@@ -1158,7 +1158,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The war-patience reference is read only under `war_patience`, which the
 /// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc144_6363_b1c2_dcb3;
+/// The wonder-race scale is read only under `live_wonder_race`, which the
+/// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x89c5_4d41_e792_24a2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

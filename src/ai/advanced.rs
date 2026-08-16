@@ -172,6 +172,11 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// How much of the game's progress the live race adds to its wonder bonus: the
+/// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
+/// `AdvancedAi::live_wonder_race_scale`.
+const LIVE_WONDER_RACE_LATE_SCALE: f64 = 2.0;
+
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
 /// See `AdvancedAi::amenity_district_path`.
@@ -7301,6 +7306,18 @@ impl AdvancedAi {
     ///
     /// The horizon every research term is scaled by. A game past its turn limit
     /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    /// How much the live race's wonder bonus grows with the game's progress:
+    /// ×1 at the start, ×2 at the midpoint, ×3 at the tally. See
+    /// `live_wonder_race`.
+    fn live_wonder_race_scale(g: &Game) -> f64 {
+        let progress = if g.max_turns > 0 {
+            (g.turn as f64 / g.max_turns as f64).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        1.0 + LIVE_WONDER_RACE_LATE_SCALE * progress
+    }
+
     /// How many wonders the live race keeps in production at once: one, plus
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
     fn live_wonder_race_lanes(city_count: usize) -> usize {
@@ -16690,7 +16707,26 @@ impl AdvancedAi {
                             // (above a Library, below a Settler) and ~30 in a
                             // 5-production one (below both) — strong cities
                             // race, weak ones keep developing.
+                            //
+                            // ★★★★ AND HIGHER AS THE TALLY APPROACHES. The
+                            // fifteen points are the same whatever the wonder
+                            // costs, but the cost climbs by era (220 ancient,
+                            // 700–1 000 renaissance and later) while this
+                            // seat's production stays at 15–40, so at a fixed
+                            // +1 500 the arm went quiet exactly when the tally
+                            // was near: run civvis-20260816T030249Z (918
+                            // against 967 at t243, eleven techs ahead) started
+                            // no wonder at all between t112 and t174, and
+                            // finished four. Late in the game a building's
+                            // yields have little left to compound, and a
+                            // wonder's fifteen points are the densest score
+                            // production buys, so the bonus rises with the
+                            // game's progress: ×1 at the start, ×2 at the
+                            // midpoint, ×3 at the tally. The completion guards
+                            // above (a wonder that cannot finish, or would take
+                            // most of what is left) still refuse.
                             LIVE_WONDER_RACE_BONUS
+                                * Self::live_wonder_race_scale(g)
                         } else if plan.strategy == GrandStrategy::Culture {
                             320.0
                         } else if self.victory_target == Some(VictoryTarget::Score) {
@@ -44044,6 +44080,24 @@ mod research_probe {
         let raced =
             live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
         assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        // ★★★★ And prices it higher as the tally approaches: ×1 at the start,
+        // ×2 at the midpoint, ×3 at the limit. See `live_wonder_race_scale`.
+        let turn_before = game.turn;
+        game.turn = 0;
+        assert!((AdvancedAi::live_wonder_race_scale(&game) - 1.0).abs() < 1e-9);
+        let raced =
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
+        game.turn = game.max_turns / 2;
+        assert!((AdvancedAi::live_wonder_race_scale(&game) - 2.0).abs() < 1e-9);
+        let raced_midgame =
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
+        assert!(
+            raced_midgame > raced * 1.5,
+            "the midgame wonder is worth more than the opening one: {raced_midgame} vs {raced}"
+        );
+        game.turn = game.max_turns;
+        assert!((AdvancedAi::live_wonder_race_scale(&game) - 3.0).abs() < 1e-9);
+        game.turn = turn_before;
         let stonehenge_before_founding = live.production_value(
             &game,
             0,
