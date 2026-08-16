@@ -516,17 +516,20 @@ impl HostCityAttackCooldowns {
 /// #1735 retires an exploration GOAL the unit stands still for, but the goal
 /// varied while the coalesced first step through (9,11) did not, so nothing
 /// fired. The host receives a coalesced destination, but CIVVIS still knows
-/// each local step that led there. A unit still standing on the tile it was
-/// ordered from, one turn after a `MOVE_TO`, proves the first speculative step
-/// in that walk unwalkable; if the mirror still holds it as unknown ground it
-/// stops being assumed traversable, and every path — exploration, settlers,
-/// the army — routes around it. Revealed terrain is never overridden: once the
-/// plot is seen, its real terrain governs.
+/// each local step that led there. A unit that never starts a long route first
+/// retries that exact speculative step; only if Firaxis refuses the one-step
+/// probe too does it become unwalkable. The mirror then stops assuming it is
+/// traversable, and every path — exploration, settlers, the army — routes
+/// around it. Revealed terrain is never overridden: once the plot is seen, its
+/// real terrain governs.
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
     /// destination sent to Firaxis, the first unknown local step, and the turn.
     sent: std::collections::BTreeMap<i64, HostMoveAttempt>,
+    /// A first unknown hop from a long route the host did not begin. It must
+    /// become the next exact `MOVE_TO` before terrain is declared dead.
+    pending_probes: std::collections::BTreeMap<i64, HostFrontierProbe>,
     /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
 }
@@ -543,6 +546,12 @@ struct HostMoveAttempt {
     turn: u32,
 }
 
+#[derive(Clone, Copy)]
+struct HostFrontierProbe {
+    from: (i32, i32),
+    target: (i32, i32),
+}
+
 impl HostMoveRefusals {
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
@@ -555,15 +564,72 @@ impl HostMoveRefusals {
                 continue;
             }
             if state.turn != attempt.turn.saturating_add(1) {
+                self.pending_probes.remove(&unit);
                 continue;
             }
             let Some(now) = state.units.iter().find(|u| u.id == unit) else {
+                self.pending_probes.remove(&unit);
                 continue;
             };
-            if (now.x, now.y) == attempt.from && attempt.from != attempt.destination {
+            if (now.x, now.y) != attempt.from || attempt.from == attempt.destination {
+                self.pending_probes.remove(&unit);
+            } else if attempt.destination == attempt.frontier_step {
+                // This was already the exact local step, rather than a long
+                // route containing it. Now the host's non-movement is proof.
+                self.pending_probes.remove(&unit);
                 self.dead.insert(attempt.frontier_step);
+            } else {
+                self.pending_probes.insert(
+                    unit,
+                    HostFrontierProbe {
+                        from: attempt.from,
+                        target: attempt.frontier_step,
+                    },
+                );
             }
         }
+    }
+
+    /// Replace a repeated long move with the one unknown hop the host just
+    /// failed to begin. This keeps healthy paths coalesced at full speed and
+    /// gathers exact terrain evidence only on a failed route.
+    fn cap_pending_frontier_moves(
+        &mut self,
+        orders: &mut [Order],
+        state: &civvis::mirror::StateSnapshot,
+        first_unknown_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
+    ) -> usize {
+        let pending = std::mem::take(&mut self.pending_probes);
+        let mut capped = 0;
+        for (unit, probe) in pending {
+            let still_at_from = state
+                .units
+                .iter()
+                .find(|candidate| candidate.id == unit)
+                .is_some_and(|candidate| (candidate.x, candidate.y) == probe.from);
+            if !still_at_from {
+                continue;
+            }
+            // A replan that chose a different opening is already escaping the
+            // failed route. Do not overwrite its tactical judgment with stale
+            // exploration feedback.
+            if first_unknown_steps.get(&unit) != Some(&probe.target) {
+                continue;
+            }
+            if let Some(order) = orders.iter_mut().find(|order| {
+                order.kind == "unit"
+                    && order.subject == Some(unit)
+                    && order.verb.as_deref() == Some("MOVE_TO")
+                    && order.pos.is_some()
+            }) {
+                if order.pos != Some(probe.target) {
+                    order.pos = Some(probe.target);
+                    capped += 1;
+                }
+                self.pending_probes.insert(unit, probe);
+            }
+        }
+        capped
     }
 
     /// Remember where each `MOVE_TO` in `orders` sends which host unit from.
@@ -593,12 +659,19 @@ impl HostMoveRefusals {
             else {
                 continue;
             };
+            let frontier_step = self
+                .pending_probes
+                .get(&unit)
+                .filter(|probe| probe.from == from && probe.target == dest)
+                .map(|probe| probe.target)
+                .or_else(|| frontier_steps.get(&unit).copied())
+                .unwrap_or(dest);
             self.sent.insert(
                 unit,
                 HostMoveAttempt {
                     from,
                     destination: dest,
-                    frontier_step: frontier_steps.get(&unit).copied().unwrap_or(dest),
+                    frontier_step,
                     turn: state.turn,
                 },
             );
@@ -2026,6 +2099,12 @@ fn decide(
     }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
+    }
+
+    let host_frontier_probes =
+        host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
+    if host_frontier_probes > 0 {
+        note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -4110,11 +4189,11 @@ mod tests {
     }
 
     /// A coalesced `MOVE_TO` keeps the host fast, but the failure feedback must
-    /// name the first speculative hop that was hidden inside it. Otherwise a
-    /// rejected three-hex Scout route only retires its far endpoint and the next
-    /// fresh mirror can choose the same blocked opening again.
+    /// verify the first speculative hop that was hidden inside it. Otherwise a
+    /// rejected three-hex Scout route either retires an unproven valid tile or
+    /// keeps choosing the same blocked opening again.
     #[test]
-    fn a_stalled_coalesced_walk_retires_its_first_unknown_step() {
+    fn a_stalled_coalesced_walk_probes_then_retires_its_first_unknown_step() {
         let (snapshot, mut state) = production_board();
         state.turn = 13;
         state.units = vec![StateUnit {
@@ -4145,10 +4224,53 @@ mod tests {
         refusals.record(&orders, &state, &probes);
         state.turn = 14;
         refusals.observe(&state);
+        assert!(
+            refusals.dead.is_empty(),
+            "a long route has not proved which unknown hop blocked it"
+        );
+        assert_eq!(
+            refusals.pending_probes.get(&900).map(|probe| (probe.from, probe.target)),
+            Some(((6, 5), (8, 5))),
+            "the next outgoing move must test the first unknown hop exactly"
+        );
+
+        // The next plan may again want the distant destination, but the bridge
+        // reduces just this known-failed route to its exact frontier probe.
+        let mut retry = vec![unit_order(900, "MOVE_TO", Some((9, 5)))];
+        assert_eq!(
+            refusals.cap_pending_frontier_moves(&mut retry, &state, &probes),
+            1
+        );
+        assert_eq!(retry[0].pos, Some((8, 5)));
+        refusals.record(&retry, &state, &std::collections::BTreeMap::new());
+        state.turn = 15;
+        refusals.observe(&state);
         assert_eq!(
             refusals.dead.iter().copied().collect::<Vec<_>>(),
             vec![(8, 5)],
-            "the hidden unknown hop, not the distant host destination, is retired"
+            "only a failed exact probe retires the hidden unknown hop"
+        );
+
+        // A later replan with another frontier opening must remain its own
+        // decision; stale feedback may narrow a repeated route, never replace
+        // a new tactical direction.
+        refusals.pending_probes.insert(
+            900,
+            HostFrontierProbe {
+                from: (6, 5),
+                target: (8, 5),
+            },
+        );
+        let mut different_route = vec![unit_order(900, "MOVE_TO", Some((7, 6)))];
+        let different_steps = std::collections::BTreeMap::from([(900, (7, 6))]);
+        assert_eq!(
+            refusals.cap_pending_frontier_moves(&mut different_route, &state, &different_steps),
+            0
+        );
+        assert_eq!(different_route[0].pos, Some((7, 6)));
+        assert!(
+            refusals.pending_probes.is_empty(),
+            "a changed route clears the stale probe instead of being overwritten"
         );
 
         let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 2);
