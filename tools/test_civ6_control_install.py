@@ -946,6 +946,29 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("seen.forfeits < cap", self.escalation)
         self.assertIn('emit("wedged"', self.escalation)
 
+    def test_the_residual_answer_is_bounded_before_the_forfeit(self) -> None:
+        """A residual ladder answer that leaves the blocker standing is tried
+        twice, then the forfeit runs.
+
+        Run `civvis-20260816T115139Z` -- the seat's best game, 804 against 715 --
+        wedged at turn 178: `civvis_complete`, the ladder's `units` answer,
+        `residual_unblock ... forfeits 0`, and the same blocker back, seven
+        times, because the residual arm reset `attempts` and never fell through
+        to the forfeit. The outside watchdog killed it after 900 s.
+        """
+        self.assertIn(
+            '(seen.residuals or 0) < (cfg.MaxResidualAnswers or 2)',
+            self.escalation,
+        )
+        self.assertIn("seen.residuals = (seen.residuals or 0) + 1", self.escalation)
+        # The bound is checked BEFORE the ladder is asked, so an exhausted
+        # residual budget yields a nil pick and the forfeit branch below runs.
+        bound = self.escalation.index("(seen.residuals or 0) < (cfg.MaxResidualAnswers or 2)")
+        ask = self.escalation.index("residual_pick = answerBlocker(player, pid, blocker, turn, true)")
+        forfeit = self.escalation.index("elseif seen.forfeits < cap then")
+        self.assertLess(bound, ask)
+        self.assertLess(ask, forfeit)
+
     def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
         """A board sitting on a blocker publishes almost nothing.
 
