@@ -5553,6 +5553,58 @@ mod belief_runtime_tests {
         game.players[0].religion_beliefs = vec!["pilgrimage".to_string()];
         assert_eq!(game.founder_belief_yields(0).faith, 4.0);
 
+        // Lay Ministry: +1 Faith per Holy Site and +1 Culture per Theater
+        // Square in cities following the religion (BELIEF_YIELD_PER_DISTRICT);
+        // Sacred Places: +2 of every yield per following city with a Wonder
+        // (BELIEF_YIELD_PER_CITY_WITH_WONDER). Both are founder income.
+        let holy_site = game
+            .cities[&cities[0]]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&cities[0]].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&holy_site).unwrap().district = Some(crate::name!("holy_site"));
+        game.map.tiles.get_mut(&holy_site).unwrap().improvement = None;
+        game.cities
+            .get_mut(&cities[0])
+            .unwrap()
+            .districts
+            .insert(crate::name!("holy_site"), holy_site);
+        game.players[0].religion_beliefs = vec!["lay_ministry".to_string()];
+        assert_eq!(game.founder_belief_yields(0).faith, 1.0);
+        assert_eq!(game.founder_belief_yields(0).culture, 0.0);
+        let second_center = game.cities[&cities[1]].pos;
+        game.cities
+            .get_mut(&cities[1])
+            .unwrap()
+            .wonders
+            .insert(crate::name!("stonehenge"), second_center);
+        game.players[0].religion_beliefs = vec!["sacred_places".to_string()];
+        let sacred = game.founder_belief_yields(0);
+        assert_eq!((sacred.faith, sacred.culture, sacred.science, sacred.gold), (2.0, 2.0, 2.0, 2.0));
+        // Divine Inspiration is a follower belief: +4 Faith per Wonder in the
+        // city that follows, paid in that city's own yields — even a rival's.
+        game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+        let without = {
+            game.players[0].religion_beliefs.clear();
+            game.city_yields(cities[1]).faith
+        };
+        game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+        assert_eq!(game.city_yields(cities[1]).faith, without + 4.0);
+        // Reliquaries triples a Relic's Faith in a following city.
+        game.players[0].religion_beliefs.clear();
+        game.grant_great_work(1, "relic", 0, "test");
+        let plain_relic = game.city_yields(cities[1]).faith;
+        game.players[0].religion_beliefs = vec!["reliquaries".to_string()];
+        let housed = game
+            .housed_great_works(1)
+            .get(&cities[1])
+            .and_then(|works| works.get("relic").copied())
+            .unwrap_or(0) as f64;
+        assert_eq!(game.city_yields(cities[1]).faith, plain_relic + 3.0 * 4.0 * housed);
+        assert!(housed >= 1.0, "the relic has to be housed for the belief to show");
+
         game.players[1].is_minor = true;
         game.players[0].religion_beliefs = vec!["religious_unity".to_string()];
         game.award_religious_unity_envoys();
@@ -6329,6 +6381,75 @@ mod governor_runtime_tests {
         assert_eq!(earned(&mut game, "nobel_prize", "engineer"), 6.0);
         // 2 from the Armory and 4 from the Military Academy.
         assert_eq!(earned(&mut game, "military_organization", "general"), 6.0);
+    }
+
+    /// Civilization VI turns the points of a Great Person class the empire
+    /// can no longer earn into Faith, one for one, each turn — the game core's
+    /// `GetFaithFromUnusedGreatPeoplePoints`. Measured on the live Settler
+    /// seat across seven games (run civvis-20260816T123936Z t219–239: the
+    /// balance grew by the Campus rate to the point once the last Great
+    /// Scientist anywhere was claimed, and by the Holy Site's Prophet rate
+    /// from the turn the map ran out of religions). The model banked the
+    /// points and paid nothing, so the empire's Faith read half the host's.
+    #[test]
+    fn unused_great_person_points_are_paid_out_as_faith() {
+        let mut game = Game::new_full(1, 24, 16, 91_921, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let center = game.cities[&city].pos;
+        let sites: Vec<Pos> = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != center)
+            .collect();
+        set_district(&mut game, city, sites[0], "campus");
+        set_district(&mut game, city, sites[1], "holy_site");
+        let rate = game.great_person_points_per_turn(0);
+        let scientist = rate["scientist"];
+        let prophet = rate["prophet"];
+        assert!(scientist > 0.0 && prophet > 0.0, "the two districts pay points: {rate:?}");
+
+        // Every class still has someone to recruit: points bank, no Faith.
+        assert!(game.great_person_class_earnable(0, "scientist"));
+        assert!(game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), 0.0);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before);
+        assert_eq!(game.players[0].gpp["scientist"], scientist);
+
+        // The host's timeline no longer lists a Great Scientist: the Campus
+        // points are still counted (Firaxis's `GetPointsTotal` keeps growing)
+        // and are paid out as Faith as well.
+        game.players[0].live_great_person_offered =
+            Some(["prophet", "writer", "merchant"].map(str::to_string).into_iter().collect());
+        assert!(!game.great_person_class_earnable(0, "scientist"));
+        assert!(game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), scientist);
+        assert_eq!(game.player_yield_extras(0).faith, scientist);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before + scientist);
+        assert_eq!(game.players[0].gpp["scientist"], 2.0 * scientist);
+
+        // An empire that holds a religion cannot earn another Prophet: the
+        // Holy Site's points become Faith too, whatever the host still offers.
+        game.players[0].religion = Some("test_faith".to_string());
+        assert!(!game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), scientist + prophet);
+        game.players[0].religion = None;
+        // ...and so is one whose Prophet is already pending.
+        game.players[0].prophet_pending = true;
+        assert!(!game.great_person_class_earnable(0, "prophet"));
+        game.players[0].prophet_pending = false;
+        assert!(game.great_person_class_earnable(0, "prophet"));
+
+        // Nothing is paid under Anarchy: the empire collects no Faith at all.
+        game.players[0].anarchy_turns = 2;
+        assert_eq!(game.unused_great_person_faith(0), 0.0);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before);
     }
 
     #[test]
@@ -16431,6 +16552,15 @@ pub struct Player {
     /// engine and old-save behavior.
     #[serde(default)]
     pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
+    /// The Great Person classes the mirrored Civilization VI game still has
+    /// an unclaimed individual for, when the host says. `None` in headless
+    /// games and on older exports: the engine then falls back to its own
+    /// roster (`current_great_person`). `Some(set)` is the host's timeline —
+    /// a class absent from it has no one left to recruit anywhere, and its
+    /// points are the ones Firaxis turns into Faith
+    /// (`great_person_class_earnable`, `unused_great_person_faith`).
+    #[serde(default)]
+    pub live_great_person_offered: Option<BTreeSet<String>>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -16658,6 +16788,7 @@ impl Player {
             gpp: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
+            live_great_person_offered: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -24672,16 +24803,53 @@ impl Game {
             .map(|city| self.religious_followers_in_city(city, religion))
             .sum::<f64>();
         let effect = |name| self.religion_belief_effect(religion, name);
+        // Lay Ministry and Sacred Places (`BELIEF_YIELD_PER_DISTRICT`,
+        // `BELIEF_YIELD_PER_CITY_WITH_WONDER`): counted over the cities that
+        // follow the religion, wherever they stand, and paid to the founder.
+        let (holy_sites, theater_squares, wonder_cities) = if effect("faith_per_holy_site")
+            + effect("culture_per_theater_square")
+            + effect("yield_per_wonder_city")
+            > 0.0
+        {
+            self.cities
+                .values()
+                .filter(|city| self.city_religion(city) == Some(religion))
+                .fold((0.0, 0.0, 0.0), |(holy, theater, wonders), city| {
+                    let districts = |family: &str| {
+                        city.districts
+                            .iter()
+                            .filter(|(district, position)| {
+                                self.district_is_family(district, Name::new(family))
+                                    && self.district_is_active(city, district, **position)
+                            })
+                            .count() as f64
+                    };
+                    (
+                        holy + districts("holy_site"),
+                        theater + districts("theater_square"),
+                        wonders + if city.wonders.is_empty() { 0.0 } else { 1.0 },
+                    )
+                })
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let sacred_places = effect("yield_per_wonder_city") * wonder_cities;
         Yields {
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
-                + effect("gold_per_foreign_city") * foreign_following,
+                + effect("gold_per_foreign_city") * foreign_following
+                + sacred_places,
             culture: (effect("culture_per_followers") * followers).floor()
-                + (effect("culture_per_foreign_followers") * foreign_followers).floor(),
+                + (effect("culture_per_foreign_followers") * foreign_followers).floor()
+                + effect("culture_per_theater_square") * theater_squares
+                + sacred_places,
             // Cross-Cultural Dialogue counts followers abroad only.
-            science: (effect("science_per_foreign_followers") * foreign_followers).floor(),
+            science: (effect("science_per_foreign_followers") * foreign_followers).floor()
+                + sacred_places,
             faith: effect("faith_per_city") * following
-                + effect("faith_per_foreign_city") * foreign_following,
+                + effect("faith_per_foreign_city") * foreign_following
+                + effect("faith_per_holy_site") * holy_sites
+                + sacred_places,
             ..Yields::default()
         }
     }
@@ -25819,13 +25987,72 @@ impl Game {
             .any(|position| self.can_found_corporation(pid, position))
     }
 
-    /// Accrue great person points and auto-claim on reaching the threshold
-    /// (simplified: generic named-less great people with instant effects).
-    fn process_great_people(&mut self, pid: usize) {
-        if self.players[pid].is_minor {
-            return;
+    /// Whether this empire can still recruit a Great Person of `kind`.
+    ///
+    /// Civilization VI stops paying a class into the bank the moment nobody of
+    /// that class is left to earn: a Great Prophet once the empire holds a
+    /// religion (or one is pending, or every religion the map allows has been
+    /// founded), and any other class once the last named individual anywhere
+    /// has been claimed. On a mirrored seat the host's own timeline is the
+    /// authority for the latter (`live_great_person_offered`); headless games
+    /// ask CIVVIS's roster. What such a class earns is not lost — see
+    /// [`Self::unused_great_person_faith`].
+    pub fn great_person_class_earnable(&self, pid: usize, kind: &str) -> bool {
+        if kind == "prophet" {
+            let player = &self.players[pid];
+            if player.religion.is_some() || player.prophet_pending {
+                return false;
+            }
+            let claimed = self.religions_founded()
+                + self.players.iter().filter(|player| player.prophet_pending).count();
+            return claimed < self.max_religions();
         }
+        if let Some(offered) = self.players[pid].live_great_person_offered.as_ref() {
+            return offered.contains(kind);
+        }
+        self.current_great_person(kind).is_some()
+    }
+
+    /// Faith Civilization VI grants each turn for Great Person points nobody
+    /// can spend: every point per turn of a class this empire can no longer
+    /// earn (`great_person_class_earnable`) becomes one Faith, the engine's
+    /// `GetFaithFromUnusedGreatPeoplePoints`. Measured on the live Settler
+    /// seat across seven games: after the last Great Scientist was claimed the
+    /// balance grew by the Campus points to the point (ratio 0.97–1.10, run
+    /// civvis-20260816T123936Z t219–239: 23–60 a turn, more than every city
+    /// together), and a Holy Site's Prophet points arrive as Faith from the
+    /// turn the empire has a religion or the map runs out of them. Zero under
+    /// Anarchy, when the empire collects no Faith at all.
+    pub fn unused_great_person_faith(&self, pid: usize) -> f64 {
+        if self.players[pid].is_minor || self.in_anarchy(pid) {
+            return 0.0;
+        }
+        self.great_person_points_per_turn(pid)
+            .iter()
+            .filter(|(kind, _)| !self.great_person_class_earnable(pid, kind))
+            .map(|(_, points)| points.max(0.0))
+            .sum()
+    }
+
+    /// Player-level yields the empire collects each turn beside its cities:
+    /// founder-belief income and the Faith from unused Great Person points.
+    /// Both sit on Civilization VI's top bar next to the city sum, so every
+    /// reader of "yields per turn" adds this to the cities.
+    pub fn player_yield_extras(&self, pid: usize) -> Yields {
+        let mut extras = self.founder_belief_yields(pid);
+        extras.faith += self.unused_great_person_faith(pid);
+        extras
+    }
+
+    /// Great Person points this empire earns per turn, by class, after every
+    /// multiplier (Governor, government, World Congress Patronage) — the
+    /// figure Civilization VI's `GetPointsPerTurn` reports. Pure: what
+    /// `process_great_people` banks each turn, readable without a turn.
+    pub fn great_person_points_per_turn(&self, pid: usize) -> BTreeMap<String, f64> {
         let mut earn: BTreeMap<String, f64> = BTreeMap::new();
+        if self.players[pid].is_minor {
+            return earn;
+        }
         for c in self.cities.values().filter(|c| c.owner == pid) {
             let mut city_earn: BTreeMap<String, f64> = BTreeMap::new();
             for position in &c.owned_tiles {
@@ -26067,20 +26294,45 @@ impl Game {
             }
         }
         let mult = 1.0 + self.gov_effects(pid).great_people_pct / 100.0;
-        for (t, amt) in earn {
-            let congress_mult = if self.congress_effect_active("patronage", "A", &t) {
+        for (t, amt) in earn.iter_mut() {
+            let congress_mult = if self.congress_effect_active("patronage", "A", t) {
                 2.0
-            } else if self.congress_effect_active("patronage", "B", &t) {
+            } else if self.congress_effect_active("patronage", "B", t) {
                 0.0
             } else {
                 1.0
             };
-            *self.players[pid].gpp.entry(t).or_insert(0.0) += amt * mult * congress_mult;
+            *amt *= mult * congress_mult;
+        }
+        earn
+    }
+
+    /// Accrue great person points and auto-claim on reaching the threshold
+    /// (simplified: generic named-less great people with instant effects).
+    ///
+    /// Points of a class the empire can no longer earn still land in the
+    /// bank — Firaxis's `GetPointsTotal` keeps counting them (773 Scientist
+    /// points banked against a 660 cost, twenty turns after the last
+    /// Scientist was claimed) — and are paid out again as Faith, one for one,
+    /// which is where a late-game empire's Faith actually comes from
+    /// (`unused_great_person_faith`).
+    fn process_great_people(&mut self, pid: usize) {
+        if self.players[pid].is_minor {
+            return;
+        }
+        let earn = self.great_person_points_per_turn(pid);
+        let anarchy = self.in_anarchy(pid);
+        for (t, amt) in earn {
+            if !anarchy && !self.great_person_class_earnable(pid, &t) {
+                self.players[pid].faith += amt.max(0.0);
+            }
+            *self.players[pid].gpp.entry(t).or_insert(0.0) += amt;
         }
         let due: Vec<String> = self.players[pid]
             .gpp
             .iter()
             .filter(|(t, pts)| **pts >= self.gp_cost(pid, t))
+            .filter(|(t, _)| self.great_person_class_earnable(pid, t))
             .map(|(t, _)| t.clone())
             .collect();
         for t in due {
@@ -40248,6 +40500,10 @@ impl Game {
         } else {
             4.0
         };
+        // Reliquaries: `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` on Relics,
+        // ScalingFactor 300 — triple Faith in a city following the religion.
+        let relic_faith = relic_faith
+            * (1.0 + self.city_religion_belief_effect(city, "relic_faith_pct") / 100.0);
         if let Some(works) = self.housed_great_works(city.owner).get(&cid) {
             for (kind, count) in works {
                 let count = *count as f64;
@@ -40690,6 +40946,16 @@ impl Game {
                     ys.culture += self.rules.buildings[building].yields.faith * choral_music;
                     ys.food += temple_food;
                 }
+            }
+            // Divine Inspiration: `MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`
+            // +4 Faith per Wonder standing in a city that follows the religion —
+            // whoever founded it. Rome under Catholicism read 35 Faith in the
+            // host and 23 in the model until this line: three Wonders, twelve
+            // Faith (run civvis-20260816T123936Z t231-239), and Ostia's
+            // Mausoleum the same four more.
+            let wonder_faith = self.city_religion_belief_effect(city, "wonder_faith");
+            if wonder_faith > 0.0 {
+                ys.faith += wonder_faith * city.wonders.len() as f64;
             }
             let work_ethic =
                 self.city_religion_belief_effect(city, "holy_site_production_from_adjacency");
@@ -56236,6 +56502,10 @@ impl Game {
         } else {
             1.0
         };
+        if kind == "relic" {
+            // Reliquaries triples a Relic's Tourism as it triples its Faith.
+            multiplier *= 1.0 + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
+        }
         if kind == "relic" && city.wonders
 .contains_key(&crate::name!("st_basils_cathedral")) {
             multiplier *= 1.0
@@ -56644,6 +56914,10 @@ impl Game {
                 ) {
                     value *=
                         1.0 + self.governor_effect(pid, city.id, "great_work_tourism_pct") / 100.0;
+                }
+                if kind == "relic" {
+                    value *= 1.0
+                        + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
                 }
                 if kind == "relic" && city.wonders
 .contains_key(&crate::name!("st_basils_cathedral")) {

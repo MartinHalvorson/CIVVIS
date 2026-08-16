@@ -3011,9 +3011,23 @@ mod tests {
         // read +1 Gold in the host and 0 in the model for its whole life. A
         // real simulation change for Rome seats only; every other row is
         // untouched.
+        // Moved by four beliefs the shipped database has and `beliefs.json`
+        // did not: Divine Inspiration (follower, +4 Faith per Wonder in a
+        // following city — `MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`
+        // 4), Reliquaries (follower, Relics ×4 Faith and Tourism —
+        // `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` ScalingFactor 300),
+        // Lay Ministry (founder, +1 Faith per Holy Site and +1 Culture per
+        // Theater Square in following cities — `BELIEF_YIELD_PER_DISTRICT`)
+        // and Sacred Places (founder, +2 of each yield per following city
+        // with a Wonder — `BELIEF_YIELD_PER_CITY_WITH_WONDER`). Measured
+        // first on live run civvis-20260816T123936Z: Rome followed a
+        // Catholicism it had not founded and read 35 Faith in the host, 23 in
+        // the model, for its last twenty turns — three Wonders under Divine
+        // Inspiration. A real change for every simulated seat: the Prophet
+        // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:daa3f93b9b203e23"
+            "fnv1a64:5caecb54c55df784"
         );
     }
 
