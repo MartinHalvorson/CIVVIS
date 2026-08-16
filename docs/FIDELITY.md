@@ -517,6 +517,50 @@ exist in exports written after this shipped. Run it on the first game the new
 mod plays; the TILES and SOURCES blocks are where the remaining Food and Gold
 episodes will name themselves.
 
+### Round 2: what the first per-plot game named (2026-08-16, run `civvis-20260816T040537Z`)
+
+The first game exported with plot yields and the host's ledgers made the
+remaining causes legible in one pass. Grouping the 849 worked-tile
+disagreements by (terrain, feature, resource, improvement, delta) put four
+signatures at the top; two were rules, two were state only the host holds:
+
+| Signature | Count | Verdict |
+|---|---:|---|
+| Tundra under **Ubsunur Hollow**: host 1 Food / 1 Production / 2 Faith, model 2 Food | 389 | rule — a natural wonder's tile pays the wonder's `Feature_YieldChanges` and nothing from the terrain or hills under it (`Rules::tile_yields`) |
+| Plains + Horses + Pasture: host 2/2, model 2/3 | 90 | state — the pasture was pillaged; `IsImprovementPillaged` now rides in the tiles export as `p` and the mirror sets the tile |
+| Floodplains (grassland and plains, with and without farms): host +1..+3 Food, +1..+2 Production over the model, varying by tile and turn | 143 | state — Gathering Storm river floods leave permanent fertility on the tile; no rule reproduces it and the per-plot correction carries it |
+| Bare Plains Hills / Grassland Hills + Iron Mine: host +1 Food, mine paying nothing | 140 | state — a pillaged mine plus storm/flood fertility on the hill; same two mechanisms |
+
+And the host's per-yield ledgers (`yield_sources`) settled three questions
+that totals never could:
+
+- **Loyalty does not touch Food.** "from Disloyal" / "from Wavering Loyalty"
+  appears on culture, faith, gold, production and science in every banded
+  city-turn (59 of them) and on food in none; a city in Unrest read "+7 from
+  Worked Tiles", total 7, while `city_yields_inner` multiplied its Food by the
+  band's **0**. `LoyaltyLevels.YieldChange` is the non-Food factor;
+  `GrowthChange` is what a disloyal city pays, and `loyalty_growth_mult`
+  already applies it. Fixed.
+- **The Palace sits where the host's capital is.** Rome fell at t79; the host
+  moved the Palace to Aquileia (`capital: true`) and the mirror paid it in
+  Antium (the first city the export listed) to the end of the game — 5 Gold,
+  2 Production, 2 Science, 1 Culture wrong in two cities, the largest
+  persistent gap of the run. Every mirrored city now takes `IsCapital` from
+  the export, rivals and city-states included, and `city_has_palace` follows.
+- **"+2 from Incoming Trade Routes"** on Aquileia from t131 was Zhang Qian,
+  activated there at t130 (`GREATPERSON_GOLD_FROM_INCOMING_FOREIGN_ROUTES`) —
+  a rule the engine already has (`great_person_foreign_route_gold`) but the
+  mirror could not count the routes it applied to: the export carried only
+  routes this seat sends. Foreign and domestic incoming counts now cross per
+  city (`incoming_routes`, gathered the way the shipped Trade Overview does,
+  from every other player's outgoing routes); wiring the Great Person's
+  permanent city effect from the `gp` event stream is the follow-up.
+
+The ledger also confirmed two rates the model already had: 0.5 Science and 0.3
+Culture per citizen (the tooltip truncates 0.29688 to "+0.2" — read totals, not
+the printed decimals), and the Monument's "+1 from Modifiers" is its
+full-loyalty Culture, which CIVVIS pays as `full_loyalty_culture`.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are

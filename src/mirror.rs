@@ -160,6 +160,14 @@ pub struct Plot {
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
+    /// Whether that improvement is pillaged (`Plot:IsImprovementPillaged`). Sent
+    /// only where an improvement stands; absent reads as not pillaged, which is
+    /// what an older export meant too. A pillaged improvement pays nothing until
+    /// repaired, and without this bit the model paid it in full — a pastured
+    /// Horses tile read at the bare-terrain figure for ninety turns on run
+    /// civvis-20260816T040537Z.
+    #[serde(default)]
+    pub p: bool,
     /// This plot's own river edges as a bitmask: 1 = W, 2 = NW, 4 = NE.
     ///
     /// Civilization VI records a river on three of a plot's six edges; the other
@@ -349,6 +357,7 @@ mod tests {
             ri: false,
             ct: None,
             cl: -1,
+            p: false,
         }
     }
 
@@ -1504,6 +1513,7 @@ mod tests {
                 ri: false,
                 ct: None,
                 cl: -1,
+                p: false,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -2310,6 +2320,98 @@ mod tests {
         let saved = serde_json::to_string(&recon.game).expect("save");
         let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load");
         assert!((loaded.city_housing(&loaded.cities[&cid]) - 9.0).abs() < 1e-9);
+    }
+
+    /// ★★★★★ THE PALACE SITS WHERE THE HOST'S CAPITAL IS.
+    ///
+    /// `place_city` flags the first city seated for a player as its capital, so
+    /// after the founding city fell the mirror paid the Palace in whichever city
+    /// the export listed first (Antium) while the host had moved it (Aquileia):
+    /// 5 Gold, 2 Production, 2 Science, 1 Culture wrong in two cities for the
+    /// rest of run civvis-20260816T040537Z.
+    #[test]
+    fn the_palace_follows_the_hosts_capital_flag() {
+        let mut first = plot(5, 4, "TERRAIN_PLAINS");
+        first.o = 0;
+        let mut second = plot(8, 4, "TERRAIN_PLAINS");
+        second.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 12,
+            height: 10,
+            chunk: 1,
+            plots: vec![first, second],
+        }]);
+        let city = |id: i64, name: &str, x: i32, capital: bool| StateCity {
+            id,
+            name: name.to_string(),
+            x,
+            y: 4,
+            pop: 3,
+            loyalty: 100.0,
+            capital,
+            ..StateCity::default()
+        };
+        // Listed first, but NOT the capital: the host moved the Palace to the
+        // second city after the founding city was lost.
+        let state = StateSnapshot {
+            turn: 90,
+            cities: vec![city(2, "Antium", 5, false), city(3, "Aquileia", 8, true)],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let antium = recon.game.city_at(crate::hex::offset_to_axial(5, 4)).unwrap();
+        let aquileia = recon.game.city_at(crate::hex::offset_to_axial(8, 4)).unwrap();
+        assert!(!recon.game.cities[&antium].is_capital);
+        assert!(recon.game.cities[&aquileia].is_capital);
+        assert!(!recon.game.city_has_palace(&recon.game.cities[&antium]));
+        assert!(recon.game.city_has_palace(&recon.game.cities[&aquileia]));
+    }
+
+    /// The tiles export's pillage bit reaches the tile, and only where an
+    /// improvement stands.
+    #[test]
+    fn a_pillaged_improvement_crosses_as_pillaged_and_pays_nothing() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut pasture = plot(6, 4, "TERRAIN_PLAINS");
+        pasture.o = 0;
+        pasture.r = Some("RESOURCE_HORSES".to_string());
+        pasture.im = Some("IMPROVEMENT_PASTURE".to_string());
+        pasture.p = true;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, pasture],
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Aquileia".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                worked: Some(vec![StateWorkedPlot { x: 6, y: 4, yields: None }]),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let pos = crate::hex::offset_to_axial(6, 4);
+        let tile = recon.game.map.get(pos).expect("the pasture plot is on the board");
+        assert_eq!(tile.improvement.as_deref(), Some("pasture"));
+        assert!(tile.pillaged, "the host's pillage bit must reach the tile");
+        // Pillaged, the pasture's Production stops: plains + horses only.
+        let paid = recon.game.modeled_tile_yields(pos);
+        let mut unpillaged = tile.clone();
+        unpillaged.pillaged = false;
+        let full = recon.game.rules.tile_yields(&unpillaged);
+        assert!(paid.production + 1.0 - full.production < 1e-9 && full.production - paid.production >= 1.0 - 1e-9,
+            "pillaged {paid:?} vs standing {full:?}");
     }
 
     #[test]
@@ -5313,6 +5415,7 @@ mod tests {
                         ri: false,
                         ct: None,
                         cl: -1,
+                        p: false,
                     })
                 })
                 .collect(),
@@ -5377,6 +5480,7 @@ mod tests {
                         ri: false,
                         ct: None,
                         cl: -1,
+                        p: false,
                     })
                 })
                 .collect(),
@@ -5697,6 +5801,7 @@ mod tests {
                         ri: false,
                         ct: None,
                         cl: -1,
+                        p: false,
                     })
                 })
                 .collect(),
@@ -6011,6 +6116,12 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                     None
                 }
             });
+            // The host's pillage bit rides only with an improvement; a district's
+            // pillage is set from the city record and must not be overwritten
+            // here, so a plot without a modelled improvement is left alone.
+            if tile.improvement.is_some() {
+                tile.pillaged = plot.p;
+            }
         }
     }
     // `place_city` initially claims its complete first ring. When part of that
@@ -6591,6 +6702,16 @@ pub struct StateWonder {
     pub y: i32,
 }
 
+/// Routes arriving at one city, by origin: foreign (another player's) and
+/// domestic (this seat's own).
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct StateIncomingRoutes {
+    #[serde(default)]
+    pub foreign: i64,
+    #[serde(default)]
+    pub domestic: i64,
+}
+
 /// One population-worked Firaxis plot, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateWorkedPlot {
@@ -6825,6 +6946,14 @@ pub struct StateCity {
     /// reconstruction reads it; `tools/civ6_yield_drift.py` parses the amounts.
     #[serde(default)]
     pub yield_sources: Option<std::collections::BTreeMap<String, String>>,
+    /// Routes other cities run INTO this one, foreign and domestic, as the host
+    /// counts them (the shipped Trade Overview's walk of every other player's
+    /// outgoing routes). The destination earns from them under a few rules —
+    /// Zhang Qian's +2 Gold per incoming foreign route was live on Aquileia from
+    /// t131 of run civvis-20260816T040537Z — and the mirror's own route list holds
+    /// only routes this seat sends. Diagnostic for now; `None` on an older export.
+    #[serde(default)]
+    pub incoming_routes: Option<StateIncomingRoutes>,
     /// The city centre plot's own yields (`Plot:GetYield` on the centre), which
     /// Firaxis lists among the worked plots and CIVVIS floors to 2 Food /
     /// 1 Production before assigning citizens.
@@ -8510,7 +8639,7 @@ const CITY_KEYS: &[&str] = &[
     "housing_from_great_works",
     "food_surplus", "growth_threshold", "growth_turns", "housing_growth_mult",
     "happiness_growth_mult", "overall_growth_mult",
-    "yield_sources", "center_yields",
+    "yield_sources", "center_yields", "incoming_routes",
 ];
 
 const UNIT_KEYS: &[&str] = &[
@@ -11374,6 +11503,20 @@ fn apply_observed_host_metrics(
         game.observed_yield_adjustments.insert(0, adjustment);
     }
 
+    // Which seats the export names a capital for. A record that flags none
+    // (an older export, or a fixture) keeps `place_city`'s own choice rather
+    // than clearing every flag and leaving the seat capital-less.
+    let flagged_capitals: std::collections::BTreeSet<usize> = state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+        .filter(|observed| observed.capital)
+        .filter_map(|observed| {
+            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
+                .map(|cid| game.cities[&cid].owner)
+        })
+        .collect();
     let cities = state
         .cities
         .iter()
@@ -11392,6 +11535,20 @@ fn apply_observed_host_metrics(
         // because the most important input had been dropped.
         if observed.pop > 0 {
             game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
+        // ★★★★ WHERE THE PALACE IS. `place_city` flags the first city it seats
+        // for a player as the capital, so a seat that lost its founding city
+        // kept its Palace on whichever city the export happened to list first.
+        // Measured on run civvis-20260816T040537Z: Rome fell at t79, the host
+        // moved the Palace to Aquileia (`capital: true`), and the model paid it
+        // in Antium instead — Aquileia short 5 Gold, 2 Production, 2 Science
+        // and 1 Culture every turn to the end of the game while Antium was
+        // over by the same, the single largest persistent gap of the run. The
+        // host's `IsCapital` is the current capital, exactly what
+        // `city_has_palace` reads; every mirrored city takes it, rivals and
+        // city-states included, so their Palaces sit where the host's do.
+        if flagged_capitals.contains(&game.cities[&cid].owner) {
+            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
         }
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {
@@ -14025,6 +14182,7 @@ mod host_fact_tests {
             ri: false,
             ct: None,
             cl: -1,
+            p: false,
         }
     }
 

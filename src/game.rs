@@ -38549,7 +38549,7 @@ impl Game {
         if tile.flooded || tile.fallout_until > self.turn || tile.district_foundation.is_some() {
             return Yields::default();
         }
-        let mut yields = self.rules.tile_yields(tile);
+        let mut yields = self.rules.worked_tile_yields(tile);
         for neighbor in self.nbrs(pos) {
             if let Some(spec) = self.map.tiles[&neighbor]
                 .feature
@@ -39809,13 +39809,13 @@ impl Game {
         if !tile.pillaged || tile.improvement.is_none() {
             return owner
                 .map(|pid| self.player_tile_yields(pid, pos, tile))
-                .unwrap_or_else(|| self.rules.tile_yields(tile));
+                .unwrap_or_else(|| self.rules.worked_tile_yields(tile));
         }
         let mut unworked = tile.clone();
         unworked.improvement = None;
         owner
             .map(|pid| self.player_tile_yields(pid, pos, &unworked))
-            .unwrap_or_else(|| self.rules.tile_yields(&unworked))
+            .unwrap_or_else(|| self.rules.worked_tile_yields(&unworked))
     }
 
     /// Open a memo scope for the expensive read-only queries.
@@ -40987,8 +40987,16 @@ impl Game {
             "dark" => 0.95,
             _ => 1.0,
         };
+        // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
+        // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
+        // (0.75 / 0.25 / 0) is what a disloyal city pays, and
+        // `loyalty_growth_mult` applies it where food becomes citizens. Measured
+        // on the host's own per-yield ledgers (runs civvis-20260816T040537Z and
+        // T045316Z, 59 city-turns in a loyalty band): "from Disloyal" /
+        // "from Wavering Loyalty" appears on culture, faith, gold, production
+        // and science every time and on food never — a city in Unrest read
+        // "+7 from Worked Tiles", total 7, while the model paid it **0**.
         m *= Self::loyalty_yield_mult(city.loyalty);
-        ys.food *= Self::loyalty_yield_mult(city.loyalty);
         ys.production *= m;
         ys.gold *= m;
         ys.science *= m;
@@ -68514,6 +68522,26 @@ mod victory_conditions {
         assert_eq!(Game::loyalty_state(25.0), "unrest");
     }
 
+    /// The loyalty band multiplies every yield but Food. `LoyaltyLevels.
+    /// YieldChange` never reaches Food in the host — its per-yield ledgers put
+    /// "from Disloyal" on culture, faith, gold, production and science and never
+    /// on food (59 banded city-turns on runs civvis-20260816T040537Z/T045316Z; a
+    /// city in Unrest read "+7 from Worked Tiles", total 7). Food pays through
+    /// `loyalty_growth_mult` where it becomes citizens.
+    #[test]
+    fn a_disloyal_city_keeps_its_food_and_loses_the_rest() {
+        let mut g = game_with_capitals(2, 4_217, 300);
+        let cid = g.player_city_ids(0)[0];
+        g.cities.get_mut(&cid).unwrap().loyalty = 100.0;
+        let loyal = g.city_yields(cid);
+        g.cities.get_mut(&cid).unwrap().loyalty = 10.0;
+        let unrest = g.city_yields(cid);
+        assert!((loyal.food - unrest.food).abs() < 1e-9, "food is not banded: {loyal:?} vs {unrest:?}");
+        assert!(loyal.production > 0.0);
+        assert!(unrest.production.abs() < 1e-9, "unrest is -100% on the rest: {unrest:?}");
+        assert!(unrest.science.abs() < 1e-9);
+    }
+
     #[test]
     fn capital_citizens_double_their_loyalty_pressure_and_still_decay() {
         let mut game = game_with_capitals(2, 9_311, 300);
@@ -68774,10 +68802,15 @@ mod victory_conditions {
         );
 
         // And it is not exempt from the rules: swamp it and it revolts into a
-        // Free City exactly as a major's city does.
+        // Free City exactly as a major's city does. Foreign pressure alone tops
+        // out at the -20 the +20 base cancels, so the push over the edge is the
+        // Unrest amenity band (-6), the way a starving, miserable city goes —
+        // its Food is not banded by loyalty (the host never touches Food), so
+        // starvation cannot be manufactured from loyalty 1 alone.
         g.cities.get_mut(&major).unwrap().pop = 60;
         g.cities.get_mut(&state).unwrap().pop = 1;
         g.cities.get_mut(&state).unwrap().loyalty = 1.0;
+        g.players[1].bankruptcy_amenity_penalty = 6;
         g.process_loyalty(1);
         let free_cities = g
             .players

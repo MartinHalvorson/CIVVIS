@@ -2760,11 +2760,49 @@ impl Rules {
         }
     }
 
+    /// The catalogue's sum for a tile: terrain, hills, feature, resource,
+    /// improvement. This is what map generation and settle valuation read, and
+    /// its outputs are pinned by the cross-platform world hashes, so it keeps
+    /// the plain additive shape. What a Citizen is PAID for the tile is
+    /// [`Self::worked_tile_yields`], which applies the one host rule the sum
+    /// misses.
     pub fn tile_yields(&self, t: &Tile) -> Yields {
         let mut ys = self.terrains[t.terrain].yields;
         if t.hills {
             ys.production += 1.0;
         }
+        if let Some(f) = &t.feature {
+            ys.add(self.features[f].yields);
+        }
+        if let Some(r) = &t.resource {
+            ys.add(self.resources[r].yields);
+        }
+        if let Some(i) = &t.improvement {
+            ys.add(self.improvements[i].yields);
+        }
+        ys
+    }
+
+    /// What a Citizen is paid for working the tile, as the host pays it.
+    ///
+    /// One rule on top of [`Self::tile_yields`]: a natural wonder's tile pays
+    /// the wonder's own `Feature_YieldChanges` and nothing from the terrain or
+    /// hills under it. Ubsunur Hollow (1 Food, 1 Production, 2 Faith) on Tundra
+    /// reads exactly 1/1/2 in the host, not 2/1/2 — 389 worked-tile-turns of +1
+    /// Food on run civvis-20260816T040537Z, every one the terrain's Food added
+    /// on top; the same is why the Great Barrier Reef shows 3 Food 2 Science and
+    /// no Coast Gold. Resources and improvements (Ha Long Bay's fishing boats)
+    /// still add. Kept out of `tile_yields` because map generation reads that
+    /// one to place starts, and its worlds are pinned by hash.
+    pub fn worked_tile_yields(&self, t: &Tile) -> Yields {
+        let natural_wonder = t
+            .feature
+            .as_ref()
+            .is_some_and(|f| self.features[f].natural_wonder);
+        if !natural_wonder {
+            return self.tile_yields(t);
+        }
+        let mut ys = Yields::default();
         if let Some(f) = &t.feature {
             ys.add(self.features[f].yields);
         }
@@ -4022,6 +4060,32 @@ mod tests {
             passable > 0 && blocked > 0,
             "both halves of the split must be represented"
         );
+    }
+
+    /// A natural wonder's tile pays the wonder and nothing from the ground under
+    /// it. Ubsunur Hollow sits on Tundra: the host reads its tiles at exactly the
+    /// feature's 1 Food, 1 Production, 2 Faith (389 worked-tile-turns on run
+    /// civvis-20260816T040537Z), never Tundra's Food on top.
+    #[test]
+    fn a_natural_wonders_tile_pays_the_wonder_not_the_terrain_under_it() {
+        let rules = Rules::embedded();
+        let mut hollow = Tile::new((0, 0));
+        hollow.terrain = Name::new("tundra");
+        hollow.feature = Some(Name::new("ubsunur_hollow"));
+        assert_eq!(rules.worked_tile_yields(&hollow), rules.features["ubsunur_hollow"].yields);
+        // Hills under a wonder add nothing either; ordinary hills still do.
+        let mut hilly_hollow = hollow.clone();
+        hilly_hollow.hills = true;
+        assert_eq!(rules.worked_tile_yields(&hilly_hollow), rules.features["ubsunur_hollow"].yields);
+        let mut plain_hills = Tile::new((0, 0));
+        plain_hills.terrain = Name::new("tundra");
+        plain_hills.hills = true;
+        assert_eq!(
+            rules.worked_tile_yields(&plain_hills).production,
+            rules.terrains["tundra"].yields.production + 1.0
+        );
+        // The catalogue sum map generation reads keeps its additive shape.
+        assert_eq!(rules.tile_yields(&hollow).food, rules.terrains["tundra"].yields.food + 1.0);
     }
 
     /// Complete transcription of the placement columns in the shipped
