@@ -1117,12 +1117,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The generic Wonder fallback reads mirror-only `blocked_wonders`, which
 /// ordinary/headless games never populate. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// Live war patience now recognizes only an observed foreign city changing
+/// hands, so a fresh settlement cannot prolong a stale war; the frozen anchor
+/// never enables `war_patience`. Compatibility re-pin; the Elo protocol does
+/// not move.
 /// The hosted-amenity and regional-reach pricing is behind
 /// `amenity_district_path`, which only the live bridge and the native repair
 /// bundle set; `AdvancedAi::new()` and `AdvancedAi::legacy()` price the
 /// Entertainment Complex exactly as before (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf613_d337_35b4_0aee;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x238c_dd54_e28a_ab4b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

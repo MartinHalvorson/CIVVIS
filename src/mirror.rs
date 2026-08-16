@@ -4192,6 +4192,104 @@ mod tests {
         );
     }
 
+    /// A Great Person is not a unit CIVVIS models, but the ground it stands on
+    /// is occupied all the same. Run civvis-20260816T003229Z: the founded
+    /// zero-charge Prophet stood beside the capital for 130 turns and a Builder
+    /// was ordered onto its tile on 25 consecutive turns.
+    #[test]
+    fn a_great_persons_plot_is_occupied_ground_the_builder_routes_around() {
+        let plots = (3..=9)
+            .flat_map(|x| (3..=9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect::<Vec<_>>();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 80,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 80,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 7,
+            kind: "UNIT_BUILDER".to_string(),
+            x: 5,
+            y: 5,
+            moves: 2.0,
+            build_charges: Some(2),
+            ..StateUnit::default()
+        });
+        state.units.push(StateUnit {
+            id: 9,
+            kind: "UNIT_GREAT_PROPHET".to_string(),
+            x: 6,
+            y: 5,
+            moves: 0.0,
+            ..StateUnit::default()
+        });
+        state.rivals.push(StateRival {
+            civ: "CIVILIZATION_SWEDEN".to_string(),
+            units: vec![StateUnit {
+                id: 11,
+                kind: "UNIT_GREAT_GENERAL".to_string(),
+                x: 8,
+                y: 8,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        let prophet_plot = crate::hex::offset_to_axial(6, 5);
+        let general_plot = crate::hex::offset_to_axial(8, 8);
+        assert!(
+            !mirror.uid_of.contains_key(&9),
+            "the Prophet is still not a unit on the board"
+        );
+        assert_eq!(
+            game.great_person_plots.get(&prophet_plot),
+            Some(&0),
+            "but its plot is recorded as ground the seat's own Great Person holds"
+        );
+        assert!(
+            game.great_person_plots
+                .get(&general_plot)
+                .is_some_and(|owner| *owner != 0),
+            "and a rival's Great Person is recorded to its owner"
+        );
+        assert!(
+            game.valid_improvements(0, prophet_plot).is_empty(),
+            "the plot offers a Builder nothing, so it is never chosen as a target"
+        );
+        let uid = *mirror.uid_of.get(&7).expect("the Builder is mirrored");
+        assert!(
+            !game.can_move(uid, prophet_plot),
+            "and the Builder cannot step onto it, as Firaxis will refuse the step"
+        );
+        let open = game
+            .nbrs(game.units[&uid].pos)
+            .into_iter()
+            .find(|pos| *pos != prophet_plot && game.map.get(*pos).is_some())
+            .expect("the capital has another neighbour");
+        assert!(
+            game.can_move(uid, open),
+            "the neighbouring plots without a Great Person stay open"
+        );
+    }
+
     #[test]
     fn a_promotion_the_host_refused_is_not_offered_again() {
         let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
@@ -11149,6 +11247,16 @@ pub fn rebuild_from_state(
             // translation count stays a translation count.
             if is_great_person(&u.kind) {
                 dropped.push(format!("{}@{},{}:great_person", u.kind, u.x, u.y));
+                // ★★★★ NOT ON THE BOARD, BUT ON THE GROUND. The plot it stands on
+                // is occupied in the host's civilian layer, and a board that shows
+                // it empty sends builders at it forever: run
+                // civvis-20260816T003229Z ordered one Builder `MOVE_TO` the
+                // founded Prophet's tile on 25 consecutive turns. See
+                // `Game::great_person_plots` for what honours this.
+                let pos = crate::hex::offset_to_axial(u.x, u.y);
+                if game.map.get(pos).is_some() {
+                    game.great_person_plots.insert(pos, owner);
+                }
                 return None;
             }
             if !unmapped.contains(&u.kind) {
@@ -11196,6 +11304,9 @@ pub fn rebuild_from_state(
         Some(uid)
     };
 
+    // Every plant below records the Great People it cannot place; start from
+    // nothing so a carried board never keeps a plot a Great Person has left.
+    game.great_person_plots.clear();
     for unit in &state.units {
         if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped, &mut dropped) {
             unit_ids.insert(uid, unit.id);
