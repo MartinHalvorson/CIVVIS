@@ -1266,7 +1266,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `barbarian_scouts_are_scouts`, off for `AdvancedAi::legacy()` (asserted);
 /// the frozen anchor prices every hostile as before. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4e3c_516a_2a82_b1a8;
+/// The nine-tile camp reach is behind `BasicAi::camp_reach`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's home guard keeps
+/// the six-tile radius for camps and raiders alike. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xeec3_e7bc_ad22_faac;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

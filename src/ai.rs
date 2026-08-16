@@ -126,6 +126,11 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// it an answer. Six is the same ring `nearest_enemy` already calls "near home"
 /// when it decides whether to chase a barbarian, so the two agree on the word.
 const HOME_THREAT_RADIUS: i32 = 6;
+/// How far from a city a barbarian CAMP still counts as home ground under
+/// `camp_reach`: Civilization VI's camps raise raiders toward cities well
+/// beyond the six-tile raider radius, and a camp is not a raider — it does
+/// not fight back, it keeps producing what does. See `camp_reach`.
+const HOME_CAMP_RADIUS: i32 = 9;
 
 /// The loyalty level the governor logic has always treated as an emergency.
 /// Retained as a floor so making the rule rate-aware never makes it blinder
@@ -1895,6 +1900,29 @@ pub struct BasicAi {
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
     naval_recon: bool,
+    /// Count a barbarian camp within `HOME_CAMP_RADIUS` of a city as home
+    /// ground the guard clears, not only one within the raider radius.
+    ///
+    /// ★★★★ TWO CAMPS SEVEN TILES FROM ROME STOOD FOR A WHOLE GAME. Run
+    /// civvis-20260816T155856Z: with the camps finally on the board (#1786),
+    /// the home guard's local-threat scan still asks whether a camp lies
+    /// within `HOME_THREAT_RADIUS` — six tiles, the raider radius — and both
+    /// camps sat at seven; from there they raised warriors, then archers,
+    /// men-at-arms, swordsmen and musketmen for two hundred turns, took eight
+    /// of fourteen Settlers within sight of the capital, and drew 121 attacks
+    /// on the raiders and none on themselves. A camp is not a raider: it does
+    /// not fight back, it keeps producing what does, and Civilization VI's
+    /// camps raise their raids toward cities well past six tiles.
+    ///
+    /// With this on, camps count as home ground within `HOME_CAMP_RADIUS`
+    /// (nine) in `barbarian_presence_at_home` (so the barbarian seat is an
+    /// enemy at home while such a camp stands), in the home guard's threat
+    /// list (ranked below any raider inside the raider radius) and in the
+    /// nearest-enemy scan that walks a unit onto it. Raiders keep the six-tile
+    /// radius. Off for the frozen native controllers; on for the live bridge
+    /// and the native repair bundle (a native camp seven tiles out raids the
+    /// same way).
+    camp_reach: bool,
     /// Price a revealed natural wonder's ring into the settle scorer, so a
     /// founding site that would work the wonder's neighbours gets credit for
     /// the wonder's modeled appeal and projected yields. Off for the frozen
@@ -3221,6 +3249,7 @@ impl BasicAi {
             siege_role: false,
             recon_replacement: false,
             naval_recon: false,
+            camp_reach: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -3294,6 +3323,26 @@ impl BasicAi {
         self.naval_recon = false;
     }
 
+    /// Count a barbarian camp within nine tiles of a city as home ground.
+    /// See `camp_reach`.
+    pub fn enable_camp_reach(&mut self) {
+        self.camp_reach = true;
+    }
+
+    pub fn disable_camp_reach(&mut self) {
+        self.camp_reach = false;
+    }
+
+    /// The radius inside which a barbarian camp counts as home ground:
+    /// `HOME_CAMP_RADIUS` under `camp_reach`, the raider radius otherwise.
+    pub(crate) fn camp_radius(&self) -> i32 {
+        if self.camp_reach {
+            HOME_CAMP_RADIUS
+        } else {
+            HOME_THREAT_RADIUS
+        }
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -3310,6 +3359,7 @@ impl BasicAi {
             siege_role: false,
             recon_replacement: false,
             naval_recon: false,
+            camp_reach: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -9656,6 +9706,17 @@ impl BasicAi {
     /// The chase itself stays bounded by [`BasicAi::nearest_enemy`]'s own
     /// near-home and exchange-score gates.
     pub(crate) fn barbarian_presence_at_home(g: &Game, pid: usize) -> bool {
+        Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_THREAT_RADIUS)
+    }
+
+    /// `barbarian_presence_at_home` with the camp radius chosen by the caller:
+    /// raiders always count within `HOME_THREAT_RADIUS`, camps within
+    /// `camp_radius`. See `camp_reach`.
+    pub(crate) fn barbarian_presence_at_home_with_camp_radius(
+        g: &Game,
+        pid: usize,
+        camp_radius: i32,
+    ) -> bool {
         let Some(barb) = g.barb_pid else {
             return false;
         };
@@ -9669,12 +9730,15 @@ impl BasicAi {
             return false;
         }
         let near_home =
-            |pos: Pos| my_cities.iter().any(|city| g.wdist(pos, *city) <= HOME_THREAT_RADIUS);
+            |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
         g.units.values().any(|unit| {
             unit.owner == barb
                 && g.rules.units[unit.kind].class == "military"
-                && near_home(unit.pos)
-        }) || g.barb_camps.keys().any(|camp| near_home(*camp))
+                && near_home(unit.pos, HOME_THREAT_RADIUS)
+        }) || g
+            .barb_camps
+            .keys()
+            .any(|camp| near_home(*camp, camp_radius))
     }
 
     /// measured threat *to our own cities*. This does, and answers the worst
@@ -9738,11 +9802,15 @@ impl BasicAi {
         // shooting stops rather than leaving the tap running.
         if let Some(barb) = g.barb_pid {
             if enemy_ids.contains(&barb) {
+                let camp_radius = self.camp_radius();
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
-                    if distance > HOME_THREAT_RADIUS {
+                    if distance > camp_radius {
                         continue;
                     }
+                    // A camp past the raider radius ranks below every raider
+                    // inside it (its severity goes negative), so the guard
+                    // walks out to it only once the home ring is quiet.
                     threats.push(((HOME_THREAT_RADIUS - distance) as i64 * 1_000 - 1, *camp, 0.0));
                 }
             }
@@ -9892,8 +9960,16 @@ impl BasicAi {
         if !self.barb {
             if let Some(bp) = g.barb_pid {
                 if enemy_ids.contains(&bp) {
+                    // See `camp_reach`: a camp counts as home ground out to
+                    // `camp_radius`, a raider only to the six-tile ring.
+                    let camp_radius = self.camp_radius();
+                    let camp_near_home = |tpos: Pos| -> bool {
+                        my_cities.is_empty()
+                            || my_cities.iter().map(|c| g.wdist(tpos, *c)).min().unwrap()
+                                <= camp_radius
+                    };
                     for cpos in g.barb_camps.keys() {
-                        if near_home(*cpos)
+                        if camp_near_home(*cpos)
                             && self.exchange_score(g, uid, *cpos, ranged)
                                 > self.attack_threshold(g, uid, *cpos)
                         {
