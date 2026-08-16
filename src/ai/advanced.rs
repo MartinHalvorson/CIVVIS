@@ -17069,6 +17069,20 @@ impl AdvancedAi {
                 && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
                 && g.wdist(unit.pos, pos) <= 1
         });
+        // ★★★★ A WARSHIP OFF THE COAST IS A THREAT TO A SETTLER ON THE SHORE.
+        // Sea units were skipped outright, so a settler's step safety, its
+        // site risk and its guard-wait fallback all read the shoreline as
+        // quiet. Run civvis-20260815T233405Z lost TWO Settlers to one
+        // barbarian Galley: at t111 the settler stood on coastal (69,22)
+        // with the Galley three hexes out and was gone on t112; the next
+        // walked the same shore at t125–130 with the Galley two hexes out
+        // and was gone on t131 — no land hostile in sight either time. A
+        // naval melee unit reaches any coastal land tile its movement puts
+        // it beside, so count sea units exactly there and nowhere inland.
+        let coastal = g
+            .nbrs(pos)
+            .iter()
+            .any(|neighbour| g.map.get(*neighbour).is_some_and(|tile| g.rules.is_water(tile)));
         let mut risk = 0.0;
         for unit in g.units.values() {
             if unit.owner == pid
@@ -17079,7 +17093,11 @@ impl AdvancedAi {
                 continue;
             }
             let spec = &g.rules.units[unit.kind];
-            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            let domain = spec.domain.as_deref();
+            if spec.class != "military"
+                || domain == Some("air")
+                || (domain == Some("sea") && !coastal)
+            {
                 continue;
             }
             let distance = g.wdist(unit.pos, pos);
@@ -17091,6 +17109,15 @@ impl AdvancedAi {
             let approach_range = attack_range + spec.moves.ceil() as i32;
             let strength = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
                 .max(1.0);
+            if domain == Some("sea") {
+                // A ship moves and strikes in one turn and a civilian on the
+                // shore cannot answer it: anything the ship can reach this
+                // turn is as good as in range, not merely "approaching".
+                if distance <= approach_range {
+                    risk += 34.0 + strength * 0.45;
+                }
+                continue;
+            }
             if distance <= attack_range {
                 risk += 34.0 + strength * 0.45;
             } else if distance <= approach_range {
@@ -18134,6 +18161,54 @@ impl AdvancedAi {
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_blocked_turns.remove(&uid);
+            }
+        }
+        // ★★★★ A SETTLER ON A THREATENED TILE RETREATS BEFORE IT DOES ANYTHING
+        // ELSE. Every hold in this routine — waiting out a forecast, a
+        // safe-step guard that refuses every neighbour, a guard that has not
+        // arrived — used to leave the settler exactly where it stood, which is
+        // no safer than the steps it refused and often worse. Run
+        // civvis-20260815T233405Z: the settler that reached coastal (69,22) on
+        // t111 with a barbarian Galley three hexes out held there and was
+        // taken on t112; the next one held on the same shore on t125–130 and
+        // was taken on t131. A guard standing on the tile is protection and
+        // is left alone; otherwise, when the tile itself is over the step
+        // limit, take the neighbour that lowers the risk most and let the
+        // target wait for the next turn's march.
+        if self.stacked_escort && self.settlement_safety {
+            // Protected where it stands: inside a city, or sharing the tile
+            // with any of our own military units (the assigned guard or not).
+            let guarded_here = g.city_at(current).is_some()
+                || g.units_at(current).into_iter().any(|other| {
+                    other != uid
+                        && g.units.get(&other).is_some_and(|unit| {
+                            unit.owner == pid && g.rules.units[unit.kind].class == "military"
+                        })
+                });
+            if !guarded_here {
+                let visible = self.battlefront_visibility(g, pid);
+                let here = self.settlement_tile_risk(g, pid, Some(uid), current, &visible);
+                if here > SETTLER_STEP_RISK_LIMIT {
+                    let mut retreat: Option<(f64, Pos)> = None;
+                    for step in g.nbrs(current) {
+                        if !g.can_move(uid, step) {
+                            continue;
+                        }
+                        let risk = self.settlement_tile_risk(g, pid, Some(uid), step, &visible);
+                        if risk < here && retreat.is_none_or(|(best, _)| risk < best) {
+                            retreat = Some((risk, step));
+                        }
+                    }
+                    if let Some((risk, step)) = retreat {
+                        think!(self.journal(), Expansion, Detail,
+                               "Settler retreats from {current:?}";
+                               "its tile is threatened (risk {here:.0}); stepping to {step:?} \
+                                (risk {risk:.0}) rather than waiting to be taken"; step);
+                        if g.apply(pid, &Action::Move { unit: uid, to: step }).is_ok() {
+                            return true;
+                        }
+                    }
+                }
             }
         }
         let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
@@ -25802,6 +25877,139 @@ mod tests {
         assert_eq!(
             ai.settlement_tile_risk(&game, 0, None, civilian_step, &visible),
             0.0
+        );
+    }
+
+    /// A hostile warship beside the shore threatens a settler standing on the
+    /// coast — and only there: the same ship is nothing to a settler inland,
+    /// and a coastal tile with no ship in reach reads as quiet.
+    #[test]
+    fn a_warship_off_the_coast_threatens_a_settler_on_the_shore_and_nowhere_inland() {
+        let mut game = Game::new(2, 20, 14, 91_481, 80, 0);
+        // A land tile with a water neighbour (the shore) and a land tile with
+        // no water within two hexes (inland).
+        let is_land = |game: &Game, p: Pos| {
+            game.map.get(p).is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+        };
+        let is_water = |game: &Game, p: Pos| game.map.get(p).is_some_and(|t| game.rules.is_water(t));
+        let mut lands: Vec<Pos> = game.map.tiles.keys().copied().filter(|p| is_land(&game, *p)).collect();
+        lands.sort_unstable();
+        let (shore, sea) = lands
+            .iter()
+            .copied()
+            .find_map(|p| game.nbrs(p).into_iter().find(|n| is_water(&game, *n)).map(|n| (p, n)))
+            .expect("map has a shore");
+        let inland = lands
+            .iter()
+            .copied()
+            .find(|p| game.wdisk(*p, 2).into_iter().all(|q| !is_water(&game, q)))
+            .expect("map has inland ground");
+        let galley = game.spawn_test_unit("galley", 1, sea);
+        // Our own settler on the shore, so the ship is in plain sight.
+        game.spawn_test_unit("settler", 0, shore);
+        game.at_war.insert((0, 1));
+        let ai = AdvancedAi::new();
+        let visible = ai.battlefront_visibility(&game, 0);
+        assert!(game.sees(&visible, sea), "fixture: the ship is in sight");
+
+        assert!(
+            ai.settlement_tile_risk(&game, 0, None, shore, &visible) > SETTLER_STEP_RISK_LIMIT,
+            "a galley beside the shore can take a civilian standing on it — the step is refused"
+        );
+        assert_eq!(
+            ai.settlement_tile_risk(&game, 0, None, inland, &visible),
+            0.0,
+            "the same ship is no threat to a settler with no water in reach"
+        );
+        game.remove_unit(galley);
+        assert_eq!(
+            ai.settlement_tile_risk(&game, 0, None, shore, &visible),
+            0.0,
+            "a shore with no ship in reach is quiet"
+        );
+    }
+
+    /// A settler standing on a threatened shore with no guard steps inland
+    /// instead of holding; the same settler inside a city stays put.
+    #[test]
+    fn a_threatened_settler_on_the_shore_retreats_inland_but_holds_inside_a_city() {
+        // Find a seed with a shore tile that has a neighbour with no water
+        // around it at all — the retreat must be able to lower the risk.
+        let is_land = |game: &Game, p: Pos| {
+            game.map.get(p).is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+        };
+        let is_water = |game: &Game, p: Pos| game.map.get(p).is_some_and(|t| game.rules.is_water(t));
+        let mut found = None;
+        for seed in 91_482..91_540u64 {
+            let game = Game::new(2, 24, 16, seed, 80, 0);
+            let mut lands: Vec<Pos> = game.map.tiles.keys().copied().filter(|p| is_land(&game, *p)).collect();
+            lands.sort_unstable();
+            let hit = lands.iter().copied().find_map(|p| {
+                let sea = game.nbrs(p).into_iter().find(|n| is_water(&game, *n))?;
+                let inland = game.nbrs(p).into_iter().find(|n| {
+                    is_land(&game, *n) && !game.nbrs(*n).into_iter().any(|m| is_water(&game, m))
+                })?;
+                Some((p, sea, inland))
+            });
+            if let Some((shore, sea, inland)) = hit {
+                found = Some((seed, shore, sea, inland));
+                break;
+            }
+        }
+        let (seed, shore, sea, inland) = found.expect("some seed offers a shore with dry ground behind it");
+
+        let fresh = |seed: u64| {
+            let mut game = Game::new(2, 24, 16, seed, 80, 0);
+            for unit in game.player_unit_ids(0).into_iter().chain(game.player_unit_ids(1)) {
+                game.remove_unit(unit);
+            }
+            game.at_war.insert((0, 1));
+            game.current = 0;
+            game
+        };
+
+        let mut game = fresh(seed);
+        game.spawn_test_unit("galley", 1, sea);
+        let settler = game.spawn_test_unit("settler", 0, shore);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        assert!(live.advanced_settler_step(&mut game, 0, settler), "the settler acts");
+        let after = game.units[&settler].pos;
+        assert_ne!(after, shore, "it does not hold on the threatened shore");
+        assert!(
+            !game.nbrs(after).into_iter().any(|m| m == sea) || after == inland,
+            "it moved away from the ship's water"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler retreats from")),
+            "the retreat is journaled"
+        );
+
+        // Inside a city the same threat does not move it.
+        let mut fortress = fresh(seed);
+        fortress.found_city_for(0, shore, None);
+        fortress.spawn_test_unit("galley", 1, sea);
+        let inside = fortress.spawn_test_unit("settler", 0, shore);
+        fortress.units.get_mut(&inside).unwrap().moves_left = 2.0;
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        let _ = live.advanced_settler_step(&mut fortress, 0, inside);
+        assert!(
+            !journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler retreats from")),
+            "a city centre is protection, not a tile to flee"
         );
     }
 
