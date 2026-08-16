@@ -172,6 +172,14 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// Rings around a settle site inside which a rival major's owned tiles read as
+/// a provocation. See `AdvancedAi::foreign_border_pressure`.
+const FOREIGN_BORDER_RADIUS: i32 = 3;
+/// Settle-value penalty per rival-owned tile within that radius.
+const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
+/// The most the border term may take off a site.
+const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
+
 /// The techs that may unlock the first Walls, as the static names the research
 /// goal chain carries. See `AdvancedAi::walls_tech_goal`.
 const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
@@ -17725,7 +17733,47 @@ impl AdvancedAi {
             .filter(|distance| *distance > 6)
             .map(|distance| (distance - 6).min(8) as f64 * 3.5)
             .unwrap_or(0.0);
-        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation
+        // ★★★★ A SITE PRESSED AGAINST A RIVAL'S BORDER IS A PROVOCATION, and
+        // on the live Settler seat it has been answered with a war three times
+        // in five games, each within ten turns of the founding, each costing
+        // cities: T021044Z Puteoli (t65, "worth −22.7", beside Babylon → war
+        // t67, two cities lost), T040537Z Ostia (t53) and Mediolanum (t66)
+        // beside an unseen Khmer → war t61, both captured and the capital with
+        // them, T045316Z Lugdunum/Mediolanum (t52/56) beside Sweden → war t60.
+        // Firaxis' AI holds a grievance for settling near it and reads a
+        // border-hugging city as the weak one to take; nothing in the site
+        // value knew a border was there — the loyalty forecast asks about
+        // cities, and the cities were in fog. The border is visible ground.
+        // Behind `settlement_safety`, the live seat's settler-survival gate.
+        let provocation = if self.settlement_safety {
+            self.foreign_border_pressure(g, pid, pos)
+        } else {
+            0.0
+        };
+        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
+    }
+
+    /// How much of the ground within `FOREIGN_BORDER_RADIUS` of `pos` a rival
+    /// major already owns, priced per tile and capped. See
+    /// `settlement_safety_penalty`.
+    fn foreign_border_pressure(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let owned = g.wdisk(pos, FOREIGN_BORDER_RADIUS)
+            .into_iter()
+            .filter(|tile| {
+                g.map
+                    .get(*tile)
+                    .and_then(|t| t.owner_city)
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner)
+                    .is_some_and(|owner| {
+                        owner != pid
+                            && g.players
+                                .get(owner)
+                                .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                    })
+            })
+            .count();
+        (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
     fn settlement_route_risk(
@@ -18966,6 +19014,29 @@ impl AdvancedAi {
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {
+            // A cached target may have been safe when it was chosen but become
+            // loyalty-doomed while the Settler walked there: a nearby rival can
+            // grow, found, or become newly visible during that trip. The fresh
+            // target loop above forecasts before marching, but intentionally
+            // retains a valid cache rather than paying for a speculative city
+            // each turn. Recheck once at arrival, when founding would otherwise
+            // make the loss irreversible.
+            if forecast_loyalty && self.settle_site_is_loyalty_doomed(g, pid, current) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler abandons loyalty-doomed arrival at {current:?}";
+                       "the cached site now loses at least {:.0} Loyalty a turn, so it is \
+                        retired before founding and the next target will be distinct",
+                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; current);
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    current,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+                self.settler_blocked_turns.remove(&uid);
+                self.settler_closest.remove(&uid);
+                return false;
+            }
             if self.settlement_safety
                 && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
                     > SETTLER_STEP_RISK_LIMIT
@@ -44050,6 +44121,108 @@ mod research_probe {
         );
     }
 
+    /// A target forecast at selection cannot see Loyalty pressure that changes
+    /// during a long march. At the arrival branch, the live controller must
+    /// recheck the cached site before it spends a Settler founding a city that
+    /// will immediately revolt; normal and frozen evaluators retain their
+    /// historical cached-target behavior.
+    #[test]
+    fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
+        let mut game = Game::new_full(2, 40, 24, 91_778, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let target = beside_rival[0];
+        let settler = game.spawn_test_unit("settler", 0, target);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        assert!(game.can_found_city(settler));
+
+        // This is the board that created the cache. The rival is not yet large
+        // enough to make the target untenable.
+        game.cities.get_mut(&theirs).unwrap().pop = 1;
+        assert!(
+            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            "the cached target must begin viable"
+        );
+
+        // A five-turn march is enough for a nearby city to grow or appear in
+        // the mirror. At arrival the same target is now a clear loss.
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        assert!(
+            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            "the arrival board must make the formerly safe target untenable"
+        );
+        let cities_before = game.player_city_ids(0).len();
+        let mut default_board = game.clone();
+        let mut frozen_board = game.clone();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.settler_targets.insert(settler, target);
+        assert!(
+            !live.advanced_settler_step(&mut game, 0, settler),
+            "the live arrival check must retire the target rather than found"
+        );
+        assert_eq!(game.player_city_ids(0).len(), cities_before);
+        assert!(live.settler_site_is_dead(settler, target));
+        assert!(
+            !live.settler_targets.contains_key(&settler),
+            "the next turn must select a distinct target"
+        );
+
+        let mut default = AdvancedAi::new();
+        default.settler_targets.insert(settler, target);
+        assert!(
+            default.advanced_settler_step(&mut default_board, 0, settler),
+            "the normal controller keeps its historical cached-target behavior"
+        );
+        assert_eq!(default_board.player_city_ids(0).len(), cities_before + 1);
+
+        let mut frozen = AdvancedAi::legacy();
+        frozen.settler_targets.insert(settler, target);
+        assert!(
+            frozen.advanced_settler_step(&mut frozen_board, 0, settler),
+            "the frozen evaluator is unchanged by the live arrival guard"
+        );
+        assert_eq!(frozen_board.player_city_ids(0).len(), cities_before + 1);
+    }
+
     /// When every candidate examined by the live forecast is doomed, holding
     /// is safer than falling through to `BasicAi`, which cannot see the
     /// retired-site set and may found on the very plot just rejected.
@@ -44938,6 +45111,92 @@ mod research_probe {
         live.major_war_since = Some(60);
         live.last_campaign_progress = 60;
         assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
+    /// A settle site pressed against a rival's border is a provocation the
+    /// live seat has paid for with cities three times in five games. See
+    /// `foreign_border_pressure`.
+    #[test]
+    fn a_site_inside_a_rivals_border_is_priced_as_a_provocation() {
+        let mut game = Game::new_full(2, 32, 20, 7_934, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let theirs = game.player_city_ids(1)[0];
+        let their_home = game.cities[&theirs].pos;
+        // A plot two steps outside their centre, ringed by their owned tiles.
+        let pressed = game
+            .wring(their_home, 3)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|t| {
+                    !game.rules.is_water(t) && game.rules.is_passable(t) && t.owner_city.is_none()
+                }) && game.wdisk(*pos, FOREIGN_BORDER_RADIUS).iter().any(|near| {
+                    game.map.get(*near).and_then(|t| t.owner_city) == Some(theirs)
+                })
+            })
+            .expect("some open plot near the rival's border");
+        let owned_near = game
+            .wdisk(pressed, FOREIGN_BORDER_RADIUS)
+            .iter()
+            .filter(|near| game.map.get(**near).and_then(|t| t.owner_city) == Some(theirs))
+            .count();
+        assert!(owned_near > 0);
+        // A plot well away from anyone's border.
+        let ours = game.cities[&game.player_city_ids(0)[0]].pos;
+        let quiet = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+                    && game.wdisk(*pos, FOREIGN_BORDER_RADIUS).iter().all(|near| {
+                        game.map.get(*near).and_then(|t| t.owner_city).is_none()
+                    })
+            })
+            .min_by_key(|pos| game.wdist(*pos, ours))
+            .expect("some plot clear of every border");
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.settlement_safety);
+        let pressure = live.foreign_border_pressure(&game, 0, pressed);
+        assert!(
+            (pressure - (owned_near as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)).abs()
+                < 1e-9,
+            "priced per rival-owned tile within {FOREIGN_BORDER_RADIUS}, capped"
+        );
+        assert_eq!(live.foreign_border_pressure(&game, 0, quiet), 0.0);
+        // Our own border is not a provocation.
+        let home_ring = game
+            .wring(ours, 2)
+            .into_iter()
+            .find(|pos| game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t)))
+            .expect("a plot in our own territory");
+        assert_eq!(live.foreign_border_pressure(&game, 0, home_ring), 0.0);
+        // The penalty reaches the site value.
+        let visible = game.player_vision_now(0);
+        let with = live.settlement_safety_penalty(&game, 0, pressed, &visible);
+        live.settlement_safety = false;
+        let without = live.settlement_safety_penalty(&game, 0, pressed, &visible);
+        assert!(
+            (with - without - pressure).abs() < 1e-9,
+            "the safety penalty carries exactly the border term under settlement_safety"
+        );
+        // The frozen anchor never prices it.
+        let frozen = AdvancedAi::legacy();
+        assert!(!frozen.settlement_safety);
+        assert_eq!(
+            frozen.settlement_safety_penalty(&game, 0, pressed, &visible),
+            without
+        );
     }
 
     /// Every live game read `Grand strategy: religion` from turn 19–26 with one

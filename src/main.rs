@@ -1168,11 +1168,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live `loyalty_rate_alarm`; the frozen anchor cannot enter the guard, so its
 /// historical fallback remains intact (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
+/// A cached settlement target's arrival forecast reads the same live-only
+/// `loyalty_rate_alarm`; normal and frozen controllers retain their historical
+/// cached-target founding behavior (asserted). Compatibility re-pin; the Elo
+/// protocol does not move.
 /// The exploration dead-target memory is behind `BasicAi::explore_dead_targets`,
 /// set only by the Civilization VI bridge; native constructors and
 /// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6074_9dac_f012_64e3;
+/// The foreign-border settle penalty is behind `settlement_safety`, which
+/// `AdvancedAi::legacy()` leaves off (asserted). Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb10d_8796_6bbf_3c80;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
