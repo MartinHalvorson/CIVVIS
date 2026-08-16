@@ -1229,8 +1229,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// protocol does not move.
 /// The sea's recon arm — the one-ship purchase and the naval explorer — is
 /// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
-/// frozen anchor's ships and production are unchanged. Compatibility re-pin;
-/// the Elo protocol does not move.
+/// frozen anchor's ships and production are unchanged. Its viable-waterway
+/// and lake-bound-hull refinements remain behind that same gate. Compatibility
+/// re-pin; the Elo protocol does not move.
 /// The in-lane answer to a Science or score leader is behind
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
@@ -1281,7 +1282,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The live envoy bank gates both the plan-aware scorer and the later
 /// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
 /// paths enabled. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x08ad_dff7_8651_48d6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe4a2_1323_e409_abbc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3888,6 +3889,24 @@ mod tests {
             fingerprint, ADVANCED_V1_SOURCE_CONTRACT_FNV,
             "BasicAi/AdvancedAi changed under the advanced_v1 anchor: if the legacy path changed, bump ELO_PROTOCOL_VERSION and start a new ledger; otherwise review the gating and deliberately re-pin this source contract"
         );
+    }
+
+    /// The sea's live-only reconnaissance arm is sourced from the same AI
+    /// files as the frozen anchor, so pin its gate independently of the
+    /// broader repair bundle.
+    #[test]
+    fn naval_recon_cannot_reach_the_frozen_anchor() {
+        for (name, ai) in [
+            ("advanced_v1", civvis::ai::AdvancedAi::legacy()),
+            ("advanced", civvis::ai::AdvancedAi::new()),
+        ] {
+            assert!(
+                !ai.naval_recon(),
+                "{name} carries live-only naval reconnaissance: the source-contract \
+                 re-pin is valid only while this arm stays unreachable from the \
+                 frozen rating anchor"
+            );
+        }
     }
 
     /// The re-pin above claims the engine-repair bundle cannot reach the
