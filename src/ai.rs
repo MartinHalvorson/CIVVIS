@@ -234,6 +234,14 @@ const DISTRICT_PRIORITY: [&str; 4] = ["campus", "commercial_hub", "holy_site", "
 /// and they disappear entirely from the ranking once the city has headroom.
 const HOUSING_DISTRICTS: [&str; 2] = ["aqueduct", "neighborhood"];
 
+/// The Amenity deficit from which the repair district outranks a city's lane
+/// whatever the city holds: the ×0.80 band, not the ×0.90 one. See the
+/// `amenity_districts` push in `pick_item`.
+const AMENITY_DISTRICT_FIRST_BAND: f64 = 2.0;
+/// Specialty districts a city must already hold before a one-Amenity shortfall
+/// outranks its lane. See the `amenity_districts` push in `pick_item`.
+const AMENITY_DISTRICT_LANE_SERVED: usize = 2;
+
 /// The population at which Civilization VI lets a city start a Settler. See
 /// `BasicAi::host_settler_pop`.
 const HOST_SETTLER_MIN_POP: f64 = 2.0;
@@ -7464,7 +7472,32 @@ impl BasicAi {
         let lane_top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
         if self.amenity_districts && !self.minor {
             let deficit = (-g.city_amenity_surplus(&g.cities[&cid])).max(0) as f64;
-            if deficit > 0.0 {
+            // ★★★★ NOT AS THE FIRST DISTRICT OF A CITY ONE SHORT. The band at
+            // −1/−2 is ×0.90 (`amenity_yield_mult_for`); the deeper bands the
+            // measurement above was made in start at −3. A brand-new city is
+            // one short as soon as it reaches population 3 with no luxury of
+            // its own, and this push then made an Entertainment Complex its
+            // FIRST specialty district — 58 production in a 2.7-production
+            // city (22 turns) plus a 150 Arena, to recover ten percent of
+            // three science — ahead of the Campus the science chain hangs off.
+            // Live runs civvis-20260816T054344Z (Puteoli/Rome/Aquileia t50–62),
+            // T045316Z (Ravenna t48, Lugdunum) and T021044Z (t51) all opened
+            // that way, and the best game (T030249Z) was the one whose new
+            // cities were not short and opened with four Campuses. So the push
+            // needs either the deeper band (deficit ≥ 2) or a city that already
+            // holds two specialty districts, where the Amenity multiplier has
+            // something to multiply and the lane has been served.
+            let specialty = g.cities[&cid]
+                .districts
+                .keys()
+                .filter(|district| {
+                    !matches!(
+                        g.district_family(**district).as_str(),
+                        "city_center" | "aqueduct" | "neighborhood" | "canal" | "dam"
+                    )
+                })
+                .count();
+            if Self::amenity_repair_outranks_lane(deficit, specialty) {
                 dpri.push(("entertainment_complex", lane_top + deficit));
             }
         }
@@ -8850,6 +8883,15 @@ impl BasicAi {
     /// strategic resource or connect a luxury, and paving Iron or Wine over
     /// with a Farm forfeits that permanently. Otherwise take the most
     /// valuable yield, weighted the way the rest of this AI values output.
+    /// Whether an Amenity shortfall of `deficit` in a city holding `specialty`
+    /// specialty districts asks for the repair district ahead of the lane: the
+    /// deeper band, or a merely displeased city whose lane has been served.
+    /// See the `amenity_districts` push in `pick_item`.
+    pub(crate) fn amenity_repair_outranks_lane(deficit: f64, specialty: usize) -> bool {
+        deficit >= AMENITY_DISTRICT_FIRST_BAND
+            || (deficit > 0.0 && specialty >= AMENITY_DISTRICT_LANE_SERVED)
+    }
+
     fn best_improvement(g: &Game, pos: Pos, options: &[Name]) -> Option<Name> {
         let resource = g.map.get(pos).and_then(|tile| tile.resource);
         options
@@ -16875,6 +16917,21 @@ mod amenity_district_tests {
             game.city_amenity_surplus(&game.cities[&city]) >= 0,
             "back to neutral, where an extra Amenity multiplies nothing"
         );
+    }
+
+    /// A city one short keeps its lane order until it has a lane: the ×0.90
+    /// band is not worth an Entertainment Complex as the FIRST district of a
+    /// 2.7-production city (civvis-20260816T054344Z, Puteoli t50), while the
+    /// ×0.80 band always is, and a served city may take the repair at −1.
+    #[test]
+    fn a_one_short_city_keeps_its_lane_order_until_it_has_a_lane() {
+        assert_eq!(AMENITY_DISTRICT_FIRST_BAND, 2.0, "the −3 band's edge, not the −1 one");
+        assert!(!BasicAi::amenity_repair_outranks_lane(1.0, 0), "−1, no districts: lane first");
+        assert!(!BasicAi::amenity_repair_outranks_lane(1.0, 1), "−1, one district: lane first");
+        assert!(BasicAi::amenity_repair_outranks_lane(1.0, 2), "−1 with two districts: repair");
+        assert!(BasicAi::amenity_repair_outranks_lane(2.0, 0), "−2 anywhere: repair");
+        assert!(BasicAi::amenity_repair_outranks_lane(6.0, 0), "and deeper");
+        assert!(!BasicAi::amenity_repair_outranks_lane(0.0, 5), "neutral asks for nothing");
     }
 
     /// The omission this repairs: neither district that raises the housing
