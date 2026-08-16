@@ -7286,6 +7286,15 @@ pub struct StateSnapshot {
     pub techs: Vec<String>,
     #[serde(default)]
     pub civics: Vec<String>,
+    /// One-time strategic `PROJECT_*` types Firaxis says this seat has completed.
+    ///
+    /// This is deliberately not every project the player has ever run. District
+    /// conversion projects are repeatable, but these are milestones that change
+    /// what the planner should build next: the nuclear prerequisites and the
+    /// space-race stages. `None` means an older control mod did not export the
+    /// fact, while `Some([])` is an authoritative early-game answer.
+    #[serde(default)]
+    pub science_projects: Option<Vec<String>>,
     /// Civ 6 type names whose **boost is triggered but which are NOT yet
     /// researched** — the eureka discount waiting to be collected.
     ///
@@ -8463,7 +8472,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
-        "boosted_techs", "boosted_civics",
+        "science_projects", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
@@ -8639,6 +8648,90 @@ fn blocked_policies_from(
         .filter_map(|civ6| civvis_node_name(&rules.policies, civ6, "POLICY_"))
         .map(|name| Name::new(&name))
         .collect()
+}
+
+/// Translate the completed one-time projects from Civilization VI's project
+/// table into the milestones CIVVIS models.
+///
+/// Civilization VI's base game represents the Mars launch as three independent
+/// parts, whereas Gathering Storm replaces those with `PROJECT_LAUNCH_MARS_BASE`.
+/// CIVVIS deliberately models one Mars-colony milestone, so base-game parts only
+/// count once *all* three are complete. Treating one part as the whole colony
+/// would make a nearly finished science victory look terminal; ignoring the three
+/// parts makes the base game perpetually retry a finished program.
+///
+/// `None` preserves a persistent mirror built by an older control mod. An empty
+/// vector is instead an authoritative statement that no milestones are complete.
+fn completed_strategic_projects(
+    civ6_projects: Option<&[String]>,
+    unmapped: &mut Vec<String>,
+) -> Option<BTreeSet<String>> {
+    let civ6_projects = civ6_projects?;
+    let reported: BTreeSet<&str> = civ6_projects.iter().map(String::as_str).collect();
+    let mut completed = BTreeSet::new();
+
+    let known = |project: &str| {
+        matches!(
+            project,
+            "PROJECT_MANHATTAN_PROJECT"
+                | "manhattan_project"
+                | "PROJECT_OPERATION_IVY"
+                | "operation_ivy"
+                | "PROJECT_LAUNCH_EARTH_SATELLITE"
+                | "launch_earth_satellite"
+                | "PROJECT_LAUNCH_MOON_LANDING"
+                | "launch_moon_landing"
+                | "PROJECT_LAUNCH_MARS_BASE"
+                | "PROJECT_LAUNCH_MARS_REACTOR"
+                | "PROJECT_LAUNCH_MARS_HABITATION"
+                | "PROJECT_LAUNCH_MARS_HYDROPONICS"
+                | "launch_mars_colony"
+                | "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+                | "exoplanet_expedition"
+        )
+    };
+    for project in civ6_projects {
+        if !known(project) {
+            let issue = format!("science_project:{project}");
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+    }
+
+    for (civ6, civvis) in [
+        ("PROJECT_MANHATTAN_PROJECT", "manhattan_project"),
+        ("manhattan_project", "manhattan_project"),
+        ("PROJECT_OPERATION_IVY", "operation_ivy"),
+        ("operation_ivy", "operation_ivy"),
+        ("PROJECT_LAUNCH_EARTH_SATELLITE", "launch_earth_satellite"),
+        ("launch_earth_satellite", "launch_earth_satellite"),
+        ("PROJECT_LAUNCH_MOON_LANDING", "launch_moon_landing"),
+        ("launch_moon_landing", "launch_moon_landing"),
+        (
+            "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+            "exoplanet_expedition",
+        ),
+        ("exoplanet_expedition", "exoplanet_expedition"),
+    ] {
+        if reported.contains(civ6) {
+            completed.insert(civvis.to_string());
+        }
+    }
+
+    let base_game_mars = [
+        "PROJECT_LAUNCH_MARS_REACTOR",
+        "PROJECT_LAUNCH_MARS_HABITATION",
+        "PROJECT_LAUNCH_MARS_HYDROPONICS",
+    ];
+    if reported.contains("PROJECT_LAUNCH_MARS_BASE")
+        || reported.contains("launch_mars_colony")
+        || base_game_mars.iter().all(|project| reported.contains(project))
+    {
+        completed.insert("launch_mars_colony".to_string());
+    }
+
+    Some(completed)
 }
 
 /// Civilization VI's node name as CIVVIS spells it, or None if CIVVIS has no such node.
@@ -11422,6 +11515,11 @@ pub fn rebuild_from_state(
             }
         }
     }
+    if let Some(projects) =
+        completed_strategic_projects(state.science_projects.as_deref(), &mut unmapped)
+    {
+        game.players[0].science_projects = projects;
+    }
     for civ6 in &state.policies {
         match civvis_node_name(&game.rules.policies, civ6, "POLICY_") {
             Some(name) => {
@@ -12795,6 +12893,11 @@ impl LiveMirror {
                 self.game.players[0].techs.insert(crate::name::Name::new(&name));
             }
         }
+        if let Some(projects) =
+            completed_strategic_projects(state.science_projects.as_deref(), &mut self.unmapped)
+        {
+            self.game.players[0].science_projects = projects;
+        }
         for civ6 in &state.civics {
             if let Some(name) = civvis_node_name(&self.game.rules.civics, civ6, "CIVIC_") {
                 self.game.players[0].civics.insert(crate::name::Name::new(&name));
@@ -14007,6 +14110,102 @@ mod host_fact_tests {
             serde_json::from_str(r#"{"turn": 1}"#).expect("an older mod still parses");
         assert!(absent.boosted_techs.is_empty());
         assert!(absent.boosted_civics.is_empty());
+    }
+
+    /// A completed strategic project disappears from every city queue, so this
+    /// must be a player-history field rather than an inference from production.
+    ///
+    /// On the turn-251 supervised live game, the fresh board saw zero completed
+    /// projects and spent five cities' production repeatedly on Manhattan Project.
+    /// The live export needs to preserve the host's player-wide completion ledger
+    /// so the existing science and nuclear-roadmap gates can skip it.
+    #[test]
+    fn completed_strategic_projects_cross_the_live_bridge_without_false_mars_progress() {
+        let raw = r#"{"turn": 205, "science_projects": [
+            "PROJECT_MANHATTAN_PROJECT",
+            "PROJECT_OPERATION_IVY",
+            "PROJECT_LAUNCH_EARTH_SATELLITE",
+            "PROJECT_LAUNCH_MOON_LANDING",
+            "PROJECT_LAUNCH_MARS_BASE",
+            "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+        ]}"#;
+        let mut state = state_from_json(raw).expect("the strategic project wire parses");
+        assert!(state.schema_gaps.is_empty(), "the new wire key is recognized");
+        assert_eq!(
+            state.science_projects,
+            Some(vec![
+                "PROJECT_MANHATTAN_PROJECT".to_string(),
+                "PROJECT_OPERATION_IVY".to_string(),
+                "PROJECT_LAUNCH_EARTH_SATELLITE".to_string(),
+                "PROJECT_LAUNCH_MOON_LANDING".to_string(),
+                "PROJECT_LAUNCH_MARS_BASE".to_string(),
+                "PROJECT_LAUNCH_EXOPLANET_EXPEDITION".to_string(),
+            ])
+        );
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 205,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let expected = BTreeSet::from([
+            "manhattan_project".to_string(),
+            "operation_ivy".to_string(),
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        assert_eq!(rebuilt.game.players[0].science_projects, expected);
+        assert!(
+            !rebuilt
+                .unmapped
+                .iter()
+                .any(|issue| issue.starts_with("science_project:")),
+            "every strategic project on the supported wire must survive: {:?}",
+            rebuilt.unmapped
+        );
+
+        // The persistent path must use the same truth and retain it if an older
+        // mod is later reloaded and does not yet know the field.
+        let before_export = StateSnapshot {
+            turn: 204,
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &before_export, 2, 1, 250, 0);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].science_projects, expected);
+        state.turn += 1;
+        state.science_projects = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[0].science_projects, expected,
+            "an absent field means an older mod, not that history was erased"
+        );
+
+        // Base Civ VI reports Mars as three independent components. CIVVIS has
+        // one Mars-colony milestone, so two components are progress but not
+        // completion; all three are the one truthful completion transition.
+        let partial_mars = vec![
+            "PROJECT_LAUNCH_MARS_REACTOR".to_string(),
+            "PROJECT_LAUNCH_MARS_HABITATION".to_string(),
+        ];
+        let mut issues = Vec::new();
+        let partial = completed_strategic_projects(Some(&partial_mars), &mut issues)
+            .expect("an explicit host list answers");
+        assert!(issues.is_empty());
+        assert!(!partial.contains("launch_mars_colony"));
+        let full_mars = vec![
+            "PROJECT_LAUNCH_MARS_REACTOR".to_string(),
+            "PROJECT_LAUNCH_MARS_HABITATION".to_string(),
+            "PROJECT_LAUNCH_MARS_HYDROPONICS".to_string(),
+        ];
+        assert!(completed_strategic_projects(Some(&full_mars), &mut issues)
+            .expect("an explicit host list answers")
+            .contains("launch_mars_colony"));
     }
 
     #[test]

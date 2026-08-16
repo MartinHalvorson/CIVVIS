@@ -33,6 +33,40 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("production_progress = prodProgress", exporter)
         self.assertIn("production_cost = prodCost", exporter)
 
+    def test_state_export_keeps_completed_strategic_projects_out_of_city_queues(self) -> None:
+        """A fresh mirror needs player history, not just the current queue.
+
+        Firaxis removes a completed Manhattan Project from every city's queue,
+        but keeps it in PlayerStats. The exact counter is also what the shipped
+        World Rankings screen uses for completed science milestones. Pin the
+        narrow strategic whitelist so repeatable district projects can never be
+        mistaken for a completed science-victory stage.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+
+        self.assertIn("local scienceProjects = {};", exporter)
+        self.assertIn("playerStats:GetNumProjectsAdvanced(project.Index)", exporter)
+        self.assertIn("science_projects = scienceProjects,", exporter)
+        for project in (
+            "PROJECT_MANHATTAN_PROJECT",
+            "PROJECT_OPERATION_IVY",
+            "PROJECT_LAUNCH_EARTH_SATELLITE",
+            "PROJECT_LAUNCH_MOON_LANDING",
+            "PROJECT_LAUNCH_MARS_REACTOR",
+            "PROJECT_LAUNCH_MARS_HABITATION",
+            "PROJECT_LAUNCH_MARS_HYDROPONICS",
+            "PROJECT_LAUNCH_MARS_BASE",
+            "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+        ):
+            self.assertIn(project, exporter)
+
+        self.assertNotIn(
+            "for row in GameInfo.Projects()",
+            exporter,
+            "walking every project would count repeatable district conversions as milestones",
+        )
+
     def test_purchase_actuator_preserves_faith_formation_and_district_placement(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 
