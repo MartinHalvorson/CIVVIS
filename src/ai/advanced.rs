@@ -1854,6 +1854,32 @@ pub struct AdvancedAi {
     /// live bridge and the native repair bundle — the engine's own amenity
     /// rules are the ones being under-read.
     pub amenity_district_path: bool,
+    /// Run the strategic governor over the cities under every grand strategy.
+    ///
+    /// ★★★★ THE GOVERNOR THAT CARRIES EVERY VALUATION IN THIS FILE — the wonder
+    /// race, the amenity path, the district and building pricing — runs only
+    /// under Recovery, under Expansion (with `expansion_dispatch`), while a
+    /// timed war plan stands, or under Conquest with `war_economy`. Under
+    /// Science, Culture, Religion and Diplomacy the cities are run by the
+    /// baseline `pick_item` (the "Cities/Decision" route), whose lists know
+    /// nothing of any of it. Measured on run civvis-20260816T054344Z: from
+    /// t131 to t185 every one of Rome's decisions was a "Cities/Decision"
+    /// (repairs, walls, trebuchets, a stock exchange) and no wonder was started
+    /// anywhere between t129 and t186 — the plan read Science from t122 to
+    /// t165, and the six wonders the game did build all fell in Conquest
+    /// stretches. Runs civvis-20260816T030249Z (Science t134–165 inside a
+    /// t112–174 wonder gap) and T011314Z (Science t147–157 inside t128–184)
+    /// have the same shape. Science is where the strong games spend their
+    /// mid-game, so this is exactly where the pricing was absent.
+    ///
+    /// With this on, the strategic governor also runs under the four victory
+    /// lanes, after each lane's own routine (`science_production`,
+    /// `culture_spending`, `religious_production`) has filled what it wanted:
+    /// a queue those routines committed is kept (the governor's ordinary
+    /// preemption margin), an empty one is priced. Part of the live bridge and
+    /// the native repair bundle — a CIVVIS-vs-CIVVIS empire in a Science lane
+    /// has the same holes. Off for ordinary and frozen controllers.
+    pub governor_every_lane: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -2862,6 +2888,7 @@ impl AdvancedAi {
             plan_city_target: false,
             amenity_project_preemption: false,
             amenity_district_path: false,
+            governor_every_lane: false,
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -3583,6 +3610,7 @@ impl AdvancedAi {
         // completes.
         self.enable_amenity_project_preemption();
         self.enable_amenity_district_path();
+        self.enable_governor_every_lane();
         // Zero wonder orders in twenty live Settler runs that all ended on the
         // host's score tally, 15 points a wonder. See `live_wonder_race`.
         self.enable_live_wonder_race();
@@ -3708,6 +3736,7 @@ impl AdvancedAi {
         self.enable_campus_every_city();
         self.enable_amenity_project_preemption();
         self.enable_amenity_district_path();
+        self.enable_governor_every_lane();
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
         // Keeping it loyal, and not slotting cards that multiply zero.
@@ -3916,6 +3945,15 @@ impl AdvancedAi {
 
     pub fn disable_amenity_district_path(&mut self) {
         self.amenity_district_path = false;
+    }
+
+    /// Run the strategic governor under every lane. See `governor_every_lane`.
+    pub fn enable_governor_every_lane(&mut self) {
+        self.governor_every_lane = true;
+    }
+
+    pub fn disable_governor_every_lane(&mut self) {
+        self.governor_every_lane = false;
     }
 
     /// Let a developed live city take the cheapest legal wonder whatever the
@@ -24866,10 +24904,22 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             self.reserve_idle_amenity_building_for_widespread_crisis(g, pid, &plan);
+            // ★★★★ And under every victory lane on the treated seat: see
+            // `governor_every_lane` — the pricing was absent exactly where the
+            // strong games spend their mid-game.
+            let every_lane = self.governor_every_lane
+                && matches!(
+                    plan.strategy,
+                    GrandStrategy::Science
+                        | GrandStrategy::Culture
+                        | GrandStrategy::Religion
+                        | GrandStrategy::Diplomacy
+                );
             if plan.strategy == GrandStrategy::Recovery
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
+                || every_lane
                 // An adaptive Conquest plan otherwise falls through to the
                 // Basic governor and fights its war on a peacetime army
                 // target. Same shape as adaptive Recovery immediately above:
@@ -44780,6 +44830,58 @@ mod research_probe {
             block.contains("self.war_economy && plan.strategy == GrandStrategy::Conquest"),
             "the war economy must route exactly the adaptive Conquest plan"
         );
+    }
+
+    /// The strategic governor runs under the Science lane on the treated seat:
+    /// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
+    /// of a Science stretch and started no wonder in 57 turns. See
+    /// `governor_every_lane`.
+    /// The strategic governor runs under the Science lane on the treated seat:
+    /// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
+    /// of a Science stretch and started no wonder in 57 turns. See
+    /// `governor_every_lane`. Same source-pinned shape as
+    /// `the_war_economy_routes_an_adaptive_conquest_plan_to_war_production`:
+    /// the routing block is the only place the choice is made.
+    #[test]
+    fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
+        let src = include_str!("advanced.rs");
+        let block = src
+            .split("|| adaptive_expansion_dispatch")
+            .nth(1)
+            .expect("the production routing condition exists")
+            .split("self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);")
+            .next()
+            .expect("the routing block ends at the production call");
+        assert!(
+            block.contains("|| every_lane"),
+            "the every-lane arm reaches the same production call"
+        );
+        let arm = src
+            .split("let every_lane = self.governor_every_lane")
+            .nth(1)
+            .expect("the arm is gated by the flag")
+            .split(';')
+            .next()
+            .expect("the arm ends");
+        for lane in ["Science", "Culture", "Religion", "Diplomacy"] {
+            assert!(arm.contains(&format!("GrandStrategy::{lane}")), "the {lane} lane is covered");
+        }
+        assert!(
+            !arm.contains("GrandStrategy::Conquest") && !arm.contains("GrandStrategy::Recovery"),
+            "war lanes keep their own routing"
+        );
+        // Off by default, set only by the live bridge and the native repair
+        // bundle, holdable off on its own.
+        assert!(!AdvancedAi::new().governor_every_lane);
+        assert!(!AdvancedAi::legacy().governor_every_lane);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.governor_every_lane);
+        live.disable_governor_every_lane();
+        assert!(!live.governor_every_lane);
+        let mut repaired = AdvancedAi::new();
+        repaired.enable_engine_repairs_economy();
+        assert!(repaired.governor_every_lane);
     }
 
     /// War patience measures a campaign, not ordinary expansion.
