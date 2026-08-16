@@ -3111,6 +3111,7 @@ impl AdvancedAi {
         // the live median Aqueduct order lands at turn 164. Making the district
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
+        self.enable_research_economy();
         self.enable_joint_tactics();
     }
 
@@ -3240,6 +3241,19 @@ impl AdvancedAi {
 
     pub fn disable_housing_research(&mut self) {
         self.housing_research = false;
+    }
+
+    /// Keep the research-economy policy explicit at the live bridge boundary.
+    /// Production `AdvancedAi::new()` already enables it, but making the bridge
+    /// set it too keeps the deployed controller correct if its constructor is
+    /// ever narrowed or replaced.
+    pub fn enable_research_economy(&mut self) {
+        self.research_economy = true;
+    }
+
+    /// Hold the research-economy policy off for a controlled live comparison.
+    pub fn disable_research_economy(&mut self) {
+        self.research_economy = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
