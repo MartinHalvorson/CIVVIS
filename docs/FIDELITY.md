@@ -616,6 +616,48 @@ population alone — `Plot:GetDistrictType` on every revealed plot would carry t
 districts at least; a rival's techs and civics cross as counts, not names;
 city-state envoy totals from all players (only ours cross today).
 
+### Round 4: the age that never crossed (2026-08-16, run `civvis-20260816T132247Z`)
+
+The largest gaps of the next game were all Production in one Golden Age:
+Cumae −10 and −13, Arretium −9.9, Rome −7, for thirty turns from t182. The
+host's own production ledger named the source in one line — "+14 from
+Districts: +4 Industrial Zone, **+10 from Campus**" — and the database named
+the rule: `COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`, Heartbeat of Steam's
+Golden Age half, every Campus granting Production equal to its Science
+adjacency. Three things were wrong at once:
+
+- **The age itself never crossed.** `golden_age`, `dark_age` and
+  `heroic_golden_age` were exported and read by nothing; `Player::age` sat at
+  its "normal" default on every mirrored board, so `dedication_active` was
+  false for the whole of every live Golden Age and no Dedication ever paid.
+  Now set from the flags (Heroic outranks Golden), every rebuild and sync.
+- **Which Dedications were active never crossed either.** The mod now exports
+  `dedications` — `Game.GetEras():GetPlayerActiveCommemorations`, the accessor
+  the shipped EraProgressPanel lists from — as `COMMEMORATION_*` type names,
+  and the mirror maps them onto its own ids (`civvis_dedication_name`).
+- **The engine had Heartbeat of Steam wrong anyway** — +1 Science per
+  Industrial Zone building, which no row grants. It now pays each active
+  Campus's Science adjacency as Production; Reform the Coinage pays +3 Gold per
+  specialty district in the destination of an international route (it was a
+  flat 3 on every route); Sky and Stars loses an invented ×1.10 (its rows grant
+  tech boosts, air-unit XP and Aluminum, no yield).
+
+And one rule the engine had that Civilization VI does not: **an age multiplies
+nothing**. `city_yields_inner` scaled every non-Food yield by ×1.10 in a Golden
+or Heroic Age and ×0.95 in a Dark Age; the shipped `Modifiers` carry no yield
+term keyed on PLAYER_HAS_GOLDEN_AGE or a Dark Age beyond the named
+commemorations (and Suleiman's trait, Tsikhe). Removed. This binds natively —
+CIVVIS-vs-CIVVIS Golden Ages are now worth their Dedication and their Loyalty,
+which is what they are worth in the game.
+
+The same run's TILES block put another host-only class on top: volcanic soil
+paying +2 Food, +1..3 Culture, +1..3 Science over the model — the
+`RandomEvent_Yields` table (eruption fertility, by severity and volcano, with
+Science and Culture terms CIVVIS's own `disaster_food/production` never
+carried). Only the host knows how many times a tile has been buried; the
+per-plot correction carries it. Modelling Science and Culture fertility
+natively is a follow-up for the eruption code.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

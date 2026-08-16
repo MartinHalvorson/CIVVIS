@@ -6409,6 +6409,22 @@ local function exportState(player, pid, turn)
 		heroic_golden_age = try(function()
 			return Game.GetEras():HasHeroicGoldenAge(pid);
 		end, nil),
+		-- ★★★★ WHICH DEDICATIONS ARE ACTIVE. The age flags above say whether a
+		-- Golden Age is on; this says what it PAYS. `GetPlayerActiveCommemorations`
+		-- is what the shipped EraProgressPanel lists, and every yield the mirror
+		-- models for a Dedication (`Game::dedication_active`) was inert without it:
+		-- Heartbeat of Steam's Campus Production ("+10 from Campus" in the host's
+		-- own production ledger, run civvis-20260816T132247Z) is the whole
+		-- production gap of that game's Golden Age. Type names, so the mirror
+		-- maps them onto its own dedication ids without guessing an index.
+		dedications = try(function()
+			local names = {};
+			for _, active in ipairs(Game.GetEras():GetPlayerActiveCommemorations(pid) or {}) do
+				local row = GameInfo.CommemorationTypes[active];
+				names[#names + 1] = row and row.CommemorationType or tostring(active);
+			end
+			return names;
+		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
 		-- are to the next Scientist, and how close the leading rival is -- and

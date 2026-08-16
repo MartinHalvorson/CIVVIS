@@ -2702,6 +2702,62 @@ mod tests {
             "pillaged {paid:?} vs standing {full:?}");
     }
 
+    /// ★★★★ THE AGE AND ITS DEDICATIONS CROSS THE BRIDGE.
+    ///
+    /// The three age flags were exported and read by nothing, so every mirrored
+    /// board sat in a Normal Age and no Dedication ever paid. Heartbeat of Steam
+    /// ("+10 from Campus" under Production in the host's own ledger, run
+    /// civvis-20260816T132247Z) was the largest gap of that game's Golden Age.
+    #[test]
+    fn the_age_and_its_dedications_reach_the_seat() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 180,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 180,
+            golden_age: Some(true),
+            dark_age: Some(false),
+            heroic_golden_age: Some(false),
+            dedications: Some(vec![
+                "COMMEMORATION_INDUSTRIAL".to_string(),
+                "COMMEMORATION_ECONOMIC".to_string(),
+                "COMMEMORATION_NOT_A_THING".to_string(),
+            ]),
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        assert_eq!(mirror.game.players[0].age, "golden");
+        assert!(mirror.game.players[0].dedications.contains("heartbeat_of_steam"));
+        assert!(mirror.game.players[0].dedications.contains("reform_the_coinage"));
+        assert_eq!(mirror.game.players[0].dedications.len(), 2, "unknown types are dropped");
+
+        // The age turns over: the sync follows the flags, heroic outranking golden.
+        state.turn = 181;
+        state.heroic_golden_age = Some(true);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].age, "heroic");
+        state.turn = 182;
+        state.heroic_golden_age = Some(false);
+        state.golden_age = Some(false);
+        state.dark_age = Some(true);
+        state.dedications = Some(vec![]);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].age, "dark");
+        assert!(mirror.game.players[0].dedications.is_empty());
+        // An older export says nothing and changes nothing.
+        state.turn = 183;
+        state.dark_age = None;
+        state.golden_age = None;
+        state.heroic_golden_age = None;
+        state.dedications = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].age, "dark");
+    }
+
     #[test]
     fn observed_worker_swap_overrides_the_nearest_city_guess() {
         let mut first_center = plot(2, 2, "TERRAIN_PLAINS");
@@ -8213,6 +8269,11 @@ pub struct StateSnapshot {
     pub golden_age: Option<bool>,
     #[serde(default)]
     pub heroic_golden_age: Option<bool>,
+    /// The Dedications (Commemorations) the host says this seat has active,
+    /// as `COMMEMORATION_*` type names — what a Golden Age PAYS. `None` on an
+    /// older export; an empty list is a seat with none.
+    #[serde(default)]
+    pub dedications: Option<Vec<String>>,
     /// Firaxis's own outgoing-route capacity. The model can differ because a
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
@@ -9330,7 +9391,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
-        "heroic_golden_age",
+        "heroic_golden_age", "dedications",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
         // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
         // if a new StateSnapshot field is missing here — this list is a second
@@ -11269,11 +11330,55 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
     if let Some(golden) = state.golden_age_threshold.filter(|value| *value >= 0) {
         player.golden_age_threshold = golden;
     }
+    // ★★★★ THE AGE ITSELF. The three flags crossed and were read by nothing:
+    // `Player::age` stayed at its "normal" default on every mirrored board, so
+    // `dedication_active` was false for the whole of every live Golden Age and
+    // no Dedication ever paid — the host's production ledger showing "+10 from
+    // Campus" (Heartbeat of Steam) against a model paying nothing was the
+    // largest gap of run civvis-20260816T132247Z. Heroic outranks Golden.
+    match (state.heroic_golden_age, state.golden_age, state.dark_age) {
+        (Some(true), _, _) => player.age = "heroic".to_string(),
+        (_, Some(true), _) => player.age = "golden".to_string(),
+        (_, _, Some(true)) => player.age = "dark".to_string(),
+        (Some(false), Some(false), Some(false)) => player.age = "normal".to_string(),
+        _ => {}
+    }
+    // And what it pays: the host's active Commemorations, by their CIVVIS ids.
+    // An older export (None) leaves the model's own list alone.
+    if let Some(active) = &state.dedications {
+        player.dedications.clear();
+        for name in active {
+            if let Some(dedication) = civvis_dedication_name(name) {
+                player.dedications.insert(dedication.to_string());
+            }
+        }
+    }
     if let Some(era) = state.world_era.filter(|value| *value >= 0) {
         // `ERA_NAMES` bounds the model's era ladder; a build that reports an era
         // past its end is clamped rather than allowed to index out of range.
         game.world_era = (era as usize).min(crate::rules::ERA_NAMES.len() - 1);
     }
+}
+
+/// A Firaxis `COMMEMORATION_*` type as CIVVIS's dedication id — the same pairing
+/// `Game`'s era-window table (`free_inquiry` / SCIENTIFIC, `heartbeat_of_steam` /
+/// INDUSTRIAL, ...) is pinned to.
+pub fn civvis_dedication_name(commemoration: &str) -> Option<&'static str> {
+    Some(match commemoration.trim() {
+        "COMMEMORATION_SCIENTIFIC" => "free_inquiry",
+        "COMMEMORATION_CULTURAL" => "pen_brush_and_voice",
+        "COMMEMORATION_INFRASTRUCTURE" => "monumentality",
+        "COMMEMORATION_RELIGIOUS" => "exodus_of_the_evangelists",
+        "COMMEMORATION_EXPLORATION" => "hic_sunt_dracones",
+        "COMMEMORATION_ECONOMIC" => "reform_the_coinage",
+        "COMMEMORATION_INDUSTRIAL" => "heartbeat_of_steam",
+        "COMMEMORATION_MILITARY" => "to_arms",
+        "COMMEMORATION_TOURISM" => "wish_you_were_here",
+        "COMMEMORATION_ESPIONAGE" => "bodyguard_of_lies",
+        "COMMEMORATION_AERONAUTICAL" => "sky_and_stars",
+        "COMMEMORATION_AUTOMATON" => "automaton_warfare",
+        _ => return None,
+    })
 }
 
 fn apply_player_religion(
