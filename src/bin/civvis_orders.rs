@@ -662,6 +662,34 @@ fn host_city_target(
     None
 }
 
+/// Resolve a CIVVIS player seat back to the Firaxis player id the order channel uses.
+///
+/// Major civilizations occupy compact seats in the exact order of `state.rivals`,
+/// but city-states live in the mirror's later minor seats and are only exported
+/// through `state.minors`.  Resolve those through an exact city plot rather than
+/// assuming a generated city-state roster has the host's player numbering.
+fn host_player_target(
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    player: usize,
+) -> Option<i64> {
+    state
+        .rivals
+        .get(player.saturating_sub(1))
+        .map(|rival| rival.player as i64)
+        .or_else(|| {
+            mirror_state
+                .game
+                .cities
+                .values()
+                .filter(|city| city.owner == player)
+                .find_map(|city| {
+                    host_city_target(mirror_state, state, city.id)
+                        .map(|(_, owner)| owner as i64)
+                })
+        })
+}
+
 /// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
@@ -2153,25 +2181,19 @@ fn translate(
         Action::DeclareWarWithCasusBelli { player, .. }
         | Action::DeclareWar { player, .. } => Some(Order {
             kind: "war",
-            subject: state
-                .rivals
-                .get(player.saturating_sub(1))
-                .map(|r| r.player as i64),
+            subject: host_player_target(mirror_state, state, *player),
             verb: Some("DECLARE".to_string()),
             pos: None,
         }),
         // ★★★★★ PEACE, WHICH HAD NO ARM AT ALL. A losing war could never be
         // exited: run civvis-20260801T221459Z spent 93 turns emitting MakePeace
         // — "Offering peace" in why.log every turn from t118 to the end — while
-        // every one fell through to the skipped tally and the harness fought
-        // on. Same seat-mapping as the war arm above; the Lua side gates on
+        // every one fell through to the skipped tally and the harness fought on.
+        // Same city-state-safe seat mapping as the war arm above; the Lua side gates on
         // IsAtWarWith and answers with the shipped deal shape.
         Action::MakePeace { player } => Some(Order {
             kind: "peace",
-            subject: state
-                .rivals
-                .get(player.saturating_sub(1))
-                .map(|r| r.player as i64),
+            subject: host_player_target(mirror_state, state, *player),
             verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
@@ -2186,10 +2208,7 @@ fn translate(
         // counterpart and stays skipped.
         Action::ProposeDeal { player, peace: true, .. } => Some(Order {
             kind: "peace",
-            subject: state
-                .rivals
-                .get(player.saturating_sub(1))
-                .map(|r| r.player as i64),
+            subject: host_player_target(mirror_state, state, *player),
             verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
@@ -2331,19 +2350,13 @@ fn translate(
         // is the session name the Lua side hands to DiplomacyManager.
         Action::SendDelegation { player } => Some(Order {
             kind: "delegation",
-            subject: state
-                .rivals
-                .get(player.saturating_sub(1))
-                .map(|r| r.player as i64),
+            subject: host_player_target(mirror_state, state, *player),
             verb: Some("DIPLOMATIC_DELEGATION".to_string()),
             pos: None,
         }),
         Action::SendEmbassy { player } => Some(Order {
             kind: "delegation",
-            subject: state
-                .rivals
-                .get(player.saturating_sub(1))
-                .map(|r| r.player as i64),
+            subject: host_player_target(mirror_state, state, *player),
             verb: Some("RESIDENT_EMBASSY".to_string()),
             pos: None,
         }),
@@ -3483,7 +3496,8 @@ mod tests {
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
-        StateGovernor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+        StateGovernor, StateMinor, StateRival, StateSnapshot, StateTradeRoute, StateUnit,
+        TilesChunk,
     };
 
     #[test]
@@ -4869,6 +4883,59 @@ mod tests {
         let unmet = translate(&Action::SendDelegation { player: 3 }, &mirror, &state)
             .expect("an unmapped rival still crosses for the ledger");
         assert_eq!(unmet.subject, None);
+    }
+
+    #[test]
+    fn city_state_war_and_peace_orders_name_the_firaxis_seat() {
+        // Live run civvis-20260816T070212Z reached this shape at t92: CIVVIS
+        // chose a staged war on Nazca (host player 13), but translating only
+        // through `state.rivals` emitted subject -1 and the control mod refused
+        // it as `war_target_unmapped` three times.
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            minors: vec![StateMinor {
+                player: 13,
+                civ: "CIVILIZATION_NAZCA".to_string(),
+                cities: vec![StateCity {
+                    id: 65_536,
+                    name: "Nazca".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 2,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let nazca = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .expect("Nazca must occupy a mirrored city-state seat")
+            .id;
+
+        let war = translate(&Action::DeclareWar { player: nazca }, &mirror, &state)
+            .expect("a city-state war crosses the order boundary");
+        assert_eq!(war.kind, "war");
+        assert_eq!(war.subject, Some(13));
+
+        let peace = translate(&Action::MakePeace { player: nazca }, &mirror, &state)
+            .expect("a city-state peace crosses the same boundary");
+        assert_eq!(peace.kind, "peace");
+        assert_eq!(peace.subject, Some(13));
     }
 
     #[test]
