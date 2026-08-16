@@ -1164,11 +1164,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wall-tech research goal is behind `garrison_walls`, the live walls
 /// doctrine, which the frozen anchor never sets (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
+/// A stalled Settler's known-hostile-frontier rejection is read only under the
+/// live `loyalty_rate_alarm`; the frozen anchor cannot enter the guard, so its
+/// historical fallback remains intact (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
 /// The exploration dead-target memory is behind `BasicAi::explore_dead_targets`,
 /// set only by the Civilization VI bridge; native constructors and
 /// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf832_920c_e738_4ea5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf202_79c7_3baf_89cd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
