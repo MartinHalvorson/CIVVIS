@@ -9387,6 +9387,33 @@ end
 -- handler avoids consuming another main-chunk register.
 CivvisApplyOrder = applyOrder;
 
+-- Pick the major civilization that is closest to a diplomatic victory.  The
+-- World Congress vote needs this independently of the rest of the turn loop,
+-- and score breaks a real DVP tie: at turn 221 of
+-- `civvis-20260816T045316Z`, Sweden and America both had 17 points, but
+-- America led 995 to 968 and reached 20 points first.  Player-manager order
+-- is not a strategic signal, so retain it only as the final stable tie-break.
+--
+-- Exposed for the offline Lua regression.  This must remain a bare global:
+-- another file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+CivvisSelectCongressLeader = function(candidates)
+	local leader, leaderPoints, leaderScore = -1, -1, -1;
+	for _, candidate in ipairs(candidates or {}) do
+		if type(candidate) == "table" then
+			local other = tonumber(candidate.id);
+			local points = tonumber(candidate.points) or 0;
+			local score = tonumber(candidate.score) or -1;
+			if other ~= nil and (points > leaderPoints
+				or (points == leaderPoints and score > leaderScore)
+				or (points == leaderPoints and score == leaderScore
+					and (leader < 0 or other < leader))) then
+				leader, leaderPoints, leaderScore = other, points, score;
+			end
+		end
+	end
+	return leader, leaderPoints, leaderScore;
+end
+
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
 --
 -- Measured on run civvis-20260801T224944Z: five Great People — three Writers and
@@ -10303,16 +10330,24 @@ local function tick()
 			if type(resolutions) ~= "table" then return 0, 0, "no_resolutions"; end
 			if type(costs) ~= "table" then costs = {}; end
 			local favor = try(function() return Players[pid]:GetFavor(); end, 0) or 0;
-			-- The diplomatic-victory leader among the others.
-			local leader, leaderPoints = -1, -1;
+			-- The diplomatic-victory leader among the others.  Keep this sampling
+			-- beside the actual vote: it is the host API contract and exposes a
+			-- useful DVP/score snapshot to the pure selector below.
+			local candidates = {};
 			for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
-				if other ~= pid then
-					local points = try(function()
-						return Players[other]:GetStats():GetDiplomaticVictoryPoints();
-					end, 0) or 0;
-					if points > leaderPoints then leader, leaderPoints = other, points; end
+				local otherID = tonumber(other);
+				if otherID ~= nil and otherID ~= pid then
+					candidates[#candidates + 1] = {
+						id = otherID,
+						points = tonumber(try(function()
+							return Players[otherID]:GetStats():GetDiplomaticVictoryPoints();
+						end, 0)) or 0,
+						score = tonumber(try(function() return Players[otherID]:GetScore(); end, -1)) or -1,
+					};
 				end
 			end
+			-- Equal DVP totals use score rather than arbitrary PlayerManager order.
+			local leader, leaderPoints, leaderScore = CivvisSelectCongressLeader(candidates);
 			-- Option 1 of these resolutions is the ban; the free vote goes to 2.
 			local BAN_FIRST = {
 				WC_RES_MERCENARY_COMPANIES = true, WC_RES_GLOBAL_ENERGY_TREATY = true,
@@ -10380,7 +10415,7 @@ local function tick()
 			pcall(function()
 				UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {});
 			end);
-			return cast, spent, nil, leader, leaderPoints;
+			return cast, spent, nil, leader, leaderPoints, leaderScore;
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
@@ -10562,10 +10597,11 @@ local function tick()
 						if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 								and seen.voted_turn ~= turn then
 							seen.voted_turn = turn;
-							local cast, spent, why, leader, leaderPoints = voteWorldCongress(pid);
+							local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
 							emit("wc_vote", { turn = turn, cast = cast, spent = spent,
 							                  why = why, leader = leader,
-							                  leader_points = leaderPoints });
+							                  leader_points = leaderPoints,
+							                  leader_score = leaderScore });
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						local dropped = dismissBlocker(pid, blocker);
