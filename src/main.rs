@@ -1262,7 +1262,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty rule is now a distance test (own city within nine
 /// tiles), still behind `frontier_loyalty` and off for `AdvancedAi::legacy()`
 /// (asserted). Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x46d5_f28f_80fc_d34d;
+/// The barbarian-scout exemption in the settlement risk model is behind
+/// `barbarian_scouts_are_scouts`, off for `AdvancedAi::legacy()` (asserted);
+/// the frozen anchor prices every hostile as before. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4e3c_516a_2a82_b1a8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

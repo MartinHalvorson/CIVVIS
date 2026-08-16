@@ -1517,6 +1517,7 @@ fn withhold_live_treatment(
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
         "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "tally-great-people" => ai.disable_tally_great_people(),
+        "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1544,7 +1545,7 @@ fn withhold_live_treatment(
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
                  era-paced-expansion, tally-culture, frontier-loyalty, \
-                 settler-target-hysteresis, tally-great-people"
+                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts"
             ))
         }
     }
@@ -3779,6 +3780,14 @@ mod tests {
         withhold_live_treatment(&mut ai, "tally-great-people")
             .expect("the tally-great-people control arm is registered");
         assert!(!ai.tally_great_people, "the named tally-great-people control must hold it off");
+
+        assert!(ai.barbarian_scouts_are_scouts);
+        withhold_live_treatment(&mut ai, "barbarian-scouts-are-scouts")
+            .expect("the barbarian-scout control arm is registered");
+        assert!(
+            !ai.barbarian_scouts_are_scouts,
+            "the named barbarian-scout control must hold it off"
+        );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
