@@ -16493,6 +16493,20 @@ impl AdvancedAi {
                 let lane_opens = plan.strategy == GrandStrategy::Culture
                     || self.victory_target == Some(VictoryTarget::Score)
                     || (wonder_civ && self.victory_target.is_none());
+                // `religion_founding_site` is the data-level marker for a
+                // Stonehenge-like wonder, rather than a name check. Once this
+                // civilization has founded its religion, that site and its
+                // free-Prophet payoff are spent. In the live trace Rome founded
+                // Buddhism at t41, then put 60/90 production into Stonehenge at
+                // t65--69 before replacing it at t70. Keep this live-only: a
+                // modded equivalent receives the same protection without moving
+                // the frozen controller's historical wonder choices.
+                let spent_religion_founding_site = self.live_wonder_race
+                    && g.players[pid].religion.is_some()
+                    && spec
+                        .effects
+                        .get("religion_founding_site")
+                        .is_some_and(|value| *value > 0.0);
                 // The live seat's race: see `live_wonder_race`. One wonder in
                 // production empire-wide, in a city with three buildings, once
                 // the empire holds three cities — a race the plan does not
@@ -16530,6 +16544,7 @@ impl AdvancedAi {
                     });
                 if already_queued
                     || threatened
+                    || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
                     || !(lane_opens || live_race_opens)
@@ -43689,6 +43704,30 @@ mod research_probe {
                 .push(Name::new(building));
         }
         let home = game.cities[&capital].pos;
+        let owned_tiles = game.cities[&capital].owned_tiles.clone();
+        let (stonehenge_site, stone) = owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != home)
+            .find_map(|site| {
+                game.nbrs(site)
+                    .iter()
+                    .copied()
+                    .find(|neighbor| *neighbor != home && owned_tiles.contains(neighbor))
+                    .map(|stone| (site, stone))
+            })
+            .expect("the capital owns neighboring non-center tiles");
+        for position in [stonehenge_site, stone] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        game.map.tiles.get_mut(&stone).unwrap().resource = Some(Name::new("stone"));
         let mut founded = 0;
         let mut sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
         sites.sort_unstable();
@@ -43713,6 +43752,18 @@ mod research_probe {
             .into_iter()
             .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids"))
             .expect("the desert capital can place the Pyramids");
+        assert!(
+            game.rules.wonders["stonehenge"]
+                .effects
+                .get("religion_founding_site")
+                .is_some_and(|value| *value > 0.0),
+            "the fixture's founding-site marker remains data-driven"
+        );
+        let stonehenge = game
+            .producible_items(0, capital)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "stonehenge"))
+            .expect("the grassland next to stone permits Stonehenge");
         let plan = StrategicPlan {
             strategy: GrandStrategy::Expansion,
             target_player: None,
@@ -43735,6 +43786,32 @@ mod research_probe {
         let raced =
             live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
         assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        let stonehenge_before_founding = live.production_value(
+            &game,
+            0,
+            capital,
+            &stonehenge,
+            &plan,
+            &live.counts(&game, 0),
+        );
+        assert!(
+            stonehenge_before_founding > 0.0,
+            "the same legal founding-site wonder remains available before religion: {stonehenge_before_founding}"
+        );
+        game.players[0].religion = Some("Already Founded".to_string());
+        let stonehenge_after_founding = live.production_value(
+            &game,
+            0,
+            capital,
+            &stonehenge,
+            &plan,
+            &live.counts(&game, 0),
+        );
+        assert!(
+            stonehenge_after_founding < -1_000.0,
+            "the live race does not sink production into a spent founding effect: {stonehenge_after_founding}"
+        );
+        game.players[0].religion = None;
         let recovery_plan = StrategicPlan {
             strategy: GrandStrategy::Recovery,
             ..plan.clone()
