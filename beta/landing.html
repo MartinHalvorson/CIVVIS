@@ -162,11 +162,51 @@
      on the left, Play (single player) on the right. */
   /* The row index rides the menu's left edge and stays put while the page
      scrolls: every row, in page order, one click away — so the whole menu
-     is legible in one glance even when its lower rows sit past the fold. */
-  .home-layout { display: flex; align-items: flex-start; gap: 16px; }
-  .row-nav { position: sticky; top: 14px; display: flex; flex: none; flex-direction: column; gap: 6px; }
+     is legible in one glance even when its lower rows sit past the fold.
+
+     Two pieces of furniture stand to the left of the cards — the index and
+     the column of vertical row labels — and between them they were taking
+     147 of the shell's 996 pixels, which is a seventh of the menu spent on
+     signposting rather than on the two cards it points at. Where the
+     viewport is wide enough to have a margin, the whole menu slides left by
+     exactly that much (`--menu-inset`) so the furniture rides in the margin
+     and the cards keep the shell to themselves.
+
+     The inset is computed from the two widths rather than written down
+     beside them, so it cannot drift out of step with what it is insetting:
+     change a width and the slide follows. Both widths are therefore fixed
+     rather than content-sized. */
+  :root {
+    --menu-gap: 16px;
+    --row-nav-w: 80px;
+    /* One line box of the vertical label: `.row-label`'s own font size
+       through the body's line height. Bump one, bump this. */
+    --row-label-w: 35px;
+    --menu-inset: calc(var(--row-nav-w) + var(--row-label-w) + 2 * var(--menu-gap));
+  }
+  .home-layout { display: flex; align-items: flex-start; gap: var(--menu-gap); }
+  /* Wide enough for the whole rail to clear the viewport edge with room to
+     spare: the shell's 1060, plus twice what the rail needs past the shell's
+     own padding, plus a margin of its own. Below that, and above the
+     one-column layout, the index alone goes out — it is the wider of the two
+     and the easier to spare. Below that again the rail stands in the menu as
+     it did, because there is no margin for it to stand in. */
+  @media (min-width: 1340px) { .home-layout { margin-left: calc(-1 * var(--menu-inset)); } }
+  @media (min-width: 1240px) and (max-width: 1339.98px) {
+    .home-layout { margin-left: calc(-1 * (var(--row-nav-w) + var(--menu-gap))); }
+  }
+  .row-nav {
+    position: sticky;
+    top: 14px;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 6px;
+    width: var(--row-nav-w);
+  }
   .row-nav a {
     padding: 6px 10px;
+    text-align: center;
     border: 1px solid var(--border);
     border-radius: 3px;
     background: var(--panel);
@@ -181,8 +221,15 @@
   .row-nav a:focus-visible { border-color: var(--accent); color: #fff; }
   .row-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* A narrow first column carries the vertical row labels; the two card
-     columns share the rest. */
-  .quadrants { display: grid; flex: 1; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; min-width: 0; }
+     columns share the rest. Fixed rather than `auto` so `--menu-inset` can
+     be computed from it. */
+  .quadrants {
+    display: grid;
+    flex: 1;
+    grid-template-columns: var(--row-label-w) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px var(--menu-gap);
+    min-width: 0;
+  }
   .col-head {
     display: flex;
     flex-direction: column;
@@ -321,10 +368,15 @@
      full-width row directly below the pair of cards it customizes — the
      battle picker below the Tactics row, the world picker below the CIVVIS
      row — so Customize and the tags open options in place rather than
-     leaving the menu. */
+     leaving the menu.
+
+     From the second column, not the first: a panel is as wide as the pair of
+     cards it belongs to, and the label column is furniture beside them.
+     Spanning that column too would hang the panel out past the cards' left
+     edge — into the margin the labels ride in, once the menu is inset. */
   .picker-panel {
     display: grid;
-    grid-column: 1 / -1;
+    grid-column: 2 / -1;
     gap: 14px;
     min-width: 0;
     padding: 18px;
@@ -421,10 +473,13 @@
   .picker-empty { padding: 12px; color: var(--faint); font-size: 13px; line-height: 1.5; }
 
   @media (max-width: 760px) {
-    /* One column of cards; the row index turns into a chip row on top. */
+    /* One column of cards; the row index turns into a chip row on top, so it
+       gives up the fixed width it is given for the inset arithmetic. With no
+       label column left there is nothing beside a panel to skip either. */
     .home-layout { display: block; }
-    .row-nav { position: static; flex-direction: row; flex-wrap: wrap; margin-bottom: 12px; }
+    .row-nav { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin-bottom: 12px; }
     .quadrants { grid-template-columns: 1fr; }
+    .picker-panel { grid-column: 1 / -1; }
     .col-head,
     .row-label,
     .grid-corner { display: none; }
