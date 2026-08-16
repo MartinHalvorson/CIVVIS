@@ -1809,6 +1809,7 @@ fn withhold_live_treatment(
         "camp-reach" => ai.disable_camp_reach(),
         "settler-stack-discipline" => ai.disable_settler_stack_discipline(),
         "camp-party" => ai.disable_camp_party(),
+        "buildings-before-projects" => ai.disable_buildings_before_projects(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1837,7 +1838,7 @@ fn withhold_live_treatment(
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
                  era-paced-expansion, tally-culture, frontier-loyalty, \
                  settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
-                 camp-reach, settler-stack-discipline, camp-party"
+                 camp-reach, settler-stack-discipline, camp-party, buildings-before-projects"
             ))
         }
     }
@@ -4159,6 +4160,14 @@ mod tests {
         withhold_live_treatment(&mut ai, "camp-party")
             .expect("the camp-party control arm is registered");
         assert!(!ai.camp_party(), "the named camp-party control must hold it off");
+
+        assert!(ai.buildings_before_projects);
+        withhold_live_treatment(&mut ai, "buildings-before-projects")
+            .expect("the buildings-before-projects control arm is registered");
+        assert!(
+            !ai.buildings_before_projects,
+            "the named buildings-before-projects control must hold it off"
+        );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

@@ -239,6 +239,17 @@ local function endScreen(attempt)
 	-- special-session notification pending, so the same screen can immediately
 	-- return.  Use the complete Firaxis path a person pressing Pass would use.
 	if NAME == "WorldCongressPopup" and type(OnPass) == "function" then
+		-- ⚠⚠ THIS IS THE RUNG THAT RUNS FOR THE SESSION POPUP TOO. The shipped
+		-- WorldCongressPopup defines BOTH `OnPass` (the emergency-proposal
+		-- review's Pass button) and `OnAccept` (the session's submit), and this
+		-- rung sits first — so the `OnAccept` rung below, and the ballot event
+		-- it raises, never ran for a session: batch-9 game
+		-- civvis-20260816T223457Z shows the popup closing here 0.05 s after it
+		-- opened at t61/81/101/121 with no `source:"popup"` ballot anywhere.
+		-- The ballot is raised here as well; the agent's handler ignores a
+		-- second call in the same turn, and between sessions (the review
+		-- popup) it finds no resolutions and casts nothing.
+		pcall(function() LuaEvents.CivvisCongressBallot(); end);
 		OnPass();
 		return true;
 	end
