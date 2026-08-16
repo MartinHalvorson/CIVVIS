@@ -222,9 +222,15 @@ const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
 /// emergency threshold the live mirror uses for a settler's current plot.
 const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
-/// How far a city's citizens press: the loyalty model's nine-tile radius. A
-/// site with no own city inside it receives no domestic pressure at all.
-/// See `frontier_loyalty`.
+/// How far from an own city a colony still holds on fogged ground. The
+/// loyalty model's citizens press out to nine tiles, but what a colony needs
+/// is enough of that pressure to outweigh rivals it cannot see: measured
+/// across three Settler games, every colony that held stood four to six tiles
+/// from another own city, and every one that revolted stood at eight or more
+/// — Arpinum at 18 and Lugdunum at 11 (civvis-20260816T123936Z, −19 a turn),
+/// then, with the reach at nine, Antium at 8 (−19 a turn) and Brundisium at 9
+/// (−4) in empire-wide-20260816T165500Z. Seven is the boundary the record
+/// shows. See `frontier_loyalty`.
 ///
 /// ⚠⚠ THIS WAS A POP-WEIGHTED PRESSURE SUM FOR ONE BATCH AND IT STOPPED THE
 /// SEAT SETTLING. #1768 doomed a site whose Σ pop × (10 − distance) over own
@@ -236,7 +242,7 @@ const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
 /// eleven and eighteen tiles from the nearest own city and every city that
 /// held stood four to six; the distance is the whole signal, and it does not
 /// depend on how big the capital is.
-const FRONTIER_LOYALTY_RADIUS: i32 = 9;
+const FRONTIER_LOYALTY_RADIUS: i32 = 7;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
@@ -2383,9 +2389,10 @@ pub struct AdvancedAi {
     /// unexplored plots lay within nine tiles of them. Two settlers, two
     /// founding bonuses and sixteen city-turns bought two revolts.
     ///
-    /// With this on, a site with no own city within nine tiles — the loyalty
-    /// model's pressure radius, so no domestic pressure at all — while
-    /// unexplored plots lie within nine tiles is treated as doomed: retired before the walk
+    /// With this on, a site with no own city within `FRONTIER_LOYALTY_RADIUS`
+    /// (seven — the measured boundary between colonies that held and colonies
+    /// that revolted; the loyalty model presses out to nine) while unexplored
+    /// plots lie within nine tiles is treated as doomed: retired before the walk
     /// and refused on arrival, exactly as a forecast revolt is, and journaled
     /// as "beyond the empire's loyalty reach". A site inside the empire's
     /// halo, or on fully explored ground, is judged by the forecast as
@@ -19599,7 +19606,9 @@ impl AdvancedAi {
         if inside_reach {
             return false;
         }
-        g.wdisk(site, FRONTIER_LOYALTY_RADIUS)
+        // Fog is asked out to the loyalty model's own nine-tile pressure radius:
+        // that is how far an unseen rival city can press the site.
+        g.wdisk(site, 9)
             .into_iter()
             .any(|pos| g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos))
     }
@@ -35711,6 +35720,7 @@ mod tests {
         let far = anchor_at(&game, home, 14);
         let near = anchor_at(&game, home, 4);
         let edge = anchor_at(&game, home, 7);
+        let eight = anchor_at(&game, home, 8);
 
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
@@ -35725,7 +35735,11 @@ mod tests {
         );
         assert!(
             !AdvancedAi::beyond_loyalty_reach(&game, 0, edge),
-            "seven tiles from a pop-1 capital is still inside its nine-tile reach"
+            "seven tiles from a pop-1 capital is inside the reach the record shows"
+        );
+        assert!(
+            AdvancedAi::beyond_loyalty_reach(&game, 0, eight),
+            "eight tiles out on fogged ground is where the measured colonies revolted"
         );
         assert!(
             live.settle_site_loyalty_verdict(&game, 0, edge).is_none(),
