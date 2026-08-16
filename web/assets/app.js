@@ -90,6 +90,21 @@ initSidebarSections();
 // stays where the markup put it while the named ones move ahead of the
 // advanced drawer, which strands it above the whole form — the way the
 // endgame rules were stranded until they were nested.
+// The words a briefing uses for the engine's random-disaster classes. Only a
+// battle remembered for its weather lists any (the catalog's `disasters`);
+// every other battle — and every custom arena — runs none, so the brief says
+// nothing rather than promising calm. Declared up here because the scenario
+// brief renders during page load (syncSetupMode → syncScenarioChoice), and a
+// const below that call site is still in its temporal dead zone there.
+const SCENARIO_WEATHER_LABELS = {
+  volcanic_eruption: "volcanic eruptions",
+  river_flood: "flooding",
+  drought: "drought",
+  hurricane: "storms",
+  tornado: "tornadoes",
+  blizzard: "blizzards",
+  dust_storm: "dust storms",
+};
 function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
@@ -30873,9 +30888,14 @@ function scenarioBriefMarkup(scenario) {
     `<div class="scenario-force"><strong>${escapeAttr(force.label)}</strong>` +
     `<small>${escapeAttr(scenario.civs[index])} · ${escapeAttr(force.commander)}</small>` +
     `<small>${force.units.map(titleCase).map(escapeAttr).join(" · ")}</small></div>`).join("");
+  const weather = (scenario.disasters || [])
+    .map(kind => SCENARIO_WEATHER_LABELS[kind] || titleCase(kind).toLowerCase())
+    .join(" · ");
   return `<h4>${escapeAttr(scenario.name)} · ${escapeAttr(scenario.date)}</h4>` +
     `<div class="scenario-brief-facts"><span>${escapeAttr(scenario.location)}</span><span>${escapeAttr(scenarioTerrainName(scenario.terrain))}</span>` +
-    `<span>${escapeAttr(scenario.turns)} recommended turns</span><span>${escapeAttr(scenario.width)}×${escapeAttr(scenario.height)} chart</span></div>` +
+    `<span>${escapeAttr(scenario.turns)} recommended turns</span><span>${escapeAttr(scenario.width)}×${escapeAttr(scenario.height)} chart</span>` +
+    (weather ? `<span title="The weather the real battle is remembered for — the one disaster class this arena still runs">Historical weather: ${escapeAttr(weather)}</span>` : "") +
+    `</div>` +
     `<p class="scenario-brief-objective"><strong>Objective:</strong> ${escapeAttr(scenario.objective)}</p>` +
     `<p class="scenario-brief-lede">${escapeAttr(scenario.summary)}</p>` +
     `<div class="scenario-brief-forces">${forces}</div>`;

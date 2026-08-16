@@ -8739,6 +8739,13 @@ mod tests {
             !EMBEDDED_INDEX.contains("data-scenario-view="),
             "the scenario browser was retired for the Scenario select"
         );
+        // A battle remembered for its weather says so in its briefing — and
+        // only such a battle: the arena runs no random disasters otherwise
+        // (`Game::script_disaster_allowed`), so a brief that said "calm"
+        // everywhere would be noise and one that said nothing here would hide
+        // the one storm that is history.
+        assert!(EMBEDDED_APP_JS.contains("const SCENARIO_WEATHER_LABELS = {"));
+        assert!(EMBEDDED_APP_JS.contains("Historical weather: ${escapeAttr(weather)}"));
     }
 
     /// Nothing the setup panel runs during page load may read a module
