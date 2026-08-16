@@ -1944,6 +1944,10 @@ mod tests {
             faith: 44,
             score: 120,
             military: 80.0,
+            government: Some("GOVERNMENT_MONARCHY".to_string()),
+            dark_age: Some(false),
+            golden_age: Some(true),
+            heroic_golden_age: Some(false),
             public_stats: StatePublicEmpireStats {
                 city_count: Some(4),
                 population: Some(31),
@@ -1967,6 +1971,10 @@ mod tests {
                 gold_per_turn: -3.0,
                 faith: 88.0,
                 faith_per_turn: 19.0,
+                government: Some("GOVERNMENT_FASCISM".to_string()),
+                dark_age: Some(false),
+                golden_age: Some(false),
+                heroic_golden_age: Some(true),
                 public_stats: StatePublicEmpireStats {
                     city_count: Some(7),
                     population: Some(49),
@@ -2002,6 +2010,8 @@ mod tests {
         assert_eq!(mine["faith"], serde_json::json!(44.0));
         assert_eq!(mine["military"], serde_json::json!(80));
         assert_eq!(mine["score"], serde_json::json!(120));
+        assert_eq!(mine["government"], serde_json::json!("monarchy"));
+        assert_eq!(mine["age"], serde_json::json!("golden"));
         assert_eq!(mine["wonder_count"], serde_json::json!(2));
         assert_eq!(mine["suzerain_count"], serde_json::json!(1));
         assert_eq!(mine["nuclear_devices"], serde_json::json!(3));
@@ -2018,6 +2028,8 @@ mod tests {
         assert_eq!(rival["gold_per_turn"], serde_json::json!(-3.0));
         assert_eq!(rival["faith"], serde_json::json!(88.0));
         assert_eq!(rival["military"], serde_json::json!(670));
+        assert_eq!(rival["government"], serde_json::json!("fascism"));
+        assert_eq!(rival["age"], serde_json::json!("heroic"));
         assert_eq!(rival["nuclear_devices"], serde_json::json!(4));
         assert_eq!(rival["thermonuclear_devices"], serde_json::json!(1));
         assert_eq!(rival["wonder_count"], serde_json::json!(5));
@@ -2034,6 +2046,16 @@ mod tests {
             serde_json::json!(7),
             "the public totals survive a saved spectator frame"
         );
+        assert_eq!(
+            crate::obs::observation_spectator(&loaded, 0)["players"][1]["government"],
+            serde_json::json!("fascism"),
+            "a fogged rival's public government survives a saved spectator frame"
+        );
+        assert_eq!(
+            crate::obs::observation_spectator(&loaded, 0)["players"][1]["age"],
+            serde_json::json!("heroic"),
+            "a fogged rival's public age survives a saved spectator frame"
+        );
 
         state.turn = 41;
         state.public_stats.city_count = Some(5);
@@ -2043,6 +2065,10 @@ mod tests {
         state.rivals[0].public_stats.nuclear_devices = Some(0);
         state.rivals[0].faith_per_turn = 23.0;
         state.rivals[0].techs = 54.0;
+        state.rivals[0].government = Some("GOVERNMENT_DEMOCRACY".to_string());
+        state.rivals[0].heroic_golden_age = Some(false);
+        state.rivals[0].golden_age = Some(false);
+        state.rivals[0].dark_age = Some(true);
         mirror.sync(&snapshot, &state, 0);
         let refreshed = crate::obs::observation_spectator(&mirror.game, 0);
         assert_eq!(refreshed["players"][0]["cities"], serde_json::json!(5));
@@ -2051,21 +2077,46 @@ mod tests {
         assert_eq!(refreshed["players"][1]["yields"]["food"], serde_json::json!(80.0));
         assert_eq!(refreshed["players"][1]["yields"]["faith"], serde_json::json!(23.0));
         assert_eq!(refreshed["players"][1]["nuclear_devices"], serde_json::json!(0));
+        assert_eq!(refreshed["players"][1]["government"], serde_json::json!("democracy"));
+        assert_eq!(refreshed["players"][1]["age"], serde_json::json!("dark"));
         assert_eq!(
             refreshed["players"][1]["victories"]["science"]["techs"],
             serde_json::json!(54)
         );
+
+        // All three explicit false flags mean Normal, while a missing field is
+        // an older control mod and must not erase the last host observation.
+        state.turn = 42;
+        state.rivals[0].heroic_golden_age = Some(false);
+        state.rivals[0].golden_age = Some(false);
+        state.rivals[0].dark_age = Some(false);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            crate::obs::observation_spectator(&mirror.game, 0)["players"][1]["age"],
+            serde_json::json!("normal")
+        );
+        state.turn = 43;
+        state.rivals[0].government = None;
+        state.rivals[0].heroic_golden_age = None;
+        state.rivals[0].golden_age = None;
+        state.rivals[0].dark_age = None;
+        mirror.sync(&snapshot, &state, 0);
+        let old_export = crate::obs::observation_spectator(&mirror.game, 0);
+        assert_eq!(old_export["players"][1]["government"], serde_json::json!("democracy"));
+        assert_eq!(old_export["players"][1]["age"], serde_json::json!("normal"));
     }
 
     #[test]
-    fn public_empire_stats_are_recognized_on_the_live_wire() {
+    fn public_empire_hud_fields_are_recognized_on_the_live_wire() {
         let state = state_from_json(
             r#"{
                 "kind":"state", "turn":40,
                 "public_stats":{"city_count":4,"population":31,"food":48.0,
                   "production":29.0,"wonder_count":2,"suzerain_count":1,
                   "nuclear_devices":3,"thermonuclear_devices":2},
-                "rivals":[{"player":3,"public_stats":{"city_count":7,"population":49,
+                "rivals":[{"player":3,"government":"GOVERNMENT_FASCISM",
+                  "dark_age":false,"golden_age":false,"heroic_golden_age":true,
+                  "public_stats":{"city_count":7,"population":49,
                   "food":76.0,"production":43.0,"wonder_count":5,"suzerain_count":2,
                   "nuclear_devices":4,"thermonuclear_devices":1}}]
             }"#,
@@ -2075,6 +2126,10 @@ mod tests {
         assert_eq!(state.public_stats.thermonuclear_devices, Some(2));
         assert_eq!(state.rivals[0].public_stats.population, Some(49));
         assert_eq!(state.rivals[0].public_stats.wonder_count, Some(5));
+        assert_eq!(state.rivals[0].government.as_deref(), Some("GOVERNMENT_FASCISM"));
+        assert_eq!(state.rivals[0].dark_age, Some(false));
+        assert_eq!(state.rivals[0].golden_age, Some(false));
+        assert_eq!(state.rivals[0].heroic_golden_age, Some(true));
         assert!(
             state.schema_gaps.is_empty(),
             "recognized public standings must not become unmapped diagnostics: {:?}",
@@ -2983,6 +3038,88 @@ mod tests {
         state.dedications = None;
         mirror.sync(&snapshot, &state, 0);
         assert_eq!(mirror.game.players[0].age, "dark");
+    }
+
+    /// ★★★★★ A CORRECTION IS MEASURED AFTER EVERYTHING IT CORRECTS FOR IS ON THE BOARD.
+    ///
+    /// The rival's per-turn correction was derived before the loop that writes
+    /// a rival city's Population (planted at one) — measured against a size-one
+    /// city, paid on the size-eleven one: Nubia read 174 Science against the
+    /// host's 141 on run civvis-20260816T175306Z. And the seat's own Dedications
+    /// were applied after its correction: Ravenna read 14.5 Science against 9.5.
+    /// Both boards must read the host's figure exactly, rebuild and sync alike.
+    #[test]
+    fn corrections_are_measured_after_population_and_dedications_are_on_the_board() {
+        let side = 16;
+        let plots: Vec<Plot> = (0..side)
+            .flat_map(|x| {
+                (0..side).map(move |y| Plot {
+                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
+                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
+                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
+                    p: false, d: None, wo: None,
+                })
+            })
+            .collect();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk { turn: 90, width: side, height: side, chunk: 1, plots }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            science: 30.0,
+            culture: 12.0,
+            golden_age: Some(true),
+            dark_age: Some(false),
+            heroic_golden_age: Some(false),
+            dedications: Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]),
+            cities: vec![StateCity {
+                id: 1, name: "Rome".to_string(), x: 3, y: 3, pop: 6, loyalty: 100.0, capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_COMMERCIAL_HUB".to_string(), x: 4, y: 3, complete: true,
+                    ..StateDistrict::default()
+                }],
+                yields: Some(crate::rules::Yields { food: 20.0, production: 9.0, gold: 8.0, science: 9.5, culture: 6.0, faith: 0.0 }),
+                ..StateCity::default()
+            }],
+            rivals: vec![StateRival {
+                player: 3, civ: "CIVILIZATION_NUBIA".to_string(),
+                science: 41.0, culture: 22.0,
+                cities: vec![StateCity {
+                    id: 3, name: "Meroe".to_string(), x: 11, y: 11, pop: 11, loyalty: 100.0, capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let seat_yields = |game: &crate::game::Game, seat: usize| {
+            let mut total = crate::rules::Yields::default();
+            for cid in game.player_city_ids(seat) {
+                total.add(game.city_yields(cid));
+            }
+            if let Some(adjustment) = game.observed_yield_adjustments.get(&seat) {
+                total.add(*adjustment);
+            }
+            total.add(game.player_yield_extras(seat));
+            total
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let rome = mirror.game.player_city_ids(0)[0];
+        assert!((mirror.game.city_yields(rome).science - 9.5).abs() < 1e-9,
+            "the city reads the host after its Dedication is on the seat: {:?}", mirror.game.city_yields(rome));
+        assert!((seat_yields(&mirror.game, 0).science - 30.0).abs() < 1e-9);
+        let meroe = mirror.game.player_city_ids(1)[0];
+        assert_eq!(mirror.game.cities[&meroe].pop, 11);
+        assert!((seat_yields(&mirror.game, 1).science - 41.0).abs() < 1e-9,
+            "the rival seat reads the host after its city's Population is on the board: {:?}", seat_yields(&mirror.game, 1));
+
+        // And after a sync that grows the rival and moves our Dedication.
+        state.turn = 91;
+        state.rivals[0].cities[0].pop = 14;
+        state.rivals[0].science = 47.0;
+        state.dedications = Some(vec!["COMMEMORATION_INDUSTRIAL".to_string()]);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.cities[&meroe].pop, 14);
+        assert!((seat_yields(&mirror.game, 1).science - 47.0).abs() < 1e-9);
+        assert!((mirror.game.city_yields(rome).science - 9.5).abs() < 1e-9);
     }
 
     #[test]
@@ -8140,6 +8277,18 @@ pub struct StateRival {
     pub civ: String,
     #[serde(default)]
     pub leader: String,
+    /// The government the rival's diplomacy panel currently shows. It is a
+    /// public empire fact, so a fogged rival must not render as unformed.
+    #[serde(default)]
+    pub government: Option<String>,
+    /// Firaxis's current age state for this met rival. These public flags keep
+    /// the standings and loyalty lens honest without exporting private plans.
+    #[serde(default)]
+    pub dark_age: Option<bool>,
+    #[serde(default)]
+    pub golden_age: Option<bool>,
+    #[serde(default)]
+    pub heroic_golden_age: Option<bool>,
     /// Whether Civilization VI says this seat may declare war on them RIGHT NOW.
     #[serde(default)]
     pub can_declare: bool,
@@ -8862,8 +9011,28 @@ fn apply_public_empire_stats(
 /// standings exact even when the city and unit records are intentionally
 /// fog-limited. Fields the host could not read (`-1`) or an older export never
 /// sent (NaN) leave the model's own derivation in place.
-fn apply_rival_public_economy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
+fn apply_rival_public_economy(
+    game: &mut crate::game::Game,
+    owner: usize,
+    rival: &StateRival,
+    unmapped: &mut Vec<String>,
+) {
     let known = |value: f64| value.is_finite() && value >= 0.0;
+    if let Some(civ6) = rival.government.as_deref() {
+        match civvis_node_name(&game.rules.governments, civ6, "GOVERNMENT_") {
+            Some(government) => game.players[owner].government = Some(government),
+            None if !unmapped.iter().any(|entry| entry == civ6) => {
+                unmapped.push(civ6.to_string())
+            }
+            None => {}
+        }
+    }
+    apply_observed_age(
+        &mut game.players[owner],
+        rival.heroic_golden_age,
+        rival.golden_age,
+        rival.dark_age,
+    );
     apply_public_empire_stats(game, owner, &rival.public_stats);
     let count = |value: f64| {
         (value.is_finite() && value >= 0.0 && value <= usize::MAX as f64)
@@ -9840,7 +10009,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "turns_to_establish", "neutralized_turns", "promotions",
     ];
     const RIVAL: &[&str] = &[
-        "player", "civ", "leader", "can_declare", "score", "dvp", "military", "at_war",
+        "player", "civ", "leader", "government", "dark_age", "golden_age",
+        "heroic_golden_age", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
         "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "public_stats",
@@ -11747,6 +11917,24 @@ fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String>
 /// answer", so a build whose `Game.GetEras()` is missing a getter leaves that
 /// field at whatever the board already held instead of writing a lie into it. A
 /// real era score of 0 is ordinary on turn 1 and is applied.
+fn apply_observed_age(
+    player: &mut crate::game::Player,
+    heroic_golden_age: Option<bool>,
+    golden_age: Option<bool>,
+    dark_age: Option<bool>,
+) {
+    // Heroic outranks Golden. An all-false response is the host's explicit
+    // Normal answer; an absent field belongs to an older control mod and must
+    // leave the previous observation intact.
+    match (heroic_golden_age, golden_age, dark_age) {
+        (Some(true), _, _) => player.age = "heroic".to_string(),
+        (_, Some(true), _) => player.age = "golden".to_string(),
+        (_, _, Some(true)) => player.age = "dark".to_string(),
+        (Some(false), Some(false), Some(false)) => player.age = "normal".to_string(),
+        _ => {}
+    }
+}
+
 fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
     let player = &mut game.players[0];
     if let Some(score) = state.era_score.filter(|value| *value >= 0) {
@@ -11768,14 +11956,13 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
     // `dedication_active` was false for the whole of every live Golden Age and
     // no Dedication ever paid — the host's production ledger showing "+10 from
     // Campus" (Heartbeat of Steam) against a model paying nothing was the
-    // largest gap of run civvis-20260816T132247Z. Heroic outranks Golden.
-    match (state.heroic_golden_age, state.golden_age, state.dark_age) {
-        (Some(true), _, _) => player.age = "heroic".to_string(),
-        (_, Some(true), _) => player.age = "golden".to_string(),
-        (_, _, Some(true)) => player.age = "dark".to_string(),
-        (Some(false), Some(false), Some(false)) => player.age = "normal".to_string(),
-        _ => {}
-    }
+    // largest gap of run civvis-20260816T132247Z.
+    apply_observed_age(
+        player,
+        state.heroic_golden_age,
+        state.golden_age,
+        state.dark_age,
+    );
     // And what it pays: the host's active Commemorations, by their CIVVIS ids.
     // An older export (None) leaves the model's own list alone.
     if let Some(active) = &state.dedications {
@@ -12814,18 +13001,6 @@ fn apply_observed_host_metrics(
     {
         game.observed_yield_adjustments.insert(0, adjustment);
     }
-    // The rivals' seats, the same way (their yields, treasury and Faith).
-    // Here, after the clear above, so the deltas survive the turn; seats are
-    // 1..n in export order, as the rival loops in `rebuild_from_state` and
-    // `LiveMirror::sync` assign them.
-    for (index, rival) in state.rivals.iter().enumerate() {
-        let owner = index + 1;
-        if owner >= game.players.len() {
-            break;
-        }
-        apply_rival_public_economy(game, owner, rival);
-    }
-
     // Which seats the export names a capital for. A record that flags none
     // (an older export, or a fixture) keeps `place_city`'s own choice rather
     // than clearing every flag and leaving the seat capital-less.
@@ -12881,6 +13056,27 @@ fn apply_observed_host_metrics(
         if observed.defense.is_finite() && observed.defense >= 0.0 {
             game.observed_city_strength.insert(cid, observed.defense);
         }
+    }
+
+    // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
+    //
+    // A correction is `host − model`, and the model of a rival city moves
+    // with every fact the loop above writes onto it — above all its
+    // Population, which is the term every yield is a linear function of and
+    // which arrives here (rival cities are planted at population one). Derived
+    // before that loop, the delta was measured against a size-one city and
+    // then paid on the size-eleven one: on run civvis-20260816T175306Z the
+    // board read Nubia at 174 Science against the host's 141, 329 Food against
+    // 229, every rival over by its own growth. Same reason the seat's own
+    // Dedications are applied before this function runs (`apply_player_ages`
+    // in both callers). Seats are 1..n in export order, as the rival loops in
+    // `rebuild_from_state` and `LiveMirror::sync` assign them.
+    for (index, rival) in state.rivals.iter().enumerate() {
+        let owner = index + 1;
+        if owner >= game.players.len() {
+            break;
+        }
+        apply_rival_public_economy(game, owner, rival, unmapped);
     }
 }
 
@@ -13701,6 +13897,15 @@ pub fn rebuild_from_state(
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_great_person_points(&mut game, state, &mut unmapped);
     apply_strategic_stockpiles(&mut game, state, &mut unmapped);
+    // The age and its Dedications change what the model pays (Heartbeat of
+    // Steam's Campus Production, Free Inquiry's Science), so they must be on
+    // the seat BEFORE the host-to-model corrections are measured, or the
+    // correction is taken against a Normal-Age model and paid on top of a
+    // Golden-Age one — Ravenna read 14.5 Science against the host's 9.5 on
+    // run civvis-20260816T175306Z. The call at the end of this function
+    // repeats it for the era score, which must be written after the cities
+    // are planted; this early call is idempotent with it.
+    apply_player_ages(&mut game, state);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -15225,6 +15430,9 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_great_person_points(&mut self.game, state, &mut self.unmapped);
         apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
+        // Age and Dedications before the corrections are measured — see the
+        // rebuild path for why; the trailing call repeats it for era score.
+        apply_player_ages(&mut self.game, state);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:

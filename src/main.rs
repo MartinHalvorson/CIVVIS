@@ -1274,7 +1274,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty reach moves from nine to seven tiles, still behind
 /// `frontier_loyalty` and off for `AdvancedAi::legacy()` (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6ccf_f451_058d_b174;
+/// The strategic governor's Expansion routing is behind `governor_every_lane`,
+/// off for `AdvancedAi::legacy()` (asserted); the frozen anchor's baseline
+/// still governs its Expansion lane. Compatibility re-pin; the Elo protocol
+/// does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x546d_4f44_8a0f_6eaf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

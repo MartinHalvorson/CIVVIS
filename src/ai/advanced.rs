@@ -1940,7 +1940,11 @@ pub struct AdvancedAi {
     /// mid-game, so this is exactly where the pricing was absent.
     ///
     /// With this on, the strategic governor also runs under the four victory
-    /// lanes, after each lane's own routine (`science_production`,
+    /// lanes — and under Expansion, since 2026-08-16: `expansion_dispatch` is a
+    /// default-off evaluator flag the live bridge never enables, and run
+    /// civvis-20260816T175306Z spent t1–90 and t120–180 in Expansion with 143
+    /// baseline picks to 84 strategic and one wonder all game — after each
+    /// lane's own routine (`science_production`,
     /// `culture_spending`, `religious_production`) has filled what it wanted:
     /// a queue those routines committed is kept (the governor's ordinary
     /// preemption margin), an empty one is priced. Part of the live bridge and
@@ -25981,6 +25985,15 @@ impl AdvancedAi {
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.
+            // ★★★★ AND EXPANSION, where the live seat spends most of its game.
+            // `expansion_dispatch` is a default-off evaluator flag that the live
+            // bridge never enables, so under Expansion the baseline ran the
+            // cities: run civvis-20260816T175306Z, plan Expansion t1–t90 and
+            // t120–t180 (the era-paced cadence keeps the lane open longer),
+            // 143 baseline "Cities/Decision" picks against 84 strategic ones,
+            // ONE wonder all game — every valuation this file carries (the
+            // wonder race, the tally price of culture, the amenity path, the
+            // district table) absent exactly when the empire was growing.
             let every_lane = self.governor_every_lane
                 && matches!(
                     plan.strategy,
@@ -25988,6 +26001,7 @@ impl AdvancedAi {
                         | GrandStrategy::Culture
                         | GrandStrategy::Religion
                         | GrandStrategy::Diplomacy
+                        | GrandStrategy::Expansion
                 );
             if plan.strategy == GrandStrategy::Recovery
                 || active_victory_target.is_some()
@@ -47506,7 +47520,7 @@ mod research_probe {
             .split(';')
             .next()
             .expect("the arm ends");
-        for lane in ["Science", "Culture", "Religion", "Diplomacy"] {
+        for lane in ["Science", "Culture", "Religion", "Diplomacy", "Expansion"] {
             assert!(arm.contains(&format!("GrandStrategy::{lane}")), "the {lane} lane is covered");
         }
         assert!(

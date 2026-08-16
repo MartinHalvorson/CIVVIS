@@ -295,6 +295,26 @@ def leader_id_matches(civ6, civvis):
     return civ6 == civvis or civ6.removesuffix("_alt") == civvis or aliases.get(civ6) == civvis
 
 
+def public_age(source):
+    """Return a host-confirmed public age, or None for an older export."""
+    if source.get("heroic_golden_age") is True:
+        return "heroic"
+    if source.get("golden_age") is True:
+        return "golden"
+    if source.get("dark_age") is True:
+        return "dark"
+    age_flags = ("heroic_golden_age", "golden_age", "dark_age")
+    if all(source.get(flag) is False for flag in age_flags):
+        return "normal"
+    return None
+
+
+def public_government(source):
+    """Normalize a host-confirmed government to the board's vocabulary."""
+    government = source.get("government")
+    return civ6_id(government, "GOVERNMENT_") if isinstance(government, str) else None
+
+
 def rival_identity_mismatches(state, board):
     """Compare each exported rival with the compact CIVVIS seat that owns it."""
     players = {player.get("id"): player for player in board.get("players") or []}
@@ -343,6 +363,17 @@ def public_fact_mismatches(state, board):
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
+        government = public_government(source)
+        if government and player.get("government") != government:
+            mismatches.append(
+                f"seat {seat} government Civ6={government} "
+                f"CIVVIS={player.get('government')!r}"
+            )
+        age = public_age(source)
+        if age and player.get("age") != age:
+            mismatches.append(
+                f"seat {seat} age Civ6={age} CIVVIS={player.get('age')!r}"
+            )
         # ⚠ COMPARE THE MAPPING, NOT THE MODEL. `military` on the board is
         # `military_power`, which is deliberately `max(observed, our own strength
         # sum)`. For our OWN seat we can see every unit, so that sum can win the
@@ -1306,7 +1337,7 @@ def main(argv=None):
         problems.append("public facts")
         print("PUBLIC   ⚠ " + "; ".join(public_mismatches))
     else:
-        print("PUBLIC   HUD totals, military, economy, research and tourism   OK")
+        print("PUBLIC   HUD identity, totals, military, economy, research and tourism   OK")
 
     civ6_cities = {(c["x"], c["y"]) for c in state.get("cities") or []}
     board_cities = {tuple(c["pos"]) for c in board.get("cities", [])
