@@ -40780,8 +40780,12 @@ impl Game {
                         rys.gold += religious_community * (1 + holy_site_buildings) as f64;
                     }
                 }
-                if self.dedication_active(city.owner, "reform_the_coinage") {
-                    rys.gold += 3.0;
+                // Reform the Coinage's Golden Age half is
+                // `COMMEMORATION_ECONOMIC_GA_TRADE_ROUTE_YIELDS`: +3 Gold PER
+                // SPECIALTY DISTRICT in the destination, international routes
+                // only — not a flat 3 on every route.
+                if !domestic && self.dedication_active(city.owner, "reform_the_coinage") {
+                    rys.gold += 3.0 * self.city_specialty_district_count(dc) as f64;
                 }
                 if let Some(alliance) = self.alliance_with(city.owner, dc.owner) {
                     match alliance.kind.as_str() {
@@ -41022,17 +41026,25 @@ impl Game {
                 ys.science += (total.gold - base.gold).max(0.0);
             }
         }
+        // Heartbeat of Steam's Golden Age half is
+        // `COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`: every Campus grants
+        // Production equal to its Science adjacency (the wonder +10% lives with
+        // production). It was paying +1 Science per Industrial Zone building,
+        // which no row grants. Measured on live run civvis-20260816T132247Z:
+        // the host's ledgers read "+10 from Campus" under PRODUCTION in Cumae
+        // and "+8 from Campus" in Arretium for the whole Golden Age, the largest
+        // persistent gaps of the game.
         if self.dedication_active(city.owner, "heartbeat_of_steam") {
-            ys.science += city
-                .buildings
-                .iter()
-                .filter(|building| {
-                    self.rules.buildings[building]
-                        .district
-
-                        .is_some_and(|district| self.district_family(district) == "industrial_zone")
-                })
-                .count() as f64;
+            for (district, position) in &city.districts {
+                if !self.district_is_active(city, district, *position)
+                    || self.district_family(*district) != "campus"
+                {
+                    continue;
+                }
+                let total = self.district_yields(district, *position);
+                let base = self.rules.districts[district].yields;
+                ys.production += (total.science - base.science).max(0.0);
+            }
         }
         let eff = self.gov_effects(city.owner);
         ys.production += eff.production_per_pop * city.pop as f64;
@@ -41244,19 +41256,13 @@ impl Game {
         ys.science *= 1.0 + economic_yields.science / 100.0;
         ys.culture *= 1.0 + economic_yields.culture / 100.0;
         ys.faith *= 1.0 + economic_yields.faith / 100.0;
-        if self.dedication_active(city.owner, "sky_and_stars")
-            && (self.city_has_district_family(city, crate::name!("aerodrome"))
-                || self.city_has_district_family(city, crate::name!("spaceport")))
-        {
-            ys.science *= 1.10;
-            ys.production *= 1.10;
-        }
+        // No age multiplies yields. Gathering Storm's `Modifiers` carry no
+        // yield term keyed on PLAYER_HAS_GOLDEN_AGE or a Dark Age beyond the
+        // named commemorations (and Suleiman's trait, Tsikhe); the ×1.10 /
+        // ×0.95 this line used to apply, and Sky and Stars' ×1.10 in
+        // Aerodrome/Spaceport cities (`COMMEMORATION_AERONAUTICAL_GA_*` grants
+        // tech boosts, air-unit XP and Aluminum, no yield), were CIVVIS's own.
         let mut m = self.amenity_yield_mult(city);
-        m *= match self.players[city.owner].age.as_str() {
-            "golden" | "heroic" => 1.10,
-            "dark" => 0.95,
-            _ => 1.0,
-        };
         // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
         // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
         // (0.75 / 0.25 / 0) is what a disloyal city pays, and
@@ -61209,6 +61215,63 @@ mod production_catalog_tests {
 #[cfg(test)]
 mod dedication_era_tests {
     use super::*;
+
+    /// A Golden Age multiplies nothing by itself; Heartbeat of Steam pays
+    /// Production equal to each Campus's Science adjacency; Reform the Coinage
+    /// pays +3 Gold per specialty district in the destination of an
+    /// INTERNATIONAL route. All three read off `CommemorationModifiers`
+    /// (`COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`,
+    /// `COMMEMORATION_ECONOMIC_GA_TRADE_ROUTE_YIELDS`) and off the absence of
+    /// any yield modifier keyed on PLAYER_HAS_GOLDEN_AGE / a Dark Age; the
+    /// ×1.10 / ×0.95 this engine used to apply, and Sky and Stars' ×1.10, were
+    /// its own invention.
+    #[test]
+    fn a_golden_age_pays_only_what_its_dedication_says() {
+        let mut g = Game::new_full(2, 26, 16, 4_217, 300, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .expect("a settler to found with");
+        let cid = g.found_city_for(0, g.units[&settler].pos, None);
+        g.players[0].age = "normal".to_string();
+        let normal = g.city_yields(cid);
+        g.players[0].age = "golden".to_string();
+        let golden = g.city_yields(cid);
+        assert!((normal.production - golden.production).abs() < 1e-9, "no age multiplier: {normal:?} vs {golden:?}");
+        assert!((normal.science - golden.science).abs() < 1e-9);
+        g.players[0].age = "dark".to_string();
+        let dark = g.city_yields(cid);
+        assert!((normal.production - dark.production).abs() < 1e-9);
+
+        // Heartbeat of Steam: place a Campus, note its adjacency, dedicate.
+        g.players[0].age = "golden".to_string();
+        let city_pos = g.cities[&cid].pos;
+        let site = g
+            .cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| {
+                *pos != city_pos
+                    && g.map.get(*pos).is_some_and(|tile| {
+                        !g.rules.is_water(tile) && tile.district.is_none() && tile.wonder.is_none()
+                    })
+            })
+            .expect("a land tile to hold the Campus");
+        g.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("campus"), site);
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        let before = g.city_yields(cid);
+        g.players[0].dedications.insert("heartbeat_of_steam".to_string());
+        let after = g.city_yields(cid);
+        let adjacency = g.district_yields(crate::name!("campus"), site).science
+            - g.rules.districts["campus"].yields.science;
+        assert!(
+            (after.production - before.production - adjacency.max(0.0)).abs() < 1e-9,
+            "Campus Science adjacency {adjacency} must arrive as Production: {before:?} -> {after:?}"
+        );
+        assert!((after.science - before.science).abs() < 1e-9, "and nothing as Science");
+    }
 
     #[test]
     fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
