@@ -16501,6 +16501,90 @@ mod tests {
         assert!(checked > 10, "the route scan found almost nothing to check");
     }
 
+    /// Every field `decorate` attaches to `/state` is either mirrored by the
+    /// browser build's `decorate_browser` or on the deliberate list below
+    /// with the reason it is not. The failure this exists for is silent by
+    /// construction and invisible where features are developed: a local
+    /// `civvis play` fills a new field, the viewer row built on it works in
+    /// every test its author runs, and the same row sits on its placeholder
+    /// on civvis.ai for the life of the tab — host telemetry shipped two
+    /// permanent "Unavailable" rows exactly this way (#1301).
+    #[test]
+    fn every_decorated_state_field_reaches_the_browser_build_or_says_why_not() {
+        fn body_of<'a>(source: &'a str, signature: &str) -> &'a str {
+            let start = source.find(signature).expect(signature);
+            let rest = &source[start..];
+            let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
+            &rest[..end]
+        }
+        fn emitted_keys(body: &str) -> std::collections::BTreeSet<String> {
+            body.split("o[\"")
+                .skip(1)
+                .filter_map(|tail| tail.split_once('"'))
+                .map(|(key, _)| key.to_string())
+                .collect()
+        }
+
+        let native = emitted_keys(body_of(include_str!("server.rs"), "fn decorate("));
+        let browser =
+            emitted_keys(body_of(include_str!("wasm.rs"), "fn decorate_browser("));
+        assert!(
+            native.len() >= 10 && browser.len() >= 5,
+            "the scan found too little to mean anything: {native:?} / {browser:?}"
+        );
+
+        // Native-only, each with the mechanism that stands in for it on the
+        // published build. "No consumer" is only acceptable while it is true —
+        // building a viewer row on such a field moves it out of this list.
+        let native_only: std::collections::BTreeMap<&str, &str> = [
+            ("restart_in", "beta/shim.js synthesizes the finale countdown"),
+            ("restart_in_ms", "beta/shim.js synthesizes the finale countdown"),
+            ("restart_hold", "beta/shim.js re-arms and counts its own holds"),
+            ("turn_ms", "the page times its own turn interval (#1301 pattern)"),
+            ("turn_compute_ms", "page-side observation stands in (#1301)"),
+            ("tactics_match", "native match series; no viewer consumer today"),
+            ("spectator_paused", "the session carries it on both lanes; \
+             decorate only forces it during a supervisor swap"),
+        ]
+        .into_iter()
+        .collect();
+
+        for key in native.difference(&browser) {
+            assert!(
+                native_only.contains_key(key.as_str()),
+                "`decorate` attaches {key:?} and `decorate_browser` does not — \
+                 mirror it in src/wasm.rs, give the viewer a page-side stand-in, \
+                 or add it to this test's native-only list with the reason. \
+                 Without one of those the field is permanently empty on civvis.ai \
+                 while working everywhere the feature was developed."
+            );
+        }
+        for (key, reason) in &native_only {
+            assert!(
+                native.contains(*key),
+                "the native-only list says {key:?} ({reason}) but `decorate` no \
+                 longer attaches it; delete the stale row"
+            );
+            assert!(
+                !browser.contains(*key),
+                "{key:?} is mirrored in the browser now; its native-only row \
+                 ({reason}) is stale and hides future drift"
+            );
+        }
+        // The browser may attach extras of its own, but only ones the native
+        // lane also serves somewhere — a browser-only field would fail on the
+        // native lane in exactly the mirrored way.
+        for key in browser.difference(&native) {
+            assert!(
+                include_str!("server.rs").contains(&format!("o[\"{key}\"]"))
+                    || include_str!("server.rs").contains(&format!("\"{key}\":")),
+                "`decorate_browser` attaches {key:?} and the native lane never \
+                 serves it; the local `civvis play` viewer would be the one \
+                 with the permanently empty row"
+            );
+        }
+    }
+
     /// A world nobody is steering can turn on its own — once asked. It holds
     /// still when the page opens (operator-directed, 2026-08-15; it opened
     /// turning from #1453 until then), and the button starts it and is
