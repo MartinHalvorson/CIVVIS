@@ -7916,6 +7916,73 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "delegation_asked" or "throw";
 	end
 
+	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
+	-- met city-state, decided on the reconstructed board by `advanced_envoys`
+	-- (type-aware, suzerainty-priced, denial-aware) now that `envoys_free`
+	-- crosses the export into the mirror. Until this arm existed the seat
+	-- finished every Settler game holding 40–70 unspent envoys with no
+	-- suzerainty — the largest measured headroom in the project (an oracle
+	-- suzerainty wins 56.7% against 22.7%) forfeited for free.
+	--
+	-- ⚠⚠ THIS IS NOT `chooseEnvoy`. That lane decides in Lua and stays behind
+	-- `cfg.EnvoyEnabled` (off) as the isolation experiment its comment asks
+	-- for; running both would have two deciders bidding the same purse. Here
+	-- the mod places what it is told and reports what happened, nothing more.
+	--
+	-- ⚠⚠ A FRESH `GetInfluence()` HANDLE PER ORDER, READ THEN DROPPED. The one
+	-- concrete defect ever pinned on the crash that took the old lane out of
+	-- deployment was a gameplay sub-object pointer held across the
+	-- `UI.RequestPlayerOperation` calls that rewrite it. Every read here goes
+	-- through a handle fetched inside this order and nothing is written
+	-- through it after the operation is issued. The prompt-clearing write
+	-- (`SetGivingTokensConsidered`) is deliberately NOT made: with the tokens
+	-- spent the `GIVE_INFLUENCE_TOKEN` blocker is not raised, and when CIVVIS
+	-- keeps one back the known-stable skip in SOFT_BLOCKERS still stands.
+	--
+	-- Every accessor is the shipped `CityStates.lua`'s: `GetTokensToGive`,
+	-- `CanGiveInfluence`, `CanGiveTokensToPlayer`, and one
+	-- `GIVE_INFLUENCE_TOKEN` request per token with `PARAM_PLAYER_ONE`.
+	if kind == "envoy" then
+		if subject < 0 then return false, "envoy_target_unmapped"; end
+		local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
+		local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+		if giveOp == nil or oneParam == nil then return false, "envoy_no_operation"; end
+		local influence = try(function() return player:GetInfluence(); end);
+		if influence == nil then return false, "envoy_no_influence"; end
+		local held = try(function() return influence:GetTokensToGive(); end, 0) or 0;
+		if held < 1 then return false, "envoy_none_held"; end
+		if not try(function() return influence:CanGiveInfluence(); end, false) then
+			return false, "envoy_cannot_give";
+		end
+		if not try(function() return influence:CanGiveTokensToPlayer(subject); end, false) then
+			return false, "envoy_refused_" .. tostring(subject);
+		end
+		local before = try(function() return influence:GetTokensToGive(); end, held) or held;
+		local params = {};
+		params[oneParam] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, giveOp, params);
+		end);
+		-- ⚠ Reported with the numerator: the token count read AFTER the request
+		-- from a second fresh handle is the receiving-side reading, because
+		-- `applied = true` on the issuing side has fooled this project four
+		-- separate times. An operation the core applies asynchronously can
+		-- still read equal to `before` on this frame, so the authoritative
+		-- check is next turn's `envoys_free` in the state export falling by the
+		-- number placed; `after` staying at `before` across many turns is the
+		-- line that says the requests are being accepted and ignored.
+		local after = try(function()
+			return player:GetInfluence():GetTokensToGive();
+		end, -1);
+		if ok then
+			emit("envoy", {
+				turn = turn, target = subject, source = "civvis",
+				held = before, after = after,
+			});
+		end
+		return ok, ok and "envoy_placed" or "throw";
+	end
+
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
 	--
 	-- These had NO arm at all: CIVVIS issued `SlotPolicy` on every turn from t80 to
