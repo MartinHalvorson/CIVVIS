@@ -283,6 +283,49 @@ class _Harness:
                 self.ledger.read_text().splitlines()] if self.ledger.exists() else []
         return code, rows
 
+class DeciderRebuildTests(unittest.TestCase):
+    """The climb rebuilds this checkout's own decider before it plays; a supplied
+    binary is left alone. See `refresh_orders_binary`."""
+
+    def test_a_supplied_binary_is_not_rebuilt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            supplied = Path(tmp) / "civvis_orders"
+            supplied.write_bytes(b"x")
+            with mock.patch.object(climb.subprocess, "run") as run:
+                note = climb.refresh_orders_binary(supplied)
+            run.assert_not_called()
+            self.assertIn("supplied binary", note)
+
+    def test_the_default_binary_is_rebuilt_with_cargo_release(self):
+        default = climb.HERE.parent / "target" / "release" / "civvis_orders"
+        with mock.patch.object(climb.subprocess, "run") as run, \
+                mock.patch.object(climb, "code_state", lambda: "cafef00d"):
+            run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            note = climb.refresh_orders_binary(default)
+        run.assert_called_once()
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[:3], ["cargo", "build", "--release"])
+        self.assertIn("--locked", cmd)
+        self.assertEqual(cmd[-2:], ["--bin", "civvis_orders"])
+        self.assertEqual(run.call_args.kwargs["cwd"], str(climb.HERE.parent))
+        self.assertIn("cafef00d", note)
+
+    def test_a_failed_rebuild_is_named_and_the_batch_goes_on(self):
+        default = climb.HERE.parent / "target" / "release" / "civvis_orders"
+        with mock.patch.object(climb.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=101, stdout="", stderr="error: boom")
+            note = climb.refresh_orders_binary(default)
+        self.assertIn("FAILED", note)
+        self.assertIn("boom", note)
+
+    def test_no_build_skips_the_rebuild(self):
+        default = climb.HERE.parent / "target" / "release" / "civvis_orders"
+        with mock.patch.object(climb.subprocess, "run") as run:
+            note = climb.refresh_orders_binary(default, enabled=False)
+        run.assert_not_called()
+        self.assertIn("--no-build", note)
+
+
 class ClimbBudgetTests(_Harness, unittest.TestCase):
     # ---- the regression itself -------------------------------------------------
 
