@@ -207,7 +207,7 @@ pub const EVAL_ONLY_AIS: [&str; 141] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 51] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 52] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -259,6 +259,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 51] = [
     "no-elective-war",
     "fog-land-capacity",
     "recon-flight",
+    "score-horizon",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -345,7 +346,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 25] = [
 ];
 
 /// The economic half: settlement, growth, districts, and the policy deck.
-pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 18] = [
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 19] = [
     "escort-unstick",
     "stacked-escort",
     "wonder-ring-settle-value",
@@ -364,13 +365,14 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 18] = [
     "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
+    "score-horizon",
 ];
 
 /// Every live-bridge repair that fixes a CIVVIS engine defect, as evaluator
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 43] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 44] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -414,6 +416,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 43] = [
     "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
+    "score-horizon",
 ];
 
 /// Register a selectable arm once, under a typed identity.  The factory,
