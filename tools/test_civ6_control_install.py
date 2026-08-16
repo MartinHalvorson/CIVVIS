@@ -1040,9 +1040,33 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         # residual budget yields a nil pick and the forfeit branch below runs.
         bound = self.escalation.index("(seen.residuals or 0) < (cfg.MaxResidualAnswers or 2)")
         ask = self.escalation.index("residual_pick = answerBlocker(player, pid, blocker, turn, true)")
-        forfeit = self.escalation.index("elseif seen.forfeits < cap then")
+        forfeit = self.escalation.index("(not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then")
         self.assertLess(bound, ask)
         self.assertLess(ask, forfeit)
+
+    def test_a_units_blocker_forfeits_in_the_same_pass_as_its_residual_answer(self) -> None:
+        """A quiet board never ticks again.
+
+        Run civvis-20260816T151716Z wedged at turn 111 WITH the residual bound
+        in place: two residual `units` answers, then no further game-core
+        event, so the forfeit the next sighting was to bring never ran. For
+        the units family the forfeit runs in the same pass; research and
+        production keep the two-step.
+        """
+        self.assertIn("local residual_taken = false;", self.escalation)
+        self.assertIn("residual_taken = true;", self.escalation)
+        self.assertIn(
+            "if (not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then",
+            self.escalation,
+        )
+        self.assertIn("elseif not residual_taken and seen.forfeits == cap then", self.escalation)
+        # The residual answer is issued BEFORE the forfeit in the same pass, so
+        # its own requests are queued ahead of the forced end of turn.
+        taken = self.escalation.index("residual_taken = true;")
+        forfeit = self.escalation.index("(not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then")
+        forced = self.escalation.index('REASON = "UserForced"', forfeit)
+        self.assertLess(taken, forfeit)
+        self.assertLess(forfeit, forced)
 
     def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
         """A board sitting on a blocker publishes almost nothing.

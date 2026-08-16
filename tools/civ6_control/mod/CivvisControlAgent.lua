@@ -10875,6 +10875,7 @@ local function tick()
 							and (seen.residuals or 0) < (cfg.MaxResidualAnswers or 2) then
 						residual_pick = answerBlocker(player, pid, blocker, turn, true);
 					end
+					local residual_taken = false;
 					if residual_pick ~= nil and residual_pick ~= "civvis_complete" then
 						seen.residuals = (seen.residuals or 0) + 1;
 						emit("residual_unblock", { turn = turn, blocker = name,
@@ -10882,7 +10883,26 @@ local function tick()
 						                           forfeits = seen.forfeits,
 						                           residuals = seen.residuals });
 						attempts = 0;
-					elseif seen.forfeits < cap then
+						residual_taken = true;
+					end
+					-- ⚠⚠⚠ A UNITS BLOCKER FORFEITS IN THE SAME PASS AS ITS RESIDUAL
+					-- ANSWER, because a quiet board never ticks again. Run
+					-- `civvis-20260816T151716Z` wedged at turn 111 with the bound
+					-- above in place: `civvis_complete`, residual `units`,
+					-- `residuals: 1`, then `residuals: 2` -- and then NOTHING. The
+					-- residual pass had no unit left to order, so it issued no
+					-- request, the game core published no event, and this function
+					-- -- driven only by game-core events, a per-frame update does
+					-- not run in this context (see the note above `onGameCoreTick`)
+					-- -- was never called again to reach the forfeit that the third
+					-- sighting-pair was supposed to bring. The outside watchdog
+					-- killed the attempt after 900 s, at 342 against 403. For the
+					-- units family the forfeit therefore runs in THIS pass, after
+					-- the residual answer's own requests are queued: park what is
+					-- still ready, dismiss, and force the end of turn. Research and
+					-- production keep the two-step, since their answers always
+					-- move the board and a forced end turn is refused under them.
+					if (not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then
 						-- BOUNDED RETRY. Re-arming after `bound` more sightings
 						-- covers a forfeit that did not stick -- the engine can
 						-- raise a fresh units notification for the same units --
@@ -10916,7 +10936,7 @@ local function tick()
 								                 { REASON = "UserForced" });
 							end);
 						end
-					elseif seen.forfeits == cap then
+					elseif not residual_taken and seen.forfeits == cap then
 						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
 						-- Say so, once, in the run's own event log. Issue #1374
 						-- died as 900 s of silence that read as a slow machine;
