@@ -113,7 +113,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
             HistoricalForce { label: "Persian expedition", commander: "Xerxes I", units: &["spearman", "archer", "horseman", "swordsman"] },
         ],
         turns: 24,
-        width: 18,
+        width: 26,
         height: 14,
     },
     HistoricalScenario {
