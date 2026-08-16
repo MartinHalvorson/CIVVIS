@@ -774,6 +774,59 @@ fn host_player_target(
         })
 }
 
+/// Resolve a mirrored city-state SEAT back to Firaxis's minor player id.
+///
+/// By the mirror's own seating rule (`minor_actor_assignments`: met city-states
+/// take the board's minor seats in export order), not through a city plot —
+/// a city-state met by a scout's contact whose centre the fog has not shown
+/// yet has no mirrored city to look up, and an envoy to it is exactly the
+/// order that must still cross (its first-meet envoy is already standing
+/// there).
+fn host_minor_target(
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    player: usize,
+) -> Option<i64> {
+    civvis::mirror::minor_actor_assignments(&mirror_state.game, state)
+        .into_iter()
+        .find(|(minor, seat)| *seat == player && minor.is_city_state())
+        .map(|(minor, _)| minor.player as i64)
+}
+
+/// How many `envoy` orders one turn may carry. The planning board spends every
+/// held envoy in one pass (`advanced_envoys` loops until `envoys_free` is 0),
+/// and a seat that has banked fifty of them — every Settler game to date —
+/// would otherwise issue fifty `GIVE_INFLUENCE_TOKEN` operations the first
+/// turn the lane opens. Eight a turn drains that bank in a week of turns, keeps
+/// the actuation path's blast radius small while it earns its record, and the
+/// remainder is not lost: next turn's board re-plans from the fresh export with
+/// the placed ones already standing. The greedy order is preserved — the first
+/// eight the plan chose are the eight that cross.
+const ENVOY_ORDERS_PER_TURN: usize = 8;
+
+/// Keep the first `ENVOY_ORDERS_PER_TURN` envoy orders in plan order and defer
+/// the rest to next turn's plan. Every other order kind passes untouched.
+fn bound_envoy_orders(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut kept = 0;
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if order.kind != "envoy" {
+                return true;
+            }
+            if kept < ENVOY_ORDERS_PER_TURN {
+                kept += 1;
+                true
+            } else {
+                deferred += 1;
+                false
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
 /// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
@@ -1905,6 +1958,20 @@ fn decide(
             "deferred_governor_followups={deferred_governor_followups}"
         ));
     }
+    let (envoy_bounded, deferred_envoys) = bound_envoy_orders(orders);
+    orders = envoy_bounded;
+    {
+        // The instrument for the lane: how many crossed this turn and how many
+        // wait, against how many the host says we hold. `envoys unspent N` in
+        // the economy note is the same fact from Firaxis's side.
+        let sent = orders.iter().filter(|order| order.kind == "envoy").count();
+        if sent > 0 || deferred_envoys > 0 {
+            note_bits.push(format!(
+                "envoy_orders={sent} deferred={deferred_envoys} held={}",
+                mirror_state.game.players[0].envoys_free
+            ));
+        }
+    }
 
     if !mirror_state.unmapped.is_empty() {
         note_bits.push(format!("unmapped: {}", mirror_state.unmapped.join(",")));
@@ -2460,6 +2527,28 @@ fn translate(
             verb: Some("RESIDENT_EMBASSY".to_string()),
             pos: None,
         }),
+        // ★★★★★ THE ENVOYS THE SEAT IS HOLDING, SPENT. `SendEnvoy` never reached
+        // this match — not because it had no counterpart, but because the
+        // mirror never carried `envoys_free`, so the planning board never
+        // enumerated it (see `mirror::apply_mirrored_envoys_free`). Measured on
+        // the twelve Settler games of 2026-08-15/16: 40–70 envoys held unspent
+        // at the end, 0 suzerainties in 11 of 12, while CIVVIS's own
+        // `advanced_envoys` prices the 1/3/6 type tiers, the suzerainty and
+        // denial exactly. One order per envoy; the mod issues one
+        // `GIVE_INFLUENCE_TOKEN` per order through a handle it fetches fresh
+        // for each — the stale-handle write is the one concrete defect the old
+        // Lua lane's crash was ever pinned on. The subject is Firaxis's minor
+        // player id, by the mirror's own seating rule rather than a city plot,
+        // so a city-state met before its centre is in view still gets its
+        // envoy.
+        Action::SendEnvoy { player } => {
+            host_minor_target(mirror_state, state, *player).map(|minor| Order {
+                kind: "envoy",
+                subject: Some(minor),
+                verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+                pos: None,
+            })
+        }
         _ => None,
     }
 }
@@ -5193,6 +5282,131 @@ mod tests {
             .expect("a city-state peace crosses the same boundary");
         assert_eq!(peace.kind, "peace");
         assert_eq!(peace.subject, Some(13));
+    }
+
+    /// ★★★★★ The whole envoy chain inside the bridge: the held count reaches
+    /// the board, the deployed controller spends it on the planning clone, and
+    /// each `SendEnvoy` crosses as an `envoy` order naming Firaxis's minor
+    /// player id — including a city-state met before its centre is in view,
+    /// which has no mirrored city to resolve through.
+    #[test]
+    fn held_envoys_are_spent_by_the_plan_and_cross_as_envoy_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            envoys_free: Some(3),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            minors: vec![
+                StateMinor {
+                    player: 9,
+                    civ: "CIVILIZATION_GENEVA".to_string(),
+                    envoys: 1,
+                    suzerain: -1,
+                    cities: vec![StateCity {
+                        id: 65_536,
+                        name: "Geneva".to_string(),
+                        x: 8,
+                        y: 8,
+                        pop: 3,
+                        capital: true,
+                        ..StateCity::default()
+                    }],
+                    ..StateMinor::default()
+                },
+                // Met by contact, centre still in the fog: no city exported.
+                StateMinor {
+                    player: 12,
+                    civ: "CIVILIZATION_KABUL".to_string(),
+                    envoys: 0,
+                    suzerain: -1,
+                    ..StateMinor::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 2, 250, 0);
+        assert_eq!(mirror.game.players[0].envoys_free, 3, "the held count is mirrored");
+        let seats: Vec<usize> = mirror
+            .game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .collect();
+        let (geneva, kabul) = (seats[0], seats[1]);
+        assert_eq!(mirror.game.players[geneva].civ, "Geneva");
+        assert_eq!(mirror.game.players[kabul].civ, "Kabul");
+
+        // Both cross by the seating rule, the unseen one included.
+        let order = translate(&Action::SendEnvoy { player: geneva }, &mirror, &state)
+            .expect("an envoy to a met city-state crosses");
+        assert_eq!(order.kind, "envoy");
+        assert_eq!(order.subject, Some(9));
+        assert_eq!(order.verb.as_deref(), Some("GIVE_INFLUENCE_TOKEN"));
+        let unseen = translate(&Action::SendEnvoy { player: kabul }, &mirror, &state)
+            .expect("a city-state met before its centre is in view still gets its envoy");
+        assert_eq!(unseen.subject, Some(12));
+        // A major seat is not a city-state.
+        assert!(translate(&Action::SendEnvoy { player: 1 }, &mirror, &state).is_none());
+
+        // The deployed controller spends what the board holds.
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        let mut planned = mirror.game.clone();
+        let begin = planned.log.len();
+        ai.take_turn(&mut planned, 0);
+        let sent: Vec<i64> = planned
+            .log
+            .since(begin)
+            .filter(|(seat, _)| *seat == 0)
+            .filter_map(|(_, action)| match action {
+                Action::SendEnvoy { .. } => translate(action, &mirror, &state),
+                _ => None,
+            })
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(sent.len(), 3, "every held envoy is spent on the planning board: {sent:?}");
+        assert!(sent.iter().all(|host| *host == 9 || *host == 12), "{sent:?}");
+        assert_eq!(planned.players[0].envoys_free, 0);
+    }
+
+    /// The first turn the lane opens on a seat holding fifty envoys must not
+    /// issue fifty operations: eight cross in plan order, the rest wait for
+    /// next turn's plan, and nothing else is touched.
+    #[test]
+    fn envoy_orders_are_bounded_per_turn_in_plan_order() {
+        let envoy = |minor: i64| Order {
+            kind: "envoy",
+            subject: Some(minor),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut orders: Vec<Order> = (0..12).map(|i| envoy(20 + i)).collect();
+        orders.insert(0, Order { kind: "research", subject: None, verb: Some("TECH_WRITING".to_string()), pos: None });
+        orders.push(Order { kind: "produce", subject: Some(65_536), verb: Some("BUILDING_LIBRARY".to_string()), pos: None });
+        let (kept, deferred) = bound_envoy_orders(orders);
+        assert_eq!(deferred, 12 - ENVOY_ORDERS_PER_TURN);
+        let envoys: Vec<i64> = kept.iter().filter(|o| o.kind == "envoy").filter_map(|o| o.subject).collect();
+        assert_eq!(envoys, (20..20 + ENVOY_ORDERS_PER_TURN as i64).collect::<Vec<_>>(), "plan order, first eight");
+        assert_eq!(kept.iter().filter(|o| o.kind != "envoy").count(), 2, "other kinds pass untouched");
+        assert_eq!(kept.first().map(|o| o.kind), Some("research"));
+        assert_eq!(kept.last().map(|o| o.kind), Some("produce"));
     }
 
     #[test]
