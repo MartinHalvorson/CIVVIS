@@ -2282,6 +2282,28 @@ pub struct AdvancedAi {
     /// `docs/COUNTERING_LEADERS.md` measured. Reachable as the live treatment
     /// `counter-in-lane`; off for ordinary and frozen controllers.
     pub counter_in_lane: bool,
+    /// Raise the city target one rung per era of the Settler game rather than
+    /// per ninety standard turns.
+    ///
+    /// ★★★★ THE CADENCE, NOT THE CEILING, BOUND THE COUNT ONCE THE FOG WAS
+    /// PRICED (#1754). `assess` adds one wanted city per
+    /// `standard_duration(90)` — sixty turns at Online speed — so on the
+    /// 250-turn Settler seat the target reads 7 at t60, 8 at t120, 9 at t180
+    /// and 10 at t240. Batch 4 (2026-08-16) held the count AT the target for
+    /// 25–30 turns on every rung: run T110555Z read "7 cities of 7 wanted"
+    /// from t97 to t122 and founded its eighth city at t156; run T093036Z read
+    /// "7 of 7" from t94 to t122; run T101521Z "6 of 7" from t67 to t121.
+    /// Every one of those ended on the tally 250–700 points behind Firaxis
+    /// Settler empires of ten to fourteen cities. An era of that game is
+    /// thirty-odd turns, not sixty: the world reaches the Atomic era by t250.
+    ///
+    /// With this on the cadence is `standard_duration(60)` — forty turns at
+    /// Online — so the target reads 7 at t40, 8 at t80, 9 at t120, 10 at t160
+    /// and 11 at t200; the ceiling, the practical-site checks and the payback
+    /// deadline still gate every settler. Firaxis-only: the league profile's
+    /// own cadence was bred against CIVVIS rivals who contest the ground; off
+    /// for ordinary and frozen controllers.
+    pub era_paced_expansion: bool,
     /// Price a point of culture at the lane's price of a point of science.
     ///
     /// ★★★★ THE TALLY PAYS THREE FOR A CIVIC AND TWO FOR A TECH, AND THE
@@ -3079,6 +3101,7 @@ impl AdvancedAi {
             route_connected_rush: false,
             rush_route_targets: None,
             counter_in_lane: false,
+            era_paced_expansion: false,
             tally_culture: false,
             bounded_recovery: false,
             counter_stand_down: false,
@@ -3824,6 +3847,9 @@ impl AdvancedAi {
         // And the last-quarter score-leader alarm asks for a race, not a war.
         // See `counter_in_lane`.
         self.enable_counter_in_lane();
+        // And the city target climbs at the Settler game's own era pace. See
+        // `era_paced_expansion`.
+        self.enable_era_paced_expansion();
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
@@ -4214,6 +4240,14 @@ impl AdvancedAi {
         self.counter_in_lane = false;
     }
 
+    /// Raise the city target one rung per era of the Settler game. See
+    /// `era_paced_expansion`.
+    pub fn enable_era_paced_expansion(&mut self) {
+        self.era_paced_expansion = true;
+    }
+
+    pub fn disable_era_paced_expansion(&mut self) {
+        self.era_paced_expansion = false;
     /// Price a point of culture at the lane's price of a point of science.
     /// See `tally_culture`.
     pub fn enable_tally_culture(&mut self) {
@@ -6991,7 +7025,11 @@ impl AdvancedAi {
         // young empire of districts, buildings, and population growth. Scale
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
-        let city_cadence = g.standard_duration(90).max(1) as usize;
+        // See `era_paced_expansion`: an era of the Settler game is forty
+        // Online turns, not sixty.
+        let city_cadence = g
+            .standard_duration(if self.era_paced_expansion { 60 } else { 90 })
+            .max(1) as usize;
         // Historical controls keep the old six-city planning ceiling. The
         // production delegation flag is also the compatibility boundary that
         // lets the promoted controller consume the full land-aware capacity.
@@ -26472,6 +26510,59 @@ mod tests {
         assert!(live.fog_land_capacity);
         live.disable_fog_land_capacity();
         assert!(!live.fog_land_capacity);
+    }
+
+    /// ★★★★ Once the fog was priced (#1754) the cadence bound the count: 25–30
+    /// turns at "N of N wanted" on every rung across batch 4. See
+    /// `era_paced_expansion`. On the league 74×46 board at Online speed the
+    /// stock cadence wants 7 cities at t100 and 8 at t120; the treated seat
+    /// wants 8 at t100 and 9 at t120 — one rung earlier all game — and the
+    /// ceiling still caps both.
+    #[test]
+    fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
+        let mut game = Game::new_full(2, 74, 46, 11, 250, 0, false);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("each major starts with a settler");
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        assert_eq!(game.standard_duration(90), 60, "ninety standard turns are sixty at Online");
+        assert_eq!(game.standard_duration(60), 40, "sixty standard turns are forty at Online");
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.era_paced_expansion, "the live seat carries the treatment");
+        let mut stock_pace = AdvancedAi::new();
+        stock_pace.enable_live_bridge();
+        stock_pace.disable_era_paced_expansion();
+
+        for (turn, stock_want, live_want) in [(50, 6, 7), (100, 7, 8), (120, 8, 9), (170, 8, 10)] {
+            game.turn = turn;
+            assert_eq!(
+                stock_pace.assess(&game, 0).desired_cities,
+                stock_want,
+                "stock cadence at t{turn}"
+            );
+            assert_eq!(
+                live.assess(&game, 0).desired_cities,
+                live_want,
+                "era-paced cadence at t{turn}"
+            );
+        }
+        // The ceiling still caps both.
+        game.turn = 2_000;
+        assert_eq!(live.assess(&game, 0).desired_cities, 12);
+        assert_eq!(stock_pace.assess(&game, 0).desired_cities, 12);
+
+        assert!(!AdvancedAi::new().era_paced_expansion);
+        assert!(!AdvancedAi::legacy().era_paced_expansion);
     }
 
     #[test]

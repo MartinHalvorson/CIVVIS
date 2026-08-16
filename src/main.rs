@@ -1235,6 +1235,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
 /// declares. Compatibility re-pin; the Elo protocol does not move.
+/// The era-paced city cadence is behind `era_paced_expansion`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
+/// per ninety standard turns. Compatibility re-pin; the Elo protocol does
+/// not move.
 /// The tally price of culture is behind `tally_culture`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
 /// bred yield weights and district table. Compatibility re-pin; the Elo

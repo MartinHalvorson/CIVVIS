@@ -1464,6 +1464,7 @@ fn withhold_live_treatment(
         "score-horizon" => ai.disable_score_horizon(),
         "naval-recon" => ai.disable_naval_recon(),
         "counter-in-lane" => ai.disable_counter_in_lane(),
+        "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
@@ -1491,7 +1492,7 @@ fn withhold_live_treatment(
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 tally-culture"
+                 era-paced-expansion, tally-culture"
             ))
         }
     }
@@ -3614,6 +3615,10 @@ mod tests {
         withhold_live_treatment(&mut ai, "counter-in-lane")
             .expect("the counter-in-lane control arm is registered");
         assert!(!ai.counter_in_lane, "the named counter-in-lane control must hold it off");
+        assert!(ai.era_paced_expansion);
+        withhold_live_treatment(&mut ai, "era-paced-expansion")
+            .expect("the era-paced-expansion control arm is registered");
+        assert!(!ai.era_paced_expansion, "the named era-pace control must hold it off");
 
         assert!(ai.tally_culture);
         withhold_live_treatment(&mut ai, "tally-culture")
