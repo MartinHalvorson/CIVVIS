@@ -1219,7 +1219,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The recon flight step is behind `recon_flight`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's scouts explore
 /// exactly as before. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa8c7_d3fd_31b1_e9fa;
+/// The embarked-settler sea link is skipped only under `stacked_escort`,
+/// which `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor
+/// still links a ship to a settler at sea. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe048_86b9_e208_5cab;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
