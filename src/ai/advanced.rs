@@ -1889,6 +1889,34 @@ pub struct AdvancedAi {
     /// seat's slow rivals, and CIVVIS-vs-CIVVIS contenders are the real race
     /// the stock order was written for. Off for ordinary and frozen controllers.
     pub expansion_before_prophet: bool,
+    /// Do not open an elective war on the live seat.
+    ///
+    /// ★★★★ THE LIVE SEAT HAS NEVER ONCE CONVERTED AN ELECTIVE WAR. The
+    /// "strong enough to take what a neighbour has" branch fired in every one
+    /// of the last eight live Settler runs (first at t55–t85: T190904Z t68,
+    /// T202611Z t59, T210845Z t56, T220819Z t68, T233405Z t55, T003229Z t85,
+    /// T011314Z t57, T021044Z t59), and no city was ever captured in any of
+    /// them — every city the seat has ever held came from `found`. What the
+    /// posture buys instead: the army marches to a neighbour's border and
+    /// stands there ("Holding off war … the army has not finished staging",
+    /// 45 turns on T021044Z), production goes to chariots and catapults, and
+    /// the neighbour — a Firaxis AI that is passive on Settler until
+    /// provoked — takes the fight to the cities the army left: T021044Z lost
+    /// Aquileia (pop 6) at t78 and Antium (pop 4) at t88, both unwalled and
+    /// building heavy chariots, eleven turns after the war opened at t67; the
+    /// tally read 497 against 1193. Sixteen cities were lost across six of
+    /// those eight games. Its premise mismeasures the host: `military_power`
+    /// counts our whole army, ships and scouts included, against the rival's
+    /// VISIBLE units ("208 power against their 70" for a Babylon whose host
+    /// strength read 82–108 and who took two cities).
+    ///
+    /// With this on, the elective branch — both its arms — yields to the
+    /// branches after it. The ancient rush, victory denial, an emergency
+    /// objective, the timed power-spike plan, "already at war" and every
+    /// home-defence treatment are untouched. Firaxis-only: it prices the
+    /// Settler seat's measured record, and CIVVIS-vs-CIVVIS wars are the ones
+    /// the branch was written for. Off for ordinary and frozen controllers.
+    pub no_elective_war: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2813,6 +2841,7 @@ impl AdvancedAi {
             amenity_district_path: false,
             live_wonder_race: false,
             expansion_before_prophet: false,
+            no_elective_war: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -3528,6 +3557,7 @@ impl AdvancedAi {
         // host's score tally, 15 points a wonder. See `live_wonder_race`.
         self.enable_live_wonder_race();
         self.enable_expansion_before_prophet();
+        self.enable_no_elective_war();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3876,6 +3906,15 @@ impl AdvancedAi {
 
     pub fn disable_expansion_before_prophet(&mut self) {
         self.expansion_before_prophet = false;
+    }
+
+    /// Do not open an elective war on the live seat. See `no_elective_war`.
+    pub fn enable_no_elective_war(&mut self) {
+        self.no_elective_war = true;
+    }
+
+    pub fn disable_no_elective_war(&mut self) {
+        self.no_elective_war = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -6774,6 +6813,9 @@ impl AdvancedAi {
                 "already at war",
             )
         } else if !stalemate
+            // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
+            // no city ever taken, sixteen lost.
+            && !self.no_elective_war
             && ((g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
                 || (military_civ
                     && g.turn >= 35
@@ -44317,6 +44359,103 @@ mod research_probe {
             AdvancedAi::legacy().denial_target(&game, 0),
             Some((2, GrandStrategy::Conquest))
         );
+    }
+
+    /// The "strong enough to take what a neighbour has" branch fired in every
+    /// one of the last eight live runs and never once produced a captured
+    /// city; sixteen cities were lost. See `no_elective_war`.
+    #[test]
+    fn the_live_seat_does_not_open_an_elective_war() {
+        let mut game = Game::new_full(2, 24, 16, 7_932, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        // Two cities, past turn 55, an army that dwarfs the neighbour's: the
+        // stock premise of the elective branch.
+        let mut sites = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && (4..=10).contains(&game.wdist(home, **position))
+            })
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>();
+        sites.sort();
+        let second = sites
+            .iter()
+            .copied()
+            .find(|site| game.cities.values().all(|city| game.wdist(city.pos, *site) >= 4))
+            .expect("the test map has a second city site");
+        game.found_city_for(0, second, None);
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, home);
+        }
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        assert!(!game.is_at_war(0, 1));
+
+        let mut stock = AdvancedAi::new();
+        assert!(!stock.no_elective_war);
+        let journal = crate::reasoning::Journal::recording();
+        stock.attach_journal(journal.handle());
+        assert_eq!(
+            stock.assess(&game, 0).strategy,
+            GrandStrategy::Conquest,
+            "the stock chain takes the elective branch"
+        );
+        assert!(journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("strong enough to take what a neighbour has")));
+        let mut frozen = AdvancedAi::legacy();
+        assert!(!frozen.no_elective_war);
+        assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.no_elective_war);
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        assert_ne!(
+            live.assess(&game, 0).strategy,
+            GrandStrategy::Conquest,
+            "the live seat does not open an elective war"
+        );
+        assert!(!journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("strong enough to take what a neighbour has")));
+
+        // The control arm takes the branch again.
+        live.disable_no_elective_war();
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+        live.enable_no_elective_war();
+
+        // A war the neighbour opens is still answered: "already at war" is
+        // not the elective branch.
+        game.current = 1;
+        game.apply(1, &Action::DeclareWar { player: 0 }).unwrap();
+        game.current = 0;
+        assert!(game.is_at_war(0, 1));
+        // A fresh war: patience has not lapsed (see `war_patience`).
+        live.major_war_since = Some(60);
+        live.last_campaign_progress = 60;
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
     }
 
     /// Every live game read `Grand strategy: religion` from turn 19–26 with one

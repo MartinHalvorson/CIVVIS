@@ -1345,6 +1345,7 @@ fn withhold_live_treatment(
         "amenity-district-path" => ai.disable_amenity_district_path(),
         "live-wonder-race" => ai.disable_live_wonder_race(),
         "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
+        "no-elective-war" => ai.disable_no_elective_war(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1369,7 +1370,7 @@ fn withhold_live_treatment(
                  escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, live-wonder-race, \
-                 expansion-before-prophet"
+                 expansion-before-prophet, no-elective-war"
             ))
         }
     }
@@ -3386,6 +3387,11 @@ mod tests {
             !ai.expansion_before_prophet,
             "the named Prophet-deferral control must hold it off"
         );
+
+        assert!(ai.no_elective_war);
+        withhold_live_treatment(&mut ai, "no-elective-war")
+            .expect("the elective-war stand-down's control arm is registered");
+        assert!(!ai.no_elective_war, "the named elective-war control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
