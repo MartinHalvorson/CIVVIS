@@ -1239,7 +1239,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
 /// per ninety standard turns. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0000_0000_0000_0000;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5f7a_c505_79ec_fd0e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
