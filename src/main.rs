@@ -1025,11 +1025,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// focused ablation tests lock the boundary. Compatibility re-pin; the Elo
 /// protocol does not move.
 /// Physical Great People that have no host-valid activation plot now add
-/// mirror-only production and research needs. `Game::new` leaves that list
-/// empty, old saves default it empty, and only `mirror.rs` populates it from a
-/// Firaxis unit export. The assertion below locks that boundary, so the frozen
-/// headless anchor cannot enter any of the new planning branches. Compatibility
-/// re-pin; the Elo protocol does not move.
+/// mirror-only production and research needs. An unfinished host activation
+/// district is also a map foundation, which reserves that family before a
+/// second Spaceport can be ordered. `Game::new` leaves the need list empty, old
+/// saves default it empty, and only `mirror.rs` populates it from a Firaxis unit
+/// export. The assertion below locks that boundary, so the frozen headless
+/// anchor cannot enter any of the new planning branches. Compatibility re-pin;
+/// the Elo protocol does not move.
 /// A named live Great Engineer can ask for a wonder only while the host has not
 /// already refused a wonder in that city. This circuit breaker reads the same
 /// mirror-only activation need and host-refusal map, both empty in ordinary and
@@ -1105,7 +1107,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `stacked_escort`, which only the live bridge and the native repair bundle set;
 /// `AdvancedAi::legacy()` never reaches it. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8614_9618_7676_e4ee;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfe19_19ec_cfeb_f308;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

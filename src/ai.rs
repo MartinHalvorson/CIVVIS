@@ -6682,11 +6682,29 @@ impl BasicAi {
         Some(wall)
     }
 
-    fn live_great_person_family_ready_or_queued(g: &Game, pid: usize, family: &str) -> bool {
+    /// Whether one district in this family is already finished or committed
+    /// somewhere in the empire.
+    ///
+    /// The live mirror represents a Firaxis district that has been placed but
+    /// is still under construction as a map `district_foundation`, rather than
+    /// as a city queue entry. It is just as committed as either of the other
+    /// two forms: issuing another order for the same family wastes a specialty
+    /// slot and can spend hundreds of production on a duplicate Spaceport.
+    fn empire_district_family_ready_or_queued(g: &Game, pid: usize, family: &str) -> bool {
         g.player_city_ids(pid).into_iter().any(|city| {
-            g.city_has_district_family(&g.cities[&city], Name::new(family))
+            let city = &g.cities[&city];
+            g.city_has_district_family(city, Name::new(family))
+                || city.owned_tiles.iter().any(|position| {
+                    g.map
+                        .tiles
+                        .get(position)
+                        .and_then(|tile| tile.district_foundation.as_ref())
+                        .is_some_and(|foundation| {
+                            g.district_family(foundation.district) == family
+                        })
+                })
                 || matches!(
-                    g.cities[&city].queue.first(),
+                    city.queue.first(),
                     Some(Item::District { district, .. })
                         if g.district_family(*district) == family
                 )
@@ -6699,7 +6717,7 @@ impl BasicAi {
         cid: u32,
         family: &str,
     ) -> Option<Item> {
-        if Self::live_great_person_family_ready_or_queued(g, pid, family)
+        if Self::empire_district_family_ready_or_queued(g, pid, family)
             || g.city_has_district_family(&g.cities[&cid], Name::new(family))
         {
             return None;
@@ -6791,7 +6809,7 @@ impl BasicAi {
             }
 
             if let Some(family) = Self::live_great_person_district(need) {
-                if !Self::live_great_person_family_ready_or_queued(g, pid, family) {
+                if !Self::empire_district_family_ready_or_queued(g, pid, family) {
                     if let Some(district) =
                         Self::live_great_person_district_item(g, pid, cid, family)
                     {
@@ -7097,15 +7115,25 @@ impl BasicAi {
             return Some(item);
         }
         if !self.minor && !self.barb {
-            let has_spaceport = g.cities.values().any(|city| {
-                city.owner == pid
-                    && (g.city_has_district_family(city, crate::name!("spaceport"))
-                        || matches!(
-                            city.queue.first(),
-                            Some(Item::District { district, .. })
-                                if g.district_family(*district) == "spaceport"
-                        ))
-            });
+            let has_spaceport = if g.players[pid]
+                .live_great_person_activation_needs
+                .is_empty()
+            {
+                g.cities.values().any(|city| {
+                    city.owner == pid
+                        && (g.city_has_district_family(city, crate::name!("spaceport"))
+                            || matches!(
+                                city.queue.first(),
+                                Some(Item::District { district, .. })
+                                    if g.district_family(*district) == "spaceport"
+                            ))
+                })
+            } else {
+                // The live-only activation signal also means that an
+                // unfinished host district is visible as a foundation rather
+                // than this simulator's queue entry.
+                Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
+            };
             if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
                 if let Some(pos) = g.district_sites(cid, crate::name!("spaceport")).into_iter().next() {
                     let item = Item::District {
@@ -11469,6 +11497,53 @@ mod tests {
         assert!(
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "a queued Campus satisfies every waiting Scientist without duplication"
+        );
+    }
+
+    #[test]
+    fn an_observed_unfinished_activation_district_reserves_its_family() {
+        let mut game = Game::new_full(1, 20, 14, 41_108, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        grant_tech_with_prerequisites(&mut game, 0, "rocketry");
+        let city = game.player_city_ids(0)[0];
+        let spaceport = crate::name!("spaceport");
+        let site = game
+            .district_sites(city, spaceport)
+            .into_iter()
+            .next()
+            .expect("a legal Spaceport site");
+        let item = Item::District {
+            district: spaceport,
+            pos: site,
+        };
+        let cost = game.item_cost_for_city(0, city, &item);
+        let foundation = crate::world::DistrictFoundation {
+            district: spaceport,
+            cost,
+        };
+        game.map.tiles.get_mut(&site).unwrap().district_foundation = Some(foundation);
+        game.players[0]
+            .live_great_person_activation_needs
+            .push(crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("stephanie_kwolek".to_string()),
+                required_district: Some("spaceport".to_string()),
+            });
+
+        assert!(
+            BasicAi::empire_district_family_ready_or_queued(&game, 0, "spaceport"),
+            "an incomplete district from the host reserves its family just like a queue"
+        );
+        assert!(
+            BasicAi::new()
+                .live_great_person_activation_item(&game, 0, city)
+                .is_none(),
+            "the activation pass must not start a second Spaceport while the first is unfinished"
         );
     }
 
