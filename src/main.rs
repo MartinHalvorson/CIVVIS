@@ -1126,7 +1126,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// bundle set; `AdvancedAi::new()` and `AdvancedAi::legacy()` price the
 /// Entertainment Complex exactly as before (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x783d_60ea_a1c1_047d;
+/// A live wonder race now rejects a data-marked religion-founding site after
+/// its civilization has already founded a religion. `live_wonder_race` remains
+/// false for the frozen anchor, so its historical wonder choices cannot enter
+/// the new guard. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7512_b42d_643a_192c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
