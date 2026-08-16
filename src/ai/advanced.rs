@@ -2438,6 +2438,29 @@ pub struct AdvancedAi {
     /// prices the Settler seat's tally; the native lanes keep the bred limit.
     /// Off for ordinary and frozen controllers.
     pub tally_great_people: bool,
+    /// A Firaxis barbarian scout is not a threat the settler retreats from or
+    /// the scout flees.
+    ///
+    /// ★★★★ ONE BARBARIAN SCOUT PINNED A WHOLE OPENING. Run
+    /// civvis-20260816T151716Z, t15–t35: a single barbarian Scout wandering
+    /// four tiles from Rome made the first Settler "fall back toward its
+    /// guard (risk 3)", "wait for its guard" and read HELD for fourteen turns
+    /// ("settler 55 stands down; it is going nowhere"), made our own Scout
+    /// "slip away" on every frame (risk 13–36) and explore nothing for
+    /// seventeen turns, and kept the Warrior and the Builder inside three
+    /// tiles of the capital for twenty. Civilization VI's barbarian scouts
+    /// explore and run home to raise a raid; they do not attack or capture,
+    /// and the settlement risk model priced one like a Warrior on approach.
+    ///
+    /// With this on, `settlement_tile_risk` — the one model behind the
+    /// settler's retreat, the guard wait, the site risk and `recon_flight` —
+    /// skips a unit that is barbarian-owned AND of the recon promotion class.
+    /// Barbarian warriors, archers, horsemen and galleys count exactly as
+    /// before, as does every unit of a rival at war. Firaxis-only: CIVVIS's
+    /// own barbarian scouts DO capture (`capture_adjacent_civilian` runs for
+    /// them), so the native model keeps pricing them. Off for ordinary and
+    /// frozen controllers.
+    pub barbarian_scouts_are_scouts: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3217,6 +3240,7 @@ impl AdvancedAi {
             frontier_loyalty: false,
             settler_target_hysteresis: false,
             tally_great_people: false,
+            barbarian_scouts_are_scouts: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3982,6 +4006,9 @@ impl AdvancedAi {
         // And banked Faith buys the Great People the tally pays five for. See
         // `tally_great_people`.
         self.enable_tally_great_people();
+        // And a barbarian scout does not pin the opening. See
+        // `barbarian_scouts_are_scouts`.
+        self.enable_barbarian_scouts_are_scouts();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -4429,6 +4456,16 @@ impl AdvancedAi {
 
     pub fn disable_tally_great_people(&mut self) {
         self.tally_great_people = false;
+    }
+
+    /// Stop pricing a Firaxis barbarian scout as a threat. See
+    /// `barbarian_scouts_are_scouts`.
+    pub fn enable_barbarian_scouts_are_scouts(&mut self) {
+        self.barbarian_scouts_are_scouts = true;
+    }
+
+    pub fn disable_barbarian_scouts_are_scouts(&mut self) {
+        self.barbarian_scouts_are_scouts = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -18446,6 +18483,14 @@ impl AdvancedAi {
             {
                 continue;
             }
+            // See `barbarian_scouts_are_scouts`: the host's barbarian scouts
+            // explore and run home; they neither attack nor capture.
+            if self.barbarian_scouts_are_scouts
+                && g.players[unit.owner].is_barbarian
+                && spec.promotion_class == "recon"
+            {
+                continue;
+            }
             let distance = g.wdist(unit.pos, pos);
             let attack_range = if spec.has_ranged_attack() {
                 g.unit_attack_range(unit.id)
@@ -26258,6 +26303,80 @@ mod tests {
         .expect("queue the active defender");
         live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         assert_eq!(game.cities[&city].queue.first(), Some(&warrior));
+    }
+
+    /// ★★★★ One barbarian scout pinned a whole opening (civvis-20260816T151716Z
+    /// t15–t35: the settler held fourteen turns, our scout fled every frame,
+    /// warrior and builder went nowhere). See `barbarian_scouts_are_scouts`.
+    /// On the live seat a barbarian scout two tiles from a settler prices no
+    /// risk; a barbarian warrior at the same spot still does; stock prices
+    /// both, and a rival's scout at war is still priced.
+    #[test]
+    fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
+        let (game0, _capital, home) = empire_with_a_capital(71_117);
+        // `empire_with_a_capital` puts players 0 and 1 at war; make 1 the
+        // barbarian seat.
+        let mut game = game0.clone();
+        game.players[1].is_barbarian = true;
+        game.barb_pid = Some(1);
+        let post = anchor_at(&game, home, 3);
+        let settler = game.spawn_test_unit("settler", 0, post);
+        // A land tile two steps off that the settler can actually see.
+        let two_off = {
+            let mut ring: Vec<Pos> = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| {
+                    game.wdist(*pos, post) == 2
+                        && game.map.get(*pos).is_some_and(|t| {
+                            game.rules.is_passable(t) && !game.rules.is_water(t)
+                        })
+                        && game.player_can_see(0, *pos)
+                })
+                .collect();
+            ring.sort_unstable();
+            ring.into_iter().next().expect("a visible land tile two steps off")
+        };
+        let scout = game.spawn_test_unit("scout", 1, two_off);
+
+        let stock = AdvancedAi::new();
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.barbarian_scouts_are_scouts, "the live seat carries the treatment");
+        let visible = game.player_vision_now(0);
+        let stock_risk = stock.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
+        let live_risk = live.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
+        assert!(stock_risk > 0.0, "stock prices the barbarian scout on approach ({stock_risk})");
+        assert_eq!(live_risk, 0.0, "the live seat prices a barbarian scout at nothing");
+
+        // A barbarian warrior at the same spot is a threat to both.
+        game.remove_unit(scout);
+        game.spawn_test_unit("warrior", 1, two_off);
+        let visible = game.player_vision_now(0);
+        assert!(live.settlement_tile_risk(&game, 0, Some(settler), post, &visible) > 0.0);
+        assert!(stock.settlement_tile_risk(&game, 0, Some(settler), post, &visible) > 0.0);
+
+        // A rival's scout at war (not barbarian) is still priced on the live seat.
+        let mut rival = game0.clone();
+        let settler = rival.spawn_test_unit("settler", 0, post);
+        rival.spawn_test_unit("scout", 1, two_off);
+        let visible = rival.player_vision_now(0);
+        assert!(live.settlement_tile_risk(&rival, 0, Some(settler), post, &visible) > 0.0);
+
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_barbarian_scouts_are_scouts();
+        let mut again = game0.clone();
+        again.players[1].is_barbarian = true;
+        again.barb_pid = Some(1);
+        let settler = again.spawn_test_unit("settler", 0, post);
+        again.spawn_test_unit("scout", 1, two_off);
+        let visible = again.player_vision_now(0);
+        assert!(withheld.settlement_tile_risk(&again, 0, Some(settler), post, &visible) > 0.0);
+        assert!(!AdvancedAi::new().barbarian_scouts_are_scouts);
+        assert!(!AdvancedAi::legacy().barbarian_scouts_are_scouts);
     }
 
     #[test]

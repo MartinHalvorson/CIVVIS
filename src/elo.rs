@@ -224,7 +224,7 @@ pub const EVAL_ONLY_AIS: [&str; 158] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 59] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 60] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -284,6 +284,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 59] = [
     "frontier-loyalty",
     "settler-target-hysteresis",
     "tally-great-people",
+    "barbarian-scouts-are-scouts",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -313,12 +314,12 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The thirteen bridge treatments that stay out of the native bundle, as tags.
+/// The fourteen bridge treatments that stay out of the native bundle, as tags.
 /// Three encode a rule of Firaxis' game rather than repairing one of ours, one
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 13] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 14] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -352,6 +353,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 13] = [
     // Prices the Settler seat's tally (five a Great Person); the native lanes
     // keep the bred closeness limit.
     "tally-great-people",
+    // Encodes a rule of Firaxis' barbarians (their scouts neither attack nor
+    // capture); CIVVIS's own barbarian scouts do, so the native model keeps
+    // pricing them.
+    "barbarian-scouts-are-scouts",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -5999,7 +6004,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 13] = [
+        const EXCLUDED: [&str; 14] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -6027,6 +6032,8 @@ mod tests {
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
             "tally_great_people",
+            // Firaxis' barbarian scouts do not capture; CIVVIS's do.
+            "barbarian_scouts_are_scouts",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
