@@ -1345,6 +1345,28 @@ fn remove_active_route_traders_from_plan(
 /// building something CIVVIS did not order; once its choice takes, `producing`
 /// matches and the queue is seeded normally again. A choice the host keeps refusing
 /// is already routed around by `blocked_production`, which `sync` refreshes.
+/// Adopt whatever the host is building right now as CIVVIS's own plan. See
+/// the persistent server's first turn: a fresh process holds an empty `ours`,
+/// so without this every city's work in progress reads as foreign to
+/// [`release_foreign_production`] and is re-decided the moment the decider
+/// restarts. Existing entries — the plan this process has already ordered —
+/// are kept.
+fn adopt_host_production(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> usize {
+    let mut adopted = 0;
+    for city in &state.cities {
+        if let Some(producing) = city.producing.as_deref() {
+            if !ours.contains_key(&city.id) {
+                ours.insert(city.id, producing.to_string());
+                adopted += 1;
+            }
+        }
+    }
+    adopted
+}
+
 fn release_foreign_production(
     planned_game: &mut civvis::game::Game,
     cid_of: &std::collections::BTreeMap<i64, u32>,
@@ -3773,6 +3795,27 @@ fn main() {
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
                 if fresh_board {
+                    // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS
+                    // NO OPENING TO PLAY. The bridge restarts this process whenever
+                    // `origin/main` advances, and a fresh agent's opening book
+                    // handed every city to the baseline governor for ten turns
+                    // per restart (Skirmishers, then Rangers, in all seven cities
+                    // of run civvis-20260816T213447Z at t139; Artillery at
+                    // t157). See `BasicAi::skip_opening_book`.
+                    if live.is_none() && state.turn > 1 {
+                        ai.skip_opening_book();
+                        // ★★★★ AND WHAT THE HOST IS BUILDING RIGHT NOW IS OURS. `ours`
+                        // is what tells `release_foreign_production` a queue is
+                        // CIVVIS's own plan rather than the ladder's; a fresh process
+                        // holds none, so on its first turn every city's work in
+                        // progress read as foreign, was released, and was re-decided
+                        // — the Taj Mahal at 188/460 in Ravenna dropped for a
+                        // University, the wonder re-ordered from Rome. On a seat that
+                        // has been CIVVIS's for a hundred turns, the host's current
+                        // item is the plan; adopt it and let the ordinary rule take
+                        // over from the next order on.
+                        adopt_host_production(&mut ours, &state);
+                    }
                     // ★★★★★ CARRY THE UNIT MEMORY ACROSS THE REBUILD INSTEAD OF
                     // DROPPING IT. This used to call `forget_unit_memory`, on the
                     // sound reasoning that rebuilding the board reassigns unit ids so
@@ -4835,6 +4878,42 @@ mod tests {
             !planned.cities[&cid].queue.is_empty(),
             "work in progress CIVVIS asked for must survive, or it re-chooses every turn"
         );
+    }
+
+    /// ★★★★ A DECIDER RESTARTED MID-GAME MUST NOT HAND BACK EVERY CITY. A fresh
+    /// process holds an empty `ours`, so on its first turn all work in progress
+    /// read as foreign and was re-decided (run civvis-20260816T213447Z, t139 and
+    /// t157: the Taj Mahal at 188/460 dropped, seven Rangers ordered). Adopting
+    /// the host's current item as ours on that first turn leaves the queue alone,
+    /// keeps a plan this process already ordered, and skips idle cities.
+    #[test]
+    fn a_restarted_decider_adopts_the_hosts_production_as_its_own() {
+        let (snapshot, mut state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+
+        let mut ours = std::collections::BTreeMap::new();
+        assert_eq!(adopt_host_production(&mut ours, &state), 1, "one city building");
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_WARRIOR"));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "the adopted item is not released"
+        );
+        assert!(!planned.cities[&cid].queue.is_empty());
+
+        // An entry this process already ordered wins over the host's reading.
+        let mut ours = std::collections::BTreeMap::new();
+        ours.insert(7_i64, "UNIT_SETTLER".to_string());
+        assert_eq!(adopt_host_production(&mut ours, &state), 0);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_SETTLER"));
+
+        // An idle city adopts nothing.
+        state.cities[0].producing = None;
+        let mut ours = std::collections::BTreeMap::new();
+        assert_eq!(adopt_host_production(&mut ours, &state), 0);
+        assert!(ours.is_empty());
     }
 
     /// A city building nothing has nothing to hand back, and must not be counted.

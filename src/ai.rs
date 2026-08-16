@@ -3809,6 +3809,35 @@ impl BasicAi {
         });
     }
 
+    /// Mark the scripted four-build capital opening as already played, so the
+    /// utility planner governs production from the first turn this agent
+    /// sees.
+    ///
+    /// ★★★★ A DECIDER RESTARTED MID-GAME REPLAYS THE OPENING BOOK OVER SEVEN
+    /// CITIES. The live bridge restarts its persistent agent whenever
+    /// `origin/main` advances (run civvis-20260816T213447Z: t139 and t157),
+    /// and a fresh agent has `book_pos = 0` — so `AdvancedAi::take_turn`'s
+    /// "preserve the proven four-build opening" branch hands EVERY city to
+    /// `BasicAi::cities` until the capital has emptied its queue four more
+    /// times. Measured: at t139 five cities started Skirmishers and at t140
+    /// all seven switched to Rangers ("the empire has no eyes", one per city)
+    /// — the Taj Mahal, St Basil's and two campus projects abandoned — and
+    /// Rangers were built in every city until t150; at t157 the same again
+    /// with Artillery, Bolshoi and the Hermitage dropped. Roughly ten turns of
+    /// the whole empire's production per restart, on a seat that restarts
+    /// several times a game. The book is the capital's first four builds of a
+    /// game that starts at turn 1; an agent that first sees turn 139 has no
+    /// opening to play. See `AdvancedAi::skip_opening_book`.
+    pub fn skip_opening_book(&mut self) {
+        self.book_pos = self.book_pos.max(4);
+    }
+
+    /// Whether the scripted opening has been played (or skipped). See
+    /// `skip_opening_book`.
+    pub fn opening_book_played(&self) -> bool {
+        self.book_pos >= 4
+    }
+
     /// Drop everything this agent remembers ABOUT INDIVIDUAL UNITS, keeping the rest.
     ///
     /// ★★★★★ FOR MIRRORING A GAME WHOSE UNIT IDS ARE REASSIGNED EVERY TURN.
@@ -6308,7 +6337,25 @@ impl BasicAi {
                 unit.owner == pid && Self::unit_doctrine(g, unit.id) == UnitDoctrine::Recon
             })
             .count();
-        if owned_recon >= RECON_ARM_MAX {
+        // ★★★★ A SCOUT ALREADY ON THE WAY IS AN EYE. This counted only recon
+        // units standing on the map, so on any turn the empire had none,
+        // EVERY city that came to `pick_item` read "the empire has no eyes"
+        // and answered it: run civvis-20260816T213447Z, t139, five cities
+        // start Skirmishers; t140, all seven start Rangers, and seven Rangers
+        // are built. One in a queue anywhere is the arm being rebuilt.
+        let queued_recon = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                g.cities[cid].queue.iter().any(|item| {
+                    matches!(item, Item::Unit { unit }
+                        if g.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                            spec.class == "military" && spec.promotion_class == "recon"
+                        }))
+                })
+            })
+            .count();
+        if owned_recon + queued_recon >= RECON_ARM_MAX {
             return false;
         }
         // Somewhere left to go. A land scout is what this buys, so ask about
@@ -15154,6 +15201,25 @@ mod tests {
         let pos = with_scout.cities[&home].pos;
         with_scout.spawn_test_unit("scout", 0, pos);
         assert!(!ai.recon_is_the_missing_arm(&with_scout, 0));
+
+        // ★★★★ And so does one already in a queue: with only units on the map
+        // counted, every city that came to `pick_item` on the same turn read
+        // "no eyes" and answered it — seven Rangers in seven cities on run
+        // civvis-20260816T213447Z, t140. A soldier in the queue is not eyes.
+        let mut queued = g.clone();
+        let home = queued.player_city_ids(0)[0];
+        queued.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+            unit: Name::new("warrior"),
+        });
+        assert!(ai.recon_is_the_missing_arm(&queued, 0), "a queued warrior is no eye");
+        queued.cities.get_mut(&home).unwrap().queue.clear();
+        queued.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+            unit: Name::new("scout"),
+        });
+        assert!(
+            !ai.recon_is_the_missing_arm(&queued, 0),
+            "a scout already in a queue is the arm being rebuilt"
+        );
     }
 
     #[test]

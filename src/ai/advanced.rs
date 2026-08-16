@@ -3106,6 +3106,19 @@ impl AdvancedAi {
         self.base.unit_memory(uid)
     }
 
+    /// The scripted opening is already behind this agent. See
+    /// [`BasicAi::skip_opening_book`]: a persistent decider restarted
+    /// mid-game must not hand the whole empire to the opening-book governor.
+    pub fn skip_opening_book(&mut self) {
+        self.base.skip_opening_book();
+    }
+
+    /// Whether the scripted opening has been played or skipped. See
+    /// [`BasicAi::skip_opening_book`].
+    pub fn opening_book_played(&self) -> bool {
+        self.base.opening_book_played()
+    }
+
     /// Forget unit-keyed memory in this agent and its baseline, keeping the plan.
     ///
     /// See [`BasicAi::forget_unit_memory`] for why: the board this agent mirrors has
@@ -40862,6 +40875,50 @@ mod tests {
         lax.observe_turn_start_hostiles(&game, 0);
         game.remove_unit(raider);
         assert_eq!(lax.settlement_tile_risk(&game, 0, Some(settler), step, &visible), 0.0);
+    }
+
+    /// ★★★★ A decider restarted mid-game replays the opening book over the
+    /// whole empire: `take_turn` hands every city to `BasicAi::cities` while
+    /// `book_pos < 4`, and a fresh agent has `book_pos = 0` (run
+    /// civvis-20260816T213447Z, t139: seven cities on Rangers for ten turns).
+    /// `skip_opening_book` marks the opening as played; a new agent still
+    /// plays it from turn one.
+    #[test]
+    fn a_restarted_agent_skips_the_opening_book_and_a_new_one_plays_it() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.opening_book_played(), "a new agent still has its opening to play");
+        ai.skip_opening_book();
+        assert!(ai.opening_book_played());
+        assert_eq!(ai.base.book_pos, 4, "exactly the position the four-build book ends on");
+        // Idempotent, and never rewinds a book that has advanced further.
+        ai.skip_opening_book();
+        assert_eq!(ai.base.book_pos, 4);
+        // On the same mid-game board a NEW agent plays the book — its
+        // position advances — while the restarted one leaves it alone.
+        let build = || {
+            let mut game = Game::new_full(2, 24, 16, 8_121, 120, 0, false);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(0, pos, None);
+            game.turn = 60;
+            game.current = 0;
+            game
+        };
+        let mut fresh = AdvancedAi::new();
+        let mut game = build();
+        fresh.take_turn(&mut game, 0);
+        assert!(
+            fresh.base.book_pos >= 1,
+            "a new agent plays its opening book on an idle capital"
+        );
+        let mut game = build();
+        ai.take_turn(&mut game, 0);
+        assert_eq!(ai.base.book_pos, 4, "the restarted agent never touches the book");
     }
 
     /// On quiet ground with the guard one step behind, the settler marches;
