@@ -6397,6 +6397,26 @@ impl AdvancedAi {
             .fold(f64::INFINITY, f64::min);
 
         let threatened_city = self.threatened_city(g, pid);
+        // ★★★★ A WAR WHOSE PATIENCE HAS RUN OUT NO LONGER SETS THE GRAND
+        // STRATEGY. "Already at war" used to pin the plan on Conquest for as
+        // long as the enemy declined peace, whatever the war was doing. Run
+        // civvis-20260815T233405Z declared on Babylon at t57 (221 power
+        // against 158), took no city in 190 turns, had its bounded patience
+        // lapse at t128 and its peace offers refused thirteen times, and read
+        // Conquest on 63 of 142 assessments (Recovery on 63 more): a whole
+        // game of war-driven production while science sat at 45–59 for fifty
+        // turns and the score finished 637 against 1237. Once patience has
+        // lapsed and no city of ours is critically threatened, the war is a
+        // stalemate the empire cannot end and should stop paying for: the plan
+        // falls through to the economic lanes, and the local-defence
+        // treatments — home defence, garrison under fire, garrison walls —
+        // answer raids whatever the grand strategy says. A city gained
+        // (`last_campaign_progress`) or a critical threat restores the war
+        // posture. Behind `war_patience`, which the frozen anchor never sets.
+        let stalemate = at_war
+            && self.war_patience
+            && threatened_city.is_none()
+            && self.war_patience_exhausted(g);
 
         let land = g
             .map
@@ -6585,16 +6605,17 @@ impl AdvancedAi {
                 counter,
                 "countering a rival close to winning",
             )
-        } else if at_war {
+        } else if at_war && !stalemate {
             (
                 GrandStrategy::Conquest,
                 "already at war",
             )
-        } else if (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
-            || (military_civ
-                && g.turn >= 35
-                && cities.len() >= 2
-                && my_power >= strongest_rival * 1.10)
+        } else if !stalemate
+            && ((g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
+                || (military_civ
+                    && g.turn >= 35
+                    && cities.len() >= 2
+                    && my_power >= strongest_rival * 1.10))
         {
             (
                 GrandStrategy::Conquest,
@@ -6637,6 +6658,13 @@ impl AdvancedAi {
                 against the strongest rival's {strongest_rival:.0}; \
                 best lane {} at {}% progress",
                cities.len(), victory.strategy.as_str(), victory.progress);
+        if stalemate && strategy != GrandStrategy::Conquest {
+            think!(self.journal(), Strategy, Strategy,
+                   "The war is a stalemate the plan stops paying for";
+                   "still at war, but no city gained in {} turns and none of ours in \
+                    danger — the economy runs as in peacetime while local defence answers raids",
+                   g.turn.saturating_sub(self.last_campaign_progress));
+        }
         if let Some(city) = threatened_city.and_then(|id| g.cities.get(&id)) {
             think!(self.journal(), Strategy, Strategy,
                    "{} is under threat", city.name;
@@ -43410,6 +43438,76 @@ mod research_probe {
     /// A stalled war against an overwhelmed campaign target is neither offered
     /// away nor accepted away while `war_patience` is on; a stalled war
     /// against anyone else keeps the shipped fatigue shape.
+    /// Once a war's patience has lapsed and no city of ours is in danger, the
+    /// plan stops reading Conquest merely because the enemy will not make
+    /// peace; a city gained (recent campaign progress) keeps the war posture.
+    #[test]
+    fn a_stalemated_war_no_longer_sets_the_grand_strategy() {
+        let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let staging = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, staging);
+        }
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        game.turn = 100;
+        assert!(game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO);
+
+        // Patience lapsed: no city gained in forty turns.
+        let mut stale = AdvancedAi::new();
+        stale.enable_war_patience();
+        stale.major_war_since = Some(60);
+        stale.last_campaign_progress = 60;
+        assert!(stale.war_patience_exhausted(&game));
+        let journal = crate::reasoning::Journal::recording();
+        stale.attach_journal(journal.handle());
+        let plan = stale.assess(&game, 0);
+        assert_ne!(
+            plan.strategy,
+            GrandStrategy::Conquest,
+            "a stalemate the empire cannot end no longer pins the plan on Conquest"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("The war is a stalemate")),
+            "the posture is journaled"
+        );
+
+        // Recent progress: the same war keeps its Conquest posture.
+        let mut pressing = AdvancedAi::new();
+        pressing.enable_war_patience();
+        pressing.major_war_since = Some(60);
+        pressing.last_campaign_progress = 95;
+        assert!(!pressing.war_patience_exhausted(&game));
+        assert_eq!(pressing.assess(&game, 0).strategy, GrandStrategy::Conquest);
+
+        // Without the flag (default and frozen controllers) the shipped
+        // "already at war" arm is unchanged.
+        let mut plain = AdvancedAi::new();
+        plain.major_war_since = Some(60);
+        plain.last_campaign_progress = 60;
+        assert!(!plain.war_patience);
+        assert_eq!(plain.assess(&game, 0).strategy, GrandStrategy::Conquest);
+        let mut frozen = AdvancedAi::legacy();
+        frozen.major_war_since = Some(60);
+        frozen.last_campaign_progress = 60;
+        assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
     #[test]
     fn war_patience_holds_the_stall_clause_only_over_an_overwhelmed_target() {
         let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);

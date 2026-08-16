@@ -1111,7 +1111,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// threatened settler retreats before any hold; both live under
 /// `settlement_safety`/`stacked_escort`, which `AdvancedAi::legacy()` leaves off.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4fdf_d778_fb28_565e;
+/// The stalemate posture is behind `war_patience`, which `AdvancedAi::legacy()`
+/// never sets; the anchor's grand-strategy selection is unchanged (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x14fd_f19a_6d9f_e3f7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
