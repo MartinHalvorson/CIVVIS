@@ -10480,10 +10480,28 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == leader then selection = idx; end
 						end
+						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
+						--
+						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
+						-- Diplomatic Victory -- the sixth early diplomatic loss on the
+						-- Settler seat -- and the ledger of this voter reads: 180 Favor
+						-- spent at t161 against a leader on 8 points, 220 at t181 (11),
+						-- 220 at t201 (14), 264 at t221 (15); the leader then went 15
+						-- -> 19 -> 20 in the two sessions that decided it while the
+						-- treasury it faced was whatever had trickled in since the
+						-- last spend. Extra votes cost Favor on a rising ladder, so the
+						-- same Favor buys the most votes when spent at once, and it
+						-- only matters at the sessions a leader can win from. Below
+						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
+						-- twenty) the free vote is still cast against the leader and
+						-- nothing is spent; from there every session spends the bank.
+						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						local n = 1;
-						while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-							n = n + 1;
+						if (tonumber(leaderPoints) or 0) >= floor then
+							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
+								n = n + 1;
+							end
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
