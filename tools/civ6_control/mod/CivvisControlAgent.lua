@@ -10396,6 +10396,114 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
+	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
+	--
+	-- Seven Settler games of 2026-08-16 ended early on a rival's DIPLOMATIC
+	-- victory, the last one (civvis-20260816T184500Z, 1058 vs 1087 at t222, the
+	-- lane's best game) probably a win otherwise. The voter's own ledger says
+	-- what WE cast (`wc_vote`: votes and favor against the leader) and the state
+	-- export says the leader's DVP afterwards, but nothing says what the session
+	-- RESOLVED: which option won each resolution and for whom, who voted how,
+	-- which emergencies and aid requests passed against whom, and every civ's
+	-- points across the session. Canada went 6→9→13→14→18→22 at successive
+	-- sessions whether we cast the free vote or twelve; without the outcome
+	-- there is no telling whether the +3/+4 was the victory resolution, a
+	-- resolution it led the votes on, an aid competition, or all three — and
+	-- so no telling whether option B against the leader is the right vote.
+	--
+	-- `Game.GetWorldCongress():GetReview(pid)` is what the shipped
+	-- `WorldCongressPopup.lua` "Last Results" tab reads (`PopulateReview` /
+	-- `PopulateReviewProposals`): `.Resolutions[i]` carries `Type`,
+	-- `ChosenOption`, `ChosenThing`, `ChosenLabel`, `RejectedLabel`,
+	-- `TargetType`, `IsNew`, `PlayerSelections[{PlayerID, OptionChosen,
+	-- Votes}]`; `.Discussions[proposalType].ProposalsOfType[]` carries
+	-- `TypeName`, `TargetPlayer`, `PlayerVotes[{PlayerType, Votes}]` (negative
+	-- = against).
+	-- The review is stable between sessions, so it is emitted once per change
+	-- of content — i.e. once per session, on the first turn after it — keyed
+	-- by a signature hung off `envoyTally` (a file-scope local would cross the
+	-- 200-register main-chunk ceiling). DVP per alive major is read the way the
+	-- voter already reads it. Read-only; nothing here votes.
+	pcall(function()
+		local wc = Game.GetWorldCongress();
+		if wc == nil then return; end
+		local review = wc:GetReview(pid);
+		if type(review) ~= "table" then return; end
+		local resolutions, signature = {}, {};
+		for i, r in pairs(review.Resolutions or {}) do
+			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
+				local info = GameInfo.Resolutions[r.Type];
+				local rtype = tostring(info and info.ResolutionType or r.Type);
+				local a, b, ours, voters = 0, 0, nil, {};
+				for _, sel in pairs(r.PlayerSelections or {}) do
+					if type(sel) == "table" then
+						local who = tonumber(sel.PlayerID) or -1;
+						local votes = tonumber(sel.Votes) or 0;
+						local option = tonumber(sel.OptionChosen) or 0;
+						if option == 1 then a = a + votes; else b = b + votes; end
+						voters[#voters + 1] = { player = who, option = option, votes = votes };
+						if who == pid then ours = { option = option, votes = votes }; end
+					end
+				end
+				local won = a > b and 1 or (b > a and 2 or 0);
+				resolutions[#resolutions + 1] = {
+					type = rtype,
+					target_type = tostring(r.TargetType or ""),
+					target = tostring(r.ChosenThing or ""),
+					chosen = tostring(r.ChosenLabel or ""),
+					won = won, a = a, b = b,
+					ours = ours, voters = voters,
+					new = (r.IsNew ~= nil and r.IsNew ~= 0 and r.IsNew ~= false) or false,
+				};
+				signature[#signature + 1] = rtype .. ":" .. tostring(r.ChosenThing or "") .. ":" .. a .. "/" .. b;
+			end
+		end
+		local proposals = {};
+		for ptype, category in pairs(review.Discussions or {}) do
+			if type(category) == "table" then
+				for _, prop in pairs(category.ProposalsOfType or {}) do
+					if type(prop) == "table" then
+						-- `PlayerVotes` entries carry `PlayerType` (the voter's id)
+						-- and a signed `Votes` (negative = against), as the
+						-- shipped review reads them.
+						local up, down, ours = 0, 0, nil;
+						for _, v in pairs(prop.PlayerVotes or {}) do
+							if type(v) == "table" then
+								local votes = tonumber(v.Votes) or 0;
+								if votes > 0 then up = up + votes; elseif votes < 0 then down = down - votes; end
+								if tonumber(v.PlayerType) == pid then ours = votes; end
+							end
+						end
+						local target = tonumber(prop.TargetPlayer) or -1;
+						local ptypeName = tostring(prop.TypeName or ptype);
+						proposals[#proposals + 1] = {
+							type = ptypeName, target = target,
+							passed = up > down, up = up, down = down, ours = ours,
+						};
+						signature[#signature + 1] = ptypeName .. "@" .. target .. ":" .. up .. "/" .. down;
+					end
+				end
+			end
+		end
+		if #resolutions == 0 and #proposals == 0 then return; end
+		table.sort(signature);
+		local key = table.concat(signature, "|");
+		if envoyTally.wc_review_signature == key then return; end
+		envoyTally.wc_review_signature = key;
+		local dvp = {};
+		for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+			local id = tonumber(other);
+			if id ~= nil then
+				dvp[#dvp + 1] = { player = id, points = tonumber(try(function()
+					return Players[id]:GetStats():GetDiplomaticVictoryPoints();
+				end, 0)) or 0 };
+			end
+		end
+		emit("wc_outcome", {
+			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
+			favor = tonumber(try(function() return player:GetFavor(); end, 0)) or 0,
+		});
+	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--
 	-- Run civvis-20260730T170738Z ended on Civilization VI's DEFEAT screen at turn 80,

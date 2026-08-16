@@ -497,6 +497,24 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("ms_ActiveSessionID", shim)
         self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
 
+    def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
+        # Seven diplomatic losses in a day and no record of what each session
+        # resolved: the mod now emits `wc_outcome` from the shipped review data
+        # (GetReview) once per change of content, with every voter, the
+        # emergency results and every civ's DVP; read-only, nothing here votes.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        block = source.split("-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED", 1)[1].split("-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED", 1)[0]
+        self.assertIn("wc:GetReview(pid)", block)
+        self.assertIn("review.Resolutions", block)
+        self.assertIn("review.Discussions", block)
+        self.assertIn("r.PlayerSelections", block)
+        self.assertIn("prop.PlayerVotes", block)
+        self.assertIn("v.PlayerType", block)
+        self.assertIn("envoyTally.wc_review_signature", block)
+        self.assertIn('emit("wc_outcome"', block)
+        self.assertIn("GetDiplomaticVictoryPoints()", block)
+        self.assertNotIn("RequestPlayerOperation", block)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
