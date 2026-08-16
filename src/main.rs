@@ -1299,7 +1299,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `explore_dead_targets`, which the Firaxis order bridge explicitly enables;
 /// `AdvancedAi::legacy()` keeps that flag off. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe62c_ef31_7890_19a3;
+/// A repeatable district project waits behind the Library, University,
+/// Research Lab or Workshop its city can already build, behind
+/// `buildings_before_projects`, off for `AdvancedAi::legacy()` (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7d7a_b26e_f674_29c6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
