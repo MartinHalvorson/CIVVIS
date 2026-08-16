@@ -1243,7 +1243,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
 /// bred yield weights and district table. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0000_0000_0000_0000;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a71_65d4_ad9c_b5a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
