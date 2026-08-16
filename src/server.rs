@@ -6921,7 +6921,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("syncModeLink();\nboot();"));
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
-        const TACTICS_QUERY: &str = "map=battlefield&players=2&era=information&arena=20x20";
+        const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
         assert!(EMBEDDED_INDEX
             .contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
         let landing = include_str!("../beta/landing.html");
@@ -6973,9 +6973,9 @@ mod tests {
             // viewer link is lane-relative (`../` from the lane's /home), so
             // the test lane's home page opens the test lane's viewer.
             "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
-            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
-            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" data-pick=\"watch\"",
             // The full game's Customized buttons land in the simulator with
             // the Game setup drawer open (`?setup=1`, honoured at the end of
             // app.js) when nothing can open the panel in place.
@@ -6998,6 +6998,13 @@ mod tests {
         let shim = include_str!("../beta/shim.js");
         assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
         assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
+        // And it knows `era`, which the Tactics cards spend on `random`. The
+        // word has to reach `tactics_era` or the armies follow `start_era`
+        // instead and every linked battle is the same era — the whole point
+        // of the cards asking for a roll. `random` is not a start era, so it
+        // travels as the Tactics rule alone.
+        assert!(shim.contains("if (era && era !== \"random\") payload.start_era = era;"));
+        assert!(shim.contains("if (era) payload.tactics_era = era;"));
         // The viewer honours the Customize links' `?setup=1`: it opens the
         // sidebar's Game setup drawer on arrival instead of leaving the
         // visitor to hunt for it.
@@ -7048,7 +7055,7 @@ mod tests {
     #[test]
     fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         let landing = include_str!("../beta/landing.html");
-        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20";
+        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20";
         for piece in [
             // The art is a way in: each photograph links its card's preset.
             &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}\">") as &str,
@@ -7101,8 +7108,8 @@ mod tests {
             // its preset at once — never carrying `data-pick`, because
             // clicking it is meant to leave the page rather than open a
             // panel — and Customize beside it opens the row's shared panel.
-            "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
-            "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
+            "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
+            "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
             "<a class=\"card-btn verb-watch\" href=\"../\" aria-labelledby=\"watch-civ-title\">Watch</a>",
             "<a class=\"card-btn verb-play\" href=\"../?mode=play\" aria-labelledby=\"play-civ-title\">Play</a>",
             "data-pick=\"watch\" aria-label=\"Customize a watched Tactics battle\">Customize</a>",

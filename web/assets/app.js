@@ -31059,8 +31059,11 @@ function watchingBattlefield() {
 }
 // The world the Tactics side of the chip opens: the same two even armies on
 // the same 20x20 field the home page's Tactics card offers, so the site has
-// one Tactics world rather than two that differ for no reason.
-const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=information&arena=20x20";
+// one Tactics world rather than two that differ for no reason. `era=random`
+// is the lobby's own Tactics default — a fresh era every battle — said in the
+// link, because a link that names nothing leaves the rule on whatever the
+// previous world set.
+const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=random&arena=20x20";
 // The mode chip beside Home. It always names the mode the deck is NOT
 // showing, which makes the whole distance between Civvis and Tactics one click
 // in either direction. Going back to Civvis asks for nothing at all, because a

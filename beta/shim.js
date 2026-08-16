@@ -157,8 +157,22 @@
     if (poles) payload.map_poles = poles;
     const speed = word("speed");
     if (speed) payload.game_speed = speed;
+    // `era` names both ends of the same question, so it travels as both: the
+    // era the world opens in, and — on a battlefield — the era its armies are
+    // drawn from, which is a Tactics rule of its own rather than a start-era
+    // spelling. Sending only the first is what made every linked battle an
+    // Information-era one: `tactics_era` stayed on the previous world's rule,
+    // which on a fresh engine is Start, so the armies followed `start_era`
+    // forever. Sending both also means a link naming Medieval cannot inherit
+    // a Random rolled by the battle before it.
+    //
+    // `era=random` is the roll itself — a fresh era for every battle of the
+    // series — and is a Tactics rule only. There is no such start era, so it
+    // deliberately does not travel as one; a full game asked for it opens
+    // where it would have anyway.
     const era = word("era");
-    if (era) payload.start_era = era;
+    if (era && era !== "random") payload.start_era = era;
+    if (era) payload.tactics_era = era;
     const turns = whole("turns");
     if (turns) payload.max_turns = turns;
     // Who is at the keyboard. `mode=play` seats the visitor in the first
