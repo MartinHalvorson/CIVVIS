@@ -8,6 +8,7 @@
 pub mod action_space;
 pub mod actionlog;
 pub mod ai;
+pub mod arena;
 pub mod belief;
 pub mod city_states;
 pub mod civ6;
