@@ -1164,6 +1164,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wall-tech research goal is behind `garrison_walls`, the live walls
 /// doctrine, which the frozen anchor never sets (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
+/// The exploration dead-target memory is behind `BasicAi::explore_dead_targets`,
+/// set only by the Civilization VI bridge; native constructors and
+/// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
+/// the Elo protocol does not move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x369d_335e_2c40_805b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

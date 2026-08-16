@@ -2985,6 +2985,13 @@ impl AdvancedAi {
         self.base.enable_host_settler_pop();
     }
 
+    /// Give up an exploration target the host will not move the unit toward
+    /// (see `BasicAi::explore_dead_targets`). Set by the Civilization VI bridge
+    /// only.
+    pub fn enable_explore_dead_targets(&mut self) {
+        self.base.enable_explore_dead_targets();
+    }
+
     /// A city losing hitpoints is besieged, whatever the fog says. See
     /// `BasicAi::garrison_under_fire` for the t115 measurement.
     pub fn enable_garrison_under_fire(&mut self) {

@@ -62,6 +62,14 @@ const LIVELOCK_STAND_DOWN_AFTER: u32 = 2 * LIVELOCK_WINDOW as u32;
 /// loop to have moved on before the unit tries again.
 const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 
+/// Turns a unit may stand on one tile aiming at one exploration goal before the
+/// goal is written off as ground the host will not walk it to. See
+/// `BasicAi::explore_dead_targets`.
+const EXPLORE_STUCK_TURNS: u32 = 2;
+/// How long a written-off exploration goal stays retired. See
+/// `BasicAi::explore_dead_targets`.
+const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
+
 /// A sighting that makes the next tile a bad commitment is useful for longer
 /// than the individual movement choice that discovered it. Keep it just long
 /// enough for a unit to withdraw and reconsider from a safer square; longer
@@ -1933,6 +1941,30 @@ pub struct BasicAi {
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
     last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// Give up an exploration target the host will not move the unit toward.
+    ///
+    /// ★★★★ AN ACCEPTED MOVE THAT NEVER MOVES IS INVISIBLE TO EVERY DETECTOR.
+    /// The live mirror marks unrevealed plots as a bounded, traversable
+    /// frontier so exploration can aim outward; Civilization VI accepts
+    /// `MOVE_TO` toward such a plot (no `move_refused`) and then, if the plot is
+    /// really ice, ocean or a mountain behind a hill, moves the unit nowhere.
+    /// Run civvis-20260816T040537Z: the only Scout stood on (13,40) from t15 to
+    /// t58 ordered `MOVE_TO (12,42)` on 34 consecutive turns, revealed nothing,
+    /// and the empire met the neighbour that took its capital at t79 by being
+    /// attacked — 172 plots revealed by t50 against 247 in the best game. The
+    /// livelock detector deliberately ignores a footprint of one tile ("a unit
+    /// that has stopped is a different problem"), so nothing ever fired.
+    ///
+    /// Set only through `AdvancedAi::enable_explore_dead_targets` (the
+    /// Civilization VI bridge); a native engine moves what it accepts, so
+    /// native constructors and the frozen anchor keep the plain goal.
+    pub(crate) explore_dead_targets: bool,
+    /// Per unit: the exploration goal it was last sent at, where it stood, and
+    /// how many consecutive turns it has stood there aiming at that goal.
+    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32)>>,
+    /// Per unit: exploration goals proved unreachable, with the turn each
+    /// expires. See `explore_dead_targets`.
+    explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3113,6 +3145,9 @@ impl BasicAi {
             fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
+            explore_dead_targets: false,
+            explore_last: RefCell::new(HashMap::new()),
+            explore_dead: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3138,6 +3173,13 @@ impl BasicAi {
     /// `--explain-settler` probe can play the same gate.
     pub fn enable_host_settler_pop(&mut self) {
         self.host_settler_pop = true;
+    }
+
+    /// Give up an exploration target the host will not move the unit toward
+    /// (see `explore_dead_targets`). The Civilization VI bridge sets this
+    /// through `AdvancedAi::enable_explore_dead_targets`.
+    pub fn enable_explore_dead_targets(&mut self) {
+        self.explore_dead_targets = true;
     }
 
     pub fn with_weights(w: Weights) -> BasicAi {
@@ -3172,6 +3214,9 @@ impl BasicAi {
             fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
+            explore_dead_targets: false,
+            explore_last: RefCell::new(HashMap::new()),
+            explore_dead: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3468,6 +3513,8 @@ impl BasicAi {
         self.settler_targets.clear();
         self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
+        self.explore_last.get_mut().clear();
+        self.explore_dead.get_mut().clear();
     }
 
     /// Carry unit-keyed memory across a board that was rebuilt underneath it.
@@ -3521,6 +3568,16 @@ impl BasicAi {
         // THIS turn", and the turn is over by the time a board is rebuilt, so every
         // entry in it is already stale.
         self.last_path_step_from.borrow_mut().clear();
+        let explore_last = std::mem::take(self.explore_last.get_mut());
+        *self.explore_last.get_mut() = explore_last
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        let explore_dead = std::mem::take(self.explore_dead.get_mut());
+        *self.explore_dead.get_mut() = explore_dead
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
     }
 
     /// Reset caches whose contents depend on the current player's borders and
@@ -9724,6 +9781,22 @@ impl BasicAi {
     /// same local fringe, which is the practical route to earlier civ and
     /// city-state contact.
     fn exploration_goal(&self, g: &Game, pid: usize, uid: u32, dry_only: bool) -> Option<Pos> {
+        // Goals this unit has proved the host will not walk it to. Empty unless
+        // the bridge asks; see `explore_dead_targets`.
+        let dead: HashSet<Pos> = if self.explore_dead_targets {
+            self.explore_dead
+                .borrow()
+                .get(&uid)
+                .map(|dead| {
+                    dead.iter()
+                        .filter(|(_, expiry)| **expiry > g.turn)
+                        .map(|(pos, _)| *pos)
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            HashSet::new()
+        };
         let origin = g.units[&uid].pos;
         let mut candidates = Vec::new();
         let mut first_candidate_ring = None;
@@ -9744,6 +9817,7 @@ impl BasicAi {
                 .into_iter()
                 .filter(|pos| {
                     !g.players[pid].explored.contains(pos)
+                        && !dead.contains(pos)
                         && g.unit_can_traverse(uid, *pos)
                         && (!dry_only
                             || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
@@ -9813,7 +9887,52 @@ impl BasicAi {
         // pacing between two sea hexes. A land unit explores land.
         let dry_only = self.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
-        if let Some(target) = self.exploration_goal(g, pid, uid, dry_only) {
+        let mut goal = self.exploration_goal(g, pid, uid, dry_only);
+        if self.explore_dead_targets {
+            // ★★★★ A goal this unit was already sent at, from this very tile,
+            // for `EXPLORE_STUCK_TURNS` turns running, is one the host will
+            // not walk it to: retire it and its ring (an impassable edge is
+            // rarely one plot wide) and aim elsewhere. See `explore_dead_targets`.
+            if let Some(target) = goal {
+                let stuck = {
+                    let mut last = self.explore_last.borrow_mut();
+                    match last.get_mut(&uid) {
+                        // Same goal from the same tile as last turn: one more
+                        // turn of proof the order went nowhere.
+                        Some(entry) if entry.0 == target && entry.1 == upos => {
+                            entry.2 += 1;
+                            entry.2
+                        }
+                        // A new goal, or the unit did move: start counting.
+                        _ => {
+                            last.insert(uid, (target, upos, 0));
+                            0
+                        }
+                    }
+                };
+                if stuck >= EXPLORE_STUCK_TURNS {
+                    {
+                        let mut dead = self.explore_dead.borrow_mut();
+                        let unit_dead = dead.entry(uid).or_default();
+                        unit_dead.retain(|_, expiry| *expiry > g.turn);
+                        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
+                        unit_dead.insert(target, expiry);
+                        for neighbour in g.nbrs(target) {
+                            unit_dead.insert(neighbour, expiry);
+                        }
+                    }
+                    self.explore_last.borrow_mut().remove(&uid);
+                    think!(self.journal, Military, Detail,
+                           "{} {uid} gives up on {target:?}", g.units[&uid].kind;
+                           "ordered there {stuck} turns running from {upos:?} and never moved; \
+                            the host will not walk it there, so that ground is retired for \
+                            {EXPLORE_DEAD_TARGET_TURNS} turns";
+                           upos);
+                    goal = self.exploration_goal(g, pid, uid, dry_only);
+                }
+            }
+        }
+        if let Some(target) = goal {
             if self.step_toward(g, pid, uid, target) {
                 return true;
             }
@@ -12527,6 +12646,78 @@ mod tests {
         game.cities.get_mut(&capital).unwrap().pop = 2;
         treated.w.settler_min_pop = 1.5;
         assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
+    }
+
+    /// A scout the host will not move gives up its target: civvis-20260816T040537Z
+    /// ordered its only Scout at one plot for 34 turns and revealed nothing.
+    /// See `explore_dead_targets`.
+    #[test]
+    fn a_scout_the_host_will_not_move_gives_up_its_exploration_target() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("DEADGOAL", 91_779), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let scout = game.spawn_unit("scout", 0, home);
+        game.turn = 10;
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_dead_targets();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, false)
+            .expect("a fresh map has unexplored ground to aim at");
+        // The host "accepts" the order and never moves the unit: model that by
+        // leaving it no movement, so the step fails and it stands still.
+        for turn in 0..EXPLORE_STUCK_TURNS {
+            game.units.get_mut(&scout).unwrap().moves_left = 0.0;
+            game.turn = 10 + turn;
+            let _ = ai.explore_step(&mut game, 0, scout);
+            assert_eq!(game.units[&scout].pos, home, "the unit stands where it was");
+            assert!(
+                ai.explore_dead.borrow().get(&scout).is_none_or(|dead| dead.is_empty()),
+                "nothing is written off before {EXPLORE_STUCK_TURNS} unmoved turns"
+            );
+        }
+        game.units.get_mut(&scout).unwrap().moves_left = 0.0;
+        game.turn = 10 + EXPLORE_STUCK_TURNS;
+        let _ = ai.explore_step(&mut game, 0, scout);
+        let dead = ai.explore_dead.borrow();
+        let retired = dead.get(&scout).expect("the goal is written off");
+        assert!(retired.contains_key(&goal), "the unreachable goal itself is retired");
+        assert!(
+            game.nbrs(goal).iter().all(|n| retired.contains_key(n)),
+            "and its ring with it"
+        );
+        assert_eq!(
+            retired[&goal],
+            game.turn + EXPLORE_DEAD_TARGET_TURNS,
+            "for {EXPLORE_DEAD_TARGET_TURNS} turns"
+        );
+        drop(dead);
+        // The next goal is somewhere else.
+        let next = ai.exploration_goal(&game, 0, scout, false);
+        assert_ne!(next, Some(goal), "the unit aims elsewhere: {next:?}");
+        // And once the retirement lapses the ground is a candidate again.
+        game.turn += EXPLORE_DEAD_TARGET_TURNS + 1;
+        let later = ai.exploration_goal(&game, 0, scout, false);
+        assert!(later.is_some());
+
+        // Without the bridge flag nothing is ever written off: the native
+        // engine moves what it accepts, and the frozen anchor keeps its goal.
+        let plain = BasicAi::new();
+        assert!(!plain.explore_dead_targets);
+        game.turn = 10;
+        for turn in 0..=EXPLORE_STUCK_TURNS {
+            game.units.get_mut(&scout).unwrap().moves_left = 0.0;
+            game.turn = 10 + turn;
+            let _ = plain.explore_step(&mut game, 0, scout);
+        }
+        assert!(plain.explore_dead.borrow().is_empty());
     }
 
     /// The frozen `advanced_v1` anchor and every native tournament game keep
