@@ -1198,11 +1198,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `stacked_escort`/`settlement_safety`, which `AdvancedAi::legacy()` leaves
 /// off; carrying retired sites across rebuilds touches only unit-keyed memory.
 /// Compatibility re-pin; the Elo protocol does not move.
+/// The pre-declaration maintenance reserve is guarded by the live-only
+/// `war_economy` flag, which the frozen anchor never enables. Its Conquest
+/// portfolio therefore keeps the historical order until the live bridge opts
+/// into the named-campaign recovery guard (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
+/// The value below is recomputed after both live-only changes are combined.
 /// The garrisoned-city raid gate is behind `garrison_under_fire`, the live
 /// doctrine that owns the besieged-city path; frozen controllers keep the raid
 /// test as it was (asserted). Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe6ca_4305_0ad7_9c69;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3aff_0662_4feb_c7b3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
