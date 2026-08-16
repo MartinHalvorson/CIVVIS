@@ -1514,6 +1514,7 @@ fn withhold_live_treatment(
         "counter-in-lane" => ai.disable_counter_in_lane(),
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
+        "frontier-loyalty" => ai.disable_frontier_loyalty(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1540,7 +1541,7 @@ fn withhold_live_treatment(
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 era-paced-expansion, tally-culture"
+                 era-paced-expansion, tally-culture, frontier-loyalty"
             ))
         }
     }
@@ -3707,6 +3708,11 @@ mod tests {
         withhold_live_treatment(&mut ai, "tally-culture")
             .expect("the tally-culture control arm is registered");
         assert!(!ai.tally_culture, "the named tally-culture control must hold it off");
+
+        assert!(ai.frontier_loyalty);
+        withhold_live_treatment(&mut ai, "frontier-loyalty")
+            .expect("the frontier-loyalty control arm is registered");
+        assert!(!ai.frontier_loyalty, "the named frontier-loyalty control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

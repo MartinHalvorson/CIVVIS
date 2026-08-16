@@ -1788,6 +1788,73 @@ mod tests {
         assert_eq!(mirror.game.score(1), 542);
     }
 
+    /// ★★★★ THE OTHER CIVILIZATIONS' ECONOMIES ARE THE HOST'S FIGURES, NOT A GUESS.
+    ///
+    /// The standings' rival Science and Culture were CIVVIS's own derivation from
+    /// whichever rival cities happened to be visible — usually none. The host reads
+    /// them for every player (as its World Rankings screen does), and now so does
+    /// the mirror: per-turn Science/Culture as the seat's own kind of delta,
+    /// treasury and Faith directly, refreshed by every sync.
+    #[test]
+    fn rival_economy_reaches_the_rival_seat_and_survives_sync() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            rivals: vec![StateRival {
+                player: 3,
+                military: 100.0,
+                score: 200,
+                science: 41.5,
+                culture: 23.25,
+                gold: 512.0,
+                gold_per_turn: -3.0,
+                faith: 88.0,
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let seat_yields = |game: &crate::game::Game| {
+            let mut total = crate::rules::Yields::default();
+            for cid in game.player_city_ids(1) {
+                total.add(game.city_yields(cid));
+            }
+            if let Some(adjustment) = game.observed_yield_adjustments.get(&1) {
+                total.add(*adjustment);
+            }
+            total
+        };
+        let yields = seat_yields(&mirror.game);
+        assert!((yields.science - 41.5).abs() < 1e-9, "{yields:?}");
+        assert!((yields.culture - 23.25).abs() < 1e-9);
+        assert_eq!(mirror.game.players[1].gold, 512.0);
+        assert_eq!(mirror.game.players[1].gold_per_turn, -3.0);
+        assert_eq!(mirror.game.players[1].faith, 88.0);
+
+        state.turn = 41;
+        state.rivals[0].science = 44.0;
+        state.rivals[0].gold = 530.0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!((seat_yields(&mirror.game).science - 44.0).abs() < 1e-9);
+        assert_eq!(mirror.game.players[1].gold, 530.0);
+
+        // An older export (NaN) or a refused read (-1) leaves the model's own
+        // derivation alone rather than zeroing the seat.
+        state.turn = 42;
+        state.rivals[0].science = -1.0;
+        state.rivals[0].culture = f64::NAN;
+        state.rivals[0].gold = -1.0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.observed_yield_adjustments.get(&1).is_none());
+        assert_eq!(mirror.game.players[1].gold, 530.0);
+    }
+
     #[test]
     fn live_diplomatic_totals_reach_rebuild_and_sync_without_legacy_erasure() {
         // This is the wire shape currently produced by CivvisControlAgent.lua.
@@ -7460,6 +7527,26 @@ pub struct StateRival {
     /// Civics finished, or `-1` if unavailable. See `techs`.
     #[serde(default = "unknown_metric")]
     pub civics: f64,
+    /// The rival's economy as the host reports it — per-turn Science and
+    /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
+    /// every one an accessor the shipped World Rankings and Deal screens call
+    /// on other players. Before these crossed, the standings' rival Science
+    /// and Culture were CIVVIS's own guess from the rival's visible cities.
+    /// `-1` when the host could not be asked; NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub science: f64,
+    #[serde(default = "unknown_metric")]
+    pub culture: f64,
+    #[serde(default = "unknown_metric")]
+    pub tourism: f64,
+    #[serde(default = "unknown_metric")]
+    pub gold: f64,
+    #[serde(default = "unknown_metric")]
+    pub gold_per_turn: f64,
+    #[serde(default = "unknown_metric")]
+    pub faith: f64,
+    #[serde(default = "unknown_metric")]
+    pub faith_per_turn: f64,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -8037,6 +8124,46 @@ pub struct StateSnapshot {
     /// look like successful mirroring while serde silently discards it.
     #[serde(skip)]
     pub schema_gaps: Vec<String>,
+}
+
+/// Put a rival's host-reported economy on its seat: treasury and Faith
+/// balances and rates directly, per-turn Science and Culture as the same
+/// host-to-model delta the seat itself carries (`observed_yield_adjustments`),
+/// so the standings read the host's figures for every civilization and a
+/// planner comparing science races is not comparing against a guess made
+/// from whichever rival cities happen to be visible. Fields the host could
+/// not read (`-1`) or an older export never sent (NaN) leave the model's own
+/// derivation in place.
+fn apply_rival_public_economy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
+    let known = |value: f64| value.is_finite() && value >= 0.0;
+    if known(rival.gold) {
+        game.players[owner].gold = rival.gold;
+    }
+    // Net income is legitimately negative, so like our own seat's
+    // `gold_per_turn` any finite figure is taken (a refused read's -1 is
+    // indistinguishable from a real -1 net; an older export is NaN).
+    if rival.gold_per_turn.is_finite() {
+        game.players[owner].gold_per_turn = rival.gold_per_turn;
+    }
+    if known(rival.faith) {
+        game.players[owner].faith = rival.faith;
+    }
+    if !known(rival.science) && !known(rival.culture) {
+        game.observed_yield_adjustments.remove(&owner);
+        return;
+    }
+    let mut derived = crate::rules::Yields::default();
+    for cid in game.player_city_ids(owner) {
+        derived.add(game.city_yields(cid));
+    }
+    let mut adjustment = crate::rules::Yields::default();
+    if known(rival.science) {
+        adjustment.science = rival.science - derived.science;
+    }
+    if known(rival.culture) {
+        adjustment.culture = rival.culture - derived.culture;
+    }
+    game.observed_yield_adjustments.insert(owner, adjustment);
 }
 
 /// Traders that Firaxis says are already servicing a route.
@@ -8917,6 +9044,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const RIVAL: &[&str] = &[
         "player", "civ", "leader", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
+        "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
@@ -11710,6 +11838,17 @@ fn apply_observed_host_metrics(
     }
     if adjustment.science != 0.0 || adjustment.culture != 0.0 {
         game.observed_yield_adjustments.insert(0, adjustment);
+    }
+    // The rivals' seats, the same way (their yields, treasury and Faith).
+    // Here, after the clear above, so the deltas survive the turn; seats are
+    // 1..n in export order, as the rival loops in `rebuild_from_state` and
+    // `LiveMirror::sync` assign them.
+    for (index, rival) in state.rivals.iter().enumerate() {
+        let owner = index + 1;
+        if owner >= game.players.len() {
+            break;
+        }
+        apply_rival_public_economy(game, owner, rival);
     }
 
     // Which seats the export names a capital for. A record that flags none

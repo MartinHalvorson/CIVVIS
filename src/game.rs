@@ -38658,6 +38658,10 @@ impl Game {
             Some("fishing_boats") => {
                 yields.food += self.tree_effect(pid, "fishing_boats_food");
                 yields.gold += self.tree_effect(pid, "fishing_boats_gold");
+                // Colonialism's +1 Production (Improvement_BonusYieldChanges,
+                // the row a duplicate Id hid from the audit — see
+                // civ6_fidelity.py TABLE_KEYS).
+                yields.production += self.tree_effect(pid, "fishing_boats_production");
                 // Each adjacent Seastead lifts its neighbouring Fishing Boats.
                 yields.production += self
                     .nbrs(pos)

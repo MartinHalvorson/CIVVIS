@@ -1243,7 +1243,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
 /// bred yield weights and district table. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a71_65d4_ad9c_b5a4;
+/// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
+/// unchanged. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x612e_a96e_a16e_b596;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
