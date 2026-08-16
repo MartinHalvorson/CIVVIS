@@ -222,6 +222,13 @@ const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
 /// emergency threshold the live mirror uses for a settler's current plot.
 const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+/// The domestic Loyalty pressure below which a site is "beyond the empire's
+/// reach": Σ pop × (10 − distance) over own cities within nine tiles, the
+/// same term the loyalty model uses. Twenty is a pop-5 city six tiles away.
+/// See `frontier_loyalty`.
+const FRONTIER_LOYALTY_MIN_DOMESTIC: f64 = 20.0;
+/// How far a city's citizens press: the loyalty model's nine-tile radius.
+const FRONTIER_LOYALTY_RADIUS: i32 = 9;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
@@ -2349,6 +2356,31 @@ pub struct AdvancedAi {
     /// again, so held city-states are still defended. Bridge-only
     /// (`civvis_orders` sets it); off for ordinary and frozen controllers.
     pub bank_envoys: bool,
+    /// Do not found a colony beyond the empire's Loyalty reach on ground the
+    /// seat has not explored.
+    ///
+    /// ★★★★ TWO COLONIES FOUNDED AT −19 LOYALTY A TURN, EACH LOST WITHIN EIGHT
+    /// TURNS. Run civvis-20260816T123936Z: Arpinum, founded at t164 EIGHTEEN
+    /// tiles from the nearest Roman city, read −19 Loyalty a turn on the
+    /// host's very first export and flipped at t172; Lugdunum, founded at t203
+    /// eleven tiles out, the same −19 and gone at t211. Every city that held
+    /// stood four to six tiles from another Roman city and read +18 to +21.
+    /// The mirror's own forecast (`settle_site_is_loyalty_doomed`) said
+    /// nothing, because it sums pressure over the cities on the board and the
+    /// rivals pressing those two sites had never been seen — 143 and 101
+    /// unexplored plots lay within nine tiles of them. Two settlers, two
+    /// founding bonuses and sixteen city-turns bought two revolts.
+    ///
+    /// With this on, a site whose own domestic pressure — Σ pop × (10 −
+    /// distance) over own cities within nine tiles, the loyalty model's own
+    /// term — is under `FRONTIER_LOYALTY_MIN_DOMESTIC` while unexplored plots
+    /// lie within nine tiles is treated as doomed: retired before the walk
+    /// and refused on arrival, exactly as a forecast revolt is, and journaled
+    /// as "beyond the empire's loyalty reach". A site inside the empire's
+    /// halo, or on fully explored ground, is judged by the forecast as
+    /// before. Firaxis-only: it prices the live mirror's fog. Off for
+    /// ordinary and frozen controllers.
+    pub frontier_loyalty: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3125,6 +3157,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             tally_culture: false,
             bank_envoys: false,
+            frontier_loyalty: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3881,6 +3914,9 @@ impl AdvancedAi {
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
+        // And no colony beyond the empire's Loyalty reach on fogged ground.
+        // See `frontier_loyalty`.
+        self.enable_frontier_loyalty();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -4295,6 +4331,16 @@ impl AdvancedAi {
 
     pub fn disable_bank_envoys(&mut self) {
         self.bank_envoys = false;
+    }
+
+    /// Do not found a colony beyond the empire's Loyalty reach on fogged
+    /// ground. See `frontier_loyalty`.
+    pub fn enable_frontier_loyalty(&mut self) {
+        self.frontier_loyalty = true;
+    }
+
+    pub fn disable_frontier_loyalty(&mut self) {
+        self.frontier_loyalty = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -19352,10 +19398,55 @@ impl AdvancedAi {
     /// Loyalty calculation of a speculative city, using the same -8/turn
     /// emergency threshold as the live mirror's current-plot protection.
     fn settle_site_is_loyalty_doomed(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        self.settle_site_loyalty_verdict(g, pid, site).is_some()
+    }
+
+    /// Why a site would not hold, if it would not: the forecast revolt, or —
+    /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
+    /// ground. `None` when the site is judged sound.
+    fn settle_site_loyalty_verdict(&self, g: &Game, pid: usize, site: Pos) -> Option<String> {
+        if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
+            return Some(
+                "it lies beyond the empire's Loyalty reach on ground the seat has not \
+                 explored, where the rivals that press it have never been seen"
+                    .to_string(),
+            );
+        }
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
-        forecast.city_loyalty_per_turn(&forecast.cities[&city])
-            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+        (forecast.city_loyalty_per_turn(&forecast.cities[&city])
+            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN)
+            .then(|| {
+                format!(
+                    "the city would lose at least {:.0} Loyalty a turn beside its neighbours",
+                    -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+                )
+            })
+    }
+
+    /// Whether `site` is beyond the empire's Loyalty reach on fogged ground:
+    /// own domestic pressure under `FRONTIER_LOYALTY_MIN_DOMESTIC` while any
+    /// plot within nine tiles is unexplored. See `frontier_loyalty`.
+    pub(crate) fn beyond_loyalty_reach(g: &Game, pid: usize, site: Pos) -> bool {
+        let domestic: f64 = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| {
+                let distance = g.wdist(city.pos, site);
+                if distance > FRONTIER_LOYALTY_RADIUS {
+                    0.0
+                } else {
+                    city.pop as f64 * (10 - distance) as f64
+                }
+            })
+            .sum();
+        if domestic >= FRONTIER_LOYALTY_MIN_DOMESTIC {
+            return false;
+        }
+        g.wdisk(site, FRONTIER_LOYALTY_RADIUS)
+            .into_iter()
+            .any(|pos| g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos))
     }
 
     /// Whether `uid` retired `pos` after standing on it unable to found. Expired
@@ -19669,15 +19760,18 @@ impl AdvancedAi {
                 let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
                     break None;
                 };
-                if !forecast_loyalty || !self.settle_site_is_loyalty_doomed(g, pid, pos) {
+                let verdict = if forecast_loyalty {
+                    self.settle_site_loyalty_verdict(g, pid, pos)
+                } else {
+                    None
+                };
+                let Some(why) = verdict else {
                     self.settler_targets.insert(uid, pos);
                     break Some(pos);
-                }
+                };
                 think!(self.journal(), Expansion, Detail,
                        "Settler refuses {pos:?} before walking there";
-                       "the city would lose at least {:.0} Loyalty a turn beside its \
-                        neighbours; the site is retired and the next best is asked",
-                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; pos);
+                       "{why}; the site is retired and the next best is asked"; pos);
                 self.settler_dead_sites.entry(uid).or_default().insert(
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
@@ -19707,12 +19801,16 @@ impl AdvancedAi {
             // retains a valid cache rather than paying for a speculative city
             // each turn. Recheck once at arrival, when founding would otherwise
             // make the loss irreversible.
-            if forecast_loyalty && self.settle_site_is_loyalty_doomed(g, pid, current) {
+            let arrival_verdict = if forecast_loyalty {
+                self.settle_site_loyalty_verdict(g, pid, current)
+            } else {
+                None
+            };
+            if let Some(why) = arrival_verdict {
                 think!(self.journal(), Expansion, Detail,
                        "Settler abandons loyalty-doomed arrival at {current:?}";
-                       "the cached site now loses at least {:.0} Loyalty a turn, so it is \
-                        retired before founding and the next target will be distinct",
-                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; current);
+                       "{why}, so the cached site is retired before founding and the next \
+                        target will be distinct"; current);
                 self.settler_dead_sites.entry(uid).or_default().insert(
                     current,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
@@ -35331,6 +35429,64 @@ mod tests {
         }
         game.at_war.insert((0, 1));
         (game, city, home)
+    }
+
+    /// ★★★★ Two colonies founded at −19 Loyalty a turn, each lost within eight
+    /// turns (civvis-20260816T123936Z: Arpinum 18 tiles from the nearest own
+    /// city, Lugdunum 11), while the mirror's forecast — which sums only the
+    /// cities on the board — said nothing. See `frontier_loyalty`. A site far
+    /// beyond the capital's reach on fogged ground is doomed on the live seat
+    /// and judged sound by the forecast alone; the same site on fully explored
+    /// ground, and a site inside the capital's halo, are judged as before.
+    #[test]
+    fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
+        let (mut game, capital, home) = empire_with_a_capital(71_119);
+        game.cities.get_mut(&capital).unwrap().pop = 6;
+        // The seat has explored only the capital's neighbourhood.
+        let known: Vec<Pos> = game.wdisk(home, 6);
+        game.players[0].explored.clear();
+        game.players[0].explored.extend(known);
+        let far = anchor_at(&game, home, 14);
+        let near = anchor_at(&game, home, 4);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.frontier_loyalty, "the live seat carries the treatment");
+        assert!(
+            AdvancedAi::beyond_loyalty_reach(&game, 0, far),
+            "fourteen tiles out with fog within nine is beyond reach"
+        );
+        assert!(
+            !AdvancedAi::beyond_loyalty_reach(&game, 0, near),
+            "four tiles from a pop-6 capital is inside the halo (36 pressure)"
+        );
+        let why = live
+            .settle_site_loyalty_verdict(&game, 0, far)
+            .expect("the live seat dooms the far fogged site");
+        assert!(why.contains("beyond the empire's Loyalty reach"), "{why}");
+        assert!(live.settle_site_is_loyalty_doomed(&game, 0, far));
+        assert!(
+            live.settle_site_loyalty_verdict(&game, 0, near).is_none(),
+            "a site inside the halo with no rival near is sound"
+        );
+
+        // Fully explored ground: the far site is judged by the forecast alone,
+        // and with no rival city on the board it is sound.
+        let mut charted = game.clone();
+        let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+        charted.players[0].explored.extend(all);
+        assert!(!AdvancedAi::beyond_loyalty_reach(&charted, 0, far));
+        assert!(live.settle_site_loyalty_verdict(&charted, 0, far).is_none());
+
+        // The forecast alone, as stock and the withheld arm see it: sound.
+        let stock = AdvancedAi::new();
+        assert!(!stock.frontier_loyalty);
+        assert!(!AdvancedAi::legacy().frontier_loyalty);
+        assert!(stock.settle_site_loyalty_verdict(&game, 0, far).is_none());
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_frontier_loyalty();
+        assert!(withheld.settle_site_loyalty_verdict(&game, 0, far).is_none());
     }
 
     /// A tile at exactly `distance` from `home`, chosen deterministically so

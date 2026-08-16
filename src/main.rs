@@ -1243,13 +1243,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
 /// bred yield weights and district table. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
+/// unchanged. Compatibility re-pin; the Elo protocol does not move.
 /// The banked envoy is behind `bank_envoys` and the committed outward
 /// exploration goal behind `BasicAi::explore_commit`, both set only by the
 /// Civilization VI bridge and off for `AdvancedAi::new()` and
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor spends every envoy
 /// and re-derives its scout's goal each turn as before. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xecc6_a42b_8a53_f0ac;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2f3b_2075_395b_eb64;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
