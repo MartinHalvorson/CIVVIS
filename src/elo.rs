@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 137] = [
+pub const EVAL_ONLY_AIS: [&str; 138] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -56,6 +56,7 @@ pub const EVAL_ONLY_AIS: [&str; 137] = [
     "live_without_amenity_project_preemption",
     "live_without_amenity_district_path",
     "live_without_live_wonder_race",
+    "live_without_expansion_before_prophet",
     "live_without_home_defense",
     "live_without_joint_tactics",
     "live_without_loyalty_policy_defence",
@@ -203,7 +204,7 @@ pub const EVAL_ONLY_AIS: [&str; 137] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 46] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 47] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -250,6 +251,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 46] = [
     "amenity-project-preemption",
     "amenity-district-path",
     "live-wonder-race",
+    "expansion-before-prophet",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -279,11 +281,11 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The five bridge treatments that stay out of the native bundle, as tags.
+/// The six bridge treatments that stay out of the native bundle, as tags.
 /// Three encode a rule of Firaxis' game rather than repairing one of ours, one
-/// is excluded on evidence, and the wonder race prices a Firaxis-only
-/// opportunity. See `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 5] = [
+/// is excluded on evidence, and the wonder race and the Prophet deferral price
+/// Firaxis-only opportunities. See `AdvancedAi::enable_engine_repairs`.
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 6] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -292,6 +294,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 5] = [
     // on the Settler seat, and a score tally at the host's turn limit — that
     // CIVVIS-vs-CIVVIS games do not offer.
     "live-wonder-race",
+    // Prices the Settler seat's slow Prophet race: the third city comes before
+    // the Holy Site. CIVVIS-vs-CIVVIS contenders are the real race the stock
+    // order was written for.
+    "expansion-before-prophet",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -426,6 +432,7 @@ define_arm_kinds! {
     LiveWithoutAmenityProjectPreemption => "live_without_amenity_project_preemption",
     LiveWithoutAmenityDistrictPath => "live_without_amenity_district_path",
     LiveWithoutLiveWonderRace => "live_without_live_wonder_race",
+    LiveWithoutExpansionBeforeProphet => "live_without_expansion_before_prophet",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
     LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
@@ -2986,6 +2993,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_live_wonder_race();
             Box::new(ai)
         }
+        "live_without_expansion_before_prophet" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_expansion_before_prophet();
+            Box::new(ai)
+        }
         "live_without_stacked_escort" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -3740,6 +3753,9 @@ impl ArmKind {
             }
             Self::LiveWithoutAmenityDistrictPath => live_without("amenity-district-path"),
             Self::LiveWithoutLiveWonderRace => live_without("live-wonder-race"),
+            Self::LiveWithoutExpansionBeforeProphet => {
+                live_without("expansion-before-prophet")
+            }
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
@@ -4268,6 +4284,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "live_without_amenity_district_path")
         }
         "live_without_live_wonder_race" => (Vec::new(), "live_without_live_wonder_race"),
+        "live_without_expansion_before_prophet" => {
+            (Vec::new(), "live_without_expansion_before_prophet")
+        }
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
         "live_without_joint_tactics" => (Vec::new(), "live_without_joint_tactics"),
         "live_without_loyalty_policy_defence" => {
@@ -5528,7 +5547,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 110] = [
+            const SCRIPTED: [&str; 111] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5615,6 +5634,7 @@ mod tests {
                 "live_without_amenity_project_preemption",
                 "live_without_amenity_district_path",
                 "live_without_live_wonder_race",
+                "live_without_expansion_before_prophet",
                 "live_without_home_defense",
                 "live_without_loyalty_policy_defence",
                 "live_without_siege_muster",
@@ -5723,7 +5743,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 5] = [
+        const EXCLUDED: [&str; 6] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5733,6 +5753,9 @@ mod tests {
             // turn limit. CIVVIS-vs-CIVVIS wonders are the contested race the
             // stock gate was written for, so the native bundle keeps it.
             "live_wonder_race",
+            // Prices the Settler seat's slow Prophet race; the native
+            // contenders are the real race the stock order was written for.
+            "expansion_before_prophet",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
