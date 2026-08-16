@@ -372,7 +372,7 @@ struct Order {
     pos: Option<(i32, i32)>,
 }
 
-/// Firaxis remembers a submitted peace offer per rival for five turns.
+/// Firaxis remembers a submitted peace offer per target for five turns.
 ///
 /// `CivvisControlAgent.lua` rejects another offer while
 /// `turn - asked < (cfg.PeaceRetryTurns or 5)`. Keep that host-only fact at the
@@ -391,10 +391,11 @@ impl HostPeaceRetries {
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         self.last_request.retain(|target, asked| {
             *asked <= state.turn
-                && state
-                    .rivals
-                    .iter()
-                    .any(|rival| rival.at_war && rival.player as i64 == *target)
+                && (state.rivals.iter().any(|rival| {
+                    rival.at_war && rival.player as i64 == *target
+                }) || state.minors.iter().any(|minor| {
+                    minor.at_war && minor.player as i64 == *target
+                }))
         });
     }
 
@@ -409,6 +410,100 @@ impl HostPeaceRetries {
     fn record(&mut self, target: i64, turn: u32) {
         self.last_request.insert(target, turn);
     }
+}
+
+/// The minimum delegation Civilization VI requires for any suzerainty, before a
+/// rival's standing raises that floor.
+const SUZERAIN_ENVOY_FLOOR: i64 = 3;
+
+/// How many of our held Envoys would immediately take this city-state.
+fn envoys_to_take_suzerainty(minor: &civvis::mirror::StateMinor) -> i64 {
+    (SUZERAIN_ENVOY_FLOOR.max(minor.most_envoys.saturating_add(1)) - minor.envoys.max(0))
+        .max(1)
+}
+
+/// Whether this city-state is only at war because its current Suzerain is.
+///
+/// A city-state follows its Suzerain into that war, so a direct peace operation
+/// cannot make Envoys legal.  The relevant major must be met to have a row in
+/// `rivals`; an unrepresented Suzerain is deliberately not guessed to be at war.
+fn city_state_war_is_derived(
+    state: &civvis::mirror::StateSnapshot,
+    minor: &civvis::mirror::StateMinor,
+) -> bool {
+    minor.suzerain >= 0
+        && state
+            .rivals
+            .iter()
+            .any(|rival| rival.at_war && rival.player as i32 == minor.suzerain)
+}
+
+/// Convert one affordable, direct city-state war into the first half of an
+/// Envoy investment.
+///
+/// Civilization VI rejects `GIVE_INFLUENCE_TOKEN` while a war is active, and its
+/// diplomacy operation lands asynchronously.  Submit exactly one peace order
+/// now; the next exported frame is the authority for whether normal envoy
+/// planning may spend the pool.  The caller retains that exact cost only on an
+/// accepted peace frame.  Picking the lowest threshold puts a limited pool
+/// behind the soonest available Suzerain bonus.
+fn queue_city_state_envoy_reclaim(
+    orders: &mut Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+) -> Option<(i64, i64)> {
+    let held = state.envoys_free.filter(|held| *held > 0)?;
+    let (needed, target) = state
+        .minors
+        .iter()
+        .filter(|minor| minor.is_city_state() && minor.at_war)
+        .filter(|minor| !city_state_war_is_derived(state, minor))
+        .map(|minor| (envoys_to_take_suzerainty(minor), minor.player as i64))
+        .filter(|(needed, _)| held >= *needed)
+        .filter(|(_, target)| {
+            !orders.iter().any(|order| {
+                order.subject == Some(*target) && matches!(order.kind, "war" | "peace")
+            })
+        })
+        .min_by_key(|(needed, target)| (*needed, *target))?;
+    orders.push(Order {
+        kind: "peace",
+        subject: Some(target),
+        verb: Some("MAKE_PEACE".to_string()),
+        pos: None,
+    });
+    Some((target, needed))
+}
+
+/// Keep the exact cost of a submitted city-state peace available for the next
+/// authoritative frame, while still investing any surplus Envoys immediately.
+///
+/// The normal per-turn envoy cap means no more than `ENVOY_ORDERS_PER_TURN`
+/// existing orders can land in this host batch.  Removing the target itself is
+/// defensive: the planning board cannot emit it during war, but the host state
+/// is authoritative and must never receive peace and envoy for one minor at once.
+fn reserve_envoys_for_submitted_reclaim(
+    orders: &mut Vec<Order>,
+    target: i64,
+    held: i64,
+    needed: i64,
+) -> usize {
+    let mut remaining_surplus = held
+        .saturating_sub(needed)
+        .clamp(0, ENVOY_ORDERS_PER_TURN as i64) as usize;
+    let mut deferred = 0;
+    orders.retain(|order| {
+        if order.kind != "envoy" {
+            return true;
+        }
+        if order.subject == Some(target) || remaining_surplus == 0 {
+            deferred += 1;
+            false
+        } else {
+            remaining_surplus -= 1;
+            true
+        }
+    });
+    deferred
 }
 
 /// Firaxis blocks outer-defense repairs for three turns after a city takes damage.
@@ -2066,9 +2161,27 @@ fn decide(
         note_bits.push("plan=none".to_string());
     }
 
+    let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state);
+
     let (host_legal, deferred_peace_retries) =
         defer_host_peace_retries(orders, state, host_peace_retries);
     orders = host_legal;
+    if let Some((target, needed)) = envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(target));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                target,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
+            ));
+        }
+    }
     if !deferred_peace_retries.is_empty() {
         let targets = deferred_peace_retries
             .iter()
@@ -4011,6 +4124,267 @@ mod tests {
         let (orders, deferred) = defer_host_peace_retries(vec![peace()], &state, &mut retries);
         assert_eq!(orders.len(), 1, "the fifth turn is legal again");
         assert!(deferred.is_empty());
+    }
+
+    #[test]
+    fn an_affordable_direct_city_state_war_peaces_before_envoys() {
+        let mut state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(4),
+            // This is the current Suzerain, but we are at peace with it.  The
+            // city-state war is therefore direct and a minor peace can release it.
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut proposed = Vec::new();
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            Some((9, 4)),
+            "four held envoys raise our one to five and take Geneva"
+        );
+        assert_eq!(proposed.len(), 1);
+        assert_eq!(proposed[0].kind, "peace");
+        assert_eq!(proposed[0].subject, Some(9));
+        assert!(
+            proposed
+                .iter()
+                .all(|order| !(order.kind == "envoy" && order.subject == Some(9))),
+            "Firaxis cannot accept an envoy to the city-state until a later state frame"
+        );
+
+        // A direct minor peace uses the same host cooldown as a major.  Without
+        // this the next bridge frame would re-submit an operation Firaxis has
+        // already accepted but not yet reflected.
+        let mut retries = HostPeaceRetries::default();
+        let (sent, deferred) = defer_host_peace_retries(proposed, &state, &mut retries);
+        assert_eq!(sent.len(), 1);
+        assert!(deferred.is_empty());
+
+        state.turn = 59;
+        let mut retry = Vec::new();
+        assert_eq!(queue_city_state_envoy_reclaim(&mut retry, &state), Some((9, 4)));
+        let (sent, deferred) = defer_host_peace_retries(retry, &state, &mut retries);
+        assert!(sent.is_empty(), "the host has not confirmed peace yet");
+        assert_eq!(deferred, vec![9]);
+
+        // Once a fresh export says the war ended, retry memory clears and the
+        // normal live planner may legally choose its envoy placements.
+        state.turn = 60;
+        state.minors[0].at_war = false;
+        let _ = defer_host_peace_retries(Vec::new(), &state, &mut retries);
+        assert!(retries.permits(9, state.turn));
+    }
+
+    #[test]
+    fn submitted_city_state_reclaim_reserves_only_the_suzerainty_cost() {
+        let envoy = |subject| Order {
+            kind: "envoy",
+            subject: Some(subject),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            Order {
+                kind: "peace",
+                subject: Some(9),
+                verb: Some("MAKE_PEACE".to_string()),
+                pos: None,
+            },
+            envoy(7),
+            // The planner should never make this during war, but preserving it
+            // would defeat the host-boundary guarantee the reserve provides.
+            envoy(9),
+            envoy(8),
+            envoy(10),
+        ];
+        assert_eq!(
+            reserve_envoys_for_submitted_reclaim(&mut orders, 9, 5, 3),
+            2,
+            "one invalid target and one generic surplus order wait for the next frame"
+        );
+        let envoys: Vec<i64> = orders
+            .iter()
+            .filter(|order| order.kind == "envoy")
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(envoys, vec![7, 8], "two surplus envoys still invest now");
+        assert!(
+            orders
+                .iter()
+                .any(|order| order.kind == "peace" && order.subject == Some(9)),
+            "the submitted peace itself remains intact"
+        );
+    }
+
+    #[test]
+    fn city_state_envoy_reclaim_skips_derived_wars_and_short_pools() {
+        let mut state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(3),
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut proposed = Vec::new();
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            None,
+            "do not end a war when the pool still cannot win the city-state"
+        );
+        assert!(proposed.is_empty());
+
+        state.envoys_free = Some(4);
+        state.rivals[0].at_war = true;
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            None,
+            "a city-state follows its hostile Suzerain; direct peace would not unlock envoys"
+        );
+        assert!(proposed.is_empty());
+    }
+
+    #[test]
+    fn direct_city_state_reclaim_crosses_the_host_boundary_as_peace_only() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 58,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 58,
+            military: 100.0,
+            envoys_free: Some(4),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                military: 1.0,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                cities: vec![StateCity {
+                    id: 65_537,
+                    name: "Geneva".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 3, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the decision is JSON");
+        let orders = reply["orders"].as_array().expect("orders are an array");
+        assert!(
+            orders.iter().any(|order| {
+                order["kind"] == "peace" && order["subject"] == 9
+            }),
+            "an affordable direct city-state war must request peace: {reply}"
+        );
+        assert!(
+            orders.iter().all(|order| {
+                !(order["kind"] == "envoy" && order["subject"] == 9)
+            }),
+            "the same host batch must not try to envoy a still-warring city-state: {reply}"
+        );
+        assert!(
+            reply["note"]
+                .as_str()
+                .is_some_and(|note| note.contains("envoy_reclaim_peace=9 needed=4")),
+            "the bridge must identify this intentional peace-to-envoy handoff: {reply}"
+        );
+
+        // The host resolves the peace asynchronously.  The first later state
+        // that says it succeeded is where the ordinary envoy planner regains
+        // legal access to Geneva and spends the prepared pool.
+        let mut confirmed_state = state.clone();
+        confirmed_state.turn = 59;
+        confirmed_state.minors[0].at_war = false;
+        let mut confirmed_mirror =
+            civvis::mirror::LiveMirror::new(&snapshot, &confirmed_state, 3, 1, 250, 0);
+        let mut confirmed_ai = civvis::ai::AdvancedAi::new();
+        let mut confirmed_ours = std::collections::BTreeMap::new();
+        let confirmed: serde_json::Value = serde_json::from_str(&decide(
+            &mut confirmed_mirror,
+            &mut confirmed_ai,
+            &snapshot,
+            &confirmed_state,
+            false,
+            &[],
+            &mut confirmed_ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the confirmed decision is JSON");
+        let envoys = confirmed["orders"]
+            .as_array()
+            .expect("confirmed orders are an array")
+            .iter()
+            .filter(|order| order["kind"] == "envoy" && order["subject"] == 9)
+            .count();
+        assert_eq!(
+            envoys, 4,
+            "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
+        );
     }
 
     #[test]
