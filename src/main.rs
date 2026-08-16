@@ -1049,8 +1049,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// and lets it start a defender after clearing a host-owned queue.
 /// `AdvancedAi::legacy()` also leaves `amenity_project_preemption` false, so
 /// it never reads the host-calibrated Amenity ledger or reserves an idle Arena
-/// queue. The new helper is live-only and returns before inspecting any city
-/// under the frozen anchor. Compatibility re-pin; the Elo protocol does not
+/// queue. The stricter broad-wartime reservation uses that same gate before it
+/// can inspect an idle or repeatable queue; every frozen constructor returns
+/// before reading a city. Compatibility re-pin; the Elo protocol does not
 /// move.
 /// A fresh direct declaration likewise observes the timed-war endgame reserve
 /// only when `endgame_war_runway` is enabled through the live bridge. The
@@ -3731,6 +3732,7 @@ mod tests {
                     "suzerain_cards_need_a_suzerainty",
                     ai.suzerain_cards_need_a_suzerainty,
                 ),
+                ("amenity_project_preemption", ai.amenity_project_preemption),
             ] {
                 assert!(
                     !on,

@@ -50,6 +50,21 @@ pub struct HistoricalScenario {
     pub turns: u32,
     pub width: i32,
     pub height: i32,
+    /// The random-disaster classes this battle is actually remembered for —
+    /// empty for nearly every engagement, because a battlefield is decided by
+    /// the fighting and the arena runs no random disasters at all (see
+    /// `Game::script_disaster_allowed`). A class earns its place here only
+    /// when the weather was significant to the real battle: the thirst at
+    /// Hattin, the storms that broke the Armada, the winter at Stalingrad.
+    ///
+    /// Considered and deliberately left empty: Agincourt's and Waterloo's
+    /// rain-mud (the engine has no rain class, and a river flood on those
+    /// fields would be invention); Cannae's Volturnus dust (a wind in Livy's
+    /// telling, not a storm, and its weight is debated); Trafalgar's great
+    /// gale (it wrecked the prizes *after* the action was decided); Midway's
+    /// squalls (concealment, not disaster); Inchon's Typhoon Kezia (it
+    /// brushed the approach convoy, not the landing).
+    pub disasters: &'static [&'static str],
 }
 
 /// The twenty-four headline engagements: three for every historical Civ VI
@@ -75,6 +90,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 34,
         width: 22,
         height: 16,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "marathon",
@@ -95,6 +111,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 28,
         width: 20,
         height: 14,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "thermopylae",
@@ -115,6 +132,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 24,
         width: 18,
         height: 14,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "gaugamela",
@@ -135,6 +153,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 40,
         width: 24,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "cannae",
@@ -157,6 +176,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 38,
         width: 22,
         height: 16,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "actium",
@@ -177,6 +197,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 36,
         width: 24,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "hastings",
@@ -197,6 +218,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 34,
         width: 20,
         height: 16,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "hattin",
@@ -217,6 +239,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 36,
         width: 22,
         height: 16,
+        // The thirst is the battle: Saladin held the springs, the Crusader
+        // army marched a waterless July plateau, and it broke around a dry
+        // camp at the Horns. The parched field is historical fact here.
+        disasters: &["drought"],
     },
     HistoricalScenario {
         id: "agincourt",
@@ -237,6 +263,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 35,
         width: 20,
         height: 16,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "constantinople_1453",
@@ -257,6 +284,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 42,
         width: 24,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "lepanto",
@@ -277,6 +305,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 32,
         width: 24,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "spanish_armada",
@@ -297,6 +326,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 34,
         width: 26,
         height: 18,
+        // "He blew with His winds, and they were scattered": the Atlantic
+        // gales sank more of the Armada than English gunnery did. A storm on
+        // this water is the campaign's own weather.
+        disasters: &["hurricane"],
     },
     HistoricalScenario {
         id: "waterloo",
@@ -317,6 +350,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 44,
         width: 28,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "gettysburg",
@@ -337,6 +371,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 46,
         width: 26,
         height: 20,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "trafalgar",
@@ -357,6 +392,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 40,
         width: 30,
         height: 24,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "stalingrad",
@@ -377,6 +413,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 48,
         width: 28,
         height: 20,
+        // The Russian winter is inseparable from the battle: the November
+        // counteroffensive rolled through snow, and the pocket froze before
+        // it starved. A blizzard here is the history, not a die roll.
+        disasters: &["blizzard"],
     },
     HistoricalScenario {
         id: "normandy",
@@ -397,6 +437,11 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 46,
         width: 28,
         height: 20,
+        // The invasion rode a one-day break in a Channel gale — Rommel was
+        // away because of the forecast — and the 19 June storm, the worst in
+        // forty years, wrecked the American Mulberry and cost the buildup
+        // more than the defenders did. Channel storms belong to this battle.
+        disasters: &["hurricane"],
     },
     HistoricalScenario {
         id: "midway",
@@ -417,6 +462,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 42,
         width: 28,
         height: 20,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "inchon",
@@ -437,6 +483,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 40,
         width: 24,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "dien_bien_phu",
@@ -457,6 +504,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 44,
         width: 22,
         height: 18,
+        // The monsoon broke over the siege's last weeks: the Nam Yum rose,
+        // trenches and dugouts flooded, the airstrip drowned, and the drop
+        // zones shrank. Flooding is the valley's own weather.
+        disasters: &["river_flood"],
     },
     HistoricalScenario {
         id: "six_day_war",
@@ -477,6 +528,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 38,
         width: 26,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "desert_storm",
@@ -497,6 +549,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 40,
         width: 28,
         height: 18,
+        // February 1991 was the theater's worst weather in years: shamal
+        // sandstorms and rain grounded sorties and slowed the left hook.
+        // Dust is this desert's own weather.
+        disasters: &["dust_storm"],
     },
     HistoricalScenario {
         id: "fallujah",
@@ -517,6 +573,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 42,
         width: 22,
         height: 18,
+        disasters: &[],
     },
     HistoricalScenario {
         id: "mosul",
@@ -537,6 +594,10 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         turns: 48,
         width: 26,
         height: 20,
+        // The defenders timed counterattacks to the dust storms that
+        // grounded coalition air cover — the weather was fought with, on the
+        // record, through the whole battle.
+        disasters: &["dust_storm"],
     },
 ];
 
