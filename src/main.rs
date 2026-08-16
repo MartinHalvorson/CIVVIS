@@ -1117,7 +1117,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The generic Wonder fallback reads mirror-only `blocked_wonders`, which
 /// ordinary/headless games never populate. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf613_d337_35b4_0aee;
+/// Live war patience now recognizes only an observed foreign city changing
+/// hands, so a fresh settlement cannot prolong a stale war; the frozen anchor
+/// never enables `war_patience`. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x238c_dd54_e28a_ab4b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
