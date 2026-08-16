@@ -172,6 +172,10 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// The techs that may unlock the first Walls, as the static names the research
+/// goal chain carries. See `AdvancedAi::walls_tech_goal`.
+const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
+
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
 /// `AdvancedAi::live_wonder_race_scale`.
@@ -7836,6 +7840,63 @@ impl AdvancedAi {
     /// target is absent from what the argmax will ever take on merit, not
     /// because it ranks below something else. Gated on the empire ACTUALLY being
     /// housing-capped, so a comfortable empire never diverts a beaker to it.
+    /// The tech that unlocks the first Walls, when a major war is on (or a
+    /// city of ours is threatened), some city of ours has no walls at all and
+    /// cannot start them for want of that tech.
+    ///
+    /// ★★★★ THE WALLS DOCTRINE NEEDS THE WALL TECH. `garrison_walls` and
+    /// `besieged_city_item` both put Ancient Walls first for a threatened city
+    /// — and both are silent when Masonry is unresearched. Run
+    /// civvis-20260816T040537Z: Khmer declared at t61 on a nine-tech empire
+    /// with Bronze Working but no Masonry; the research chooser then took Iron
+    /// Working, Irrigation, Shipbuilding, Currency and Celestial Navigation
+    /// (Masonry "at 16" against Celestial Navigation's 18 on t78) while Rome,
+    /// unwalled at defence 27, went 0 → 156 damage from t72 and fell on t79 —
+    /// the capital, to a Settler AI. Behind `garrison_walls`, the live walls
+    /// doctrine, which the frozen anchor never sets. Asked from the ruleset
+    /// (`buildings["walls"].tech`), so a moved unlock stays correct.
+    fn walls_tech_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.base.garrison_walls {
+            return None;
+        }
+        let major_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        if !major_war && self.threatened_city(g, pid).is_none() {
+            return None;
+        }
+        let walls = crate::name!("walls");
+        let spec = g.rules.buildings.get(&walls)?;
+        let tech = spec.tech.as_ref()?;
+        if g.players[pid].techs.contains(tech) {
+            return None;
+        }
+        let unwalled = g.cities.values().any(|city| {
+            city.owner == pid
+                && !city.buildings.iter().any(|built| {
+                    g.rules
+                        .buildings
+                        .get(built)
+                        .is_some_and(|spec| spec.outer_defense > 0)
+                })
+        });
+        if !unwalled {
+            return None;
+        }
+        // The chooser walks the cheapest step toward the goal, so name the
+        // tech itself; a static name is what the goal chain carries.
+        g.rules
+            .techs
+            .keys()
+            .find(|known| **known == *tech)
+            .map(|known| known.as_str())
+            .and_then(|name| WALL_TECH_NAMES.iter().copied().find(|w| *w == name))
+    }
+
     fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
         if !self.housing_research {
             return None;
@@ -7889,7 +7950,11 @@ impl AdvancedAi {
                 || self.diplomatic_science_backup(g, pid, plan);
             let great_person_goal =
                 BasicAi::live_great_person_tech_goal(g, pid);
+            // ★★★★ A city under attack that cannot wall itself researches the
+            // wall before anything else. See `walls_tech_goal`.
+            let walls_goal = self.walls_tech_goal(g, pid);
             let forced_goal = match objective {
+                _ if walls_goal.is_some() => walls_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) => self
@@ -43542,6 +43607,79 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// A city under attack that cannot wall itself researches the wall first:
+    /// civvis-20260816T040537Z lost its unwalled capital on t79 with Masonry
+    /// "at 16" behind Celestial Navigation. See `walls_tech_goal`.
+    #[test]
+    fn a_major_war_sends_an_unwalled_empire_at_the_wall_tech() {
+        let mut game = crate::game::Game::new(2, 32, 24, 9_103, 250, 0);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        game.record_contact(0, 1);
+        game.players[0].techs.remove(&crate::name!("masonry"));
+        assert!(
+            game.rules.buildings["walls"].tech.as_deref() == Some("masonry"),
+            "the ruleset unlocks the first Walls with Masonry"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.garrison_walls, "the walls doctrine is on for the live seat");
+        // At peace, with no threatened city: nothing to force.
+        assert_eq!(live.walls_tech_goal(&game, 0), None);
+
+        // The neighbour declares: the unwalled empire is sent at Masonry.
+        game.current = 1;
+        game.apply(1, &Action::DeclareWar { player: 0 }).unwrap();
+        game.current = 0;
+        assert_eq!(live.walls_tech_goal(&game, 0), Some("masonry"));
+        // And it drives the research decision itself.
+        game.players[0].research = None;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        live.advanced_research(&mut game, 0, &plan);
+        let picked = game.players[0].research.clone().expect("a tech is chosen");
+        assert!(
+            live.tech_leads_to(&game, picked.as_str(), "masonry"),
+            "under a major war the cheapest step toward the wall tech is researched first, not {picked}"
+        );
+
+        // Walls known: the goal is spent.
+        game.players[0].techs.insert(crate::name!("masonry"));
+        assert_eq!(live.walls_tech_goal(&game, 0), None);
+        game.players[0].techs.remove(&crate::name!("masonry"));
+        // Every city walled: nothing to force either.
+        let capital = game.player_city_ids(0)[0];
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
+        assert_eq!(live.walls_tech_goal(&game, 0), None);
+        game.cities.get_mut(&capital).unwrap().buildings.pop();
+
+        // The stock controller and the frozen anchor never enter it.
+        let stock = AdvancedAi::new();
+        assert!(!stock.base.garrison_walls);
+        assert_eq!(stock.walls_tech_goal(&game, 0), None);
+        let frozen = AdvancedAi::legacy();
+        assert_eq!(frozen.walls_tech_goal(&game, 0), None);
     }
 
     /// The live Campus treatment used to be unable to act during a religious
