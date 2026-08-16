@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 136] = [
+pub const EVAL_ONLY_AIS: [&str; 137] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -54,6 +54,7 @@ pub const EVAL_ONLY_AIS: [&str; 136] = [
     // moves, which is exactly what a rating anchor must not do.
     "live",
     "live_without_amenity_project_preemption",
+    "live_without_amenity_district_path",
     "live_without_live_wonder_race",
     "live_without_home_defense",
     "live_without_joint_tactics",
@@ -202,7 +203,7 @@ pub const EVAL_ONLY_AIS: [&str; 136] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 45] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 46] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -247,6 +248,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 45] = [
     "garrison-walls",
     "housing-buildings",
     "amenity-project-preemption",
+    "amenity-district-path",
     "live-wonder-race",
 ];
 
@@ -322,7 +324,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 24] = [
 ];
 
 /// The economic half: settlement, growth, districts, and the policy deck.
-pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 16] = [
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 17] = [
     "escort-unstick",
     "stacked-escort",
     "wonder-ring-settle-value",
@@ -331,6 +333,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 16] = [
     "housing-districts",
     "housing-buildings",
     "amenity-project-preemption",
+    "amenity-district-path",
     "housing-cards",
     "housing-research",
     "campus-every-city",
@@ -345,7 +348,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 16] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 40] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 41] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -378,6 +381,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 40] = [
     "housing-districts",
     "housing-buildings",
     "amenity-project-preemption",
+    "amenity-district-path",
     "housing-cards",
     "housing-research",
     "campus-every-city",
@@ -420,6 +424,7 @@ define_arm_kinds! {
     // held off, so each repair can be priced in cities and score.
     Live => "live",
     LiveWithoutAmenityProjectPreemption => "live_without_amenity_project_preemption",
+    LiveWithoutAmenityDistrictPath => "live_without_amenity_district_path",
     LiveWithoutLiveWonderRace => "live_without_live_wonder_race",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
@@ -2969,6 +2974,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_amenity_project_preemption();
             Box::new(ai)
         }
+        "live_without_amenity_district_path" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_amenity_district_path();
+            Box::new(ai)
+        }
         "live_without_live_wonder_race" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -3727,6 +3738,7 @@ impl ArmKind {
             Self::LiveWithoutAmenityProjectPreemption => {
                 live_without("amenity-project-preemption")
             }
+            Self::LiveWithoutAmenityDistrictPath => live_without("amenity-district-path"),
             Self::LiveWithoutLiveWonderRace => live_without("live-wonder-race"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
@@ -4251,6 +4263,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live" => (Vec::new(), "live"),
         "live_without_amenity_project_preemption" => {
             (Vec::new(), "live_without_amenity_project_preemption")
+        }
+        "live_without_amenity_district_path" => {
+            (Vec::new(), "live_without_amenity_district_path")
         }
         "live_without_live_wonder_race" => (Vec::new(), "live_without_live_wonder_race"),
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
@@ -5513,7 +5528,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 109] = [
+            const SCRIPTED: [&str; 110] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5598,6 +5613,7 @@ mod tests {
                 // weights artifact and no value net.
                 "live",
                 "live_without_amenity_project_preemption",
+                "live_without_amenity_district_path",
                 "live_without_live_wonder_race",
                 "live_without_home_defense",
                 "live_without_loyalty_policy_defence",

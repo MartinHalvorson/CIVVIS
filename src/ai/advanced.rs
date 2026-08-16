@@ -167,6 +167,15 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// Raw production value the live wonder race adds on top of a wonder's yields.
 /// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
 const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
+
+/// What a district's first-tier amenity building is worth at district-choice
+/// time, as a share of its amenity: it is a second build, not the district.
+/// See `AdvancedAi::amenity_district_path`.
+const HOSTED_AMENITY_DISCOUNT: f64 = 0.75;
+
+/// What each further city a regional amenity building reaches is worth, as a
+/// share of the local city's own weight. See `AdvancedAi::amenity_district_path`.
+const REGIONAL_AMENITY_REACH_DISCOUNT: f64 = 0.8;
 /// Standard turns a settler avoids a site it stood on and could not found. See
 /// `advanced_settler_step`.
 const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
@@ -1785,6 +1794,30 @@ pub struct AdvancedAi {
     /// native repair bundle enable it, so a Science plan can keep its project
     /// tempo except when host-observed happiness has become the binding loss.
     pub amenity_project_preemption: bool,
+    /// Price an amenity district by the amenity building it will host, and a
+    /// regional amenity building by every city it reaches.
+    ///
+    /// ★★★★ THE ENTERTAINMENT COMPLEX WAS WORTH NOTHING UNTIL A CRISIS. The
+    /// district arm of `production_value` pays `amenity_gain` from
+    /// `Game::district_amenity`, and the district's own spec carries no
+    /// amenity — the Arena's +2 arrives only after the district stands. So
+    /// at choice time an Entertainment Complex scored like an empty plot, and
+    /// only `amenity_project_preemption` (a ≥3 shortfall in two cities) ever
+    /// forced one. Measured over the last five live Settler runs
+    /// (`civvis-20260815T190904Z` … `civvis-20260816T003229Z`, 6,567
+    /// city-turns): **57–83% of city-turns Displeased or worse** (−10%
+    /// non-food yields, −15% growth), the severe band only 0–16%, and the
+    /// first Entertainment Complex of the newest run at turn 139 in one city
+    /// of eight. Every empire played its whole game a step short.
+    ///
+    /// With this on, a district that hosts amenity buildings is worth the
+    /// first-tier one the player can already build (Arena +2), discounted for
+    /// the second build it still needs; and a regional building (Zoo,
+    /// Stadium: `regional_range`) is worth its amenity in every own city it
+    /// reaches, not one. Off for ordinary and frozen controllers; part of the
+    /// live bridge and the native repair bundle — the engine's own amenity
+    /// rules are the ones being under-read.
+    pub amenity_district_path: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -2739,6 +2772,7 @@ impl AdvancedAi {
             city_target_floor: 3,
             plan_city_target: false,
             amenity_project_preemption: false,
+            amenity_district_path: false,
             live_wonder_race: false,
             wide_map_capacity: false,
             city_strategy: false,
@@ -3443,6 +3477,7 @@ impl AdvancedAi {
         // and the rest of the Science queue while the district/building chain
         // completes.
         self.enable_amenity_project_preemption();
+        self.enable_amenity_district_path();
         // Zero wonder orders in twenty live Settler runs that all ended on the
         // host's score tally, 15 points a wonder. See `live_wonder_race`.
         self.enable_live_wonder_race();
@@ -3565,6 +3600,7 @@ impl AdvancedAi {
         self.enable_housing_research();
         self.enable_campus_every_city();
         self.enable_amenity_project_preemption();
+        self.enable_amenity_district_path();
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
         // Keeping it loyal, and not slotting cards that multiply zero.
@@ -3763,6 +3799,16 @@ impl AdvancedAi {
 
     pub fn disable_amenity_project_preemption(&mut self) {
         self.amenity_project_preemption = false;
+    }
+
+    /// Price an amenity district by the building it will host and a regional
+    /// amenity building by every city it reaches. See `amenity_district_path`.
+    pub fn enable_amenity_district_path(&mut self) {
+        self.amenity_district_path = true;
+    }
+
+    pub fn disable_amenity_district_path(&mut self) {
+        self.amenity_district_path = false;
     }
 
     /// Let a developed live city take the cheapest legal wonder whatever the
@@ -7067,6 +7113,73 @@ impl AdvancedAi {
     ///
     /// The horizon every research term is scaled by. A game past its turn limit
     /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    /// The amenity a district of `family` unlocks through the first-tier
+    /// amenity building the player can already build there (an Arena's +2 for
+    /// an Entertainment Complex), discounted because it is a second build.
+    /// Zero for a family with no such building. See `amenity_district_path`.
+    fn hosted_amenity_path(g: &Game, pid: usize, family: &Name) -> f64 {
+        let player = &g.players[pid];
+        let hosted = g
+            .rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| {
+                !spec.wonder
+                    && spec.amenity > 0.0
+                    && spec.requires.is_empty()
+                    && spec.requires_any.is_empty()
+                    && spec
+                        .district
+                        .is_some_and(|district| g.district_family(district) == *family)
+                    && spec
+                        .unique_to
+                        .as_deref()
+                        .is_none_or(|civ| civ == player.civ.as_str())
+                    && spec.tech.as_ref().is_none_or(|tech| player.techs.contains(tech))
+                    && spec
+                        .civic
+                        .as_ref()
+                        .is_none_or(|civic| player.civics.contains(civic))
+            })
+            .map(|(_, spec)| spec.amenity)
+            .fold(0.0, f64::max);
+        hosted * HOSTED_AMENITY_DISCOUNT
+    }
+
+    /// The extra weight a regional amenity building earns from the other own
+    /// cities it would reach that no copy already reaches, in the same units
+    /// as the local `30 + 22 × need` term. Zero for a building with no range.
+    /// See `amenity_district_path`.
+    fn regional_amenity_reach(
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        building: &Name,
+        spec: &crate::rules::BuildingSpec,
+    ) -> f64 {
+        if spec.regional_range <= 0 || spec.amenity <= 0.0 {
+            return 0.0;
+        }
+        let range = spec.regional_range;
+        let own: Vec<&crate::game::City> =
+            g.cities.values().filter(|other| other.owner == pid).collect();
+        own.iter()
+            .filter(|other| other.id != city.id && g.wdist(city.pos, other.pos) <= range)
+            .filter(|other| {
+                // Non-stacking: a city a standing copy already reaches gains
+                // nothing from a second one.
+                !own.iter().any(|source| {
+                    source.buildings.contains(building)
+                        && g.wdist(source.pos, other.pos) <= range
+                })
+            })
+            .map(|other| {
+                let need = (-g.city_amenity_surplus(other)).max(0) as f64;
+                (30.0 + need * 22.0) * REGIONAL_AMENITY_REACH_DISCOUNT
+            })
+            .sum()
+    }
+
     fn research_horizon(g: &Game) -> f64 {
         let budget = g.max_turns.max(1) as f64;
         ((budget - g.turn as f64) / budget).clamp(0.0, 1.0)
@@ -15928,10 +16041,18 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // A regional amenity building (Zoo, Stadium) reaches every
+                    // own city within `regional_range`; priced as one city's
+                    // +1 it never outbid a Library. See `amenity_district_path`.
+                    let regional_amenity_reach = if self.amenity_district_path {
+                        Self::regional_amenity_reach(g, pid, city, building, spec)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + research_debt
                         + spec.housing * (22.0 + housing_need * 18.0)
-                        + spec.amenity * (30.0 + amenity_need * 22.0)
+                        + spec.amenity * (30.0 + amenity_need * 22.0 + regional_amenity_reach)
                         + great_work_slots
                             * if plan.strategy == GrandStrategy::Culture {
                                 180.0
@@ -16021,7 +16142,19 @@ impl AdvancedAi {
                 developed.districts.insert(Name::new(district), *pos);
                 let housing_gain = (g.city_housing(&developed) - g.city_housing(city)).max(0.0);
                 let housing_need = (city.pop as f64 + 2.0 - g.city_housing(city)).max(0.0);
-                let amenity_gain = g.district_amenity(district, *pos);
+                // ★★★★ AN AMENITY DISTRICT IS WORTH THE BUILDING IT WILL HOST.
+                // `district_amenity` reads the district's own spec, and an
+                // Entertainment Complex carries none — its Arena's +2 arrives
+                // one build later — so it scored like an empty plot and never
+                // won a queue outside a crisis: no Entertainment Complex at all
+                // in four of the last five live runs, 57–83% of city-turns
+                // Displeased. See `amenity_district_path`.
+                let amenity_gain = g.district_amenity(district, *pos)
+                    + if self.amenity_district_path {
+                        Self::hosted_amenity_path(g, pid, &family)
+                    } else {
+                        0.0
+                    };
                 let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
                 let great_people = spec.great_person_points.values().sum::<f64>();
                 let relevant_great_people = match plan.strategy {
@@ -32213,6 +32346,223 @@ mod tests {
         );
         live.disable_amenity_project_preemption();
         assert!(!live.amenity_project_preemption);
+    }
+
+    /// The Entertainment Complex carries no amenity of its own; the Arena it
+    /// hosts does. Priced by the district spec alone it scored like an empty
+    /// plot: no Entertainment Complex in four of the last five live runs and
+    /// 57–83% of city-turns Displeased. See `amenity_district_path`.
+    #[test]
+    fn an_amenity_district_is_worth_the_arena_it_hosts() {
+        let (mut game, capital, _home) = empire_with_a_capital(71_113);
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
+        // A Displeased city, host-calibrated the way the live mirror does it.
+        let modeled = game.city_amenity_surplus(&game.cities[&capital]);
+        game.observed_city_amenity_adjustments
+            .insert(capital, -1 - modeled);
+        let site = game
+            .district_sites(capital, crate::name!("entertainment_complex"))
+            .into_iter()
+            .next()
+            .expect("the capital has a plot for an Entertainment Complex");
+        let complex = Item::District {
+            district: crate::name!("entertainment_complex"),
+            pos: site,
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = EmpireCounts::default();
+
+        assert_eq!(
+            AdvancedAi::hosted_amenity_path(&game, 0, &crate::name!("entertainment_complex")),
+            game.rules.buildings["arena"].amenity * HOSTED_AMENITY_DISCOUNT,
+            "the Arena is the first-tier amenity building the district hosts"
+        );
+        assert_eq!(
+            AdvancedAi::hosted_amenity_path(&game, 0, &crate::name!("campus")),
+            0.0,
+            "a Campus hosts no amenity building"
+        );
+        game.players[0]
+            .civics
+            .remove(&crate::name!("games_recreation"));
+        assert_eq!(
+            AdvancedAi::hosted_amenity_path(&game, 0, &crate::name!("entertainment_complex")),
+            0.0,
+            "and a building the player cannot yet build is not counted"
+        );
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
+
+        let ordinary = AdvancedAi::new();
+        assert!(!ordinary.amenity_district_path);
+        let frozen = AdvancedAi::legacy();
+        assert!(!frozen.amenity_district_path);
+        let stock = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
+        assert_eq!(
+            frozen.production_value(&game, 0, capital, &complex, &plan, &counts),
+            stock,
+            "the frozen anchor prices the district exactly as the ordinary controller"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.amenity_district_path);
+        let priced = live.production_value(&game, 0, capital, &complex, &plan, &counts);
+        let lift_displeased = priced - stock;
+        assert!(
+            lift_displeased > 0.0,
+            "the live seat adds the hosted Arena at the district's amenity weight: \
+             {priced} against {stock}"
+        );
+        // The lift is the hosted amenity at the district arm's own weight,
+        // `55 + 35 × need`, behind the same build-time normaliser as the rest
+        // of the value: a city short by two (still Displeased, so the same
+        // production and the same normaliser) lifts by exactly 125/90 of one
+        // short by one. A Content city produces more, so its normaliser
+        // differs; there the lift is only bounded — present, and smaller.
+        game.observed_city_amenity_adjustments
+            .insert(capital, -2 - modeled);
+        let stock_two = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
+        let priced_two = live.production_value(&game, 0, capital, &complex, &plan, &counts);
+        assert!(
+            ((priced_two - stock_two) / lift_displeased - 125.0 / 90.0).abs() < 1e-6,
+            "short by two: lift {} against {lift_displeased}, expected ratio 125/90",
+            priced_two - stock_two
+        );
+        game.observed_city_amenity_adjustments
+            .insert(capital, -modeled);
+        let stock_content = ordinary.production_value(&game, 0, capital, &complex, &plan, &counts);
+        let priced_content = live.production_value(&game, 0, capital, &complex, &plan, &counts);
+        let lift_content = priced_content - stock_content;
+        assert!(
+            lift_content > 0.0 && lift_content < lift_displeased,
+            "a Content city still values the hosted Arena, less: {lift_content} against \
+             {lift_displeased}"
+        );
+        game.observed_city_amenity_adjustments
+            .insert(capital, -1 - modeled);
+
+        live.disable_amenity_district_path();
+        assert_eq!(
+            live.production_value(&game, 0, capital, &complex, &plan, &counts),
+            stock,
+            "the control arm prices it like stock again"
+        );
+    }
+
+    /// A Zoo reaches every own city within six tiles; priced as one city's
+    /// +1 it never outbid a Library. See `amenity_district_path`.
+    #[test]
+    fn a_regional_amenity_building_counts_the_cities_it_reaches() {
+        // `found_nearby_test_city` sites a city 4–10 tiles out; keep seeding
+        // until at least one lands inside the Zoo's six-tile reach.
+        let range = 6;
+        let (mut game, capital, cities) = (71_114..71_140)
+            .find_map(|seed| {
+                let (mut game, capital, home) = empire_with_a_capital(seed);
+                let mut cities = vec![capital];
+                for _ in 0..3 {
+                    cities.push(found_nearby_test_city(&mut game, 0, home));
+                }
+                cities[1..]
+                    .iter()
+                    .any(|city| game.wdist(game.cities[&capital].pos, game.cities[city].pos) <= range)
+                    .then_some((game, capital, cities))
+            })
+            .expect("some seed sites a city within the Zoo's reach");
+        for civic in ["games_recreation", "natural_history"] {
+            game.players[0].civics.insert(Name::new(civic));
+        }
+        install_ai_test_district(&mut game, capital, "entertainment_complex");
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("arena"));
+        for city in &cities {
+            let modeled = game.city_amenity_surplus(&game.cities[city]);
+            game.observed_city_amenity_adjustments
+                .insert(*city, -1 - modeled);
+        }
+        let zoo = Item::Building {
+            building: crate::name!("zoo"),
+        };
+        assert!(game.can_produce(0, capital, &zoo), "the fixture must offer the Zoo");
+        let spec = game.rules.buildings["zoo"].clone();
+        assert_eq!(spec.regional_range, range, "the Zoo is a six-tile regional building");
+        let reached = cities[1..]
+            .iter()
+            .filter(|city| game.wdist(game.cities[&capital].pos, game.cities[city].pos) <= range)
+            .count();
+        assert!(reached >= 1, "the fixture sites a city inside the Zoo's range");
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = EmpireCounts::default();
+        let ordinary = AdvancedAi::new();
+        let stock = ordinary.production_value(&game, 0, capital, &zoo, &plan, &counts);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let priced = live.production_value(&game, 0, capital, &zoo, &plan, &counts);
+        assert!(
+            priced > stock,
+            "each Displeased city in range adds its own weight: {priced} against {stock} \
+             for {reached} cities"
+        );
+        assert_eq!(
+            AdvancedAi::regional_amenity_reach(&game, 0, &game.cities[&capital], &crate::name!("zoo"), &spec),
+            reached as f64 * (30.0 + 1.0 * 22.0) * REGIONAL_AMENITY_REACH_DISCOUNT,
+            "the reach is one local weight per Displeased city in range, discounted"
+        );
+        let unreached = AdvancedAi::new();
+        assert!(!unreached.amenity_district_path);
+        assert_eq!(
+            unreached.production_value(&game, 0, capital, &zoo, &plan, &counts),
+            stock
+        );
+
+        // A second Zoo whose reach is already covered adds nothing regional.
+        let other = cities[1];
+        install_ai_test_district(&mut game, other, "entertainment_complex");
+        game.cities
+            .get_mut(&other)
+            .unwrap()
+            .buildings
+            .push(crate::name!("arena"));
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("zoo"));
+        assert_eq!(
+            AdvancedAi::regional_amenity_reach(
+                &game,
+                0,
+                &game.cities[&other],
+                &crate::name!("zoo"),
+                &spec
+            ),
+            0.0,
+            "cities the standing Zoo already reaches earn a second one nothing"
+        );
     }
 
     #[test]

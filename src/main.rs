@@ -1117,6 +1117,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The generic Wonder fallback reads mirror-only `blocked_wonders`, which
 /// ordinary/headless games never populate. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// The hosted-amenity and regional-reach pricing is behind
+/// `amenity_district_path`, which only the live bridge and the native repair
+/// bundle set; `AdvancedAi::new()` and `AdvancedAi::legacy()` price the
+/// Entertainment Complex exactly as before (asserted). Compatibility re-pin;
+/// the Elo protocol does not move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf613_d337_35b4_0aee;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
