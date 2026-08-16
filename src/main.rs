@@ -1114,7 +1114,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The stalemate posture is behind `war_patience`, which `AdvancedAi::legacy()`
 /// never sets; the anchor's grand-strategy selection is unchanged (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x14fd_f19a_6d9f_e3f7;
+/// The generic Wonder fallback reads mirror-only `blocked_wonders`, which
+/// ordinary/headless games never populate. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf613_d337_35b4_0aee;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
