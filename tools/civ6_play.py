@@ -1838,6 +1838,36 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
+# Firaxis's rolling autosaves on this build: `AutoSave_NNNN.Civ6Save`, one per
+# turn, the newest ten kept, older ones rotated into `prev/`. The Load Game
+# screen lists them only while its "Autosaves" filter is ticked.
+AUTOSAVE_DIR = (Path.home() / "Library" / "Application Support"
+                / "Sid Meier's Civilization VI" / "Sid Meier's Civilization VI"
+                / "Saves" / "Single" / "auto")
+
+
+def latest_autosave(directory: Path = AUTOSAVE_DIR,
+                    newer_than: float | None = None) -> Path | None:
+    """The most recently written autosave, or None.
+
+    ⚠ By modification time, not by number: the numbering wraps and the newest
+    file after a rotation can carry a lower number than an older one. Bounded
+    below by ``newer_than`` (a POSIX timestamp) so a resume never loads a save
+    from some earlier game that happens to be the newest file on disk.
+    """
+    try:
+        candidates = [path for path in directory.glob("AutoSave_*.Civ6Save")
+                      if path.is_file()]
+    except OSError:
+        return None
+    if newer_than is not None:
+        candidates = [path for path in candidates
+                      if path.stat().st_mtime >= newer_than]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -1886,6 +1916,24 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         panel = run_dir / f"load-panel-attempt{attempt}.png"
         screenshot(panel)
         save_target = _observed_label_point(panel, save_label, bounds)
+        # ⚠ AUTOSAVES ARE HIDDEN UNTIL THEIR FILTER IS TICKED. The Load Game
+        # list opens with the "Autosaves" checkbox off, showing only manual and
+        # quick saves — measured on `civvis-20260815T230003Z-cont`, whose
+        # `load-panel-attempt3.png` shows the filter unticked, "(Quick Save)"
+        # alone in the list, and the resume that was meant to reload
+        # AutoSave_0098 refusing "not visible" three times. Tick the filter by
+        # its own read label, once, and look again; a filter that cannot be
+        # read leaves the existing refusal in force.
+        if save_target is None and _normalized_label(save_label).startswith("autosave"):
+            toggle = _observed_label_point(panel, "Autosaves", bounds)
+            if toggle is not None:
+                click_at(*toggle)
+                time.sleep(1.5)
+                panel = run_dir / f"load-panel-autosaves-attempt{attempt}.png"
+                screenshot(panel)
+                save_target = _observed_label_point(panel, save_label, bounds)
+                print(f"ticked the Autosaves filter; {save_label!r} "
+                      f"{'found' if save_target else 'still not visible'}", flush=True)
         if save_target is None:
             print(f"saved game {save_label!r} is not visible; refusing to select a row",
                   file=sys.stderr)
