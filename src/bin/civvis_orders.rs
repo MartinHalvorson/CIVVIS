@@ -1516,6 +1516,7 @@ fn withhold_live_treatment(
         "tally-culture" => ai.disable_tally_culture(),
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
         "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
+        "tally-great-people" => ai.disable_tally_great_people(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1543,7 +1544,7 @@ fn withhold_live_treatment(
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
                  era-paced-expansion, tally-culture, frontier-loyalty, \
-                 settler-target-hysteresis"
+                 settler-target-hysteresis, tally-great-people"
             ))
         }
     }
@@ -3773,6 +3774,11 @@ mod tests {
             !ai.settler_target_hysteresis,
             "the named settler-target-hysteresis control must hold it off"
         );
+
+        assert!(ai.tally_great_people);
+        withhold_live_treatment(&mut ai, "tally-great-people")
+            .expect("the tally-great-people control arm is registered");
+        assert!(!ai.tally_great_people, "the named tally-great-people control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

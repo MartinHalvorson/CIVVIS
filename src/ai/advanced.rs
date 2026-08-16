@@ -2408,6 +2408,29 @@ pub struct AdvancedAi {
     /// for the live bridge and the native repair bundle (a native settler
     /// flickers the same way beside a wandering barbarian).
     pub settler_target_hysteresis: bool,
+    /// On the tally seat, banked Faith (or gold) patronizes any Great Person
+    /// it can pay for, not only one the empire is already close to earning.
+    ///
+    /// ★★★★ THREE GAMES ENDED WITH 2,302, 1,341 AND 1,283 FAITH IN THE BANK.
+    /// Runs civvis-20260816T101521Z, T123936Z, T132247Z (Settler, 250 turns)
+    /// each closed on the host's score tally with a Faith treasury that had
+    /// grown for fifty turns and bought nothing: `advanced_great_people`
+    /// patronizes only a Great Person whose points are within 15% (40% for
+    /// the lane's own class) of the recruit cost, so with the offers sitting
+    /// at 30–75% of cost every session — Admiral 511 of 660, Engineer 301,
+    /// Artist 186 in T101521Z at t240 — nothing qualified, while the
+    /// worship-building purchases were refused and Theocracy's unit purchases
+    /// score nothing. On the tally every Great Person is five points plus its
+    /// effect, and a Faith point that ends the game in the treasury is zero.
+    ///
+    /// With this on, the closeness limit is lifted for a purchase the bank
+    /// covers above its reserve — the price still scales with the missing
+    /// points, so a near recruit stays the better buy and a far one is bought
+    /// only when the bank can carry it. The Prophet exclusion, the reserves,
+    /// the affinity ordering and the gold path are unchanged. Firaxis-only: it
+    /// prices the Settler seat's tally; the native lanes keep the bred limit.
+    /// Off for ordinary and frozen controllers.
+    pub tally_great_people: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3186,6 +3209,7 @@ impl AdvancedAi {
             bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
+            tally_great_people: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3948,6 +3972,9 @@ impl AdvancedAi {
         // And no colony beyond the empire's Loyalty reach on fogged ground.
         // See `frontier_loyalty`.
         self.enable_frontier_loyalty();
+        // And banked Faith buys the Great People the tally pays five for. See
+        // `tally_great_people`.
+        self.enable_tally_great_people();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -4385,6 +4412,16 @@ impl AdvancedAi {
 
     pub fn disable_settler_target_hysteresis(&mut self) {
         self.settler_target_hysteresis = false;
+    }
+
+    /// Let banked Faith or gold patronize any Great Person it can pay for on
+    /// the tally seat. See `tally_great_people`.
+    pub fn enable_tally_great_people(&mut self) {
+        self.tally_great_people = true;
+    }
+
+    pub fn disable_tally_great_people(&mut self) {
+        self.tally_great_people = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -12348,7 +12385,16 @@ impl AdvancedAi {
                 _ => 100.0,
             };
             let close_fraction = missing / cost.max(1.0);
-            let limit = if affinity >= 500.0 { 0.40 } else { 0.15 };
+            // See `tally_great_people`: on the tally seat any Great Person the
+            // bank can carry is worth its five points; the price still rises
+            // with the missing points, so a near recruit stays the better buy.
+            let limit = if self.tally_great_people {
+                1.0
+            } else if affinity >= 500.0 {
+                0.40
+            } else {
+                0.15
+            };
             if affinity < 0.0 || close_fraction > limit {
                 continue;
             }
@@ -37286,6 +37332,86 @@ mod tests {
         ai.advanced_great_people(&mut game, 0, GrandStrategy::Science);
         assert_eq!(game.players[0].gp_claimed["scientist"], 1);
         assert_eq!(game.players[0].gold, 225.0);
+    }
+
+    /// ★★★★ Three games ended with 2,302 / 1,341 / 1,283 Faith in the bank
+    /// (civvis-20260816T101521Z, T123936Z, T132247Z) while every offered Great
+    /// Person sat at 30–75% of its recruit cost — outside the closeness limit
+    /// the patronage keeps. See `tally_great_people`. With a scientist offer at
+    /// 30% of cost and a bank that covers the price, stock buys nothing and
+    /// the live seat patronizes with Faith; the reserve still holds.
+    #[test]
+    fn on_the_tally_seat_banked_faith_patronizes_a_great_person_far_from_recruitment() {
+        let mut game = Game::new(2, 24, 16, 7_102, 200, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("campus"), campus);
+        let cost = game.gp_cost(0, "scientist");
+        // Thirty percent of the way there: outside every closeness limit.
+        game.players[0]
+            .gpp
+            .insert("scientist".to_string(), (cost * 0.30).floor());
+        game.players[0].gold = 0.0;
+        let price = game
+            .great_person_patronage_price(0, "scientist", "faith")
+            .expect("a faith price is quoted");
+        game.players[0].faith = price + 100.0 + 50.0; // above the reserve
+
+        let stock = AdvancedAi::new();
+        assert!(!stock.tally_great_people);
+        assert!(!AdvancedAi::legacy().tally_great_people);
+        let mut untouched = game.clone();
+        stock.advanced_great_people(&mut untouched, 0, GrandStrategy::Science);
+        assert_eq!(
+            untouched.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
+            0,
+            "stock leaves a far recruit alone and banks the Faith"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.tally_great_people, "the live seat carries the treatment");
+        let mut bought = game.clone();
+        live.advanced_great_people(&mut bought, 0, GrandStrategy::Science);
+        assert_eq!(
+            bought.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
+            1,
+            "the tally seat patronizes the far recruit with its banked Faith"
+        );
+        assert!(
+            bought.players[0].faith >= 100.0 - f64::EPSILON,
+            "the Faith reserve is untouched ({})",
+            bought.players[0].faith
+        );
+
+        // Below the reserve, the treatment buys nothing either.
+        let mut poor = game.clone();
+        poor.players[0].faith = price + 50.0;
+        live.advanced_great_people(&mut poor, 0, GrandStrategy::Science);
+        assert_eq!(poor.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 0);
+
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_tally_great_people();
+        let mut kept = game.clone();
+        withheld.advanced_great_people(&mut kept, 0, GrandStrategy::Science);
+        assert_eq!(kept.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 0);
     }
 
     #[test]
