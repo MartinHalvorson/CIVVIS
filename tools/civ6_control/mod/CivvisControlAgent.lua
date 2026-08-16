@@ -4788,6 +4788,94 @@ local function exportState(player, pid, turn)
 	end
 	if cfg.ExportState ~= true then return; end
 
+	-- A met rival's detailed city list stays gated on actual map sight below.
+	-- These totals are different: they are the public standings a player can
+	-- compare without learning where the underlying cities, Wonders or weapons
+	-- are. Keep the two channels separate so a full HUD never turns into a
+	-- fog-of-war leak.
+	local wonderBuildingIndices = {};
+	for building in GameInfo.Buildings() do
+		if building.IsWonder then
+			wonderBuildingIndices[#wonderBuildingIndices + 1] = building.Index;
+		end
+	end
+	local function publicSuzerainCounts()
+		return try(function()
+			local counts = {};
+			for _, minor in ipairs(PlayerManager.GetAliveMinors()) do
+				local minorId = minor:GetID();
+				local civ = PlayerConfigurations[minorId]:GetCivilizationTypeName();
+				if civ ~= "CIVILIZATION_FREE_CITIES" and civ ~= "CIVILIZATION_BARBARIAN" then
+					local influence = minor:GetInfluence();
+					if influence == nil then return nil; end
+					local holder = influence:GetSuzerain();
+					if type(holder) ~= "number" then return nil; end
+					if holder >= 0 then
+						counts[holder] = (counts[holder] or 0) + 1;
+					end
+				end
+			end
+			return counts;
+		end, nil);
+	end
+	local function publicEmpireStats(subject, suzerainCounts)
+		local subjectId = try(function() return subject:GetID(); end, -1);
+		local stats = {
+			city_count = -1, population = -1, food = -1, production = -1,
+			wonder_count = -1,
+			suzerain_count = suzerainCounts ~= nil and (suzerainCounts[subjectId] or 0) or -1,
+			nuclear_devices = -1, thermonuclear_devices = -1,
+		};
+		local totals = try(function()
+			local subjectsCities = subject:GetCities();
+			if subjectsCities == nil then return nil; end
+			local tally = {
+				city_count = 0, population = 0, food = 0, production = 0, wonder_count = 0,
+			};
+			for _, city in subjectsCities:Members() do
+				local population = city:GetPopulation();
+				local food = city:GetYield(YieldTypes.FOOD);
+				local production = city:GetYield(YieldTypes.PRODUCTION);
+				local buildings = city:GetBuildings();
+				if type(population) ~= "number" or type(food) ~= "number"
+						or type(production) ~= "number" or buildings == nil then
+					return nil;
+				end
+				tally.city_count = tally.city_count + 1;
+				tally.population = tally.population + population;
+				tally.food = tally.food + food;
+				tally.production = tally.production + production;
+				for _, buildingIndex in ipairs(wonderBuildingIndices) do
+					local built = buildings:HasBuilding(buildingIndex);
+					if built == nil then return nil; end
+					if built then tally.wonder_count = tally.wonder_count + 1; end
+				end
+			end
+			return tally;
+		end, nil);
+		if totals ~= nil then
+			stats.city_count = totals.city_count;
+			stats.population = totals.population;
+			stats.food = totals.food;
+			stats.production = totals.production;
+			stats.wonder_count = totals.wonder_count;
+		end
+		local weapons = try(function() return subject:GetWMDs(); end, nil);
+		local nuclear = try(function()
+			local definition = GameInfo.WMDs["WMD_NUCLEAR_DEVICE"];
+			return weapons ~= nil and definition ~= nil
+				and weapons:GetWeaponCount(definition.Index) or nil;
+		end, nil);
+		local thermonuclear = try(function()
+			local definition = GameInfo.WMDs["WMD_THERMONUCLEAR_DEVICE"];
+			return weapons ~= nil and definition ~= nil
+				and weapons:GetWeaponCount(definition.Index) or nil;
+		end, nil);
+		if type(nuclear) == "number" then stats.nuclear_devices = nuclear; end
+		if type(thermonuclear) == "number" then stats.thermonuclear_devices = thermonuclear; end
+		return stats;
+	end
+
 	local cities = {};
 	-- Firaxis leaves a Trader unit on the map while it travels, so its position
 	-- alone cannot say whether it is available for a new route.  Export the
@@ -5526,6 +5614,9 @@ local function exportState(player, pid, turn)
 		};
 	end);
 
+	local suzerainCounts = publicSuzerainCounts();
+	local publicStats = publicEmpireStats(player, suzerainCounts);
+
 	-- Rivals: only what we have actually met, so the mirror never contains
 	-- knowledge the seat has not earned.
 	local rivals = {};
@@ -5534,6 +5625,7 @@ local function exportState(player, pid, turn)
 		if otherId ~= pid and diplomacy ~= nil
 				and try(function() return diplomacy:HasMet(otherId); end, false) then
 			local other = Players[otherId];
+			local otherPublicStats = publicEmpireStats(other, suzerainCounts);
 			local theirCities = {};
 			pcall(function()
 				for _, city in other:GetCities():Members() do
@@ -5725,6 +5817,7 @@ local function exportState(player, pid, turn)
 				end, -1),
 				faith = try(function() return other:GetReligion():GetFaithBalance(); end, -1),
 				faith_per_turn = try(function() return other:GetReligion():GetFaithYield(); end, -1),
+				public_stats = otherPublicStats,
 				cities = theirCities,
 				units = theirUnits,
 			};
@@ -6357,6 +6450,7 @@ local function exportState(player, pid, turn)
 		end, nil),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
+		public_stats = publicStats,
 		score = try(function() return player:GetScore(); end, -1),
 		-- Diplomatic-victory points and the Favor that buys congress votes; see
 		-- `voteWorldCongress`.

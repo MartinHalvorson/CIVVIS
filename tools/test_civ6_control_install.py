@@ -33,6 +33,33 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("production_progress = prodProgress", exporter)
         self.assertIn("production_cost = prodCost", exporter)
 
+    def test_state_export_has_fog_safe_public_empire_totals_for_every_major(self) -> None:
+        """A standings row needs empire totals even when its cities are unseen.
+
+        The detail loop remains visibility-gated, while this aggregate carries
+        no city or unit identity/location. Keep the distinction in the export:
+        losing the aggregate makes every fogged rival look like a zero-city
+        empire in the player HUD.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+        rivals = exporter.split("-- Rivals:", 1)[1].split(
+            "-- Met city-states", 1
+        )[0]
+
+        self.assertIn("local function publicEmpireStats(subject, suzerainCounts)", exporter)
+        self.assertIn("city:GetYield(YieldTypes.FOOD)", exporter)
+        self.assertIn("city:GetYield(YieldTypes.PRODUCTION)", exporter)
+        self.assertIn("weapons:GetWeaponCount(definition.Index)", exporter)
+        self.assertIn("local function publicSuzerainCounts()", exporter)
+        self.assertIn("public_stats = publicStats,", exporter)
+        self.assertIn("public_stats = otherPublicStats,", rivals)
+        self.assertLess(
+            rivals.index("local otherPublicStats = publicEmpireStats(other, suzerainCounts);"),
+            rivals.index("for _, city in other:GetCities():Members() do"),
+        )
+        self.assertIn("local seen = plotRevealed(pid, cx, cy);", rivals)
+
     def test_state_export_keeps_completed_strategic_projects_out_of_city_queues(self) -> None:
         """A fresh mirror needs player history, not just the current queue.
 
