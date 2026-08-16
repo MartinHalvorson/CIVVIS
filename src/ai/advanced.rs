@@ -20703,7 +20703,11 @@ impl AdvancedAi {
         let visible = self
             .battlefront_observation
             .then(|| self.battlefront_visibility(g, pid));
-        let unit = &g.units[&uid];
+        // The score closes over this snapshot while the selected move below
+        // may mutate the board. Holding a clone instead of a borrow keeps the
+        // decision's turn-start unit frame explicit and lets a route escape
+        // apply before the ordinary local fallback is considered.
+        let unit = g.units[&uid].clone();
         let upos = unit.pos;
         let prefer_dry = self.base.come_ashore
             && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
@@ -20864,7 +20868,7 @@ impl AdvancedAi {
                             enemy.hp,
                         );
                         let defense =
-                            crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
+                            crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
                         value -= self.base.w.mv_threat
                             * threat_caution
                             * 30.0
@@ -20920,6 +20924,65 @@ impl AdvancedAi {
 
         let stay = score(g, upos);
         let holding_role_position = g.wdist(upos, target) == preferred_depth;
+        let stop_range = if matches!(
+            role,
+            ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
+        ) {
+            preferred_depth
+        } else {
+            1
+        };
+
+        // The ordinary one-ply scorer keeps its historical priority on every
+        // healthy unit. A unit that has spent a whole six-turn window inside
+        // two or three tiles is different evidence: its locally best moves
+        // have already failed as a route. Let A* nominate the next detour
+        // step before greedy scoring repeats that proof. The router can need
+        // to cross one of the recorded tiles to leave the pocket, so this
+        // path is paired with BasicAi's narrowly scoped retread exception.
+        //
+        // A route is not a license to walk into a kill zone. Its score may be
+        // at most the same eight points that already price escaping a
+        // livelock; a larger tactical loss still leaves the unit holding.
+        let route_escape = if matches!(group.posture, ForcePosture::Advance | ForcePosture::Engage)
+            && self.base.live_livelock_route_escape(uid)
+        {
+            g.route_step(uid, target, stop_range)
+                .filter(|pos| g.can_move(uid, *pos))
+                .filter(|pos| {
+                    !(decline_settlers
+                        && g.units_at(*pos).iter().any(|other| {
+                            let other = &g.units[other];
+                            other.owner != pid
+                                && g.is_at_war(pid, other.owner)
+                                && other.kind == "settler"
+                        }))
+                })
+        } else {
+            None
+        };
+        if let Some(pos) = route_escape {
+            let routed = score(g, pos) + crate::ai::LIVELOCK_ESCAPE_VALUE;
+            if self.base.move_beats_holding(g, uid, routed, stay) {
+                if self.base.unit_objective_memory {
+                    let danger = self
+                        .base
+                        .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                    if self.base.remember_dangerous_approach(g, uid, pos, danger) {
+                        return self
+                            .base
+                            .retreat_step(g, pid, uid)
+                            .unwrap_or_else(|| self.base.fortify_or_stop(g, pid, uid));
+                    }
+                }
+                if self
+                    .base
+                    .tactical_apply_livelock_route_escape(g, pid, uid, pos)
+                {
+                    return true;
+                }
+            }
+        }
         let mut best: Option<(f64, Pos)> = None;
         for pos in g.nbrs(upos).into_iter().filter(|pos| {
             g.can_move(uid, *pos)
@@ -20977,14 +21040,6 @@ impl AdvancedAi {
             }
         }
 
-        let stop_range = if matches!(
-            role,
-            ForceRole::Recon | ForceRole::Ranged | ForceRole::Siege | ForceRole::AirStrike
-        ) {
-            preferred_depth
-        } else {
-            1
-        };
         if g.wdist(upos, target) > stop_range {
             if let Some(pos) = g
                 .route_step(uid, target, stop_range)
@@ -38225,6 +38280,88 @@ mod tests {
             "expected most coordinated troops to advance; moved {moved}/{}",
             army.len()
         );
+    }
+
+    #[test]
+    fn live_livelock_route_escape_can_cross_its_recorded_footprint() {
+        let mut game = Game::new_full(2, 20, 14, 80_271, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        // Match the router's obstacle fixture: all geometrically improving
+        // first steps are mountains, so the valid route begins sideways or
+        // backward. The tactical score is deliberately allowed to dislike
+        // that step; six observed fruitless turns are the evidence that the
+        // short detour is now better than another greedy retry.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        let start = *game
+            .map
+            .tiles
+            .keys()
+            .find(|position| game.wdisk(**position, 3).len() == 37)
+            .expect("fixture needs an interior tile");
+        let target = (start.0 + 3, start.1);
+        let unit = game.spawn_test_unit("warrior", 0, start);
+        game.at_war.insert((0, 1));
+        let direct = game
+            .nbrs(start)
+            .into_iter()
+            .filter(|position| game.wdist(*position, target) < game.wdist(start, target))
+            .collect::<Vec<_>>();
+        for position in direct {
+            game.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("mountain");
+        }
+        let detour = game
+            .route_step(unit, target, 1)
+            .expect("the mountain wedge leaves a route to attack range");
+        assert!(
+            game.wdist(detour, target) >= game.wdist(start, target),
+            "the first route step is a genuine geometric detour"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_recorded_tactical_step();
+        // Record the same two-tile pocket at the start of six real turns.
+        // The route's first step is deliberately inside that footprint, which
+        // is exactly the case `path_move` must ordinarily reject.
+        for position in [start, detour, start, detour, start, detour, start] {
+            let mover = game.units.get_mut(&unit).unwrap();
+            mover.pos = position;
+            mover.moves_left = 2.0;
+            mover.moved = false;
+            live.base.begin_movement_turn(&game, 0);
+            game.turn += 1;
+        }
+        assert!(live.base.live_livelock_route_escape(unit));
+        assert!(
+            !live.base.tactical_apply_move(&mut game, 0, unit, detour),
+            "ordinary recorded movement must keep rejecting the exhausted footprint"
+        );
+
+        let orders = ForceGroup {
+            id: unit,
+            domain: ForceDomain::Land,
+            units: vec![unit],
+            anchor: start,
+            objective: target,
+            focus_target: None,
+            posture: ForcePosture::Advance,
+            readiness: 1.0,
+            local_strength_ratio: 2.0,
+        };
+        assert!(live.coordinated_tactical_step(&mut game, 0, unit, &orders, &[1], false));
+        assert_eq!(
+            game.units[&unit].pos, detour,
+            "the live route exception may retrace one recorded tile only to leave the pocket"
+        );
+        assert!(matches!(
+            game.log.last(),
+            Some((0, Action::Move { unit: moved, to })) if *moved == unit && *to == detour
+        ));
     }
 
     #[test]
