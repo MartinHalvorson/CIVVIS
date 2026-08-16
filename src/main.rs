@@ -1176,7 +1176,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set only by the Civilization VI bridge; native constructors and
 /// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6c93_f33b_c85c_a06e;
+/// The foreign-border settle penalty is behind `settlement_safety`, which
+/// `AdvancedAi::legacy()` leaves off (asserted). Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb10d_8796_6bbf_3c80;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
