@@ -439,6 +439,17 @@ Duel heading.
 `tools/civ6_ladder.py` holds the record. A rung is claimed only by a victory
 event naming the controller's own team, with the run's event log kept.
 
+The record has two homes. The **live ledger** sits beside the runs
+(`<runs>/ladder.json`) and `civ6_play.py` records every summary into it the
+moment the summary exists — recording was once a by-hand step, and between
+July 31 and August 16, 2026 that step simply stopped happening while 211
+summaries piled up unrecorded. The **published snapshot** is
+`docs/civ6_ladder.json` + `docs/CIV6_LADDER.md`, refreshed with
+`civ6_ladder.py publish` and landed like any other change. `civ6_ladder.py
+check --stale-hours 12` fails when summaries are unrecorded, when the
+snapshot trails the ledger, or when no run has finished recently — the last
+one is how a silently halted supervisor becomes a visible failure.
+
 See `docs/CIV6_LADDER.md` for the current standing.
 
 ## The host itself is part of the bridge (macOS 26, measured 2026-08-07)
