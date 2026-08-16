@@ -186,7 +186,11 @@ class InfrastructureMirrorTest(unittest.TestCase):
                 "x": 62, "y": 16,
                 "yields": {"food": 8, "production": 7, "gold": 6,
                            "science": 5, "culture": 4, "faith": 3},
-                "worked": [{"x": 62, "y": 16}, {"x": 61, "y": 16}],
+                # The centre, one tile, and the Theater plot the specialist
+                # staffs — Firaxis lists all three as worked.
+                "worked": [{"x": 62, "y": 16}, {"x": 61, "y": 16}, {"x": 63, "y": 16}],
+                "districts": [{"type": "DISTRICT_THEATER", "x": 63, "y": 16,
+                               "complete": True}],
                 "specialists": ["DISTRICT_THEATER"],
                 "production_progress": 12.5,
                 "great_works": [{"object": "GREATWORKOBJECT_WRITING"}],

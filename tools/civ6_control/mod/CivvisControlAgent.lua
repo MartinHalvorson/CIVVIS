@@ -4755,6 +4755,25 @@ local finished = false;
 -- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
 -- single log line is unbounded.
 local function exportState(player, pid, turn)
+	-- The six yields of one plot as the owner sees them, or nil when the read
+	-- fails. Nested here rather than at file scope: the main chunk sits one
+	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
+	-- script that crosses it fails to compile with no log line anywhere.
+	-- Yield indices come from the enum the shipped UI uses; a build whose enum
+	-- lacks a member returns nil for that member, which `try` turns into an
+	-- absent field rather than a zero.
+	local function plotYields(plot)
+		return try(function()
+			return {
+				food = plot:GetYield(YieldTypes.FOOD),
+				production = plot:GetYield(YieldTypes.PRODUCTION),
+				gold = plot:GetYield(YieldTypes.GOLD),
+				science = plot:GetYield(YieldTypes.SCIENCE),
+				culture = plot:GetYield(YieldTypes.CULTURE),
+				faith = plot:GetYield(YieldTypes.FAITH),
+			};
+		end);
+	end
 	if cfg.ExportState ~= true then return; end
 
 	local cities = {};
@@ -4804,11 +4823,27 @@ local function exportState(player, pid, turn)
 		-- city whose buildings are invisible looks empty forever, so CIVVIS keeps
 		-- ordering the granary it finished twenty turns ago.
 		local built = {};
+		-- ★★★★★ AND WHICH OF THEM ARE PILLAGED. `HasBuilding` stays true for a
+		-- pillaged Library, and a pillaged building pays nothing until it is
+		-- repaired. Districts already cross with their pillage bit; buildings
+		-- did not, so a raid that pillaged Antium's Library and University left
+		-- the mirror paying +6 Science on a Campus the host had at +0 for
+		-- twenty turns (run civvis-20260816T011314Z t147-t170: host 5.9, model
+		-- 11.2), and CIVVIS could not see that "Repair Library" was the build
+		-- that mattered. `IsPillaged` is the accessor the shipped CitySupport
+		-- reads for the same fact. nil, not an empty list, when the collection
+		-- cannot be read — "could not ask" must stay distinguishable from
+		-- "nothing pillaged".
+		local pillagedBuildings = nil;
 		local blds = try(function() return city:GetBuildings(); end);
 		if blds ~= nil then
+			pillagedBuildings = {};
 			for row in GameInfo.Buildings() do
 				if try(function() return blds:HasBuilding(row.Index); end, false) then
 					built[#built + 1] = row.BuildingType;
+					if try(function() return blds:IsPillaged(row.Index); end, false) then
+						pillagedBuildings[#pillagedBuildings + 1] = row.BuildingType;
+					end
 				end
 			end
 		end
@@ -4893,7 +4928,24 @@ local function exportState(player, pid, turn)
 					if citizens ~= nil and try(function()
 						return citizens:IsPlotWorked(px, py);
 					end, false) then
-						worked[#worked + 1] = { x = px, y = py };
+						-- ★★★★★ THE PLOT'S OWN YIELDS, SO A DRIFT CAN NAME ITS TILE.
+						--
+						-- The city total is exported below, and `mirror.rs`
+						-- reconciles it as one number per yield per city. That
+						-- says BY HOW MUCH the model disagrees, never WHERE:
+						-- a +2 Food gap could be a coast tile the Lighthouse
+						-- feeds, a specialist counted twice, or a resource the
+						-- tile catalogue mislabels, and totals cannot tell them
+						-- apart. `Plot:GetYield(index)` is what the shipped
+						-- PlotInfo paints on the map, evaluated for the owner
+						-- exactly as the city panel does, so it is the tile-level
+						-- ledger CIVVIS's own tile model can be diffed against.
+						-- Guarded per plot: a plot the read fails on carries no
+						-- yields rather than zeros.
+						worked[#worked + 1] = {
+							x = px, y = py,
+							yields = plotYields(plot),
+						};
 					end
 					local dtype = try(function() return plot:GetDistrictType(); end, -1);
 					if dtype ~= nil and dtype >= 0 then
@@ -5038,6 +5090,43 @@ local function exportState(player, pid, turn)
 				faith = city:GetYield(YieldTypes.FAITH),
 			};
 		end);
+		-- ★★★★★ WHERE EACH YIELD COMES FROM, IN THE HOST'S OWN WORDS.
+		--
+		-- `City:GetYieldToolTip(yield)` is the text behind the city panel's
+		-- per-yield tooltip: the same "+N from Buildings / Citizens / Districts /
+		-- Trade Routes / ..." ledger a player reads. Exporting the total alone
+		-- left every model-versus-host gap a guessing game (a +4 Gold step in
+		-- two cities on one turn was chased through policies, religion, envoys
+		-- and city-states without an answer). Raw and localized, one string per
+		-- yield: the consumer parses the amounts, and nothing here has to know
+		-- the wording. Absent when the accessor is missing on a build.
+		local yieldSources = try(function()
+			-- Compacted, not paraphrased: icon tags carry no information the
+			-- yield key does not, and the markup newline becomes a real one so
+			-- the record stays a few hundred bytes per yield. The amounts and
+			-- the source names are untouched.
+			local function compact(text)
+				if text == nil then return nil; end
+				text = tostring(text):gsub("%[ICON_[%w_]+%]", "");
+				text = text:gsub("%[NEWLINE%]", "\n"):gsub("[ \t]+", " ");
+				-- Parenthesised: gsub returns (string, count) and the caller
+				-- wants exactly one value. Capped: a ledger is a dozen short
+				-- lines, and a state record already reaches ~75 KB on a large
+				-- empire; six of these per city must not double it.
+				return (text:gsub("^%s+", ""):gsub("%s+$", "")):sub(1, 400);
+			end
+			return {
+				food = compact(city:GetYieldToolTip(YieldTypes.FOOD)),
+				production = compact(city:GetYieldToolTip(YieldTypes.PRODUCTION)),
+				gold = compact(city:GetYieldToolTip(YieldTypes.GOLD)),
+				science = compact(city:GetYieldToolTip(YieldTypes.SCIENCE)),
+				culture = compact(city:GetYieldToolTip(YieldTypes.CULTURE)),
+				faith = compact(city:GetYieldToolTip(YieldTypes.FAITH)),
+			};
+		end);
+		local centerPlot = try(function()
+			return Map.GetPlot(city:GetX(), city:GetY());
+		end);
 		cities[#cities + 1] = {
 			districts = placed,
 			wonders = wonders,
@@ -5045,6 +5134,11 @@ local function exportState(player, pid, turn)
 			specialists = specialists,
 			great_works = greatWorks,
 			yields = exactYields,
+			yield_sources = yieldSources,
+			-- The city centre's own plot yields, which the worked list carries
+			-- (Firaxis counts the centre as worked) but which CIVVIS floors to
+			-- 2 Food / 1 Production before assigning citizens.
+			center_yields = centerPlot ~= nil and plotYields(centerPlot) or nil,
 			-- ★★★★★ WHOSE RELIGION THIS CITY FOLLOWS, AND WHAT IS CONVERTING IT.
 			--
 			-- `religion` was **null on all 26,954 city records ever exported**, the
@@ -5079,6 +5173,7 @@ local function exportState(player, pid, turn)
 			-- out as ROME / OSTIA / ANTIUM on the left-hand screen.
 			name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 			buildings = built,
+			pillaged_buildings = pillagedBuildings,
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
@@ -5170,6 +5265,52 @@ local function exportState(player, pid, turn)
 			housing_from_improvements = try(function()
 				return city:GetGrowth():GetHousingFromImprovements();
 			end, -1),
+			-- The rest of the host's housing ledger, one term each, so a mirror
+			-- that disagrees with the total can say which term it got wrong.
+			-- Every accessor is one the shipped CitySupport calls on
+			-- `city:GetGrowth()`; -1 is the per-field "could not read" sentinel.
+			housing_from_water = try(function()
+				return city:GetGrowth():GetHousingFromWater();
+			end, -1),
+			housing_from_buildings = try(function()
+				return city:GetGrowth():GetHousingFromBuildings();
+			end, -1),
+			housing_from_districts = try(function()
+				return city:GetGrowth():GetHousingFromDistricts();
+			end, -1),
+			housing_from_civics = try(function()
+				return city:GetGrowth():GetHousingFromCivics();
+			end, -1),
+			housing_from_great_people = try(function()
+				return city:GetGrowth():GetHousingFromGreatPeople();
+			end, -1),
+			housing_from_starting_era = try(function()
+				return city:GetGrowth():GetHousingFromStartingEra();
+			end, -1),
+			housing_from_great_works = try(function()
+				return city:GetGrowth():GetHousingFromGreatWorks();
+			end, -1),
+			-- Growth, as the host computes it: the surplus after consumption,
+			-- the next-citizen threshold, the housing/happiness multipliers and
+			-- the turns the host itself forecasts. `food` above is the stockpile.
+			food_surplus = try(function()
+				return city:GetGrowth():GetFoodSurplus();
+			end, -1),
+			growth_threshold = try(function()
+				return city:GetGrowth():GetGrowthThreshold();
+			end, -1),
+			growth_turns = try(function()
+				return city:GetGrowth():GetTurnsUntilGrowth();
+			end, -1),
+			housing_growth_mult = try(function()
+				return city:GetGrowth():GetHousingGrowthModifier();
+			end, -1),
+			happiness_growth_mult = try(function()
+				return city:GetGrowth():GetHappinessGrowthModifier();
+			end, -1),
+			overall_growth_mult = try(function()
+				return city:GetGrowth():GetOverallGrowthModifier();
+			end, -1),
 			amenities = try(function() return city:GetGrowth():GetAmenities(); end, -1),
 			amenities_needed = try(function()
 				return city:GetGrowth():GetAmenitiesNeeded();
@@ -5199,6 +5340,30 @@ local function exportState(player, pid, turn)
 			end, -1),
 			amenities_bankruptcy = try(function()
 				return city:GetGrowth():GetAmenitiesLostFromBankruptcy();
+			end, -1),
+			-- The remaining amenity sources the shipped CitySupport reads, so the
+			-- host's count decomposes completely: the six above plus these sum to
+			-- `amenities`, and a model that disagrees can name the term.
+			amenities_great_people = try(function()
+				return city:GetGrowth():GetAmenitiesFromGreatPeople();
+			end, -1),
+			amenities_religion = try(function()
+				return city:GetGrowth():GetAmenitiesFromReligion();
+			end, -1),
+			amenities_national_parks = try(function()
+				return city:GetGrowth():GetAmenitiesFromNationalParks();
+			end, -1),
+			amenities_starting_era = try(function()
+				return city:GetGrowth():GetAmenitiesFromStartingEra();
+			end, -1),
+			amenities_improvements = try(function()
+				return city:GetGrowth():GetAmenitiesFromImprovements();
+			end, -1),
+			amenities_districts = try(function()
+				return city:GetGrowth():GetAmenitiesFromDistricts();
+			end, -1),
+			amenities_natural_wonders = try(function()
+				return city:GetGrowth():GetAmenitiesFromNaturalWonders();
 			end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole

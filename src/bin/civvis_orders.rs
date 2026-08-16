@@ -2950,6 +2950,65 @@ fn main() {
                     serde_json::json!({"x": wx, "y": wy})
                 })
                 .collect::<Vec<_>>();
+            // The tile-level ledger behind the model total, in the host's
+            // offset coordinates so `tools/civ6_yield_drift.py` can diff it
+            // against the export's per-plot yields tile for tile.
+            let ledger = game.city_yield_ledger(city.id);
+            let offset = |pos: civvis::Pos| {
+                let (px, py) = civvis::hex::axial_to_offset(pos.0, pos.1);
+                serde_json::json!({"x": px, "y": py})
+            };
+            let ledger_json = serde_json::json!({
+                "center": ledger.center,
+                "tiles": ledger
+                    .tiles
+                    .iter()
+                    .map(|(pos, yields)| {
+                        let mut entry = offset(*pos);
+                        entry["yields"] = serde_json::json!(yields);
+                        entry
+                    })
+                    .collect::<Vec<_>>(),
+                "tile_adjustments": ledger
+                    .tile_adjustments
+                    .iter()
+                    .map(|(pos, yields)| {
+                        let mut entry = offset(*pos);
+                        entry["yields"] = serde_json::json!(yields);
+                        entry
+                    })
+                    .collect::<Vec<_>>(),
+                "specialists": ledger
+                    .specialists
+                    .iter()
+                    .map(|(family, yields)| serde_json::json!({"district": family, "yields": yields}))
+                    .collect::<Vec<_>>(),
+                "districts": ledger
+                    .districts
+                    .iter()
+                    .map(|(name, pos, yields)| {
+                        let mut entry = offset(*pos);
+                        entry["district"] = serde_json::json!(name);
+                        entry["yields"] = serde_json::json!(yields);
+                        entry
+                    })
+                    .collect::<Vec<_>>(),
+            });
+            // Board values carry the mirror's host-to-model correction; the
+            // `model_*` twins are what CIVVIS derives on its own, which is the
+            // number the fidelity instrument scores.
+            let housing = game.city_housing(city);
+            let housing_adjustment = game
+                .observed_city_housing_adjustments
+                .get(&city.id)
+                .copied()
+                .unwrap_or(0.0);
+            let amenities = game.city_amenities(city);
+            let amenity_adjustment = game
+                .observed_city_amenity_adjustments
+                .get(&city.id)
+                .copied()
+                .unwrap_or(0);
             cities.push(serde_json::json!({
                 "x": x,
                 "y": y,
@@ -2960,6 +3019,13 @@ fn main() {
                 "specialists": plan.specialists,
                 "yields": game.city_yields(city.id),
                 "model_yields": game.city_yields_model(city.id),
+                "ledger": ledger_json,
+                "housing": housing,
+                "model_housing": housing - housing_adjustment,
+                "amenities": amenities,
+                "model_amenities": amenities - amenity_adjustment,
+                "amenities_required": civvis::game::Game::city_amenities_required(city),
+                "amenity_surplus": game.city_amenity_surplus(city),
             }));
         }
         let great_works = [

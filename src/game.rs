@@ -15664,6 +15664,26 @@ pub struct CitizenStrategy {
     pub food_target: f64,
 }
 
+/// The tile-level ledger behind a city's modelled yields; see
+/// [`Game::city_yield_ledger`].
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct CityYieldLedger {
+    /// The city centre as CIVVIS floors it before assigning citizens.
+    pub center: Yields,
+    /// Every worked tile and what CIVVIS's own tile model pays this city for
+    /// it, before any host correction.
+    pub tiles: Vec<(Pos, Yields)>,
+    /// The host-to-model correction on the centre and each worked tile where
+    /// the mirror derived one (`observed_tile_yield_adjustments`); empty on a
+    /// native game.
+    pub tile_adjustments: Vec<(Pos, Yields)>,
+    /// Every assigned specialist, by district family, and what its slot pays.
+    pub specialists: Vec<(String, Yields)>,
+    /// Every standing district's own yields (adjacency and base), by name and
+    /// position.
+    pub districts: Vec<(String, Pos, Yields)>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CitizenPlan {
     pub strategy: CitizenStrategy,
@@ -17856,6 +17876,24 @@ pub struct Game {
     /// the projected surplus instead of being masked by a frozen host value.
     #[serde(default)]
     pub observed_city_amenity_adjustments: BTreeMap<u32, i64>,
+    /// Per-city host-to-model Housing corrections for a mirrored Firaxis
+    /// turn, the Amenity map's twin: `host - model`, added inside
+    /// [`Game::city_housing`] so the board reads the host's ceiling while a
+    /// planned Granary or Aqueduct still moves the projection by its modeled
+    /// amount. Native games leave this empty.
+    #[serde(default)]
+    pub observed_city_housing_adjustments: BTreeMap<u32, f64>,
+    /// Per-plot host-to-model yield corrections for a mirrored Firaxis turn:
+    /// `Plot:GetYield` minus CIVVIS's own tile model, on the plots the host
+    /// reports worked. Added inside [`Game::workable_tile_yields`], so the
+    /// board pays a tile what the host pays it — including the terms only the
+    /// host can know, such as the fertility an eruption or a flood left on the
+    /// ground (Rome on run civvis-20260816T003229Z read **+12 Food** over the
+    /// model for forty turns on volcanic soil) — while a counterfactual
+    /// improvement still moves the tile by its modeled amount. Native games
+    /// leave this empty.
+    #[serde(default)]
+    pub observed_tile_yield_adjustments: BTreeMap<Pos, crate::rules::Yields>,
     #[serde(default)]
     pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18346,6 +18384,11 @@ struct GameSer {
     #[serde(default)]
     observed_city_amenity_adjustments: BTreeMap<u32, i64>,
     #[serde(default)]
+    observed_city_housing_adjustments: BTreeMap<u32, f64>,
+    /// A list, not a map: JSON cannot key an object by a tuple.
+    #[serde(default)]
+    observed_tile_yield_adjustments: Vec<(Pos, crate::rules::Yields)>,
+    #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
     observed_city_specialists: BTreeMap<u32, Vec<String>>,
@@ -18516,6 +18559,8 @@ impl From<GameSer> for Game {
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
+            observed_city_housing_adjustments: s.observed_city_housing_adjustments,
+            observed_tile_yield_adjustments: s.observed_tile_yield_adjustments.into_iter().collect(),
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -18708,6 +18753,8 @@ impl From<Game> for GameSer {
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
+            observed_city_housing_adjustments: g.observed_city_housing_adjustments,
+            observed_tile_yield_adjustments: g.observed_tile_yield_adjustments.into_iter().collect(),
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -18769,6 +18816,8 @@ impl Game {
         self.observed_city_max_wall_hp.clear();
         self.observed_city_yield_adjustments.clear();
         self.observed_city_amenity_adjustments.clear();
+        self.observed_city_housing_adjustments.clear();
+        self.observed_tile_yield_adjustments.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -18839,6 +18888,7 @@ impl Game {
         self.observed_city_max_wall_hp.remove(&cid);
         self.observed_city_yield_adjustments.remove(&cid);
         self.observed_city_amenity_adjustments.remove(&cid);
+        self.observed_city_housing_adjustments.remove(&cid);
         self.observed_city_worked_tiles.remove(&cid);
         self.observed_city_specialists.remove(&cid);
         for player in self.players.iter_mut() {
@@ -19092,6 +19142,8 @@ impl Game {
             observed_yield_adjustments: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
             observed_city_amenity_adjustments: BTreeMap::new(),
+            observed_city_housing_adjustments: BTreeMap::new(),
+            observed_tile_yield_adjustments: BTreeMap::new(),
             observed_city_worked_tiles: BTreeMap::new(),
             observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
@@ -24249,6 +24301,90 @@ impl Game {
         multiplier
     }
 
+    /// The cities a route passes through on its way from `from` to `to`, in
+    /// walking order, ending with the destination and never including the
+    /// origin. The same greedy straight walk `route_district_gold_multiplier`
+    /// uses: CIVVIS has no trader pathfinder, so this is the route as the crow
+    /// flies over passable ground, which is what a Firaxis trader mostly does
+    /// on land within range.
+    fn route_path_cities(&self, from: Pos, to: Pos) -> Vec<u32> {
+        let mut current = from;
+        let mut cities = Vec::new();
+        for _ in 0..40 {
+            if current == to {
+                break;
+            }
+            let Some(next) = self
+                .nbrs(current)
+                .into_iter()
+                .filter(|position| self.rules.is_passable(&self.map.tiles[position]))
+                .min_by_key(|position| (self.wdist(*position, to), *position))
+            else {
+                break;
+            };
+            current = next;
+            if let Some(cid) = self.city_at(current) {
+                if !cities.contains(&cid) {
+                    cities.push(cid);
+                }
+            }
+        }
+        if let Some(dest) = self.city_at(to) {
+            if !cities.contains(&dest) {
+                cities.push(dest);
+            }
+        }
+        cities
+    }
+
+    /// Gold a route earns from the Trading Posts it passes through, as the
+    /// shipped rules pay it.
+    ///
+    /// Two host parameters and one trait, all read from the game database:
+    /// `TRADING_POST_GOLD_IN_FOREIGN_CITY = 1` pays one Gold per foreign city
+    /// on the route where the owner already holds a Trading Post — CIVVIS
+    /// records those as `trading_post_city:<id>` when a route completes;
+    /// `TRADING_POST_GOLD_IN_OWN_CITY = 0` pays nothing at home; and Rome's
+    /// `TRAIT_GOLD_FROM_DOMESTIC_TRADING_POSTS`
+    /// (`MODIFIER_PLAYER_ADJUST_TRADE_ROUTE_YIELD_PER_POST_IN_OWN_CITY`, 1 Gold)
+    /// pays one Gold per OWN city on the route, every Roman city holding a
+    /// post from founding (`TRAIT_FREE_TRADING_POSTS`). Both are
+    /// `own_trading_post_route_gold` / `free_trading_posts` in `civs.json`.
+    ///
+    /// Measured before it was modelled, on live Rome/Trajan run
+    /// civvis-20260816T011314Z: a domestic route Antium -> Rome read **+1 Gold**
+    /// in the host and 0 in the model from the turn it opened (t33) to the turn
+    /// it closed (t47), and Antium -> Arpinum through Ostia read **+2** — one per
+    /// Roman city on the way. Nothing else in the route ledger moved.
+    fn trading_post_route_gold(&self, owner: usize, origin: u32, dest: u32) -> f64 {
+        let (Some(origin_city), Some(dest_city)) =
+            (self.cities.get(&origin), self.cities.get(&dest))
+        else {
+            return 0.0;
+        };
+        // `TRADING_POST_GOLD_IN_FOREIGN_CITY`, a shipped GlobalParameter.
+        let foreign_post_gold = 1.0;
+        let own_post_gold = self.civ_effect(owner, "own_trading_post_route_gold");
+        let free_own_posts = self.civ_effect(owner, "free_trading_posts") > 0.0;
+        let mut gold = 0.0;
+        for cid in self.route_path_cities(origin_city.pos, dest_city.pos) {
+            let Some(city) = self.cities.get(&cid) else { continue };
+            if city.owner == owner {
+                // A post at home pays only where the trait says so, and the
+                // trait's cities all hold one from founding.
+                if free_own_posts {
+                    gold += own_post_gold;
+                }
+            } else if self.players[owner]
+                .counters
+                .contains_key(&format!("trading_post_city:{cid}"))
+            {
+                gold += foreign_post_gold;
+            }
+        }
+        gold
+    }
+
     /// Route upkeep at the owner's turn start: expire finished routes and
     /// hand the trader back to its origin city.
     fn process_routes(&mut self, pid: usize) {
@@ -28730,7 +28866,16 @@ impl Game {
                     && self.rules.buildings[building].outer_defense > 0
             })
             .count() as f64;
-        h + government.wall_level_housing * active_wall_levels
+        h += government.wall_level_housing * active_wall_levels;
+        // A mirrored board reads the host's ceiling: the mirror stores
+        // `host - model` here, so the number beside population is the one the
+        // host grows against, while a planned building still moves it by its
+        // modeled amount. Empty on a native game.
+        h + self
+            .observed_city_housing_adjustments
+            .get(&city.id)
+            .copied()
+            .unwrap_or(0.0)
     }
 
     pub fn wonder_built(&self, name: &str) -> bool {
@@ -30950,24 +31095,34 @@ impl Game {
 
     /// Amenities supplied to this city before subtracting its population need
     /// or an empire-wide bankruptcy penalty.
+    ///
+    /// On a mirrored board this includes the host-to-model correction the
+    /// mirror derived (`observed_city_amenity_adjustments`), so the count a
+    /// viewer reads beside `amenities_required` is the host's own count and
+    /// not the model's — the two disagreed by up to three on live Rome
+    /// (host 3, model 6, run civvis-20260816T011314Z t151) because Firaxis
+    /// does not hand luxuries to the neediest city first the way CIVVIS does.
+    /// The surplus below reads through here, so the correction is applied
+    /// exactly once.
     pub fn city_amenities(&self, city: &City) -> i64 {
         let luxury = self
             .luxury_amenity_allocations(city.owner)
             .get(&city.id)
             .copied()
             .unwrap_or(0);
-        self.city_local_amenities(city) + luxury
+        self.city_local_amenities(city)
+            + luxury
+            + self
+                .observed_city_amenity_adjustments
+                .get(&city.id)
+                .copied()
+                .unwrap_or(0)
     }
 
     pub fn city_amenity_surplus(&self, city: &City) -> i64 {
         self.city_amenities(city)
             - Self::city_amenities_required(city)
             - self.players[city.owner].bankruptcy_amenity_penalty
-            + self
-                .observed_city_amenity_adjustments
-                .get(&city.id)
-                .copied()
-                .unwrap_or(0)
     }
 
     fn amenity_yield_mult(&self, city: &City) -> f64 {
@@ -39633,6 +39788,19 @@ impl Game {
     }
 
     fn workable_tile_yields(&self, pos: Pos) -> Yields {
+        let mut yields = self.modeled_tile_yields(pos);
+        // A mirrored board pays the tile what the host pays it; see
+        // `observed_tile_yield_adjustments`. Empty on a native game.
+        if let Some(adjustment) = self.observed_tile_yield_adjustments.get(&pos) {
+            yields.add(*adjustment);
+        }
+        yields
+    }
+
+    /// CIVVIS's own tile model, before any host correction: what
+    /// [`Self::workable_tile_yields`] pays on a native game, and the number the
+    /// mirror measures the host's per-plot export against.
+    pub fn modeled_tile_yields(&self, pos: Pos) -> Yields {
         let tile = &self.map.tiles[&pos];
         let owner = tile
             .owner_city
@@ -39714,6 +39882,73 @@ impl Game {
     /// uses this to derive the additive correction without reading itself.
     pub fn city_yields_model(&self, cid: u32) -> Yields {
         self.city_yields_inner(cid, None, false)
+    }
+
+    /// The tile-level ledger behind [`Self::city_yields_model`]: the centre as
+    /// CIVVIS floors it (2 Food / 1 Production minimum), then every worked
+    /// tile with the yields it pays this city, then every assigned specialist
+    /// with the yields its slot pays, then every standing district's own
+    /// yields. Whatever the model total holds beyond the sum of these is
+    /// buildings, routes, policies and the rest.
+    ///
+    /// Diagnostic only — nothing decides on it. It exists so the yield-fidelity
+    /// instrument (`tools/civ6_yield_drift.py`) can diff CIVVIS's tile model
+    /// against the host's own per-plot export and name the tile, specialist or
+    /// district a gap lives on, rather than only its size per city.
+    pub fn city_yield_ledger(&self, cid: u32) -> CityYieldLedger {
+        let city = &self.cities[&cid];
+        let _memo = self.query_memo();
+        let mut center = self.modeled_tile_yields(city.pos);
+        center.food = center.food.max(2.0);
+        center.production = center.production.max(1.0);
+        let plan = self.city_citizen_plan(cid);
+        let tiles = plan
+            .worked_tiles
+            .iter()
+            .map(|pos| (*pos, self.modeled_tile_yields(*pos)))
+            .collect();
+        let tile_adjustments = std::iter::once(city.pos)
+            .chain(plan.worked_tiles.iter().copied())
+            .filter_map(|pos| {
+                self.observed_tile_yield_adjustments
+                    .get(&pos)
+                    .map(|adjustment| (pos, *adjustment))
+            })
+            .collect();
+        let jobs = self.city_specialist_jobs(city);
+        let specialists = plan
+            .specialists
+            .iter()
+            .map(|family| {
+                let yields = jobs
+                    .iter()
+                    .find(|(district, _)| district == family)
+                    .map(|(_, yields)| *yields)
+                    .unwrap_or_default();
+                (family.clone(), yields)
+            })
+            .collect();
+        let districts = city
+            .districts
+            .iter()
+            .filter(|(dname, dpos)| {
+                let (dname, dpos): (&Name, &Pos) = (dname, dpos);
+                !(self.map.tiles[dpos].pillaged
+                    || (self.district_is_family(dname, crate::name!("encampment"))
+                        && city.encampment_pillaged))
+            })
+            .map(|(dname, dpos)| {
+                let (dname, dpos): (&Name, &Pos) = (dname, dpos);
+                (dname.to_string(), *dpos, self.district_yields(dname, *dpos))
+            })
+            .collect();
+        CityYieldLedger {
+            center,
+            tiles,
+            tile_adjustments,
+            specialists,
+            districts,
+        }
     }
 
     fn city_yields_inner(
@@ -40145,6 +40380,7 @@ impl Game {
             if let Some(dc) = self.cities.get(&r.dest) {
                 let domestic = dc.owner == city.owner;
                 let mut rys = self.trade_route_yields(city.owner, r.dest);
+                rys.gold += self.trading_post_route_gold(city.owner, cid, r.dest);
                 if self.grants_city_state_unique_bonus(city.owner, "Chinguetti") {
                     if let Some(religion) = self.players[city.owner]
                         .religion
