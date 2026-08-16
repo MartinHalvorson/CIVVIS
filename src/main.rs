@@ -1182,7 +1182,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The Amenity-repair band gate sits inside `amenity_districts`, which every
 /// native constructor and the frozen anchor leave off. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8970_263e_f49a_f070;
+/// The every-lane governor routing is behind `governor_every_lane`, which only
+/// the live bridge and the native repair bundle set; `AdvancedAi::new()` and
+/// `legacy()` keep the historical routing (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfd1d_bb07_5a20_0ba6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
