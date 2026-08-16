@@ -1259,7 +1259,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The tally price of a Great Person is behind `tally_great_people`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's patronage keeps its
 /// closeness limit. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd6e4_3b40_1e3f_e90a;
+/// The frontier-loyalty rule is now a distance test (own city within nine
+/// tiles), still behind `frontier_loyalty` and off for `AdvancedAi::legacy()`
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x46d5_f28f_80fc_d34d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
