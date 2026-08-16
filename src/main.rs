@@ -1216,7 +1216,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (asserted); a native board carries no unknown terrain, so the estimate
 /// equals the count there. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x860d_0a07_2275_677c;
+/// The recon flight step is behind `recon_flight`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's scouts explore
+/// exactly as before. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa8c7_d3fd_31b1_e9fa;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

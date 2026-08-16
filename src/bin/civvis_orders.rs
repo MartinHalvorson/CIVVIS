@@ -1460,6 +1460,7 @@ fn withhold_live_treatment(
         "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
         "no-elective-war" => ai.disable_no_elective_war(),
         "fog-land-capacity" => ai.disable_fog_land_capacity(),
+        "recon-flight" => ai.disable_recon_flight(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1485,7 +1486,7 @@ fn withhold_live_treatment(
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity"
+                 fog-land-capacity, recon-flight"
             ))
         }
     }
@@ -3589,6 +3590,11 @@ mod tests {
         withhold_live_treatment(&mut ai, "fog-land-capacity")
             .expect("the fogged-capacity control arm is registered");
         assert!(!ai.fog_land_capacity, "the named fogged-capacity control must hold it off");
+
+        assert!(ai.recon_flight);
+        withhold_live_treatment(&mut ai, "recon-flight")
+            .expect("the recon-flight control arm is registered");
+        assert!(!ai.recon_flight, "the named recon-flight control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
