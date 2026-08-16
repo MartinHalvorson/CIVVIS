@@ -224,3 +224,32 @@ class BridgeHealth(LedgerCase):
             code = civ6_ladder.check(self.runs, self.ledger, None,
                                      self.snapshot, min_applied=95.0)
         self.assertEqual(code, 1)
+
+
+class ScoreLead(LedgerCase):
+    """The gap to the best rival rides the ledger; outcome.score cannot."""
+
+    def test_final_standing_reads_the_last_turn_that_saw_both(self):
+        events = self.runs / "events.jsonl"
+        events.write_text("\n".join([
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "score": 10, "rival_best": 12}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 250,
+                        "score": 731, "rival_best": 1200}),
+            # The victory event's score is the LOCAL seat's, never a rival's.
+            json.dumps({"kind": "victory", "score": 715, "team": 5}),
+        ]))
+        self.assertEqual(civ6_ladder.final_standing(events), (731, 1200))
+
+    def test_the_lead_is_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("gap", rival_best=1200, last_score=731)))
+        entry = self.state()["attempts"][0]
+        self.assertEqual(entry["rival_best"], 1200)
+        self.assertEqual(entry["lead"], -469)
+
+    def test_an_unmeasured_run_records_no_lead(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary("old")))
+        entry = self.state()["attempts"][0]
+        self.assertIsNone(entry["rival_best"])
+        self.assertIsNone(entry["lead"])

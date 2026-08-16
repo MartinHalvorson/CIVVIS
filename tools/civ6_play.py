@@ -2599,6 +2599,12 @@ def _play(args: argparse.Namespace) -> int:
         totals = civ6_ladder.orders_totals(run_dir / "events.jsonl")
         if totals:
             summary["orders_seen"], summary["orders_applied"] = totals
+        # The score gap to the best rival is the climb's primary progress
+        # metric: our own score doubling means nothing while rival_best
+        # holds a four-hundred-point lead at the cap.
+        standing = civ6_ladder.final_standing(run_dir / "events.jsonl")
+        if standing:
+            summary["rival_best"] = standing[1]
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
