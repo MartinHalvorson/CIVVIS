@@ -416,10 +416,13 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertNotIn("SetGivingTokensConsidered", handler)
         self.assertNotIn("envoySpendOrder", handler)
         self.assertNotIn("cfg.EnvoyEnabled", handler)
-        # Receiving-side telemetry: the count after the request, from a second fresh handle.
+        # Issuing-side telemetry only: no same-frame "after" count, which read equal
+        # to `held` on every live placement while the tokens were landing; the
+        # receiving side is the next export's envoys_free / minors[].envoys.
         self.assertIn('emit("envoy"', handler)
         self.assertIn('source = "civvis"', handler)
-        self.assertIn("player:GetInfluence():GetTokensToGive();", handler)
+        self.assertNotIn("after =", handler)
+        self.assertNotIn("player:GetInfluence():GetTokensToGive();", handler)
         # And a refusal names its reason.
         for reason in ("envoy_target_unmapped", "envoy_no_operation", "envoy_none_held", "envoy_cannot_give", "envoy_refused_"):
             self.assertIn(reason, handler)
