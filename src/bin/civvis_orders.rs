@@ -503,6 +503,90 @@ impl HostCityAttackCooldowns {
     }
 }
 
+/// Plots the host will not walk a unit onto, learned from moves that went
+/// nowhere.
+///
+/// ★★★★ AN ACCEPTED MOVE THAT NEVER MOVES IS THE MIRROR'S BLIND SPOT. The
+/// mirror marks unrevealed plots within the frontier depth as traversable so
+/// exploration and expansion can aim outward, and Civilization VI accepts a
+/// `MOVE_TO` toward one without a `move_refused` — then, if the plot is really
+/// ice, ocean or a mountain behind a hill, walks the unit nowhere. Run
+/// civvis-20260816T093036Z: the only Scout stood on (12,12) from t13 to t49
+/// ordered `MOVE_TO (9,11)` on 28 consecutive turns; 193 plots revealed by t50.
+/// #1735 retires an exploration GOAL the unit stands still for, but the goal
+/// varied while the coalesced first step through (9,11) did not, so nothing
+/// fired. This works at the true grain: the DESTINATION the bridge sent, per
+/// host unit. A unit still standing on the tile it was ordered from, one turn
+/// after a `MOVE_TO`, proves that destination unwalkable; if the mirror still
+/// holds it as unknown ground it stops being assumed traversable, and every
+/// path — exploration, settlers, the army — routes around it. Revealed terrain
+/// is never overridden: once the plot is seen, its real terrain governs.
+#[derive(Default)]
+struct HostMoveRefusals {
+    /// The last `MOVE_TO` sent per host unit: where it stood and where it was
+    /// sent, on which turn.
+    sent: std::collections::BTreeMap<i64, ((i32, i32), (i32, i32), u32)>,
+    /// Destinations proved unwalkable, in host offset coordinates.
+    dead: std::collections::BTreeSet<(i32, i32)>,
+}
+
+impl HostMoveRefusals {
+    /// Compare this turn's positions with last turn's orders.
+    fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
+        let sent = std::mem::take(&mut self.sent);
+        for (unit, (from, dest, turn)) in sent {
+            // The ladder asks several times per turn; a same-turn frame cannot
+            // judge last frame's move yet, so keep it for the turn that can.
+            if state.turn <= turn {
+                self.sent.insert(unit, (from, dest, turn));
+                continue;
+            }
+            if state.turn != turn.saturating_add(1) {
+                continue;
+            }
+            let Some(now) = state.units.iter().find(|u| u.id == unit) else {
+                continue;
+            };
+            if (now.x, now.y) == from && from != dest {
+                self.dead.insert(dest);
+            }
+        }
+    }
+
+    /// Remember where each `MOVE_TO` in `orders` sends which host unit from.
+    fn record(&mut self, orders: &[Order], state: &civvis::mirror::StateSnapshot) {
+        for order in orders {
+            if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
+                continue;
+            }
+            let (Some(unit), Some(dest)) = (order.subject, order.pos) else {
+                continue;
+            };
+            let Some(from) = state
+                .units
+                .iter()
+                .find(|u| u.id == unit)
+                .map(|u| (u.x, u.y))
+            else {
+                continue;
+            };
+            self.sent.insert(unit, (from, dest, state.turn));
+        }
+    }
+
+    /// Take the proved-unwalkable plots off the mirror's speculative frontier.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror) {
+        for &(x, y) in &self.dead {
+            let pos = civvis::hex::offset_to_axial(x, y);
+            if let Some(tile) = mirror.game.map.tiles.get_mut(&pos) {
+                if tile.terrain == "unknown" {
+                    tile.assumed_traversable = false;
+                }
+            }
+        }
+    }
+}
+
 /// Withhold only peace orders whose known Firaxis cooldown has not expired.
 ///
 /// This is deliberately below translation, so native `MakePeace`, negotiated
@@ -1417,6 +1501,7 @@ fn decide(
     withheld: &[String],
     ours: &mut std::collections::BTreeMap<i64, String>,
     host_peace_retries: &mut HostPeaceRetries,
+    host_move_refusals: &mut HostMoveRefusals,
 ) -> String {
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -1800,6 +1885,12 @@ fn decide(
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
 
+    // Remember where each move sends which host unit, so next turn's positions
+    // can prove a destination unwalkable. See `HostMoveRefusals`.
+    host_move_refusals.record(&orders, state);
+    if !host_move_refusals.dead.is_empty() {
+        note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
+    }
     let (governor_safe, deferred_governor_followups) = defer_governor_followups(orders);
     orders = governor_safe;
     if deferred_governor_followups > 0 {
@@ -3141,6 +3232,7 @@ fn main() {
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
         let mut host_peace_retries = HostPeaceRetries::default();
+        let mut host_move_refusals = HostMoveRefusals::default();
         let reply = decide(
             &mut live,
             &mut ai,
@@ -3150,6 +3242,7 @@ fn main() {
             &withheld,
             &mut ours,
             &mut host_peace_retries,
+            &mut host_move_refusals,
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
@@ -3185,6 +3278,7 @@ fn main() {
     // choice. Keep it through all bridge reconstruction modes so a fresh board or
     // diagnostic fresh AI cannot repeat a host-cooldown peace request.
     let mut host_peace_retries = HostPeaceRetries::default();
+    let mut host_move_refusals = HostMoveRefusals::default();
     // The Firaxis repair cooldown belongs to the host, not the reconstructed
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
@@ -3201,6 +3295,7 @@ fn main() {
             Some((snapshot, state)) => {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 host_city_attack_cooldowns.observe(&state);
+                host_move_refusals.observe(&state);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -3263,6 +3358,7 @@ fn main() {
                     }
                     board.carry_treasury_baseline(carried_treasury);
                     host_city_attack_cooldowns.apply(&mut board);
+                    host_move_refusals.apply(&mut board);
                     let reply = decide(
                         &mut board,
                         &mut ai,
@@ -3272,6 +3368,7 @@ fn main() {
                         &withheld,
                         &mut ours,
                         &mut host_peace_retries,
+                        &mut host_move_refusals,
                     );
                     live = Some(board);
                     reply
@@ -3282,6 +3379,7 @@ fn main() {
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
                         host_city_attack_cooldowns.apply(&mut fresh);
+                        host_move_refusals.apply(&mut fresh);
                         let reply = decide(
                             &mut fresh,
                             &mut ai,
@@ -3291,6 +3389,7 @@ fn main() {
                             &withheld,
                             &mut ours,
                             &mut host_peace_retries,
+                            &mut host_move_refusals,
                         );
                         live = Some(fresh);
                         reply
@@ -3298,6 +3397,7 @@ fn main() {
                     Some(existing) => {
                         existing.sync(&snapshot, &state, frontier);
                         host_city_attack_cooldowns.apply(existing);
+                        host_move_refusals.apply(existing);
                         // `--fresh-ai` isolates the two halves of persistence: keep the
                         // mirror, throw away the agent. If orders come back, the empty
                         // turns are the AGENT's carried state; if they stay empty, they
@@ -3322,6 +3422,7 @@ fn main() {
                                 &withheld,
                                 &mut ours,
                                 &mut host_peace_retries,
+                                &mut host_move_refusals,
                             )
                         } else {
                             decide(
@@ -3333,6 +3434,7 @@ fn main() {
                                 &withheld,
                                 &mut ours,
                                 &mut host_peace_retries,
+                                &mut host_move_refusals,
                             )
                         }
                     }
@@ -3606,6 +3708,118 @@ mod tests {
     }
 
     /// One land patch is enough: the override reads cities, not terrain.
+    /// ★★★★ A move the host accepts and never performs is a fact about the
+    /// ground, and it must reach the mirror's speculative frontier.
+    ///
+    /// Run civvis-20260816T093036Z: the only Scout stood on (12,12) for 28
+    /// consecutive turns of `MOVE_TO (9,11)` with no `move_refused` and 193 plots
+    /// revealed by t50. The mirror kept assuming the unrevealed (9,11) traversable
+    /// on every rebuild, so every replan chose the same dead line. Here a scout is
+    /// ordered from (4,5) onto the unknown ring beyond the revealed 8×8, is still
+    /// standing on (4,5) next turn, and the destination stops being assumed
+    /// traversable — while a same-turn frame keeps the memory, a unit that DID
+    /// move proves nothing, and revealed terrain is never overridden.
+    #[test]
+    fn a_frontier_plot_the_host_will_not_walk_onto_stops_being_traversable() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 13;
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 4,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..StateUnit::default()
+        }];
+        // (8,5) is the first unrevealed column past the 8×8 board: frontier ground.
+        let dead_dest = (8, 5);
+        let dead_pos = civvis::hex::offset_to_axial(dead_dest.0, dead_dest.1);
+        let seen_pos = civvis::hex::offset_to_axial(6, 5);
+
+        let mut refusals = HostMoveRefusals::default();
+        let orders = vec![
+            Order {
+                kind: "unit",
+                subject: Some(900),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some(dead_dest),
+            },
+            // A non-move for the same unit and a move for an unknown unit are noise.
+            Order {
+                kind: "unit",
+                subject: Some(900),
+                verb: Some("FORTIFY".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "unit",
+                subject: Some(901),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((7, 7)),
+            },
+        ];
+        refusals.record(&orders, &state);
+        assert_eq!(refusals.sent.len(), 1, "only the scout's move is remembered");
+
+        // A second frame on the SAME turn cannot judge the move yet and must not
+        // forget it.
+        refusals.observe(&state);
+        assert_eq!(refusals.sent.len(), 1, "a same-turn frame keeps the memory");
+        assert!(refusals.dead.is_empty());
+
+        // Next turn, still on the tile it was ordered from: the destination is dead.
+        state.turn = 14;
+        refusals.observe(&state);
+        assert!(refusals.sent.is_empty(), "a judged move is consumed");
+        assert_eq!(
+            refusals.dead.iter().copied().collect::<Vec<_>>(),
+            vec![dead_dest],
+            "a unit that never left its tile proves the destination unwalkable"
+        );
+
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 2);
+        assert_eq!(mirror.game.map.tiles[&dead_pos].terrain.as_str(), "unknown");
+        assert!(
+            mirror.game.map.tiles[&dead_pos].assumed_traversable,
+            "fixture precondition: the frontier plot starts out assumed traversable"
+        );
+        refusals.apply(&mut mirror);
+        assert!(
+            !mirror.game.map.tiles[&dead_pos].assumed_traversable,
+            "the proved-dead frontier plot stops being assumed traversable"
+        );
+        assert!(
+            !mirror.game.rules.is_passable(&mirror.game.map.tiles[&dead_pos]),
+            "and the planner's paths route around it"
+        );
+
+        // A move that DID progress proves nothing, and a revealed plot is never
+        // overridden even if it once sat in the dead set.
+        refusals.record(
+            &[Order {
+                kind: "unit",
+                subject: Some(900),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((6, 5)),
+            }],
+            &state,
+        );
+        state.turn = 15;
+        state.units[0].x = 5;
+        refusals.observe(&state);
+        assert_eq!(refusals.dead.len(), 1, "a unit that moved marks nothing dead");
+        refusals.dead.insert((6, 5));
+        let before = mirror.game.map.tiles[&seen_pos].assumed_traversable;
+        refusals.apply(&mut mirror);
+        assert_eq!(mirror.game.map.tiles[&seen_pos].terrain.as_str(), "grassland");
+        assert_eq!(
+            mirror.game.map.tiles[&seen_pos].assumed_traversable, before,
+            "revealed terrain keeps its own truth"
+        );
+        assert!(mirror.game.rules.is_passable(&mirror.game.map.tiles[&seen_pos]));
+    }
+
     fn production_board() -> (Snapshot, StateSnapshot) {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 1,
@@ -3864,6 +4078,7 @@ mod tests {
             &[],
             &mut ours,
             &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
         ))
         .unwrap();
         let attacks = reply["orders"]
@@ -5002,6 +5217,7 @@ mod tests {
             &[],
             &mut Default::default(),
             &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
         ))
         .expect("the decision is JSON");
 
@@ -5186,6 +5402,7 @@ mod tests {
             &[],
             &mut Default::default(),
             &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
         );
 
         assert!(reply.contains("\"turn\":4"));
@@ -5261,6 +5478,7 @@ mod tests {
             &[],
             &mut Default::default(),
             &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
         ))
         .expect("the decision is JSON");
 
@@ -5335,6 +5553,7 @@ mod tests {
             &[],
             &mut Default::default(),
             &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
         );
 
         assert!(
