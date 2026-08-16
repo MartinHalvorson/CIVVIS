@@ -2304,6 +2304,30 @@ pub struct AdvancedAi {
     /// own cadence was bred against CIVVIS rivals who contest the ground; off
     /// for ordinary and frozen controllers.
     pub era_paced_expansion: bool,
+    /// Price a point of culture at the lane's price of a point of science.
+    ///
+    /// ★★★★ THE TALLY PAYS THREE FOR A CIVIC AND TWO FOR A TECH, AND THE
+    /// SCIENCE LANE PRICES CULTURE AT A QUARTER OF A BEAKER. Every Settler game
+    /// so far has ended on the host's score tally. `yield_value` under the
+    /// Science lane weighs science 4.2 and culture 1.2, so the strategic
+    /// governor buys Campuses and Libraries and never a Theater Square: run
+    /// civvis-20260816T093036Z ended with EIGHT Campuses and ZERO Theater
+    /// Squares in nine cities, culture 69 against science 233, 41 civics
+    /// against the rivals' 43–50; run T101521Z culture 95 against science 208,
+    /// 41 civics against 47–50; run T110555Z culture 41 against science 71, 36
+    /// civics against 46–53. On the tally a civic is worth three points, a
+    /// tech two, and Civilization VI's civics cost less than its techs of the
+    /// same era — so a point of culture buys MORE tally than a point of
+    /// science, before counting the governments, policy slots and wildcards
+    /// the civic tree unlocks.
+    ///
+    /// With this on, `yield_value` prices culture at no less than the lane's
+    /// science weight under every lane but Culture (which already prices it
+    /// higher), and the strategic governor's district table gives the Theater
+    /// Square the Campus's Science-lane weight. Firaxis-only: it prices the
+    /// Settler seat's tally; the native lanes keep their bred weights. Off for
+    /// ordinary and frozen controllers.
+    pub tally_culture: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3078,6 +3102,7 @@ impl AdvancedAi {
             rush_route_targets: None,
             counter_in_lane: false,
             era_paced_expansion: false,
+            tally_culture: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3825,6 +3850,9 @@ impl AdvancedAi {
         // And the city target climbs at the Settler game's own era pace. See
         // `era_paced_expansion`.
         self.enable_era_paced_expansion();
+        // And a civic is three points on that tally to a tech's two. See
+        // `tally_culture`.
+        self.enable_tally_culture();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -4220,6 +4248,16 @@ impl AdvancedAi {
 
     pub fn disable_era_paced_expansion(&mut self) {
         self.era_paced_expansion = false;
+    }
+
+    /// Price a point of culture at the lane's price of a point of science.
+    /// See `tally_culture`.
+    pub fn enable_tally_culture(&mut self) {
+        self.tally_culture = true;
+    }
+
+    pub fn disable_tally_culture(&mut self) {
+        self.tally_culture = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -7800,6 +7838,13 @@ impl AdvancedAi {
         // replacement: the Science lane's 4.2 always wins, and with
         // `research_economy` off the floor is 0.0 and this line is a no-op.
         let science = science.max(self.research_weight);
+        // See `tally_culture`: on the tally seat a point of culture buys at
+        // least what a point of science buys.
+        let culture = if self.tally_culture && strategy != GrandStrategy::Culture {
+            culture.max(science)
+        } else {
+            culture
+        };
         yields.food * food
             + yields.production * prod
             + yields.gold * gold
@@ -17099,6 +17144,8 @@ impl AdvancedAi {
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
+                    // See `tally_culture`: the civic tree pays three a rung.
+                    (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
                     (GrandStrategy::Religion, "holy_site") => {
                         if self.holy_lane_parity {
@@ -34351,6 +34398,127 @@ mod tests {
 
     /// A Zoo reaches every own city within six tiles; priced as one city's
     /// +1 it never outbid a Library. See `amenity_district_path`.
+    /// ★★★★ The tally pays three for a civic and two for a tech, and the
+    /// Science lane priced culture at a quarter of a beaker: eight Campuses
+    /// and zero Theater Squares in nine cities (civvis-20260816T093036Z), 36–41
+    /// civics against rivals' 43–53 in every batch-4 game. See
+    /// `tally_culture`. On the live seat a point of culture is worth no less
+    /// than a point of science under the Science lane, the Culture lane keeps
+    /// its own higher culture weight, and the strategic governor's Theater
+    /// Square carries the Campus's Science-lane weight; stock and frozen
+    /// controllers are unchanged.
+    #[test]
+    fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
+        let culture_only = Yields {
+            culture: 1.0,
+            ..Yields::default()
+        };
+        let science_only = Yields {
+            science: 1.0,
+            ..Yields::default()
+        };
+        let stock = AdvancedAi::new();
+        let frozen = AdvancedAi::legacy();
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.tally_culture, "the live seat carries the treatment");
+
+        assert!(
+            stock.yield_value(culture_only, GrandStrategy::Science)
+                < stock.yield_value(science_only, GrandStrategy::Science),
+            "the stock Science lane prices culture below science"
+        );
+        assert_eq!(
+            frozen.yield_value(culture_only, GrandStrategy::Science),
+            stock.yield_value(culture_only, GrandStrategy::Science),
+            "the frozen anchor prices exactly as stock"
+        );
+        assert_eq!(
+            live.yield_value(culture_only, GrandStrategy::Science),
+            live.yield_value(science_only, GrandStrategy::Science),
+            "the tally seat prices a point of culture at the Science lane's beaker"
+        );
+        for lane in [
+            GrandStrategy::Expansion,
+            GrandStrategy::Conquest,
+            GrandStrategy::Recovery,
+            GrandStrategy::Diplomacy,
+            GrandStrategy::Religion,
+        ] {
+            assert!(
+                live.yield_value(culture_only, lane) >= live.yield_value(science_only, lane),
+                "under {lane:?} culture is worth no less than science on the tally seat"
+            );
+            assert!(
+                live.yield_value(science_only, lane) == stock.yield_value(science_only, lane),
+                "and the beaker itself is priced as before under {lane:?}"
+            );
+        }
+        assert_eq!(
+            live.yield_value(culture_only, GrandStrategy::Culture),
+            stock.yield_value(culture_only, GrandStrategy::Culture),
+            "the Culture lane keeps its own, higher, culture weight"
+        );
+
+        // The strategic governor: a Theater Square is priced like a Campus
+        // under the Science lane on the tally seat, and below it as stock.
+        let (mut game, capital, _home) = empire_with_a_capital(71_113);
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        let campus_site = game
+            .district_sites(capital, crate::name!("campus"))
+            .into_iter()
+            .next()
+            .expect("the capital has a plot for a Campus");
+        // The same plot serves both, so the comparison is the district alone.
+        let theater_site = game
+            .district_sites(capital, crate::name!("theater_square"))
+            .into_iter()
+            .find(|site| *site == campus_site)
+            .or_else(|| {
+                game.district_sites(capital, crate::name!("theater_square"))
+                    .into_iter()
+                    .next()
+            })
+            .expect("the capital has a plot for a Theater Square");
+        let campus = Item::District {
+            district: crate::name!("campus"),
+            pos: campus_site,
+        };
+        let theater = Item::District {
+            district: crate::name!("theater_square"),
+            pos: theater_site,
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = EmpireCounts::default();
+        let stock_gap = stock.production_value(&game, 0, capital, &campus, &plan, &counts)
+            - stock.production_value(&game, 0, capital, &theater, &plan, &counts);
+        let live_gap = live.production_value(&game, 0, capital, &campus, &plan, &counts)
+            - live.production_value(&game, 0, capital, &theater, &plan, &counts);
+        assert!(
+            live_gap < stock_gap,
+            "the tally seat closes the Campus-over-Theater gap ({live_gap} vs {stock_gap})"
+        );
+
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_tally_culture();
+        assert_eq!(
+            withheld.yield_value(culture_only, GrandStrategy::Science),
+            stock.yield_value(culture_only, GrandStrategy::Science)
+        );
+        assert!(!stock.tally_culture);
+        assert!(!frozen.tally_culture);
+    }
+
     #[test]
     fn a_regional_amenity_building_counts_the_cities_it_reaches() {
         // `found_nearby_test_city` sites a city 4–10 tiles out; keep seeding

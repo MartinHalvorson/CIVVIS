@@ -1239,7 +1239,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
 /// per ninety standard turns. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5f7a_c505_79ec_fd0e;
+/// The tally price of culture is behind `tally_culture`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
+/// bred yield weights and district table. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a71_65d4_ad9c_b5a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
