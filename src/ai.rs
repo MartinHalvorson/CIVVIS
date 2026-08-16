@@ -7629,7 +7629,7 @@ impl BasicAi {
         }
         // developed cities turn to wonders
         if !self.minor && g.cities[&cid].buildings.len() as f64 >= self.w.wonder_min_bld {
-            if let Some(wonder) = Self::cheapest_available_wonder(g, pid, cid) {
+            if let Some(wonder) = Self::fallback_wonder(g, pid, cid) {
                 return Some(wonder);
             }
         }
@@ -7695,6 +7695,22 @@ impl BasicAi {
                     .total_cmp(&g.item_cost_for_city(pid, cid, right))
                     .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
             })
+    }
+
+    /// A generic fallback has no strategic reason to walk the whole Wonder
+    /// catalogue after Firaxis has already refused one in this city. The
+    /// mirror's `blocked_wonders` feedback is live-only, so ordinary games
+    /// retain their existing cheapest-legal-Wonder behavior.
+    fn fallback_wonder(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let host_refused_a_wonder_here = g
+            .blocked_wonders
+            .get(&cid)
+            .is_some_and(|wonders| !wonders.is_empty());
+        if host_refused_a_wonder_here {
+            None
+        } else {
+            Self::cheapest_available_wonder(g, pid, cid)
+        }
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
@@ -12217,10 +12233,22 @@ mod tests {
             |item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids")
         ));
 
-        let wonder = BasicAi::cheapest_available_wonder(&game, 0, city)
+        let wonder = BasicAi::fallback_wonder(&game, 0, city)
             .expect("the developed city has a placed wonder fallback");
         assert!(matches!(wonder, Item::Wonder { .. }));
         assert!(game.can_produce(0, city, &wonder));
+
+        // The live mirror records `build_no_plot` as an exact Wonder block.
+        // After one such response, generic fallback production must return to
+        // its non-Wonder choices instead of trying the next catalog entry.
+        game.blocked_wonders
+            .entry(city)
+            .or_default()
+            .insert(crate::name!("pyramids"));
+        assert!(
+            BasicAi::fallback_wonder(&game, 0, city).is_none(),
+            "a host-refused Wonder must stop the generic fallback from walking the catalogue"
+        );
     }
 
     /// A settler standing still does not hold the expansion gate shut.
