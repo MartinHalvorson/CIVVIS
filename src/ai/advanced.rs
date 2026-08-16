@@ -3546,6 +3546,21 @@ impl AdvancedAi {
         self.base.naval_recon
     }
 
+    /// Count a barbarian camp within nine tiles of a city as home ground the
+    /// guard clears. See `BasicAi::camp_reach`.
+    pub fn enable_camp_reach(&mut self) {
+        self.base.enable_camp_reach();
+    }
+
+    pub fn disable_camp_reach(&mut self) {
+        self.base.disable_camp_reach();
+    }
+
+    /// Whether the wider camp reach is on. See `BasicAi::camp_reach`.
+    pub fn camp_reach(&self) -> bool {
+        self.base.camp_reach
+    }
+
     /// Price a revealed natural wonder's ring into the settle scorer. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
@@ -3784,6 +3799,9 @@ impl AdvancedAi {
         self.enable_score_horizon();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
+        // And a camp within nine tiles of a city is home ground the guard clears.
+        // See `BasicAi::camp_reach`.
+        self.enable_camp_reach();
         // ⚠ A revealed natural wonder is priced into founding only through the
         // worked tiles the growth forecast can see and a future Holy Site's
         // adjacency — for the Matterhorn about 2-4 points — while everything
@@ -4117,6 +4135,9 @@ impl AdvancedAi {
         self.enable_score_horizon();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
+        // And a camp within nine tiles of a city is home ground the guard clears.
+        // See `BasicAi::camp_reach`.
+        self.enable_camp_reach();
         // A Religion plan that keeps its wars blockades its own lane.
         self.enable_religion_sues_peace();
     }
@@ -23750,7 +23771,13 @@ impl AdvancedAi {
         // very much on the board. The presence check is the liveness test.
         if self.base.home_defense {
             if let Some(barb) = g.barb_pid {
-                if !enemies.contains(&barb) && BasicAi::barbarian_presence_at_home(g, pid) {
+                if !enemies.contains(&barb)
+                    && BasicAi::barbarian_presence_at_home_with_camp_radius(
+                        g,
+                        pid,
+                        self.base.camp_radius(),
+                    )
+                {
                     enemies.push(barb);
                 }
             }
@@ -42725,6 +42752,103 @@ mod tests {
     /// cycled through exploration. The list now admits the barbarian seat
     /// exactly when it has a presence within `HOME_THREAT_RADIUS` of one of
     /// our cities, and the campaign chain consults `garrison_step` and
+    /// ★★★★ Two camps seven tiles from Rome stood for a whole game
+    /// (civvis-20260816T155856Z): the raider radius is six, so a camp at seven
+    /// was nobody's business while it raised musketmen. See `camp_reach`. A
+    /// camp eight tiles from the capital, with no raider in sight, is home
+    /// ground on the live seat — the barbarian seat is an enemy at home and
+    /// the guard's objective is the camp — and out of reach for the withheld
+    /// arm; a camp at ten is out of reach for both.
+    #[test]
+    fn a_camp_within_nine_tiles_of_a_city_is_home_ground_the_guard_clears() {
+        let mut game = Game::new_full(2, 30, 20, 90_078, 60, 0, true);
+        for player in 0..2 {
+            let settler = game
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            game.current = player;
+            game.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..2 {
+            for uid in game.player_unit_ids(player) {
+                game.remove_unit(uid);
+            }
+        }
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        let camp_at = |g: &Game, distance: i32| -> Pos {
+            let mut ring: Vec<Pos> = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| g.wdist(*pos, home) == distance && open(g, *pos))
+                .collect();
+            ring.sort_unstable();
+            ring.into_iter().next().expect("open ground at the distance")
+        };
+        let eight = camp_at(&game, 8);
+        game.barb_camps.insert(eight, game.turn);
+        game.map.tiles.get_mut(&eight).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+        let warrior = game.spawn_test_unit("warrior", 0, home);
+
+        assert!(
+            !BasicAi::barbarian_presence_at_home(&game, 0),
+            "at the raider radius a camp eight tiles out is nobody's business"
+        );
+        assert!(
+            BasicAi::barbarian_presence_at_home_with_camp_radius(&game, 0, crate::ai::HOME_CAMP_RADIUS),
+            "at the camp radius it is home ground"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.camp_reach(), "the live seat carries the treatment");
+        assert_eq!(live.base.camp_radius(), crate::ai::HOME_CAMP_RADIUS);
+        assert_eq!(
+            live.base.home_defense_objective(&game, 0, warrior, &[barb]),
+            Some(eight),
+            "the guard's objective is the camp"
+        );
+
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_camp_reach();
+        assert_eq!(withheld.base.camp_radius(), crate::ai::HOME_THREAT_RADIUS);
+        assert_eq!(
+            withheld.base.home_defense_objective(&game, 0, warrior, &[barb]),
+            None,
+            "the withheld arm leaves a camp past the raider radius alone"
+        );
+
+        // Ten tiles: past the camp radius for both.
+        game.barb_camps.clear();
+        game.map.tiles.get_mut(&eight).unwrap().improvement = None;
+        let ten = camp_at(&game, 10);
+        game.barb_camps.insert(ten, game.turn);
+        assert!(!BasicAi::barbarian_presence_at_home_with_camp_radius(&game, 0, crate::ai::HOME_CAMP_RADIUS));
+        assert_eq!(live.base.home_defense_objective(&game, 0, warrior, &[barb]), None);
+
+        assert!(!AdvancedAi::new().camp_reach());
+        assert!(!AdvancedAi::legacy().camp_reach());
+    }
+
     /// `home_defense_objective` before the campaign march, mirroring the
     /// Basic step's precedence.
     #[test]

@@ -1518,6 +1518,7 @@ fn withhold_live_treatment(
         "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "tally-great-people" => ai.disable_tally_great_people(),
         "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
+        "camp-reach" => ai.disable_camp_reach(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1545,7 +1546,8 @@ fn withhold_live_treatment(
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
                  era-paced-expansion, tally-culture, frontier-loyalty, \
-                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts"
+                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
+                 camp-reach"
             ))
         }
     }
@@ -3788,6 +3790,11 @@ mod tests {
             !ai.barbarian_scouts_are_scouts,
             "the named barbarian-scout control must hold it off"
         );
+
+        assert!(ai.camp_reach());
+        withhold_live_treatment(&mut ai, "camp-reach")
+            .expect("the camp-reach control arm is registered");
+        assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
