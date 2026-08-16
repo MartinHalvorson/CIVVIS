@@ -799,10 +799,23 @@ Production 8→0, Science 20→0, Gold 99→70 — 60 of the 70 is Cumae's Trade
 Gold, which this run's export cannot carry (no `resolutions`, no route
 origins) and the first game launched with the new mod will; the other 10 is Ostia's path.
 
-**Open after round 7**: Ostia's domestic route Gold reads 2 in the host and 1
-in the model (t144-154; the second own-city trading post on the path — the
-greedy `route_path_cities` walk misses an intermediate city); the first game
-launched with the new mod should be read for the treaty and the routes with
+### Round 8: the route's own path (2026-08-16, run `civvis-20260816T200454Z`)
+
+Ostia → Aquileia read "+2 from Outgoing Trade Routes" (t144-154) against a
+model that found one Trading Post: the host's trader follows roads, and its
+road ran through Cumae; the model's `route_path_cities` walks a straight
+line. Rather than emulate the pathfinder, the mod now asks it —
+`Game.GetTradeManager():GetTradeRoutePath(...)`, the call the shipped
+TradeRouteChooser draws — and files each city plot on the path (origin
+excluded, destination included) that answers `HasActiveTradingPost(pid)` by
+owner: `trade_routes[].posts_own` / `posts_foreign`. The mirror keeps them in
+`Game::observed_route_posts` keyed by (origin, destination) and
+`trading_post_route_gold` pays them (own posts at Rome's trait Gold, foreign
+at `TRADING_POST_GOLD_IN_FOREIGN_CITY`) instead of walking; an export without
+the fields, or a route the pathfinder could not answer for, walks as before.
+
+**Open after round 8**: the first game launched with the new mod should be
+read for the treaty, the seated routes and the path posts with
 `civ6_yield_drift.py`.
 
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)

@@ -18081,6 +18081,13 @@ pub struct Game {
     /// leave this empty.
     #[serde(default)]
     pub observed_tile_yield_adjustments: BTreeMap<Pos, crate::rules::Yields>,
+    /// Trading Posts on the host's own path for one of our routes, keyed by
+    /// (origin, destination) city and filed (own cities, foreign cities). The
+    /// host's pathfinder follows roads the model's straight-line walk does
+    /// not; where the mirror knows the host's answer it is the one that pays
+    /// (`trading_post_route_gold`). Empty on a native game.
+    #[serde(default)]
+    pub observed_route_posts: BTreeMap<(u32, u32), (i64, i64)>,
     #[serde(default)]
     pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18578,6 +18585,8 @@ struct GameSer {
     #[serde(default)]
     observed_tile_yield_adjustments: Vec<(Pos, crate::rules::Yields)>,
     #[serde(default)]
+    observed_route_posts: Vec<((u32, u32), (i64, i64))>,
+    #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
     observed_city_specialists: BTreeMap<u32, Vec<String>>,
@@ -18751,6 +18760,7 @@ impl From<GameSer> for Game {
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: s.observed_tile_yield_adjustments.into_iter().collect(),
+            observed_route_posts: s.observed_route_posts.into_iter().collect(),
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -18946,6 +18956,7 @@ impl From<Game> for GameSer {
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: g.observed_tile_yield_adjustments.into_iter().collect(),
+            observed_route_posts: g.observed_route_posts.into_iter().collect(),
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -19009,6 +19020,7 @@ impl Game {
         self.observed_city_amenity_adjustments.clear();
         self.observed_city_housing_adjustments.clear();
         self.observed_tile_yield_adjustments.clear();
+        self.observed_route_posts.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -19336,6 +19348,7 @@ impl Game {
             observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_housing_adjustments: BTreeMap::new(),
             observed_tile_yield_adjustments: BTreeMap::new(),
+            observed_route_posts: BTreeMap::new(),
             observed_city_worked_tiles: BTreeMap::new(),
             observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
@@ -24555,6 +24568,13 @@ impl Game {
         // `TRADING_POST_GOLD_IN_FOREIGN_CITY`, a shipped GlobalParameter.
         let foreign_post_gold = 1.0;
         let own_post_gold = self.civ_effect(owner, "own_trading_post_route_gold");
+        // Where the host has told the mirror which posts its own path
+        // crosses, that answer stands in for the walk below: the pathfinder
+        // follows roads (Ostia -> Aquileia by way of Cumae, run
+        // civvis-20260816T200454Z t144-154) and a straight line does not.
+        if let Some(&(own, foreign)) = self.observed_route_posts.get(&(origin, dest)) {
+            return own as f64 * own_post_gold + foreign as f64 * foreign_post_gold;
+        }
         let free_own_posts = self.civ_effect(owner, "free_trading_posts") > 0.0;
         let mut gold = 0.0;
         for cid in self.route_path_cities(origin_city.pos, dest_city.pos) {
@@ -69081,6 +69101,28 @@ mod victory_conditions {
         assert!((more.production - full.production).abs() < 1e-9);
         assert!((more.faith - full.faith).abs() < 1e-9);
         assert!(more.science > full.science);
+    }
+
+    #[test]
+    fn the_hosts_route_posts_replace_the_straight_line_walk() {
+        // Ostia -> Aquileia (run civvis-20260816T200454Z, t144-154) read "+2
+        // from Outgoing Trade Routes": the host's road ran through Cumae's
+        // post, the model's straight line did not. Where the mirror knows the
+        // host's path, its posts pay — a Roman own-city post at the trait's
+        // Gold, a foreign one at TRADING_POST_GOLD_IN_FOREIGN_CITY.
+        let mut g = game_with_capitals(2, 4_218, 300);
+        g.players[0].civ = "Rome".to_string();
+        let origin = g.player_city_ids(0)[0];
+        let dest = g.player_city_ids(1)[0];
+        let walked = g.trading_post_route_gold(0, origin, dest);
+        g.observed_route_posts.insert((origin, dest), (2, 1));
+        let own = g.civ_effect(0, "own_trading_post_route_gold");
+        assert!(own > 0.0, "the fixture is Roman");
+        assert_eq!(g.trading_post_route_gold(0, origin, dest), 2.0 * own + 1.0);
+        // Only that route: nothing is known about the reverse one.
+        assert!(!g.observed_route_posts.contains_key(&(dest, origin)));
+        g.observed_route_posts.clear();
+        assert_eq!(g.trading_post_route_gold(0, origin, dest), walked);
     }
 
     #[test]

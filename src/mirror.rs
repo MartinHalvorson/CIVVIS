@@ -5880,6 +5880,8 @@ mod tests {
                 origin_y: 6,
                 destination_x: 5,
                 destination_y: 5,
+                posts_own: Some(2),
+                posts_foreign: Some(1),
                 ..StateTradeRoute::default()
             }],
             // Firaxis allocates city ids per player. This city-state's first city
@@ -5911,6 +5913,13 @@ mod tests {
             mirror.game.cities[&mirror.game.routes[0].origin].owner, 0,
             "a colliding city-state id must not steal the route origin"
         );
+        // The host's own path and its Trading Posts stand in for the model's
+        // straight-line walk, and survive a save.
+        let key = (mirror.game.routes[0].origin, mirror.game.routes[0].dest);
+        assert_eq!(mirror.game.observed_route_posts.get(&key), Some(&(2, 1)));
+        let saved: crate::game::Game =
+            serde_json::from_str(&serde_json::to_string(&mirror.game).unwrap()).unwrap();
+        assert_eq!(saved.observed_route_posts.get(&key), Some(&(2, 1)));
 
         // The next authoritative state is the only thing allowed to complete a
         // route.  A persistent mirror must stop counting it immediately once the
@@ -5921,6 +5930,7 @@ mod tests {
         assert_eq!(mirror.game.active_routes(0), 0);
         assert!(mirror.active_trade_route_traders.is_empty());
         assert!(mirror.game.units.contains_key(&trader));
+        assert!(mirror.game.observed_route_posts.is_empty());
     }
 
     #[test]
@@ -8405,6 +8415,14 @@ pub struct StateTradeRoute {
     pub destination_x: i32,
     #[serde(default = "minus_one")]
     pub destination_y: i32,
+    /// Trading Posts on the host's own path for this route (origin excluded,
+    /// destination included), filed by owner: our cities and other players'.
+    /// `None` on an older export or when the path could not be read; the
+    /// model then walks its own straight line.
+    #[serde(default)]
+    pub posts_own: Option<i64>,
+    #[serde(default)]
+    pub posts_foreign: Option<i64>,
 }
 
 /// Empire-wide facts Civilization VI exposes in standings without exposing
@@ -9300,6 +9318,7 @@ fn restore_active_trade_routes(
     city_of_civ6: &std::collections::BTreeMap<i64, u32>,
 ) -> Vec<String> {
     game.routes.clear();
+    game.observed_route_posts.clear();
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
 
@@ -9341,6 +9360,15 @@ fn restore_active_trade_routes(
         if origin_city.owner != 0 || !game.cities.contains_key(&destination) {
             unresolved.push(format!("trade_route:{}:unavailable_city", route.trader));
             continue;
+        }
+        // The host's own path is the one that pays: its Trading Posts, by
+        // owner, override the model's straight-line walk (Ostia -> Aquileia
+        // ran through Cumae's post, run civvis-20260816T200454Z t144-154).
+        if let (Some(own), Some(foreign)) = (route.posts_own, route.posts_foreign) {
+            if own >= 0 && foreign >= 0 {
+                game.observed_route_posts
+                    .insert((origin, destination), (own, foreign));
+            }
         }
         game.routes.push(crate::game::TradeRoute {
             origin,
@@ -10392,7 +10420,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
-        "destination_x", "destination_y",
+        "destination_x", "destination_y", "posts_own", "posts_foreign",
     ];
     const GOVERNOR: &[&str] = &[
         "type", "city", "city_player", "x", "y", "established", "turns_on_site",
