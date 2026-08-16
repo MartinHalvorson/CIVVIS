@@ -2268,6 +2268,19 @@ pub struct AdvancedAi {
     /// the alarm and changes only what the alarm asks for, so paired against
     /// `advanced` it isolates the response's *shape* from its existence --
     /// which `advanced_blind_to_leaders` already bounds from the other side.
+    ///
+    /// ★★★★ ON FOR THE LIVE SEAT SINCE 2026-08-16. Every Settler game so far
+    /// has ended on the host's score tally with the seat behind the leader,
+    /// and the shipped score term is a CLOCK: in the last quarter of the game
+    /// whoever leads on score reads as "close to winning" and the counter is
+    /// a war. Run civvis-20260816T110555Z, t211: "conquest — countering a
+    /// rival close to winning" declared on India — twice our score, across
+    /// the sea, the stronger army — Inca joined at t230, a city was lost, and
+    /// the tally read 606 to 1,304. `no_elective_war` (#1722) covers the
+    /// elective branch only. With this on the seat answers a Science or score
+    /// leader by racing in that lane, exactly the response shape the census in
+    /// `docs/COUNTERING_LEADERS.md` measured. Reachable as the live treatment
+    /// `counter-in-lane`; off for ordinary and frozen controllers.
     pub counter_in_lane: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
@@ -3783,6 +3796,9 @@ impl AdvancedAi {
         self.enable_live_wonder_race();
         self.enable_expansion_before_prophet();
         self.enable_no_elective_war();
+        // And the last-quarter score-leader alarm asks for a race, not a war.
+        // See `counter_in_lane`.
+        self.enable_counter_in_lane();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -4158,6 +4174,16 @@ impl AdvancedAi {
 
     pub fn disable_no_elective_war(&mut self) {
         self.no_elective_war = false;
+    }
+
+    /// Answer a Science or score leader by racing in that lane, not by
+    /// declaring on them. See `counter_in_lane`.
+    pub fn enable_counter_in_lane(&mut self) {
+        self.counter_in_lane = true;
+    }
+
+    pub fn disable_counter_in_lane(&mut self) {
+        self.counter_in_lane = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -32597,6 +32623,76 @@ mod tests {
         stand_down.counter_stand_down = true;
         assert_eq!(stand_down.victory_denial(&game, 0), None);
         assert_eq!(stand_down.rival_victory_pressure(&game, 2).progress, 78);
+    }
+
+    /// ★★★★ In the last quarter the shipped score term reads whoever leads on
+    /// score as "close to winning", and the stock counter is a war: run
+    /// civvis-20260816T110555Z declared on a rival with twice its score at
+    /// t211 and lost a city. See `counter_in_lane`. On the live seat the same
+    /// alarm asks for the Expansion lane; the stock controller still declares.
+    #[test]
+    fn the_live_seat_races_the_score_leader_instead_of_declaring_on_it() {
+        let mut game = Game::new_full(3, 36, 22, 76_121, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 240; // the last quarter of 300
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
+        // Rival 2 leads the tally by a wide margin: sixty techs at two points each.
+        let techs: Vec<Name> = game.rules.techs.keys().take(60).copied().collect();
+        for tech in techs {
+            game.players[2].techs.insert(tech);
+        }
+        assert!(
+            game.score(2) > 2 * game.score(0),
+            "fixture precondition: rival 2 leads on score ({} vs {})",
+            game.score(2),
+            game.score(0)
+        );
+
+        let stock = AdvancedAi::new();
+        let pressure = stock.rival_victory_pressure(&game, 2);
+        assert_eq!(pressure.strategy, GrandStrategy::Expansion, "the score clock names the leader");
+        assert!(pressure.progress >= 78, "and calls it close to winning ({})", pressure.progress);
+        assert_eq!(
+            stock.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Conquest)),
+            "the stock controller answers the score leader with a war"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.counter_in_lane, "the live seat carries the treatment");
+        assert_eq!(
+            live.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Expansion)),
+            "the live seat races the leader in its lane and declares on nobody"
+        );
+        let plan = live.assess(&game, 0);
+        assert_ne!(
+            (plan.strategy, plan.target_player),
+            (GrandStrategy::Conquest, Some(2)),
+            "no denial war on the live seat: {:?}",
+            (plan.strategy, plan.target_player)
+        );
+
+        // Withheld: the same seat declares as the stock controller does.
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_counter_in_lane();
+        assert_eq!(withheld.victory_denial(&game, 0), Some((2, GrandStrategy::Conquest)));
+        assert!(!AdvancedAi::new().counter_in_lane);
+        assert!(!AdvancedAi::legacy().counter_in_lane);
     }
 
     #[test]
