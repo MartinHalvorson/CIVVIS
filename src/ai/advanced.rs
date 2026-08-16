@@ -1003,6 +1003,11 @@ const SETTLEMENT_ROUTE_CANDIDATE_LIMIT: usize = 160;
 /// below the direct-threat score of a healthy ancient military unit and above
 /// the one-turn approach warning used to order otherwise safe routes.
 const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
+/// The tile risk at which a recon unit steps out of reach before it explores:
+/// `settlement_tile_risk` prices any visible hostile that can reach the tile
+/// next turn at 12 plus a strength term, so this is "one unit can get here".
+/// See `recon_flight`.
+const RECON_FLIGHT_RISK: f64 = 12.0;
 
 /// A sparse-map fallback may keep one reachable global site alive when every
 /// ordinary candidate is below the normal score floor. It is only considered
@@ -1616,6 +1621,10 @@ pub struct AdvancedAi {
     /// See `advanced_settler_step`: a target the settler keeps retreating from
     /// is retired the way a site it cannot found is.
     settler_retreats: BTreeMap<u32, (Pos, u32)>,
+    /// The turn each recon unit last stepped out of a hostile's reach, so the
+    /// same turn's explore step does not walk it straight back in. Same-turn
+    /// only; stale entries are inert. See `recon_flight`.
+    recon_fled: BTreeMap<u32, u32>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -1988,6 +1997,35 @@ pub struct AdvancedAi {
     /// Settler seat's measured record, and CIVVIS-vs-CIVVIS wars are the ones
     /// the branch was written for. Off for ordinary and frozen controllers.
     pub no_elective_war: bool,
+    /// A recon unit that a visible hostile can reach next turn steps out of
+    /// reach before it explores.
+    ///
+    /// ★★★★ SEVEN SCOUTS DIED IN 76 TURNS AND EXPLORATION STILL CRAWLED. Run
+    /// civvis-20260816T101521Z: scouts 196608 (t6–20), 589827 (t27–33),
+    /// 1048584 (t38–41), 1376266 (t50–64), 1441803 (t51–65), 1507340 (t51–55)
+    /// and 1572872 (t52–76) — seven units, 210 production, none older than 25
+    /// turns. Every death was walked into: 196608 stepped from two tiles off a
+    /// barbarian Spearman to the tile BESIDE it (t18→t19, 100→59 hp, gone on
+    /// t21); 1507340 stood next to a Warrior and an Archer for three turns
+    /// (49 hp) until it fell; 1572872 sat on (7,26) with an Archer two tiles
+    /// away for its last three turns (73→25→24 hp). `exploration_goal` and
+    /// `step_toward` carry no danger term at all, `healing_step` only routes
+    /// a unit already below the withdrawal line home across the map, and
+    /// `recon_replacement` then buys the next scout to die the same way.
+    /// Meanwhile revealed plots read 64 at t10, 119 at t30, 217 at t50 on a
+    /// 3,404-plot map — the ceiling on cities, sites and rivals met.
+    ///
+    /// With this on, `recon_flight_step` runs before the explore step for a
+    /// Recon-doctrine unit outside a city: when the tile it stands on prices
+    /// at `RECON_FLIGHT_RISK` or more (`settlement_tile_risk` — a visible
+    /// hostile within its attack-plus-move reach, no escort discount), it
+    /// takes the reachable neighbour that lowers the risk most, furthest from
+    /// the nearest hostile on ties, and journals "slips away". It repeats
+    /// while it has movement and an improving step, so a Scout outruns a
+    /// Warrior; when no neighbour improves it explores as before rather than
+    /// freezing. Off for ordinary and frozen controllers; on for the live
+    /// bridge and the native repair bundle (a CIVVIS scout dies the same way).
+    pub recon_flight: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2936,6 +2974,7 @@ impl AdvancedAi {
             settler_avoid: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
+            recon_fled: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -2954,6 +2993,7 @@ impl AdvancedAi {
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
+            recon_flight: false,
             wide_map_capacity: false,
             fog_land_capacity: false,
             city_strategy: false,
@@ -3485,6 +3525,9 @@ impl AdvancedAi {
         // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
         // the eventual winner first met on turn 215 already holding 927 points.
         self.enable_recon_replacement();
+        // And the recon it rebuilds must stop walking into barbarians. See
+        // `recon_flight`.
+        self.enable_recon_flight();
         // ⚠ A revealed natural wonder is priced into founding only through the
         // worked tiles the growth forecast can see and a future Holy Site's
         // adjacency — for the Matterhorn about 2-4 points — while everything
@@ -3789,6 +3832,9 @@ impl AdvancedAi {
         self.enable_strike_opening();
         self.enable_ranged_needs_line_of_sight();
         self.enable_recon_replacement();
+        // And the recon it rebuilds must stop walking into barbarians. See
+        // `recon_flight`.
+        self.enable_recon_flight();
         // A Religion plan that keeps its wars blockades its own lane.
         self.enable_religion_sues_peace();
     }
@@ -4059,6 +4105,16 @@ impl AdvancedAi {
 
     pub fn disable_no_elective_war(&mut self) {
         self.no_elective_war = false;
+    }
+
+    /// Let a recon unit step out of a visible hostile's reach before it
+    /// explores. See `recon_flight`.
+    pub fn enable_recon_flight(&mut self) {
+        self.recon_flight = true;
+    }
+
+    pub fn disable_recon_flight(&mut self) {
+        self.recon_flight = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -23429,11 +23485,23 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
 
-        if doctrine == UnitDoctrine::Recon
-            && self.base.should_explore(g, pid, uid, true)
-            && self.base.explore_step(g, pid, uid)
-        {
-            return true;
+        if doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true) {
+            if self.recon_flight {
+                if let Some(acted) = self.recon_flight_step(g, pid, uid) {
+                    if acted {
+                        self.recon_fled.insert(uid, g.turn);
+                    }
+                    return acted;
+                }
+                // Out of reach now, having fled this turn: hold here rather
+                // than let the explore step walk back into the band.
+                if self.recon_fled.get(&uid) == Some(&g.turn) {
+                    return self.base.fortify_or_stop(g, pid, uid);
+                }
+            }
+            if self.base.explore_step(g, pid, uid) {
+                return true;
+            }
         }
 
         // A charged military unique still gets every immediate combat, escort,
@@ -24280,6 +24348,61 @@ impl AdvancedAi {
                     for the same units attacking one at a time ({gain:+.0})",
                    plan.resolved.len(), plan.score, plan.greedy_score);
         }
+    }
+
+    /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
+    /// the tile it stands on is threatened and a reachable neighbour lowers the
+    /// risk; `None` leaves the turn to the explore step. See `recon_flight`.
+    fn recon_flight_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        let current = g.units[&uid].pos;
+        // A city defends the unit standing in it.
+        if g.city_at(current).is_some() {
+            return None;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        let here = self.settlement_tile_risk_with_support(g, pid, None, current, &visible, false);
+        if here < RECON_FLIGHT_RISK {
+            return None;
+        }
+        let hostiles: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.sees(&visible, unit.pos)
+            })
+            .map(|unit| unit.pos)
+            .collect();
+        let clearance = |pos: Pos| hostiles.iter().map(|h| g.wdist(pos, *h)).min().unwrap_or(i32::MAX);
+        let room_here = clearance(current);
+        // An improving step lowers the risk, or keeps it while opening more
+        // ground between the unit and the nearest hostile — the whole approach
+        // band prices alike, and walking out of it takes more than one step.
+        let mut flight: Option<(f64, i32, Pos)> = None;
+        for step in g.nbrs(current) {
+            if !g.can_move(uid, step) {
+                continue;
+            }
+            let risk = self.settlement_tile_risk_with_support(g, pid, None, step, &visible, false);
+            let room = clearance(step);
+            if risk > here || (risk == here && room <= room_here) {
+                continue;
+            }
+            let better = flight.is_none_or(|(best_risk, best_room, _)| {
+                risk < best_risk || (risk == best_risk && room > best_room)
+            });
+            if better {
+                flight = Some((risk, room, step));
+            }
+        }
+        let (risk, room, step) = flight?;
+        think!(self.journal(), Military, Detail,
+               "{} {uid} slips away from {current:?}", g.units[&uid].kind;
+               "a visible hostile can reach this tile next turn (risk {here:.0}); stepping to \
+                {step:?} (risk {risk:.0}, {room} tiles clear) before it explores"; step);
+        Some(self.base.tactical_apply_move(g, pid, uid, step))
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -38510,6 +38633,135 @@ mod tests {
     /// On quiet ground with the guard one step behind, the settler marches;
     /// the guard re-stacks on its own move. civvis-20260816T084206Z spent ten
     /// turns on a four-tile walk holding for a guard one tile back.
+    /// ★★★★ Seven scouts died in 76 turns of run civvis-20260816T101521Z and
+    /// every death was walked into: the explore step carries no danger term.
+    /// See `recon_flight`. A scout two tiles from a hostile Warrior on open
+    /// ground steps to the neighbour that lowers its risk most (further from
+    /// the Warrior) and journals it; the same scout with the flag withheld
+    /// explores as before; and a scout inside a city is left to the city.
+    #[test]
+    fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores() {
+        let is_land = |game: &Game, p: Pos| {
+            game.map.get(p).is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+        };
+        let fresh = |seed: u64| {
+            let mut game = Game::new(2, 24, 16, seed, 80, 0);
+            for unit in game.player_unit_ids(0).into_iter().chain(game.player_unit_ids(1)) {
+                game.remove_unit(unit);
+            }
+            game.at_war.insert((0, 1));
+            game.current = 0;
+            game
+        };
+        // Open ground with a hostile Warrior two tiles off that the scout can
+        // actually see, and dry land behind the scout to flee onto: search a
+        // few seeds for it, on the real board.
+        let probe = AdvancedAi::new();
+        let mut found = None;
+        'seeds: for seed in 91_482..91_560u64 {
+            let board = fresh(seed);
+            let mut lands: Vec<Pos> = board.map.tiles.keys().copied().filter(|p| is_land(&board, *p)).collect();
+            lands.sort_unstable();
+            for p in lands.iter().copied() {
+                if board.nbrs(p).into_iter().filter(|n| is_land(&board, *n)).count() < 6 {
+                    continue;
+                }
+                let threats: Vec<Pos> = board
+                    .map
+                    .tiles
+                    .keys()
+                    .copied()
+                    .filter(|q| board.wdist(p, *q) == 2 && is_land(&board, *q))
+                    .collect();
+                for q in threats {
+                    let mut game = fresh(seed);
+                    game.spawn_test_unit("warrior", 1, q);
+                    let scout = game.spawn_test_unit("scout", 0, p);
+                    let visible = game.player_vision_now(0);
+                    let here = probe.settlement_tile_risk_with_support(&game, 0, None, p, &visible, false);
+                    if game.player_can_see(0, q) && here >= RECON_FLIGHT_RISK && game.units[&scout].moves_left > 0.0 {
+                        found = Some((seed, p, q));
+                        break 'seeds;
+                    }
+                }
+            }
+        }
+        let (seed, post, threat) = found.expect("some seed offers open ground with a visible hostile two tiles off");
+
+        let mut game = fresh(seed);
+        game.spawn_test_unit("warrior", 1, threat);
+        let scout = game.spawn_test_unit("scout", 0, post);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.recon_flight, "the live seat carries the treatment");
+        let plan = live.assess(&game, 0);
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        let visible = game.player_vision_now(0);
+        let here = live.settlement_tile_risk_with_support(&game, 0, None, post, &visible, false);
+        assert!(here >= RECON_FLIGHT_RISK, "fixture precondition: the post is priced as reachable ({here})");
+
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false),
+            "the scout acts"
+        );
+        let after = game.units[&scout].pos;
+        assert_ne!(after, post, "it does not hold on the threatened tile");
+        let risk_after = live.settlement_tile_risk_with_support(&game, 0, None, after, &visible, false);
+        assert!(risk_after <= here, "it never steps into more risk ({risk_after} vs {here})");
+        assert!(
+            game.wdist(after, threat) > 2,
+            "it moved away from the warrior, not toward it ({after:?} vs {threat:?})"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.contains("slips away from")),
+            "the flight is journaled"
+        );
+
+        // The whole turn: it keeps stepping while a step opens ground, and the
+        // explore step of the same turn does not walk it back into the band.
+        let mut game = fresh(seed);
+        game.spawn_test_unit("warrior", 1, threat);
+        let scout = game.spawn_test_unit("scout", 0, post);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let plan = live.assess(&game, 0);
+        live.advance_unit_serial(&mut game, 0, scout, &plan, false, false);
+        let rested = game.units[&scout].pos;
+        assert!(
+            game.wdist(rested, threat) >= 3,
+            "with its whole movement it ends at least three tiles from the warrior ({rested:?})"
+        );
+
+        // Withheld: the same scout explores as before and never journals a flight.
+        let mut game = fresh(seed);
+        game.spawn_test_unit("warrior", 1, threat);
+        let scout = game.spawn_test_unit("scout", 0, post);
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_recon_flight();
+        let plan = withheld.assess(&game, 0);
+        let journal = crate::reasoning::Journal::recording();
+        withheld.attach_journal(journal.handle());
+        let _ = withheld.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false);
+        assert!(
+            !journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.contains("slips away from")),
+            "the withheld arm keeps the historical explore step"
+        );
+
+        // Defaults: off for the stock and frozen controllers.
+        assert!(!AdvancedAi::new().recon_flight);
+        assert!(!AdvancedAi::legacy().recon_flight);
+    }
+
     #[test]
     fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
         let (mut game, source, target) = stacked_escort_fixture();
