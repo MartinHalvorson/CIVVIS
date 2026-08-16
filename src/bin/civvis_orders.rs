@@ -1459,6 +1459,7 @@ fn withhold_live_treatment(
         "live-wonder-race" => ai.disable_live_wonder_race(),
         "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
         "no-elective-war" => ai.disable_no_elective_war(),
+        "fog-land-capacity" => ai.disable_fog_land_capacity(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1483,7 +1484,8 @@ fn withhold_live_treatment(
                  escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
-                 live-wonder-race, expansion-before-prophet, no-elective-war"
+                 live-wonder-race, expansion-before-prophet, no-elective-war, \
+                 fog-land-capacity"
             ))
         }
     }
@@ -3582,6 +3584,11 @@ mod tests {
         withhold_live_treatment(&mut ai, "no-elective-war")
             .expect("the elective-war stand-down's control arm is registered");
         assert!(!ai.no_elective_war, "the named elective-war control must hold it off");
+
+        assert!(ai.fog_land_capacity);
+        withhold_live_treatment(&mut ai, "fog-land-capacity")
+            .expect("the fogged-capacity control arm is registered");
+        assert!(!ai.fog_land_capacity, "the named fogged-capacity control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
