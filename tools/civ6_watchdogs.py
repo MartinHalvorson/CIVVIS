@@ -684,10 +684,20 @@ def city_economy_agreement(events: list[dict], dump: dict) -> dict:
             if want.get("worked") is not None:
                 # GetWorkedPlots includes the city centre; CIVVIS accounts for
                 # that tile intrinsically and dumps only citizen assignments.
+                # It also includes every District plot a specialist staffs
+                # (`IsPlotWorked` is true for a staffed Campus); those are the
+                # `specialists` compared below, and the mirror deliberately
+                # keeps them out of its tile list — importing them as tiles
+                # paid each specialist twice (yield-fidelity work, 2026-08-16).
+                district_plots = {
+                    (district.get("x"), district.get("y"))
+                    for district in want.get("districts") or []
+                }
                 a = {
                     (plot.get("x"), plot.get("y"))
                     for plot in want.get("worked") or []
                     if (plot.get("x"), plot.get("y")) != key
+                    and (plot.get("x"), plot.get("y")) not in district_plots
                 }
                 b = {(plot.get("x"), plot.get("y")) for plot in got.get("worked") or []}
                 if a != b:

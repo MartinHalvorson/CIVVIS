@@ -1078,10 +1078,13 @@ pub struct CivSpec {
     /// `unit_production_pct`, `settler_production_pct`,
     /// `building_production_pct`, `district_production_pct` and
     /// `wonder_production_pct` speed what a city is building;
-    /// `combat_strength` and `unit_xp_pct` belong to its units. An ability
-    /// that does something the engine cannot express this way — Rome's free
-    /// monument, Scythia's healing — stays keyed by name in `has_ability`
-    /// instead.
+    /// `combat_strength` and `unit_xp_pct` belong to its units;
+    /// `free_trading_posts` and `own_trading_post_route_gold` are Rome's
+    /// All Roads Lead to Rome — every city holds a Trading Post from founding
+    /// and a route pays that many Gold per own city it passes through
+    /// (`Game::trading_post_route_gold`). An ability that does something the
+    /// engine cannot express this way — Rome's free monument, Scythia's
+    /// healing — stays keyed by name in `has_ability` instead.
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
     #[serde(default)]
@@ -2957,9 +2960,22 @@ mod tests {
         // expected and is NOT evidence the rule is inert. It binds in the
         // live regime, where the diagnosed re-ask loop lived; judge it on
         // `build_no_plot` repeat structure there.
+        // Moved by giving Rome its civilization ability. `data/civs.json` had
+        // only Trajan's leader ability (the free Monument); All Roads Lead to
+        // Rome — a Trading Post in every city from founding and +1 Gold per
+        // own city a route passes through — is `free_trading_posts` /
+        // `own_trading_post_route_gold`, read by `Game::trading_post_route_gold`
+        // and confirmed against the shipped database
+        // (`TRAIT_GOLD_FROM_DOMESTIC_TRADING_POSTS`,
+        // `MODIFIER_PLAYER_ADJUST_TRADE_ROUTE_YIELD_PER_POST_IN_OWN_CITY` 1,
+        // `TRADING_POST_GOLD_IN_OWN_CITY` 0 for everyone else). Measured first
+        // on live run civvis-20260816T011314Z: a domestic route Antium -> Rome
+        // read +1 Gold in the host and 0 in the model for its whole life. A
+        // real simulation change for Rome seats only; every other row is
+        // untouched.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:f758c90083643ce3"
+            "fnv1a64:daa3f93b9b203e23"
         );
     }
 

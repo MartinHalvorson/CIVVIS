@@ -184,6 +184,39 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.city_fact_mismatches(state, board, 44)[0],
         )
 
+    def test_city_data_check_covers_housing_amenities_and_per_city_yields(self) -> None:
+        # The board carries a host-to-model correction for Housing, the Amenity
+        # count and every yield, so all three must read the host's figure to the
+        # rounding; `amenities_needed` has no correction and guards the rule.
+        state = {"cities": [{
+            "x": 18, "y": 35, "name": "Rome", "pop": 12, "loyalty": 100,
+            "housing": 10, "amenities": 4, "amenities_needed": 6,
+            "yields": {"food": 35, "production": 16.8008, "gold": 21.6016,
+                       "science": 6.40234, "culture": 6.87891, "faith": 4.80078},
+            "buildings": [], "districts": [{"type": "DISTRICT_CITY_CENTER"}],
+        }]}
+        board = {"cities": [{
+            "pos": [14, 9], "name": "Rome", "pop": 12, "loyalty": 100.0,
+            "housing": 10.0, "amenities": 4, "amenities_required": 6,
+            "yields": {"food": 35.0, "production": 16.8, "gold": 21.6,
+                       "science": 6.4, "culture": 6.9, "faith": 4.8},
+            "buildings": [], "districts": {}, "wonders": {},
+        }]}
+        self.assertEqual(civ6_mirror_check.city_fact_mismatches(state, board, 44), [])
+        board["cities"][0]["housing"] = 8.5
+        board["cities"][0]["amenities"] = 6
+        board["cities"][0]["yields"]["science"] = 11.25
+        found = civ6_mirror_check.city_fact_mismatches(state, board, 44)
+        self.assertEqual(len(found), 3, found)
+        self.assertIn("housing Civ6=10 CIVVIS=8.5", found[0])
+        self.assertIn("amenities Civ6=4 CIVVIS=6", found[1])
+        self.assertIn("yields.science Civ6=6.40234 CIVVIS=11.25", found[2])
+        # An older export without the figures makes no claim.
+        for key in ("housing", "amenities", "amenities_needed", "yields"):
+            state["cities"][0].pop(key)
+        board["cities"][0]["housing"] = 8.5
+        self.assertEqual(civ6_mirror_check.city_fact_mismatches(state, board, 44), [])
+
     def test_city_health_check_catches_each_independent_pool(self) -> None:
         state = {"cities": [{
             "x": 3, "y": 5, "name": "Rome", "damage": 25, "max_damage": 100,

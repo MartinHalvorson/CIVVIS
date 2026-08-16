@@ -3,7 +3,11 @@
     "leader": "Trajan",
     "ability": "trajans_column",
     "unique_unit": "legion",
-    "note": "Trajan's Column: every founded city starts with a free monument",
+    "effects": {
+      "free_trading_posts": 1,
+      "own_trading_post_route_gold": 1
+    },
+    "note": "Trajan's Column: every founded city starts with a free monument. All Roads Lead to Rome: every city starts with a Trading Post and a route earns +1 gold for each Roman city it passes through (TRAIT_FREE_TRADING_POSTS + TRAIT_GOLD_FROM_DOMESTIC_TRADING_POSTS)",
     "agenda": "optimus_princeps",
     "traits": [
       "expansionist",
