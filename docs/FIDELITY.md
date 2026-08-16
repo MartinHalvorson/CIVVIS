@@ -698,6 +698,20 @@ host's ledgers in one line each:
 Both bind natively. The remaining Culture residual of that run is the same
 Nan Madol term through the game's other coastal cities and closes with it.
 
+### Round 6: a correction is measured after everything it corrects for (2026-08-16, run `civvis-20260816T175306Z`)
+
+`civ6_mirror_check.py` on the refreshed board read the rivals over by their own
+growth — Nubia 174 Science against the host's 141, 329 Food against 229 — and
+Ravenna 14.5 Science against 9.5. Two orderings, both mine: the rival seats'
+corrections were derived before the loop that writes a rival city's Population
+(rival cities are planted at one), so the delta was measured against a
+size-one city and paid on the size-eleven one; and the seat's own Dedications
+(round 4) were applied after its correction, so a Golden Age paid Free
+Inquiry's Science on top of a delta measured without it. Rival seats are now
+corrected last in `apply_observed_host_metrics`, and `apply_player_ages` runs
+before it on both paths (and still after it for the era score). The regression
+test fails on the previous ordering by exactly those margins.
+
 **The other civilizations, continued.** The first item on the round-3 list is
 closed: the tiles export now names the district (`d`) and wonder (`wo`) on
 every revealed plot — any owner — and the mirror puts them on the rival or
