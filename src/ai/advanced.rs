@@ -281,6 +281,15 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// How far a rival must fall back before an already-engaged victory-denial
+/// response lets go of them.
+///
+/// Sized to clear ordinary assessment-to-assessment drift in the progress
+/// estimate without holding a response against a rival who genuinely stopped
+/// leading: eight points is under half the fifteen-point relative-lead test
+/// the same gate applies, so a rival who falls a lane behind still releases.
+const DENIAL_RELEASE_MARGIN: i32 = 8;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -1889,6 +1898,15 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_counter_stand_down`. The other four races are
     /// answered exactly as they are today.
     pub counter_stand_down: bool,
+    /// Hold a denial response once engaged until the rival falls clearly back,
+    /// instead of releasing it the moment their progress dips a single point.
+    ///
+    /// The entry test below is two hard cutoffs on quantities that drift, and
+    /// `plan_stale` treats denial engaging or releasing as a reason to rebuild
+    /// the plan — so a rival sitting near a threshold rewrites this empire's
+    /// grand strategy every reassessment. Default off; an addition, not a
+    /// withheld production behaviour.
+    pub denial_hysteresis: bool,
 
     /// Whether the score race is read as a margin over the field instead of as
     /// a clock.
@@ -2556,6 +2574,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             bounded_recovery: false,
             counter_stand_down: false,
+            denial_hysteresis: false,
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
@@ -5956,7 +5975,24 @@ impl AdvancedAi {
             {
                 return None;
             }
-        } else if pressure.progress < 78 || pressure.progress < own_progress + 15 {
+        } else if {
+            // Once this empire is already answering this same rival, judge the
+            // threat on a lower bar. The quantity being tested drifts by a
+            // point or two between assessments, and both the entry cutoff and
+            // the relative-lead test sit on it as hard steps, so an unchanged
+            // board can release and re-engage the response repeatedly.
+            let engaged = self.denial_hysteresis
+                && self
+                    .plan
+                    .as_ref()
+                    .is_some_and(|plan| plan.target_player == Some(rival));
+            let (floor, lead) = if engaged {
+                (78 - DENIAL_RELEASE_MARGIN, 15 - DENIAL_RELEASE_MARGIN)
+            } else {
+                (78, 15)
+            };
+            pressure.progress < floor || pressure.progress < own_progress + lead
+        } {
             return None;
         }
         // Four of the seven races answer themselves — a culture threat is met
