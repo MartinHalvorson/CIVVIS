@@ -4286,7 +4286,7 @@ impl AdvancedAi {
         if plan.threatened_city != self.threatened_city(g, pid) {
             return true;
         }
-        if let Some((rival, counter)) = self.victory_denial(g, pid) {
+        if let Some((rival, counter)) = self.actionable_victory_denial(g, pid) {
             let expects_hostile_target = self.campaign_target_legal(g, pid, rival);
             if (expects_hostile_target && plan.target_player != Some(rival))
                 || (!expects_hostile_target && plan.target_player == Some(rival))
@@ -6336,6 +6336,36 @@ impl AdvancedAi {
         self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
     }
 
+    /// A Conquest denial needs a destination the mirrored army can reach.
+    ///
+    /// Firaxis publishes a rival's score and victory progress before this
+    /// mirror necessarily has a position for any of their cities. That is
+    /// still a useful warning for Congress and in-lane counters, but an army
+    /// cannot answer it. Otherwise a cityless leader can set Conquest while
+    /// the target selector keeps pursuing an unrelated war already under way.
+    /// The frozen anchor retains its historical all-information behaviour.
+    fn conquest_denial_actionable(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        counter: GrandStrategy,
+    ) -> bool {
+        counter != GrandStrategy::Conquest
+            || !self.battlefront_observation
+            || (self.campaign_target_legal(g, pid, rival)
+                && !g.player_city_ids(rival).is_empty())
+    }
+
+    /// The denial response that can actually change an army plan. Keep the
+    /// raw signal in [`Self::victory_denial`] for pressure reporting and
+    /// non-military counters.
+    fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
+        self.victory_denial(g, pid).filter(|(rival, counter)| {
+            self.conquest_denial_actionable(g, pid, *rival, *counter)
+        })
+    }
+
     fn victory_denial_with_culture_pressures(
         &self,
         g: &Game,
@@ -6458,9 +6488,9 @@ impl AdvancedAi {
 
     /// Diagnostic seam: the rival this empire would move against right now and
     /// the counter-strategy it would adopt, or `None` when nobody clears the
-    /// bar. Same call `replan_needed` and `assess` make.
+    /// bar. Same actionable call `replan_needed` and `assess` make.
     pub fn denial_target(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        self.victory_denial(g, pid)
+        self.actionable_victory_denial(g, pid)
     }
 
     /// Diagnostic seam: whether `target`'s clock is short enough to skip the
@@ -6619,6 +6649,9 @@ impl AdvancedAi {
         } else {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
         };
+        let actionable_denial = denial.filter(|(rival, counter)| {
+            self.conquest_denial_actionable(g, pid, *rival, *counter)
+        });
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -6668,7 +6701,7 @@ impl AdvancedAi {
         let impossible_denial = self.battlefront_observation
             && recovery_is_stale
             && !wartime_majors.is_empty()
-            && denial.is_some_and(|(rival, counter)| {
+            && actionable_denial.is_some_and(|(rival, counter)| {
                 counter == GrandStrategy::Conquest
                     && my_power * 2.0 < g.military_power(rival)
             });
@@ -6719,7 +6752,7 @@ impl AdvancedAi {
                     "following the assigned victory lane",
                 )
             }
-        } else if let Some((_, counter)) = denial {
+        } else if let Some((_, counter)) = actionable_denial {
             (
                 counter,
                 "countering a rival close to winning",
@@ -6820,7 +6853,7 @@ impl AdvancedAi {
             // rival two weeks' march away.
             rush_victim.map(|(target, _)| target).or_else(|| {
             forced_target.or_else(|| {
-                denial
+                actionable_denial
                     .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                     .map(|(rival, _)| rival)
                     .or_else(|| {
@@ -44096,6 +44129,92 @@ mod research_probe {
         frozen.major_war_since = Some(60);
         frozen.last_campaign_progress = 60;
         assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
+    /// The live mirror can know a leader's public victory clock before it has
+    /// any city coordinate for that leader. That warning must not turn a
+    /// stalled war with somebody else back into Conquest. See
+    /// `conquest_denial_actionable`.
+    #[test]
+    fn a_live_conquest_denial_needs_a_known_city_target() {
+        let mut game = Game::new_full(3, 24, 16, 7_932, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, home);
+        }
+        let leader_capital = game.player_city_ids(2)[0];
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        game.turn = 100;
+
+        // The host has announced player 2's victory progress, but not a city
+        // position. Move its capital into player 1's public city list to model
+        // that omitted rival-city export without leaving a dangling map tile.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 1;
+        assert!(game.player_city_ids(2).is_empty());
+
+        let mut live = AdvancedAi::new();
+        live.enable_war_patience();
+        live.major_war_since = Some(60);
+        live.last_campaign_progress = 60;
+        assert!(live.war_patience_exhausted(&game));
+        assert_eq!(
+            live.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Conquest)),
+            "the raw public warning remains available to non-military responses"
+        );
+        assert_eq!(
+            live.denial_target(&game, 0),
+            None,
+            "a live Conquest response needs a known city to campaign against"
+        );
+        let plan = live.assess(&game, 0);
+        assert_ne!(
+            plan.strategy,
+            GrandStrategy::Conquest,
+            "the cityless leader cannot re-arm a war whose patience expired"
+        );
+        assert_eq!(plan.target_player, Some(1));
+        live.plan = Some(plan);
+        assert!(
+            !live.plan_stale(&game, 0),
+            "the raw warning must not interrupt the economic plan every turn"
+        );
+
+        // Restoring the leader's actual city makes the same emergency a valid
+        // Conquest denial again.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 2;
+        assert_eq!(
+            live.denial_target(&game, 0),
+            Some((2, GrandStrategy::Conquest))
+        );
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+        assert!(
+            live.plan_stale(&game, 0),
+            "an actionable leader still interrupts the cached economic plan"
+        );
+
+        // `advanced_v1` retains the historical all-information response.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 1;
+        assert_eq!(
+            AdvancedAi::legacy().denial_target(&game, 0),
+            Some((2, GrandStrategy::Conquest))
+        );
     }
 
     /// Every live game read `Grand strategy: religion` from turn 19–26 with one

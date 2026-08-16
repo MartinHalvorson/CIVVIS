@@ -1133,8 +1133,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The Prophet deferral is behind `expansion_before_prophet`, which only the
 /// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` enter
 /// the Prophet race with two cities exactly as before (asserted).
+/// A battlefront-observing controller now requires a legal, known enemy city
+/// before a Conquest denial may replace a stalled war's economic plan; raw
+/// leader pressure remains available to Congress and in-lane counters, while
+/// `advanced_v1` retains its historical all-information path (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6557_86f2_1072_bcfd;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe86f_00b0_e578_9b0c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
