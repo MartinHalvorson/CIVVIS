@@ -721,6 +721,54 @@ mod tests {
         );
     }
 
+    /// ★★★★ Two camps seven tiles from Rome for a whole game, 121 attacks on
+    /// their raiders and none on the camps, eight of fourteen Settlers captured
+    /// (civvis-20260816T155856Z): the tile carried `barbarian_camp` and
+    /// `game.barb_camps` — what the home guard, the settle risk and
+    /// `defensibility` read — stayed empty. The host's camps now reach the
+    /// register on every apply, and a camp the host cleared leaves it.
+    #[test]
+    fn the_hosts_barbarian_camps_reach_the_boards_camp_register() {
+        let mut camp = plot(12, 10, "TERRAIN_GRASS");
+        camp.im = Some("IMPROVEMENT_BARBARIAN_CAMP".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(10, 10, "TERRAIN_GRASS"), camp],
+        }]);
+        let game = rebuild_game(&snapshot, 4, 7);
+        let camp_pos = crate::hex::offset_to_axial(12, 10);
+        assert_eq!(
+            game.map.tiles[&camp_pos].improvement.as_deref(),
+            Some("barbarian_camp"),
+            "the improvement is modelled"
+        );
+        assert!(
+            game.barb_camps.contains_key(&camp_pos),
+            "and the camp is in the register the home guard reads: {:?}",
+            game.barb_camps
+        );
+        assert_eq!(game.barb_camps.len(), 1);
+
+        // Cleared by the host: the next apply forgets it.
+        let cleared = Snapshot::from_chunks(&[TilesChunk {
+            turn: 41,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(10, 10, "TERRAIN_GRASS"), plot(12, 10, "TERRAIN_GRASS")],
+        }]);
+        let mut game = game;
+        apply_terrain(&mut game, &cleared);
+        assert!(
+            game.barb_camps.is_empty(),
+            "a camp the host cleared leaves the register: {:?}",
+            game.barb_camps
+        );
+    }
+
     #[test]
     fn frontier_access_never_turns_unknown_into_mock_land_or_water() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -6598,6 +6646,35 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     for city in game.cities.values_mut() {
         city.owned_tiles
             .retain(|pos| !unknown_positions.contains(pos));
+    }
+    // ★★★★ THE HOST'S BARBARIAN CAMPS REACH THE BOARD'S CAMP REGISTER.
+    //
+    // The tile above carries `barbarian_camp` as an improvement, and that is all
+    // it carried: `game.barb_camps` — the register the engine's own barbarian
+    // seat fills when it plants a camp — stayed EMPTY on every mirrored board.
+    // Four readers depend on it and every one of them read nothing: the home
+    // guard's threat list ranks a camp within `HOME_THREAT_RADIUS` "just under
+    // a live raider" and sends a unit to clear it (`ai.rs`, the local-threat
+    // scan); `barbarian_presence_at_home` counts a camp near home as a reason
+    // to treat the barbarian seat as an enemy; `settlement_tile_risk` prices a
+    // visible camp within three tiles of a site; `defensibility` discounts a
+    // site by its distance to the nearest camp. Run civvis-20260816T155856Z:
+    // two camps SEVEN tiles from Rome for the whole game, upgrading warriors
+    // into musketmen; 121 attacks on the raiders they sent, not one on either
+    // camp; eight of fourteen Settlers captured; five cities at turn 147.
+    // Rebuilt from the tiles on every apply — a camp the host cleared is gone
+    // on the next export, and the value is the turn it was seen, which is what
+    // the engine's own register holds.
+    let camps: Vec<crate::Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| tile.improvement.as_deref() == Some("barbarian_camp"))
+        .map(|(pos, _)| *pos)
+        .collect();
+    game.barb_camps.clear();
+    for camp in camps {
+        game.barb_camps.insert(camp, game.turn);
     }
     // Rivers before the memory below, so what the seat remembers is the mirrored
     // network and not the generated one.
