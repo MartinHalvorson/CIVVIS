@@ -1156,7 +1156,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wonder-race scale is read only under `live_wonder_race`, which the
 /// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe502_e2dd_89ac_350c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa70a_9422_8f48_daad;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
