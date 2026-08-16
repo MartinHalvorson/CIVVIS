@@ -1559,11 +1559,31 @@ fn live_finishing_candidates(
 /// predicted kill alive it gets the second blow; if the first blow killed it, a
 /// ranged order is refused and a melee order can only enter the cleared tile or
 /// be blocked by the first attacker.
+#[cfg(test)]
 fn finish_live_war_units(
     planned_game: &mut civvis::game::Game,
     pid: usize,
     mapped: &std::collections::BTreeMap<u32, i64>,
 ) -> WarFinishingVolley {
+    finish_live_war_units_excluding(planned_game, pid, mapped, &std::collections::BTreeSet::new())
+}
+
+/// [`finish_live_war_units`] with `excluded` units left out of the volley
+/// entirely — a settler's bound guard under
+/// `AdvancedAi::settler_stack_discipline`, which the joint engagement
+/// leaves alone for the same reason.
+fn finish_live_war_units_excluding(
+    planned_game: &mut civvis::game::Game,
+    pid: usize,
+    mapped: &std::collections::BTreeMap<u32, i64>,
+    excluded: &std::collections::BTreeSet<u32>,
+) -> WarFinishingVolley {
+    let mapped: std::collections::BTreeMap<u32, i64> = mapped
+        .iter()
+        .filter(|(uid, _)| !excluded.contains(uid))
+        .map(|(uid, civ6)| (*uid, *civ6))
+        .collect();
+    let mapped = &mapped;
     let mut targets = planned_game
         .units
         .values()
@@ -1765,6 +1785,8 @@ fn withhold_live_treatment(
         "tally-great-people" => ai.disable_tally_great_people(),
         "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
         "camp-reach" => ai.disable_camp_reach(),
+        "settler-stack-discipline" => ai.disable_settler_stack_discipline(),
+        "camp-party" => ai.disable_camp_party(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1793,7 +1815,7 @@ fn withhold_live_treatment(
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
                  era-paced-expansion, tally-culture, frontier-loyalty, \
                  settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
-                 camp-reach"
+                 camp-reach, settler-stack-discipline, camp-party"
             ))
         }
     }
@@ -1843,7 +1865,19 @@ fn decide(
     let released =
         release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
-    let war_finishers = finish_live_war_units(&mut planned_game, 0, &mirror_state.civ6_of);
+    // ★★★★ BEFORE THE VOLLEY. See `AdvancedAi::observe_turn_start_hostiles`:
+    // the volley below removes wounded raiders from the planning board, and
+    // a settler stepping afterwards must keep pricing them — the host has
+    // been measured leaving such kills alive. And a settler's bound guard is
+    // not the volley's to spend one tile away from the civilian it shields.
+    ai.observe_turn_start_hostiles(&planned_game, 0);
+    let bound_guards = ai.bound_settler_guards(&planned_game, 0);
+    let war_finishers = finish_live_war_units_excluding(
+        &mut planned_game,
+        0,
+        &mirror_state.civ6_of,
+        &bound_guards,
+    );
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
@@ -4069,6 +4103,19 @@ mod tests {
         withhold_live_treatment(&mut ai, "camp-reach")
             .expect("the camp-reach control arm is registered");
         assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
+
+        assert!(ai.settler_stack_discipline());
+        withhold_live_treatment(&mut ai, "settler-stack-discipline")
+            .expect("the settler-stack-discipline control arm is registered");
+        assert!(
+            !ai.settler_stack_discipline(),
+            "the named settler-stack-discipline control must hold it off"
+        );
+
+        assert!(ai.camp_party());
+        withhold_live_treatment(&mut ai, "camp-party")
+            .expect("the camp-party control arm is registered");
+        assert!(!ai.camp_party(), "the named camp-party control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
