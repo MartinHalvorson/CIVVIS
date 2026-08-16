@@ -3123,6 +3123,140 @@ mod tests {
     }
 
     #[test]
+    fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_before_the_correction() {
+        let side = 16;
+        let plots: Vec<Plot> = (0..side)
+            .flat_map(|x| {
+                (0..side).map(move |y| Plot {
+                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
+                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
+                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
+                    p: false, d: None, wo: None,
+                })
+            })
+            .collect();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk { turn: 90, width: side, height: side, chunk: 1, plots }]);
+        let host_gold = 12.0;
+        let mut state = StateSnapshot {
+            turn: 90,
+            science: 30.0,
+            culture: 12.0,
+            resolutions: Some(vec![
+                StateResolution { kind: "WC_RES_TRADE_TREATY".to_string(), option: 1, target: "0".to_string() },
+                StateResolution { kind: "WC_RES_LUXURY".to_string(), option: 2, target: "RESOURCE_SILK".to_string() },
+                StateResolution { kind: "WC_RES_ARMS_CONTROL".to_string(), option: 1, target: "".to_string() },
+            ]),
+            congress_turns_left: Some(11),
+            cities: vec![StateCity {
+                id: 1, name: "Cumae".to_string(), x: 3, y: 3, pop: 6, loyalty: 100.0, capital: true,
+                yields: Some(crate::rules::Yields { food: 20.0, production: 9.0, gold: host_gold, science: 9.5, culture: 6.0, faith: 0.0 }),
+                incoming_routes: Some(StateIncomingRoutes {
+                    foreign: 1,
+                    domestic: 0,
+                    origins: vec![StateRouteOrigin { x: 11, y: 11, player: 3 }],
+                }),
+                ..StateCity::default()
+            }],
+            rivals: vec![StateRival {
+                player: 3, civ: "CIVILIZATION_MAORI".to_string(),
+                cities: vec![StateCity {
+                    id: 3, name: "Auckland".to_string(), x: 11, y: 11, pop: 8, loyalty: 100.0, capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let cumae = mirror.game.player_city_ids(0)[0];
+        let auckland = mirror.game.player_city_ids(1)[0];
+        // The route is on the board, owned by the rival's SEAT, from its city.
+        let seated: Vec<_> = mirror.game.routes.iter().filter(|route| route.dest == cumae).collect();
+        assert_eq!(seated.len(), 1, "one incoming route: {:?}", mirror.game.routes);
+        assert_eq!(seated[0].origin, auckland);
+        assert_eq!(seated[0].owner, 1);
+        // The host's Congress is the model's Congress: Trade Policy A on our
+        // seat, Luxury Policy B on silk, and the resolution the model has no
+        // rule for is reported rather than guessed.
+        assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+        assert!(mirror.game.congress_effect_active("luxury_policy", "B", "silk"));
+        assert_eq!(mirror.game.active_congress_effects.len(), 2);
+        assert_eq!(mirror.game.active_congress_effects[0].expires, 90 + 11 + 1);
+        assert!(mirror.unmapped.iter().any(|issue| issue == "congress:WC_RES_ARMS_CONTROL:1:"),
+            "unmapped: {:?}", mirror.unmapped);
+        // The model pays the +4 itself, so the correction it derives is the
+        // host's number minus a model that already includes it — the city reads
+        // the host either way, and the model's own view carries the treaty.
+        assert!((mirror.game.city_yields(cumae).gold - host_gold).abs() < 1e-9);
+        let model = mirror.game.city_yields_model(cumae).gold;
+        mirror.game.active_congress_effects.clear();
+        let without_treaty = mirror.game.city_yields_model(cumae).gold;
+        assert!((model - without_treaty - 4.0).abs() < 1e-9,
+            "Trade Policy A pays the destination +4 per incoming foreign route: {} vs {}", model, without_treaty);
+        mirror.game.routes.clear();
+        let without_route = mirror.game.city_yields_model(cumae).gold;
+        assert!(without_route <= without_treaty);
+
+        // The next sync re-seats the route and re-reads the Congress; when the
+        // host drops both, the board follows and the correction stays honest.
+        state.turn = 91;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.routes.iter().filter(|route| route.dest == cumae).count(), 1);
+        assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
+        state.turn = 92;
+        state.resolutions = Some(vec![]);
+        state.cities[0].incoming_routes = Some(StateIncomingRoutes::default());
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.active_congress_effects.is_empty());
+        assert_eq!(mirror.game.routes.iter().filter(|route| route.dest == cumae).count(), 0);
+        assert!((mirror.game.city_yields(cumae).gold - host_gold).abs() < 1e-9);
+        // An older export (no `resolutions`) leaves the model's own Congress alone.
+        state.turn = 93;
+        state.resolutions = None;
+        mirror.game.active_congress_effects.push(crate::game::CongressEffect {
+            resolution: "patronage".to_string(), outcome: "A".to_string(),
+            target: "scientist".to_string(), expires: 200,
+        });
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.congress_effect_active("patronage", "A", "scientist"));
+    }
+
+    #[test]
+    fn host_resolutions_translate_into_the_models_congress_vocabulary() {
+        let rules = crate::rules::Rules::shipped();
+        let seats: std::collections::BTreeMap<usize, usize> = [(0, 0), (5, 2)].into_iter().collect();
+        let map = |kind: &str, option: i64, target: &str| {
+            civvis_congress_effect(
+                &rules,
+                &StateResolution { kind: kind.to_string(), option, target: target.to_string() },
+                &seats,
+                120,
+            )
+            .map(|effect| (effect.resolution, effect.outcome, effect.target))
+        };
+        assert_eq!(map("WC_RES_TRADE_TREATY", 1, "5"), Some(("trade_policy".into(), "A".into(), "2".into())));
+        assert_eq!(map("WC_RES_TRADE_TREATY", 2, "0"), Some(("trade_policy".into(), "B".into(), "0".into())));
+        assert_eq!(map("WC_RES_TRADE_TREATY", 1, "9"), None, "an unseated player is not guessed");
+        assert_eq!(map("WC_RES_MERCENARY_COMPANIES", 1, "YIELD_PRODUCTION"), Some(("mercenary_companies".into(), "A".into(), "production".into())));
+        assert_eq!(map("WC_RES_LUXURY", 1, "RESOURCE_WHALES"), Some(("luxury_policy".into(), "A".into(), "whales".into())));
+        assert_eq!(map("WC_RES_URBAN_DEVELOPMENT", 2, "DISTRICT_CAMPUS"), Some(("urban_development_treaty".into(), "B".into(), "campus".into())));
+        assert_eq!(map("WC_RES_URBAN_DEVELOPMENT", 1, "DISTRICT_CITY_CENTER"), Some(("urban_development_treaty".into(), "A".into(), "city_center".into())));
+        assert_eq!(map("WC_RES_PATRONAGE", 1, "GREAT_PERSON_CLASS_SCIENTIST"), Some(("patronage".into(), "A".into(), "scientist".into())));
+        assert_eq!(map("WC_RES_MILITARY_ADVISORY", 2, "PROMOTION_CLASS_MELEE"), Some(("military_advisory".into(), "B".into(), "melee".into())));
+        assert_eq!(map("WC_RES_ESPIONAGE_PACT", 1, "UNITOPERATION_SPY_SIPHON_FUNDS"), Some(("espionage_pact".into(), "A".into(), "siphon_funds".into())));
+        assert_eq!(map("WC_RES_HERITAGE_ORG", 1, "GREATWORKOBJECT_WRITING"), Some(("heritage_organization".into(), "A".into(), "writing".into())));
+        assert_eq!(map("WC_RES_DEFORESTATION_TREATY", 1, "FEATURE_FOREST"), Some(("deforestation_treaty".into(), "A".into(), "forest".into())));
+        assert_eq!(map("WC_RES_DEFORESTATION_TREATY", 2, "FEATURE_JUNGLE"), Some(("deforestation_treaty".into(), "B".into(), "jungle".into())));
+        assert_eq!(map("WC_RES_HERITAGE_ORG", 2, "GREATWORKOBJECT_SCULPTURE"), Some(("heritage_organization".into(), "B".into(), "art".into())));
+        assert_eq!(map("WC_RES_MILITARY_ADVISORY", 1, "PROMOTION_CLASS_APOSTLE"), Some(("military_advisory".into(), "A".into(), "religious_apostle".into())));
+        assert_eq!(map("WC_RES_GLOBAL_ENERGY_TREATY", 1, "BUILDING_FOSSIL_FUEL_POWER_PLANT"), Some(("global_energy_treaty".into(), "A".into(), "oil_power_plant".into())));
+        assert_eq!(map("WC_RES_WORLD_IDEOLOGY", 1, "GOVERNMENT_DEMOCRACY"), Some(("world_ideology".into(), "A".into(), "democracy".into())));
+        assert_eq!(map("WC_RES_PUBLIC_WORKS", 1, "PROJECT_MANHATTAN_PROJECT"), Some(("public_works_program".into(), "A".into(), "manhattan_project".into())));
+        assert_eq!(map("WC_RES_TRADE_TREATY", 0, "0"), None, "an option the mod could not read is not guessed");
+        assert_eq!(map("WC_RES_SOVEREIGNTY", 1, "MINOR_CIV_TRADE"), None, "no model rule, no effect");
+    }
+
+    #[test]
     fn observed_worker_swap_overrides_the_nearest_city_guess() {
         let mut first_center = plot(2, 2, "TERRAIN_PLAINS");
         first_center.o = 0;
@@ -7669,12 +7803,45 @@ pub struct StateWonder {
 
 /// Routes arriving at one city, by origin: foreign (another player's) and
 /// domestic (this seat's own).
-#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
 pub struct StateIncomingRoutes {
     #[serde(default)]
     pub foreign: i64,
     #[serde(default)]
     pub domestic: i64,
+    /// Where each foreign route comes from: the origin city's OFFSET
+    /// coordinates and its host player id. With these the mirror seats the
+    /// route on the board (`game.routes`, owner = that player's seat) instead
+    /// of only counting it, so every destination-side rule that reads the
+    /// route list — Zhang Qian's Gold, alliance yields, the World Congress
+    /// Trade Policy — sees what the host sees. Empty on an older export.
+    #[serde(default)]
+    pub origins: Vec<StateRouteOrigin>,
+}
+
+/// One foreign route's origin, as `incoming_routes.origins[]` carries it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct StateRouteOrigin {
+    #[serde(default = "minus_one")]
+    pub x: i32,
+    #[serde(default = "minus_one")]
+    pub y: i32,
+    #[serde(default = "minus_one")]
+    pub player: i32,
+}
+
+/// One World Congress resolution currently in effect, as the host reports it:
+/// the `WC_RES_*` type, which option won (1 = A, 2 = B, 0 = the mod could not
+/// tell), and the chosen target verbatim (a host player id for PLAYER-targeted
+/// resolutions, a `RESOURCE_*`/`DISTRICT_*`/... type name otherwise).
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct StateResolution {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub option: i64,
+    #[serde(default)]
+    pub target: String,
 }
 
 /// One population-worked Firaxis plot, in OFFSET coordinates.
@@ -8780,6 +8947,16 @@ pub struct StateSnapshot {
     /// older export; an empty list is a seat with none.
     #[serde(default)]
     pub dedications: Option<Vec<String>>,
+    /// The World Congress resolutions binding this turn (`GetResolutions`),
+    /// mapped onto the model's own `active_congress_effects`. `None` on an
+    /// older export leaves the model's Congress alone; `Some([])` is a world
+    /// with nothing in effect.
+    #[serde(default)]
+    pub resolutions: Option<Vec<StateResolution>>,
+    /// Turns until the next regular session — how long `resolutions` stay
+    /// binding (`GetMeetingStatus().TurnsLeft`).
+    #[serde(default)]
+    pub congress_turns_left: Option<i64>,
     /// Firaxis's own outgoing-route capacity. The model can differ because a
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
@@ -9173,6 +9350,215 @@ fn restore_active_trade_routes(
         });
     }
     unresolved
+}
+
+/// Seat the routes OTHER players run into this seat's cities.
+///
+/// `restore_active_trade_routes` carries only our own routes, so every rule the
+/// destination earns from an incoming foreign route — Zhang Qian's "+2 Gold from
+/// incoming foreign routes", alliance yields, the World Congress Trade Policy's
+/// +4 Gold per incoming international route — paid nothing on a mirrored board:
+/// Cumae's host ledger read "+4 from Incoming Trade Routes" for t87-101 of run
+/// civvis-20260816T200454Z against a model that had no route to count. The
+/// mod's `incoming_routes.origins[]` names each route's origin city and owner;
+/// the origin's owner ON THE BOARD is the route's seat (rival cities are planted
+/// before this runs), so no host-id map is needed. A route whose origin city is
+/// not on the board (an unrevealed city of an unmet civ) is reported, not
+/// guessed. Routes seated here run to the end of the game the way restored own
+/// routes do — the host says when they end by dropping them from the export.
+fn restore_incoming_foreign_routes(
+    game: &mut crate::game::Game,
+    cities: &[StateCity],
+) -> Vec<String> {
+    let ends = game.turn.saturating_add(game.max_turns.max(1));
+    let mut unresolved = Vec::new();
+    for city in cities {
+        let Some(incoming) = city.incoming_routes.as_ref() else {
+            continue;
+        };
+        if incoming.origins.is_empty() {
+            continue;
+        }
+        let Some(dest) = game.city_at(crate::hex::offset_to_axial(city.x, city.y)) else {
+            unresolved.push(format!("incoming_route:{}:destination", city.name));
+            continue;
+        };
+        let dest_owner = game.cities[&dest].owner;
+        for origin in &incoming.origins {
+            if origin.x < 0 || origin.y < 0 {
+                unresolved.push(format!("incoming_route:{}:origin", city.name));
+                continue;
+            }
+            let Some(origin_city) =
+                game.city_at(crate::hex::offset_to_axial(origin.x, origin.y))
+            else {
+                unresolved.push(format!("incoming_route:{}:origin_city", city.name));
+                continue;
+            };
+            let owner = game.cities[&origin_city].owner;
+            if owner == dest_owner || origin_city == dest {
+                // A domestic route of ours is already in `game.routes` from the
+                // seat's own export; anything else here is a host/board mismatch.
+                continue;
+            }
+            let route = crate::game::TradeRoute {
+                origin: origin_city,
+                dest,
+                owner,
+                ends,
+            };
+            if !game.routes.contains(&route) {
+                game.routes.push(route);
+            }
+        }
+    }
+    unresolved
+}
+
+/// The engine id and target vocabulary of one host World Congress resolution,
+/// or `None` when the model has no such resolution (Arms Control, Sovereignty,
+/// the Diplomatic Victory resolution) or the target does not translate.
+///
+/// Targets follow the engine's own `congress_resolution` rosters: a player is
+/// its SEAT as a decimal string, a resource/district/building/feature/project
+/// its CIVVIS node name, and the class-like targets (Great Person class,
+/// promotion class, great-work object, spy operation, yield) the Firaxis
+/// suffix in lower case, which is what the engine keys them by.
+fn civvis_congress_effect(
+    rules: &crate::rules::Rules,
+    resolution: &StateResolution,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    expires: u32,
+) -> Option<crate::game::CongressEffect> {
+    let outcome = match resolution.option {
+        1 => "A",
+        2 => "B",
+        _ => return None,
+    };
+    let target = resolution.target.trim();
+    let seat = || {
+        target
+            .parse::<usize>()
+            .ok()
+            .and_then(|host| seat_of_host.get(&host).copied())
+            .map(|seat| seat.to_string())
+    };
+    let suffix = |prefix: &str| {
+        target
+            .strip_prefix(prefix)
+            .map(|rest| rest.to_ascii_lowercase())
+            .filter(|rest| !rest.is_empty())
+    };
+    let (id, target): (&str, String) = match resolution.kind.as_str() {
+        "WC_RES_TRADE_TREATY" => ("trade_policy", seat()?),
+        "WC_RES_BORDER_CONTROL" => ("border_control_treaty", seat()?),
+        "WC_RES_MIGRATION_TREATY" => ("migration_treaty", seat()?),
+        "WC_RES_PUBLIC_RELATIONS" => ("public_relations", seat()?),
+        "WC_RES_LUXURY" => (
+            "luxury_policy",
+            civvis_node_name(&rules.resources, target, "RESOURCE_")?,
+        ),
+        "WC_RES_MERCENARY_COMPANIES" => ("mercenary_companies", suffix("YIELD_")?),
+        "WC_RES_WORLD_RELIGION" => ("world_religion", civvis_religion_name(target)?),
+        "WC_RES_URBAN_DEVELOPMENT" => (
+            "urban_development_treaty",
+            if target == "DISTRICT_CITY_CENTER" {
+                "city_center".to_string()
+            } else {
+                civvis_node_name(&rules.districts, target, "DISTRICT_")?
+            },
+        ),
+        "WC_RES_PATRONAGE" => ("patronage", suffix("GREAT_PERSON_CLASS_")?),
+        "WC_RES_MILITARY_ADVISORY" => (
+            "military_advisory",
+            match target {
+                "PROMOTION_CLASS_APOSTLE" => "religious_apostle".to_string(),
+                "PROMOTION_CLASS_MONK" => "warrior_monk".to_string(),
+                "PROMOTION_CLASS_SPY" => "espionage".to_string(),
+                _ => suffix("PROMOTION_CLASS_")?,
+            },
+        ),
+        "WC_RES_ESPIONAGE_PACT" => ("espionage_pact", suffix("UNITOPERATION_SPY_")?),
+        // The engine keys the visual-art objects — sculpture, portrait,
+        // landscape, religious art — as one "art" class.
+        "WC_RES_HERITAGE_ORG" => (
+            "heritage_organization",
+            match target {
+                "GREATWORKOBJECT_SCULPTURE"
+                | "GREATWORKOBJECT_PORTRAIT"
+                | "GREATWORKOBJECT_LANDSCAPE"
+                | "GREATWORKOBJECT_RELIGIOUS" => "art".to_string(),
+                _ => suffix("GREATWORKOBJECT_")?,
+            },
+        ),
+        "WC_RES_WORLD_IDEOLOGY" => (
+            "world_ideology",
+            civvis_node_name(&rules.governments, target, "GOVERNMENT_")?,
+        ),
+        "WC_RES_GLOBAL_ENERGY_TREATY" => (
+            "global_energy_treaty",
+            civvis_node_name(&rules.buildings, target, "BUILDING_")?,
+        ),
+        "WC_RES_PUBLIC_WORKS" => (
+            "public_works_program",
+            civvis_node_name(&rules.projects, target, "PROJECT_")?,
+        ),
+        "WC_RES_DEFORESTATION_TREATY" => (
+            "deforestation_treaty",
+            civvis_node_name(&rules.features, target, "FEATURE_")?,
+        ),
+        _ => return None,
+    };
+    Some(crate::game::CongressEffect {
+        resolution: id.to_string(),
+        outcome: outcome.to_string(),
+        target,
+        expires,
+    })
+}
+
+/// Put the host's binding World Congress resolutions on the board.
+///
+/// The model has its own Congress and simulates one when it plans ahead, but on
+/// a mirrored board the host's is the one in force: Trade Policy A on this seat
+/// (run civvis-20260816T200454Z, t82-101) paid +4 Gold per incoming foreign
+/// route in Cumae and +1 route capacity, and Luxury Policy changes what every
+/// city's Amenities are. An export without `resolutions` (older mod) leaves the
+/// model's own list alone. Effects expire when the host says the next session
+/// convenes (`congress_turns_left`), or a standard session length out if the
+/// export does not say. Called BEFORE the host-to-model corrections are
+/// measured, for the same reason as the age and Dedications: anything that
+/// changes model yields must be on the board first.
+fn apply_host_congress(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+    unmapped: &mut Vec<String>,
+) {
+    let Some(resolutions) = &state.resolutions else {
+        return;
+    };
+    let turns_left = state
+        .congress_turns_left
+        .filter(|turns| *turns >= 0)
+        .map(|turns| turns as u32)
+        .unwrap_or_else(|| game.standard_duration(30));
+    let expires = game.turn.saturating_add(turns_left).saturating_add(1);
+    game.active_congress_effects.clear();
+    for resolution in resolutions {
+        match civvis_congress_effect(&game.rules, resolution, seat_of_host, expires) {
+            Some(effect) => game.active_congress_effects.push(effect),
+            None => {
+                let issue = format!(
+                    "congress:{}:{}:{}",
+                    resolution.kind, resolution.option, resolution.target
+                );
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+            }
+        }
+    }
 }
 
 /// Replace CIVVIS's inferred Governor state with the authoritative Firaxis roster.
@@ -9981,7 +10367,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
-        "heroic_golden_age", "dedications",
+        "heroic_golden_age", "dedications", "resolutions", "congress_turns_left",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
         // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
         // if a new StateSnapshot field is missing here — this list is a second
@@ -13894,6 +14280,7 @@ pub fn rebuild_from_state(
         &state.trade_routes,
         &known_city_ids,
     ));
+    unmapped.extend(restore_incoming_foreign_routes(&mut game, &state.cities));
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_great_person_points(&mut game, state, &mut unmapped);
     apply_strategic_stockpiles(&mut game, state, &mut unmapped);
@@ -13906,6 +14293,9 @@ pub fn rebuild_from_state(
     // repeats it for the era score, which must be written after the cities
     // are planted; this early call is idempotent with it.
     apply_player_ages(&mut game, state);
+    // The host's World Congress, likewise before the corrections: Trade Policy
+    // and Luxury Policy change what the model pays and supplies.
+    apply_host_congress(&mut game, state, &seat_of_host, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -15411,7 +15801,10 @@ impl LiveMirror {
             &mut self.game,
             &state.trade_routes,
             &self.known_city_ids,
-        ) {
+        )
+        .into_iter()
+        .chain(restore_incoming_foreign_routes(&mut self.game, &state.cities))
+        {
             if !self.unmapped.contains(&issue) {
                 self.unmapped.push(issue);
             }
@@ -15433,6 +15826,7 @@ impl LiveMirror {
         // Age and Dedications before the corrections are measured — see the
         // rebuild path for why; the trailing call repeats it for era score.
         apply_player_ages(&mut self.game, state);
+        apply_host_congress(&mut self.game, state, &seat_of_host, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:

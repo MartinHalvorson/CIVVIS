@@ -48,7 +48,8 @@ class CityComparisonTest(unittest.TestCase):
         records = drift.city_comparisons(state, dump)
         self.assertEqual([r["name"] for r in records], ["Rome"])
         self.assertEqual(records[0]["delta"]["food"], 2.0)
-        self.assertEqual(records[0]["housing_delta"], 1.5)
+        # 9.5 floors to the 9 the host would show, one above its 8.
+        self.assertEqual(records[0]["housing_delta"], 1.0)
         self.assertEqual(records[0]["amenities_delta"], 2)
 
     def test_the_mods_could_not_read_sentinel_is_not_a_housing_claim(self):
@@ -108,9 +109,11 @@ class EpisodeTest(unittest.TestCase):
 class StateChangeTest(unittest.TestCase):
     def test_names_city_and_empire_changes_between_two_states(self):
         before = {"policies": ["POLICY_A"], "techs": ["TECH_X"], "government": "G1",
+                  "resolutions": [],
                   "cities": [{"name": "Rome", "buildings": ["BUILDING_MONUMENT"],
                               "districts": [], "worked": [{"x": 1, "y": 1}], "pop": 3}]}
         after = {"policies": ["POLICY_B"], "techs": ["TECH_X", "TECH_Y"], "government": "G1",
+                 "resolutions": [{"type": "WC_RES_TRADE_TREATY", "option": 1, "target": "0"}],
                  "cities": [{"name": "Rome",
                              "buildings": ["BUILDING_MONUMENT", "BUILDING_GRANARY"],
                              "pillaged_buildings": ["BUILDING_MONUMENT"],
@@ -123,6 +126,8 @@ class StateChangeTest(unittest.TestCase):
         self.assertIn("worked: -[(1, 1)] +[(1, 2)]", joined)
         self.assertIn("state.policies: -['POLICY_A'] +['POLICY_B']", joined)
         self.assertIn("state.techs: -[] +['TECH_Y']", joined)
+        self.assertIn("state.resolutions: -[] +[{'option': 1, 'target': '0', "
+                      "'type': 'WC_RES_TRADE_TREATY'}]", joined)
         self.assertNotIn("government", joined)
 
     def test_first_turn_has_nothing_to_compare(self):

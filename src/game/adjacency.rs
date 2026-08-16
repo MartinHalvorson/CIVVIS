@@ -220,7 +220,7 @@ impl Game {
                 .flatten()
                 .filter(|tile| {
                     !gaul
-                        && (tile.district.is_some()
+                        && ((tile.district.is_some() && !tile.pillaged)
                             || self.city_at(tile.pos).is_some()
                             || assume.treats_as_city_center(tile.pos)
                             || (assume.foundations && tile.district_foundation.is_some()))
