@@ -2503,6 +2503,9 @@ fn main() {
     // empire is still short of its city plan. Measure the previously untested
     // target-plus-throughput cell as one explicit live treatment.
     ai.enable_parallel_settlers();
+    // And build the Settler at Civilization VI's own population floor rather
+    // than the genome's: see `BasicAi::host_settler_pop`.
+    ai.enable_host_settler_pop();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -2712,8 +2715,10 @@ fn main() {
         );
         let w = advanced.weights().clone();
         let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
-        // The live decider plays with the second pipeline slot open.
+        // The live decider plays with the second pipeline slot open and the
+        // host's Settler population floor.
         ai.enable_parallel_settlers();
+        ai.enable_host_settler_pop();
         let pid = 0usize;
         let n_cities = g.player_city_ids(pid).len();
         let settlers = g
@@ -2745,9 +2750,12 @@ fn main() {
             "  settlers < pipeline ({pipeline})            {:>5}   {settlers}",
             settlers < pipeline
         );
+        // The live seat's floor is the host's (see `BasicAi::host_settler_pop`).
+        let settler_min_pop = w.settler_min_pop.min(2.0);
         println!(
-            "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1}",
-            (city_pop as f64) >= w.settler_min_pop,
+            "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1} (genome {:.3}, host floor 2)",
+            (city_pop as f64) >= settler_min_pop,
+            settler_min_pop,
             w.settler_min_pop
         );
         println!(

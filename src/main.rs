@@ -1141,7 +1141,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// sets; `AdvancedAi::new()` and `legacy()` refuse wonders exactly as before
 /// (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf4b0_54bf_b8ca_8260;
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
+/// The host Settler population floor is behind `BasicAi::host_settler_pop`,
+/// set only by the Civilization VI bridge; every native constructor and
+/// `AdvancedAi::legacy()` keep the genome's `settler_min_pop` (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf9fb_3e50_fbbf_33cb;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
