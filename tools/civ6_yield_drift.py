@@ -23,7 +23,10 @@ compares the thing the correction hides.
            last ≥ `--min-episode` turns (a rule the model gets wrong) and
            transients (the host publishes a change one turn before or after
            the model does — a policy swap, a tech, a repair — which is timing,
-           not a rule).
+           not a rule). Where the export carries plot yields the model figure
+           already includes the mirror's per-plot corrections, so TOTALS is
+           the city-level residual (buildings, routes, policies, bands) and
+           TILES is where the tile model itself is judged.
 - EPISODES every persistent per-city, per-yield gap: turns, sign, size, and
            the host-side changes on the turn it opened (buildings, districts,
            worked plots, specialists, amenity band, policies, government,
@@ -235,9 +238,10 @@ def state_changes(before: dict | None, after: dict, city_name: str) -> list:
     prev = next((c for c in before.get("cities") or [] if c.get("name") == city_name), None)
     cur = next((c for c in after.get("cities") or [] if c.get("name") == city_name), None)
     if prev and cur:
-        for key in ("pop", "buildings", "pillaged_buildings", "wonders", "specialists",
-                    "happiness_yield_mult", "amenities", "amenities_needed",
-                    "housing", "religion", "pantheon_active", "great_works"):
+        for key in ("pop", "capital", "buildings", "pillaged_buildings", "wonders",
+                    "specialists", "happiness_yield_mult", "amenities", "amenities_needed",
+                    "housing", "religion", "pantheon_active", "great_works",
+                    "incoming_routes"):
             if prev.get(key) != cur.get(key):
                 lines.append(f"city.{key}: {prev.get(key)!r} -> {cur.get(key)!r}")
         pd = [(d.get("type"), d.get("x"), d.get("y"), d.get("complete"), d.get("pillaged"))
@@ -354,6 +358,8 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
                                        if e["yield"] == k), 1) for k in YIELDS}
     print()
     print("TOTALS   |model-host| x turns")
+    print("  (the model figure includes the per-plot corrections the mirror derives where the "
+          "export carries plot yields; the tile model itself is judged in TILES below)")
     print(f"  persistent (>= {min_len} turns): {weight(persistent)}")
     print(f"  transient  (<  {min_len} turns): {weight(transient)}")
     last = max(per_turn)

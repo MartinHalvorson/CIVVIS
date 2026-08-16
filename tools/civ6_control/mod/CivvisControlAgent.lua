@@ -4795,6 +4795,37 @@ local function exportState(player, pid, turn)
 	-- uses.  CIVVIS needs both endpoint ids for capacity/yields and the unit id
 	-- to keep the active Trader out of the next planning pass.
 	local tradeRoutes = {};
+	-- Routes OTHER players run into our cities, per destination city id. The
+	-- destination earns from them under a few rules — Zhang Qian's "+2 Gold from
+	-- incoming foreign routes" was live on Aquileia from t131 of run
+	-- civvis-20260816T040537Z and the mirror had no way to count the routes it
+	-- applied to. Foreign and domestic are told apart by origin player.
+	-- There is no incoming-routes accessor; the shipped TradeOverview walks every
+	-- other player's cities' OUTGOING routes and keeps those whose destination is
+	-- the local player, and so does this. Keyed by destination city id.
+	local incomingRoutes = {};
+	pcall(function()
+		for _, other in ipairs(Game.GetPlayers() or {}) do
+			local otherId = try(function() return other:GetID(); end, -1);
+			if otherId ~= pid then
+				local theirCities = try(function() return other:GetCities(); end);
+				if theirCities ~= nil then
+					for _, theirCity in theirCities:Members() do
+						local theirRoutes = try(function()
+							return theirCity:GetTrade():GetOutgoingRoutes();
+						end, {});
+						for _, route in ipairs(theirRoutes or {}) do
+							if try(function() return route.DestinationCityPlayer; end, -1) == pid then
+								local dest = try(function() return route.DestinationCityID; end, -1);
+								incomingRoutes[dest] = incomingRoutes[dest] or { foreign = 0, domestic = 0 };
+								incomingRoutes[dest].foreign = incomingRoutes[dest].foreign + 1;
+							end
+						end
+					end
+				end
+			end
+		end
+	end);
 	eachCity(player, function(city)
 		local outgoing = try(function()
 			return city:GetTrade():GetOutgoingRoutes();
@@ -4808,6 +4839,11 @@ local function exportState(player, pid, turn)
 				local destinationOwner = Players[destinationPlayer];
 				return destinationOwner and destinationOwner:GetCities():FindID(destinationID);
 			end, nil);
+			if destinationPlayer == pid and destinationID ~= nil and destinationID >= 0 then
+				incomingRoutes[destinationID] = incomingRoutes[destinationID]
+					or { foreign = 0, domestic = 0 };
+				incomingRoutes[destinationID].domestic = incomingRoutes[destinationID].domestic + 1;
+			end
 			tradeRoutes[#tradeRoutes + 1] = {
 				trader = try(function() return route.TraderUnitID; end, -1),
 				origin = originID,
@@ -5147,6 +5183,7 @@ local function exportState(player, pid, turn)
 			great_works = greatWorks,
 			yields = exactYields,
 			yield_sources = yieldSources,
+			incoming_routes = incomingRoutes[try(function() return city:GetID(); end, -1)],
 			-- The city centre's own plot yields, which the worked list carries
 			-- (Firaxis counts the centre as worked) but which CIVVIS floors to
 			-- 2 Food / 1 Production before assigning citizens.
@@ -6663,6 +6700,19 @@ local function exportTiles(player, pid, turn)
 						-- no-economy failure, and just as self-defeating.
 						im = typeName("Improvements", "ImprovementType",
 						              try(function() return plot:GetImprovementType(); end, -1)),
+						-- ★★★★ AND WHETHER IT IS PILLAGED. A pillaged Farm still reads
+						-- IMPROVEMENT_FARM above and pays nothing until repaired; without
+						-- this bit the mirror paid every pillaged improvement in full and
+						-- CIVVIS could not see there was anything to repair. The first
+						-- per-plot yield export (run civvis-20260816T040537Z) showed a
+						-- pastured Horses tile at the bare-terrain figure for ninety
+						-- turns. `IsImprovementPillaged` is what the shipped PlotToolTip
+						-- reads. Sent only where an improvement stands, so an unimproved
+						-- plot costs no bytes; nil (absent) elsewhere.
+						p = try(function()
+							if plot:GetImprovementType() < 0 then return nil; end
+							return plot:IsImprovementPillaged() and true or nil;
+						end, nil),
 						-- This plot's own three river edges, as a bitmask: 1 = W,
 						-- 2 = NW, 4 = NE. See `riverMask` above for why the other
 						-- three edges do not need sending.
