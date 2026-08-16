@@ -1146,7 +1146,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set only by the Civilization VI bridge; every native constructor and
 /// `AdvancedAi::legacy()` keep the genome's `settler_min_pop` (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf9fb_3e50_fbbf_33cb;
+/// The elective-war stand-down is behind `no_elective_war`, which only the
+/// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` take
+/// the "strong enough" branch exactly as before (asserted). Compatibility
+/// re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x00fa_6a25_76a3_892d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
