@@ -669,6 +669,43 @@ carried). Only the host knows how many times a tile has been buried; the
 per-plot correction carries it. Modelling Science and Culture fertility
 natively is a follow-up for the eruption code.
 
+### Round 5: the first game with everything exported (2026-08-16, run `civvis-20260816T155856Z`)
+
+With plot yields, pillage bits, incoming routes, the age and its Dedications
+all crossing, the first full game read persistent Production 9 and Science 21
+(from 913 and 279 the game before). Two classes were left, both named by the
+host's ledgers in one line each:
+
+- **The capital's Gold: 44 modelled against 17 reported for thirty turns.**
+  The host's capital ledger was "+1 Harbor, +5 Palace, +11 Worked Tiles" and
+  nothing else; the model's 27 was Merchant Confederation's Gold per placed
+  Envoy (7 + 6 + 13 + 1 Envoys at four city-states). The card is
+  `MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN` — income paid
+  to the PLAYER, on the top bar beside the city sum, never a line of any city's
+  ledger — and Raj (`..._PER_TRIBUTARY`) and an Emergency's Gold per Envoy are
+  the same shape. `city_yields_inner` had paid all three into the Palace city.
+  They now sit in `Game::player_policy_yields`, banked at turn end with the
+  founder-belief income and reported by every consumer of the per-turn figure
+  through `player_yield_extras`. (God King stays a capital-city yield: its
+  modifier is `PLAYER_CAPITAL_CITY_ADJUST_CITY_YIELD_CHANGE`.)
+- **Two Culture short in every coastal city.** "+2 from City Center" in Rome
+  and "+2 from Wonder" in Mediolanum, beside the +2 the model already paid on
+  each specialty district: Nan Madol's
+  `MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE` reaches every district plot on
+  or beside Coast, and the City Center and each wonder's plot are district
+  plots too. `city_yields_inner` now pays them.
+
+Both bind natively. The remaining Culture residual of that run is the same
+Nan Madol term through the game's other coastal cities and closes with it.
+
+**The other civilizations, continued.** The first item on the round-3 list is
+closed: the tiles export now names the district (`d`) and wonder (`wo`) on
+every revealed plot — any owner — and the mirror puts them on the rival or
+city-state city that owns the ground (`apply_foreign_infrastructure`, rebuilt
+from every export so a razed district does not linger; our own cities keep the
+city record, which carries completion and pillage). A rival's Encampment,
+Campus or wonder is on the board from the turn it is seen.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

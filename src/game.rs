@@ -26065,13 +26065,52 @@ impl Game {
     }
 
     /// Player-level yields the empire collects each turn beside its cities:
-    /// founder-belief income and the Faith from unused Great Person points.
-    /// Both sit on Civilization VI's top bar next to the city sum, so every
-    /// reader of "yields per turn" adds this to the cities.
+    /// founder-belief income, the Faith from unused Great Person points, and
+    /// the policy income that pays per Envoy or per tributary. All sit on
+    /// Civilization VI's top bar next to the city sum, so every reader of
+    /// "yields per turn" adds this to the cities.
     pub fn player_yield_extras(&self, pid: usize) -> Yields {
         let mut extras = self.founder_belief_yields(pid);
         extras.faith += self.unused_great_person_faith(pid);
+        extras.add(self.player_policy_yields(pid));
         extras
+    }
+
+    /// Policy income paid to the PLAYER rather than to any city: Merchant
+    /// Confederation's and an Emergency's Gold per placed Envoy
+    /// (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN`) and
+    /// Raj's Science, Culture, Faith and Gold per tributary
+    /// (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_TRIBUTARY`). None of it is a
+    /// line of a city's ledger — the host's capital showed no trace of 27
+    /// Envoys' Gold — so it is banked with the founder-belief income at turn
+    /// end and reported beside the city sum, not inside the Palace city.
+    pub fn player_policy_yields(&self, pid: usize) -> Yields {
+        let mut yields = Yields::default();
+        let Some(player) = self.players.get(pid) else { return yields };
+        if player.is_minor || player.is_barbarian {
+            return yields;
+        }
+        let envoys: i64 = player.envoys.iter().map(|(_, count)| *count).sum();
+        yields.gold += envoys as f64 * self.policy_effect(pid, "gold_per_envoy");
+        yields.gold += envoys as f64
+            * player
+                .counters
+                .get("emergency_gold_per_envoy")
+                .copied()
+                .unwrap_or(0) as f64;
+        let suzerains = self
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.is_minor && !minor.is_barbarian && self.suzerain_of(minor.id) == Some(pid)
+            })
+            .count() as f64;
+        let raj = suzerains * self.policy_effect(pid, "suzerain_all_yields");
+        yields.gold += raj;
+        yields.science += raj;
+        yields.culture += raj;
+        yields.faith += raj;
+        yields
     }
 
     /// Great Person points this empire earns per turn, by class, after every
@@ -40289,6 +40328,29 @@ impl Game {
             }
             ys.add(self.district_yields(dname, *dpos));
         }
+        // Nan Madol's `MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE` reaches
+        // every district plot on or beside Coast — the City Center and each
+        // wonder's plot included, which `district_yields` above never sees.
+        // The host's culture ledger on live run civvis-20260816T155856Z read
+        // "+2 from City Center" in Rome and "+2 from Wonder" in Mediolanum
+        // beside the specialty districts the model already paid, two Culture
+        // short in every coastal city for a hundred turns.
+        if self.grants_city_state_unique_bonus(city.owner, "Nan Madol") {
+            let coastal = |pos: Pos| {
+                matches!(self.map.tiles[&pos].terrain.as_str(), "coast" | "lake")
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                    })
+            };
+            if coastal(city.pos) {
+                ys.culture += 2.0;
+            }
+            for (_, wonder_pos) in city.wonders.iter() {
+                if coastal(*wonder_pos) {
+                    ys.culture += 2.0;
+                }
+            }
+        }
         for b in &city.buildings {
             if city.pillaged_buildings.contains(b)
                 || !self.building_district_is_active(city, b)
@@ -40638,34 +40700,17 @@ impl Game {
                     self.policy_effect(city.owner, "neighborhood_breathtaking_production");
             }
         }
-        if self.city_has_palace(city) {
-            let envoys: i64 = self.players[city.owner]
-                .envoys
-                .iter()
-                .map(|(_, count)| *count)
-                .sum();
-            ys.gold += envoys as f64 * self.policy_effect(city.owner, "gold_per_envoy");
-            ys.gold += envoys as f64
-                * self.players[city.owner]
-                    .counters
-                    .get("emergency_gold_per_envoy")
-                    .copied()
-                    .unwrap_or(0) as f64;
-            let suzerains = self
-                .players
-                .iter()
-                .filter(|minor| {
-                    minor.is_minor
-                        && !minor.is_barbarian
-                        && self.suzerain_of(minor.id) == Some(city.owner)
-                })
-                .count() as f64;
-            let raj = suzerains * self.policy_effect(city.owner, "suzerain_all_yields");
-            ys.gold += raj;
-            ys.science += raj;
-            ys.culture += raj;
-            ys.faith += raj;
-        }
+        // Merchant Confederation's Gold per Envoy, an Emergency's Gold per
+        // Envoy and Raj's yields per tributary are PLAYER-level income
+        // (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN`,
+        // `..._PER_TRIBUTARY`), collected on the top bar beside the city sum —
+        // never a line of any city's ledger. They used to be paid into the
+        // Palace city here; measured on live run civvis-20260816T155856Z the
+        // capital read 44 Gold modelled against 17 reported for thirty turns,
+        // the whole of it 27 placed Envoys under Merchant Confederation, while
+        // the host's own capital ledger carried no such line. They now sit in
+        // `player_policy_yields`, read by every consumer of the per-turn
+        // figure alongside founder-belief income.
         for r in self.routes.iter().filter(|r| r.origin == cid) {
             if let Some(dc) = self.cities.get(&r.dest) {
                 let domestic = dc.owner == city.owner;
@@ -57708,6 +57753,13 @@ impl Game {
         cul += founder_yields.culture;
         gold += founder_yields.gold;
         faith += founder_yields.faith;
+        // Policy income paid to the player, not to a city — see
+        // `player_policy_yields`.
+        let policy_yields = self.player_policy_yields(pid);
+        sci += policy_yields.science;
+        cul += policy_yields.culture;
+        gold += policy_yields.gold;
+        faith += policy_yields.faith;
         let cultural_alliance_partner = self.alliance_partner(pid, "cultural", 3);
         if let Some(partner) = cultural_alliance_partner {
             cul += self
@@ -74634,17 +74686,23 @@ mod district_mechanics {
         assert_eq!(game.players[2].diplomatic_favor, 200.0);
         assert_eq!(game.players[2].counters["emergency_gold_per_envoy"], 1);
         assert_eq!(game.players[3].diplomatic_favor, 0.0);
+        // The reward pays the PLAYER per placed Envoy (a top-bar term, like
+        // Merchant Confederation), never a line of the capital's ledger.
         let member_capital = game.player_city_ids(2)[0];
         let mut without_reward = game.clone();
         without_reward.players[2]
             .counters
             .remove("emergency_gold_per_envoy");
         assert!(
-            (game.city_yields(member_capital).gold
-                - without_reward.city_yields(member_capital).gold
-                - 3.0)
+            (game.player_policy_yields(2).gold - without_reward.player_policy_yields(2).gold - 3.0)
                 .abs()
                 < 1e-9
+        );
+        assert!(
+            (game.city_yields(member_capital).gold - without_reward.city_yields(member_capital).gold)
+                .abs()
+                < 1e-9,
+            "the capital's own yields carry none of it"
         );
     }
 

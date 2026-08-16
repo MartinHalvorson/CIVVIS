@@ -1389,3 +1389,91 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
     // The second step is the same size as the first: 5% of the pre-bonus total.
     assert_close(two_kinds - one_kind, one_kind - base);
 }
+
+/// Nan Madol's `MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE` reaches every
+/// district plot on or beside Coast — the City Center and each wonder's plot
+/// included. The host's culture ledger on live run civvis-20260816T155856Z read
+/// "+2 from City Center" in Rome and "+2 from Wonder" in Mediolanum beside the
+/// specialty districts the model already paid.
+#[test]
+fn nan_madol_pays_the_city_center_and_wonder_plots_too() {
+    let (mut game, cities) = game_with_capitals(2, 77_101);
+    let city = cities[0];
+    let center = game.cities[&city].pos;
+    // A landlocked capital first: suzerainty alone brings the envoy-tier
+    // Culture, and nothing from Nan Madol's own bonus.
+    for pos in game.cities[&city].owned_tiles.clone() {
+        if game.rules.is_water(&game.map.tiles[&pos]) {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+    }
+    let minor = add_city_state(&mut game, "Nan Madol");
+    make_suzerain(&mut game, 0, minor);
+    let before = game.city_yields(city).culture;
+    // Now put the sea beside the centre and beside one owned plot that will
+    // hold a wonder.
+    let coast_pos = game.nbrs(center)[0];
+    let wonder_pos = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| {
+            *pos != center
+                && *pos != coast_pos
+                && game.map.tiles[pos].district.is_none()
+                && game.nbrs(*pos).contains(&coast_pos)
+        })
+        .expect("a land plot beside the new coast");
+    let sea = game.map.tiles.get_mut(&coast_pos).unwrap();
+    sea.terrain = crate::name!("coast");
+    sea.feature = None;
+    sea.resource = None;
+    sea.improvement = None;
+    let with_center = game.city_yields(city).culture;
+    assert!(
+        (with_center - before - 2.0).abs() < 1e-9,
+        "the coastal City Center is a district plot: {before} -> {with_center}"
+    );
+    // A wonder with no Culture and no Amenity of its own, so the only Culture
+    // that moves is Nan Madol's.
+    game.cities.get_mut(&city).unwrap().wonders.insert(crate::name!("great_library"), wonder_pos);
+    game.map.tiles.get_mut(&wonder_pos).unwrap().wonder = Some(crate::name!("great_library"));
+    let with_wonder = game.city_yields(city).culture;
+    assert!(
+        (with_wonder - with_center - 2.0).abs() < 1e-9,
+        "the coastal wonder plot pays Nan Madol's 2: {with_center} -> {with_wonder}"
+    );
+}
+
+/// Merchant Confederation's Gold per Envoy and Raj's yields per tributary are
+/// player-level income (`..._PER_USED_INFLUENCE_TOKEN`, `..._PER_TRIBUTARY`),
+/// banked with the founder-belief income and reported beside the city sum —
+/// never inside the Palace city, whose host ledger carried none of the 27
+/// Envoys' Gold on live run civvis-20260816T155856Z.
+#[test]
+fn envoy_and_tributary_policy_income_is_the_players_not_the_capitals() {
+    let (mut game, cities) = game_with_capitals(2, 77_102);
+    let capital = cities[0];
+    let minor = add_city_state(&mut game, "Nan Madol");
+    let second = add_city_state(&mut game, "Muscat");
+    game.players[0].envoys.push((minor, 5));
+    game.players[0].envoys.push((second, 2));
+    let quiet_city = game.city_yields(capital);
+    let quiet_player = game.player_policy_yields(0);
+    game.players[0].policies.insert(crate::name!("merchant_confederation"));
+    assert!((game.player_policy_yields(0).gold - quiet_player.gold - 7.0).abs() < 1e-9);
+    assert!((game.city_yields(capital).gold - quiet_city.gold).abs() < 1e-9, "not in the capital");
+    make_suzerain(&mut game, 0, minor);
+    make_suzerain(&mut game, 0, second);
+    let before_raj = game.player_policy_yields(0);
+    game.players[0].policies.insert(crate::name!("raj"));
+    let with_raj = game.player_policy_yields(0);
+    assert!((with_raj.science - before_raj.science - 4.0).abs() < 1e-9, "two tributaries at 2 each");
+    assert!((with_raj.gold - before_raj.gold - 4.0).abs() < 1e-9);
+    // And the per-turn extras every reader adds carry it.
+    assert!((game.player_yield_extras(0).science - with_raj.science).abs() < 1e-9);
+}

@@ -6999,6 +6999,29 @@ local function exportTiles(player, pid, turn)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★★ WHAT STANDS ON THE OTHER CIVILIZATIONS' GROUND. A rival
+						-- city record is name, size, health, walls and capital; its
+						-- districts and wonders were never exported, so a rival's
+						-- economy and defence were modelled from population alone
+						-- and the mirror could not tell an Encampment from a farm.
+						-- The plot knows (`GetDistrictType`, `GetWonderType`) for
+						-- any revealed ground, ours included; sent only where one
+						-- stands, nil elsewhere, so an empty plot costs no bytes.
+						-- Our own cities' districts still cross with the city record
+						-- (with completion and pillage); the mirror reads these
+						-- for rivals and city-states.
+						d = try(function()
+							local kind = plot:GetDistrictType();
+							if kind == nil or kind < 0 then return nil; end
+							local row = GameInfo.Districts[kind];
+							return row and row.DistrictType or nil;
+						end, nil),
+						wo = try(function()
+							local kind = plot:GetWonderType();
+							if kind == nil or kind < 0 then return nil; end
+							local row = GameInfo.Buildings[kind];
+							return row and row.BuildingType or nil;
+						end, nil),
 					};
 					if index >= (cfg.TileChunk or 250) then
 						flush(); index = 0;
