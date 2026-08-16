@@ -1299,11 +1299,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `explore_dead_targets`, which the Firaxis order bridge explicitly enables;
 /// `AdvancedAi::legacy()` keeps that flag off. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// The idle Entertainment Complex reservation is behind
+/// `amenity_project_preemption`, which both `AdvancedAi::legacy()` and the
+/// stock constructor keep off (asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`). Compatibility re-pin;
+/// the Elo protocol does not move.
 /// A repeatable district project waits behind the Library, University,
 /// Research Lab or Workshop its city can already build, behind
 /// `buildings_before_projects`, off for `AdvancedAi::legacy()` (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7d7a_b26e_f674_29c6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5e8b_4095_81d2_3cbb;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
