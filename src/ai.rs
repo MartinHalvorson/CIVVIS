@@ -50,7 +50,7 @@ const LIVELOCK_FOOTPRINT: usize = 3;
 /// of positional error is a price worth paying to get out of a loop; walking
 /// into an even fight, at roughly fifteen points of threat, is not — so this
 /// redirects a stuck unit without ever ordering it to its death.
-const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
+pub(crate) const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
 
 /// After this many fruitless turns the tabu has had every chance to work and
 /// has not: whatever the unit is trying to reach, it cannot. Standing it down
@@ -3708,6 +3708,22 @@ impl BasicAi {
             }
             _ => 0.0,
         }
+    }
+
+    /// Whether the live bridge has observed this unit circling without work.
+    ///
+    /// A normal tactical move must still respect the loop tabu: otherwise a
+    /// one-hex dead end can consume the whole war.  The coordinated mover may
+    /// make one exception for an A* route after this becomes true, because the
+    /// route can need to cross an already-visited square before it exits the
+    /// pocket.  Keeping that exception behind `recorded_tactical_step` leaves
+    /// every native controller on its historical movement path.
+    pub(crate) fn live_livelock_route_escape(&self, uid: u32) -> bool {
+        self.recorded_tactical_step
+            && self
+                .unit_motion
+                .get(&uid)
+                .is_some_and(|motion| motion.looping)
     }
 
     /// Whether a plain pathing step should be refused because it walks back
@@ -8139,7 +8155,39 @@ impl BasicAi {
         self.path_move(g, pid, uid, to)
     }
 
+    /// Follow one A* step out of a *proven* live-bridge livelock.
+    ///
+    /// `path_move` normally forbids every historical retread. That is right
+    /// for a greedy step, but it also rejects the first square of a valid
+    /// detour when the route must briefly pass back through the pocket that
+    /// diagnosed the livelock. The same-turn reversal check remains in force;
+    /// only the multi-turn tabu is relaxed, and only after six fruitless
+    /// recorded starts have established the loop.
+    pub(crate) fn tactical_apply_livelock_route_escape(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+    ) -> bool {
+        if !self.live_livelock_route_escape(uid) {
+            return false;
+        }
+        self.path_move_inner(g, pid, uid, to, true)
+    }
+
     pub(crate) fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
+        self.path_move_inner(g, pid, uid, to, false)
+    }
+
+    fn path_move_inner(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+        allow_livelock_retread: bool,
+    ) -> bool {
         let from = g.units[&uid].pos;
         if self.minor {
             let Some(home) = Self::minor_home(g, pid) else {
@@ -8165,7 +8213,7 @@ impl BasicAi {
         // The same refusal over the unit's last several turns rather than its
         // last several movement points. A route that keeps proposing a tile
         // this unit has already been standing on all window is not a route.
-        if self.retreads_a_loop(uid, to) {
+        if !allow_livelock_retread && self.retreads_a_loop(uid, to) {
             return false;
         }
         // Settlers use the shared route-order tool exposed to network clients
