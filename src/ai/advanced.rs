@@ -4210,6 +4210,8 @@ impl AdvancedAi {
 
     pub fn disable_counter_in_lane(&mut self) {
         self.counter_in_lane = false;
+    }
+
     /// Raise the city target one rung per era of the Settler game. See
     /// `era_paced_expansion`.
     pub fn enable_era_paced_expansion(&mut self) {
