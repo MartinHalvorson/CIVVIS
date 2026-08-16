@@ -1137,7 +1137,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wonder lanes are behind `live_wonder_race`, which only the live bridge
 /// sets; `AdvancedAi::new()` and `legacy()` refuse wonders exactly as before
 /// (asserted). Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6557_86f2_1072_bcfd;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3569_5755_0684_6a69;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
