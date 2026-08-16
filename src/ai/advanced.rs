@@ -2010,6 +2010,29 @@ pub struct AdvancedAi {
     /// Native tournament games leave this off so recorded ladders stay
     /// comparable.
     pub wide_map_capacity: bool,
+    /// Read the map's land through the fog when pricing the city ceiling.
+    ///
+    /// ★★★★ THE WIDE CEILING WAS STILL PRICED OFF THE REVEALED CORNER OF THE
+    /// MAP. `wide_map_capacity` counts passable land on the board, and the
+    /// live mirror's board is only what the seat has seen plus a two-ring
+    /// frontier. Run civvis-20260816T093036Z (74×46, 3,404 plots): 375 plots
+    /// were revealed by t96, 551 by t120 and 865 by t200 — under a quarter of
+    /// the map — so the ceiling read 7 at t61, 8 at t123, 9 at t182 and 10 at
+    /// t242, while the one-city-per-era cadence alone wanted 8 at t90, 9 at
+    /// t135, 10 at t180 and 11 at t225. Each rung of the city target arrived
+    /// 30–45 turns late; the eighth city was founded over target at t111 and
+    /// the ninth waited until t201, and the game ended 871 to 1,157 against a
+    /// rival that was never even met. Sight is not capacity: the land beyond
+    /// the fog is exactly as settleable as the land inside it.
+    ///
+    /// With this on, `assess` extrapolates the whole board's land from the
+    /// share of the KNOWN plots that are passable land, and prices the ceiling
+    /// off the larger of that estimate and the counted land — never lower.
+    /// Native boards carry no unknown terrain, so the estimate equals the count
+    /// there and nothing changes; the cadence, the practical-site checks and
+    /// the payback deadline still gate every settler. Live-only, under
+    /// `wide_map_capacity`; off for ordinary and frozen controllers.
+    pub fog_land_capacity: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -2932,6 +2955,7 @@ impl AdvancedAi {
             expansion_before_prophet: false,
             no_elective_war: false,
             wide_map_capacity: false,
+            fog_land_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -3048,6 +3072,16 @@ impl AdvancedAi {
 
     pub fn disable_wide_map_capacity(&mut self) {
         self.wide_map_capacity = false;
+    }
+
+    /// Price the live city ceiling off the whole map's land, read through the
+    /// fog. See `fog_land_capacity`.
+    pub fn enable_fog_land_capacity(&mut self) {
+        self.fog_land_capacity = true;
+    }
+
+    pub fn disable_fog_land_capacity(&mut self) {
+        self.fog_land_capacity = false;
     }
 
     /// Let two Settlers walk at once (see `parallel_settlers`). Set by the
@@ -3400,6 +3434,9 @@ impl AdvancedAi {
         // ten- and eleven-city rivals; the stock nine-ceiling was the binding
         // constant. See `wide_map_capacity`.
         self.enable_wide_map_capacity();
+        // And that ceiling was still priced off the revealed quarter of the
+        // map. See `fog_land_capacity`.
+        self.enable_fog_land_capacity();
         // The other half of the same three-defeat measurement: the capital that
         // fell bleeding with an empty hostile list. See garrison_under_fire.
         self.enable_garrison_under_fire();
@@ -6751,6 +6788,15 @@ impl AdvancedAi {
             // passable land is smallest precisely when expansion must begin.
             // Treat fog as unknown capacity, not proof of a three-city map.
             // Practical-site checks still stop production when sites run out.
+            //
+            // The floor answers the opening; the fogged MIDDLE game is what
+            // `fog_land_capacity` answers, by reading the land share of what
+            // is known across the whole board. See that flag.
+            let land = if self.fog_land_capacity {
+                Self::fog_land_estimate(g, land)
+            } else {
+                land
+            };
             (2 + land / 45)
                 .clamp(3, 12)
                 .max(PRODUCTION_CITY_TARGET_FLOOR)
@@ -7179,6 +7225,28 @@ impl AdvancedAi {
     /// This asks the question the reserve was standing in for. Time enough to
     /// build the settler at this city's real production rate, walk it out, and
     /// then hold the ground long enough to return more than it cost.
+    /// The whole board's passable land, extrapolated from the share of the
+    /// KNOWN plots that are passable land. Never below `counted_land`, and
+    /// equal to it on a board with no unknown terrain. See `fog_land_capacity`.
+    pub(crate) fn fog_land_estimate(g: &Game, counted_land: usize) -> usize {
+        let mut known = 0usize;
+        let mut known_land = 0usize;
+        for tile in g.map.tiles.values() {
+            if g.rules.is_unknown(tile) {
+                continue;
+            }
+            known += 1;
+            if g.rules.is_passable(tile) && !g.rules.is_water(tile) {
+                known_land += 1;
+            }
+        }
+        if known == 0 {
+            return counted_land;
+        }
+        let total = g.map.tiles.len();
+        (known_land.saturating_mul(total) / known).max(counted_land)
+    }
+
     fn expansion_pays_back_for(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
         let production = g.city_yields(cid).production.max(1.0);
@@ -25841,6 +25909,108 @@ mod tests {
         assert!(bridged.wide_map_capacity);
         bridged.disable_wide_map_capacity();
         assert!(!bridged.wide_map_capacity);
+    }
+
+    /// ★★★★ The wide ceiling was still priced off the revealed corner of the
+    /// map. Run civvis-20260816T093036Z: 375 of 3,404 plots revealed by t96,
+    /// 865 by t200; the ceiling read 7/8/9/10 at t61/t123/t182/t242 while the
+    /// cadence alone wanted 8/9/10/11 at t90/t135/t180/t225. See
+    /// `fog_land_capacity`. Here the same 74×46 board is fogged down to the
+    /// capital's neighbourhood: the plain wide treatment prices what it sees,
+    /// the fogged treatment reads the land share across the whole board, and
+    /// on the unfogged board the two agree exactly.
+    #[test]
+    fn the_live_city_ceiling_reads_the_map_through_the_fog() {
+        let mut game = Game::new_full(2, 74, 46, 11, 1_000, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("each major starts with a settler");
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+            game.remove_unit(settler);
+        }
+        game.turn = 2_000; // past every cadence step: the ceiling decides.
+        game.current = 0;
+
+        let mut wide = AdvancedAi::new();
+        wide.plan_city_target = true;
+        wide.city_target_floor = 6;
+        wide.enable_wide_map_capacity();
+        let mut fogged = wide.clone();
+        fogged.enable_fog_land_capacity();
+
+        // Unfogged: no unknown terrain, so the estimate IS the count.
+        let counted = game
+            .map
+            .tiles
+            .values()
+            .filter(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+            .count();
+        assert_eq!(AdvancedAi::fog_land_estimate(&game, counted), counted);
+        assert_eq!(wide.assess(&game, 0).desired_cities, 12);
+        assert_eq!(
+            fogged.assess(&game, 0).desired_cities,
+            12,
+            "a fully known board prices exactly as before"
+        );
+
+        // Fog everything beyond six rings of the capital, the way the live
+        // mirror carries only revealed terrain (plus a thin frontier).
+        std::sync::Arc::make_mut(&mut game.rules).enable_unknown_terrain();
+        let capital = game.cities.values().find(|c| c.owner == 0).unwrap().pos;
+        let mut fogged_board = game.clone();
+        let far: Vec<Pos> = fogged_board
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| fogged_board.map.distance(*pos, capital) > 6)
+            .collect();
+        for pos in far {
+            let tile = fogged_board.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("unknown");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.assumed_traversable = false;
+        }
+        let visible_land = fogged_board
+            .map
+            .tiles
+            .values()
+            .filter(|t| fogged_board.rules.is_passable(t) && !fogged_board.rules.is_water(t))
+            .count();
+        assert!(
+            visible_land < 45 * 6,
+            "fixture precondition: the revealed corner alone prices well under the floor              ({visible_land} land plots seen)"
+        );
+        let seen = wide.assess(&fogged_board, 0).desired_cities;
+        assert_eq!(
+            seen, PRODUCTION_CITY_TARGET_FLOOR,
+            "the plain wide ceiling is pinned to the floor by what the seat has seen"
+        );
+        let estimate = AdvancedAi::fog_land_estimate(&fogged_board, visible_land);
+        assert!(
+            estimate > visible_land,
+            "the fog is read as land in the known share, not as a three-city map"
+        );
+        assert_eq!(
+            fogged.assess(&fogged_board, 0).desired_cities,
+            12,
+            "the fogged treatment prices the whole 74×46 board, not its revealed corner"
+        );
+
+        // Defaults: off for the stock and frozen controllers, on for the live seat.
+        assert!(!AdvancedAi::new().fog_land_capacity);
+        assert!(!AdvancedAi::legacy().fog_land_capacity);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.fog_land_capacity);
+        live.disable_fog_land_capacity();
+        assert!(!live.fog_land_capacity);
     }
 
     #[test]

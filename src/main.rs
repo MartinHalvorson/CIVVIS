@@ -1211,6 +1211,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The adjacent-guard march is behind `stacked_escort`/`settlement_safety`,
 /// which `AdvancedAi::legacy()` leaves off. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// The fog-read city ceiling is behind `fog_land_capacity` under
+/// `wide_map_capacity`, both live-only and off for `AdvancedAi::legacy()`
+/// (asserted); a native board carries no unknown terrain, so the estimate
+/// equals the count there. Compatibility re-pin; the Elo protocol does not
+/// move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x11ae_cdbd_98b7_8d2a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
