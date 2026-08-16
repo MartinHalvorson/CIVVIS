@@ -1168,7 +1168,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set only by the Civilization VI bridge; native constructors and
 /// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x369d_335e_2c40_805b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf832_920c_e738_4ea5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
