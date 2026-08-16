@@ -1936,7 +1936,7 @@ mod tests {
                     complete: true,
                     ..StateDistrict::default()
                 }],
-                worked: Some(vec![StateWorkedPlot { x: 6, y: 4 }]),
+                worked: Some(vec![StateWorkedPlot { x: 6, y: 4, yields: None }]),
                 specialists: Some(vec!["DISTRICT_THEATER".to_string()]),
                 great_works: Some(vec![StateGreatWork {
                     kind: "GREATWORK_QU_YUAN_1".to_string(),
@@ -1975,6 +1975,283 @@ mod tests {
         assert_eq!(loaded.players[0].counters["great_work:writing"], 1);
     }
 
+    /// ★★★★★ A DISTRICT PLOT IN THE HOST'S WORKED LIST IS A SPECIALIST, NOT A TILE.
+    ///
+    /// `Citizens:IsPlotWorked` answers true for a Campus a citizen staffs, and the
+    /// export names that citizen in `specialists`. Importing the plot as a worked
+    /// tile as well paid the specialist twice — its slot yield AND the terrain
+    /// under the district. Measured on live run civvis-20260816T011314Z: Cumae
+    /// with two Campus specialists and one Industrial Zone specialist read +2
+    /// Food, +4 Production over the host for twenty turns.
+    #[test]
+    fn a_worked_district_plot_is_the_specialist_not_a_second_tile() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        let mut campus = plot(5, 5, "TERRAIN_GRASS_HILLS");
+        campus.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked, campus],
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Cumae".to_string(),
+                x: 5,
+                y: 4,
+                pop: 2,
+                // `StateCity::default()` is loyalty 0 — the revolt band, which
+                // multiplies every yield by zero. A real export always carries
+                // loyalty; a fixture must say so or its city yields nothing.
+                loyalty: 100.0,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 5,
+                    y: 5,
+                    complete: true,
+                    ..StateDistrict::default()
+                }],
+                // Firaxis lists the centre, the farmed tile AND the Campus plot.
+                worked: Some(vec![
+                    StateWorkedPlot { x: 5, y: 4, yields: None },
+                    StateWorkedPlot { x: 6, y: 4, yields: None },
+                    StateWorkedPlot { x: 5, y: 5, yields: None },
+                ]),
+                specialists: Some(vec!["DISTRICT_CAMPUS".to_string()]),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let cid = recon.game.player_city_ids(0)[0];
+        let plan = recon.game.city_citizen_plan(cid);
+        assert_eq!(
+            plan.worked_tiles,
+            vec![crate::hex::offset_to_axial(6, 4)],
+            "the Campus plot is the specialist's seat, not a tile job"
+        );
+        assert_eq!(plan.specialists, vec!["campus"]);
+        let ledger = recon.game.city_yield_ledger(cid);
+        assert_eq!(ledger.tiles.len(), 1);
+        assert_eq!(ledger.specialists.len(), 1);
+    }
+
+    /// ★★★★★ THE HOST'S PER-PLOT YIELDS CROSS AS TILE-LEVEL CORRECTIONS.
+    ///
+    /// Some of what a tile pays only the host can know — the fertility an
+    /// eruption left (Rome on run civvis-20260816T003229Z read +12 Food over the
+    /// model on volcanic soil for forty turns). With `worked[].yields` and
+    /// `center_yields` in the export, the mirror pays each plot what the host
+    /// pays it, the city correction carries only what is left, and the modelled
+    /// tile stays readable beside the correction.
+    #[test]
+    fn host_plot_yields_become_tile_corrections_and_the_model_stays_readable() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked],
+        }]);
+        // Grassland pays 2 Food in the ruleset; the host says this one pays 4
+        // Food and 1 Production (fertile ground the tile catalogue cannot see).
+        let host_plot = crate::rules::Yields {
+            food: 4.0,
+            production: 1.0,
+            ..crate::rules::Yields::default()
+        };
+        // Plains centre floors to 2 Food / 1 Production; the host says 3 / 2.
+        let host_center = crate::rules::Yields {
+            food: 3.0,
+            production: 2.0,
+            ..crate::rules::Yields::default()
+        };
+        // Centre 3/2 plus the tile 4/1: the food and production are entirely
+        // the two plots; the rest is the city's own (Palace, citizen).
+        let host_city = crate::rules::Yields {
+            food: 7.0,
+            production: 3.0,
+            gold: 1.0,
+            science: 0.5,
+            culture: 1.3,
+            faith: 0.0,
+        };
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Ravenna".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                loyalty: 100.0,
+                worked: Some(vec![
+                    StateWorkedPlot { x: 5, y: 4, yields: Some(host_center) },
+                    StateWorkedPlot { x: 6, y: 4, yields: Some(host_plot) },
+                ]),
+                center_yields: Some(host_center),
+                yields: Some(host_city),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let cid = recon.game.player_city_ids(0)[0];
+        let worked_pos = crate::hex::offset_to_axial(6, 4);
+        let center_pos = crate::hex::offset_to_axial(5, 4);
+        let tile_fix = recon.game.observed_tile_yield_adjustments[&worked_pos];
+        assert!((tile_fix.food - 2.0).abs() < 1e-9, "host 4 against modelled 2: {tile_fix:?}");
+        assert!((tile_fix.production - 1.0).abs() < 1e-9);
+                // The ledger reads the model, not the corrected board.
+        // The ledger reads the model, not the corrected board.
+        let ledger = recon.game.city_yield_ledger(cid);
+        let center_fix = recon.game.observed_tile_yield_adjustments[&center_pos];
+        assert!((center_fix.food - 2.0).abs() < 1e-9, "host 3 against the raw plains 1: {center_fix:?}");
+        assert!((center_fix.production - 1.0).abs() < 1e-9);
+        assert!((ledger.center.food - 2.0).abs() < 1e-9, "the ledger shows the floored model centre");
+        assert!((ledger.tiles[0].1.food - 2.0).abs() < 1e-9);
+        assert_eq!(ledger.tile_adjustments.len(), 2);
+        // And the board still agrees with the host to the last yield.
+        assert_eq!(recon.game.city_yields(cid), host_city);
+        // The tile-level part is out of the city-level correction: nothing but
+        // the two plots pays Food here, so the city's own Food correction is
+        // exactly zero (Production still carries the Palace's own term).
+        let city_fix = recon.game.observed_city_yield_adjustments[&cid];
+        assert!((city_fix.food - 0.0).abs() < 1e-9, "food is fully explained by the tiles: {city_fix:?}");
+
+        let saved = serde_json::to_string(&recon.game).expect("save");
+        let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load");
+        assert_eq!(loaded.city_yields(cid), host_city);
+        assert_eq!(loaded.observed_tile_yield_adjustments.len(), 2);
+    }
+
+    /// ★★★★★ A PILLAGED BUILDING PAYS NOTHING, AND THE EXPORT NOW SAYS WHICH.
+    ///
+    /// `HasBuilding` stays true for a pillaged Library. Without the pillage list
+    /// the mirror paid Antium +6 Science on a raided Campus for twenty turns
+    /// (run civvis-20260816T011314Z t147-t170: host 5.9, model 11.2).
+    #[test]
+    fn pillaged_buildings_cross_the_bridge_and_stop_paying() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut campus = plot(5, 5, "TERRAIN_GRASS_HILLS");
+        campus.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, campus],
+        }]);
+        let city = |pillaged: Option<Vec<String>>| StateCity {
+            id: 10,
+            name: "Antium".to_string(),
+            x: 5,
+            y: 4,
+            pop: 1,
+            loyalty: 100.0,
+            buildings: vec!["BUILDING_LIBRARY".to_string()],
+            pillaged_buildings: pillaged,
+            // Pin the citizen so the only difference between the two boards is
+            // the Library itself: left to its own governor, the intact city
+            // seats its citizen in the Library's specialist slot (+2 more).
+            worked: Some(vec![StateWorkedPlot { x: 5, y: 4, yields: None }]),
+            specialists: Some(vec![]),
+            districts: vec![StateDistrict {
+                kind: "DISTRICT_CAMPUS".to_string(),
+                x: 5,
+                y: 5,
+                complete: true,
+                ..StateDistrict::default()
+            }],
+            ..StateCity::default()
+        };
+        let intact = StateSnapshot {
+            turn: 60,
+            cities: vec![city(Some(vec![]))],
+            ..StateSnapshot::default()
+        };
+        let raided = StateSnapshot {
+            turn: 60,
+            cities: vec![city(Some(vec!["BUILDING_LIBRARY".to_string()]))],
+            ..StateSnapshot::default()
+        };
+        let intact = rebuild_from_state(&snapshot, &intact, 2, 1, 250, 0);
+        let raided = rebuild_from_state(&snapshot, &raided, 2, 1, 250, 0);
+        let intact_cid = intact.game.player_city_ids(0)[0];
+        let raided_cid = raided.game.player_city_ids(0)[0];
+        assert!(intact.game.cities[&intact_cid].pillaged_buildings.is_empty());
+        assert!(raided.game.cities[&raided_cid]
+            .pillaged_buildings
+            .contains(&crate::name::Name::new("library")));
+        let intact_science = intact.game.city_yields_model(intact_cid).science;
+        let raided_science = raided.game.city_yields_model(raided_cid).science;
+        assert!(
+            (intact_science - raided_science - 2.0).abs() < 1e-9,
+            "the Library's 2 Science must stop while it is pillaged: {intact_science} vs {raided_science}"
+        );
+        // An older export says nothing about pillage and must not clear anything.
+        let unknown = StateSnapshot {
+            turn: 60,
+            cities: vec![city(None)],
+            ..StateSnapshot::default()
+        };
+        let unknown = rebuild_from_state(&snapshot, &unknown, 2, 1, 250, 0);
+        let unknown_cid = unknown.game.player_city_ids(0)[0];
+        assert!(unknown.game.cities[&unknown_cid].pillaged_buildings.is_empty());
+    }
+
+    /// The host's Housing ceiling reaches the board as a delta, the Amenity map's
+    /// twin: the number beside population is the host's, and a counterfactual
+    /// Granary still moves it by its modelled amount.
+    #[test]
+    fn host_housing_reaches_the_board_as_a_delta() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center],
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Ostia".to_string(),
+                x: 5,
+                y: 4,
+                pop: 3,
+                loyalty: 100.0,
+                housing: Some(9.0),
+                amenities: 1.0,
+                amenities_needed: 2.0,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let cid = recon.game.player_city_ids(0)[0];
+        let city = &recon.game.cities[&cid];
+        assert!((recon.game.city_housing(city) - 9.0).abs() < 1e-9);
+        assert_eq!(recon.game.city_amenities(city), 1, "the count reads the host's, not the model's");
+        assert_eq!(recon.game.city_amenity_surplus(city), -1);
+        let saved = serde_json::to_string(&recon.game).expect("save");
+        let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load");
+        assert!((loaded.city_housing(&loaded.cities[&cid]) - 9.0).abs() < 1e-9);
+    }
+
     #[test]
     fn observed_worker_swap_overrides_the_nearest_city_guess() {
         let mut first_center = plot(2, 2, "TERRAIN_PLAINS");
@@ -2000,7 +2277,7 @@ mod tests {
                 },
                 StateCity {
                     id: 2, name: "Lugdunum".to_string(), x: 6, y: 2, pop: 2,
-                    worked: Some(vec![StateWorkedPlot { x: 3, y: 2 }]),
+                    worked: Some(vec![StateWorkedPlot { x: 3, y: 2, yields: None }]),
                     ..StateCity::default()
                 },
             ],
@@ -2047,8 +2324,8 @@ mod tests {
                 capital: true,
                 buildings: vec!["BUILDING_PALACE".to_string()],
                 worked: Some(vec![
-                    StateWorkedPlot { x: 5, y: 4 },
-                    StateWorkedPlot { x: 6, y: 4 },
+                    StateWorkedPlot { x: 5, y: 4, yields: None },
+                    StateWorkedPlot { x: 6, y: 4, yields: None },
                 ]),
                 ..StateCity::default()
             }],
@@ -2963,10 +3240,18 @@ mod tests {
     /// runs. `city_yields_weighted`, which is documented as never being on the cached
     /// path, reads 0 as well, so it is not the query memo.
     ///
+    /// RESOLVED (yield-fidelity work, 2026-08-16): the body runs; the LAST line
+    /// zeroes it. `StateCity::default()` is `loyalty: 0.0` — the serde default
+    /// `unknown_strength` (-1) applies only when deserializing — the mirror copies
+    /// any non-negative loyalty onto the city, and `loyalty_yield_mult(0.0)` is the
+    /// revolt band's **0**. A fixture that wants numbers says `loyalty: 100.0`
+    /// (see `host_plot_yields_become_tile_corrections_and_the_model_stays_readable`);
+    /// a real export always carries loyalty, so live boards were never affected.
+    ///
     /// ⚠⚠ That silently weakens the sibling test below: it asserts only that the
     /// drift string carries **Civ 6's** number and a `%`, never CIVVIS's own, so it
-    /// passes just as happily on a reconstruction yielding zero. Worth its own
-    /// investigation; both halves of that comparison should be assertable.
+    /// passes just as happily on a reconstruction yielding zero. Both halves of
+    /// that comparison are assertable once the fixture carries loyalty.
     #[test]
     fn a_mirrored_capital_is_not_paid_for_its_palace_twice() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -6253,6 +6538,12 @@ pub struct StateWorkedPlot {
     pub x: i32,
     #[serde(default)]
     pub y: i32,
+    /// The plot's own yields as the host computes them for its owner
+    /// (`Plot:GetYield`), so a model-versus-host gap can be located to a tile
+    /// rather than only sized per city. `None` on an export older than the
+    /// field, or when the host could not read the plot.
+    #[serde(default)]
+    pub yields: Option<crate::rules::Yields>,
 }
 
 /// One Great Work in an exact Firaxis city slot.
@@ -6315,6 +6606,13 @@ pub struct StateCity {
     /// Civ 6 building type names this city has already finished.
     #[serde(default)]
     pub buildings: Vec<String>,
+    /// The subset of `buildings` the host reports pillaged
+    /// (`CityBuildings:IsPillaged`). A pillaged building pays nothing until
+    /// repaired; without this the mirror paid Antium +6 Science on a raided
+    /// Campus for twenty turns. `None` on an older export — an unknown, not
+    /// an empty list.
+    #[serde(default)]
+    pub pillaged_buildings: Option<Vec<String>>,
     /// The religion this city actually follows, by Civ 6 type name, and the one
     /// converting it.
     ///
@@ -6430,6 +6728,48 @@ pub struct StateCity {
     pub housing: Option<f64>,
     #[serde(default)]
     pub housing_from_improvements: Option<f64>,
+    /// The rest of the host's housing ledger, one term each (`GetHousingFrom*`),
+    /// so a modelled total that disagrees can name the term it got wrong.
+    /// `None` on an older export; `-1` when the host could not read one term.
+    #[serde(default)]
+    pub housing_from_water: Option<f64>,
+    #[serde(default)]
+    pub housing_from_buildings: Option<f64>,
+    #[serde(default)]
+    pub housing_from_districts: Option<f64>,
+    #[serde(default)]
+    pub housing_from_civics: Option<f64>,
+    #[serde(default)]
+    pub housing_from_great_people: Option<f64>,
+    #[serde(default)]
+    pub housing_from_starting_era: Option<f64>,
+    #[serde(default)]
+    pub housing_from_great_works: Option<f64>,
+    /// Growth as the host computes it: surplus after consumption, the threshold
+    /// for the next citizen, the multipliers, and the host's own turn forecast.
+    #[serde(default = "unknown_metric")]
+    pub food_surplus: f64,
+    #[serde(default = "unknown_metric")]
+    pub growth_threshold: f64,
+    #[serde(default = "unknown_metric")]
+    pub growth_turns: f64,
+    #[serde(default = "unknown_metric")]
+    pub housing_growth_mult: f64,
+    #[serde(default = "unknown_metric")]
+    pub happiness_growth_mult: f64,
+    #[serde(default = "unknown_metric")]
+    pub overall_growth_mult: f64,
+    /// Where each yield comes from, in the host's own words: the text behind the
+    /// city panel's per-yield tooltip (`City:GetYieldToolTip`), icon markup
+    /// stripped, one entry per yield name. Diagnostic — nothing in the
+    /// reconstruction reads it; `tools/civ6_yield_drift.py` parses the amounts.
+    #[serde(default)]
+    pub yield_sources: Option<std::collections::BTreeMap<String, String>>,
+    /// The city centre plot's own yields (`Plot:GetYield` on the centre), which
+    /// Firaxis lists among the worked plots and CIVVIS floors to 2 Food /
+    /// 1 Production before assigning citizens.
+    #[serde(default)]
+    pub center_yields: Option<crate::rules::Yields>,
 
     /// Civilization VI's own amenity ledger for this city, and the multiplier it
     /// puts on every non-food yield.
@@ -6488,6 +6828,22 @@ pub struct StateCity {
     pub amenities_war_weariness: f64,
     #[serde(default = "unknown_metric")]
     pub amenities_bankruptcy: f64,
+    /// The remaining amenity sources the shipped CitySupport reads, so the host's
+    /// count decomposes completely and a modelled total can name its wrong term.
+    #[serde(default = "unknown_metric")]
+    pub amenities_great_people: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_religion: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_national_parks: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_starting_era: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_improvements: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_districts: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_natural_wonders: f64,
     /// Loyalty CHANGE per turn. `loyalty` alone is a level, and a city at 100
     /// falling fast looks identical to one at 100 holding steady — which is exactly
     /// how a city was lost at t98 with loyalty reading 100.
@@ -8035,7 +8391,8 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 /// ⚠ A superset is correct, not an error. Serde aliases mean one field answers to two
 /// names — `kind` also accepts `type` — and only the export side needs both.
 const CITY_KEYS: &[&str] = &[
-    "id", "name", "buildings", "religion", "religion_next", "religion_turns",
+    "id", "name", "buildings", "pillaged_buildings", "religion", "religion_next",
+    "religion_turns",
     "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
     "yields", "producing", "producing_hash", "production_progress", "production",
     "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
@@ -8047,6 +8404,19 @@ const CITY_KEYS: &[&str] = &[
     "amenities", "amenities_needed", "happiness", "happiness_yield_mult",
     "amenities_luxuries", "amenities_entertainment", "amenities_civics",
     "amenities_city_states", "amenities_war_weariness", "amenities_bankruptcy",
+    // The complete amenity and housing ledgers, the host's growth arithmetic and
+    // the per-yield source tooltips: the fields the yield-fidelity instrument
+    // reads. `the_schema_allowlists_cover_every_declared_field` fails if a
+    // StateCity field is missing here.
+    "amenities_great_people", "amenities_religion", "amenities_national_parks",
+    "amenities_starting_era", "amenities_improvements", "amenities_districts",
+    "amenities_natural_wonders",
+    "housing_from_water", "housing_from_buildings", "housing_from_districts",
+    "housing_from_civics", "housing_from_great_people", "housing_from_starting_era",
+    "housing_from_great_works",
+    "food_surplus", "growth_threshold", "growth_turns", "housing_growth_mult",
+    "happiness_growth_mult", "overall_growth_mult",
+    "yield_sources", "center_yields",
 ];
 
 const UNIT_KEYS: &[&str] = &[
@@ -8125,7 +8495,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "damage", "max_damage", "wall_damage", "max_wall_damage",
     ];
     const WONDER: &[&str] = &["type", "x", "y"];
-    const WORKED: &[&str] = &["x", "y"];
+    const WORKED: &[&str] = &["x", "y", "yields"];
     const GREAT_WORK: &[&str] = &["type", "object", "era", "creator", "building", "slot"];
     const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
     const UNIT: &[&str] = UNIT_KEYS;
@@ -10103,6 +10473,33 @@ fn apply_encampment_health(
         };
 }
 
+/// Carry the host's per-building pillage state onto a reconstructed city.
+///
+/// The engine already refuses to pay a building in `pillaged_buildings`
+/// (yields, housing, amenities, great-work slots all test it), so this is the
+/// import matching a rule that was there; only the export was missing. An
+/// older export (`None`) leaves the city's own set alone rather than clearing
+/// it — unknown is not "nothing pillaged".
+fn apply_pillaged_buildings(
+    rules: &crate::rules::Rules,
+    city: &mut crate::game::City,
+    state: &StateCity,
+) {
+    let Some(pillaged) = &state.pillaged_buildings else { return };
+    city.pillaged_buildings.clear();
+    for civ6 in pillaged {
+        if let Some(name) = civvis_node_name(&rules.buildings, civ6, "BUILDING_") {
+            if name == "palace" {
+                continue;
+            }
+            let named = crate::name::Name::new(&name);
+            if city.buildings.contains(&named) {
+                city.pillaged_buildings.insert(named);
+            }
+        }
+    }
+}
+
 fn apply_observed_city_infrastructure(
     game: &mut crate::game::Game,
     cid: u32,
@@ -10508,9 +10905,12 @@ fn apply_observed_city_economy(
     unmapped: &mut Vec<String>,
 ) {
     game.observed_city_yield_adjustments.clear();
-    // Clear first: the previous correction is part of `city_amenity_surplus`,
-    // and using it while deriving this turn's delta would compound it forever.
+    // Clear first: the previous correction is part of `city_amenities` and
+    // `city_housing`, and using it while deriving this turn's delta would
+    // compound it forever.
     game.observed_city_amenity_adjustments.clear();
+    game.observed_city_housing_adjustments.clear();
+    game.observed_tile_yield_adjustments.clear();
     game.observed_city_worked_tiles.clear();
     game.observed_city_specialists.clear();
 
@@ -10527,6 +10927,27 @@ fn apply_observed_city_economy(
                 // the whole authoritative list and silently restored CIVVIS's
                 // own governor instead.
                 .filter(|worked_pos| *worked_pos != pos)
+                // ★★★★★ A DISTRICT PLOT IN THE WORKED LIST IS A SPECIALIST, NOT
+                // A TILE. `Citizens:IsPlotWorked` answers true for a Campus a
+                // citizen staffs, and the export already names that citizen in
+                // `specialists`. Passing the plot through as a worked tile made
+                // the model pay the specialist twice — once from `specialists`
+                // (+2 Science, correctly) and once as the ground under the
+                // district (its terrain Food/Production, which Firaxis removes
+                // when the district is placed). Measured on live run
+                // civvis-20260816T011314Z: Cumae with two Campus specialists and
+                // one Industrial Zone specialist read **+2 Food, +4 Production**
+                // over the host for twenty turns; every specialist city showed
+                // the same signature. CIVVIS's own governor never offers a
+                // district, foundation or wonder plot as a tile job, so this is
+                // the import matching the engine, not a new rule.
+                .filter(|worked_pos| {
+                    game.map.get(*worked_pos).is_none_or(|tile| {
+                        tile.district.is_none()
+                            && tile.district_foundation.is_none()
+                            && tile.wonder.is_none()
+                    })
+                })
                 .collect::<Vec<_>>();
             let all_valid = positions.iter().all(|worked_pos| {
                 game.map.get(*worked_pos).is_some() && game.city_at(*worked_pos).is_none()
@@ -10619,6 +11040,73 @@ fn apply_observed_city_economy(
         }
     }
 
+    // ★★★★★ THE HOST'S OWN PER-PLOT YIELDS, WHERE THE EXPORT CARRIES THEM.
+    //
+    // A city total says by how much the model is off; the plot says where. Some
+    // of what a tile pays only the host can know — the fertility an eruption or
+    // a flood left behind (Rome on run civvis-20260816T003229Z: **+12 Food and
+    // +5 Production** over the model for forty turns, all of it volcanic soil),
+    // a plantation pillaged between two tile exports, a modifier CIVVIS has no
+    // row for. This is the tile-level twin of the city correction below: the
+    // difference between `Plot:GetYield` and CIVVIS's own tile model, on the
+    // centre and every plot the host says this city works, added inside
+    // `workable_tile_yields`. Derived first, so the city correction that
+    // follows carries only what is left (buildings, routes, policies).
+    //
+    // Deltas, never overrides, for the same reason as every other correction
+    // here: a Builder's counterfactual mine still moves the tile by its modeled
+    // amount. Cleared each turn above, so a plot the host stops working — or a
+    // repaired plantation — carries no stale correction. Skipped for district,
+    // foundation and wonder plots (specialists, imported separately) and for
+    // any plot the mirror lacks. An export older than the field leaves the map
+    // empty and everything below exactly as it was.
+    for observed in &state.cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(_cid) = game.city_at(pos) else { continue };
+        let finite = |yields: &crate::rules::Yields| {
+            [yields.food, yields.production, yields.gold,
+             yields.science, yields.culture, yields.faith]
+            .iter()
+            .all(|value| value.is_finite())
+        };
+        let delta = |host: crate::rules::Yields, model: crate::rules::Yields| crate::rules::Yields {
+            food: host.food - model.food,
+            production: host.production - model.production,
+            gold: host.gold - model.gold,
+            science: host.science - model.science,
+            culture: host.culture - model.culture,
+            faith: host.faith - model.faith,
+        };
+        if let Some(host) = observed.center_yields.filter(finite) {
+            // Against the RAW tile model, not the floored centre: the
+            // correction is added before `city_yields_inner` applies its 2 Food
+            // / 1 Production floor, and the host's own centre figure already
+            // sits at or above that floor, so raw + correction = host survives
+            // the floor unchanged.
+            let model = game.modeled_tile_yields(pos);
+            game.observed_tile_yield_adjustments
+                .insert(pos, delta(host, model));
+        }
+        for plot in observed.worked.iter().flatten() {
+            let Some(host) = plot.yields.filter(finite) else { continue };
+            let plot_pos = crate::hex::offset_to_axial(plot.x, plot.y);
+            if plot_pos == pos {
+                continue;
+            }
+            let Some(tile) = game.map.get(plot_pos) else { continue };
+            if tile.district.is_some()
+                || tile.district_foundation.is_some()
+                || tile.wonder.is_some()
+                || game.city_at(plot_pos).is_some()
+            {
+                continue;
+            }
+            let model = game.modeled_tile_yields(plot_pos);
+            game.observed_tile_yield_adjustments
+                .insert(plot_pos, delta(host, model));
+        }
+    }
+
     // Exact citizen assignments and durable Great Work state are now in place.
     // Calibrate the actual happiness band before deriving yield corrections.
     // The correction is a delta, not a host-value override, so a simulated Arena
@@ -10632,6 +11120,22 @@ fn apply_observed_city_economy(
         let modeled_surplus = game.city_amenity_surplus(&game.cities[&cid]);
         game.observed_city_amenity_adjustments
             .insert(cid, host_surplus - modeled_surplus);
+    }
+
+    // Housing the same way: the host's ceiling is what the city grows against,
+    // and the board showed CIVVIS's own derivation beside the host's population
+    // (Rome 8.5 modelled against 10 reported, Ostia 7.5 against 6, on run
+    // civvis-20260816T011314Z t169). `-1` is the mod's could-not-read sentinel
+    // and `None` an older export; neither is a claim about the ceiling.
+    for observed in &state.cities {
+        let Some(host_housing) = observed.housing.filter(|value| *value >= 0.0) else {
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else { continue };
+        let modeled_housing = game.city_housing(&game.cities[&cid]);
+        game.observed_city_housing_adjustments
+            .insert(cid, host_housing - modeled_housing);
     }
 
     // What remains is a local correction for host rules CIVVIS has not modeled.
@@ -11153,6 +11657,7 @@ pub fn rebuild_from_state(
                         }
                     }
                 }
+                apply_pillaged_buildings(&game.rules, built, city);
             }
             apply_observed_city_infrastructure(&mut game, cid, city, &mut unmapped);
         }
@@ -12632,6 +13137,7 @@ impl LiveMirror {
                             }
                         }
                     }
+                    apply_pillaged_buildings(&self.game.rules, live, city);
                 }
             }
         }

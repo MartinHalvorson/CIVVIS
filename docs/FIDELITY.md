@@ -440,6 +440,83 @@ CIVVIS had the elaborate part of the condition right and dropped the negation.
 carries its unit-class exclusions on the wrapper and its yield on the inner
 modifier; a sweep that reads only the effect-bearing row sees neither.
 
+## Measured: the live economy against the host, city by city (2026-08-16)
+
+The rules-data audit above compares CIVVIS' *tables* with the game's. This
+compares CIVVIS' *derived economy* with the game's, on a live mirrored seat —
+the first stage of the differential stack described under Phase 4, shipped as
+`tools/civ6_yield_drift.py`.
+
+The mirror already corrects the board to the host: every own city carries a
+host-to-model delta on its yields (and now on its Housing ceiling and Amenity
+count, and on every worked plot where the export names the plot's yields), so
+the numbers a viewer reads beside the Civilization VI window agree by
+construction, and `tools/civ6_mirror_check.py` guards that per city. What those
+corrections *hide* is how far CIVVIS' own model is from the game — the currency
+every "what is a Library worth here?" is priced in. The instrument rebuilds the
+decider's own board for every exported state record (`civvis_orders
+--dump-mirror --turn N`), reads `city_yields_model` — the figure BEFORE the
+correction — and diffs it against `city:GetYield` per city and per yield,
+splitting the result into episodes that persist (a rule the model has wrong)
+and transients (the host publishing a change one turn before or after the
+model — a policy swap, a tech, a repair — which is timing, not a rule).
+
+    python3 tools/civ6_yield_drift.py [run-dir] [--turns LO:HI] [--city NAME]
+
+The first run over three completed Settler games named its causes, and the
+fixes below shipped with it. Numbers are `|model − host| × turns` summed over
+persistent episodes on run `civvis-20260816T011314Z` (turns 1–200, 8 cities),
+the decider before this change against the decider after it, on the same
+recorded exports; the whole-empire figures at turn 200 moved from
+Production 183.8 / Gold 124.5 / Food 227.0 modelled against 178.8 / 131.2 /
+220.0 reported, to 178.8 / 130.8 / 222.0:
+
+| Yield | before | after | What was wrong |
+|---|---:|---:|---|
+| Production | 334 | 149 | a District plot in the host's worked list is a **specialist**, and the mirror imported it as a worked tile too — every specialist paid its slot yield AND the ground under the district (Cumae, two Campus + one Industrial Zone specialists: +2 Food, +4 Production for twenty turns) |
+| Gold | 828 | 490 | Rome had only Trajan's leader ability; All Roads Lead to Rome (`TRAIT_FREE_TRADING_POSTS`, `TRAIT_GOLD_FROM_DOMESTIC_TRADING_POSTS`) is now `free_trading_posts` / `own_trading_post_route_gold` in `civs.json`, read by `Game::trading_post_route_gold` — Antium → Rome read +1 Gold in the host and 0 in the model for the route's whole life; the base rule (`TRADING_POST_GOLD_IN_FOREIGN_CITY` 1) pays foreign posts the same way |
+| Food | 517 | 338 | the specialist double-pay above; the residual is tile-level and mostly the class only the host can know (below) |
+| Science | 169 | 169* | a **pillaged building** was invisible: `HasBuilding` stays true for a raided Library and the export carried no pillage bit for buildings, so Antium paid +6 Science on a Campus the host had at +0 (t147–t170); `pillaged_buildings` now crosses (`CityBuildings:IsPillaged`) and the engine's existing pillage rule finally has its input. *Unchanged in this replay by construction: the export that carries the bit is new, so the episode closes on the next game |
+
+Two findings could not be closed from totals alone, and are why the export
+grew:
+
+- **Fertility the ground remembers.** Rome on run `civvis-20260816T003229Z`
+  read +12 Food and +5 Production over the model for forty turns, all of it on
+  volcanic soil an eruption had left. Gathering Storm pays for a disaster with
+  permanent tile fertility, cumulative and random; no rule reproduces it and no
+  tile catalogue carries it. The mod now exports every worked plot's own
+  `Plot:GetYield` (`worked[].yields`, `center_yields`), the mirror pays each
+  plot what the host pays it (`observed_tile_yield_adjustments`, a delta like
+  every other correction), and the instrument's TILES block names the exact
+  plot — terrain, feature, resource, improvement — where CIVVIS' tile model and
+  the host disagree.
+- **A +4 Gold step in two cities on one turn** (Antium and Ostia, t102, both
+  Library cities, nothing else in the export moved) was chased through
+  policies, religion, envoys, city-states and trade routes without an answer.
+  The mod now exports the host's own per-yield ledger, `City:GetYieldToolTip`
+  (`yield_sources`, icon markup stripped) — the "+N from Buildings / Citizens /
+  Districts / Trade Routes" a player reads in the city panel — so the next such
+  step names its source instead of inviting a guess.
+
+The export also gained the rest of the host's Housing ledger
+(`housing_from_water/buildings/districts/civics/great_people/starting_era/great_works`),
+the rest of its Amenity ledger (`amenities_great_people/religion/national_parks/
+starting_era/improvements/districts/natural_wonders`) and its growth arithmetic
+(`food_surplus`, `growth_threshold`, `growth_turns`, the three growth
+multipliers), for the same reason: a modelled total that disagrees must be able
+to name the term. Two model-side observations already fell out of the ledgers
+that were there: Firaxis does not hand a luxury to the neediest city first the
+way CIVVIS' allocator does (Rome sat at 3 luxuries → 0 with a deficit of three
+while smaller cities held theirs), and the host's `amenities_needed` is
+`ceil(pop/2)` exactly as `Game::city_amenities_required` has it.
+
+What to expect from the instrument going forward: the two `after` columns are
+this replay's floor, not the model's — the pillage and per-plot fields only
+exist in exports written after this shipped. Run it on the first game the new
+mod plays; the TILES and SOURCES blocks are where the remaining Food and Gold
+episodes will name themselves.
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are

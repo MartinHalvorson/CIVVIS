@@ -479,12 +479,36 @@ def city_fact_mismatches(state, board, top):
         name = source.get("name")
         if name and city.get("name") != name:
             mismatches.append(f"{name}@{pos} name={city.get('name')!r}")
-        for key, tolerance in (("pop", 0), ("food", 0.11), ("loyalty", 0.11),
-                               ("loyalty_per_turn", 0.11), ("defense", 0.11)):
-            want, got = source.get(key), city.get(key)
+        # `housing` and `amenities` are on this list since the yield-fidelity
+        # work: the board carries a host-to-model correction for both (the
+        # Amenity surplus already did; the count and the Housing ceiling now
+        # do too), so a disagreement here is the bridge, not the model.
+        # `amenities_needed` has no correction — CIVVIS's ceil(pop/2) IS the
+        # host's rule — so it guards the rule itself.
+        for key, board_key, tolerance in (
+            ("pop", "pop", 0), ("food", "food", 0.11), ("loyalty", "loyalty", 0.11),
+            ("loyalty_per_turn", "loyalty_per_turn", 0.11), ("defense", "defense", 0.11),
+            ("housing", "housing", 0.11), ("amenities", "amenities", 0.11),
+            ("amenities_needed", "amenities_required", 0.11),
+        ):
+            want, got = source.get(key), city.get(board_key)
             if isinstance(want, (int, float)) and want >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - want) > tolerance):
                 mismatches.append(f"{name or pos} {key} Civ6={want:g} CIVVIS={got!r}")
+        # Per-city yields: the board's figure is the host's plus nothing, by
+        # construction (`observed_city_yield_adjustments`); a gap here means the
+        # correction machinery itself broke, which the seat totals cannot show
+        # once two cities' errors cancel.
+        want_yields = source.get("yields")
+        got_yields = city.get("yields")
+        if isinstance(want_yields, dict) and isinstance(got_yields, dict):
+            for key in ("food", "production", "gold", "science", "culture", "faith"):
+                want, got = want_yields.get(key), got_yields.get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    mismatches.append(
+                        f"{name or pos} yields.{key} Civ6={want:g} CIVVIS={got!r}"
+                    )
         damage, max_damage = source.get("damage"), source.get("max_damage")
         if all(isinstance(value, (int, float)) and value >= 0
                for value in (damage, max_damage)) and max_damage > 0:
@@ -1212,7 +1236,8 @@ def main(argv=None):
         problems.append("city facts")
         print("CITYDATA ⚠ " + "; ".join(city_mismatches))
     else:
-        print("CITYDATA population, health, loyalty, defense, religion and development   OK")
+        print("CITYDATA population, food, housing, amenities, yields, health, loyalty, "
+              "defense, religion and development   OK")
 
     # --- production: an in-progress city must not read as idle -------------
     # A completed item used to stay in the mirror queue, then a new real item
