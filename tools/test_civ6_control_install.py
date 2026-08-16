@@ -534,6 +534,24 @@ class ProtectedInstallTest(unittest.TestCase):
         # The blocker-time call stays, marked, so the ledger tells the two apart.
         self.assertIn('source = "blocker"', source)
 
+    def test_the_state_export_carries_the_emergencies(self) -> None:
+        # The leader's +8 in one session came from World Fair / World Games
+        # resolving — competitions the seat never entered because nothing said
+        # they were running. The state now carries Firaxis's own crisis table.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+        block = exporter.split("emergencies = try(function()", 1)[1].split("end, nil),", 1)[0]
+        self.assertIn("Game.GetEmergencyManager():GetEmergencyInfoTable(pid)", block)
+        for field in ("crisis.EmergencyType", "crisis.TargetID", "crisis.TurnsLeft",
+                      "crisis.HasBegun", "crisis.bSuccess", "crisis.MemberIDs",
+                      "crisis.ScoresTables", "crisis.MemberTiers", "crisis.GoalsTable",
+                      "crisis.TargetGoalsTable", "crisis.ScoreSourcesTable"):
+            self.assertIn(field, block)
+        for key in ("turns_left =", "members = members", "scores = scores", "ours = {",
+                    "goals = goals", "score_sources = sources"):
+            self.assertIn(key, block)
+        self.assertNotIn("RequestPlayerOperation", block)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
