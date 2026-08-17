@@ -1838,6 +1838,36 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
+# Firaxis's rolling autosaves on this build: `AutoSave_NNNN.Civ6Save`, one per
+# turn, the newest ten kept, older ones rotated into `prev/`. The Load Game
+# screen lists them only while its "Autosaves" filter is ticked.
+AUTOSAVE_DIR = (Path.home() / "Library" / "Application Support"
+                / "Sid Meier's Civilization VI" / "Sid Meier's Civilization VI"
+                / "Saves" / "Single" / "auto")
+
+
+def latest_autosave(directory: Path = AUTOSAVE_DIR,
+                    newer_than: float | None = None) -> Path | None:
+    """The most recently written autosave, or None.
+
+    ⚠ By modification time, not by number: the numbering wraps and the newest
+    file after a rotation can carry a lower number than an older one. Bounded
+    below by ``newer_than`` (a POSIX timestamp) so a resume never loads a save
+    from some earlier game that happens to be the newest file on disk.
+    """
+    try:
+        candidates = [path for path in directory.glob("AutoSave_*.Civ6Save")
+                      if path.is_file()]
+    except OSError:
+        return None
+    if newer_than is not None:
+        candidates = [path for path in candidates
+                      if path.stat().st_mtime >= newer_than]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -1886,6 +1916,24 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         panel = run_dir / f"load-panel-attempt{attempt}.png"
         screenshot(panel)
         save_target = _observed_label_point(panel, save_label, bounds)
+        # ⚠ AUTOSAVES ARE HIDDEN UNTIL THEIR FILTER IS TICKED. The Load Game
+        # list opens with the "Autosaves" checkbox off, showing only manual and
+        # quick saves — measured on `civvis-20260815T230003Z-cont`, whose
+        # `load-panel-attempt3.png` shows the filter unticked, "(Quick Save)"
+        # alone in the list, and the resume that was meant to reload
+        # AutoSave_0098 refusing "not visible" three times. Tick the filter by
+        # its own read label, once, and look again; a filter that cannot be
+        # read leaves the existing refusal in force.
+        if save_target is None and _normalized_label(save_label).startswith("autosave"):
+            toggle = _observed_label_point(panel, "Autosaves", bounds)
+            if toggle is not None:
+                click_at(*toggle)
+                time.sleep(1.5)
+                panel = run_dir / f"load-panel-autosaves-attempt{attempt}.png"
+                screenshot(panel)
+                save_target = _observed_label_point(panel, save_label, bounds)
+                print(f"ticked the Autosaves filter; {save_label!r} "
+                      f"{'found' if save_target else 'still not visible'}", flush=True)
         if save_target is None:
             print(f"saved game {save_label!r} is not visible; refusing to select a row",
                   file=sys.stderr)
@@ -2590,8 +2638,40 @@ def _play(args: argparse.Namespace) -> int:
         "outcome": outcome or None,
         "game_stopped": game_stopped,
     }
+    # Bridge health rides in the summary: how much of what CIVVIS said the
+    # engine actually did. Summed from this run's own turn events so the
+    # number describes the run being recorded, not a tool's later reading of
+    # it; `civ6_ladder.py check --min-applied` floors it on the ledger.
+    try:
+        import civ6_ladder
+        totals = civ6_ladder.orders_totals(run_dir / "events.jsonl")
+        if totals:
+            summary["orders_seen"], summary["orders_applied"] = totals
+        # The score gap to the best rival is the climb's primary progress
+        # metric: our own score doubling means nothing while rival_best
+        # holds a four-hundred-point lead at the cap.
+        standing = civ6_ladder.final_standing(run_dir / "events.jsonl")
+        if standing:
+            summary["rival_best"] = standing[1]
+    except Exception as exc:  # noqa: BLE001 — health must not fail the run
+        print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
+
+    # The ladder records itself. This used to be a by-hand step, and the
+    # by-hand step simply stopped happening: 211 summaries piled up
+    # unrecorded between July 31 and August 16, 2026 while the committed
+    # ladder said the last attempt was July 30. The ledger written here is
+    # the live one beside the runs directory — never the repository copy, so
+    # a finishing game cannot dirty the management worktree it plays from.
+    # A recording failure must not fail the run: the summary on disk is the
+    # evidence, and `civ6_ladder.py sync` recovers it later.
+    try:
+        import civ6_ladder
+        civ6_ladder.record_summary(run_dir / "summary.json")
+    except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
+        print(f"ladder record failed (summary is on disk; "
+              f"`civ6_ladder.py sync` will recover it): {exc}", file=sys.stderr)
 
     if outcome.get("kind") == "victory" and outcome.get("team") == outcome.get("local_team"):
         return 0

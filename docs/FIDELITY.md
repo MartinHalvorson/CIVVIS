@@ -561,6 +561,431 @@ Culture per citizen (the tooltip truncates 0.29688 to "+0.2" — read totals, no
 the printed decimals), and the Monument's "+1 from Modifiers" is its
 full-loyalty Culture, which CIVVIS pays as `full_loyalty_culture`.
 
+### Round 3: the audit's blind row, and the other civilizations (2026-08-16, run `civvis-20260816T115139Z`)
+
+The next per-plot game put a new signature on top — every worked Fishing Boat
+one Production under the host from the turn Colonialism landed — and chasing it
+found two defects in **this audit**, not in the engine:
+
+- **A duplicate Id in the shipped table.** `Improvement_BonusYieldChanges` keys
+  its rows by `Id`, and Firaxis ships Id 225 twice (Camp/Gold/Synthetic
+  Materials and Fishing Boats/Production/Colonialism). Keyed by Id, the loader
+  kept one and dropped the other, so Colonialism's grant was never compared,
+  never listed as "only in Civ VI", and never modelled. The table is now keyed
+  by (improvement, yield, tech, civic) and `compare` treats a grant we pay that
+  the game does not as a divergence rather than an unmeasured field.
+- **The XML route never applied `<Expansion>_RemoveData.xml`.** The core
+  directories are filtered by `FILE_PATTERN`, which names the rules files and
+  not the retirement file each expansion ships at modinfo `Priority="1"` (394
+  and 572 `<Delete>` rows). Every retired base row therefore stayed in the XML
+  reference: Robotics granting Pasture Production (moved to Replaceable Parts by
+  Gathering Storm) "confirmed" a CIVVIS grant the game no longer makes;
+  Cartography and Mass Production kept a Shipbuilding prerequisite the game
+  removed; Niter kept a Floodplains feature; the Sphinx kept Snow; the
+  Industrial Zone kept a 1.5 mine adjacency; every base Boost was compared
+  against a row the expansion re-declares. Applied first, as the modinfo does,
+  the XML route now agrees with the compiled cache on all of them, and the
+  four "divergences" the earlier fingerprint notes had recorded as CIVVIS
+  corrections were CIVVIS being right against a stale reference. What remains
+  between the two routes (12 fields, all matching the compiled cache: Pike and
+  Shot upkeep, the Tagma, three unique buildings, Eyjafjallajökull's adjacent
+  Food) is content-pack rebalancing the XML route still misses; the cache
+  route — `--cache`, which now also finds the Aspyr build's nested path — is
+  the reference for the running game.
+
+Both engine-side corrections that fell out are in `tree_effects.json`:
+Colonialism `fishing_boats_production: 1` (and the engine's Fishing Boats
+branch reads it), Robotics loses `pasture_production`. Fingerprint re-pinned.
+
+**The other civilizations.** The standings' rival Science and Culture were
+CIVVIS's own derivation from whichever rival cities happened to be visible —
+usually none — the one column of the mirror a viewer could never trust. The
+host reads them for every player (its World Rankings and Deal screens call
+`GetTechs():GetScienceYield`, `GetCulture():GetCultureYield`,
+`GetStats():GetTourism`, `GetTreasury():GetGoldBalance` on other players), so
+the rival record carries `science`, `culture`, `tourism`, `gold`,
+`gold_per_turn` (net), `faith`, `faith_per_turn`, and its technology and civic
+counts. The mirror puts the balances directly on the rival seat and uses the
+five host yield rates as host-to-model deltas, just as it does for seat 0.
+
+The rest of the player HUD is now an explicit fog-safe `public_stats` aggregate
+for the active civilization and every met major: city count, total population,
+Food and Production per turn, World Wonder count, suzerainty count, and both
+nuclear-device counts. The exporter totals a player's cities but does **not**
+send the hidden city identities, positions, improvements, or units that made
+those totals. CIVVIS holds that aggregate apart from its reconstructed city
+records, so an unseen empire can correctly read seven cities and 49 population
+without inventing seven map locations. Technology/civic counts and tourism are
+also surfaced in the public observation. `civ6_mirror_check.py` PUBLIC compares
+every current HUD total, economy rate, research count, and tourism figure per
+rival seat.
+
+Still open on the other civilizations, in order of value: rival cities'
+districts and buildings are not exported (a rival city record is name, size,
+health, walls, capital), so a rival's economy and defence are modelled from
+population alone — `Plot:GetDistrictType` on every revealed plot would carry the
+districts at least; a rival's techs and civics cross as counts, not names;
+city-state envoy totals from all players (only ours cross today).
+
+### Round 4: the age that never crossed (2026-08-16, run `civvis-20260816T132247Z`)
+
+The largest gaps of the next game were all Production in one Golden Age:
+Cumae −10 and −13, Arretium −9.9, Rome −7, for thirty turns from t182. The
+host's own production ledger named the source in one line — "+14 from
+Districts: +4 Industrial Zone, **+10 from Campus**" — and the database named
+the rule: `COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`, Heartbeat of Steam's
+Golden Age half, every Campus granting Production equal to its Science
+adjacency. Three things were wrong at once:
+
+- **The age itself never crossed.** `golden_age`, `dark_age` and
+  `heroic_golden_age` were exported and read by nothing; `Player::age` sat at
+  its "normal" default on every mirrored board, so `dedication_active` was
+  false for the whole of every live Golden Age and no Dedication ever paid.
+  Now set from the flags (Heroic outranks Golden), every rebuild and sync.
+- **Which Dedications were active never crossed either.** The mod now exports
+  `dedications` — `Game.GetEras():GetPlayerActiveCommemorations`, the accessor
+  the shipped EraProgressPanel lists from — as `COMMEMORATION_*` type names,
+  and the mirror maps them onto its own ids (`civvis_dedication_name`).
+- **The engine had Heartbeat of Steam wrong anyway** — +1 Science per
+  Industrial Zone building, which no row grants. It now pays each active
+  Campus's Science adjacency as Production; Reform the Coinage pays +3 Gold per
+  specialty district in the destination of an international route (it was a
+  flat 3 on every route); Sky and Stars loses an invented ×1.10 (its rows grant
+  tech boosts, air-unit XP and Aluminum, no yield).
+
+And one rule the engine had that Civilization VI does not: **an age multiplies
+nothing**. `city_yields_inner` scaled every non-Food yield by ×1.10 in a Golden
+or Heroic Age and ×0.95 in a Dark Age; the shipped `Modifiers` carry no yield
+term keyed on PLAYER_HAS_GOLDEN_AGE or a Dark Age beyond the named
+commemorations (and Suleiman's trait, Tsikhe). Removed. This binds natively —
+CIVVIS-vs-CIVVIS Golden Ages are now worth their Dedication and their Loyalty,
+which is what they are worth in the game.
+
+The same run's TILES block put another host-only class on top: volcanic soil
+paying +2 Food, +1..3 Culture, +1..3 Science over the model — the
+`RandomEvent_Yields` table (eruption fertility, by severity and volcano, with
+Science and Culture terms CIVVIS's own `disaster_food/production` never
+carried). Only the host knows how many times a tile has been buried; the
+per-plot correction carries it. Modelling Science and Culture fertility
+natively is a follow-up for the eruption code.
+
+### Round 5: the first game with everything exported (2026-08-16, run `civvis-20260816T155856Z`)
+
+With plot yields, pillage bits, incoming routes, the age and its Dedications
+all crossing, the first full game read persistent Production 9 and Science 21
+(from 913 and 279 the game before). Two classes were left, both named by the
+host's ledgers in one line each:
+
+- **The capital's Gold: 44 modelled against 17 reported for thirty turns.**
+  The host's capital ledger was "+1 Harbor, +5 Palace, +11 Worked Tiles" and
+  nothing else; the model's 27 was Merchant Confederation's Gold per placed
+  Envoy (7 + 6 + 13 + 1 Envoys at four city-states). The card is
+  `MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN` — income paid
+  to the PLAYER, on the top bar beside the city sum, never a line of any city's
+  ledger — and Raj (`..._PER_TRIBUTARY`) and an Emergency's Gold per Envoy are
+  the same shape. `city_yields_inner` had paid all three into the Palace city.
+  They now sit in `Game::player_policy_yields`, banked at turn end with the
+  founder-belief income and reported by every consumer of the per-turn figure
+  through `player_yield_extras`. (God King stays a capital-city yield: its
+  modifier is `PLAYER_CAPITAL_CITY_ADJUST_CITY_YIELD_CHANGE`.)
+- **Two Culture short in every coastal city.** "+2 from City Center" in Rome
+  and "+2 from Wonder" in Mediolanum, beside the +2 the model already paid on
+  each specialty district: Nan Madol's
+  `MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE` reaches every district plot on
+  or beside Coast, and the City Center and each wonder's plot are district
+  plots too. `city_yields_inner` now pays them.
+
+Both bind natively. The remaining Culture residual of that run is the same
+Nan Madol term through the game's other coastal cities and closes with it.
+
+### Round 6: a correction is measured after everything it corrects for (2026-08-16, run `civvis-20260816T175306Z`)
+
+`civ6_mirror_check.py` on the refreshed board read the rivals over by their own
+growth — Nubia 174 Science against the host's 141, 329 Food against 229 — and
+Ravenna 14.5 Science against 9.5. Two orderings, both mine: the rival seats'
+corrections were derived before the loop that writes a rival city's Population
+(rival cities are planted at one), so the delta was measured against a
+size-one city and paid on the size-eleven one; and the seat's own Dedications
+(round 4) were applied after its correction, so a Golden Age paid Free
+Inquiry's Science on top of a delta measured without it. Rival seats are now
+corrected last in `apply_observed_host_metrics`, and `apply_player_ages` runs
+before it on both paths (and still after it for the era score). The regression
+test fails on the previous ordering by exactly those margins.
+
+**The other civilizations, continued.** The first item on the round-3 list is
+closed: the tiles export now names the district (`d`) and wonder (`wo`) on
+every revealed plot — any owner — and the mirror puts them on the rival or
+city-state city that owns the ground (`apply_foreign_infrastructure`, rebuilt
+from every export so a razed district does not linger; our own cities keep the
+city record, which carries completion and pillage). A rival's Encampment,
+Campus or wonder is on the board from the turn it is seen.
+
+### Round 7: the World Congress, incoming routes, and three rules the ledgers taught (2026-08-16, run `civvis-20260816T200454Z`)
+
+The instrument's largest remaining episode was Cumae's Gold, four under the
+host for fifteen turns, against a host ledger line the model had never heard
+of: "+4 from Incoming Trade Routes", opening the turn a Maori route arrived and
+closing at t102 while the route still ran. The rules database names the
+figure — `TRADE_ROUTE_GOLD_CULTURAL_DOMINANCE` is 4 too, but the modifier that
+actually carries an incoming-route Gold of 4 is `INCREASES_TRADE_TO_GOLD`, an
+`EFFECT_ADJUST_TRADE_ROUTE_YIELD_FROM_OTHERS` owned by no game table because
+`Expansion2_Congress.xml` attaches it: World Congress resolution
+`WC_RES_TRADE_TREATY` ("Trade Policy"), option A, alongside
+`TARGET_ADD_TRADE_ROUTE`. Our own trade capacity had gone 1→2 at t82 and 2→1 at
+t102 for the same reason. Four things follow, all shipped:
+
+- **The mod exports what the Congress has in force**, every turn: `resolutions`
+  (`GetResolutions(pid)`, the call the shipped CityPanel makes between
+  sessions; only entries with a `ChosenOption` are in effect, the same call
+  returns the unfinished ballot during a session) as `{type, option 1|2,
+  target}` plus `congress_turns_left`. The mirror maps them onto the model's
+  own `active_congress_effects` (`civvis_congress_effect`: player targets
+  become seats, `RESOURCE_`/`DISTRICT_`/`BUILDING_`/`PROJECT_`/`FEATURE_`
+  targets their CIVVIS node names, class-like targets the engine's own
+  suffixes; Sovereignty, Arms Control and the victory resolution have no model
+  rule and are reported as `congress:…` in the unmapped list) — and applies
+  them BEFORE the host-to-model corrections, for the round-6 reason. An export
+  without the field leaves the model's simulated Congress alone.
+- **Trade Policy A pays the chosen player's destination city, not the sender.**
+  The resolution's text says "+4 Gold to the sender"; what Firaxis ships is a
+  FROM_OTHERS effect on the chosen player, the same shape as Zhang Qian's
+  destination Gold and Cleopatra's, and the host's ledger agrees (a domestic
+  incoming route paid nothing, the sender's origin nothing extra). The engine
+  used to pay the origin +4 in `route_yields`; it now pays the destination +4
+  per incoming international route.
+- **Rival routes into our cities are on the board.** `game.routes` carried only
+  our own, so every destination-side rule (Zhang Qian, alliances, this one)
+  paid nothing on a mirrored seat. `incoming_routes.origins[]` now names each
+  foreign route's origin city and owner; the mirror seats the route on the
+  rival's city with the rival's seat as owner (`restore_incoming_foreign_routes`),
+  reporting rather than guessing an origin that is not on the board.
+- **Three more rules from the same run's ledgers, each measured on its opening
+  and closing turn.** (1) A pillaged destination district still pays its
+  `District_TradeRouteYields` row: Rome's pillaged Holy Site and Campus kept
+  Cumae's domestic route at "+6 from Outgoing Trade Routes" (t81-95) while the
+  model, skipping them, paid 4–5, and the gap closed district by district as
+  each was repaired; and a route made to Aquileia while its Diplomatic Quarter
+  lay pillaged paid the Quarter's Food and Production from its first turn
+  (t144) — the row is for the district's existence, not a figure frozen at
+  the route's creation. (2) A pillaged district is not adjacent to anything: Rome's
+  Campus read "+8 from Campus" beside a Government Plaza and a Holy Site and
+  "+6" from the turn after the Holy Site was pillaged (t82) until its repair
+  (t96) — Natural Philosophy doubling a base that had lost its district pair;
+  Aquileia's Industrial Zone and Campus lost the same point while the
+  Diplomatic Quarter between them lay pillaged (t142-145). The count excludes
+  pillaged neighbours in the live rule and the planner's cached count alike.
+  (3) An unemployed citizen pays half a Gold: with every workable plot taken
+  and no specialist slot, Rome's Gold ledger read "+0.5 from Population" for
+  one idle citizen (t81-96), "+1" for two (t97-106) and nothing once new plots
+  were worked (t107); no other ledger moved (Science and Culture per citizen
+  are paid regardless). The model now pays `0.5 × (pop − employed)`.
+  (4) Percentage modifiers SUM; they do not chain. Rome under Merchant
+  Republic (10% Gold with a Governor) with Kilwa Kisiwani (15% for a Trade
+  suzerainty) read "+25 (+4.5) from Modifiers" on a base of 18 → 22.5, where
+  the model's ×1.10 × ×1.15 read 22.77 (t146-149); and "-10 (-2) from
+  Amenities | +10 (+2) from Modifiers" on 21 read exactly 21.0 (t150), which
+  ×0.9 × ×1.1 would have made 20.79. Every `ADJUST_CITY_YIELD_MODIFIER`-shaped
+  term in `city_yields_inner` — government, policy, wonder, Governor, suzerain
+  bonus, industry, the Amenity band, Loyalty, the difficulty handicap — now
+  lands in one per-yield sum applied once (floored at −100%).
+
+Housing in the instrument now compares the floor of the model's figure, since
+the host never reports a fraction; the persistent half-Housing offset of a
+Farm was noise, not a finding. `state_changes` names `resolutions` and
+`dedications` changes on an episode's opening turn.
+
+Replayed on the run with the round-7 binary: persistent Food 21→0,
+Production 8→0, Science 20→0, Gold 99→70 — 60 of the 70 is Cumae's Trade Policy
+Gold, which this run's export cannot carry (no `resolutions`, no route
+origins) and the first game launched with the new mod will; the other 10 is Ostia's path.
+
+### Round 8: the route's own path (2026-08-16, run `civvis-20260816T200454Z`)
+
+Ostia → Aquileia read "+2 from Outgoing Trade Routes" (t144-154) against a
+model that found one Trading Post: the host's trader follows roads, and its
+road ran through Cumae; the model's `route_path_cities` walks a straight
+line. Rather than emulate the pathfinder, the mod now asks it —
+`Game.GetTradeManager():GetTradeRoutePath(...)`, the call the shipped
+TradeRouteChooser draws — and files each city plot on the path (origin
+excluded, destination included) that answers `HasActiveTradingPost(pid)` by
+owner: `trade_routes[].posts_own` / `posts_foreign`. The mirror keeps them in
+`Game::observed_route_posts` keyed by (origin, destination) and
+`trading_post_route_gold` pays them (own posts at Rome's trait Gold, foreign
+at `TRADING_POST_GOLD_IN_FOREIGN_CITY`) instead of walking; an export without
+the fields, or a route the pathfinder could not answer for, walks as before.
+
+**Open after round 8**: the first game launched with the new mod should be
+read for the treaty, the seated routes and the path posts with
+`civ6_yield_drift.py`.
+
+### Round 9: the Dark Age cards were guesses (2026-08-16, run `civvis-20260816T223457Z`)
+
+The first game with the round-7 mod opened its Dark Age at t57 with
+Inquisition slotted, and every city's Science ledger read "-25% from
+Modifiers" beside its Amenity band; the model docked 15. `policies.json`
+had -15, with a note that read like a paraphrase, and so did every other
+Dark Age card: they were CIVVIS's own approximations, not the shipped rows.
+Audited against `PolicyModifiers` → `Modifiers`/`ModifierArguments`/
+`RequirementSets` and `Policies_XP1` (era windows) in the live rules
+database — the ordinary cards (adjacency, trade-route, colonial taxes) all
+matched; only the Dark Age set did not:
+
+- **Inquisition** −25% Science (was −15). **Monasticism** −25% Culture in
+  EVERY city (`MONASTICISM_CULTURE_MODIFIER` has no requirement set; the
+  code used to dock only cities without a Holy Site). **Robber Barons** +50%
+  Gold with a Stock Exchange and +25% Production with a Factory
+  (`BUILDING_IS_STOCK_EXCHANGE` / `BUILDING_IS_FACTORY`; the code had
+  rewritten this to Bank-or-Shipyard on a note that names a requirement set
+  which exists nowhere in the Expansion data). **Isolationism** +2 Food and
+  +2 Production on domestic routes that stay on one continent
+  (`Intercontinental=0`) — no route capacity, no Gold, which were both
+  invented. **Letters of Marque** +100% plunder from every unit and −50% Trade
+  Route yields at the origin AND the destination (twelve rows) — no capacity
+  penalty. **Elite Forces** +2 maintenance (was 1) and Industrial–Future (was
+  Classical–Renaissance).
+- **Six cards CIVVIS never carried**, now on the roster with the shipped
+  amounts: Collectivism (Modern–Atomic: +2 Housing, +1 Food per worked
+  Farm, +100% Industrial Zone adjacency, −50% Great Person points), Rogue
+  State (Atomic+: +50% toward the Manhattan Project, Operation Ivy and the
+  nuclear/thermonuclear devices; no Influence), Flower Power (Atomic+: −100%
+  unit Production, +100% unit purchase cost, free Rock Bands, +50% concert
+  Tourism), Cyber Warfare (Information+: +10 Combat against Information-era
+  civilizations; Grievances against you never decay), Automated Workforce
+  (Information+: +20% project Production, −1 Amenity, −5 Loyalty per turn),
+  Disinformation Campaign (Information+: −10% Science, −10% Culture, +3
+  Favor per Broadcast Center).
+
+`Yields::scale`, `Game::same_continent` and the destination-side route
+yields gathered into one figure (`iys`) are the engine's new seams; the
+policy effect vocabulary grows by `domestic_same_continent_trade_*`,
+`trade_route_yield_pct`, `stock_exchange_city_gold_pct`,
+`factory_city_production_pct`, `city_housing`, `farm_food`,
+`great_people_pct`, `nuclear_project_production_pct`,
+`project_production_pct`, `no_influence`, `unit_production_pct`,
+`unit_purchase_cost_pct`, `rock_band_purchase_discount_pct`,
+`rock_band_concert_tourism_pct`, `combat_vs_information_era`,
+`no_grievance_decay`, `city_loyalty`, `favor_per_broadcast_center`.
+Fingerprint re-pinned. The lesson generalises: a `note` that paraphrases
+instead of naming the row it came from is a guess until measured.
+
+**A placed district is not adjacent until it is built.** The same run's
+Ravenna read its Commercial Hub one adjacency point over the host for thirty
+turns (model 3, host 2) beside a city-state Encampment the tiles export
+named — `Plot:GetDistrictType` answers from the turn a district is placed.
+Our own placements — Puteoli's Campus beside its Hub (t108-119), Arpinum's
+Industrial Zone beside its Campus (t131-140), Ostia's Theater beside its
+Campus (t196-198) — held the neighbour's adjacency flat until the turn the
+district completed, then moved it. The tiles export now carries `dc`
+(`CityManager.GetDistrictAt(x, y):IsComplete()`) beside `d`, and
+`apply_foreign_infrastructure` plants only what is built; our own cities'
+records already carried completion.
+
+### Round 10: a district project's per-turn yield is a city yield (2026-08-16, run `civvis-20260816T223457Z`)
+
+Rome read 32.17 Gold against a model 25.20 for the three turns it ran
+Commercial Hub Investment (t112-114), Ravenna 14.17 against 11.70 — the
+host's ledger line is "+7.7 from Commercial Hub Investment", 30% of the
+city's Production rate (`Project_YieldConversions.PercentOfProductionRate`:
+Commercial Hub 30% Gold; Campus/Theater/Holy Site 15%; Encampment and
+Harbor 15% Gold), filed as a base line the Amenity band then scales. The
+engine already paid the conversion, but only inside turn processing; the
+city's yield never carried it, so every project turn read short. It is now
+computed in `city_yields_inner` from the finished Production rate, before
+the percentage sum, and turn processing adds nothing on top.
+
+**A city-state at war with the seat suspends its Envoy bonuses.** Ostia's
+"+2 from Consulate" Culture (Caguana, three Envoys) went to nothing the turn
+Caguana's new Suzerain brought it into a war against us (t90) and came back
+the turn peace was made (t98); Rome's capital point from the same city-state
+went and returned with it. `envoy_yields` now skips a city-state the seat is
+at war with — the mirror already carries `minors[].at_war` onto the board.
+
+**Exodus of the Evangelists pays +4 Great Prophet points a turn.** The
+player-level Faith block read the host 3.7–4.6 a turn over the model for
+t65-91: "+8 from excess Great Person points" against a model 3.45. Rome's
+Holy Site, Shrine and Temple make 3 a turn; the Golden Age dedication
+(`COMMEMORATION_RELIGIOUS_GA_GREAT_PROPHET_POINTS`, Amount 4) makes it 7,
+and Classical Republic's 15% makes it 8.05 — the host's 8.04. With the
+Prophet class exhausted every one of those points is Faith. Now in
+`great_person_points_per_turn`.
+
+### Round 11: the host houses its own Great Works, and Rationalism reads raw adjacency (2026-08-17, run `civvis-20260816T233226Z`)
+
+- **A Relic the host kept in Rome's Palace read "+6 from GreatWorks" there
+  while the model paid Mediolanum** — the model houses works by its own
+  best-slot heuristic (a Relic goes to St. Basil's over the Palace), and for
+  twenty turns Rome read 6 Faith under and Mediolanum 6 over. The export
+  already names each work's city, building and slot; the mirror now keeps
+  that placement (`Game::observed_great_work_housing`) and `housed_great_works`
+  returns it for the seat instead of distributing.
+- **Rationalism, Free Market, Grand Opera and Simultaneum read the district's
+  own adjacency.** Ostia's Campus showed "+6" (3 doubled by Natural
+  Philosophy) and Antium's "+4" (2 doubled) with Rationalism slotted, and
+  neither city's Library or University earned a point (t153-169); the model
+  paid both +3. `REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4` is
+  met by the district's adjacency before the percentage cards, so the clause
+  now sums the adjacency sources without the `adjacency_bonus` line.
+
+### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
+
+Rome's Faith per turn diverged from the host by more than half, and the
+city-by-city instrument could not see most of it because most of it is not in
+any city. From t231 the host banked 100–113 Faith a turn while every city
+together made 49 and the model read 33; Rome itself read 35 in the host and 23
+in the model. Three causes:
+
+- **Civilization VI pays the Great Person points of a class the empire can no
+  longer earn out again as Faith, one for one.** The game core's
+  `GetFaithFromUnusedGreatPeoplePoints` (`Player::GreatPeoplePoints`, visible in
+  the shipped `.map` symbols); the top-bar tooltip files it under "from Other".
+  A class is exhausted once the last named individual anywhere is claimed —
+  the mod now says so outright (`great_person_exhausted`, a list so that
+  "nobody exhausted" and "everybody exhausted" both encode; before it, a class
+  with points and no `great_person_costs` entry was the same answer except
+  on the turn every class was gone) — and the Prophet the moment the empire holds a
+  religion, has one pending, or the map's religions are all founded. Measured
+  across seven live games as the balance's next-turn change minus the city
+  sum: after the last Great Scientist was claimed the empire gained the Campus
+  rate to the point (ratio 0.97–1.10, 19–32 turns per game), a Holy Site's
+  Prophet points arrived as Faith from the turn we founded a religion (with
+  other Prophets still on offer) or the map ran out of them, and by t239 the
+  five exhausted classes paid 60 a turn. `Game::great_person_class_earnable`,
+  `unused_great_person_faith` and `player_yield_extras` carry it; the mirror
+  reads the host's roster into `live_great_person_exhausted`; the HUD, the
+  `--dump-mirror` JSON and the player-level correction all add the extras.
+- **A religion's follower beliefs belong to the city that follows it, whoever
+  founded it, and the mirror could not say which religion held which belief.**
+  Rome and Ostia followed a Catholicism founded elsewhere; Divine Inspiration
+  (`MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`, +4 Faith per Wonder in a
+  following city) was neither in `beliefs.json` nor attributable from the
+  union `taken_religion_beliefs`. The mod now exports each religion with its
+  founder and beliefs (`religions`), the mirror seats them on the founder's
+  seat (rivals hold seats in host order), and Divine Inspiration, Reliquaries
+  (`MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` ScalingFactor 300 on Relics),
+  Lay Ministry (`BELIEF_YIELD_PER_DISTRICT`: +1 Faith per Holy Site, +1
+  Culture per Theater Square in following cities, to the founder) and Sacred
+  Places (`BELIEF_YIELD_PER_CITY_WITH_WONDER`: +2 of each yield per following
+  city with a Wonder) are modelled from the database's own modifier rows.
+- **The export carried no host Faith rate to be corrected to.** `science` and
+  `culture` were per-turn rates from the host; `faith` was a balance.
+  `faith_per_turn` (`GetFaithYield`, the top bar's figure) and `faith_sources`
+  (`GetFaithYieldToolTip`) now join the player-level correction,
+  `great_person_points_per_turn` lets the model's per-class rate be judged
+  against the host's, `civ6_mirror_check.py` guards the board's faith/turn,
+  and `civ6_yield_drift.py` gains a PLAYER block — reading the host income
+  from `faith_per_turn`, or on an older export from the balance's next-turn
+  change where no purchase intervened.
+
+Replayed with the new decider on the recorded run: Rome 35/35, Ostia
+12.6/12.6, the empire 114.6 against a host income of 113 at t238 (the model's
+Scientist rate is 31 to the host's 30 and its Writer 17 to 16 — the per-class
+export will name that next), and the city-level Faith residual over t100–239
+falls from 58.8 persistent + 94.8 transient to 0. Two smaller readings from
+the same instrument stand open: the model's Great Person rates against the
+host's once `great_person_points_per_turn` is in the export, and whether
+Anarchy suspends the payout (the whole Faith line reads "No Faith due to
+anarchy"; the engine follows that).
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are

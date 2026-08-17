@@ -69,6 +69,23 @@ const EXPLORE_STUCK_TURNS: u32 = 2;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
+/// How many turns a committed exploration goal is held before it is chosen
+/// afresh, if it is not reached, revealed or written off first. See
+/// `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_TURNS: u32 = 20;
+/// How many rings past the first fogged one a committed explorer looks when it
+/// picks a goal — twice the stock lookahead, because a goal within a scout's
+/// own sight of the fringe is revealed by the walk toward it and re-chosen
+/// next turn, which is the pacing this replaces. See `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_LOOKAHEAD: i32 = 8;
+/// Another explorer's committed goal keeps this one out of the ground around
+/// it, so two scouts fan out instead of shaving the same fringe. See
+/// `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_SEPARATION: i32 = 4;
+/// A visible hostile this close to a goal takes the goal off the table — a
+/// scout that has just slipped out of a barbarian's reach must not be sent
+/// straight back at the same fog behind it. See `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_THREAT_RADIUS: i32 = 3;
 
 /// A sighting that makes the next tile a bad commitment is useful for longer
 /// than the individual movement choice that discovered it. Keep it just long
@@ -109,6 +126,11 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// it an answer. Six is the same ring `nearest_enemy` already calls "near home"
 /// when it decides whether to chase a barbarian, so the two agree on the word.
 const HOME_THREAT_RADIUS: i32 = 6;
+/// How far from a city a barbarian CAMP still counts as home ground under
+/// `camp_reach`: Civilization VI's camps raise raiders toward cities well
+/// beyond the six-tile raider radius, and a camp is not a raider — it does
+/// not fight back, it keeps producing what does. See `camp_reach`.
+const HOME_CAMP_RADIUS: i32 = 9;
 
 /// The loyalty level the governor logic has always treated as an emergency.
 /// Retained as a floor so making the rule rate-aware never makes it blinder
@@ -164,11 +186,26 @@ const SIEGE_ARM_MAX: usize = 2;
 const SIEGE_TARGET_REACH: i32 = 20;
 
 /// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
-/// toward. One, because this repairs blindness rather than buying map control:
-/// the empire that measured the defect had *two* scouts at its peak and still
-/// charted a quarter of the world. Past this the ordinary military choice
-/// resumes, so it cannot become an endless appetite.
-const RECON_ARM_MAX: usize = 1;
+/// toward after the empire has expanded. Two independent scouts are a bounded
+/// hedge against one being killed, trapped, or forced away from the frontier;
+/// past that the ordinary military choice resumes, so reconnaissance cannot
+/// become an endless appetite.
+const RECON_ARM_MAX: usize = 2;
+
+/// A capital needs one eye; a second city is the first point at which losing
+/// that sole Scout can leave the whole empire blind. Do not spend a second
+/// early build before expansion has paid for it.
+const RECON_SECOND_EYE_CITY_FLOOR: usize = 2;
+
+/// A naval scout needs room for a complete Galley move after launch: the
+/// launch tile plus its three movement points. Anything smaller is commonly
+/// a lake where the only available order is to turn straight back, which
+/// spends production without opening another contact or frontier.
+const NAVAL_RECON_MIN_WATERWAY_TILES: usize = 4;
+/// A major war fought on the water needs one hull for the battle and one to
+/// keep charting the world. This is an exploration arm, not a fleet target:
+/// the generic navy policy may still ask for more combat ships.
+const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 
 /// Once a scout reaches the nearest fog, inspect this many additional rings
 /// before choosing where to go.  A short horizon is enough to distinguish a
@@ -1845,6 +1882,15 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
+    /// The advanced live envoy planner has already chosen whether a held envoy
+    /// has a productive destination this turn.  Its ancillary baseline pass
+    /// must not replace that deliberate bank with a blind "highest count"
+    /// placement.
+    ///
+    /// Off for normal and frozen controllers, which retain the historical
+    /// baseline fallback.  The Civilization VI bridge enables it through
+    /// [`AdvancedAi::enable_bank_envoys`](crate::ai::AdvancedAi::enable_bank_envoys).
+    pub(crate) bank_envoys: bool,
     /// Enforce the live Firaxis rule that a religious unit inherits its
     /// purchase city's majority. Off for the frozen native controllers and
     /// enabled explicitly by the Civilization VI bridge.
@@ -1862,6 +1908,73 @@ pub struct BasicAi {
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
     recon_replacement: bool,
+    /// Buy one ship for an empire that has none while unexplored water lies
+    /// off its coast, and let the advanced controller send it exploring.
+    ///
+    /// ★★★★ ONE OF FIVE RIVALS MET BY TURN 142, THIRTEEN PERCENT OF THE MAP
+    /// SEEN. Run civvis-20260816T110555Z (Continents, 3,404 plots): the land
+    /// recon arm charted its own continent — 251 land plots — and stopped at
+    /// the shore; the empire held Sailing, Shipbuilding, Celestial Navigation
+    /// and Cartography, and in 142 turns built exactly one Galley (t91–t101,
+    /// dead at sea in ten turns). The other four rivals, the eventual winner
+    /// among them, stayed unknown; no trade route, no delegation, no coastal
+    /// site across the strait, and `fog_land_capacity` had nothing to read.
+    /// `recon_is_the_missing_arm` asks only about ground a scout could walk to
+    /// — correct for the scout, blind for the sea. Off for the frozen native
+    /// controllers; on for the live bridge and the native repair bundle. See
+    /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
+    naval_recon: bool,
+    /// Count a barbarian camp within `HOME_CAMP_RADIUS` of a city as home
+    /// ground the guard clears, not only one within the raider radius.
+    ///
+    /// ★★★★ TWO CAMPS SEVEN TILES FROM ROME STOOD FOR A WHOLE GAME. Run
+    /// civvis-20260816T155856Z: with the camps finally on the board (#1786),
+    /// the home guard's local-threat scan still asks whether a camp lies
+    /// within `HOME_THREAT_RADIUS` — six tiles, the raider radius — and both
+    /// camps sat at seven; from there they raised warriors, then archers,
+    /// men-at-arms, swordsmen and musketmen for two hundred turns, took eight
+    /// of fourteen Settlers within sight of the capital, and drew 121 attacks
+    /// on the raiders and none on themselves. A camp is not a raider: it does
+    /// not fight back, it keeps producing what does, and Civilization VI's
+    /// camps raise their raids toward cities well past six tiles.
+    ///
+    /// With this on, camps count as home ground within `HOME_CAMP_RADIUS`
+    /// (nine) in `barbarian_presence_at_home` (so the barbarian seat is an
+    /// enemy at home while such a camp stands), in the home guard's threat
+    /// list (ranked below any raider inside the raider radius) and in the
+    /// nearest-enemy scan that walks a unit onto it. Raiders keep the six-tile
+    /// radius. Off for the frozen native controllers; on for the live bridge
+    /// and the native repair bundle (a native camp seven tiles out raids the
+    /// same way).
+    camp_reach: bool,
+    /// In peacetime the whole field army answers home threats, and a camp
+    /// inside the camp reach ranks above raiders in the countryside.
+    ///
+    /// ★★★★ A CAMP SEVEN TILES FROM ROME STOOD FOR 130 TURNS WITH THE REACH
+    /// ON. Run civvis-20260816T200454Z: the camp at (1,43) was on the board
+    /// from t20 (#1786) and inside the nine-tile reach (#1789), the barbarian
+    /// seat was admitted as an enemy at home every turn, and still no unit
+    /// ever walked toward it — the second city came at t39, the third at t68,
+    /// three Settlers were carried off within sight of the capital, and the
+    /// game read 381 against 609 at t154. Two gates in
+    /// `home_defense_objective` did it. The recall budget is HALF the army
+    /// with the garrison charged against it: a three-unit peacetime army with
+    /// one unit holding the capital has a cap of ZERO responders, and five
+    /// units yield one. And the camp ranks below every raider inside the
+    /// six-tile ring — which, with the camp raising a new raider every few
+    /// turns, is always. The one responder there was chased raiders for a
+    /// hundred turns while the tap ran.
+    ///
+    /// The half share exists so an empire at war does not strip its
+    /// offensive to chase raiders. In peacetime — the enemy list holds only
+    /// the barbarian seat — there is no offensive to protect, so every field
+    /// unit not garrisoned or healing may answer. And the camp ranks as a
+    /// raider three tiles out: below anything at the gates, above the
+    /// countryside. The party is sized to the camp's visible defender rather
+    /// than to zero, so a spearman-held camp draws two units, not one that
+    /// declines the attack forever. Off for the frozen native controllers;
+    /// on for the live bridge and the native repair bundle.
+    camp_party: bool,
     /// Price a revealed natural wonder's ring into the settle scorer, so a
     /// founding site that would work the wonder's neighbours gets credit for
     /// the wonder's modeled appeal and projected yields. Off for the frozen
@@ -1978,6 +2091,52 @@ pub struct BasicAi {
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
+    /// Hold an exploration goal until it is reached, revealed, written off or
+    /// `EXPLORE_COMMIT_TURNS` old; choose it from twice the fog lookahead,
+    /// farthest from home among the most revealing; keep out of the ground
+    /// around another explorer's committed goal.
+    ///
+    /// ★★★★ THE LONE SCOUT PACED A TEN-BY-TEN BOX FOR FORTY TURNS. Live run
+    /// civvis-20260816T123936Z: the only Scout stood inside (41–50, 25–36) from
+    /// t34 to t75 — (46,27)→(45,27)→(44,26)→(45,26)→(43,25)→(43,25)→(45,26)→
+    /// (46,27) is one week of it — moving 1.21 tiles a turn over its life, and
+    /// the empire had revealed 197 plots at t50 and 391 at t100 of 3,404. It
+    /// met its second city-state at t99 and its first major at t90; the twelve
+    /// Settler games of 2026-08-15/16 met 0–3 city-states by t50 and 2–5 by
+    /// t100 of the nine on the map. Every first meeting is a free envoy, every
+    /// tribal village a free reward, and every unmet major a war we cannot see
+    /// coming.
+    ///
+    /// The stock goal is re-derived every turn from the first fogged ring plus
+    /// four, ties to the nearest — so a goal two tiles into the fog is inside
+    /// the scout's own sight, revealed by the walk toward it, and replaced by
+    /// whatever fog is nearest from the new tile, which is as often behind as
+    /// ahead; and a scout that `recon_flight` has just stepped out of a
+    /// barbarian's reach is aimed straight back at the same fog behind it,
+    /// which is the other half of the box (11 flight steps in that run's t36–47).
+    /// With this on, a chosen goal is held (`explore_goal`) until it is
+    /// reached, revealed, written off (`explore_dead_targets`), within
+    /// `EXPLORE_COMMIT_THREAT_RADIUS` of a visible hostile, or twenty turns
+    /// old; a fresh one is picked from eight rings past the first fogged one,
+    /// the most revealing first and, among those, the one FARTHEST FROM HOME —
+    /// so the walk sweeps outward and along the frontier instead of hugging
+    /// it; ground around a visible hostile is not a goal; and ground within
+    /// four tiles of another own explorer's held goal is left to that explorer.
+    ///
+    /// Measured (`explore_commit_sweeps_more_ground`, 16 six-seat Continents
+    /// boards at the live size, seat 0 the bridge controller, everyone else
+    /// stock): revealed plots at t30/t50/t70 **208/333/474 against 181/284/384**
+    /// (+15%/+17%/+23%), city-states met 1.62/2.56/3.31 against 1.69/2.25/3.06,
+    /// majors met level. Commitment alone measured level with stock
+    /// (178/277/387) and commitment + depth + outward without the threat rule
+    /// 180/289/419: the box is the flee-and-return loop as much as the churn.
+    /// Set only through `AdvancedAi::enable_explore_commit` (the Civilization
+    /// VI bridge); the native constructors and the frozen anchor keep the
+    /// stock rule.
+    pub(crate) explore_commit: bool,
+    /// Per unit: the committed exploration goal and the turn it was chosen.
+    /// See `explore_commit`.
+    explore_goal: RefCell<HashMap<u32, (Pos, u32)>>,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -2307,6 +2466,94 @@ impl BasicAi {
                 .into_iter()
                 .any(|pos| g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
         })
+    }
+
+    /// Whether this civilization's naval units can cross Ocean tiles. This
+    /// mirrors the sea portion of `Game::traversal_class`: a Galley penned
+    /// behind deep water before Cartography has not found an open route.
+    fn naval_recon_can_cross_ocean(g: &Game, pid: usize) -> bool {
+        g.has_ability(pid, "mana")
+            || g.tree_effect(pid, "ocean_navigation") > 0.0
+            || (g.has_ability(pid, "knarr")
+                && g.players[pid].techs.contains(&crate::name!("shipbuilding")))
+    }
+
+    /// The navigable, known-water component reached from `starts`. Unknown
+    /// terrain is deliberately not treated as water here: it may be a useful
+    /// frontier to probe, but cannot turn a visible two-hex lake into an open
+    /// sea by assumption.
+    fn naval_recon_waterway<I>(g: &Game, pid: usize, starts: I) -> BTreeSet<Pos>
+    where
+        I: IntoIterator<Item = Pos>,
+    {
+        let can_cross_ocean = Self::naval_recon_can_cross_ocean(g, pid);
+        let navigable_water = |pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| {
+                g.rules.is_passable(tile)
+                    && g.rules.is_water(tile)
+                    && (tile.terrain != "ocean" || can_cross_ocean)
+            })
+        };
+        let mut waterway = BTreeSet::new();
+        let mut frontier = VecDeque::new();
+        for pos in starts {
+            if navigable_water(pos) && waterway.insert(pos) {
+                frontier.push_back(pos);
+            }
+        }
+        while let Some(pos) = frontier.pop_front() {
+            for neighbor in g.nbrs(pos) {
+                if navigable_water(neighbor) && waterway.insert(neighbor) {
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
+        waterway
+    }
+
+    /// A waterway pays for a dedicated scout only when it is genuinely roomy
+    /// and has either unseen water or a live-mirror frontier at its edge.
+    fn naval_recon_waterway_can_chart(g: &Game, pid: usize, waterway: &BTreeSet<Pos>) -> bool {
+        waterway.len() >= NAVAL_RECON_MIN_WATERWAY_TILES
+            && waterway.iter().any(|pos| {
+                !g.players[pid].explored.contains(pos)
+                    || g.nbrs(*pos).into_iter().any(|neighbor| {
+                        g.map.get(neighbor).is_some_and(|tile| {
+                            g.rules.is_unknown(tile) && g.rules.is_passable(tile)
+                        })
+                    })
+            })
+    }
+
+    /// Whether a city can launch a naval scout into water that can still
+    /// reveal something useful. General coastal logic intentionally remains
+    /// broad — a two-tile lake is coastal for yields and harbor rules — while
+    /// reconnaissance needs an actual route.
+    fn city_has_naval_recon_launch(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let waterway = Self::naval_recon_waterway(g, pid, g.nbrs(city.pos));
+        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
+    }
+
+    /// A ship stranded in a small lake is not the empire's naval eye. Keep
+    /// this separate from a ship's combat availability: a linked escort or a
+    /// hull with no fresh-water route must not suppress a real explorer.
+    pub(crate) fn naval_recon_ship_can_chart(g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if unit.owner != pid || spec.class != "military" || spec.domain.as_deref() != Some("sea") {
+            return false;
+        }
+        let waterway = Self::naval_recon_waterway(
+            g,
+            pid,
+            std::iter::once(unit.pos).chain(g.nbrs(unit.pos)),
+        );
+        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
     }
 
     pub(crate) fn empire_is_coastal(g: &Game, pid: usize) -> bool {
@@ -3137,10 +3384,14 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            naval_recon: false,
+            camp_reach: false,
+            camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -3161,6 +3412,8 @@ impl BasicAi {
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
+            explore_commit: false,
+            explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3195,6 +3448,68 @@ impl BasicAi {
         self.explore_dead_targets = true;
     }
 
+    /// Hold an exploration goal and sweep outward from home (see
+    /// `explore_commit`). The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_explore_commit`.
+    pub fn enable_explore_commit(&mut self) {
+        self.explore_commit = true;
+    }
+
+    /// Let the plan-aware live envoy pass retain an envoy when no productive
+    /// city-state placement is available this turn.
+    pub(crate) fn enable_bank_envoys(&mut self) {
+        self.bank_envoys = true;
+    }
+
+    pub(crate) fn disable_bank_envoys(&mut self) {
+        self.bank_envoys = false;
+    }
+
+    /// Buy one ship for an empire that has none while unexplored water lies
+    /// off its coast. See `naval_recon`.
+    pub fn enable_naval_recon(&mut self) {
+        self.naval_recon = true;
+    }
+
+    pub fn disable_naval_recon(&mut self) {
+        self.naval_recon = false;
+    }
+
+    /// Count a barbarian camp within nine tiles of a city as home ground.
+    /// See `camp_reach`.
+    pub fn enable_camp_reach(&mut self) {
+        self.camp_reach = true;
+    }
+
+    pub fn disable_camp_reach(&mut self) {
+        self.camp_reach = false;
+    }
+
+    /// The whole peacetime field army answers home threats and a camp in
+    /// reach outranks the countryside. See `camp_party`.
+    pub fn enable_camp_party(&mut self) {
+        self.camp_party = true;
+    }
+
+    pub fn disable_camp_party(&mut self) {
+        self.camp_party = false;
+    }
+
+    /// Whether the peacetime camp party is on. See `camp_party`.
+    pub fn camp_party(&self) -> bool {
+        self.camp_party
+    }
+
+    /// The radius inside which a barbarian camp counts as home ground:
+    /// `HOME_CAMP_RADIUS` under `camp_reach`, the raider radius otherwise.
+    pub(crate) fn camp_radius(&self) -> i32 {
+        if self.camp_reach {
+            HOME_CAMP_RADIUS
+        } else {
+            HOME_THREAT_RADIUS
+        }
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -3206,10 +3521,14 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            naval_recon: false,
+            camp_reach: false,
+            camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -3230,6 +3549,8 @@ impl BasicAi {
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
+            explore_commit: false,
+            explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3497,6 +3818,35 @@ impl BasicAi {
         });
     }
 
+    /// Mark the scripted four-build capital opening as already played, so the
+    /// utility planner governs production from the first turn this agent
+    /// sees.
+    ///
+    /// ★★★★ A DECIDER RESTARTED MID-GAME REPLAYS THE OPENING BOOK OVER SEVEN
+    /// CITIES. The live bridge restarts its persistent agent whenever
+    /// `origin/main` advances (run civvis-20260816T213447Z: t139 and t157),
+    /// and a fresh agent has `book_pos = 0` — so `AdvancedAi::take_turn`'s
+    /// "preserve the proven four-build opening" branch hands EVERY city to
+    /// `BasicAi::cities` until the capital has emptied its queue four more
+    /// times. Measured: at t139 five cities started Skirmishers and at t140
+    /// all seven switched to Rangers ("the empire has no eyes", one per city)
+    /// — the Taj Mahal, St Basil's and two campus projects abandoned — and
+    /// Rangers were built in every city until t150; at t157 the same again
+    /// with Artillery, Bolshoi and the Hermitage dropped. Roughly ten turns of
+    /// the whole empire's production per restart, on a seat that restarts
+    /// several times a game. The book is the capital's first four builds of a
+    /// game that starts at turn 1; an agent that first sees turn 139 has no
+    /// opening to play. See `AdvancedAi::skip_opening_book`.
+    pub fn skip_opening_book(&mut self) {
+        self.book_pos = self.book_pos.max(4);
+    }
+
+    /// Whether the scripted opening has been played (or skipped). See
+    /// `skip_opening_book`.
+    pub fn opening_book_played(&self) -> bool {
+        self.book_pos >= 4
+    }
+
     /// Drop everything this agent remembers ABOUT INDIVIDUAL UNITS, keeping the rest.
     ///
     /// ★★★★★ FOR MIRRORING A GAME WHOSE UNIT IDS ARE REASSIGNED EVERY TURN.
@@ -3528,6 +3878,7 @@ impl BasicAi {
         self.unit_motion.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
+        self.explore_goal.get_mut().clear();
     }
 
     /// Carry unit-keyed memory across a board that was rebuilt underneath it.
@@ -3588,6 +3939,11 @@ impl BasicAi {
             .collect();
         let explore_dead = std::mem::take(self.explore_dead.get_mut());
         *self.explore_dead.get_mut() = explore_dead
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        let explore_goal = std::mem::take(self.explore_goal.get_mut());
+        *self.explore_goal.get_mut() = explore_goal
             .into_iter()
             .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
             .collect();
@@ -3673,42 +4029,55 @@ impl BasicAi {
         for uid in ids {
             let mark = work_mark(g, uid);
             let pos = g.units[&uid].pos;
-            let motion = self.unit_motion.entry(uid).or_default();
-            let was_looping = motion.looping;
-            if motion.tiles.is_empty() {
-                motion.work = mark;
-            }
-            if motion.work != mark {
-                // The unit achieved something, so whatever it was doing was
-                // worth doing. Judge it from here rather than against a
-                // history that has just been made irrelevant.
-                *motion = UnitMotion {
-                    work: mark,
-                    resume_turn: motion.resume_turn,
-                    ..UnitMotion::default()
-                };
-            } else {
-                motion.fruitless += 1;
-            }
-            motion.tiles.push_back(pos);
-            while motion.tiles.len() > LIVELOCK_WINDOW {
-                motion.tiles.pop_front();
-            }
-            motion.looping = motion.circling();
-            let looping = motion.looping;
-            let fruitless = motion.fruitless;
-            let footprint = motion.footprint();
-            let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
-            if stand_down {
-                // The tabu has had a full second window to redirect this unit
-                // and has not. Stop paying for the same fruitless search, hold
-                // the ground, and come back to the problem with a clean slate
-                // once the world around it has changed.
-                *motion = UnitMotion {
-                    work: mark,
-                    resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
-                    ..UnitMotion::default()
-                };
+            let (was_looping, looping, fruitless, footprint, stand_down) = {
+                let motion = self.unit_motion.entry(uid).or_default();
+                let was_looping = motion.looping;
+                if motion.tiles.is_empty() {
+                    motion.work = mark;
+                }
+                if motion.work != mark {
+                    // The unit achieved something, so whatever it was doing was
+                    // worth doing. Judge it from here rather than against a
+                    // history that has just been made irrelevant.
+                    *motion = UnitMotion {
+                        work: mark,
+                        resume_turn: motion.resume_turn,
+                        ..UnitMotion::default()
+                    };
+                } else {
+                    motion.fruitless += 1;
+                }
+                motion.tiles.push_back(pos);
+                while motion.tiles.len() > LIVELOCK_WINDOW {
+                    motion.tiles.pop_front();
+                }
+                motion.looping = motion.circling();
+                let looping = motion.looping;
+                let fruitless = motion.fruitless;
+                let footprint = motion.footprint();
+                let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
+                if stand_down {
+                    // The tabu has had a full second window to redirect this unit
+                    // and has not. Stop paying for the same fruitless search, hold
+                    // the ground, and come back to the problem with a clean slate
+                    // once the world around it has changed.
+                    *motion = UnitMotion {
+                        work: mark,
+                        resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                        ..UnitMotion::default()
+                    };
+                }
+                (was_looping, looping, fruitless, footprint, stand_down)
+            };
+            let retired_goal = (looping && !was_looping && self.explore_dead_targets)
+                .then(|| self.explore_goal.borrow().get(&uid).map(|(goal, _)| *goal))
+                .flatten();
+            if let Some(goal) = retired_goal {
+                // A live Scout can move enough to evade the no-progress probe
+                // while still returning to the same blocked frontier approach.
+                // The loop proves the held goal is not producing discovery, so
+                // retire it now and let this turn choose a fresh outward route.
+                self.retire_exploration_target(g, uid, goal);
             }
             // Say it once when the loop is first recognized, and once more if
             // it outlasts every attempt to steer out of it.
@@ -3719,6 +4088,13 @@ impl BasicAi {
                        "{fruitless} turns inside {footprint} tiles with nothing to show for \
                         them, and steering it out did not work; holding for \
                         {LIVELOCK_STAND_DOWN_TURNS} turns";
+                       pos);
+            } else if let Some(goal) = retired_goal {
+                think!(self.journal, Military, Detail,
+                       "{kind} {uid} abandons looped reconnaissance goal {goal:?}";
+                       "{fruitless} turns inside {footprint} tiles found no new ground; \
+                        that target and its ring are retired for \
+                        {EXPLORE_DEAD_TARGET_TURNS} turns";
                        pos);
             } else if looping && !was_looping {
                 think!(self.journal, Military, Detail,
@@ -4348,7 +4724,7 @@ impl BasicAi {
         // governor pass first, so this is an emergency backstop rather than a
         // second strategy fighting the first one.
         self.reassign_governor_for_loyalty(g, pid);
-        while g.players[pid].envoys_free > 0 {
+        while !self.bank_envoys && g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g
                 .players
@@ -5957,8 +6333,9 @@ impl BasicAi {
     /// strict subset of it, so the unexplored test is as live against
     /// Civilization VI as it is in a native game.
     ///
-    /// ⚠ Bounded by `RECON_ARM_MAX` and by there being ground left to chart, so
-    /// it stops asking as soon as the arm exists or the world runs out.
+    /// ⚠ Bounded by one eye before city two and `RECON_ARM_MAX` afterwards,
+    /// and by there being ground left to chart, so it stops asking as soon as
+    /// the arm exists or the world runs out.
     fn recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
         if !self.recon_replacement || self.minor || self.barb {
             return false;
@@ -5970,7 +6347,35 @@ impl BasicAi {
                 unit.owner == pid && Self::unit_doctrine(g, unit.id) == UnitDoctrine::Recon
             })
             .count();
-        if owned_recon >= RECON_ARM_MAX {
+        // ★★★★ A SCOUT ALREADY ON THE WAY IS AN EYE. This counted only recon
+        // units standing on the map, so on any turn the empire had none,
+        // EVERY city that came to `pick_item` read "the empire has no eyes"
+        // and answered it: run civvis-20260816T213447Z, t139, five cities
+        // start Skirmishers; t140, all seven start Rangers, and seven Rangers
+        // are built. One in a queue anywhere is the arm being rebuilt.
+        let queued_recon = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                g.cities[cid].queue.iter().any(|item| {
+                    matches!(item, Item::Unit { unit }
+                        if g.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                            spec.class == "military" && spec.promotion_class == "recon"
+                        }))
+                })
+            })
+            .count();
+        // A one-city empire gets the original single opening Scout. Once it
+        // has two cities, retain one spare explorer: the last live match had
+        // eleven city-states but met only five after its only Scout spent the
+        // closing turns retreating around a hostile coast. The city gate keeps
+        // that redundancy from stealing the initial Settler/Builder cadence.
+        let recon_arm_target = if g.player_city_ids(pid).len() >= RECON_SECOND_EYE_CITY_FLOOR {
+            RECON_ARM_MAX
+        } else {
+            1
+        };
+        if owned_recon + queued_recon >= recon_arm_target {
             return false;
         }
         // Somewhere left to go. A land scout is what this buys, so ask about
@@ -5982,6 +6387,103 @@ impl BasicAi {
                 && g.rules.is_passable(tile)
                 && !g.rules.is_water(tile)
         })
+    }
+
+    /// The sea's `recon_is_the_missing_arm`: no usable explorer, and water the
+    /// empire has never seen. A hull trapped in a lake or linked to a Settler
+    /// does not answer it. One free ship normally completes the arm; during a
+    /// major naval war, retain a second eye so the fighting ship cannot make
+    /// the unexplored world disappear from production's priorities.
+    /// See `naval_recon`.
+    pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
+        if !self.naval_recon || self.minor || self.barb {
+            return false;
+        }
+        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+        });
+        if !water_left {
+            return false;
+        }
+        let naval_eyes = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+                    && unit.linked_to.is_none()
+                    && Self::naval_recon_ship_can_chart(g, pid, unit.id)
+            })
+            .count();
+        // A ship already in a viable coastal queue is the arm being rebuilt.
+        // Without this, every city inspected on the same production pass can
+        // read the one-hull wartime gap and start another Galley.
+        let queued_naval_eyes = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| Self::city_has_naval_recon_launch(g, pid, *cid))
+            .flat_map(|cid| g.cities[&cid].queue.iter())
+            .filter(|item| {
+                matches!(item,
+                    Item::Unit { unit } | Item::Formation { unit, .. }
+                        if g.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                            spec.class == "military" && spec.domain.as_deref() == Some("sea")
+                        })
+                )
+            })
+            .count();
+        let major_naval_war = g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && !enemy.is_minor
+                && !enemy.is_barbarian
+                && g.is_at_war(pid, enemy.id)
+                && (g.units.values().any(|unit| {
+                    unit.owner == enemy.id
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                }) || g
+                    .player_city_ids(enemy.id)
+                    .into_iter()
+                    .any(|cid| Self::city_is_coastal(g, cid)))
+        });
+        let arm_target = if major_naval_war {
+            NAVAL_RECON_WARTIME_ARM_MAX
+        } else {
+            1
+        };
+        if naval_eyes + queued_naval_eyes >= arm_target {
+            return false;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::city_has_naval_recon_launch(g, pid, cid))
+    }
+
+    /// The cheapest ship this city can lay down. Exploration wants a hull
+    /// that moves, not a broadside; the cost is the whole price of an eye.
+    pub(crate) fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+        if !Self::city_has_naval_recon_launch(g, pid, cid) {
+            return None;
+        }
+        let mut best: Option<((i64, i64), String)> = None;
+        for (name, spec) in &g.rules.units {
+            if spec.class != "military" || spec.domain.as_deref() != Some("sea") {
+                continue;
+            }
+            if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
+                continue;
+            }
+            let rank = (spec.cost as i64, -(spec.moves as i64));
+            if best.as_ref().map(|(b, _)| rank < *b).unwrap_or(true) {
+                best = Some((rank, name.to_string()));
+            }
+        }
+        best.map(|(_, n)| n)
     }
 
     fn siege_support_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
@@ -7200,8 +7702,13 @@ impl BasicAi {
         // eventual winner on turn 215. Recon is an arm in exactly the sense
         // siege is, and it goes missing the same silent way.
         let missing_recon_arm = self.recon_is_the_missing_arm(g, pid);
+        // And the sea has its own eye. See `naval_recon`.
+        let missing_naval_recon_arm = self.naval_recon_is_the_missing_arm(g, pid);
         if can_add_military
-            && ((military as f64) < military_floor || missing_siege_arm || missing_recon_arm)
+            && ((military as f64) < military_floor
+                || missing_siege_arm
+                || missing_recon_arm
+                || missing_naval_recon_arm)
         {
             // A capability gap is an invitation to build that capability, not
             // a permanent waiver of the standing-army ceiling. A city without
@@ -7216,6 +7723,9 @@ impl BasicAi {
             let recon_pick = missing_recon_arm
                 .then(|| self.best_recon(g, pid, cid))
                 .flatten();
+            let naval_recon_pick = missing_naval_recon_arm
+                .then(|| self.best_naval_recon(g, pid, cid))
+                .flatten();
             let force_pick = if (military as f64) < military_floor {
                 if rushing && melee < self.rush_military_floor {
                     self.best_military(g, pid, cid, Some(false))
@@ -7226,7 +7736,7 @@ impl BasicAi {
             } else {
                 None
             };
-            let picked = siege_pick.or(recon_pick).or(force_pick);
+            let picked = siege_pick.or(recon_pick).or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
                 //
@@ -7237,9 +7747,10 @@ impl BasicAi {
                 // the two disagreed with no way to tell which was wrong.
                 think!(self.journal, Cities, Detail,
                        "Military floor takes the build";
-                       "holding {military} against a floor of {military_floor:.1}{}{}",
+                       "holding {military} against a floor of {military_floor:.1}{}{}{}",
                        if missing_siege_arm { ", and the siege arm is missing" } else { "" },
-                       if missing_recon_arm { ", and the empire has no eyes" } else { "" });
+                       if missing_recon_arm { ", and the empire has no eyes" } else { "" },
+                       if missing_naval_recon_arm { ", and no ship to chart the sea" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
@@ -9490,6 +10001,17 @@ impl BasicAi {
     /// The chase itself stays bounded by [`BasicAi::nearest_enemy`]'s own
     /// near-home and exchange-score gates.
     pub(crate) fn barbarian_presence_at_home(g: &Game, pid: usize) -> bool {
+        Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_THREAT_RADIUS)
+    }
+
+    /// `barbarian_presence_at_home` with the camp radius chosen by the caller:
+    /// raiders always count within `HOME_THREAT_RADIUS`, camps within
+    /// `camp_radius`. See `camp_reach`.
+    pub(crate) fn barbarian_presence_at_home_with_camp_radius(
+        g: &Game,
+        pid: usize,
+        camp_radius: i32,
+    ) -> bool {
         let Some(barb) = g.barb_pid else {
             return false;
         };
@@ -9503,12 +10025,15 @@ impl BasicAi {
             return false;
         }
         let near_home =
-            |pos: Pos| my_cities.iter().any(|city| g.wdist(pos, *city) <= HOME_THREAT_RADIUS);
+            |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
         g.units.values().any(|unit| {
             unit.owner == barb
                 && g.rules.units[unit.kind].class == "military"
-                && near_home(unit.pos)
-        }) || g.barb_camps.keys().any(|camp| near_home(*camp))
+                && near_home(unit.pos, HOME_THREAT_RADIUS)
+        }) || g
+            .barb_camps
+            .keys()
+            .any(|camp| near_home(*camp, camp_radius))
     }
 
     /// measured threat *to our own cities*. This does, and answers the worst
@@ -9570,13 +10095,49 @@ impl BasicAi {
         // measured raiders all came from one. Rank it just under a live raider at
         // the same range so a unit already in the empire clears it once the
         // shooting stops rather than leaving the tap running.
+        // Peacetime is when the enemy list holds nothing but the barbarian
+        // seat: there is no offensive to protect. See `camp_party`.
+        let peacetime = self.camp_party
+            && !enemy_ids.is_empty()
+            && enemy_ids
+                .iter()
+                .all(|enemy| g.players.get(*enemy).is_some_and(|p| p.is_barbarian));
         if let Some(barb) = g.barb_pid {
             if enemy_ids.contains(&barb) {
+                let camp_radius = self.camp_radius();
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
-                    if distance > HOME_THREAT_RADIUS {
+                    if distance > camp_radius {
                         continue;
                     }
+                    if peacetime {
+                        // ★★★★ THE CAMP IS THE TAP. See `camp_party`: it
+                        // ranks as a raider three tiles out — below anything
+                        // at the gates, above the countryside — and the party
+                        // is sized to whoever is standing on it.
+                        let ranked = distance.min(3);
+                        let defender = g
+                            .units_at(*camp)
+                            .into_iter()
+                            .filter_map(|other| g.units.get(&other))
+                            .filter(|other| {
+                                enemy_ids.contains(&other.owner)
+                                    && g.rules.units[other.kind].class == "military"
+                            })
+                            .map(|other| {
+                                effective_strength(g.unit_strength(other, true), other.hp)
+                            })
+                            .fold(0.0_f64, f64::max);
+                        threats.push((
+                            (HOME_THREAT_RADIUS - ranked) as i64 * 1_000 - 1,
+                            *camp,
+                            defender,
+                        ));
+                        continue;
+                    }
+                    // A camp past the raider radius ranks below every raider
+                    // inside it (its severity goes negative), so the guard
+                    // walks out to it only once the home ring is quiet.
                     threats.push(((HOME_THREAT_RADIUS - distance) as i64 * 1_000 - 1, *camp, 0.0));
                 }
             }
@@ -9608,6 +10169,11 @@ impl BasicAi {
                 })
                 .filter(|unit| !self.recovering_units.contains(&unit.id))
                 .filter(|unit| !garrisoned.iter().any(|(held, _)| *held == unit.id))
+                // The peacetime party is the field ARMY: a scout is not sent
+                // to clear a camp. See `camp_party`.
+                .filter(|unit| {
+                    !(peacetime && g.rules.units[unit.kind].promotion_class == "recon")
+                })
                 .map(|unit| unit.id)
                 .collect();
             ids.sort_unstable();
@@ -9631,7 +10197,15 @@ impl BasicAi {
         // and subtract what the garrison spent.
         let eligible = responders.len() + garrisoned.len();
         let budget = ((eligible as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
-        let cap = budget.saturating_sub(garrisoned.len());
+        // ★★★★ IN PEACETIME THE WHOLE FIELD ARMY IS THE BUDGET. See
+        // `camp_party`: the half share protects an offensive, and there is
+        // none; a three-unit army with one garrisoned used to read a cap of
+        // zero here and leave the raiders and their camp to nobody.
+        let cap = if peacetime {
+            responders.len()
+        } else {
+            budget.saturating_sub(garrisoned.len())
+        };
         if cap == 0 || !responders.contains(&uid) {
             return None;
         }
@@ -9726,8 +10300,16 @@ impl BasicAi {
         if !self.barb {
             if let Some(bp) = g.barb_pid {
                 if enemy_ids.contains(&bp) {
+                    // See `camp_reach`: a camp counts as home ground out to
+                    // `camp_radius`, a raider only to the six-tile ring.
+                    let camp_radius = self.camp_radius();
+                    let camp_near_home = |tpos: Pos| -> bool {
+                        my_cities.is_empty()
+                            || my_cities.iter().map(|c| g.wdist(tpos, *c)).min().unwrap()
+                                <= camp_radius
+                    };
                     for cpos in g.barb_camps.keys() {
-                        if near_home(*cpos)
+                        if camp_near_home(*cpos)
                             && self.exchange_score(g, uid, *cpos, ranged)
                                 > self.attack_threshold(g, uid, *cpos)
                         {
@@ -9872,6 +10454,78 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
+        // Visible hostiles at war with us: ground around them is not a goal.
+        // Live vision only — a threat the seat cannot see does not steer it.
+        let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
+            let visible = g.player_vision_now(pid);
+            g.units
+                .values()
+                .filter(|unit| {
+                    unit.owner != pid
+                        && g.is_at_war(pid, unit.owner)
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.sees(&visible, unit.pos)
+                })
+                .map(|unit| unit.pos)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let threatened =
+            |pos: Pos| threats.iter().any(|t| g.wdist(*t, pos) <= EXPLORE_COMMIT_THREAT_RADIUS);
+        // A held goal is kept while it is still worth walking to; see
+        // `explore_commit`. Reached, revealed, written off, threatened, or
+        // aged out, it is dropped here and a fresh one chosen below.
+        if self.explore_commit {
+            let held = self.explore_goal.borrow().get(&uid).copied();
+            if let Some((goal, since)) = held {
+                let wanted = g.turn.saturating_sub(since) <= EXPLORE_COMMIT_TURNS
+                    && goal != origin
+                    && !g.players[pid].explored.contains(&goal)
+                    && !dead.contains(&goal)
+                    && !threatened(goal)
+                    && g.unit_can_traverse(uid, goal)
+                    && (!dry_only
+                        || g.map.get(goal).is_some_and(|tile| !g.rules.is_water(tile)));
+                if wanted {
+                    return Some(goal);
+                }
+                self.explore_goal.borrow_mut().remove(&uid);
+            }
+        }
+        // Ground another own explorer is already committed to. See
+        // `explore_commit`.
+        let reserved: Vec<Pos> = if self.explore_commit {
+            self.explore_goal
+                .borrow()
+                .iter()
+                .filter(|(other, (_, since))| {
+                    **other != uid
+                        && g.turn.saturating_sub(*since) <= EXPLORE_COMMIT_TURNS
+                        && g.units.get(other).is_some_and(|unit| unit.owner == pid)
+                })
+                .map(|(_, (goal, _))| *goal)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let lookahead = if self.explore_commit {
+            EXPLORE_COMMIT_LOOKAHEAD
+        } else {
+            EXPLORATION_FRONTIER_LOOKAHEAD
+        };
+        // Home is the capital (the palace), or the oldest city, or — before
+        // the first city — where the unit stands, so the first goal is simply
+        // the deepest fog.
+        let home = if self.explore_commit {
+            g.player_city_ids(pid)
+                .into_iter()
+                .filter_map(|cid| g.cities.get(&cid))
+                .min_by_key(|city| (std::cmp::Reverse(g.city_has_palace(city)), city.id))
+                .map(|city| city.pos)
+        } else {
+            None
+        };
         let mut candidates = Vec::new();
         let mut first_candidate_ring = None;
         let mut radius = 1;
@@ -9895,6 +10549,10 @@ impl BasicAi {
                         && g.unit_can_traverse(uid, *pos)
                         && (!dry_only
                             || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+                        && !reserved
+                            .iter()
+                            .any(|held| g.wdist(*pos, *held) <= EXPLORE_COMMIT_SEPARATION)
+                        && !threatened(*pos)
                 })
                 .collect();
             if !ring_candidates.is_empty() {
@@ -9905,12 +10563,24 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.tactical_strategy || radius >= first + EXPLORATION_FRONTIER_LOOKAHEAD {
+            if !self.tactical_strategy || radius >= first + lookahead {
                 break;
             }
             radius += 1;
         }
-        if self.tactical_strategy {
+        let chosen = if self.explore_commit {
+            // The most revealing goal, and among those the one farthest from
+            // home: the walk sweeps outward and along the frontier instead of
+            // hugging the fringe nearest the unit. See `explore_commit`.
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else if self.tactical_strategy {
             candidates.into_iter().max_by_key(|target| {
                 (
                     Self::frontier_reveal_value(g, pid, uid, *target),
@@ -9922,7 +10592,31 @@ impl BasicAi {
             candidates
                 .into_iter()
                 .min_by_key(|target| (g.wdist(origin, *target), *target))
+        };
+        if self.explore_commit {
+            if let Some(goal) = chosen {
+                self.explore_goal.borrow_mut().insert(uid, (goal, g.turn));
+            }
         }
+        chosen
+    }
+
+    /// Retire one exploration target that the Firaxis host has shown it cannot
+    /// turn into discovery. The target's ring goes with it because a blocked
+    /// frontier is rarely one plot wide, and every destination cache is cleared
+    /// so the next exploration step must choose a genuinely different route.
+    fn retire_exploration_target(&self, g: &Game, uid: u32, target: Pos) {
+        let mut dead = self.explore_dead.borrow_mut();
+        let unit_dead = dead.entry(uid).or_default();
+        unit_dead.retain(|_, expiry| *expiry > g.turn);
+        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
+        unit_dead.insert(target, expiry);
+        for neighbour in g.nbrs(target) {
+            unit_dead.insert(neighbour, expiry);
+        }
+        drop(dead);
+        self.explore_last.borrow_mut().remove(&uid);
+        self.explore_goal.borrow_mut().remove(&uid);
     }
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -9985,17 +10679,7 @@ impl BasicAi {
                     }
                 };
                 if stuck >= EXPLORE_STUCK_TURNS {
-                    {
-                        let mut dead = self.explore_dead.borrow_mut();
-                        let unit_dead = dead.entry(uid).or_default();
-                        unit_dead.retain(|_, expiry| *expiry > g.turn);
-                        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
-                        unit_dead.insert(target, expiry);
-                        for neighbour in g.nbrs(target) {
-                            unit_dead.insert(neighbour, expiry);
-                        }
-                    }
-                    self.explore_last.borrow_mut().remove(&uid);
+                    self.retire_exploration_target(g, uid, target);
                     think!(self.journal, Military, Detail,
                            "{} {uid} gives up on {target:?}", g.units[&uid].kind;
                            "ordered there {stuck} turns running from {upos:?} and never moved; \
@@ -11126,6 +11810,68 @@ mod tests {
         );
         assert!(ai.retreads_a_loop(scout, ground[1]));
         assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    /// The host can move a Scout around an obstacle without ever taking the
+    /// committed route toward new ground. That is a distinct failure from an
+    /// outright refused move: it must retire the goal when the unit's own
+    /// history proves the loop, rather than wait forever for the same-tile
+    /// refusal counter.
+    #[test]
+    fn a_live_scout_loop_retires_its_committed_goal() {
+        let (mut game, ground, scout) = scouted_world();
+        let home = ground[0];
+        let other = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .expect("the scout has a second land tile for the loop");
+        game.players[0].explored.clear();
+        game.turn = 10;
+
+        let mut live = BasicAi::new();
+        live.enable_explore_dead_targets();
+        live.enable_explore_commit();
+        let goal = live
+            .exploration_goal(&game, 0, scout, false)
+            .expect("the board has unexplored ground");
+        assert_eq!(live.explore_goal.borrow().get(&scout).map(|(goal, _)| *goal), Some(goal));
+
+        // The route order changes the Scout's position, but it returns to the
+        // same two tiles for a whole livelock window and reveals nothing.
+        for turn in 0..LIVELOCK_WINDOW {
+            game.turn = 10 + turn as u32;
+            game.units.get_mut(&scout).unwrap().pos = if turn.is_multiple_of(2) {
+                home
+            } else {
+                other
+            };
+            live.begin_movement_turn(&game, 0);
+        }
+
+        let dead = live.explore_dead.borrow();
+        let retired = dead.get(&scout).expect("the loop retires its held goal");
+        assert_eq!(retired.get(&goal), Some(&(game.turn + EXPLORE_DEAD_TARGET_TURNS)));
+        assert!(
+            game.nbrs(goal).iter().all(|neighbour| retired.contains_key(neighbour)),
+            "the blocked goal's ring is retired with it"
+        );
+        drop(dead);
+        assert!(
+            !live.explore_goal.borrow().contains_key(&scout),
+            "the next step must choose a new destination rather than keep the looped one"
+        );
+        let rerouted = live
+            .exploration_goal(&game, 0, scout, false)
+            .expect("there is another route to discover");
+        assert_ne!(rerouted, goal, "the Scout is sent toward fresh ground");
+
+        let plain = BasicAi::new();
+        assert!(!plain.explore_dead_targets, "the retirement remains live-bridge only");
     }
 
     #[test]
@@ -12794,6 +13540,98 @@ mod tests {
         assert!(plain.explore_dead.borrow().is_empty());
     }
 
+    /// ★★★★ See `explore_commit`: a goal is held across turns until it is
+    /// revealed or aged out, a second explorer keeps out of the first one's
+    /// ground, the pick reaches deeper than the stock rule and prefers the
+    /// ground farthest from home, and the plain controllers keep re-deriving
+    /// theirs every turn.
+    #[test]
+    fn a_committed_explorer_holds_its_goal_and_sweeps_outward() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("COMMITGOAL", 91_781), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let scout = game.spawn_unit("scout", 0, home);
+        game.turn = 10;
+
+        // The plain controllers hold nothing.
+        let plain = BasicAi::new();
+        assert!(!plain.explore_commit);
+        let _ = plain.exploration_goal(&game, 0, scout, false);
+        assert!(plain.explore_goal.borrow().is_empty());
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_commit();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, false)
+            .expect("a fresh map has unexplored ground to aim at");
+        assert_eq!(ai.explore_goal.borrow().get(&scout).copied(), Some((goal, 10)));
+        // The committed goal lies beyond the stock lookahead's reach: at least
+        // as far as the stock rule's own pick, and never nearer to home than it.
+        let stock = plain.exploration_goal(&game, 0, scout, false).unwrap();
+        assert!(
+            game.wdist(home, goal) >= game.wdist(home, stock),
+            "the committed pick is the farther-from-home one: commit {goal:?} at {} vs stock {stock:?} at {}",
+            game.wdist(home, goal), game.wdist(home, stock)
+        );
+
+        // Held on the following turns, whatever the nearest fringe now is.
+        game.turn = 11;
+        assert_eq!(ai.exploration_goal(&game, 0, scout, false), Some(goal), "held on turn 11");
+        game.turn = 10 + EXPLORE_COMMIT_TURNS;
+        assert_eq!(ai.exploration_goal(&game, 0, scout, false), Some(goal), "held to its age limit");
+        // Aged out: re-chosen (and re-stamped) rather than kept forever.
+        game.turn = 11 + EXPLORE_COMMIT_TURNS;
+        let again = ai.exploration_goal(&game, 0, scout, false).expect("still ground to aim at");
+        assert_eq!(ai.explore_goal.borrow().get(&scout).map(|(_, since)| *since), Some(game.turn));
+        // Revealed: dropped and re-chosen.
+        game.players[0].explored.insert(again);
+        let after = ai.exploration_goal(&game, 0, scout, false).expect("still ground to aim at");
+        assert_ne!(after, again, "a revealed goal is not held");
+
+        // A second explorer keeps out of the first one's ground.
+        let second = game.spawn_unit("scout", 0, home);
+        let other = ai
+            .exploration_goal(&game, 0, second, false)
+            .expect("the second scout has ground of its own");
+        assert!(
+            game.wdist(other, after) > EXPLORE_COMMIT_SEPARATION,
+            "the second scout's goal {other:?} lies clear of the first's {after:?}"
+        );
+
+        // A dead board (`explore_dead_targets`) drops the held goal too.
+        let mut bridge = BasicAi::new();
+        bridge.enable_explore_commit();
+        bridge.enable_explore_dead_targets();
+        game.turn = 40;
+        let held = bridge.exploration_goal(&game, 0, scout, false).unwrap();
+        bridge
+            .explore_dead
+            .borrow_mut()
+            .entry(scout)
+            .or_default()
+            .insert(held, game.turn + EXPLORE_DEAD_TARGET_TURNS);
+        let replaced = bridge.exploration_goal(&game, 0, scout, false).unwrap();
+        assert_ne!(replaced, held, "a written-off goal is not held");
+
+        // And the memory rides a rebuilt board like the other unit-keyed maps.
+        let mut carried = BasicAi::new();
+        carried.enable_explore_commit();
+        game.turn = 50;
+        let before = carried.exploration_goal(&game, 0, scout, false).unwrap();
+        let map = std::collections::BTreeMap::from([(scout, 999u32)]);
+        carried.remap_unit_memory(&map);
+        assert_eq!(carried.explore_goal.borrow().get(&999).map(|(goal, _)| *goal), Some(before));
+        carried.forget_unit_memory();
+        assert!(carried.explore_goal.borrow().is_empty());
+    }
+
     /// The frozen `advanced_v1` anchor and every native tournament game keep
     /// the historical gate: without the treatment a parked settler is still
     /// "in flight", so their recorded ladders stay comparable.
@@ -14250,10 +15088,158 @@ mod tests {
         (g, ai)
     }
 
+    fn dry_map(g: &mut Game) {
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+    }
+
+    /// Lay a straight, four-or-more-hex coastal route from a city. The final
+    /// tile is deliberately kept unseen, giving a native-test fixture the
+    /// same fresh-water objective the live mirror supplies at its fog edge.
+    fn coastal_waterway(g: &mut Game, origin: Pos, length: usize) -> Vec<Pos> {
+        let mut waterway = Vec::new();
+        let mut current = origin;
+        for distance in 1..=length {
+            current = g
+                .nbrs(current)
+                .into_iter()
+                .find(|pos| {
+                    g.map.tiles.contains_key(pos) && g.wdist(origin, *pos) == distance as i32
+                })
+                .expect("an interior city has an outward coastal path");
+            g.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
+            waterway.push(current);
+        }
+        g.players[0].explored.remove(waterway.last().unwrap());
+        waterway
+    }
+
+    /// Cut a two-hex lake into otherwise dry ground. The caller chooses a
+    /// centre away from cities, so this is a small, deterministic stand-in for
+    /// the live Durocortorum lake that trapped a Galley.
+    fn two_tile_lake(g: &mut Game, centre: Pos) -> [Pos; 2] {
+        for pos in g.wdisk(centre, 2) {
+            let Some(tile) = g.map.tiles.get_mut(&pos) else {
+                continue;
+            };
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let neighbors = g.nbrs(centre);
+        let first = neighbors[0];
+        let second = neighbors
+            .into_iter()
+            .find(|pos| *pos != first && g.wdist(first, *pos) == 1)
+            .expect("a hex has adjacent neighbors");
+        for pos in [first, second] {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+        }
+        [first, second]
+    }
+
     /// The empire owns no recon and there is ground it has never walked, so the
     /// arm is missing. See `recon_is_the_missing_arm`: this is the state live
     /// run `civvis-20260808T142724Z` sat in for 150 turns while its army grew
     /// to 22 units and 77% of the map stayed dark.
+    /// The measurement behind `BasicAi::explore_commit`, kept runnable:
+    /// `CIVVIS_EXPLORE_AB_SEEDS=16 cargo test --profile ci --lib explore_commit_sweeps_more_ground -- --ignored --nocapture`.
+    /// Six-seat Continents boards at the live seat's size, seat 0 the deployed
+    /// bridge controller with and without the treatment, everyone else stock;
+    /// prints revealed plots and contacts at t30/t50/t70 per arm. Ignored
+    /// because it plays whole early games (~2 min per 16 seeds); the assertion
+    /// is the mean, so a single map cannot pass or fail it. 2026-08-16, 16
+    /// seeds: stock 181/284/384, treated 208/333/474 revealed; city-states met
+    /// 1.69/2.25/3.06 against 1.62/2.56/3.31.
+    #[test]
+    #[ignore]
+    fn explore_commit_sweeps_more_ground() {
+        let arms = ["stock-bridge", "explore-commit"];
+        let count: u64 = std::env::var("CIVVIS_EXPLORE_AB_SEEDS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(8);
+        let seeds: Vec<u64> = (1..=count).map(|n| 26_081_600 + n).collect();
+        let mut summary: Vec<(String, [f64; 3], [f64; 3], [f64; 3])> = Vec::new();
+        for (arm, commit) in arms.iter().zip([false, true]) {
+            let mut revealed = [0.0f64; 3];
+            let mut minors_met = [0.0f64; 3];
+            let mut majors_met = [0.0f64; 3];
+            for seed in &seeds {
+                let mut game = Game::new_with(crate::game::GameOptions {
+                    speed: "online".to_string(),
+                    map_script: crate::setup::MapScript::Continents,
+                    ..crate::game::GameOptions::new(6, 74, 46, *seed, 70, 9)
+                });
+                let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                    .map(|seat| {
+                        let mut ai = AdvancedAi::new();
+                        if seat == 0 {
+                            ai.enable_live_bridge();
+                            if commit {
+                                ai.enable_explore_commit();
+                            }
+                        }
+                        ai
+                    })
+                    .collect();
+                game.set_fog_memory(false);
+                let mut marks = [30u32, 50, 70].into_iter().peekable();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &Action::EndTurn);
+                    }
+                    if pid == game.players.len() - 1 {
+                        if let Some(mark) = marks.peek().copied() {
+                            if game.turn >= mark {
+                                let slot = [30u32, 50, 70].iter().position(|m| *m == mark).unwrap();
+                                revealed[slot] += game.players[0].explored.len() as f64;
+                                minors_met[slot] += game
+                                    .players
+                                    .iter()
+                                    .filter(|p| p.is_minor && !p.is_barbarian && game.has_met(0, p.id))
+                                    .count() as f64;
+                                majors_met[slot] += game
+                                    .players
+                                    .iter()
+                                    .filter(|p| !p.is_minor && p.id != 0 && game.has_met(0, p.id))
+                                    .count() as f64;
+                                marks.next();
+                            }
+                        }
+                    }
+                }
+            }
+            let n = seeds.len() as f64;
+            for slot in 0..3 {
+                revealed[slot] /= n;
+                minors_met[slot] /= n;
+                majors_met[slot] /= n;
+            }
+            eprintln!(
+                "{arm}: revealed t30/t50/t70 = {:.0}/{:.0}/{:.0}  city-states met = {:.2}/{:.2}/{:.2}  majors met = {:.2}/{:.2}/{:.2}",
+                revealed[0], revealed[1], revealed[2],
+                minors_met[0], minors_met[1], minors_met[2],
+                majors_met[0], majors_met[1], majors_met[2]
+            );
+            summary.push((arm.to_string(), revealed, minors_met, majors_met));
+        }
+        assert!(
+            summary[1].1[1] > summary[0].1[1],
+            "the committed sweep must reveal more ground by t50 on average: {:?}",
+            summary
+        );
+    }
+
     #[test]
     fn an_empire_with_no_eyes_and_ground_left_to_walk_is_missing_the_recon_arm() {
         let (g, ai) = blind_empire(4_411);
@@ -14268,12 +15254,63 @@ mod tests {
         );
         assert!(ai.recon_is_the_missing_arm(&g, 0));
 
-        // One scout answers it. The arm is repaired, not stockpiled.
+        // One scout answers it before expansion. The arm is repaired, not
+        // stockpiled through the opening.
         let mut with_scout = g.clone();
         let home = with_scout.player_city_ids(0)[0];
         let pos = with_scout.cities[&home].pos;
         with_scout.spawn_test_unit("scout", 0, pos);
         assert!(!ai.recon_is_the_missing_arm(&with_scout, 0));
+
+        // City two earns an independent second eye. The single Scout may be
+        // trapped or killed; it must no longer mask the frontier from an
+        // expanded empire.
+        let mut expanded = with_scout.clone();
+        let capital = expanded.player_city_ids(0)[0];
+        let capital_pos = expanded.cities[&capital].pos;
+        let second_site = expanded
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.owner_city.is_none()
+                    && expanded.rules.is_passable(tile)
+                    && !expanded.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .find(|position| (4..=10).contains(&expanded.wdist(capital_pos, *position)))
+            .expect("the fixture has a legal second-city site");
+        let second_city = expanded.found_city_for(0, second_site, None);
+        assert_eq!(expanded.player_city_ids(0).len(), RECON_SECOND_EYE_CITY_FLOOR);
+        assert!(
+            ai.recon_is_the_missing_arm(&expanded, 0),
+            "one Scout does not leave a two-city empire with a redundant eye"
+        );
+
+        // ★★★★ A queued Scout also answers the second-eye gap. With only
+        // units on the map counted, every city that came to `pick_item` on the
+        // same turn read "no eyes" and answered it — seven Rangers in seven
+        // cities on run civvis-20260816T213447Z, t140. A soldier in the queue
+        // is not eyes.
+        let mut queued = expanded.clone();
+        queued.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+            unit: Name::new("warrior"),
+        });
+        assert!(ai.recon_is_the_missing_arm(&queued, 0), "a queued warrior is no eye");
+        queued.cities.get_mut(&home).unwrap().queue.clear();
+        queued.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+            unit: Name::new("scout"),
+        });
+        assert!(
+            !ai.recon_is_the_missing_arm(&queued, 0),
+            "a Scout already in a queue is the expanded arm being rebuilt"
+        );
+
+        expanded.spawn_test_unit("scout", 0, expanded.cities[&second_city].pos);
+        assert!(
+            !ai.recon_is_the_missing_arm(&expanded, 0),
+            "two live Scouts satisfy the complete, bounded recon arm"
+        );
     }
 
     #[test]
@@ -14290,6 +15327,41 @@ mod tests {
         assert_eq!(
             ai.book_pos, 1,
             "the Scout replaces the first scripted build instead of adding a fifth opener"
+        );
+    }
+
+    #[test]
+    fn the_live_recon_repair_starts_one_second_scout_after_city_two() {
+        let (mut game, mut ai) = blind_empire(4_414);
+        let capital = game.player_city_ids(0)[0];
+        let capital_pos = game.cities[&capital].pos;
+        game.spawn_test_unit("scout", 0, capital_pos);
+        let second_site = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .find(|position| (4..=10).contains(&game.wdist(capital_pos, *position)))
+            .expect("the fixture has a legal second-city site");
+        game.found_city_for(0, second_site, None);
+        ai.book_pos = 4;
+
+        ai.cities(&mut game, 0);
+
+        let queued_scouts = game
+            .player_city_ids(0)
+            .into_iter()
+            .flat_map(|city| game.cities[&city].queue.iter())
+            .filter(|item| matches!(item, Item::Unit { unit } if unit == "scout"))
+            .count();
+        assert_eq!(
+            queued_scouts, 1,
+            "city two replaces the lone Scout with exactly one independent eye"
         );
     }
 
@@ -14320,6 +15392,181 @@ mod tests {
         let mut shipped = ai.clone();
         shipped.recon_replacement = false;
         assert!(!shipped.recon_is_the_missing_arm(&g, 0));
+    }
+
+    /// ★★★★ One of five rivals met by turn 142 and 13% of the map seen: the
+    /// land recon arm charted its continent and stopped at the shore, and in
+    /// 142 turns the empire built one Galley (civvis-20260816T110555Z). See
+    /// `naval_recon`. An empire with no ship and unexplored water is missing
+    /// the sea's arm; one Galley with an open route satisfies it; a charted
+    /// sea releases it; and a viable coastal city with Sailing buys the
+    /// cheapest hull for it.
+    #[test]
+    fn an_empire_with_no_ship_and_water_left_to_chart_is_missing_the_naval_arm() {
+        let (mut g, mut ai) = blind_empire(4_430);
+        ai.naval_recon = true;
+        let cid = g.player_city_ids(0)[0];
+        let city_pos = g.cities[&cid].pos;
+        dry_map(&mut g);
+        let waterway = coastal_waterway(&mut g, city_pos, NAVAL_RECON_MIN_WATERWAY_TILES);
+        assert!(
+            BasicAi::city_has_naval_recon_launch(&g, 0, cid),
+            "fixture precondition: unexplored water exists"
+        );
+        assert!(ai.naval_recon_is_the_missing_arm(&g, 0), "no ship, water unseen: missing");
+
+        // Nothing to buy without Sailing; the cheapest hull once it is known.
+        assert_eq!(ai.best_naval_recon(&g, 0, cid), None);
+        let mut sailing = g.clone();
+        sailing.players[0].techs.insert(crate::name!("sailing"));
+        assert_eq!(
+            ai.best_naval_recon(&sailing, 0, cid).as_deref(),
+            Some("galley"),
+            "the cheapest ship the city can lay down"
+        );
+
+        // A soldier does not satisfy the sea's arm; one Galley does.
+        let mut army = g.clone();
+        let pos = army.cities[&cid].pos;
+        for _ in 0..6 {
+            army.spawn_test_unit("warrior", 0, pos);
+        }
+        assert!(ai.naval_recon_is_the_missing_arm(&army, 0));
+        let mut fleet = g.clone();
+        let free_galley = fleet.spawn_test_unit("galley", 0, waterway[0]);
+        assert!(
+            BasicAi::naval_recon_ship_can_chart(&fleet, 0, free_galley),
+            "the Galley can reach the uncharted open water"
+        );
+        assert!(!ai.naval_recon_is_the_missing_arm(&fleet, 0), "one hull is the whole arm");
+
+        // A Galley that is physically present but caught in a two-hex lake
+        // must not stop the empire from repairing its actual naval eye.
+        let mut stranded = sailing.clone();
+        let city_pos = stranded.cities[&cid].pos;
+        let lake_centre = stranded
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                stranded.wdist(city_pos, tile.pos) >= 5
+                    && !stranded.rules.is_water(tile)
+                    && stranded.wdisk(tile.pos, 2).len() == 19
+            })
+            .map(|tile| tile.pos)
+            .expect("a dry patch well away from the coastal capital");
+        let lake = two_tile_lake(&mut stranded, lake_centre);
+        let trapped_galley = stranded.spawn_test_unit("galley", 0, lake[0]);
+        assert!(
+            !BasicAi::naval_recon_ship_can_chart(&stranded, 0, trapped_galley),
+            "a two-hex lake is not a route to new contacts"
+        );
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&stranded, 0),
+            "the stranded Galley cannot mask the missing sea explorer"
+        );
+
+        // A charted sea releases it; and it is off unless turned on.
+        let mut charted = g.clone();
+        let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+        charted.players[0].explored.extend(all);
+        assert!(!ai.naval_recon_is_the_missing_arm(&charted, 0));
+        let mut off = ai.clone();
+        off.naval_recon = false;
+        assert!(!off.naval_recon_is_the_missing_arm(&g, 0));
+    }
+
+    #[test]
+    fn a_major_naval_war_keeps_a_second_recon_eye() {
+        let mut game = Game::new_full(2, 30, 18, 4_432, 300, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("the first major starts with a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the fixture founds a capital");
+        for uid in game.player_unit_ids(0) {
+            game.remove_unit(uid);
+        }
+        let city = game.player_city_ids(0)[0];
+        let city_pos = game.cities[&city].pos;
+        dry_map(&mut game);
+        let waterway = coastal_waterway(
+            &mut game,
+            city_pos,
+            NAVAL_RECON_MIN_WATERWAY_TILES + 3,
+        );
+        game.players[0].techs.insert(crate::name!("sailing"));
+        game.at_war.insert((0, 1));
+        game.spawn_test_unit("galley", 1, *waterway.last().unwrap());
+        let first = game.spawn_test_unit("galley", 0, waterway[0]);
+
+        let mut ai = BasicAi::new();
+        ai.enable_naval_recon();
+        assert!(BasicAi::naval_recon_ship_can_chart(&game, 0, first));
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&game, 0),
+            "the sole Galley can fight the major naval war or chart, but not reliably do both"
+        );
+
+        // A viable sea unit already queued is the second eye being built, not
+        // permission for every other city to queue another copy.
+        game.cities.get_mut(&city).unwrap().queue.push(Item::Unit {
+            unit: crate::name!("galley"),
+        });
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&game, 0),
+            "one live eye plus one queued eye completes the bounded wartime arm"
+        );
+        game.cities.get_mut(&city).unwrap().queue.clear();
+
+        let second = game.spawn_test_unit("galley", 0, waterway[1]);
+        assert!(BasicAi::naval_recon_ship_can_chart(&game, 0, second));
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&game, 0),
+            "two live eyes complete the wartime arm"
+        );
+
+        let mut city_state_war = game.clone();
+        city_state_war.remove_unit(second);
+        city_state_war.players[1].is_minor = true;
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&city_state_war, 0),
+            "a city-state war keeps the normal one-ship exploration arm"
+        );
+    }
+
+    #[test]
+    fn naval_recon_never_launches_from_a_two_tile_lake() {
+        let (mut lake, mut ai) = blind_empire(4_531);
+        ai.naval_recon = true;
+        let cid = lake.player_city_ids(0)[0];
+        let city_pos = lake.cities[&cid].pos;
+        dry_map(&mut lake);
+        let shore = two_tile_lake(&mut lake, city_pos);
+        lake.players[0].techs.insert(crate::name!("sailing"));
+
+        assert!(BasicAi::city_is_coastal(&lake, cid), "the lake still makes the city coastal");
+        assert!(
+            !BasicAi::city_has_naval_recon_launch(&lake, 0, cid),
+            "coastal yields do not imply a viable sea-scout launch"
+        );
+        assert_eq!(
+            ai.best_naval_recon(&lake, 0, cid),
+            None,
+            "do not spend a Galley on a lake-bound reconnaissance job"
+        );
+        let galley = lake.spawn_test_unit("galley", 0, shore[0]);
+        assert!(
+            !BasicAi::naval_recon_ship_can_chart(&lake, 0, galley),
+            "a lake-bound hull is not a naval reconnaissance arm"
+        );
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&lake, 0),
+            "with no viable launch, do not keep forcing a naval build"
+        );
     }
 
     /// The shape live run `civvis-20260807T181839Z` was in at t115 when its

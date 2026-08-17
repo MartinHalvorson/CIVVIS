@@ -414,6 +414,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         empire[4] += adjustment.culture;
         empire[5] += adjustment.faith;
     }
+    // Founder-belief income and the Faith paid for unused Great Person
+    // points are collected by the empire, not by any city; the top bar
+    // shows them with the city sum, and so does this.
+    {
+        let extras = g.player_yield_extras(pid);
+        empire[2] += extras.gold;
+        empire[3] += extras.science;
+        empire[4] += extras.culture;
+        empire[5] += extras.faith;
+    }
 
     enum KnownCity<'a> {
         Live(&'a City),
@@ -789,6 +799,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // output visible.  These are aggregate public indicators rather
             // than hidden city details, and make spectator comparisons useful.
             let city_ids = g.player_city_ids(o.id);
+            let public_stats = g.observed_public_empire_stats.get(&o.id);
             let mut output = crate::rules::Yields::default();
             for &cid in &city_ids {
                 output.add(g.city_yields(cid));
@@ -796,6 +807,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
                 output.add(*adjustment);
             }
+            output.add(g.player_yield_extras(o.id));
             // An arena grants Gold and Science to the side rather than to a
             // city, so summing cities alone would report zero of both while
             // the treasury filled and the tree opened — and would report a
@@ -803,10 +815,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // where they are actually collected, so the panel says what the
             // turn is about to do.
             output.add(g.arena_side_yields(o.id));
-            let total_population: i32 = city_ids
+            let modeled_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
                 .sum();
+            let city_count = public_stats
+                .and_then(|stats| stats.city_count)
+                .unwrap_or(city_ids.len());
+            let total_population = public_stats
+                .and_then(|stats| stats.population)
+                .unwrap_or(modeled_population);
             let military = g.military_power(o.id).round() as i64;
             // A finished device is an empire-scale fact of the same kind as
             // military strength, and it goes on the public ledger for the same
@@ -874,15 +892,19 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "anarchy_turns": o.anarchy_turns,
                 "age": o.age,
                 "score": g.score(o.id),
-                "cities": city_ids.len(),
+                "cities": city_count,
                 "population": total_population,
-                "suzerain_count": g.players.iter()
-                    .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
-                    .filter(|minor| g.suzerain_of(minor.id) == Some(o.id))
-                    .count(),
-                "wonder_count": city_ids.iter()
-                    .map(|city| g.cities[city].wonders.len())
-                    .sum::<usize>(),
+                "suzerain_count": public_stats
+                    .and_then(|stats| stats.suzerain_count)
+                    .unwrap_or_else(|| g.players.iter()
+                        .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
+                        .filter(|minor| g.suzerain_of(minor.id) == Some(o.id))
+                        .count()),
+                "wonder_count": public_stats
+                    .and_then(|stats| stats.wonder_count)
+                    .unwrap_or_else(|| city_ids.iter()
+                        .map(|city| g.cities[city].wonders.len())
+                        .sum::<usize>()),
                 "victories": if !o.is_minor && !o.is_barbarian {
                     Some(victory_progress_json(g, o.id, leading_score))
                 } else {
@@ -894,9 +916,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "faith": round1(o.faith),
                 "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
+                "tourism_per_turn": round1(public_stats
+                    .and_then(|stats| stats.tourism_per_turn)
+                    .unwrap_or_else(|| g.tourism_per_turn(o.id))),
                 "military": military,
-                "nuclear_devices": devices("project_effect:nuclear_devices"),
-                "thermonuclear_devices": devices("project_effect:thermonuclear_devices"),
+                "nuclear_devices": public_stats
+                    .and_then(|stats| stats.nuclear_devices)
+                    .unwrap_or_else(|| devices("project_effect:nuclear_devices")),
+                "thermonuclear_devices": public_stats
+                    .and_then(|stats| stats.thermonuclear_devices)
+                    .unwrap_or_else(|| devices("project_effect:thermonuclear_devices")),
                 // ⚠ WHAT THE HOST SAID, kept apart from what CIVVIS MODELS.
                 // `military` above is `military_power`, which is deliberately
                 // `max(observed, our own strength sum)` — so for our OWN seat,

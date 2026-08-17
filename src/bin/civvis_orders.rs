@@ -372,7 +372,7 @@ struct Order {
     pos: Option<(i32, i32)>,
 }
 
-/// Firaxis remembers a submitted peace offer per rival for five turns.
+/// Firaxis remembers a submitted peace offer per target for five turns.
 ///
 /// `CivvisControlAgent.lua` rejects another offer while
 /// `turn - asked < (cfg.PeaceRetryTurns or 5)`. Keep that host-only fact at the
@@ -391,10 +391,11 @@ impl HostPeaceRetries {
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         self.last_request.retain(|target, asked| {
             *asked <= state.turn
-                && state
-                    .rivals
-                    .iter()
-                    .any(|rival| rival.at_war && rival.player as i64 == *target)
+                && (state.rivals.iter().any(|rival| {
+                    rival.at_war && rival.player as i64 == *target
+                }) || state.minors.iter().any(|minor| {
+                    minor.at_war && minor.player as i64 == *target
+                }))
         });
     }
 
@@ -409,6 +410,141 @@ impl HostPeaceRetries {
     fn record(&mut self, target: i64, turn: u32) {
         self.last_request.insert(target, turn);
     }
+}
+
+/// The minimum delegation Civilization VI requires for any suzerainty, before a
+/// rival's standing raises that floor.
+const SUZERAIN_ENVOY_FLOOR: i64 = 3;
+
+/// How many of our held Envoys would immediately take this city-state.
+fn envoys_to_take_suzerainty(minor: &civvis::mirror::StateMinor) -> i64 {
+    (SUZERAIN_ENVOY_FLOOR.max(minor.most_envoys.saturating_add(1)) - minor.envoys.max(0))
+        .max(1)
+}
+
+/// Whether this city-state is only at war because its current Suzerain is.
+///
+/// A city-state follows its Suzerain into that war, so a direct peace operation
+/// cannot make Envoys legal.  The relevant major must be met to have a row in
+/// `rivals`; an unrepresented Suzerain is deliberately not guessed to be at war.
+fn city_state_war_is_derived(
+    state: &civvis::mirror::StateSnapshot,
+    minor: &civvis::mirror::StateMinor,
+) -> bool {
+    minor.suzerain >= 0
+        && state
+            .rivals
+            .iter()
+            .any(|rival| rival.at_war && rival.player as i32 == minor.suzerain)
+}
+
+/// Convert one affordable, direct city-state war into the first half of an
+/// Envoy investment.
+///
+/// Civilization VI rejects `GIVE_INFLUENCE_TOKEN` while a war is active, and its
+/// diplomacy operation lands asynchronously.  Submit exactly one peace order
+/// now; the next exported frame is the authority for whether normal envoy
+/// planning may spend the pool.  The caller retains that exact cost only on an
+/// accepted peace frame.  Picking the lowest threshold puts a limited pool
+/// behind the soonest available Suzerain bonus.
+fn queue_city_state_envoy_reclaim(
+    orders: &mut Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+) -> Option<(i64, i64)> {
+    let held = state.envoys_free.filter(|held| *held > 0)?;
+    let (needed, target) = state
+        .minors
+        .iter()
+        .filter(|minor| minor.is_city_state() && minor.at_war)
+        .filter(|minor| !city_state_war_is_derived(state, minor))
+        .map(|minor| (envoys_to_take_suzerainty(minor), minor.player as i64))
+        .filter(|(needed, _)| held >= *needed)
+        .filter(|(_, target)| {
+            !orders.iter().any(|order| {
+                order.subject == Some(*target) && matches!(order.kind, "war" | "peace")
+            })
+        })
+        .min_by_key(|(needed, target)| (*needed, *target))?;
+    orders.push(Order {
+        kind: "peace",
+        subject: Some(target),
+        verb: Some("MAKE_PEACE".to_string()),
+        pos: None,
+    });
+    Some((target, needed))
+}
+
+/// Pair an already-planned major peace with the city-state suzerainty it frees.
+///
+/// A city-state at war through its hostile Suzerain cannot accept a direct
+/// peace operation or an Envoy.  The major's peace, unlike a direct minor
+/// peace, is a bilateral offer that can be refused and later ask for Gold.  Do
+/// not manufacture that strategic trade merely to spend Envoys: wait until the
+/// planner has already chosen the peace, then retain the exact takeover cost
+/// for the authoritative post-peace frame.  A successful deal is the only
+/// event that makes the minor legal again.
+///
+/// Returns `(suzerain, minor, needed)`, choosing the cheapest immediately
+/// affordable reclaim.  The caller deliberately keeps the direct-city-state
+/// reclaim ahead of this one: a minor peace is a unilateral, lower-risk path.
+fn planned_suzerain_peace_envoy_reclaim(
+    orders: &[Order],
+    state: &civvis::mirror::StateSnapshot,
+) -> Option<(i64, i64, i64)> {
+    let held = state.envoys_free.filter(|held| *held > 0)?;
+    state
+        .minors
+        .iter()
+        .filter(|minor| minor.is_city_state() && minor.at_war)
+        .filter(|minor| city_state_war_is_derived(state, minor))
+        .filter_map(|minor| {
+            let suzerain = i64::from(minor.suzerain);
+            let peace_is_planned = orders.iter().any(|order| {
+                order.kind == "peace" && order.subject == Some(suzerain)
+            });
+            let war_is_planned = orders.iter().any(|order| {
+                order.kind == "war" && order.subject == Some(suzerain)
+            });
+            (peace_is_planned && !war_is_planned).then_some((
+                suzerain,
+                minor.player as i64,
+                envoys_to_take_suzerainty(minor),
+            ))
+        })
+        .filter(|(_, _, needed)| held >= *needed)
+        .min_by_key(|(suzerain, minor, needed)| (*needed, *minor, *suzerain))
+}
+
+/// Keep the exact cost of a submitted city-state peace available for the next
+/// authoritative frame, while still investing any surplus Envoys immediately.
+///
+/// The normal per-turn envoy cap means no more than `ENVOY_ORDERS_PER_TURN`
+/// existing orders can land in this host batch.  Removing the target itself is
+/// defensive: the planning board cannot emit it during war, but the host state
+/// is authoritative and must never receive peace and envoy for one minor at once.
+fn reserve_envoys_for_submitted_reclaim(
+    orders: &mut Vec<Order>,
+    target: i64,
+    held: i64,
+    needed: i64,
+) -> usize {
+    let mut remaining_surplus = held
+        .saturating_sub(needed)
+        .clamp(0, ENVOY_ORDERS_PER_TURN as i64) as usize;
+    let mut deferred = 0;
+    orders.retain(|order| {
+        if order.kind != "envoy" {
+            return true;
+        }
+        if order.subject == Some(target) || remaining_surplus == 0 {
+            deferred += 1;
+            false
+        } else {
+            remaining_surplus -= 1;
+            true
+        }
+    });
+    deferred
 }
 
 /// Firaxis blocks outer-defense repairs for three turns after a city takes damage.
@@ -515,46 +651,135 @@ impl HostCityAttackCooldowns {
 /// ordered `MOVE_TO (9,11)` on 28 consecutive turns; 193 plots revealed by t50.
 /// #1735 retires an exploration GOAL the unit stands still for, but the goal
 /// varied while the coalesced first step through (9,11) did not, so nothing
-/// fired. This works at the true grain: the DESTINATION the bridge sent, per
-/// host unit. A unit still standing on the tile it was ordered from, one turn
-/// after a `MOVE_TO`, proves that destination unwalkable; if the mirror still
-/// holds it as unknown ground it stops being assumed traversable, and every
-/// path — exploration, settlers, the army — routes around it. Revealed terrain
-/// is never overridden: once the plot is seen, its real terrain governs.
+/// fired. The host receives a coalesced destination, but CIVVIS still knows
+/// each local step that led there. A unit that never starts a long route first
+/// retries that exact speculative step; only if Firaxis refuses the one-step
+/// probe too does it become unwalkable. The mirror then stops assuming it is
+/// traversable, and every path — exploration, settlers, the army — routes
+/// around it. Revealed terrain is never overridden: once the plot is seen, its
+/// real terrain governs.
 #[derive(Default)]
 struct HostMoveRefusals {
-    /// The last `MOVE_TO` sent per host unit: where it stood and where it was
-    /// sent, on which turn.
-    sent: std::collections::BTreeMap<i64, ((i32, i32), (i32, i32), u32)>,
-    /// Destinations proved unwalkable, in host offset coordinates.
+    /// The last `MOVE_TO` sent per host unit: where it stood, the long
+    /// destination sent to Firaxis, the first unknown local step, and the turn.
+    sent: std::collections::BTreeMap<i64, HostMoveAttempt>,
+    /// A first unknown hop from a long route the host did not begin. It must
+    /// become the next exact `MOVE_TO` before terrain is declared dead.
+    pending_probes: std::collections::BTreeMap<i64, HostFrontierProbe>,
+    /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
+}
+
+#[derive(Clone, Copy)]
+struct HostMoveAttempt {
+    from: (i32, i32),
+    destination: (i32, i32),
+    /// The first unrevealed step CIVVIS simulated before coalescing the whole
+    /// path into `destination`, or that destination for a fully revealed route.
+    /// It is the actionable feedback target when the host never starts the
+    /// route at all.
+    frontier_step: (i32, i32),
+    turn: u32,
+}
+
+#[derive(Clone, Copy)]
+struct HostFrontierProbe {
+    from: (i32, i32),
+    target: (i32, i32),
 }
 
 impl HostMoveRefusals {
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         let sent = std::mem::take(&mut self.sent);
-        for (unit, (from, dest, turn)) in sent {
+        for (unit, attempt) in sent {
             // The ladder asks several times per turn; a same-turn frame cannot
             // judge last frame's move yet, so keep it for the turn that can.
-            if state.turn <= turn {
-                self.sent.insert(unit, (from, dest, turn));
+            if state.turn <= attempt.turn {
+                self.sent.insert(unit, attempt);
                 continue;
             }
-            if state.turn != turn.saturating_add(1) {
+            if state.turn != attempt.turn.saturating_add(1) {
+                self.pending_probes.remove(&unit);
                 continue;
             }
             let Some(now) = state.units.iter().find(|u| u.id == unit) else {
+                self.pending_probes.remove(&unit);
                 continue;
             };
-            if (now.x, now.y) == from && from != dest {
-                self.dead.insert(dest);
+            if (now.x, now.y) != attempt.from || attempt.from == attempt.destination {
+                self.pending_probes.remove(&unit);
+            } else if attempt.destination == attempt.frontier_step {
+                // This was already the exact local step, rather than a long
+                // route containing it. Now the host's non-movement is proof.
+                self.pending_probes.remove(&unit);
+                self.dead.insert(attempt.frontier_step);
+            } else {
+                self.pending_probes.insert(
+                    unit,
+                    HostFrontierProbe {
+                        from: attempt.from,
+                        target: attempt.frontier_step,
+                    },
+                );
             }
         }
     }
 
+    /// Replace a repeated long move with the one unknown hop the host just
+    /// failed to begin. This keeps healthy paths coalesced at full speed and
+    /// gathers exact terrain evidence only on a failed route.
+    fn cap_pending_frontier_moves(
+        &mut self,
+        orders: &mut [Order],
+        state: &civvis::mirror::StateSnapshot,
+        first_unknown_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
+    ) -> usize {
+        let pending = std::mem::take(&mut self.pending_probes);
+        let mut capped = 0;
+        for (unit, probe) in pending {
+            let still_at_from = state
+                .units
+                .iter()
+                .find(|candidate| candidate.id == unit)
+                .is_some_and(|candidate| (candidate.x, candidate.y) == probe.from);
+            if !still_at_from {
+                continue;
+            }
+            // A replan that chose a different opening is already escaping the
+            // failed route. Do not overwrite its tactical judgment with stale
+            // exploration feedback.
+            if first_unknown_steps.get(&unit) != Some(&probe.target) {
+                continue;
+            }
+            if let Some(order) = orders.iter_mut().find(|order| {
+                order.kind == "unit"
+                    && order.subject == Some(unit)
+                    && order.verb.as_deref() == Some("MOVE_TO")
+                    && order.pos.is_some()
+            }) {
+                if order.pos != Some(probe.target) {
+                    order.pos = Some(probe.target);
+                    capped += 1;
+                }
+                self.pending_probes.insert(unit, probe);
+            }
+        }
+        capped
+    }
+
     /// Remember where each `MOVE_TO` in `orders` sends which host unit from.
-    fn record(&mut self, orders: &[Order], state: &civvis::mirror::StateSnapshot) {
+    ///
+    /// `frontier_steps` comes from the uncoalesced action log. It identifies the
+    /// first unknown hop along an otherwise long host route; a one-step or fully
+    /// revealed route falls back to its final destination, preserving the ordinary
+    /// refusal behaviour.
+    fn record(
+        &mut self,
+        orders: &[Order],
+        state: &civvis::mirror::StateSnapshot,
+        frontier_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
+    ) {
         for order in orders {
             if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
                 continue;
@@ -570,7 +795,22 @@ impl HostMoveRefusals {
             else {
                 continue;
             };
-            self.sent.insert(unit, (from, dest, state.turn));
+            let frontier_step = self
+                .pending_probes
+                .get(&unit)
+                .filter(|probe| probe.from == from && probe.target == dest)
+                .map(|probe| probe.target)
+                .or_else(|| frontier_steps.get(&unit).copied())
+                .unwrap_or(dest);
+            self.sent.insert(
+                unit,
+                HostMoveAttempt {
+                    from,
+                    destination: dest,
+                    frontier_step,
+                    turn: state.turn,
+                },
+            );
         }
     }
 
@@ -691,6 +931,53 @@ fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
     (out, deferred, coalesced)
 }
 
+/// The first unrevealed step in each walk that reaches the host boundary.
+///
+/// `coalesce_unit_paths` deliberately sends a unit's furthest planned hex so
+/// Scouts, settlers and builders spend all of their movement. When the host
+/// refuses that long route without moving at all, retaining only its terminal
+/// hex gives the next mirror no useful terrain fact: the obstacle can be an
+/// intermediate speculative step. Capture that first unknown step before the
+/// command is compressed, but only for a contiguous opening walk — exactly the
+/// prefix that coalescing will actually emit.
+fn first_unknown_coalesced_steps(
+    orders: &[Order],
+    snapshot: &civvis::mirror::Snapshot,
+) -> std::collections::BTreeMap<i64, (i32, i32)> {
+    let mut open_walks: std::collections::BTreeMap<i64, bool> =
+        std::collections::BTreeMap::new();
+    let mut steps = std::collections::BTreeMap::new();
+    for order in orders {
+        if order.kind != "unit" {
+            continue;
+        }
+        let Some(unit) = order.subject else {
+            continue;
+        };
+        let step = (order.verb.as_deref() == Some("MOVE_TO"))
+            .then_some(order.pos)
+            .flatten();
+        match open_walks.get_mut(&unit) {
+            None => {
+                open_walks.insert(unit, step.is_some());
+                if let Some(pos) = step.filter(|pos| !snapshot.is_revealed(*pos)) {
+                    steps.insert(unit, pos);
+                }
+            }
+            Some(open) if *open => {
+                if let Some(pos) = step.filter(|pos| !snapshot.is_revealed(*pos)) {
+                    steps.entry(unit).or_insert(pos);
+                }
+                if step.is_none() {
+                    *open = false;
+                }
+            }
+            Some(_) => {}
+        }
+    }
+    steps
+}
+
 /// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
 /// titles in one simulated planning pass, but each later appointment/promotion was
 /// chosen against the result of the prior one. Send only the first and re-plan from
@@ -774,6 +1061,59 @@ fn host_player_target(
         })
 }
 
+/// Resolve a mirrored city-state SEAT back to Firaxis's minor player id.
+///
+/// By the mirror's own seating rule (`minor_actor_assignments`: met city-states
+/// take the board's minor seats in export order), not through a city plot —
+/// a city-state met by a scout's contact whose centre the fog has not shown
+/// yet has no mirrored city to look up, and an envoy to it is exactly the
+/// order that must still cross (its first-meet envoy is already standing
+/// there).
+fn host_minor_target(
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    player: usize,
+) -> Option<i64> {
+    civvis::mirror::minor_actor_assignments(&mirror_state.game, state)
+        .into_iter()
+        .find(|(minor, seat)| *seat == player && minor.is_city_state())
+        .map(|(minor, _)| minor.player as i64)
+}
+
+/// How many `envoy` orders one turn may carry. The planning board spends every
+/// held envoy in one pass (`advanced_envoys` loops until `envoys_free` is 0),
+/// and a seat that has banked fifty of them — every Settler game to date —
+/// would otherwise issue fifty `GIVE_INFLUENCE_TOKEN` operations the first
+/// turn the lane opens. Eight a turn drains that bank in a week of turns, keeps
+/// the actuation path's blast radius small while it earns its record, and the
+/// remainder is not lost: next turn's board re-plans from the fresh export with
+/// the placed ones already standing. The greedy order is preserved — the first
+/// eight the plan chose are the eight that cross.
+const ENVOY_ORDERS_PER_TURN: usize = 8;
+
+/// Keep the first `ENVOY_ORDERS_PER_TURN` envoy orders in plan order and defer
+/// the rest to next turn's plan. Every other order kind passes untouched.
+fn bound_envoy_orders(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut kept = 0;
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if order.kind != "envoy" {
+                return true;
+            }
+            if kept < ENVOY_ORDERS_PER_TURN {
+                kept += 1;
+                true
+            } else {
+                deferred += 1;
+                false
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
 /// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
@@ -797,13 +1137,20 @@ fn host_player_target(
 struct GreatPersonStall {
     on_cooldown: usize,
     no_activation_plot: usize,
+    /// Slot-consuming people (Writers, Artists, Musicians) the host says have
+    /// ZERO compatible empty Great Work slots anywhere. Their highlight plots
+    /// still list the district, so before this counter existed they sat in
+    /// `on_cooldown` forever — seven of them, thirty-plus turns, on run
+    /// civvis-20260817T010950Z. This bucket is a build order the mirror's
+    /// needs machinery is already placing, not a wait.
+    no_empty_slot: usize,
     /// Founded zero-charge Prophets sent for retirement this frame.
     retired_prophets: usize,
 }
 
 impl GreatPersonStall {
     fn total(self) -> usize {
-        self.on_cooldown + self.no_activation_plot
+        self.on_cooldown + self.no_activation_plot + self.no_empty_slot
     }
 }
 
@@ -853,6 +1200,15 @@ fn great_person_orders(
                 verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
                 pos: None,
             });
+            continue;
+        }
+        // Zero compatible empty slots empire-wide is not a cooldown and not a
+        // marching problem: nothing this unit can do fixes it, and walking to
+        // a highlighted-but-full district is motion without progress. Stand
+        // still and let the mirror's activation-needs machinery build the
+        // capacity (the host counts the slots itself; see `empty_slots`).
+        if person.empty_slots == Some(0) {
+            stall.no_empty_slot += 1;
             continue;
         }
         // A command that just resolved can remain unavailable for the rest of
@@ -1046,6 +1402,28 @@ fn remove_active_route_traders_from_plan(
 /// building something CIVVIS did not order; once its choice takes, `producing`
 /// matches and the queue is seeded normally again. A choice the host keeps refusing
 /// is already routed around by `blocked_production`, which `sync` refreshes.
+/// Adopt whatever the host is building right now as CIVVIS's own plan. See
+/// the persistent server's first turn: a fresh process holds an empty `ours`,
+/// so without this every city's work in progress reads as foreign to
+/// [`release_foreign_production`] and is re-decided the moment the decider
+/// restarts. Existing entries — the plan this process has already ordered —
+/// are kept.
+fn adopt_host_production(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> usize {
+    let mut adopted = 0;
+    for city in &state.cities {
+        if let Some(producing) = city.producing.as_deref() {
+            if !ours.contains_key(&city.id) {
+                ours.insert(city.id, producing.to_string());
+                adopted += 1;
+            }
+        }
+    }
+    adopted
+}
+
 fn release_foreign_production(
     planned_game: &mut civvis::game::Game,
     cid_of: &std::collections::BTreeMap<i64, u32>,
@@ -1074,8 +1452,9 @@ fn release_foreign_production(
 }
 
 #[derive(Default)]
-struct BarbarianFinishingVolley {
-    /// Barbarians the exact planning model removed before ordinary movement.
+struct WarFinishingVolley {
+    /// Wounded military enemies at war that the exact planning model removed
+    /// before ordinary movement.
     targets: usize,
     /// Direct attacks to send from the exported frame, including one reserve
     /// attacker when Firaxis may leave a modelled kill alive.
@@ -1238,7 +1617,7 @@ fn live_finishing_candidates(
     candidates
 }
 
-/// Finish exposed barbarians before their attackers receive campaign moves.
+/// Finish exposed wounded enemies before their attackers receive campaign moves.
 ///
 /// The old live-only repair rewrote every wounded barbarian to 100 HP on the
 /// planning board. That kept a second defender from being released after a
@@ -1247,43 +1626,57 @@ fn live_finishing_candidates(
 /// barbarians survive successive exported frames on 1, 3, 6, 8, 16 and 20 HP
 /// while nearby units promoted or marched. The reserve was firing throughout.
 ///
-/// Keep the exported HP. For a wounded barbarian inside the existing six-tile
-/// home-defense ring, prove a kill using only attacks legal *right now*, apply
-/// that shortest volley before the normal AI turn, and reserve one additional
-/// direct attacker when one is available. The extra order preserves the old
-/// host/model safety margin: if Firaxis leaves the predicted kill alive it gets
-/// the second blow; if the first blow killed it, a ranged order is refused and
-/// a melee order can only enter the cleared tile or be blocked by the first
-/// attacker. Rivals remain entirely on the ordinary campaign path.
-fn finish_live_barbarians(
+/// Keep the exported HP. For every wounded military unit belonging to a player
+/// we are currently at war with, prove a kill using only attacks legal *right
+/// now*, apply that shortest volley before the normal AI turn, and reserve one
+/// additional direct attacker when one is available. This covers barbarians,
+/// rivals, city-states, and Free Cities without treating a visible peacetime
+/// unit as a target. Damage-only opportunities remain the normal tactical
+/// planner's decision.
+///
+/// The extra order preserves the host/model safety margin: if Firaxis leaves a
+/// predicted kill alive it gets the second blow; if the first blow killed it, a
+/// ranged order is refused and a melee order can only enter the cleared tile or
+/// be blocked by the first attacker.
+#[cfg(test)]
+fn finish_live_war_units(
     planned_game: &mut civvis::game::Game,
     pid: usize,
     mapped: &std::collections::BTreeMap<u32, i64>,
-) -> BarbarianFinishingVolley {
-    let Some(barbarian) = planned_game.barb_pid else {
-        return BarbarianFinishingVolley::default();
-    };
-    let cities = planned_game
-        .player_city_ids(pid)
-        .into_iter()
-        .filter_map(|city| planned_game.cities.get(&city).map(|city| city.pos))
-        .collect::<Vec<_>>();
+) -> WarFinishingVolley {
+    finish_live_war_units_excluding(planned_game, pid, mapped, &std::collections::BTreeSet::new())
+}
+
+/// [`finish_live_war_units`] with `excluded` units left out of the volley
+/// entirely — a settler's bound guard under
+/// `AdvancedAi::settler_stack_discipline`, which the joint engagement
+/// leaves alone for the same reason.
+fn finish_live_war_units_excluding(
+    planned_game: &mut civvis::game::Game,
+    pid: usize,
+    mapped: &std::collections::BTreeMap<u32, i64>,
+    excluded: &std::collections::BTreeSet<u32>,
+) -> WarFinishingVolley {
+    let mapped: std::collections::BTreeMap<u32, i64> = mapped
+        .iter()
+        .filter(|(uid, _)| !excluded.contains(uid))
+        .map(|(uid, civ6)| (*uid, *civ6))
+        .collect();
+    let mapped = &mapped;
     let mut targets = planned_game
         .units
         .values()
         .filter(|unit| {
-            unit.owner == barbarian
+            unit.owner != pid
+                && planned_game.is_at_war(pid, unit.owner)
                 && planned_game.rules.units[unit.kind].class == "military"
                 && unit.hp < 100
-                && cities
-                    .iter()
-                    .any(|city| planned_game.wdist(*city, unit.pos) <= 6)
         })
         .map(|unit| (unit.hp, unit.pos, unit.id))
         .collect::<Vec<_>>();
     targets.sort_unstable();
 
-    let mut result = BarbarianFinishingVolley::default();
+    let mut result = WarFinishingVolley::default();
     let mut committed = std::collections::BTreeSet::new();
     for (_, _, target) in targets {
         if !planned_game.units.contains_key(&target) {
@@ -1460,6 +1853,20 @@ fn withhold_live_treatment(
         "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
         "no-elective-war" => ai.disable_no_elective_war(),
         "fog-land-capacity" => ai.disable_fog_land_capacity(),
+        "recon-flight" => ai.disable_recon_flight(),
+        "score-horizon" => ai.disable_score_horizon(),
+        "naval-recon" => ai.disable_naval_recon(),
+        "counter-in-lane" => ai.disable_counter_in_lane(),
+        "era-paced-expansion" => ai.disable_era_paced_expansion(),
+        "tally-culture" => ai.disable_tally_culture(),
+        "frontier-loyalty" => ai.disable_frontier_loyalty(),
+        "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
+        "tally-great-people" => ai.disable_tally_great_people(),
+        "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
+        "camp-reach" => ai.disable_camp_reach(),
+        "settler-stack-discipline" => ai.disable_settler_stack_discipline(),
+        "camp-party" => ai.disable_camp_party(),
+        "buildings-before-projects" => ai.disable_buildings_before_projects(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1485,7 +1892,10 @@ fn withhold_live_treatment(
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity"
+                 fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
+                 era-paced-expansion, tally-culture, frontier-loyalty, \
+                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
+                 camp-reach, settler-stack-discipline, camp-party, buildings-before-projects"
             ))
         }
     }
@@ -1535,8 +1945,19 @@ fn decide(
     let released =
         release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
-    let barbarian_finishers =
-        finish_live_barbarians(&mut planned_game, 0, &mirror_state.civ6_of);
+    // ★★★★ BEFORE THE VOLLEY. See `AdvancedAi::observe_turn_start_hostiles`:
+    // the volley below removes wounded raiders from the planning board, and
+    // a settler stepping afterwards must keep pricing them — the host has
+    // been measured leaving such kills alive. And a settler's bound guard is
+    // not the volley's to spend one tile away from the civilian it shields.
+    ai.observe_turn_start_hostiles(&planned_game, 0);
+    let bound_guards = ai.bound_settler_guards(&planned_game, 0);
+    let war_finishers = finish_live_war_units_excluding(
+        &mut planned_game,
+        0,
+        &mirror_state.civ6_of,
+        &bound_guards,
+    );
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
@@ -1596,7 +2017,7 @@ fn decide(
         .count();
     ai.take_turn(&mut planned_game, 0);
 
-    let mut orders: Vec<Order> = barbarian_finishers
+    let mut orders: Vec<Order> = war_finishers
         .actions
         .iter()
         .filter_map(|action| translate(action, mirror_state, state))
@@ -1642,12 +2063,12 @@ fn decide(
             pre_traders.join("; ")
         ));
     }
-    if barbarian_finishers.targets > 0 {
+    if war_finishers.targets > 0 {
         note_bits.push(format!(
-            "barbarian_finishing_volleys={} attacks={} reserves={}",
-            barbarian_finishers.targets,
-            barbarian_finishers.actions.len(),
-            barbarian_finishers.reserves,
+            "war_unit_finishing_volleys={} attacks={} reserves={}",
+            war_finishers.targets,
+            war_finishers.actions.len(),
+            war_finishers.reserves,
         ));
     }
 
@@ -1770,10 +2191,11 @@ fn decide(
         // split alongside: one of these two numbers is a cooldown frame and the
         // other is a Great Person the empire cannot use at all.
         note_bits.push(format!(
-            "great_people_without_activation_target={} (cooldown={} no_plot={})",
+            "great_people_without_activation_target={} (cooldown={} no_plot={} no_empty_slot={})",
             great_person_stall.total(),
             great_person_stall.on_cooldown,
             great_person_stall.no_activation_plot,
+            great_person_stall.no_empty_slot,
         ));
     }
 
@@ -1854,9 +2276,50 @@ fn decide(
         note_bits.push("plan=none".to_string());
     }
 
+    let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state);
+    // A direct city-state peace remains the preferred reclaim: it cannot cost
+    // a major-war concession.  If none is available, turn a peace the planner
+    // already chose against the hostile Suzerain into an Envoy reservation.
+    let suzerain_envoy_reclaim = envoy_reclaim
+        .is_none()
+        .then(|| planned_suzerain_peace_envoy_reclaim(&orders, state))
+        .flatten();
+
     let (host_legal, deferred_peace_retries) =
         defer_host_peace_retries(orders, state, host_peace_retries);
     orders = host_legal;
+    if let Some((target, needed)) = envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(target));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                target,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
+            ));
+        }
+    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
+        let submitted = orders.iter().any(|order| {
+            order.kind == "peace" && order.subject == Some(suzerain)
+        });
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                minor,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
+                 deferred_envoys={deferred}"
+            ));
+        }
+    }
     if !deferred_peace_retries.is_empty() {
         let targets = deferred_peace_retries
             .iter()
@@ -1875,6 +2338,10 @@ fn decide(
         ));
     }
 
+    // Keep the first speculative local step before a whole walk is compressed
+    // into one host operation. `HostMoveRefusals` uses it only if Firaxis then
+    // leaves the unit exactly where it started.
+    let first_unknown_steps = first_unknown_coalesced_steps(&orders, snapshot);
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
         coalesce_unit_paths(orders);
     orders = causally_safe;
@@ -1885,9 +2352,15 @@ fn decide(
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
 
+    let host_frontier_probes =
+        host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
+    if host_frontier_probes > 0 {
+        note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
+    }
+
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
-    host_move_refusals.record(&orders, state);
+    host_move_refusals.record(&orders, state, &first_unknown_steps);
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
     }
@@ -1897,6 +2370,20 @@ fn decide(
         note_bits.push(format!(
             "deferred_governor_followups={deferred_governor_followups}"
         ));
+    }
+    let (envoy_bounded, deferred_envoys) = bound_envoy_orders(orders);
+    orders = envoy_bounded;
+    {
+        // The instrument for the lane: how many crossed this turn and how many
+        // wait, against how many the host says we hold. `envoys unspent N` in
+        // the economy note is the same fact from Firaxis's side.
+        let sent = orders.iter().filter(|order| order.kind == "envoy").count();
+        if sent > 0 || deferred_envoys > 0 {
+            note_bits.push(format!(
+                "envoy_orders={sent} deferred={deferred_envoys} held={}",
+                mirror_state.game.players[0].envoys_free
+            ));
+        }
     }
 
     if !mirror_state.unmapped.is_empty() {
@@ -2462,6 +2949,47 @@ fn translate(
             verb: Some("RESIDENT_EMBASSY".to_string()),
             pos: None,
         }),
+        // ★★★★★ THE ENVOYS THE SEAT IS HOLDING, SPENT. `SendEnvoy` never reached
+        // this match — not because it had no counterpart, but because the
+        // mirror never carried `envoys_free`, so the planning board never
+        // enumerated it (see `mirror::apply_mirrored_envoys_free`). Measured on
+        // the twelve Settler games of 2026-08-15/16: 40–70 envoys held unspent
+        // at the end, 0 suzerainties in 11 of 12, while CIVVIS's own
+        // `advanced_envoys` prices the 1/3/6 type tiers, the suzerainty and
+        // denial exactly. One order per envoy; the mod issues one
+        // `GIVE_INFLUENCE_TOKEN` per order through a handle it fetches fresh
+        // for each — the stale-handle write is the one concrete defect the old
+        // Lua lane's crash was ever pinned on. The subject is Firaxis's minor
+        // player id, by the mirror's own seating rule rather than a city plot,
+        // so a city-state met before its centre is in view still gets its
+        // envoy.
+        Action::SendEnvoy { player } => {
+            host_minor_target(mirror_state, state, *player).map(|minor| Order {
+                kind: "envoy",
+                subject: Some(minor),
+                verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+                pos: None,
+            })
+        }
+        // ★★★★ THE LEVY, WHICH THE PLAN ASKED FOR 44 TIMES A GAME AND NEVER GOT.
+        // `levy_city_state_military` fires at war (and urgently under
+        // Conquest/Recovery) for the suzerained city-state whose visible army
+        // is the most strength per gold, and `LevyMilitary` was the single
+        // most-skipped action in the pre-#1765 tally — moot while the seat held
+        // no suzerainty, live now that it spends its envoys. A levied army is
+        // the one force that does not have to be built first, on a seat whose
+        // dominant loss mode is a tech-superior rival's siege. The mod pays
+        // Firaxis's own quote (`GetLevyMilitaryCost`) against the treasury and
+        // refuses on `CanLevyMilitary`, so a mirror-priced levy the host will
+        // not sell is a named refusal, not a phantom army.
+        Action::LevyMilitary { player } => {
+            host_minor_target(mirror_state, state, *player).map(|minor| Order {
+                kind: "levy",
+                subject: Some(minor),
+                verb: Some("LEVY_MILITARY".to_string()),
+                pos: None,
+            })
+        }
         _ => None,
     }
 }
@@ -2626,6 +3154,15 @@ fn main() {
     // And give up an exploration target the host accepts but never walks to:
     // see `BasicAi::explore_dead_targets`.
     ai.enable_explore_dead_targets();
+    // And hold an exploration goal, chosen from deeper fog and farthest from
+    // home, instead of re-deriving the nearest fringe every turn: the lone
+    // scout of run civvis-20260816T123936Z paced a ten-by-ten box from t34
+    // to t75. See `BasicAi::explore_commit`.
+    ai.enable_explore_commit();
+    // And bank an envoy the plan has no positive use for, so the next
+    // city-state met can be taken outright — this seat meets its city-states
+    // over 250 turns, not 50. See `AdvancedAi::bank_envoys`.
+    ai.enable_bank_envoys();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -3200,15 +3737,32 @@ fn main() {
             empire_yields.add(game.city_yields(city.id));
             model_empire_yields.add(game.city_yields_model(city.id));
         }
+        // What the empire collects beside its cities — founder beliefs and
+        // the Faith Firaxis pays for Great Person points nobody can spend —
+        // is part of the model's per-turn figure and of the board's, and the
+        // player-level correction (`observed_yield_adjustments`) is measured
+        // against the same sum, so the board reads the host's number.
+        let player_extras = game.player_yield_extras(0);
+        empire_yields.add(player_extras);
+        model_empire_yields.add(player_extras);
         if let Some(adjustment) = game.observed_yield_adjustments.get(&0) {
             empire_yields.add(*adjustment);
         }
+        let great_person_points_per_turn = game.great_person_points_per_turn(0);
+        let unused_great_person_classes = great_person_points_per_turn
+            .keys()
+            .filter(|kind| !game.great_person_class_earnable(0, kind))
+            .cloned()
+            .collect::<Vec<_>>();
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
              \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
              \"great_works\":{},\"governors\":{},\"governor_points\":{},\
              \"governor_points_spent\":{},\"governor_points_available\":{},\
-             \"empire_yields\":{},\"model_empire_yields\":{}}}",
+             \"empire_yields\":{},\"model_empire_yields\":{},\
+             \"player_extras\":{},\"unused_great_person_faith\":{},\
+             \"great_person_points_per_turn\":{},\"unused_great_person_classes\":{},\
+             \"host_faith_per_turn\":{}}}",
             state.turn,
             width,
             height,
@@ -3223,6 +3777,11 @@ fn main() {
             game.governor_titles_available(0),
             serde_json::to_string(&empire_yields).unwrap(),
             serde_json::to_string(&model_empire_yields).unwrap(),
+            serde_json::to_string(&player_extras).unwrap(),
+            game.unused_great_person_faith(0),
+            serde_json::to_string(&great_person_points_per_turn).unwrap(),
+            serde_json::to_string(&unused_great_person_classes).unwrap(),
+            serde_json::to_string(&state.faith_per_turn).unwrap(),
         );
         return;
     }
@@ -3327,6 +3886,27 @@ fn main() {
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
                 if fresh_board {
+                    // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS
+                    // NO OPENING TO PLAY. The bridge restarts this process whenever
+                    // `origin/main` advances, and a fresh agent's opening book
+                    // handed every city to the baseline governor for ten turns
+                    // per restart (Skirmishers, then Rangers, in all seven cities
+                    // of run civvis-20260816T213447Z at t139; Artillery at
+                    // t157). See `BasicAi::skip_opening_book`.
+                    if live.is_none() && state.turn > 1 {
+                        ai.skip_opening_book();
+                        // ★★★★ AND WHAT THE HOST IS BUILDING RIGHT NOW IS OURS. `ours`
+                        // is what tells `release_foreign_production` a queue is
+                        // CIVVIS's own plan rather than the ladder's; a fresh process
+                        // holds none, so on its first turn every city's work in
+                        // progress read as foreign, was released, and was re-decided
+                        // — the Taj Mahal at 188/460 in Ravenna dropped for a
+                        // University, the wonder re-ordered from Rome. On a seat that
+                        // has been CIVVIS's for a hundred turns, the host's current
+                        // item is the plan; adopt it and let the ordinary rule take
+                        // over from the next order on.
+                        adopt_host_production(&mut ours, &state);
+                    }
                     // ★★★★★ CARRY THE UNIT MEMORY ACROSS THE REBUILD INSTEAD OF
                     // DROPPING IT. This used to call `forget_unit_memory`, on the
                     // sound reasoning that rebuilding the board reassigns unit ids so
@@ -3599,6 +4179,86 @@ mod tests {
             .expect("the fogged-capacity control arm is registered");
         assert!(!ai.fog_land_capacity, "the named fogged-capacity control must hold it off");
 
+        assert!(ai.recon_flight);
+        withhold_live_treatment(&mut ai, "recon-flight")
+            .expect("the recon-flight control arm is registered");
+        assert!(!ai.recon_flight, "the named recon-flight control must hold it off");
+
+        assert!(ai.score_horizon);
+        withhold_live_treatment(&mut ai, "score-horizon")
+            .expect("the score-horizon control arm is registered");
+        assert!(!ai.score_horizon, "the named score-horizon control must hold it off");
+        assert!(ai.naval_recon());
+        withhold_live_treatment(&mut ai, "naval-recon")
+            .expect("the naval-recon control arm is registered");
+        assert!(!ai.naval_recon(), "the named naval-recon control must hold it off");
+
+        assert!(ai.counter_in_lane);
+        withhold_live_treatment(&mut ai, "counter-in-lane")
+            .expect("the counter-in-lane control arm is registered");
+        assert!(!ai.counter_in_lane, "the named counter-in-lane control must hold it off");
+        assert!(ai.era_paced_expansion);
+        withhold_live_treatment(&mut ai, "era-paced-expansion")
+            .expect("the era-paced-expansion control arm is registered");
+        assert!(!ai.era_paced_expansion, "the named era-pace control must hold it off");
+
+        assert!(ai.tally_culture);
+        withhold_live_treatment(&mut ai, "tally-culture")
+            .expect("the tally-culture control arm is registered");
+        assert!(!ai.tally_culture, "the named tally-culture control must hold it off");
+
+        assert!(ai.frontier_loyalty);
+        withhold_live_treatment(&mut ai, "frontier-loyalty")
+            .expect("the frontier-loyalty control arm is registered");
+        assert!(!ai.frontier_loyalty, "the named frontier-loyalty control must hold it off");
+
+        assert!(ai.settler_target_hysteresis);
+        withhold_live_treatment(&mut ai, "settler-target-hysteresis")
+            .expect("the settler-target-hysteresis control arm is registered");
+        assert!(
+            !ai.settler_target_hysteresis,
+            "the named settler-target-hysteresis control must hold it off"
+        );
+
+        assert!(ai.tally_great_people);
+        withhold_live_treatment(&mut ai, "tally-great-people")
+            .expect("the tally-great-people control arm is registered");
+        assert!(!ai.tally_great_people, "the named tally-great-people control must hold it off");
+
+        assert!(ai.barbarian_scouts_are_scouts);
+        withhold_live_treatment(&mut ai, "barbarian-scouts-are-scouts")
+            .expect("the barbarian-scout control arm is registered");
+        assert!(
+            !ai.barbarian_scouts_are_scouts,
+            "the named barbarian-scout control must hold it off"
+        );
+
+        assert!(ai.camp_reach());
+        withhold_live_treatment(&mut ai, "camp-reach")
+            .expect("the camp-reach control arm is registered");
+        assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
+
+        assert!(ai.settler_stack_discipline());
+        withhold_live_treatment(&mut ai, "settler-stack-discipline")
+            .expect("the settler-stack-discipline control arm is registered");
+        assert!(
+            !ai.settler_stack_discipline(),
+            "the named settler-stack-discipline control must hold it off"
+        );
+
+        assert!(ai.camp_party());
+        withhold_live_treatment(&mut ai, "camp-party")
+            .expect("the camp-party control arm is registered");
+        assert!(!ai.camp_party(), "the named camp-party control must hold it off");
+
+        assert!(ai.buildings_before_projects);
+        withhold_live_treatment(&mut ai, "buildings-before-projects")
+            .expect("the buildings-before-projects control arm is registered");
+        assert!(
+            !ai.buildings_before_projects,
+            "the named buildings-before-projects control must hold it off"
+        );
+
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
             bad.is_err(),
@@ -3653,6 +4313,357 @@ mod tests {
         let (orders, deferred) = defer_host_peace_retries(vec![peace()], &state, &mut retries);
         assert_eq!(orders.len(), 1, "the fifth turn is legal again");
         assert!(deferred.is_empty());
+    }
+
+    #[test]
+    fn an_affordable_direct_city_state_war_peaces_before_envoys() {
+        let mut state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(4),
+            // This is the current Suzerain, but we are at peace with it.  The
+            // city-state war is therefore direct and a minor peace can release it.
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut proposed = Vec::new();
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            Some((9, 4)),
+            "four held envoys raise our one to five and take Geneva"
+        );
+        assert_eq!(proposed.len(), 1);
+        assert_eq!(proposed[0].kind, "peace");
+        assert_eq!(proposed[0].subject, Some(9));
+        assert!(
+            proposed
+                .iter()
+                .all(|order| !(order.kind == "envoy" && order.subject == Some(9))),
+            "Firaxis cannot accept an envoy to the city-state until a later state frame"
+        );
+
+        // A direct minor peace uses the same host cooldown as a major.  Without
+        // this the next bridge frame would re-submit an operation Firaxis has
+        // already accepted but not yet reflected.
+        let mut retries = HostPeaceRetries::default();
+        let (sent, deferred) = defer_host_peace_retries(proposed, &state, &mut retries);
+        assert_eq!(sent.len(), 1);
+        assert!(deferred.is_empty());
+
+        state.turn = 59;
+        let mut retry = Vec::new();
+        assert_eq!(queue_city_state_envoy_reclaim(&mut retry, &state), Some((9, 4)));
+        let (sent, deferred) = defer_host_peace_retries(retry, &state, &mut retries);
+        assert!(sent.is_empty(), "the host has not confirmed peace yet");
+        assert_eq!(deferred, vec![9]);
+
+        // Once a fresh export says the war ended, retry memory clears and the
+        // normal live planner may legally choose its envoy placements.
+        state.turn = 60;
+        state.minors[0].at_war = false;
+        let _ = defer_host_peace_retries(Vec::new(), &state, &mut retries);
+        assert!(retries.permits(9, state.turn));
+    }
+
+    #[test]
+    fn submitted_city_state_reclaim_reserves_only_the_suzerainty_cost() {
+        let envoy = |subject| Order {
+            kind: "envoy",
+            subject: Some(subject),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            Order {
+                kind: "peace",
+                subject: Some(9),
+                verb: Some("MAKE_PEACE".to_string()),
+                pos: None,
+            },
+            envoy(7),
+            // The planner should never make this during war, but preserving it
+            // would defeat the host-boundary guarantee the reserve provides.
+            envoy(9),
+            envoy(8),
+            envoy(10),
+        ];
+        assert_eq!(
+            reserve_envoys_for_submitted_reclaim(&mut orders, 9, 5, 3),
+            2,
+            "one invalid target and one generic surplus order wait for the next frame"
+        );
+        let envoys: Vec<i64> = orders
+            .iter()
+            .filter(|order| order.kind == "envoy")
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(envoys, vec![7, 8], "two surplus envoys still invest now");
+        assert!(
+            orders
+                .iter()
+                .any(|order| order.kind == "peace" && order.subject == Some(9)),
+            "the submitted peace itself remains intact"
+        );
+    }
+
+    #[test]
+    fn city_state_envoy_reclaim_skips_derived_wars_and_short_pools() {
+        let mut state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(3),
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut proposed = Vec::new();
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            None,
+            "do not end a war when the pool still cannot win the city-state"
+        );
+        assert!(proposed.is_empty());
+
+        state.envoys_free = Some(4);
+        state.rivals[0].at_war = true;
+        assert_eq!(
+            queue_city_state_envoy_reclaim(&mut proposed, &state),
+            None,
+            "a city-state follows its hostile Suzerain; direct peace would not unlock envoys"
+        );
+        assert!(proposed.is_empty());
+    }
+
+    #[test]
+    fn planned_major_peace_reserves_envoys_to_reclaim_its_derived_city_state() {
+        let state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(5),
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: true,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let peace = Order {
+            kind: "peace",
+            subject: Some(2),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        };
+        let envoy = |subject| Order {
+            kind: "envoy",
+            subject: Some(subject),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut proposed = vec![peace, envoy(7), envoy(9)];
+
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&proposed, &state),
+            Some((2, 9, 4)),
+            "the existing peace offer releases Geneva only after it succeeds"
+        );
+        let mut retries = HostPeaceRetries::default();
+        let (submitted, deferred_peace) =
+            defer_host_peace_retries(proposed, &state, &mut retries);
+        assert!(deferred_peace.is_empty());
+        proposed = submitted;
+        assert_eq!(
+            reserve_envoys_for_submitted_reclaim(&mut proposed, 9, 5, 4),
+            1,
+            "the invalid envoy to the still-hostile minor waits with the four-token claim"
+        );
+        let retained: Vec<i64> = proposed
+            .iter()
+            .filter(|order| order.kind == "envoy")
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(retained, vec![7], "the one surplus envoy may still invest now");
+        assert!(
+            proposed
+                .iter()
+                .any(|order| order.kind == "peace" && order.subject == Some(2)),
+            "the planner's major peace, rather than a fabricated city-state peace, crosses the host boundary"
+        );
+
+        let no_peace = vec![envoy(7)];
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&no_peace, &state),
+            None,
+            "a valuable city-state alone never asks a major to end a campaign"
+        );
+        let conflicting_orders = vec![
+            Order {
+                kind: "peace",
+                subject: Some(2),
+                verb: Some("MAKE_PEACE".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "war",
+                subject: Some(2),
+                verb: Some("DECLARE".to_string()),
+                pos: None,
+            },
+        ];
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&conflicting_orders, &state),
+            None,
+            "a contradictory order set cannot turn an Envoy reserve into a war-ending decision"
+        );
+    }
+
+    #[test]
+    fn direct_city_state_reclaim_crosses_the_host_boundary_as_peace_only() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 58,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 58,
+            military: 100.0,
+            envoys_free: Some(4),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: false,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                military: 1.0,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                cities: vec![StateCity {
+                    id: 65_537,
+                    name: "Geneva".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 3, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the decision is JSON");
+        let orders = reply["orders"].as_array().expect("orders are an array");
+        assert!(
+            orders.iter().any(|order| {
+                order["kind"] == "peace" && order["subject"] == 9
+            }),
+            "an affordable direct city-state war must request peace: {reply}"
+        );
+        assert!(
+            orders.iter().all(|order| {
+                !(order["kind"] == "envoy" && order["subject"] == 9)
+            }),
+            "the same host batch must not try to envoy a still-warring city-state: {reply}"
+        );
+        assert!(
+            reply["note"]
+                .as_str()
+                .is_some_and(|note| note.contains("envoy_reclaim_peace=9 needed=4")),
+            "the bridge must identify this intentional peace-to-envoy handoff: {reply}"
+        );
+
+        // The host resolves the peace asynchronously.  The first later state
+        // that says it succeeded is where the ordinary envoy planner regains
+        // legal access to Geneva and spends the prepared pool.
+        let mut confirmed_state = state.clone();
+        confirmed_state.turn = 59;
+        confirmed_state.minors[0].at_war = false;
+        let mut confirmed_mirror =
+            civvis::mirror::LiveMirror::new(&snapshot, &confirmed_state, 3, 1, 250, 0);
+        let mut confirmed_ai = civvis::ai::AdvancedAi::new();
+        let mut confirmed_ours = std::collections::BTreeMap::new();
+        let confirmed: serde_json::Value = serde_json::from_str(&decide(
+            &mut confirmed_mirror,
+            &mut confirmed_ai,
+            &snapshot,
+            &confirmed_state,
+            false,
+            &[],
+            &mut confirmed_ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the confirmed decision is JSON");
+        let envoys = confirmed["orders"]
+            .as_array()
+            .expect("confirmed orders are an array")
+            .iter()
+            .filter(|order| order["kind"] == "envoy" && order["subject"] == 9)
+            .count();
+        assert_eq!(
+            envoys, 4,
+            "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
+        );
     }
 
     #[test]
@@ -3768,7 +4779,7 @@ mod tests {
                 pos: Some((7, 7)),
             },
         ];
-        refusals.record(&orders, &state);
+        refusals.record(&orders, &state, &std::collections::BTreeMap::new());
         assert_eq!(refusals.sent.len(), 1, "only the scout's move is remembered");
 
         // A second frame on the SAME turn cannot judge the move yet and must not
@@ -3813,6 +4824,7 @@ mod tests {
                 pos: Some((6, 5)),
             }],
             &state,
+            &std::collections::BTreeMap::new(),
         );
         state.turn = 15;
         state.units[0].x = 5;
@@ -3827,6 +4839,107 @@ mod tests {
             "revealed terrain keeps its own truth"
         );
         assert!(mirror.game.rules.is_passable(&mirror.game.map.tiles[&seen_pos]));
+    }
+
+    /// A coalesced `MOVE_TO` keeps the host fast, but the failure feedback must
+    /// verify the first speculative hop that was hidden inside it. Otherwise a
+    /// rejected three-hex Scout route either retires an unproven valid tile or
+    /// keeps choosing the same blocked opening again.
+    #[test]
+    fn a_stalled_coalesced_walk_probes_then_retires_its_first_unknown_step() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 13;
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 6,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..StateUnit::default()
+        }];
+        // The first local step is known ground. The second is the first unknown
+        // frontier plot, then the coalescer carries the Scout a further hex.
+        let planned = vec![
+            unit_order(900, "MOVE_TO", Some((7, 5))),
+            unit_order(900, "MOVE_TO", Some((8, 5))),
+            unit_order(900, "MOVE_TO", Some((9, 5))),
+        ];
+        let probes = first_unknown_coalesced_steps(&planned, &snapshot);
+        assert_eq!(probes.get(&900), Some(&(8, 5)));
+
+        let (orders, deferred, coalesced) = coalesce_unit_paths(planned);
+        assert_eq!(deferred, 0);
+        assert_eq!(coalesced, 2);
+        assert_eq!(orders[0].pos, Some((9, 5)), "the host still gets the full walk");
+
+        let mut refusals = HostMoveRefusals::default();
+        refusals.record(&orders, &state, &probes);
+        state.turn = 14;
+        refusals.observe(&state);
+        assert!(
+            refusals.dead.is_empty(),
+            "a long route has not proved which unknown hop blocked it"
+        );
+        assert_eq!(
+            refusals.pending_probes.get(&900).map(|probe| (probe.from, probe.target)),
+            Some(((6, 5), (8, 5))),
+            "the next outgoing move must test the first unknown hop exactly"
+        );
+
+        // The next plan may again want the distant destination, but the bridge
+        // reduces just this known-failed route to its exact frontier probe.
+        let mut retry = vec![unit_order(900, "MOVE_TO", Some((9, 5)))];
+        assert_eq!(
+            refusals.cap_pending_frontier_moves(&mut retry, &state, &probes),
+            1
+        );
+        assert_eq!(retry[0].pos, Some((8, 5)));
+        refusals.record(&retry, &state, &std::collections::BTreeMap::new());
+        state.turn = 15;
+        refusals.observe(&state);
+        assert_eq!(
+            refusals.dead.iter().copied().collect::<Vec<_>>(),
+            vec![(8, 5)],
+            "only a failed exact probe retires the hidden unknown hop"
+        );
+
+        // A later replan with another frontier opening must remain its own
+        // decision; stale feedback may narrow a repeated route, never replace
+        // a new tactical direction.
+        refusals.pending_probes.insert(
+            900,
+            HostFrontierProbe {
+                from: (6, 5),
+                target: (8, 5),
+            },
+        );
+        let mut different_route = vec![unit_order(900, "MOVE_TO", Some((7, 6)))];
+        let different_steps = std::collections::BTreeMap::from([(900, (7, 6))]);
+        assert_eq!(
+            refusals.cap_pending_frontier_moves(&mut different_route, &state, &different_steps),
+            0
+        );
+        assert_eq!(different_route[0].pos, Some((7, 6)));
+        assert!(
+            refusals.pending_probes.is_empty(),
+            "a changed route clears the stale probe instead of being overwritten"
+        );
+
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 2);
+        let first_unknown = civvis::hex::offset_to_axial(8, 5);
+        let host_destination = civvis::hex::offset_to_axial(9, 5);
+        assert!(mirror.game.map.tiles[&first_unknown].assumed_traversable);
+        assert!(mirror.game.map.tiles[&host_destination].assumed_traversable);
+        refusals.apply(&mut mirror);
+        assert!(
+            !mirror.game.map.tiles[&first_unknown].assumed_traversable,
+            "the next fresh mirror routes around the exact failed frontier hop"
+        );
+        assert!(
+            mirror.game.map.tiles[&host_destination].assumed_traversable,
+            "unproven downstream frontier remains available to future exploration"
+        );
     }
 
     fn production_board() -> (Snapshot, StateSnapshot) {
@@ -3956,6 +5069,42 @@ mod tests {
         );
     }
 
+    /// ★★★★ A DECIDER RESTARTED MID-GAME MUST NOT HAND BACK EVERY CITY. A fresh
+    /// process holds an empty `ours`, so on its first turn all work in progress
+    /// read as foreign and was re-decided (run civvis-20260816T213447Z, t139 and
+    /// t157: the Taj Mahal at 188/460 dropped, seven Rangers ordered). Adopting
+    /// the host's current item as ours on that first turn leaves the queue alone,
+    /// keeps a plan this process already ordered, and skips idle cities.
+    #[test]
+    fn a_restarted_decider_adopts_the_hosts_production_as_its_own() {
+        let (snapshot, mut state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+
+        let mut ours = std::collections::BTreeMap::new();
+        assert_eq!(adopt_host_production(&mut ours, &state), 1, "one city building");
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_WARRIOR"));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "the adopted item is not released"
+        );
+        assert!(!planned.cities[&cid].queue.is_empty());
+
+        // An entry this process already ordered wins over the host's reading.
+        let mut ours = std::collections::BTreeMap::new();
+        ours.insert(7_i64, "UNIT_SETTLER".to_string());
+        assert_eq!(adopt_host_production(&mut ours, &state), 0);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_SETTLER"));
+
+        // An idle city adopts nothing.
+        state.cities[0].producing = None;
+        let mut ours = std::collections::BTreeMap::new();
+        assert_eq!(adopt_host_production(&mut ours, &state), 0);
+        assert!(ours.is_empty());
+    }
+
     /// A city building nothing has nothing to hand back, and must not be counted.
     #[test]
     fn an_idle_city_is_not_reported_as_released() {
@@ -4039,6 +5188,23 @@ mod tests {
         (snapshot, state)
     }
 
+    /// The same exposed-defender geometry, but a current war against a rival
+    /// supplies the defender rather than the aggregate barbarian export.
+    fn local_war_enemy_board() -> (Snapshot, StateSnapshot) {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        let hostile = state
+            .hostiles
+            .pop()
+            .expect("the local defense fixture carries one barbarian");
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![hostile],
+            ..StateRival::default()
+        });
+        (snapshot, state)
+    }
+
     #[test]
     fn local_barbarian_finishing_volley_keeps_exported_hp_and_proves_the_kill() {
         let (snapshot, state) = local_barbarian_defense_board();
@@ -4053,7 +5219,7 @@ mod tests {
             .id;
         let mut planned = mirror.game.clone();
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 1);
         assert!(
             volley.actions.len() >= 2,
@@ -4109,7 +5275,97 @@ mod tests {
         assert!(reply["note"]
             .as_str()
             .unwrap()
-            .contains("barbarian_finishing_volleys=1 attacks=2 reserves=1"));
+            .contains("war_unit_finishing_volleys=1 attacks=2 reserves=1"));
+    }
+
+    #[test]
+    fn dying_war_enemy_gets_a_direct_attack_and_a_reserve_before_any_movement() {
+        let (snapshot, mut state) = local_war_enemy_board();
+        state.rivals[0].units[0].hp = 8.0;
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let (target, owner, target_pos) = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner != 0)
+            .map(|unit| (unit.id, unit.owner, unit.pos))
+            .expect("the rival warrior is mirrored");
+        assert_ne!(Some(owner), mirror.game.barb_pid);
+        assert!(mirror.game.is_at_war(0, owner));
+
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 1);
+        assert!(
+            volley.actions.len() >= 2,
+            "one modelled kill and one host-side reserve must be retained: {:?}",
+            volley.actions
+        );
+        assert!(
+            !planned.units.contains_key(&target),
+            "a current-war unit on 8 health must be removed on the private board before movement"
+        );
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .unwrap();
+        let (x, y) = civvis::hex::axial_to_offset(target_pos.0, target_pos.1);
+        let attacks = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .take_while(|order| {
+                matches!(order["verb"].as_str(), Some("ATTACK" | "RANGE_ATTACK"))
+                    && order["x"] == x
+                    && order["y"] == y
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            attacks.len(),
+            2,
+            "the finishing volley must lead every ordinary movement order: {}",
+            reply["orders"]
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("war_unit_finishing_volleys=1 attacks=2 reserves=1"));
+    }
+
+    #[test]
+    fn a_wounded_peacetime_enemy_does_not_preempt_the_tactical_planner() {
+        let (snapshot, mut state) = local_war_enemy_board();
+        state.rivals[0].at_war = false;
+        state.rivals[0].units[0].hp = 8.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let target = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner != 0)
+            .expect("the rival warrior is mirrored");
+        assert!(!mirror.game.is_at_war(0, target.owner));
+        let target = target.id;
+        let mut planned = mirror.game.clone();
+
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 0);
+        assert!(volley.actions.is_empty());
+        assert!(
+            planned.units.contains_key(&target),
+            "an enemy outside a current war must stay with the ordinary planner"
+        );
     }
 
     #[test]
@@ -4127,7 +5383,7 @@ mod tests {
         let mut planned = mirror.game.clone();
         planned.units.get_mut(&hostile).unwrap().hp = 100;
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 0);
         assert!(volley.actions.is_empty());
         assert_eq!(planned.units[&hostile].hp, 100);
@@ -4157,7 +5413,7 @@ mod tests {
         );
         let mut planned = mirror.game.clone();
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 1);
         assert_eq!(
             volley.actions,
@@ -4219,6 +5475,93 @@ mod tests {
         assert_eq!(orders[1].subject, Some(71));
         assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
         assert_eq!(orders[1].pos, Some((11, 12)));
+    }
+
+    /// Seven cultural people stood on one Theater plot for thirty-plus turns
+    /// on run civvis-20260817T010950Z: `GetActivationHighlightPlots` lists the
+    /// district whether or not a compatible Great Work slot is free, so the
+    /// cooldown branch swallowed them forever and no one built the slots.
+    /// With the host's own empty-slot count, a slot-starved person stands
+    /// still under an explicit counter — and never marches to a full building.
+    #[test]
+    fn a_person_with_no_empty_slot_anywhere_stalls_explicitly_not_as_cooldown() {
+        let on_plot = StateActivationPlot { x: 25, y: 23, distance: 0 };
+        let far_plot = StateActivationPlot { x: 30, y: 20, distance: 7 };
+        let state = StateSnapshot {
+            units: vec![
+                // Standing on the highlighted Theater, zero writing slots free.
+                StateUnit {
+                    id: 80,
+                    kind: "UNIT_GREAT_WRITER".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(0),
+                        activation_plots: vec![on_plot.clone(), far_plot.clone()],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                // Slot-starved and NOT on a plot: marching cannot help either.
+                StateUnit {
+                    id: 81,
+                    kind: "UNIT_GREAT_ARTIST".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(0),
+                        activation_plots: vec![far_plot],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                // Slots exist: standing on the plot is the benign cooldown
+                // frame, exactly as before this field existed.
+                StateUnit {
+                    id: 82,
+                    kind: "UNIT_GREAT_MUSICIAN".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(2),
+                        activation_plots: vec![on_plot],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert!(
+            orders.is_empty(),
+            "no order helps a slot-starved person, and a cooldown is a wait \
+             ({} issued)",
+            orders.len()
+        );
+        assert_eq!(stall.no_empty_slot, 2);
+        assert_eq!(stall.on_cooldown, 1);
+        assert_eq!(stall.no_activation_plot, 0);
+        assert_eq!(stall.total(), 3);
+    }
+
+    /// The host answering `can_activate` outranks its slot arithmetic: if the
+    /// engine will take Activate here and now, press it.
+    #[test]
+    fn can_activate_outranks_a_zero_slot_count() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 83,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    can_activate: true,
+                    empty_slots: Some(0),
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let (orders, stall) = great_person_orders(&state);
+        assert_eq!(stall.total(), 0);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
     }
 
     #[test]
@@ -5200,6 +6543,266 @@ mod tests {
         assert_eq!(peace.subject, Some(13));
     }
 
+    /// ★★★★★ The whole envoy chain inside the bridge: the held count reaches
+    /// the board, the deployed controller spends it on the planning clone, and
+    /// each `SendEnvoy` crosses as an `envoy` order naming Firaxis's minor
+    /// player id — including a city-state met before its centre is in view,
+    /// which has no mirrored city to resolve through.
+    #[test]
+    fn held_envoys_are_spent_by_the_plan_and_cross_as_envoy_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            envoys_free: Some(3),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            minors: vec![
+                StateMinor {
+                    player: 9,
+                    civ: "CIVILIZATION_GENEVA".to_string(),
+                    envoys: 1,
+                    suzerain: -1,
+                    cities: vec![StateCity {
+                        id: 65_536,
+                        name: "Geneva".to_string(),
+                        x: 8,
+                        y: 8,
+                        pop: 3,
+                        capital: true,
+                        ..StateCity::default()
+                    }],
+                    ..StateMinor::default()
+                },
+                // Met by contact, centre still in the fog: no city exported.
+                StateMinor {
+                    player: 12,
+                    civ: "CIVILIZATION_KABUL".to_string(),
+                    envoys: 0,
+                    suzerain: -1,
+                    ..StateMinor::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 2, 250, 0);
+        assert_eq!(mirror.game.players[0].envoys_free, 3, "the held count is mirrored");
+        let seats: Vec<usize> = mirror
+            .game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .collect();
+        let (geneva, kabul) = (seats[0], seats[1]);
+        assert_eq!(mirror.game.players[geneva].civ, "Geneva");
+        assert_eq!(mirror.game.players[kabul].civ, "Kabul");
+
+        // Both cross by the seating rule, the unseen one included.
+        let order = translate(&Action::SendEnvoy { player: geneva }, &mirror, &state)
+            .expect("an envoy to a met city-state crosses");
+        assert_eq!(order.kind, "envoy");
+        assert_eq!(order.subject, Some(9));
+        assert_eq!(order.verb.as_deref(), Some("GIVE_INFLUENCE_TOKEN"));
+        let unseen = translate(&Action::SendEnvoy { player: kabul }, &mirror, &state)
+            .expect("a city-state met before its centre is in view still gets its envoy");
+        assert_eq!(unseen.subject, Some(12));
+        // A major seat is not a city-state.
+        assert!(translate(&Action::SendEnvoy { player: 1 }, &mirror, &state).is_none());
+
+        // The deployed controller spends what the board holds.
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        let mut planned = mirror.game.clone();
+        let begin = planned.log.len();
+        ai.take_turn(&mut planned, 0);
+        let sent: Vec<i64> = planned
+            .log
+            .since(begin)
+            .filter(|(seat, _)| *seat == 0)
+            .filter_map(|(_, action)| match action {
+                Action::SendEnvoy { .. } => translate(action, &mirror, &state),
+                _ => None,
+            })
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(sent.len(), 3, "every held envoy is spent on the planning board: {sent:?}");
+        assert!(sent.iter().all(|host| *host == 9 || *host == 12), "{sent:?}");
+        assert_eq!(planned.players[0].envoys_free, 0);
+    }
+
+    /// The live planner may intentionally retain envoys after it has secured
+    /// every met city-state past its final yield tier.  That decision has to
+    /// survive the whole order boundary: `BasicAi` runs later in the same
+    /// simulated turn, so its historical "highest count" fallback must not
+    /// turn the bank straight back into `GIVE_INFLUENCE_TOKEN` orders.
+    #[test]
+    fn banked_secure_envoys_do_not_cross_the_live_order_boundary() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            envoys_free: Some(2),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_AUCKLAND".to_string(),
+                envoys: 8,
+                most_envoys: 8,
+                suzerain: 0,
+                cities: vec![StateCity {
+                    id: 65_537,
+                    name: "Auckland".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let auckland = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .expect("Auckland must occupy a mirrored city-state seat");
+        assert_eq!(mirror.game.envoys_at(0, auckland), 8);
+        assert_eq!(mirror.game.suzerain_of(auckland), Some(0));
+        assert_eq!(mirror.game.players[0].envoys_free, 2);
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_bank_envoys();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the decision is JSON");
+
+        assert!(
+            reply["orders"]
+                .as_array()
+                .expect("orders are an array")
+                .iter()
+                .all(|order| order["kind"] != "envoy"),
+            "a safely owned eight-envoy city-state must retain the two-envoy bank: {reply}"
+        );
+    }
+
+    /// A suzerain at war levies the city-state's army through the same seat
+    /// resolution as the envoy; a major seat is not a city-state.
+    #[test]
+    fn a_levy_names_the_firaxis_city_state() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 120,
+            minors: vec![StateMinor {
+                player: 11,
+                civ: "CIVILIZATION_KABUL".to_string(),
+                envoys: 4,
+                suzerain: 0,
+                cities: vec![StateCity {
+                    id: 65_536,
+                    name: "Kabul".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 5,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let kabul = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .expect("Kabul occupies the mirrored city-state seat")
+            .id;
+        assert_eq!(mirror.game.suzerain_of(kabul), Some(0));
+        let levy = translate(&Action::LevyMilitary { player: kabul }, &mirror, &state)
+            .expect("a levy of a suzerained city-state crosses");
+        assert_eq!(levy.kind, "levy");
+        assert_eq!(levy.subject, Some(11));
+        assert_eq!(levy.verb.as_deref(), Some("LEVY_MILITARY"));
+        assert!(translate(&Action::LevyMilitary { player: 1 }, &mirror, &state).is_none());
+    }
+
+    /// The first turn the lane opens on a seat holding fifty envoys must not
+    /// issue fifty operations: eight cross in plan order, the rest wait for
+    /// next turn's plan, and nothing else is touched.
+    #[test]
+    fn envoy_orders_are_bounded_per_turn_in_plan_order() {
+        let envoy = |minor: i64| Order {
+            kind: "envoy",
+            subject: Some(minor),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut orders: Vec<Order> = (0..12).map(|i| envoy(20 + i)).collect();
+        orders.insert(0, Order { kind: "research", subject: None, verb: Some("TECH_WRITING".to_string()), pos: None });
+        orders.push(Order { kind: "produce", subject: Some(65_536), verb: Some("BUILDING_LIBRARY".to_string()), pos: None });
+        let (kept, deferred) = bound_envoy_orders(orders);
+        assert_eq!(deferred, 12 - ENVOY_ORDERS_PER_TURN);
+        let envoys: Vec<i64> = kept.iter().filter(|o| o.kind == "envoy").filter_map(|o| o.subject).collect();
+        assert_eq!(envoys, (20..20 + ENVOY_ORDERS_PER_TURN as i64).collect::<Vec<_>>(), "plan order, first eight");
+        assert_eq!(kept.iter().filter(|o| o.kind != "envoy").count(), 2, "other kinds pass untouched");
+        assert_eq!(kept.first().map(|o| o.kind), Some("research"));
+        assert_eq!(kept.last().map(|o| o.kind), Some("produce"));
+    }
+
     #[test]
     fn exact_spent_firaxis_titles_suppress_duplicate_governor_orders() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -5395,6 +6998,9 @@ mod tests {
             ct: None,
             cl: -1,
             p: false,
+            d: None,
+            dc: None,
+            wo: None,
         }
     }
 

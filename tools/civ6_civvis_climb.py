@@ -1004,6 +1004,96 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
     return "timeout"
 
 
+# A game frozen before this turn is redone from scratch faster than it is
+# reloaded (the load flow itself takes minutes and a fresh map is cheap early).
+RESUME_MIN_TURN = 20
+
+
+def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
+                 load_save: Path | None = None) -> list[str]:
+    """The `civ6_play` command line for one attempt — or its continuation.
+
+    One builder for both, so a resumed game is driven by exactly the flags the
+    original was: the ONLY differences are the run tag (`<tag>-contN`) and
+    `--load-save`, which swaps the Create Game flow for the Load Game flow.
+    """
+    return (
+        [sys.executable, "-u", str(HERE / "civ6_play.py"),
+         "--tag", tag,
+         "--orders-db", str(orders_db),
+         "--difficulty", args.difficulty,
+         "--map-size", args.map_size,
+         "--speed", args.speed]
+        + (["--leader", args.leader] if args.leader else [])
+        + (["--load-save", str(load_save)] if load_save is not None else [])
+        + [
+         "--max-turns", str(args.max_turns),
+         "--timeout", str(args.timeout),
+         "--timeout-ceiling", str(attempt_ceiling(args)),
+         "--lock-wait", "30",
+         "--report-every", "10",
+         "--export-state"]
+        + (["--probe-citizens"] if args.probe_citizens else [])
+        + (["--campus-specialist"] if args.campus_specialist else [])
+        + (["--envoys"] if args.envoys else [])
+        + (["--no-envoy-place"] if args.envoys and not args.envoy_place else [])
+        + (["--no-envoy-levy"] if args.envoys and not args.envoy_levy else [])
+        + (["--no-envoy-consider"] if args.envoys and not args.envoy_consider else [])
+        + [
+         "--announcement-seconds", "0.05",
+         "--era-announcement-seconds", "0.05",
+         "--civvis-decides",
+         "--civvis-bin", str(orders_bin),
+         "--civvis-victory", args.victory,
+         "--civvis-strategy", args.strategy]
+        + (["--civvis-war-from-plan"] if args.war_from_plan else [])
+        + [
+         "--tile-export-every", str(args.tile_export_every),
+         "--window-side", "right",
+         "--window-frac", "0.5", "--window-vfrac", "0.5"]
+    )
+
+
+def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
+                         started_at: float, latest=None) -> Path | None:
+    """The autosave a frozen attempt should be reloaded from, or None.
+
+    ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
+    leading games died on the 900 s watchdog on 2026-08-16 alone:
+    `civvis-20260816T115139Z` at t178 (804 vs 715, leading), `T175306Z` at
+    t207 (731 vs 958) and `T192522Z` at t102 (340 vs 324, leading, the lane's
+    first-ever capture) — a late first-contact scene, then the same, then a
+    plain map reading "PLEASE WAIT" with the game core spinning on the other
+    players' turns. Each was killed from outside and written into the ledger
+    with its last score, and each had `AutoSave_NNNN.Civ6Save`, one per turn,
+    sitting in Firaxis's autosave folder — the exact turn it froze on. The
+    engine-side hang is not ours to fix; the reload is. `civ6_play
+    --load-save` already drives the Load Game screen (and since this change
+    ticks the Autosaves filter the list hides them behind).
+
+    Resumes only what is worth resuming: the attempt was killed as `frozen`
+    (a timeout or a locked screen is a different story), reached
+    `--resume-min-turn`, did not already reach an end screen, the resume
+    budget is not spent, and an autosave written since the attempt began
+    exists (never one from an earlier game). Everything else falls through to
+    the ledger exactly as before.
+    """
+    if why != "frozen" or resumes_so_far >= args.max_resumes:
+        return None
+    turn = record.get("last_turn")
+    if not isinstance(turn, int) or turn < args.resume_min_turn:
+        return None
+    if record.get("end_screen_turn") is not None:
+        return None
+    finder = latest if latest is not None else _latest_autosave
+    return finder(newer_than=started_at)
+
+
+def _latest_autosave(newer_than: float | None = None) -> Path | None:
+    import civ6_play  # noqa: PLC0415 — the play harness owns the save folder
+    return civ6_play.latest_autosave(newer_than=newer_than)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -1103,6 +1193,15 @@ def main() -> int:
     ap.add_argument("--frozen-seconds", type=float, default=900.0,
                     help="kill an attempt whose TURN has not advanced for this "
                          "long, from outside its harness")
+    # ★★★★ A FROZEN GAME IS RESUMED, NOT SCORED. See `resume_from_autosave`:
+    # three leading games died on the clock in one day, each with a
+    # turn-fresh autosave on disk.
+    ap.add_argument("--max-resumes", type=int, default=2,
+                    help="how many times a frozen attempt is reloaded from its "
+                         "latest autosave under <tag>-contN before it is scored "
+                         "as it stands (0 disables)")
+    ap.add_argument("--resume-min-turn", type=int, default=RESUME_MIN_TURN,
+                    help="a game frozen before this turn is not worth reloading")
     # ⚠⚠ THE DEFAULT WAS `domination`, AND THE COMMENT SAYING SO WAS ALREADY HERE.
     #
     # "A ladder left on this default measures a plan that cannot complete" was
@@ -1352,141 +1451,94 @@ def main() -> int:
         # ⚠ No `<tag>-brain.log` any more, and its absence is the point: an empty
         # file next to a real one reads as "the decider said nothing". The single
         # decider logs to `<run-dir>/brain.log`, where `civ6_play` puts it.
+        attempt_started_at = time.time()
         play = subprocess.Popen(
-            [sys.executable, "-u", str(HERE / "civ6_play.py"),
-             "--tag", tag,
-             "--orders-db", str(orders_db),
-             "--difficulty", args.difficulty,
-             "--map-size", args.map_size,
-             "--speed", args.speed]
-            + (["--leader", args.leader] if args.leader else [])
-            + [
-             "--max-turns", str(args.max_turns),
-             "--timeout", str(args.timeout),
-             # Derived from the same place as the outer watchdog, so the child's
-             # ceiling and the backstop above it stay ordered by construction.
-             "--timeout-ceiling", str(attempt_ceiling(args)),
-             "--lock-wait", "30",
-             "--report-every", "10",
-             "--export-state"]
-            # ⚠⚠ THE CHAIN IS FOUR LINKS AND THIS IS THE FOURTH. The mod reads
-            # `cfg.ProbeCitizens` (#1098), `civ6_play.py` sets it from
-            # `--probe-citizens` (#1115) -- and this loop builds a FIXED argument
-            # list, so without this line the flag still could not reach a live
-            # game. #1098 shipped unreachable for exactly one missing link; a
-            # second missing link is the same bug with a different address.
-            #
-            # It answers the last untouched science lane: only 8 of 50 live
-            # campus cities carry a specialist ON the Campus, and 45% of all
-            # specialists sit on Commercial Hubs, because CIVVIS has never
-            # issued a citizen order. The probe is read-only -- it asks
-            # `CanStartCommand` and emits the verdict without issuing anything.
-            + (["--probe-citizens"] if args.probe_citizens else [])
-            + (["--campus-specialist"] if args.campus_specialist else [])
-            # The fourth link for the envoy lane. Runs end holding a MEDIAN 42
-            # unspent envoys and `envoys_free` never once decreases across 62
-            # runs, so this is the largest resource the agent never touches —
-            # but the actuation path has three recorded SIGSEGVs, so the flag
-            # stays off and this only makes the experiment RUNNABLE.  Forward
-            # every non-default mutation switch with it: sending no flag means
-            # the child retains its stable all-true defaults, while an explicit
-            # `--no-envoy-*` makes the launch's isolation visible in its command
-            # line and in civ6_play's effective config.
-            + (["--envoys"] if args.envoys else [])
-            + (["--no-envoy-place"] if args.envoys and not args.envoy_place else [])
-            + (["--no-envoy-levy"] if args.envoys and not args.envoy_levy else [])
-            + (["--no-envoy-consider"] if args.envoys and not args.envoy_consider else [])
-            + [
-             # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
-             # already, but the delay is how long they are VISIBLE, and the operator is
-             # watching this screen to check it against CIVVIS's. Near-zero rather than
-             # zero: the shim keys on a screen having been shown, and era screens hold
-             # an event lock that has to be released rather than raced.
-             "--announcement-seconds", "0.05",
-             "--era-announcement-seconds", "0.05",
-             "--civvis-decides",
-             # The decider's whole configuration, on the ONE process that runs it.
-             # `--orders-bin` used to reach only this script's own second brain, so
-             # `civ6_play` fell back to its repo-relative default and a worktree
-             # without a build died with "CIVVIS decision binary does not exist"
-             # while the flag naming a real binary sat on the command line.
-             "--civvis-bin", str(orders_bin),
-             "--civvis-victory", args.victory,
-             "--civvis-strategy", args.strategy]
-            + (["--civvis-war-from-plan"] if args.war_from_plan else [])
-            + [
-             "--tile-export-every", str(args.tile_export_every),
-             # The operator's 2026-08-01 layout: the game owns the LOWER right
-             # at 2/3 of the screen each way; CIVVIS holds the upper left.
-             # The operator's 2026-08-02 layout is QUADRANTS: CIVVIS upper-left,
-             # Civilization VI upper-RIGHT, the terminal lower-left, and the
-             # lower-right deliberately empty for them to fill. `right` is
-             # top-anchored, so a half in each axis lands the game exactly in the
-             # upper-right quarter and nothing overlaps.
-             #
-             # ⚠ This has to be passed here rather than set by hand: the in-game
-             # loop re-places the window every turn, so any manual move is undone
-             # within seconds. It is also read at process start, so changing it
-             # needs a new attempt — not a live edit.
-             "--window-side", "right",
-             "--window-frac", "0.5", "--window-vfrac", "0.5"],
+            play_command(args, tag, orders_db, orders_bin),
             stdout=play_log, stderr=subprocess.STDOUT,
         )
-        # ⚠⚠⚠ THERE USED TO BE A SECOND DECIDER HERE, AND IT RACED THE FIRST ONE.
-        #
-        # `civ6_play.py --civvis-decides` spawns its own `civ6_brain.py` — it has
-        # since the bridge landed (#697) — and this script spawned another three
-        # seconds later, on the same run dir, the same `orders.sqlite` and the same
-        # `why.log`. Measured live on `civvis-20260803T185256Z`:
-        #
-        #     pid 81760   civ6_brain.py ...            (spawned by civ6_play)
-        #     pid 81772   civ6_brain.py --war-from-plan   (spawned by here)
-        #
-        # It hid for two reasons. Both deciders are deterministic over the same
-        # `events.jsonl`, so their logs agree turn for turn — 47/47 with identical
-        # order counts on the run before this one — and nothing ever compared the
-        # two configurations. They are NOT the same configuration: `--war-from-plan`
-        # is passed by this script only, so the flag the operator turned on for the
-        # 2026-08-03 batches was carried by one of two racing writers.
-        #
-        # ⚠ And `write_turn` is not safe to race. It does
-        #     DELETE FROM orders WHERE run=? AND turn=?  ->  INSERT ...  -> COMMIT
-        # and then commits the `ready` row SEPARATELY, on purpose, so that `ready`
-        # can never name a partial turn. Two writers reopen that window from the
-        # outside: A commits its orders, A commits ready=N, the mod starts reading —
-        # and B's DELETE for the same turn lands underneath it. `ready` says N and
-        # the table says nothing.
-        #
-        # So: ONE decider, the one `civ6_play` owns, configured from here. Every
-        # setting this script used to apply to its own copy is now passed through.
 
         # Bound before the `try` so the ledger stamp below reads a variable that
         # always exists, rather than relying on the exact control flow that
         # happens to reach it today.
         why = None
+        # The run dir the attempt's outcome is read from: the original tag, or
+        # the last `<tag>-contN` it was resumed under. See `resume_from_autosave`.
+        run_tag = tag
+        resumes: list[dict] = []
+        torn_down = False
+        record: dict = {}
+        # The frozen run's own row, kept in case the reload never reaches a turn:
+        # a resume that fails must not erase the game it was trying to save.
+        before_resume: dict = {}
         try:
-            # Above the child's own ceiling, never above its base budget. See
-            # `--timeout-ceiling`: these two numbers inverted once and killed
-            # healthy games at turn 194.
-            why = wait_watching_the_turn(play, tag, attempt_ceiling(args) + 600,
-                                         args.frozen_seconds)
-            if why == "timeout":
-                print("attempt exceeded its own timeout; stopping it", flush=True)
-                play.send_signal(signal.SIGTERM)
-            elif why == "locked":
-                # Already signalled inside the watcher. Named separately so the
-                # log does not blame a timeout for an unattended machine.
-                print("attempt abandoned: the screen stayed locked", flush=True)
+            while True:
+                # Above the child's own ceiling, never above its base budget. See
+                # `--timeout-ceiling`: these two numbers inverted once and killed
+                # healthy games at turn 194.
+                why = wait_watching_the_turn(play, run_tag, attempt_ceiling(args) + 600,
+                                             args.frozen_seconds)
+                if why == "timeout":
+                    print("attempt exceeded its own timeout; stopping it", flush=True)
+                    play.send_signal(signal.SIGTERM)
+                elif why == "locked":
+                    # Already signalled inside the watcher. Named separately so the
+                    # log does not blame a timeout for an unattended machine.
+                    print("attempt abandoned: the screen stayed locked", flush=True)
+                # `civ6_play` owns the decider now and stops it on the way out
+                # (`stop_brain`, also registered with atexit), so there is nothing to
+                # signal from here. `teardown()` still sweeps a brain that outlived a
+                # play process killed by signal, which is the case that motivated the
+                # explicit terminate in the first place.
+                play_log.close()
+                teardown(run_tag)
+                torn_down = True
+                # Read once per run: this is the attempt's row unless it resumes.
+                record = outcome_of(run_tag)
+                save = resume_from_autosave(record, why, len(resumes), args,
+                                            attempt_started_at)
+                if save is None:
+                    break
+                cont = f"{tag}-cont{len(resumes) + 1}"
+                print(f"[resume] {run_tag} froze at turn {record.get('last_turn')}; "
+                      f"reloading {save.name} under {cont} (resume {len(resumes) + 1} "
+                      f"of {args.max_resumes})", flush=True)
+                resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
+                                "save": save.name})
+                before_resume = record
+                run_tag = cont
+                play_log = (logs / f"{cont}-play.log").open("w")
+                torn_down = False
+                play = subprocess.Popen(
+                    play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
+                                 orders_bin, load_save=save),
+                    stdout=play_log, stderr=subprocess.STDOUT,
+                )
         finally:
-            # `civ6_play` owns the decider now and stops it on the way out
-            # (`stop_brain`, also registered with atexit), so there is nothing to
-            # signal from here. `teardown()` still sweeps a brain that outlived a
-            # play process killed by signal, which is the case that motivated the
-            # explicit terminate in the first place.
-            play_log.close()
-            teardown(tag)
+            # The loop tears each run down before it resumes or breaks; this
+            # is the safety net for an exception between those two points.
+            if not play_log.closed:
+                play_log.close()
+            if not torn_down:
+                teardown(run_tag)
 
-        record = outcome_of(tag)
+        if not record:
+            record = outcome_of(run_tag)
+        if resumes and record.get("last_turn") is None:
+            # ⚠ THE RELOAD NEVER REACHED A TURN (the Load Game flow refused, the
+            # save would not open, the game did not come back). The attempt is
+            # the frozen game as it stood, not a hole: keep its row and say the
+            # resume failed, so nothing that was played is lost from the ledger.
+            failed = record.get("blocked") or tail_of(logs / f"{run_tag}-play.log")
+            record = before_resume
+            record["reason"] = "attempt frozen; resume failed"
+            record["resume_failed"] = {"tag": run_tag, "why": failed or "no turn observed"}
+        if resumes:
+            # ★ SAY IT WAS RESUMED. The row's score is the continuation's; the
+            # original tag and each freeze turn are kept so a reader can tell a
+            # game that ran through from one that was reloaded, and find both
+            # run dirs.
+            record["resumed_from"] = tag
+            record["resumes"] = resumes
         # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
         #
         # `outcome_of` reads what `civ6_play` wrote on its way out. A run this
