@@ -3882,9 +3882,12 @@ impl AdvancedAi {
         self.endgame_war_runway = true;
     }
 
-    /// Keep the campaign pointed at a city the army has already breached and
-    /// beaten down, instead of re-picking a fresh objective and letting the
-    /// broken one heal. Native tournament games leave this disabled so their
+    /// Keep a live campaign pointed at its chosen city. A breach gets an
+    /// additional value credit, but even an intact objective needs several
+    /// turns of marching and bombardment before that credit exists; changing
+    /// the objective every assessment strands the whole army between cities.
+    /// An emergency, a changed war target, or capture immediately releases the
+    /// commitment. Native tournament games leave this disabled so their
     /// recorded ladders stay comparable.
     pub fn enable_siege_commitment(&mut self) {
         self.siege_commitment = true;
@@ -7877,7 +7880,8 @@ impl AdvancedAi {
                 })
                 .map(|(rival, _)| rival)
         };
-        let target_city = emergency_objective
+        let ranked_target_city = emergency_objective
+            .as_ref()
             .map(|emergency| emergency.city)
             // The rush aims at the capital and nothing else. A capital is the
             // one city whose loss can end a small neighbour outright, it is
@@ -7902,6 +7906,50 @@ impl AdvancedAi {
                         .map(|c| c.id)
                 })
             });
+
+        // A campaign objective is a commitment, not a continuously refreshed
+        // preference. The city scorer below rightly ranks a fresh objective
+        // when a war opens and after a capture, but its distance and fog terms
+        // also change while an army is marching. Re-ranking that city every
+        // five turns made a superior force walk Batumi -> Tbilisi -> Kutaisi
+        // without firing enough shots to take any of them. Keep the existing
+        // foreign objective through an active major war while it is still
+        // enemy-owned. A home emergency deliberately remains a hard override;
+        // a city-state is excluded because its diplomacy has its own reclaim
+        // path rather than a major-war capture campaign.
+        let committed_target_city = if self.siege_commitment && emergency_objective.is_none() {
+            target_player
+                .filter(|target| {
+                    g.is_at_war(pid, *target)
+                        && g.players.get(*target).is_some_and(|player| {
+                            !player.is_minor && !player.is_barbarian
+                        })
+                })
+                .and_then(|target| {
+                    self.plan
+                        .as_ref()
+                        .filter(|prior| prior.target_player == Some(target))
+                        .and_then(|prior| prior.target_city)
+                        .filter(|city| {
+                            g.cities
+                                .get(city)
+                                .is_some_and(|city| city.owner == target)
+                        })
+                })
+        } else {
+            None
+        };
+        let target_city = committed_target_city.or(ranked_target_city);
+
+        if let Some(committed_city) =
+            committed_target_city.filter(|city| Some(*city) != ranked_target_city)
+        {
+            let city = &g.cities[&committed_city];
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign remains aimed at {}", city.name;
+                   "the major-war army stays committed until it captures the city or its war target changes";
+                   city.pos);
+        }
 
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             match target_player.and_then(|id| g.players.get(id)) {
@@ -32420,6 +32468,122 @@ mod tests {
             gap(&shipped, &live, &game),
             0.0,
             "damage dealt where no soldier of ours can finish it is not our siege"
+        );
+    }
+
+    #[test]
+    fn live_campaign_holds_a_major_war_city_until_capture_or_emergency() {
+        let mut game = Game::new_full(2, 30, 18, 7_112, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy_capital = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy_capital].pos;
+        let outpost_position = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && tile.owner_city.is_none()
+                    && game.wdist(enemy_position, **position) >= 9
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, **position) >= 4)
+            })
+            .map(|(position, _)| *position)
+            .next()
+            .expect("test map has a second enemy-city site");
+        game.current = 1;
+        let settler = game.spawn_test_unit("settler", 1, outpost_position);
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .expect("the enemy can found its outpost");
+        let enemy_outpost = game
+            .player_city_ids(1)
+            .into_iter()
+            .find(|city| *city != enemy_capital)
+            .expect("the enemy owns two cities");
+        game.current = 0;
+        game.at_war.insert((0, 1));
+        game.spawn_test_unit("scout", 0, game.cities[&enemy_capital].pos);
+        game.spawn_test_unit("scout", 0, game.cities[&enemy_outpost].pos);
+
+        // Let the regular ranking choose the city it would otherwise re-pick
+        // on the next assessment, then preserve the other existing objective.
+        let mut ranking = AdvancedAi::targeting(VictoryTarget::Domination);
+        ranking.belief.observe(&game, 0);
+        let ranked = ranking.assess(&game, 0);
+        assert_eq!(ranked.target_player, Some(1));
+        let ranked_target = ranked.target_city.expect("the major war has a city objective");
+        let previous_target = [enemy_capital, enemy_outpost]
+            .into_iter()
+            .find(|city| *city != ranked_target)
+            .expect("the enemy's other city is a valid previous objective");
+        let prior_plan = StrategicPlan {
+            strategy: ranked.strategy,
+            target_player: Some(1),
+            target_city: Some(previous_target),
+            threatened_city: None,
+            desired_cities: ranked.desired_cities,
+            assessed_turn: game.turn.saturating_sub(1),
+            rush: false,
+        };
+
+        let mut ordinary = AdvancedAi::targeting(VictoryTarget::Domination);
+        ordinary.belief.observe(&game, 0);
+        ordinary.plan = Some(prior_plan.clone());
+        assert_eq!(
+            ordinary.assess(&game, 0).target_city,
+            Some(ranked_target),
+            "the frozen planner still refreshes its objective from the city ranking"
+        );
+
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+        live.belief.observe(&game, 0);
+        live.plan = Some(prior_plan);
+        assert_eq!(
+            live.assess(&game, 0).target_city,
+            Some(previous_target),
+            "the live major-war column keeps marching toward the city it was ordered to take"
+        );
+
+        // A live emergency is more urgent than the offensive campaign, even
+        // if it names the city that the ordinary ranking would have picked.
+        game.active_emergencies.push(crate::game::Emergency {
+            id: 1,
+            kind: "military".to_string(),
+            target: 1,
+            city: ranked_target,
+            original_owner: 1,
+            members: [0].into_iter().collect(),
+            contributions: BTreeMap::new(),
+            started: game.turn,
+            ends: game.turn + 30,
+        });
+        assert_eq!(
+            live.assess(&game, 0).target_city,
+            Some(ranked_target),
+            "an emergency may immediately override the committed campaign city"
+        );
+        game.active_emergencies.clear();
+
+        // Capture invalidates the old objective. The remaining enemy city is
+        // then eligible for a fresh campaign ranking immediately.
+        game.cities.get_mut(&previous_target).unwrap().owner = 0;
+        assert_eq!(
+            live.assess(&game, 0).target_city,
+            Some(ranked_target),
+            "a captured city cannot keep the campaign target pinned"
         );
     }
 
