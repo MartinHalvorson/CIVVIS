@@ -736,7 +736,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// declaration is about to void — spare Luxury copies, Open Borders, Gold per
 /// turn — for lump Gold priced at the victim's own walk-away, and the war then
 /// returns the Luxury and stops the instalments. Unlike the compatibility
-/// re-pins listed beside `ADVANCED_V1_SOURCE_CONTRACT_FNV`, this one is behind
+/// re-pins recorded in `docs/ELO_REPINS.md`, this one is behind
 /// no constructor flag: `BasicAi::war_eve_liquidation` runs from the shared
 /// `diplomacy` pass and from `AdvancedAi`'s ordinary declaration, so the
 /// `advanced_v1` anchor plays it too and its treasuries genuinely differ from
@@ -757,7 +757,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// ⚠ At `GameSpeed::default()` — Standard — the scaled price is exactly the `25.0`
 /// literal it replaced, so the anchor's behaviour is bit-for-bit unchanged and a
-/// compatibility re-pin of `ADVANCED_V1_SOURCE_CONTRACT_FNV` would have sufficed.
+/// compatibility re-pin of the old byte-hash source contract would have sufficed.
 /// Bumped anyway, on the operator's call: the ledger is cheap to restart and the
 /// alternative is a ledger that silently mixes two rule sets if the Standard-speed
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
