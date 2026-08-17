@@ -12096,57 +12096,6 @@ impl AdvancedAi {
         true
     }
 
-    /// Return the hostile Suzerain and Envoy price for a city-state that a
-    /// negotiated peace can make immediately available.
-    ///
-    /// A direct city-state war is deliberately excluded: peace with a major
-    /// does not legalize Envoys there. Keep this one eligibility check shared
-    /// by the diplomatic peace offer and the Envoy liquidity reserve, so the
-    /// latter cannot spend the exact pool the former needs.
-    fn derived_suzerain_reclaim_cost(
-        g: &Game,
-        pid: usize,
-        minor_id: usize,
-    ) -> Option<(usize, i64)> {
-        let minor = g.players.get(minor_id)?;
-        if !minor.alive
-            || !minor.is_minor
-            || minor.is_barbarian
-            || minor.is_free_city
-            || !g.has_met(pid, minor_id)
-            || !g.is_at_war(pid, minor_id)
-            || g.at_war.contains(&(pid.min(minor_id), pid.max(minor_id)))
-        {
-            return None;
-        }
-        let suzerain = g.suzerain_of(minor_id)?;
-        let owner = g.players.get(suzerain)?;
-        if suzerain == pid
-            || !owner.alive
-            || owner.is_minor
-            || owner.is_barbarian
-            || owner.is_free_city
-        {
-            return None;
-        }
-        let ours = g.envoys_at(pid, minor_id);
-        let rival = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.id != pid
-                    && player.alive
-                    && !player.is_minor
-                    && !player.is_barbarian
-                    && !player.is_free_city
-            })
-            .map(|player| g.envoys_at(player.id, minor_id))
-            .max()
-            .unwrap_or_default();
-        let needed = (3_i64.max(rival.saturating_add(1)) - ours).max(1);
-        Some((suzerain, needed))
-    }
-
     /// Return the cheapest city-state that an idle Envoy pool can take once a
     /// peace with `other` ends the Suzerain-derived war.
     ///
@@ -12183,10 +12132,35 @@ impl AdvancedAi {
 
         g.players
             .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && !minor.is_free_city
+                    && g.has_met(pid, minor.id)
+                    && g.is_at_war(pid, minor.id)
+                    && !g
+                        .at_war
+                        .contains(&(pid.min(minor.id), pid.max(minor.id)))
+                    && g.suzerain_of(minor.id) == Some(other)
+            })
             .filter_map(|minor| {
-                let (suzerain, needed) =
-                    Self::derived_suzerain_reclaim_cost(g, pid, minor.id)?;
-                (suzerain == other && held >= needed).then_some((minor.id, needed))
+                let ours = g.envoys_at(pid, minor.id);
+                let rival = g
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && !player.is_free_city
+                    })
+                    .map(|player| g.envoys_at(player.id, minor.id))
+                    .max()
+                    .unwrap_or_default();
+                let needed = (3_i64.max(rival.saturating_add(1)) - ours).max(1);
+                (held >= needed).then_some((minor.id, needed))
             })
             .min_by_key(|(minor, needed)| (*needed, *minor))
     }
@@ -12659,7 +12633,8 @@ impl AdvancedAi {
     ///
     /// Production and Envoy allocation run before diplomacy, so the pool must
     /// retain the option until that pass decides whether the peace is
-    /// acceptable.
+    /// acceptable. Keep this check local: the recently shipped peace helper is
+    /// deliberately left intact rather than mechanically refactored here.
     fn banked_envoy_liquidity_reserve(&self, g: &Game, pid: usize) -> i64 {
         if !self.bank_envoys {
             return 0;
@@ -12668,8 +12643,43 @@ impl AdvancedAi {
             .players
             .iter()
             .filter_map(|minor| {
-                Self::derived_suzerain_reclaim_cost(g, pid, minor.id)
-                    .map(|(_, needed)| needed)
+                if !minor.alive
+                    || !minor.is_minor
+                    || minor.is_barbarian
+                    || minor.is_free_city
+                    || !g.has_met(pid, minor.id)
+                    || !g.is_at_war(pid, minor.id)
+                    || g
+                        .at_war
+                        .contains(&(pid.min(minor.id), pid.max(minor.id)))
+                {
+                    return None;
+                }
+                let suzerain = g.suzerain_of(minor.id)?;
+                let owner = g.players.get(suzerain)?;
+                if suzerain == pid
+                    || !owner.alive
+                    || owner.is_minor
+                    || owner.is_barbarian
+                    || owner.is_free_city
+                {
+                    return None;
+                }
+                let ours = g.envoys_at(pid, minor.id);
+                let rival = g
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && !player.is_free_city
+                    })
+                    .map(|player| g.envoys_at(player.id, minor.id))
+                    .max()
+                    .unwrap_or_default();
+                Some((3_i64.max(rival.saturating_add(1)) - ours).max(1))
             })
             .min()
             .unwrap_or_default();

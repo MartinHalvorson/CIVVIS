@@ -1332,7 +1332,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The bounded Envoy liquidity reserve is reached only through `bank_envoys`,
 /// false in `AdvancedAi::legacy()`. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb272_bf0c_46cc_6d08;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd2f0_fe99_9573_dc97;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
