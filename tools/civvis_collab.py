@@ -325,19 +325,27 @@ def colliding_paths(
     )
 
 
-#: The one line every PR touching `src/ai.rs` or `src/ai/advanced.rs` must
-#: rewrite. `ADVANCED_V1_SOURCE_CONTRACT_FNV` is a fingerprint over the whole of
-#: both files, so any two such PRs collide on it by construction — and every
-#: merge invalidates the value on every other open PR, which must then re-merge
-#: and recompute. On 2026-08-03, 18 of the 41 commits that reached `main`
-#: touched it, and the resulting "coordinate with #N" bookkeeping never
-#: converged because the colliding set changed on every merge.
+#: The anchor pin, exempted from collision reporting when a PR edits nothing
+#: else in its file.
 #:
-#: The collision is real to git and meaningless to a reviewer. Exempt it, but
-#: only when the PR's edit to that file is *nothing but* the re-pin and its
-#: explanatory doc paragraph — a PR that also changes real code in `main.rs`
-#: still collides normally.
-SOURCE_CONTRACT_PIN = "ADVANCED_V1_SOURCE_CONTRACT_FNV"
+#: ⚠ THIS EXEMPTION IS A WORKAROUND FOR A PROBLEM THAT NO LONGER EXISTS, KEPT
+#: NARROW ON PURPOSE. It was built for `ADVANCED_V1_SOURCE_CONTRACT_FNV`, a
+#: hash over every byte of `src/ai.rs` and `src/ai/advanced.rs`: any two PRs
+#: touching either file collided on that one line by construction, every merge
+#: invalidated the value on every other open PR, and the resulting "coordinate
+#: with #N" bookkeeping never converged because the colliding set changed on
+#: every merge. On 2026-08-03, 18 of the 41 commits that reached `main` touched
+#: it; over the thirty days to 2026-08-17, 248 of ~1,669.
+#:
+#: #1841 removed the cause. `ANCHOR_BEHAVIOUR_FNV` pins what `advanced_v1`
+#: DOES — its decision stream over five profiles — so an ordinary change to
+#: either AI file moves nothing, and this line is expected to change only when
+#: the Elo protocol does. The exemption stays because that rare edit still
+#: collides for the same meaningless reason, and because a gate that has to be
+#: re-added under pressure is a gate that is not there. It should now almost
+#: never fire; if it starts firing often again, something has reintroduced a
+#: pin that moves on every edit.
+SOURCE_CONTRACT_PIN = "ANCHOR_BEHAVIOUR_FNV"
 SOURCE_CONTRACT_FILE = "src/main.rs"
 
 

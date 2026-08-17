@@ -60,8 +60,12 @@ decision rather than an accident:
   simulation loop ever reports "map identical, game diverged" on a globe,
   convert this next.
 - AI evaluation `exp`/`ln` in `src/ai.rs` and `src/ai/advanced.rs` — same
-  empirical status, and converting those files re-pins the `advanced_v1`
-  source contract, which is not a change to make as a side effect.
+  empirical status. This used to carry a second objection: converting those
+  files re-pinned the `advanced_v1` byte-hash source contract. That hash is
+  gone (#1841); the anchor is now pinned by its decision stream, so a
+  conversion that changes no float result changes nothing to re-pin — and one
+  that DOES change a result will fail `advanced_v1_plays_the_same_game_it_always_did`,
+  which is the honest signal and was always the real question.
 
 ## What enforces it
 

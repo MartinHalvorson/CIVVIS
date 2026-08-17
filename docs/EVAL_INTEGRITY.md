@@ -33,6 +33,38 @@ anything; R3 decides whether a number means what it says.
 
 ## 2. R1 — identity is a label maintained apart from the thing
 
+### The same shape, in the anchor's own guard (closed 2026-08-17, #1841)
+
+The frozen rating anchor `advanced_v1` was guarded by
+`ADVANCED_V1_SOURCE_CONTRACT_FNV`: a hash over **every byte** of `src/ai.rs`
+and `src/ai/advanced.rs`, asserting that the anchor "cannot change silently".
+That is R1 exactly — a label (the source bytes) maintained apart from the thing
+it stands for (what the anchor plays). It failed in both directions at once. A
+typo fix in a comment moved it, so it had to be re-pinned; and re-pinning was a
+constant edit plus a prose paragraph, never a re-derivation.
+
+The rate is the finding. Over the thirty days to 2026-08-17, **248 of about
+1,669 merged pull requests rewrote that constant**, rising from 14% of a day's
+merges on 08-04 to 48% on 08-16. A guard discharged 248 times a month by
+editing it is not being read; it is being routed around. It had even grown its
+own workaround inside the collaboration gate
+(`civvis_collab.py: SOURCE_CONTRACT_PIN`), exempting the collision it
+manufactured.
+
+`ANCHOR_BEHAVIOUR_FNV` binds the label to the thing: `advanced_v1` plays five
+profiles — a two-player 20×14 duel through the six-player 54×34 deployment
+shape, plus an archipelago — and **every action it applies** is hashed, with
+the decision count pinned beside it so a failure opens with "20,311 decisions
+rather than 20,464" instead of a changed 64-bit number.
+
+Measured on the branch that introduced it: flipping `battlefront_observation`
+on inside `legacy()` fails it; changing `FIRST_MOVE_SCORE_BONUS` from 4.0 to
+5.0 fails it; a comment-only edit — the case that forced those 248 re-pins —
+passes. Its honest limit is stated where it lives: it catches changes that fire
+on those profiles, and `WATER_MARCH_PENALTY` 18.0 → 17.0 fired on none of the
+four land ones, which is why an archipelago is the fifth. The targeted
+`*_cannot_reach_the_frozen_anchor` tests remain the second line.
+
 ### The defect
 
 `elo::builtin_ai` (`src/elo.rs:1169`) is a `match` over 78 names that
