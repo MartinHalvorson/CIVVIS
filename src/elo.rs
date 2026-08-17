@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 181] = [
+pub const EVAL_ONLY_AIS: [&str; 185] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -168,6 +168,18 @@ pub const EVAL_ONLY_AIS: [&str; 181] = [
     // for every real run; see the constructor arms below.
     "advanced_target_domination",
     "advanced_target_score",
+    // ⚠⚠ AND THE OTHER FOUR, which had no arm at all. `VictoryTarget` has six
+    // variants; two were registered here, so the lane the deployed decider is
+    // handed could be measured only if that lane happened to be Domination or
+    // Score. `civ6_civvis_climb.py --victory` can now select all six (#1871),
+    // and `victory_eval` at the ladder's own profile finishes four of the five
+    // named conditions inside its clock while Science — the deployed default —
+    // finishes none. Which lane is STRONGEST is a different question from which
+    // completes, and these are the arms that can answer it.
+    "advanced_target_science",
+    "advanced_target_culture",
+    "advanced_target_religious",
+    "advanced_target_diplomatic",
     "advanced_measured_dedication",
     "advanced_garrison_loyalty",
     "advanced_settler_first",
@@ -712,6 +724,10 @@ define_arm_kinds! {
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
+    AdvancedTargetScience => "advanced_target_science",
+    AdvancedTargetCulture => "advanced_target_culture",
+    AdvancedTargetReligious => "advanced_target_religious",
+    AdvancedTargetDiplomatic => "advanced_target_diplomatic",
     AdvancedV1 => "advanced_v1",
     AdvancedWarHalf => "advanced_war_half",
     AdvancedWideOpening => "advanced_wide_opening",
@@ -3138,6 +3154,20 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_target_score" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
         }
+        // The four that had no arm. Each differs from `advanced` only in the
+        // lane it is handed, exactly as the two above do.
+        "advanced_target_science" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Science))
+        }
+        "advanced_target_culture" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Culture))
+        }
+        "advanced_target_religious" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Religion))
+        }
+        "advanced_target_diplomatic" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Diplomacy))
+        }
         // Prices `limitanei` (+2 Loyalty in garrisoned cities), which the hardcoded
         // portfolios in `strategic_policies` never reach. Revolts are 42% of 192
         // observed city losses and holding is worth roughly double the score, but
@@ -3880,11 +3910,20 @@ impl ArmKind {
             ],
             Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
-            // The two arms differ only in the lane they are told to win, which is
+            // These arms differ only in the lane they are told to win, which is
             // the axis: the deployed Civ 6 decider is handed one of these by
             // `civ6_civvis_climb.py --victory` and nothing could compare them.
+            //
+            // ⚠ Two of the six used to be here and four did not, so the lane the
+            // deployment actually runs could be priced only if it happened to be
+            // Domination or Score. `--victory` selects all six since #1871, and
+            // Science — the ladder's default — was among the four with no arm.
             Self::AdvancedTargetDomination => &["victory-lane-domination"],
             Self::AdvancedTargetScore => &["victory-lane-score"],
+            Self::AdvancedTargetScience => &["victory-lane-science"],
+            Self::AdvancedTargetCulture => &["victory-lane-culture"],
+            Self::AdvancedTargetReligious => &["victory-lane-religious"],
+            Self::AdvancedTargetDiplomatic => &["victory-lane-diplomatic"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
@@ -4478,6 +4517,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
+        "advanced_target_science" => (Vec::new(), "advanced_target_science"),
+        "advanced_target_culture" => (Vec::new(), "advanced_target_culture"),
+        "advanced_target_religious" => (Vec::new(), "advanced_target_religious"),
+        "advanced_target_diplomatic" => (Vec::new(), "advanced_target_diplomatic"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
@@ -5632,7 +5675,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 86] = [
+            const SCRIPTED: [&str; 90] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5713,10 +5756,14 @@ mod tests {
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
                 "advanced_without_unit_tactics",
-                // Built from code, not from a weights artifact: these two differ
+                // Built from code, not from a weights artifact: these six differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
                 "advanced_target_score",
+                "advanced_target_science",
+                "advanced_target_culture",
+                "advanced_target_religious",
+                "advanced_target_diplomatic",
                 "advanced_v1",
                 "basic",
                 // Scripted composites of bridge flags: built from code, no
