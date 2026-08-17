@@ -1350,7 +1350,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `great_person_class_earnable`) and one absent from its current
 /// `live_great_person_offers` screen; native boards carry neither list and are
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x60b2_0c12_0fb3_3378;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x11b3_3eeb_16e5_9d3c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

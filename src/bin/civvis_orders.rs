@@ -1855,6 +1855,7 @@ fn withhold_live_treatment(
         "fog-land-capacity" => ai.disable_fog_land_capacity(),
         "recon-flight" => ai.disable_recon_flight(),
         "score-horizon" => ai.disable_score_horizon(),
+        "one-launch-pad" => ai.disable_one_launch_pad(),
         "naval-recon" => ai.disable_naval_recon(),
         "counter-in-lane" => ai.disable_counter_in_lane(),
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
@@ -4188,6 +4189,10 @@ mod tests {
         withhold_live_treatment(&mut ai, "score-horizon")
             .expect("the score-horizon control arm is registered");
         assert!(!ai.score_horizon, "the named score-horizon control must hold it off");
+        assert!(ai.one_launch_pad);
+        withhold_live_treatment(&mut ai, "one-launch-pad")
+            .expect("the one-launch-pad control arm is registered");
+        assert!(!ai.one_launch_pad, "the named one-launch-pad control must hold it off");
         assert!(ai.naval_recon());
         withhold_live_treatment(&mut ai, "naval-recon")
             .expect("the naval-recon control arm is registered");
