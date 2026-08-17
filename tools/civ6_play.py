@@ -42,6 +42,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CIVVIS_VICTORY = "science"
 DEFAULT_CIVVIS_STRATEGY = ""
 
+# Every objective `civvis_orders --victory` accepts, in the spelling its enum
+# prints back. `civvis` lets the agent choose; the other six are
+# `VictoryTarget`'s own variants.
+#
+# ⚠ THREE OF THESE WERE UNREACHABLE FROM THE LIVE SEAT UNTIL 2026-08-17, and the
+# omission was not cosmetic: `advanced.rs` gates the machinery of a lane on being
+# TARGETED at it. A targeted agent that is not aiming at Culture prices every
+# great-work building at -10_000; one not aiming at Religion prices the
+# Missionary at -10_000; one not aiming at Diplomacy abstains from every World
+# Congress ballot that is not an emergency. So the launcher's four-value list did
+# not merely hide three options — it made three victory conditions impossible to
+# play for, whatever else was configured.
+VICTORY_LANES = ["civvis", "science", "culture", "religious", "diplomatic",
+                 "domination", "score"]
+
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
 # Civilization VI's optional game modes, from the `ConfigurationId`s its
@@ -2940,9 +2955,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--civvis-bin", default=None,
                     help="civvis_orders binary; defaults to target/release/civvis_orders")
     ap.add_argument("--civvis-victory", default=DEFAULT_CIVVIS_VICTORY,
-                    choices=["domination", "science", "score", "civvis"],
+                    choices=VICTORY_LANES,
                     help="victory objective passed to the supervised CIVVIS worker; "
-                         "defaults to non-religious Science")
+                         "defaults to Science")
     ap.add_argument("--civvis-strategy", default=DEFAULT_CIVVIS_STRATEGY,
                     help="rated CIVVIS strategy name; empty keeps stock AdvancedAi. "
                          "auto is an uncalibrated opt-in")

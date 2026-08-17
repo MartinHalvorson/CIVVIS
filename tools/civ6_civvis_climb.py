@@ -51,6 +51,12 @@ DEFAULT_STRATEGY = ""
 
 sys.path.insert(0, str(HERE))
 from civ6_control import gamelock, install, launcher  # noqa: E402
+# The objective list is not restated here. This launcher's `--victory` is
+# forwarded verbatim to `civ6_play.py --civvis-victory`, which forwards it
+# verbatim to `civvis_orders --victory`; a second copy of the names is a second
+# place for them to go stale, which is exactly how three of the six lanes stayed
+# unreachable. `test_civ6_play.py` pins this list against the Rust const.
+from civ6_play import VICTORY_LANES  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
 # is a Steam client that is coming back up on its own; the last is long because if
@@ -1307,10 +1313,30 @@ def main() -> int:
     #
     # ⚠ `domination`, `score` and `civvis` stay available and unchanged; only the
     # default moves. Rows either side of this change are NOT comparable.
+    #
+    # ★★★★★ CULTURE, RELIGIOUS AND DIPLOMATIC WERE MISSING FROM THIS LIST, and
+    # the reasoning above was written as though the choice were between the four
+    # that were here. It was not a menu: `advanced.rs` gates each lane's
+    # machinery on being TARGETED at it, and the gate is NEGATIVE — a targeted
+    # agent aiming anywhere else prices great-work buildings
+    # (`advanced.rs:18365`) and Missionaries (`advanced.rs:18115`) at -10_000 and
+    # abstains from non-emergency World Congress ballots
+    # (`advanced.rs:12830`). So every ladder attempt run at this default has been
+    # playing with three of Civilization VI's five victory conditions switched
+    # off in its own production valuation. All six of `VictoryTarget`'s variants
+    # are selectable now; the names are the enum's own `as_str` spellings and
+    # `civvis_orders` parses them through its `FromStr`, so the two lists cannot
+    # drift.
+    #
+    # ⚠ The default does NOT move with this change. Science stays the default
+    # until a lane is measured to beat it; rows are still separated by
+    # `code_rev`, and an attempt that passes `--victory culture` is a different
+    # experiment from the rows above it.
     ap.add_argument("--victory", default=DEFAULT_VICTORY,
-                    choices=["domination", "science", "score", "civvis"],
-                    help="victory objective; defaults to reachable non-religious "
-                         "Science. Domination remains an explicit experiment")
+                    choices=VICTORY_LANES,
+                    help="victory objective; defaults to Science. Every "
+                         "VictoryTarget the engine implements is selectable; "
+                         "`civvis` lets the agent choose its own")
     # The rated genome is an opt-in experiment. Its internal league strength does
     # not establish Firaxis transfer, while stock AdvancedAi has the powered
     # deployment-shaped result and makes concurrent controller work attributable.

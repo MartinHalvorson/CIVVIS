@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -1158,6 +1159,62 @@ class SupervisedBrainCommandTests(unittest.TestCase):
         # an `if args.civvis_refresh_seconds:` implementation would drop it.
         cmd = self._command(civvis_refresh_seconds=0.0)
         self.assertEqual(cmd[cmd.index("--github-refresh-seconds") + 1], "0.0")
+
+    def test_every_lane_reaches_the_worker_verbatim(self):
+        """The launcher forwards the objective; it does not translate it."""
+        for lane in civ6_play.VICTORY_LANES:
+            with self.subTest(lane=lane):
+                cmd = self._command(civvis_victory=lane)
+                self.assertEqual(cmd[cmd.index("--victory") + 1], lane)
+
+
+class VictoryLaneListTests(unittest.TestCase):
+    """The launchers' objective list against the engine's own.
+
+    ⚠ THIS IS THE TEST THAT WOULD HAVE CAUGHT THE ORIGINAL BUG. The Python
+    launchers offered four objectives while `VictoryTarget` had six, and
+    `advanced.rs` gates each lane's machinery on being targeted at it — so
+    Culture, Religion and Diplomacy were not merely missing from a menu, they
+    were unplayable in the live seat. Nothing failed, because no test compared
+    the two lists.
+    """
+
+    REPO = Path(__file__).resolve().parent.parent
+
+    def _rust_source(self, relative):
+        return (self.REPO / relative).read_text(encoding="utf-8")
+
+    def test_the_launcher_list_matches_the_orders_binary(self):
+        source = self._rust_source("src/bin/civvis_orders.rs")
+        match = re.search(r'const VICTORY_LANES: &str = "([^"]+)";', source)
+        self.assertIsNotNone(match, "civvis_orders.rs no longer names its lanes")
+        self.assertEqual(match.group(1).split("|"), civ6_play.VICTORY_LANES)
+
+    def test_the_launcher_list_matches_the_engine_enum(self):
+        """Every `VictoryTarget` variant, spelled the way the enum prints it."""
+        source = self._rust_source("src/ai/advanced.rs")
+        # Anchored on the impl block, not on `as_str`: several enums in this file
+        # have an `as_str`, and the first one is `WarPhase`'s.
+        block = re.search(r"\nimpl VictoryTarget \{(.*?)\n\}\n", source, re.DOTALL)
+        self.assertIsNotNone(block, "impl VictoryTarget no longer parses")
+        spellings = re.findall(r'VictoryTarget::\w+ => "(\w+)"', block.group(1))
+        self.assertEqual(len(spellings), 6, spellings)
+        # `civvis` is not a target — it is the absence of one — so it leads the
+        # list and is not expected among the enum's spellings.
+        self.assertEqual(civ6_play.VICTORY_LANES[0], "civvis")
+        self.assertEqual(sorted(civ6_play.VICTORY_LANES[1:]), sorted(spellings))
+
+    def test_no_launcher_in_the_chain_keeps_its_own_copy(self):
+        """`climb --victory` → `play --civvis-victory` → `brain --victory` →
+        `civvis_orders --victory`. A lane has to survive all four; the two
+        launchers in the middle each used to restate the names, and the middle
+        one is where Culture, Religion and Diplomacy were actually refused."""
+        here = Path(__file__).resolve().parent
+        for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
+            with self.subTest(launcher=launcher):
+                source = (here / launcher).read_text(encoding="utf-8")
+                self.assertIn("from civ6_play import VICTORY_LANES", source)
+                self.assertIn("choices=VICTORY_LANES", source)
 
 
 if __name__ == "__main__":

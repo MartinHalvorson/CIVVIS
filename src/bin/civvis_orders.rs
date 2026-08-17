@@ -50,6 +50,37 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// Every value `--victory` accepts, for the usage line and for the launchers
+/// that mirror this list in Python.
+const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
+
+/// Build the agent for a `--victory` lane, or `None` if the name is not one.
+///
+/// ⚠ THE SIX NAMES ARE NOT A SEPARATE LIST. They come from
+/// [`civvis::ai::VictoryTarget`]'s own `FromStr`, so a target added to the enum
+/// reaches the live seat without a second edit here, and the aliases the enum
+/// already accepts (`religion`/`religious`, `diplomacy`/`diplomatic`,
+/// `conquest`/`domination`) work on the command line for free. The previous
+/// hand-written match listed four of the six, which is why Culture, Religion
+/// and Diplomacy — all three implemented in `advanced.rs` — could not be played
+/// in the live seat at all.
+///
+/// ★ NAMING THE OBJECTIVE IS NOT MAKING THE DECISIONS. `targeting` pins which
+/// victory CIVVIS plays for and leaves every choice about how to reach it —
+/// war target, army size, what each city builds, where each unit goes — to
+/// CIVVIS. Left to itself on a reconstruction carrying no wonders or tech
+/// history it picked `religion` with `victory=None`, unreachable in 250 turns.
+/// `--victory civvis` restores letting it choose, so the two are comparable.
+fn victory_lane(victory: &str) -> Option<civvis::ai::AdvancedAi> {
+    if victory == "civvis" {
+        return Some(civvis::ai::AdvancedAi::new());
+    }
+    victory
+        .parse::<civvis::ai::VictoryTarget>()
+        .ok()
+        .map(civvis::ai::AdvancedAi::targeting)
+}
+
 fn mirror_setup(
     state: &civvis::mirror::StateSnapshot,
     fallback_players: usize,
@@ -3123,19 +3154,10 @@ fn main() {
         .unwrap_or(6);
     let victory = arg_text(&args, "--victory").unwrap_or_else(|| "domination".to_string());
     let rated = resolve_strategy(&args);
-    let mut ai = match victory.as_str() {
-        // ★ NAMING THE OBJECTIVE IS NOT MAKING THE DECISIONS. `targeting` pins which
-        // victory CIVVIS plays for and leaves every choice about how to reach it —
-        // war target, army size, what each city builds, where each unit goes — to
-        // CIVVIS. Left to itself on a reconstruction carrying no wonders or tech
-        // history it picked `religion` with `victory=None`, unreachable in 250 turns.
-        // `--victory civvis` restores letting it choose, so the two are comparable.
-        "civvis" => civvis::ai::AdvancedAi::new(),
-        "domination" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination),
-        "science" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Science),
-        "score" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Score),
-        other => {
-            eprintln!("unknown --victory {other}; use domination|science|score|civvis");
+    let mut ai = match victory_lane(&victory) {
+        Some(lane) => lane,
+        None => {
+            eprintln!("unknown --victory {victory}; use {VICTORY_LANES}");
             std::process::exit(2);
         }
     };
@@ -3996,15 +4018,14 @@ fn main() {
                         // are the MIRROR's. Guessing between the two cost several
                         // rebuilds, so it is worth a flag.
                         if fresh_ai {
-                            let mut throwaway = match victory.as_str() {
-                                "civvis" => civvis::ai::AdvancedAi::new(),
-                                "science" => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Science),
-                                "score" => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Score),
-                                _ => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Domination),
-                            };
+                            // ⚠ This was a SECOND hand-written match, and it did not
+                            // agree with the one that built `ai`: it listed three
+                            // lanes and sent everything else to Domination, so a
+                            // `--fresh-ai` run silently swapped the objective it was
+                            // asked for. `victory` was already validated at startup,
+                            // so the lane always resolves here.
+                            let mut throwaway = victory_lane(&victory)
+                                .expect("--victory was validated at startup");
                             decide(
                                 existing,
                                 &mut throwaway,
@@ -4103,6 +4124,60 @@ fn action_variant(action: &Action) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The lane list is the enum's, in the enum's order, with `civvis` in front.
+    ///
+    /// ⚠ The usage line and the Python launchers' `choices` are both generated
+    /// from this const, so it is the one place the six names are written. If a
+    /// seventh `VictoryTarget` is added this fails until the const names it, and
+    /// `test_civ6_play.py` then fails until the launchers do.
+    #[test]
+    fn the_usage_line_offers_exactly_the_targets_the_engine_implements() {
+        let expected: Vec<&str> = std::iter::once("civvis")
+            .chain(
+                civvis::ai::VictoryTarget::ALL
+                    .iter()
+                    .map(|target| target.as_str()),
+            )
+            .collect();
+        assert_eq!(super::VICTORY_LANES.split('|').collect::<Vec<_>>(), expected);
+    }
+
+    /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat
+    /// matched four names by hand while `VictoryTarget` had six, so Culture,
+    /// Religion and Diplomacy exited with code 2 — and because `advanced.rs`
+    /// gates each lane's own machinery on being targeted at it, no other setting
+    /// could reach them either.
+    #[test]
+    fn every_named_lane_builds_the_agent_it_names() {
+        for target in civvis::ai::VictoryTarget::ALL {
+            let ai = super::victory_lane(target.as_str())
+                .unwrap_or_else(|| panic!("{} is in the usage line", target.as_str()));
+            assert_eq!(ai.victory_target(), Some(target));
+        }
+        // The aliases `VictoryTarget::from_str` already accepted now work on the
+        // command line as well, so a run asking for `religion` is not refused.
+        for (spelling, target) in [
+            ("religion", civvis::ai::VictoryTarget::Religion),
+            ("diplomacy", civvis::ai::VictoryTarget::Diplomacy),
+            ("conquest", civvis::ai::VictoryTarget::Domination),
+        ] {
+            assert_eq!(
+                super::victory_lane(spelling).and_then(|ai| ai.victory_target()),
+                Some(target),
+                "{spelling}"
+            );
+        }
+        // `civvis` is the absence of a target, not one of them.
+        assert_eq!(
+            super::victory_lane("civvis").and_then(|ai| ai.victory_target()),
+            None
+        );
+        // And a name that is not a lane stays an error rather than quietly
+        // becoming Domination, which is what the `--fresh-ai` copy of this match
+        // used to do.
+        assert!(super::victory_lane("religous").is_none());
+    }
+
     /// ★★★★★ A CONTROL ARM THE LIVE HARNESS CAN ACTUALLY RUN.
     ///
     /// Every live-bridge repair has a `live_without_*` arm in `src/elo.rs`, but

@@ -922,6 +922,18 @@ class OneDeciderTests(_Harness, unittest.TestCase):
         self.assertEqual(words[words.index("--civvis-victory") + 1], "domination")
         self.assertEqual(words[words.index("--civvis-strategy") + 1], "auto")
 
+    def test_the_three_lanes_that_were_unreachable_now_reach_the_game(self):
+        """Culture, Religion and Diplomacy are implemented in `advanced.rs` and were
+        absent from this launcher's `choices`, so argparse rejected them before
+        anything could be measured. A lane the engine plays and the ladder cannot
+        select is a lane that does not exist."""
+        for lane in ("culture", "religious", "diplomatic"):
+            with self.subTest(lane=lane):
+                play = next(argv for argv in self._play_argv(("--victory", lane))
+                            if any("civ6_play.py" in str(word) for word in argv))
+                words = [str(word) for word in play]
+                self.assertEqual(words[words.index("--civvis-victory") + 1], lane)
+
     def test_civ6_play_forwards_the_war_flag_to_the_brain(self):
         """The far end of the same wire. A flag `civ6_play` accepts and drops is worse
         than one it does not accept: the climb would look configured and not be."""
