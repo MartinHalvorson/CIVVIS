@@ -1432,7 +1432,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             campus_specialist=False, envoys=False, envoy_place=False,
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
-            refresh_seconds=None, no_peace_deterrence=False,
+            refresh_seconds=None, no_peace_deterrence=False, without=[],
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1444,6 +1444,19 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         cmd = climb.play_command(self._play_args(), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))
         self.assertNotIn("--no-peace-deterrence", cmd)
+
+    def test_a_batch_can_be_the_control_half_of_a_live_ab(self):
+        cmd = climb.play_command(
+            self._play_args(without=["peacetime-deterrence"]), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--civvis-without")
+        self.assertEqual(cmd[at + 1], "peacetime-deterrence")
+        self.assertNotIn(
+            "--civvis-without",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the treatment half withholds nothing",
+        )
 
     def test_the_freeze_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(refresh_seconds=0.0), "t",

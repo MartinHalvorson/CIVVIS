@@ -167,6 +167,28 @@ class RecordsItself(LedgerCase):
 
 
 
+class LiveArmAttributionTests(unittest.TestCase):
+    """A row must say WHICH ARM played it, or two pinned batches cannot be
+    compared after the fact — the precondition for pricing anything live."""
+
+    def test_both_halves_of_the_arm_ride_the_entry(self) -> None:
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-x", "last_turn": 250,
+            "withheld": ["peacetime-deterrence"],
+            "mod_arms": {"PeaceDeterrence": False},
+        })
+        self.assertEqual(entry["withheld"], ["peacetime-deterrence"])
+        self.assertEqual(entry["mod_arms"], {"PeaceDeterrence": False})
+
+    def test_an_older_row_is_unknown_not_a_full_bundle(self) -> None:
+        # None means "nobody could record it", which is a different claim from
+        # [] ("the full shipped bundle played"). Reading the first as the
+        # second would silently pool control rows with treatment rows.
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        self.assertIsNone(entry["withheld"])
+        self.assertIsNone(entry["mod_arms"])
+        full = civ6_ladder.entry_from({"tag": "new", "last_turn": 250, "withheld": []})
+        self.assertEqual(full["withheld"], [])
 class OpeningTempoTests(unittest.TestCase):
     """The ladder's strongest measured correlate, watched instead of
     reconstructed: cities at t60 (r=+0.69 with final lead) and the second
