@@ -1329,7 +1329,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wartime second naval eye and its idle-city reservation are both reached
 /// only through `naval_recon`, which `AdvancedAi::legacy()` leaves false.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f84_9122_1eab_12c1;
+/// The bounded Envoy liquidity reserve is reached only through `bank_envoys`,
+/// false in `AdvancedAi::legacy()`. Compatibility re-pin; the Elo protocol
+/// does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb272_bf0c_46cc_6d08;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
