@@ -1380,6 +1380,45 @@ Oracle throughput is the bottleneck: real games run near real time, roughly one
 game per hour per instance. Plan for a small fleet or weeks of soak, and lean
 on distribution tests and fuzzing where oracle samples are scarce.
 
+### The trace comparator (the dynamic boundary that is now executable)
+
+`tools/civ6_differential.py` is the first reusable piece of stage 2. It compares
+two JSONL traces without starting either engine, which makes it cheap enough to
+run on every replay artifact and in CI:
+
+```sh
+python3 tools/civ6_differential.py \
+  --oracle traces/stock.jsonl --candidate traces/new.jsonl \
+  --require-contiguous
+```
+
+The selected transition records (by default `state`, `orders` and `turn`) remain
+in source order. Each is keyed by `(turn, phase, occurrence)`;
+reordering a phase, dropping a state, or appending a duplicate therefore fails
+before a later matching score can hide it. The payload is canonicalised and
+SHA-256 hashed, with the first differing JSON-pointer path and both leaf values
+reported. `--json` emits the same result as a machine-readable report for a
+golden-corpus gate. Exit status is 0 for equal traces, 1 for a semantic or
+structural drift, and 2 for a malformed or contract-invalid trace.
+
+Only transport envelope fields (`run`, `ctx`, revision and timestamps) are
+ignored by default. Decision fields such as an order's `source` remain strict.
+Set-like schema fields whose
+order is not a transition (`techs`, `civics`, `policies` and religion lists)
+are canonicalised as unordered; all other lists remain ordered unless a
+reviewed `--unordered /path` waiver is supplied. A waiver is a schema decision,
+not a way to make a failing replay green: the command records no silent
+wildcards, and duplicate JSON keys, non-finite numbers, backwards turns and
+missing selected turns fail closed. Live tails may opt into one unterminated
+final line with `--allow-trailing-partial`; golden traces should not.
+
+This comparator does not yet pretend that a pair of traces is a full turn-0
+replay. The action injector and forced-randomness recorder still have to produce
+the candidate trace. Once they do, this boundary is the part that turns their
+output into a deterministic first-divergence test instead of a final-score
+eyeball check. The hermetic contract is pinned in
+`tools/test_civ6_differential.py`.
+
 ## Determinism rules for engine code
 
 These already hold in CIVVIS and must keep holding, because clause 2 depends on
