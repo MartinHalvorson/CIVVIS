@@ -8445,7 +8445,7 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> f64 {
-        if g.governor_effect(pid, cid, "settler_no_population") > 0.0 {
+        if !g.settler_consumes_population(pid, cid) {
             return 0.0;
         }
         let population = g.cities[&cid].pop;
@@ -8468,6 +8468,7 @@ impl AdvancedAi {
     /// investment. This is intentionally bounded and deterministic: it does
     /// not clone a terminal game or grant a free city, but it does make every
     /// material cost visible to the production decision.
+    #[allow(clippy::too_many_arguments)]
     fn coupled_expansion_value(
         &self,
         g: &Game,
@@ -8489,12 +8490,8 @@ impl AdvancedAi {
             return -10_000.0;
         }
 
-        let forecast = self.settlement_growth_forecast_from_positions(
-            g,
-            pid,
-            site,
-            &g.wdisk(site, 2),
-        );
+        let forecast =
+            self.settlement_growth_forecast_from_positions(g, pid, site, &g.wdisk(site, 2));
         let horizon = g.standard_duration(COUPLED_EXPANSION_HORIZON).max(1) as f64;
         let payoff_fraction = (payback_turns / horizon).clamp(0.0, 1.0);
         // Keep the historical 920/site base as the benefit scale, but make
@@ -8521,15 +8518,13 @@ impl AdvancedAi {
             0.0
         };
         let city_count = g.player_city_ids(pid).len();
-        let escort_cost = (self.settlement_safety && counts.military <= city_count)
-            .then_some(COUPLED_EXPANSION_ESCORT_VALUE)
-            .unwrap_or(0.0);
-        let net = benefit
-            - production_cost
-            - population_cost
-            - route_cost
-            - safety_cost
-            - escort_cost;
+        let escort_cost = if self.settlement_safety && counts.military <= city_count {
+            COUPLED_EXPANSION_ESCORT_VALUE
+        } else {
+            0.0
+        };
+        let net =
+            benefit - production_cost - population_cost - route_cost - safety_cost - escort_cost;
         if net.is_finite() && net > 0.0 {
             net
         } else {
@@ -33077,15 +33072,8 @@ mod tests {
         };
         let build_turns = game.item_remaining_cost_for_city(0, city, &settler_item)
             / game.city_yields(city).production.max(1.0);
-        let early = treated.coupled_expansion_value(
-            &game,
-            0,
-            city,
-            &plan,
-            &counts,
-            site,
-            build_turns,
-        );
+        let early =
+            treated.coupled_expansion_value(&game, 0, city, &plan, &counts, site, build_turns);
         assert!(
             early > -10_000.0,
             "a healthy early site should remain an auditable paid candidate: {early}"

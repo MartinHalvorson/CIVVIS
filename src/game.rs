@@ -38333,7 +38333,7 @@ impl Game {
                 .strategic_resources
                 .insert(Name::new(&resource), stock - amount);
         }
-        if unit == "settler" && self.governor_effect(pid, cid, "settler_no_population") <= 0.0 {
+        if unit == "settler" && self.settler_consumes_population(pid, cid) {
             self.cities.get_mut(&cid).unwrap().pop -= 1;
         }
         bump(&mut self.players[pid], &format!("trained:{unit}"));
@@ -43166,6 +43166,16 @@ impl Game {
                         .sum::<f64>()
             })
             .sum()
+    }
+
+    /// Whether completing a Settler in this city consumes one population.
+    ///
+    /// Production and purchase completion must use the same governor-aware
+    /// rule, and AI estimators need that contract when pricing a Settler as a
+    /// coupled investment. Keeping the decision here prevents those paths
+    /// from drifting apart as governor promotions evolve.
+    pub fn settler_consumes_population(&self, pid: usize, cid: u32) -> bool {
+        self.governor_effect(pid, cid, "settler_no_population") <= 0.0
     }
 
     fn sync_governor_cities(&mut self, pid: usize) {
@@ -48118,9 +48128,7 @@ impl Game {
                     self.units.get_mut(&placed).unwrap().charges +=
                         self.governor_effect(pid, cid, "builder_charges") as i32;
                 }
-                if unit == "settler"
-                    && self.governor_effect(pid, cid, "settler_no_population") <= 0.0
-                {
+                if unit == "settler" && self.settler_consumes_population(pid, cid) {
                     self.cities.get_mut(&cid).unwrap().pop -= 1;
                 }
                 bump(&mut self.players[pid], &format!("trained:{unit}"));
