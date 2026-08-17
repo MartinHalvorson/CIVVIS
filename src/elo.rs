@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 185] = [
+pub const EVAL_ONLY_AIS: [&str; 187] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -88,6 +88,7 @@ pub const EVAL_ONLY_AIS: [&str; 185] = [
     "live_without_war_reinforcement",
     "live_without_war_patience",
     "live_without_deny_while_targeted",
+    "live_without_stock_denial_lead_time",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -201,6 +202,7 @@ pub const EVAL_ONLY_AIS: [&str; 185] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
     // survey of the work it would do, and military units credited for
     // strength-per-production and the civ's own unique window. Reserved
@@ -270,7 +272,7 @@ pub const EVAL_ONLY_AIS: [&str; 185] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 69] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -339,6 +341,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
+    "stock-denial-lead-time",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -373,7 +376,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 18] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -421,6 +424,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
     // Settler seat's standing order) has a target gate to override; the
     // native gate agents are adaptive, so the flag cannot fire there.
     "deny-while-targeted",
+    // Priced on the Settler seat's own steal record (five led games taken at
+    // t229-245); the native lanes end on their own clock and keep the
+    // measured 90 bar until a native run says otherwise.
+    "stock-denial-lead-time",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -607,6 +614,7 @@ define_arm_kinds! {
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
+    LiveWithoutStockDenialLeadTime => "live_without_stock_denial_lead_time",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -708,6 +716,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
@@ -2989,6 +2998,21 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // The reconnaissance quartet the live bridge has carried since its
+        // repair era, applied to stock native production: rebuild a lost
+        // scout (`recon_is_the_missing_arm` is dead code without
+        // `recon_replacement`), slip a threatened one away, put a hull on
+        // unseen water, and bring embarked explorers ashore. The native
+        // fleet peaks at 1.83 concurrent recon units and wins ~13% of the
+        // board's villages; this arm prices giving it the bridge's eyes.
+        "advanced_recon_fleet" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_recon_replacement();
+            ai.enable_recon_flight();
+            ai.enable_naval_recon();
+            ai.enable_come_ashore();
+            Box::new(ai)
+        }
         "advanced_settler_founds_when_stalled" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settler_founds_when_stalled();
@@ -3842,6 +3866,7 @@ impl ArmKind {
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
+            Self::LiveWithoutStockDenialLeadTime => live_without("stock-denial-lead-time"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -3981,6 +4006,12 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedReconFleet => &[
+                "recon-replacement",
+                "recon-flight",
+                "naval-recon",
+                "come-ashore",
+            ],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
@@ -4461,6 +4492,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_recon_fleet" => (Vec::new(), "advanced_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
@@ -5673,7 +5705,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 90] = [
+            const SCRIPTED: [&str; 91] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5740,6 +5772,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_recon_fleet",
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
@@ -5860,7 +5893,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 17] = [
+        const EXCLUDED: [&str; 18] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5900,6 +5933,8 @@ mod tests {
             // to override; the native gate agents are adaptive, so the flag
             // cannot fire there.
             "deny_while_targeted",
+            // Same: priced on the live seat's steal record, not native play.
+            "stock_denial_lead_time",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {

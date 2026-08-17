@@ -274,6 +274,8 @@ age number published before 2026-07-27, and `Measured` is retained as
 `age_census` is the instrument. It never changes a decision and no agent can
 name it.
 
+⚠ `age_census` was removed in #1278 as an unreferenced binary. The command below is kept as the record of how this was measured — it does not run against this tree. Restoring it follows the pattern in #1876: bring the source back with tests, so the audit's question and the real one agree.
+
 ```text
 cargo run --release --bin age_census -- --players 4 --maps 24 --turns 500
 ```

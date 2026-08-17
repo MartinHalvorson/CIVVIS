@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -1041,6 +1042,53 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 RESUME_MIN_TURN = 20
 
 
+def resolvable_win_rate(attempts: int, baseline: float = 0.25,
+                        alpha: float = 1.959963984540054,
+                        beta: float = 0.8416212335729143) -> float | None:
+    """The smallest win rate a batch of this size could tell apart from
+    `baseline`, at 5% significance and 80% power, one arm each.
+
+    ⚠⚠ A BATCH THAT REPORTS A RESULT WITHOUT ITS POWER IS HOW AN UNDERPOWERED
+    NUMBER GETS QUOTED. The live ladder finishes roughly 24 games a day, and
+    separating the measured 25% Settler win rate from 40% needs about 152
+    games PER ARM — twelve days of the whole ladder for one paired
+    comparison. Eight games settle a MECHANISM (did the treatment fire, did
+    the pin hold); they settle no effect at all, and the difference has to be
+    printed where the operator reads the batch, not left to be worked out
+    later from a table nobody opens.
+
+    Returns None when no rate below certainty is separable at this size.
+    """
+    if attempts < 1:
+        return None
+    for step in range(1, 1000):
+        rate = baseline + step / 1000.0
+        if rate >= 1.0:
+            return None
+        pooled = (baseline + rate) / 2
+        need = ((alpha * math.sqrt(2 * pooled * (1 - pooled))
+                 + beta * math.sqrt(baseline * (1 - baseline)
+                                    + rate * (1 - rate)))
+                / (rate - baseline)) ** 2
+        if need <= attempts:
+            return rate
+    return None
+
+
+def batch_power_line(attempts: int, baseline: float = 0.25) -> str:
+    """One line naming what this batch can and cannot settle."""
+    if attempts <= 1:
+        return ("single attempt: a smoke test — one game distinguishes "
+                "nothing (live score stdev ~398 on the current build)")
+    resolvable = resolvable_win_rate(attempts, baseline)
+    if resolvable is None:
+        return (f"batch of {attempts}: too small to separate any win rate "
+                f"from {baseline:.0%} — a mechanism check, not a measurement")
+    return (f"batch of {attempts}: at 80% power this separates "
+            f"{baseline:.0%} from {resolvable:.0%} or better, and nothing "
+            f"finer — smaller effects need more games PER ARM")
+
+
 def batch_refresh_seconds(refresh_seconds: float | None, pinned: str | None,
                           attempts: int) -> float | None:
     """The decider-refresh cadence a batch should play under.
@@ -1100,6 +1148,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
+        + [flag for treatment in args.without
+           for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
@@ -1151,6 +1201,11 @@ def _latest_autosave(newer_than: float | None = None) -> Path | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--without", action="append", default=[], metavar="TREATMENT",
+                    help="withhold one live treatment for every attempt in "
+                         "this batch — the control half of a live A/B. Pair "
+                         "with --attempts N on a pinned revision, then run the "
+                         "same N without this flag for the treatment half")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
@@ -1474,6 +1529,7 @@ def main() -> int:
                  if "+" in pinned else "")
               + staleness, flush=True)
 
+    print(batch_power_line(args.attempts), flush=True)
     args.refresh_seconds = batch_refresh_seconds(
         args.refresh_seconds, pinned, args.attempts)
     if args.refresh_seconds == 0.0:
