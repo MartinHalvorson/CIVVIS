@@ -1317,7 +1317,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` leaves off. The frozen anchor still gets an empty
 /// explorer set before inspecting units, so its movement decisions are
 /// byte-identical. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x14b7_d405_0c11_1065;
+/// The recon-flight loop escape is reached only from `recon_flight`; that
+/// live-only flag is false in `AdvancedAi::legacy()`, so a frozen Scout keeps
+/// its historical flight and exploration behavior. Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa43c_f521_770d_261f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
