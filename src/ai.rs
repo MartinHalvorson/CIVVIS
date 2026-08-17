@@ -186,11 +186,16 @@ const SIEGE_ARM_MAX: usize = 2;
 const SIEGE_TARGET_REACH: i32 = 20;
 
 /// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
-/// toward. One, because this repairs blindness rather than buying map control:
-/// the empire that measured the defect had *two* scouts at its peak and still
-/// charted a quarter of the world. Past this the ordinary military choice
-/// resumes, so it cannot become an endless appetite.
-const RECON_ARM_MAX: usize = 1;
+/// toward after the empire has expanded. Two independent scouts are a bounded
+/// hedge against one being killed, trapped, or forced away from the frontier;
+/// past that the ordinary military choice resumes, so reconnaissance cannot
+/// become an endless appetite.
+const RECON_ARM_MAX: usize = 2;
+
+/// A capital needs one eye; a second city is the first point at which losing
+/// that sole Scout can leave the whole empire blind. Do not spend a second
+/// early build before expansion has paid for it.
+const RECON_SECOND_EYE_CITY_FLOOR: usize = 2;
 
 /// A naval scout needs room for a complete Galley move after launch: the
 /// launch tile plus its three movement points. Anything smaller is commonly
@@ -6324,8 +6329,9 @@ impl BasicAi {
     /// strict subset of it, so the unexplored test is as live against
     /// Civilization VI as it is in a native game.
     ///
-    /// ⚠ Bounded by `RECON_ARM_MAX` and by there being ground left to chart, so
-    /// it stops asking as soon as the arm exists or the world runs out.
+    /// ⚠ Bounded by one eye before city two and `RECON_ARM_MAX` afterwards,
+    /// and by there being ground left to chart, so it stops asking as soon as
+    /// the arm exists or the world runs out.
     fn recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
         if !self.recon_replacement || self.minor || self.barb {
             return false;
@@ -6355,7 +6361,17 @@ impl BasicAi {
                 })
             })
             .count();
-        if owned_recon + queued_recon >= RECON_ARM_MAX {
+        // A one-city empire gets the original single opening Scout. Once it
+        // has two cities, retain one spare explorer: the last live match had
+        // eleven city-states but met only five after its only Scout spent the
+        // closing turns retreating around a hostile coast. The city gate keeps
+        // that redundancy from stealing the initial Settler/Builder cadence.
+        let recon_arm_target = if g.player_city_ids(pid).len() >= RECON_SECOND_EYE_CITY_FLOOR {
+            RECON_ARM_MAX
+        } else {
+            1
+        };
+        if owned_recon + queued_recon >= recon_arm_target {
             return false;
         }
         // Somewhere left to go. A land scout is what this buys, so ask about
@@ -15195,19 +15211,45 @@ mod tests {
         );
         assert!(ai.recon_is_the_missing_arm(&g, 0));
 
-        // One scout answers it. The arm is repaired, not stockpiled.
+        // One scout answers it before expansion. The arm is repaired, not
+        // stockpiled through the opening.
         let mut with_scout = g.clone();
         let home = with_scout.player_city_ids(0)[0];
         let pos = with_scout.cities[&home].pos;
         with_scout.spawn_test_unit("scout", 0, pos);
         assert!(!ai.recon_is_the_missing_arm(&with_scout, 0));
 
-        // ★★★★ And so does one already in a queue: with only units on the map
-        // counted, every city that came to `pick_item` on the same turn read
-        // "no eyes" and answered it — seven Rangers in seven cities on run
-        // civvis-20260816T213447Z, t140. A soldier in the queue is not eyes.
-        let mut queued = g.clone();
-        let home = queued.player_city_ids(0)[0];
+        // City two earns an independent second eye. The single Scout may be
+        // trapped or killed; it must no longer mask the frontier from an
+        // expanded empire.
+        let mut expanded = with_scout.clone();
+        let capital = expanded.player_city_ids(0)[0];
+        let capital_pos = expanded.cities[&capital].pos;
+        let second_site = expanded
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.owner_city.is_none()
+                    && expanded.rules.is_passable(tile)
+                    && !expanded.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .find(|position| (4..=10).contains(&expanded.wdist(capital_pos, *position)))
+            .expect("the fixture has a legal second-city site");
+        let second_city = expanded.found_city_for(0, second_site, None);
+        assert_eq!(expanded.player_city_ids(0).len(), RECON_SECOND_EYE_CITY_FLOOR);
+        assert!(
+            ai.recon_is_the_missing_arm(&expanded, 0),
+            "one Scout does not leave a two-city empire with a redundant eye"
+        );
+
+        // ★★★★ A queued Scout also answers the second-eye gap. With only
+        // units on the map counted, every city that came to `pick_item` on the
+        // same turn read "no eyes" and answered it — seven Rangers in seven
+        // cities on run civvis-20260816T213447Z, t140. A soldier in the queue
+        // is not eyes.
+        let mut queued = expanded.clone();
         queued.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
             unit: Name::new("warrior"),
         });
@@ -15218,7 +15260,13 @@ mod tests {
         });
         assert!(
             !ai.recon_is_the_missing_arm(&queued, 0),
-            "a scout already in a queue is the arm being rebuilt"
+            "a Scout already in a queue is the expanded arm being rebuilt"
+        );
+
+        expanded.spawn_test_unit("scout", 0, expanded.cities[&second_city].pos);
+        assert!(
+            !ai.recon_is_the_missing_arm(&expanded, 0),
+            "two live Scouts satisfy the complete, bounded recon arm"
         );
     }
 
@@ -15236,6 +15284,41 @@ mod tests {
         assert_eq!(
             ai.book_pos, 1,
             "the Scout replaces the first scripted build instead of adding a fifth opener"
+        );
+    }
+
+    #[test]
+    fn the_live_recon_repair_starts_one_second_scout_after_city_two() {
+        let (mut game, mut ai) = blind_empire(4_414);
+        let capital = game.player_city_ids(0)[0];
+        let capital_pos = game.cities[&capital].pos;
+        game.spawn_test_unit("scout", 0, capital_pos);
+        let second_site = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .find(|position| (4..=10).contains(&game.wdist(capital_pos, *position)))
+            .expect("the fixture has a legal second-city site");
+        game.found_city_for(0, second_site, None);
+        ai.book_pos = 4;
+
+        ai.cities(&mut game, 0);
+
+        let queued_scouts = game
+            .player_city_ids(0)
+            .into_iter()
+            .flat_map(|city| game.cities[&city].queue.iter())
+            .filter(|item| matches!(item, Item::Unit { unit } if unit == "scout"))
+            .count();
+        assert_eq!(
+            queued_scouts, 1,
+            "city two replaces the lone Scout with exactly one independent eye"
         );
     }
 

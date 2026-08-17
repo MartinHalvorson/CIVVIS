@@ -1308,7 +1308,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Research Lab or Workshop its city can already build, behind
 /// `buildings_before_projects`, off for `AdvancedAi::legacy()` (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5e8b_4095_81d2_3cbb;
+/// The live recon arm keeps a second Scout only after city two, still behind
+/// `recon_replacement`, which `AdvancedAi::legacy()` leaves off. Its missing-arm
+/// predicate therefore returns on the same first-line flag check in every
+/// frozen game; the anchor's production decisions remain byte-identical.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf44c_9200_47bb_3ca5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
