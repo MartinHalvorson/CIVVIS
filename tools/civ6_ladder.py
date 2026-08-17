@@ -378,6 +378,12 @@ def entry_from(summary: dict) -> dict:
         "reason": summary.get("reason"),
         "applied_pct": applied_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        # Which arm played this row: the live treatments withheld from the
+        # decider, or [] for the full shipped bundle. Rows recorded before the
+        # launchers could withhold anything carry None — unknown, which is not
+        # the same claim as "nothing was withheld".
+        "withheld": summary.get("withheld"),
+        "mod_arms": summary.get("mod_arms"),
         "rival_best": summary.get("rival_best"),
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None

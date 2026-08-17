@@ -1212,6 +1212,41 @@ class ScreenshotFailureTests(unittest.TestCase):
         self.assertFalse(visible)
 
 
+class LiveControlArmTests(unittest.TestCase):
+    """The control arm's route to a live game. `civvis_orders --without` has
+    always existed and no launcher could ask for it, so no live treatment was
+    ever withholdable in a real game."""
+
+    @staticmethod
+    def _args(**changes):
+        values = {
+            "civvis_victory": "science", "civvis_strategy": "auto",
+            "civvis_war_from_plan": False, "civvis_refresh_seconds": None,
+            "civvis_without": [], "timeout": 7200.0,
+        }
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def _cmd(self, **changes):
+        return civ6_play.supervised_brain_command(
+            self._args(**changes), Path("/tmp/run"),
+            Path("/tmp/orders.sqlite"), Path("/tmp/civvis_orders"))
+
+    def test_the_full_bundle_withholds_nothing(self) -> None:
+        self.assertNotIn("--without", self._cmd())
+
+    def test_each_withheld_treatment_reaches_the_decider(self) -> None:
+        cmd = self._cmd(civvis_without=["peacetime-deterrence", "stacked-escort"])
+        pairs = [(cmd[i], cmd[i + 1]) for i, tok in enumerate(cmd)
+                 if tok == "--without"]
+        self.assertEqual(
+            pairs,
+            [("--without", "peacetime-deterrence"),
+             ("--without", "stacked-escort")],
+            "each treatment needs its own flag; the decider takes one name each",
+        )
+
+
 class SupervisedBrainCommandTests(unittest.TestCase):
     """Every flag that reaches the decision worker is decided in one builder."""
 
@@ -1222,6 +1257,7 @@ class SupervisedBrainCommandTests(unittest.TestCase):
             "civvis_strategy": "auto",
             "civvis_war_from_plan": False,
             "civvis_refresh_seconds": None,
+            "civvis_without": [],
             "timeout": 7200.0,
         }
         values.update(changes)

@@ -1100,6 +1100,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
+        + [flag for treatment in args.without
+           for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
@@ -1151,6 +1153,11 @@ def _latest_autosave(newer_than: float | None = None) -> Path | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--without", action="append", default=[], metavar="TREATMENT",
+                    help="withhold one live treatment for every attempt in "
+                         "this batch — the control half of a live A/B. Pair "
+                         "with --attempts N on a pinned revision, then run the "
+                         "same N without this flag for the treatment half")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "

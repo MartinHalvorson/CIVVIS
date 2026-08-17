@@ -269,6 +269,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command.append("--war-from-plan")
     if args.civvis_refresh_seconds is not None:
         command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    for treatment in args.civvis_without:
+        command += ["--without", treatment]
     return command
 
 
@@ -2375,7 +2377,8 @@ def _play(args: argparse.Namespace) -> int:
         print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
-              f"refresh_seconds={refresh} bin={binary}")
+              f"refresh_seconds={refresh} "
+              f"withheld={args.civvis_without or 'none'} bin={binary}")
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -2781,6 +2784,25 @@ def _play(args: argparse.Namespace) -> int:
         # no target was pinned and the agent chose; it is not a seventh victory
         # condition. The victory a game actually ended on is `outcome.victory`.
         "victory_target": args.civvis_victory if args.civvis_decides else None,
+        # ★★★ WHICH ARM THIS ROW IS. A control arm that does not say so in the
+        # record is a control arm nobody can trust afterwards, and until the
+        # flag above existed no live row could say it at all — so two pinned
+        # batches would have been unattributable even once they were run.
+        # Empty list means the full shipped bundle played.
+        "withheld": sorted(args.civvis_without) if args.civvis_decides else None,
+        # And the MOD side of the same question. The fallback ladder decides a
+        # real share of production, so an arm is only fully described when both
+        # halves are recorded. Add a switch here when it becomes A/B-able —
+        # `config` itself is not embedded because most of it is the game setup,
+        # which the summary already records field by field.
+        "mod_arms": {
+            "PeaceDeterrence": args.peace_deterrence,
+            "EnvoyPlace": args.envoy_place,
+            "EnvoyLevy": args.envoy_levy,
+            "EnvoyConsider": args.envoy_consider,
+            "ProbeCitizens": args.probe_citizens,
+            "CampusSpecialist": args.campus_specialist,
+        },
     }
     # Bridge health rides in the summary: how much of what CIVVIS said the
     # engine actually did. Summed from this run's own turn events so the
@@ -3023,6 +3045,17 @@ def main(argv: list[str] | None = None) -> int:
     # Same lesson one flag up: `civ6_brain.py` has taken `--github-refresh-seconds`
     # all along, and with no route through this launcher a pinned batch was never
     # pinned — the brain re-execs itself onto every origin/main advance mid-game.
+    # ⚠⚠ THE CONTROL ARM HAD NO ROUTE TO A LIVE GAME, and that is why no live
+    # treatment has ever been priced. `civvis_orders --without <treatment>` has
+    # existed since the withholding registry landed and stamps `withheld=[...]`
+    # into its own run log, but no launcher between here and the ladder could
+    # ask for it: all 69 registered live treatments were unwithholdable in a
+    # real game. Same four-link shape `--probe-citizens` records one flag up —
+    # a decider option with no path through its own launcher.
+    ap.add_argument("--civvis-without", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="withhold one live treatment from the decision worker, "
+                         "repeatable — the control arm of a live A/B")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "
