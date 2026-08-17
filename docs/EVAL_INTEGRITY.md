@@ -375,8 +375,10 @@ decision to keep `advanced` was correct both times. What is wrong is reusing
 the decision statistic as a description.
 
 Note the repository's own discipline already covers the *direction* of this
-(“confirm on a seed the result was not found on”) and it is honour-system, not
-enforced, and never applied to sizes.
+(“confirm on a seed the result was not found on”). Before the evaluator
+hardening that was honour-system: a different base could still overlap the
+discovery prefix and the confirmation label was only a promise. The evaluator
+now rejects overlapping inclusive prefixes before it starts a game.
 
 ### The fix
 
@@ -396,8 +398,12 @@ give confirmations for the four rows above.
                           not quotable until confirmed on a disjoint seed)
    ```
 
-2. A `--confirm <prior-seed>` mode that requires a disjoint seed, reports the
-   confirmation estimate and the pooled estimate, and marks *those* quotable.
+2. A `--confirm <prior-seed>` mode that requires a disjoint seed prefix, reports
+   the independent confirmation estimate, and marks that estimate quotable.
+   A pooled point estimate is not promoted to a headline: it would still
+   contain the discovery run selected on the gate, so it inherits the winner's
+   curse unless the underlying per-map results are retained and analyzed as a
+   separate diagnostic.
 3. A documentation rule with a mechanical check: **no effect size enters
    `docs/` or `README.md` without a confirmation run recorded beside it.** The
    same `tools/civvis_collab.py check-pr` gate that already validates ownership
@@ -436,14 +442,17 @@ touch `docs/`/`README.md` would have been flagged — and both are effect-size
 claims of exactly this class, one of them the `+207` that later re-measured
 to +86.
 
-Note what it does **not** do. It cannot tell a discovery estimate from a
-confirmed one, because that distinction lives in how the run was commissioned
-rather than in the text. Fixes (1) and (2) — `ai_eval` labelling a gate-passing
-size as a `DISCOVERY ESTIMATE`, and a `--confirm <prior-seed>` mode — are the
-half that has to happen in the evaluator, and they are **not** done. They belong
-in `src/bin/ai_eval.rs`, which PR #679 holds; whoever picks them up should read
-the `EVIDENCE_RE` escape list first, so the string the tool prints is one the
-gate already accepts.
+The evaluator now handles the two run-level labels as well. `ai_eval` prints a
+gate-selected size as `DISCOVERY ESTIMATE`, rejects a confirmation whose
+inclusive `[seed, seed + pairs - 1]` range overlaps the named discovery range,
+and prints the independent run as `CONFIRMED` with both seed bases. The docs
+checker still enforces evidence adjacency; it deliberately does not pretend
+that prose can prove a run was commissioned independently.
+
+The confirmation guard also rejects a prefix that would overflow `u64`, and
+matrix mode applies the same check before adding its fixed per-profile stride.
+That keeps compact and deployment confirmation streams disjoint without
+depending on a human to compare the endpoints.
 
 ---
 
