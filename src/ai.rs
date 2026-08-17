@@ -202,6 +202,10 @@ const RECON_SECOND_EYE_CITY_FLOOR: usize = 2;
 /// a lake where the only available order is to turn straight back, which
 /// spends production without opening another contact or frontier.
 const NAVAL_RECON_MIN_WATERWAY_TILES: usize = 4;
+/// A major war fought on the water needs one hull for the battle and one to
+/// keep charting the world. This is an exploration arm, not a fleet target:
+/// the generic navy policy may still ask for more combat ships.
+const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 
 /// Once a scout reaches the nearest fog, inspect this many additional rings
 /// before choosing where to go.  A short horizon is enough to distinguish a
@@ -6387,9 +6391,9 @@ impl BasicAi {
 
     /// The sea's `recon_is_the_missing_arm`: no usable explorer, and water the
     /// empire has never seen. A hull trapped in a lake or linked to a Settler
-    /// does not answer it. One free ship with an open route is the whole arm —
-    /// a Continents seat with a fleet is not blind, and a fleet is the war
-    /// lane's business.
+    /// does not answer it. One free ship normally completes the arm; during a
+    /// major naval war, retain a second eye so the fighting ship cannot make
+    /// the unexplored world disappear from production's priorities.
     /// See `naval_recon`.
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
         if !self.naval_recon || self.minor || self.barb {
@@ -6403,17 +6407,56 @@ impl BasicAi {
         if !water_left {
             return false;
         }
-        let has_naval_eye = g
+        let naval_eyes = g
             .units
             .values()
-            .any(|unit| {
+            .filter(|unit| {
                 unit.owner == pid
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
                     && unit.linked_to.is_none()
                     && Self::naval_recon_ship_can_chart(g, pid, unit.id)
-            });
-        if has_naval_eye {
+            })
+            .count();
+        // A ship already in a viable coastal queue is the arm being rebuilt.
+        // Without this, every city inspected on the same production pass can
+        // read the one-hull wartime gap and start another Galley.
+        let queued_naval_eyes = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| Self::city_has_naval_recon_launch(g, pid, *cid))
+            .flat_map(|cid| g.cities[&cid].queue.iter())
+            .filter(|item| {
+                matches!(item,
+                    Item::Unit { unit } | Item::Formation { unit, .. }
+                        if g.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                            spec.class == "military" && spec.domain.as_deref() == Some("sea")
+                        })
+                )
+            })
+            .count();
+        let major_naval_war = g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && !enemy.is_minor
+                && !enemy.is_barbarian
+                && g.is_at_war(pid, enemy.id)
+                && (g.units.values().any(|unit| {
+                    unit.owner == enemy.id
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                }) || g
+                    .player_city_ids(enemy.id)
+                    .into_iter()
+                    .any(|cid| Self::city_is_coastal(g, cid)))
+        });
+        let arm_target = if major_naval_war {
+            NAVAL_RECON_WARTIME_ARM_MAX
+        } else {
+            1
+        };
+        if naval_eyes + queued_naval_eyes >= arm_target {
             return false;
         }
         g.player_city_ids(pid)
@@ -6423,7 +6466,7 @@ impl BasicAi {
 
     /// The cheapest ship this city can lay down. Exploration wants a hull
     /// that moves, not a broadside; the cost is the whole price of an eye.
-    fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+    pub(crate) fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
         if !Self::city_has_naval_recon_launch(g, pid, cid) {
             return None;
         }
@@ -15431,6 +15474,68 @@ mod tests {
         let mut off = ai.clone();
         off.naval_recon = false;
         assert!(!off.naval_recon_is_the_missing_arm(&g, 0));
+    }
+
+    #[test]
+    fn a_major_naval_war_keeps_a_second_recon_eye() {
+        let mut game = Game::new_full(2, 30, 18, 4_432, 300, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("the first major starts with a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the fixture founds a capital");
+        for uid in game.player_unit_ids(0) {
+            game.remove_unit(uid);
+        }
+        let city = game.player_city_ids(0)[0];
+        let city_pos = game.cities[&city].pos;
+        dry_map(&mut game);
+        let waterway = coastal_waterway(
+            &mut game,
+            city_pos,
+            NAVAL_RECON_MIN_WATERWAY_TILES + 3,
+        );
+        game.players[0].techs.insert(crate::name!("sailing"));
+        game.at_war.insert((0, 1));
+        game.spawn_test_unit("galley", 1, *waterway.last().unwrap());
+        let first = game.spawn_test_unit("galley", 0, waterway[0]);
+
+        let mut ai = BasicAi::new();
+        ai.enable_naval_recon();
+        assert!(BasicAi::naval_recon_ship_can_chart(&game, 0, first));
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&game, 0),
+            "the sole Galley can fight the major naval war or chart, but not reliably do both"
+        );
+
+        // A viable sea unit already queued is the second eye being built, not
+        // permission for every other city to queue another copy.
+        game.cities.get_mut(&city).unwrap().queue.push(Item::Unit {
+            unit: crate::name!("galley"),
+        });
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&game, 0),
+            "one live eye plus one queued eye completes the bounded wartime arm"
+        );
+        game.cities.get_mut(&city).unwrap().queue.clear();
+
+        let second = game.spawn_test_unit("galley", 0, waterway[1]);
+        assert!(BasicAi::naval_recon_ship_can_chart(&game, 0, second));
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&game, 0),
+            "two live eyes complete the wartime arm"
+        );
+
+        let mut city_state_war = game.clone();
+        city_state_war.remove_unit(second);
+        city_state_war.players[1].is_minor = true;
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&city_state_war, 0),
+            "a city-state war keeps the normal one-ship exploration arm"
+        );
     }
 
     #[test]
