@@ -1433,3 +1433,14 @@ async function playOnPastVictory(mode, paused) {
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
+
+// ── deferred cross-file init ─────────────────────────────────────────────────
+// app.js loads before this file, so its load-time init cannot call anything
+// defined here (readSetting, syncModeLink, …) — the first such call threw and
+// the crash cascaded until the page never registered as a viewer. Those calls
+// live HERE, at the very end of the second script, where every declaration in
+// both files is guaranteed initialized. Order preserved: the advanced-settings
+// composition first, then the mode chip, both still ahead of the engine's
+// first /state answer (boot's synchronous prefix ends at its first await).
+initAdvancedSettings();
+syncModeLink();
