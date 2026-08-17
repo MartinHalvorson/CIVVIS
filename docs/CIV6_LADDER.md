@@ -27,6 +27,21 @@ before that export carries the index alone and reads `—` here.
 
 Attempts recorded: 307.
 
+## Which victories have been won, per difficulty
+
+A rung is claimed by the FIRST win at a difficulty; this table is the
+other question — which of Civilization VI's victory conditions the
+controller has beaten, and where. The two differ as soon as a second
+victory type is won at a rung already claimed, which the rung table
+records as an ordinary repeat.
+
+Rows are the host's own `GameInfo.Victories()`, so a condition this
+install offers and nobody has won still appears, empty.
+
+| victory | type | Settler | Chieftain | Warlord | Prince | King | Emperor | Immortal | Deity |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | — | 2026-08-16T06:49:58Z | — | — | — | — | — | — | — |
+
 ## How these games ended
 
 Every terminal `TeamVictory` in the record, ours and the rivals'.
