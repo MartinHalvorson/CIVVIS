@@ -197,6 +197,13 @@ const RECON_ARM_MAX: usize = 2;
 /// early build before expansion has paid for it.
 const RECON_SECOND_EYE_CITY_FLOOR: usize = 2;
 
+/// A developed empire that still has not met most city-states earns one more
+/// independent land explorer. This is a contact sweep, not a general army
+/// target: it is considered only after the ordinary two live eyes exist.
+const RECON_CITY_STATE_SWEEP_ARM_MAX: usize = 3;
+const RECON_CITY_STATE_SWEEP_CITY_FLOOR: usize = 6;
+const RECON_CITY_STATE_SWEEP_UNMET_MIN: usize = 3;
+
 /// A naval scout needs room for a complete Galley move after launch: the
 /// launch tile plus its three movement points. Anything smaller is commonly
 /// a lake where the only available order is to turn straight back, which
@@ -6333,9 +6340,39 @@ impl BasicAi {
     /// strict subset of it, so the unexplored test is as live against
     /// Civilization VI as it is in a native game.
     ///
-    /// ⚠ Bounded by one eye before city two and `RECON_ARM_MAX` afterwards,
-    /// and by there being ground left to chart, so it stops asking as soon as
-    /// the arm exists or the world runs out.
+    /// ⚠ Bounded by one eye before city two and two afterwards. A developed
+    /// empire that has missed a majority of at least three city-states can add
+    /// exactly one third eye, but only after both ordinary Scouts are live;
+    /// this cannot turn the opening or a two-Scout rebuild into Scout spam.
+    /// Every arm also releases once there is no land left to chart.
+    fn city_state_sweep_needs_third_eye(
+        g: &Game,
+        pid: usize,
+        city_count: usize,
+        owned_recon: usize,
+    ) -> bool {
+        if city_count < RECON_CITY_STATE_SWEEP_CITY_FLOOR || owned_recon < RECON_ARM_MAX {
+            return false;
+        }
+        let (met, unmet) = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            })
+            .fold((0usize, 0usize), |(met, unmet), player| {
+                if g.has_met(pid, player.id) {
+                    (met + 1, unmet)
+                } else {
+                    (met, unmet + 1)
+                }
+            });
+        unmet >= RECON_CITY_STATE_SWEEP_UNMET_MIN && unmet > met
+    }
+
     fn recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
         if !self.recon_replacement || self.minor || self.barb {
             return false;
@@ -6370,7 +6407,15 @@ impl BasicAi {
         // eleven city-states but met only five after its only Scout spent the
         // closing turns retreating around a hostile coast. The city gate keeps
         // that redundancy from stealing the initial Settler/Builder cadence.
-        let recon_arm_target = if g.player_city_ids(pid).len() >= RECON_SECOND_EYE_CITY_FLOOR {
+        let city_count = g.player_city_ids(pid).len();
+        let recon_arm_target = if Self::city_state_sweep_needs_third_eye(
+            g,
+            pid,
+            city_count,
+            owned_recon,
+        ) {
+            RECON_CITY_STATE_SWEEP_ARM_MAX
+        } else if city_count >= RECON_SECOND_EYE_CITY_FLOOR {
             RECON_ARM_MAX
         } else {
             1
@@ -15310,6 +15355,96 @@ mod tests {
         assert!(
             !ai.recon_is_the_missing_arm(&expanded, 0),
             "two live Scouts satisfy the complete, bounded recon arm"
+        );
+    }
+
+    /// The current live Rome game reached turn 121 with nine cities, two
+    /// Scouts, and only four of roughly ten city-states met. Two eyes are the
+    /// ordinary bounded arm, but a mature empire that has missed most of the
+    /// map's city-states needs one fresh route without turning its opening or
+    /// a rebuild into a three-Scout burst.
+    #[test]
+    fn a_developed_empire_with_most_city_states_unmet_adds_exactly_one_third_scout() {
+        let mut game = Game::new_full(1, 42, 30, 4_415, 200, 6, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("the major opens with a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for uid in game.player_unit_ids(0) {
+            game.remove_unit(uid);
+        }
+
+        while game.player_city_ids(0).len() < RECON_CITY_STATE_SWEEP_CITY_FLOOR {
+            let site = game
+                .map
+                .tiles
+                .iter()
+                .filter(|(position, tile)| {
+                    tile.owner_city.is_none()
+                        && game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(**position).is_none()
+                })
+                .map(|(position, _)| *position)
+                .find(|position| {
+                    game.cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, *position) >= 4)
+                })
+                .expect("the large fixture has room for the developed empire");
+            game.found_city_for(0, site, None);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.spawn_test_unit("scout", 0, home);
+        game.spawn_test_unit("scout", 0, home);
+
+        let minors = game
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            })
+            .map(|player| player.id)
+            .collect::<Vec<_>>();
+        assert_eq!(minors.len(), 6, "the fixture needs six city-states");
+
+        let mut ai = BasicAi::new();
+        ai.recon_replacement = true;
+        assert!(
+            ai.recon_is_the_missing_arm(&game, 0),
+            "two ordinary eyes leave one late contact-sweep eye missing"
+        );
+
+        // The live production pass starts only one third Scout: once a city
+        // has it queued, the other five empty cities see the complete arm.
+        ai.book_pos = 4;
+        ai.cities(&mut game, 0);
+        let queued_scouts = game
+            .player_city_ids(0)
+            .into_iter()
+            .flat_map(|city| game.cities[&city].queue.iter())
+            .filter(|item| matches!(item, Item::Unit { unit } if unit == "scout"))
+            .count();
+        assert_eq!(queued_scouts, 1, "the contact sweep adds exactly one Scout");
+        assert!(
+            !ai.recon_is_the_missing_arm(&game, 0),
+            "the queued third Scout completes the bounded contact sweep"
+        );
+
+        // Meeting half the city-states releases the extra eye; the ordinary
+        // two-Scout arm remains enough even after its pending Scout is cleared.
+        for city in game.player_city_ids(0) {
+            game.cities.get_mut(&city).unwrap().queue.clear();
+        }
+        game.players[0].met.extend(minors.iter().take(3).copied());
+        assert!(
+            !ai.recon_is_the_missing_arm(&game, 0),
+            "three met versus three unseen city-states is no longer a majority gap"
         );
     }
 
