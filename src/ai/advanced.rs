@@ -1617,6 +1617,39 @@ pub struct AdvancedAi {
     /// **On in production**; the arm withholds. Evaluator arm
     /// `advanced_without_settler_deadline`.
     pub production_settler_deadline: bool,
+
+    /// Price a Builder by the work it would do, not by a headcount quota.
+    ///
+    /// Off, the Builder production arm is `ceil(cities/2)` and a flat 260 —
+    /// it never looks at a tile, so a fully-improved empire and a virgin one
+    /// buy Builders identically, and `docs/EVAL.md`'s floor withhold measured
+    /// the overbuild costing terminal score (225/175, p=0.0142). On, the arm
+    /// surveys the empire's improvable tiles with the same valuation the
+    /// Builder's own movement uses, scores the charges this player's next
+    /// Builder would actually carry (`Game::builder_charges`), and prices the
+    /// unit as the sum of the best remaining jobs — after skipping the jobs
+    /// the Builders already alive will take. The same survey replaces the
+    /// `delegated_cities` quota so the repricing reaches the lanes that build
+    /// through `BasicAi::cities`.
+    ///
+    /// Off by default; evaluator arm `advanced_builder_survey`.
+    pub builder_reward_survey: bool,
+
+    /// Credit strength-per-production and a civ's own unique unit when
+    /// pricing military production.
+    ///
+    /// Off, the military arm scores raw `power` within a best-in-role band
+    /// and cost enters only through the shared `/(7+turns)` damping — so
+    /// Sumeria's War Cart (30 strength / 55 production, the best
+    /// strength-per-cost in its era) wins only what its 10 extra strength
+    /// buys, and a unique whose stats match its base row (Tagma, Nau) is
+    /// invisible. On, a unit earns up to +45 for leading its role's
+    /// strength-per-production and +85 while it is this civilization's own
+    /// unique — a window the tech tree closes, which is what makes a unique
+    /// "almost always great value" while it lasts. Respects `civ_blind`.
+    ///
+    /// Off by default; evaluator arm `advanced_unit_efficiency`.
+    pub unit_cost_efficiency: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -3644,6 +3677,8 @@ impl AdvancedAi {
             settler_founds_when_stalled: false,
             production_builder_floor: true,
             production_settler_deadline: true,
+            builder_reward_survey: false,
+            unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             stacked_escort: false,
@@ -4908,6 +4943,19 @@ impl AdvancedAi {
     /// Withhold the call-local settler-deadline extension. Evaluator-only.
     pub fn disable_production_settler_deadline(&mut self) {
         self.production_settler_deadline = false;
+    }
+
+    /// Price Builder production by a survey of the work it would do.
+    /// Evaluator arm `advanced_builder_survey`; off in production.
+    pub fn enable_builder_reward_survey(&mut self) {
+        self.builder_reward_survey = true;
+    }
+
+    /// Credit strength-per-production and the civ's own unique unit in the
+    /// military production arm. Evaluator arm `advanced_unit_efficiency`;
+    /// off in production.
+    pub fn enable_unit_cost_efficiency(&mut self) {
+        self.unit_cost_efficiency = true;
     }
 
     /// Fortify units the planner gave nothing to do. Evaluator arm
@@ -8665,7 +8713,25 @@ impl AdvancedAi {
         // and no number, one of which cost 41 Elo. Its justification is
         // reasoning, not measurement: "three active Builders per four cities
         // provide roughly two useful improvements per city".
-        if self.production_builder_floor {
+        //
+        // The survey replaces the floor rather than stacking on it: a quota
+        // sized from the actual job backlog and a quota sized from prose
+        // cannot both govern one number.
+        if self.builder_reward_survey {
+            let ids = g.player_city_ids(pid);
+            if let Some(&first) = ids.first() {
+                let origin = g.cities[&first].pos;
+                let charges = g.builder_charges(pid).max(1) as usize;
+                let jobs = self
+                    .builder_job_rewards(g, pid, origin, plan.strategy)
+                    .into_iter()
+                    .filter(|reward| *reward > 12.0)
+                    .count();
+                let wanted = jobs.div_ceil(charges);
+                self.base.w.builder_per_city =
+                    (wanted as f64 / ids.len().max(1) as f64).clamp(0.0, 1.0);
+            }
+        } else if self.production_builder_floor {
             self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         }
         self.base.cities(g, pid);
@@ -18069,11 +18135,34 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "builder" => {
-                let desired = city_count.div_ceil(2).max(1);
-                if counts.builders < desired {
-                    260.0 + 35.0 * (desired - counts.builders) as f64
+                if self.builder_reward_survey {
+                    // Price the Builder by the jobs it would actually get:
+                    // the engine says how many charges it will carry, the
+                    // survey says what the best open jobs are worth, and the
+                    // Builders already alive claim the head of the list. An
+                    // empire with three high-value connections waiting bids
+                    // high; a fully-improved empire bids almost nothing,
+                    // where the old quota kept bidding 260 either way.
+                    let charges = g.builder_charges(pid).max(1) as usize;
+                    let rewards = self.builder_job_rewards(g, pid, city.pos, plan.strategy);
+                    let claimed = counts.builders.saturating_mul(charges);
+                    let next: f64 = rewards.iter().skip(claimed).take(charges).sum();
+                    if next < 12.0 {
+                        15.0
+                    } else {
+                        // 4x puts a typical three-job survey (~60-90) in the
+                        // band the flat 260 occupied, lets a luxury+strategic
+                        // backlog outbid ordinary buildings, and caps below
+                        // the settler's 920 so expansion keeps its priority.
+                        (next * 4.0).min(880.0)
+                    }
                 } else {
-                    25.0
+                    let desired = city_count.div_ceil(2).max(1);
+                    if counts.builders < desired {
+                        260.0 + 35.0 * (desired - counts.builders) as f64
+                    } else {
+                        25.0
+                    }
                 }
             }
             Item::Unit { unit } if unit == "trader" => {
@@ -18256,7 +18345,7 @@ impl AdvancedAi {
                         return -2_000.0;
                     }
                     let power = spec.strength.max(spec.ranged_attack_strength());
-                    let best_role_power = g
+                    let (best_role_power, best_role_ratio) = g
                         .rules
                         .units
                         .iter()
@@ -18273,12 +18362,40 @@ impl AdvancedAi {
                                 )
                         })
                         .map(|(_, candidate)| {
-                            candidate.strength.max(candidate.ranged_attack_strength())
+                            let candidate_power =
+                                candidate.strength.max(candidate.ranged_attack_strength());
+                            (candidate_power, candidate_power / candidate.cost.max(1.0))
                         })
-                        .fold(0.0_f64, f64::max);
+                        .fold(
+                            (0.0_f64, 0.0_f64),
+                            |(power_best, ratio_best), (candidate_power, candidate_ratio)| {
+                                (
+                                    power_best.max(candidate_power),
+                                    ratio_best.max(candidate_ratio),
+                                )
+                            },
+                        );
                     if unit != "scout" && power + 5.0 < best_role_power {
                         return -2_000.0;
                     }
+                    // Strength per production, ranked against the best ratio
+                    // among the units this city could train into the same
+                    // role, and a credit for the civilization's own unique
+                    // unit while its window is open. Off-flag both terms are
+                    // exactly zero and the arm is unchanged.
+                    let efficiency = if self.unit_cost_efficiency && best_role_ratio > 0.0 {
+                        45.0 * ((power / spec.cost.max(1.0)) / best_role_ratio).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let unique_window = if self.unit_cost_efficiency
+                        && !self.civ_blind
+                        && spec.unique_to.as_deref() == Some(g.players[pid].civ.as_str())
+                    {
+                        85.0
+                    } else {
+                        0.0
+                    };
                     let force_gap = if naval {
                         desired_naval.saturating_sub(counts.naval) as f64
                     } else if aircraft {
@@ -18354,6 +18471,8 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + efficiency
+                        + unique_window
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
@@ -21794,6 +21913,200 @@ impl AdvancedAi {
             };
         }
         value
+    }
+
+    /// The value of one improvement for the *production* decision — what a
+    /// Builder charge spent here is worth — as opposed to
+    /// `improvement_value`, which ranks jobs for a Builder that already
+    /// exists. Three things the movement scorer deliberately flattens are
+    /// modelled here, because they decide whether the charge is worth its
+    /// share of 50 production at all:
+    ///
+    /// - **Worked likelihood.** Tile yields pay only while a citizen stands
+    ///   on the tile. A job on a tile the city's own citizen plan works
+    ///   counts in full; an unworked tile keeps a growth-discounted fraction.
+    ///   Housing, tourism and resource connection are not worked-gated by the
+    ///   engine and are never discounted.
+    /// - **Luxury novelty.** Connecting a luxury pays +1 Amenity in up to
+    ///   four needy cities — but only the empire's *first* copy. The movement
+    ///   scorer's flat 14 prices a duplicate Wine like a first Silk; here a
+    ///   duplicate is worth a trade chip and a new luxury scales with how
+    ///   many cities are actually short of Amenities.
+    /// - **Strategic saturation.** The first source of a strategic unlocks
+    ///   whole unit lines and outranks any ordinary improvement; later
+    ///   sources feed a stockpile capped near 50 and are worth less as the
+    ///   cap approaches. The movement scorer's flat 30 cannot tell these
+    ///   apart.
+    #[allow(clippy::too_many_arguments)]
+    fn surveyed_improvement_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        worked_here: bool,
+        needy_cities: usize,
+    ) -> f64 {
+        let tile = &g.map.tiles[&pos];
+        let spec = &g.rules.improvements[improvement];
+        let appeal = g.tile_appeal(pos).max(0) as f64;
+        let mut yields = spec.yields;
+        yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
+        let worked_weight = if worked_here { 1.0 } else { 0.4 };
+        let mut value = self.yield_value(yields, strategy) * worked_weight;
+        if strategy == GrandStrategy::Culture {
+            let tourism = spec.effects.get("tourism").copied().unwrap_or(0.0)
+                + spec.effects.get("appeal_tourism").copied().unwrap_or(0.0) * appeal;
+            value += tourism * 35.0;
+        }
+        // Housing counts only within three tiles of the centre — the
+        // engine's own rule in `city_housing` — and matters in proportion to
+        // how close the city is to its ceiling, the measured population cap.
+        if spec.housing > 0.0 && g.wdist(city.pos, pos) <= 3 {
+            let pressed = g.city_housing_headroom(city) <= 2.0;
+            value += spec.housing * if pressed { 34.0 } else { 10.0 };
+        }
+        if let Some(resource) = &tile.resource {
+            let works = spec.resources.iter().any(|entry| entry == resource);
+            if works {
+                value += match g.rules.resources[resource].class.as_str() {
+                    "luxury" => {
+                        if g.resource_access_count(pid, resource) > 0 {
+                            // A duplicate supplies no Amenity under the
+                            // default congress policy; it is a trade chip.
+                            2.0
+                        } else {
+                            10.0 + 9.0 * needy_cities.min(4) as f64
+                        }
+                    }
+                    "strategic" => {
+                        if g.strategic_resource_rate(pid, resource.as_str()) <= 0.0 {
+                            45.0
+                        } else {
+                            let headroom = g.strategic_stockpile_capacity(pid)
+                                - g.strategic_stockpile(pid, *resource);
+                            if headroom <= 5.0 {
+                                6.0
+                            } else {
+                                18.0
+                            }
+                        }
+                    }
+                    _ => 4.0,
+                };
+            }
+        }
+        value
+    }
+
+    /// The best improvement upgrade one Builder charge could make on this
+    /// tile, as a delta over what already stands there. Zero when nothing
+    /// beats the current improvement by a worthwhile margin — the same 0.5
+    /// anti-oscillation band `worthwhile_improvements` uses.
+    #[allow(clippy::too_many_arguments)]
+    fn charge_reward(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        pos: Pos,
+        strategy: GrandStrategy,
+        worked_here: bool,
+        needy_cities: usize,
+    ) -> f64 {
+        let current = g.map.tiles[&pos]
+            .improvement
+            .as_deref()
+            .map(|improvement| {
+                self.surveyed_improvement_value(
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
+                )
+            })
+            .unwrap_or(0.0);
+        let best = g
+            .valid_improvements(pid, pos)
+            .into_iter()
+            .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
+            .map(|improvement| {
+                self.surveyed_improvement_value(
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    &improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
+                )
+            })
+            .fold(0.0_f64, f64::max);
+        if best > current + 0.5 {
+            best - current
+        } else {
+            0.0
+        }
+    }
+
+    /// Every Builder job the empire is holding open, each priced by
+    /// `charge_reward` and discounted by its distance from `origin`, sorted
+    /// best-first. The production arm reads this list to price the *next*
+    /// Builder as the jobs it would actually get — the Builders already
+    /// alive claim the head of the list — and `delegated_cities` reads it to
+    /// size the delegated quota. Both callers thereby stop paying for
+    /// Builders an improved empire has no work for, which is the direction
+    /// the floor withhold's terminal-score reading pointed.
+    fn builder_job_rewards(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: Pos,
+        strategy: GrandStrategy,
+    ) -> Vec<f64> {
+        let needy_cities = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid && g.city_amenity_surplus(city) <= 0)
+            .count();
+        let mut rewards = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            let worked: HashSet<Pos> = g
+                .city_citizen_plan(cid)
+                .worked_tiles
+                .iter()
+                .copied()
+                .collect();
+            for pos in &city.owned_tiles {
+                let reward = self.charge_reward(
+                    g,
+                    pid,
+                    city,
+                    *pos,
+                    strategy,
+                    worked.contains(pos),
+                    needy_cities,
+                );
+                if reward > 0.0 {
+                    // A remote job is worth less to this city's queue, but a
+                    // Builder walks: never discount a real job below a
+                    // quarter of its value.
+                    let discounted =
+                        (reward - g.wdist(origin, *pos) as f64 * 0.35).max(reward * 0.25);
+                    rewards.push(discounted);
+                }
+            }
+        }
+        rewards.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        rewards
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -36524,6 +36837,200 @@ mod tests {
         assert!(
             resumed > fresh,
             "incremental evaluation should prefer finishing invested infrastructure"
+        );
+    }
+
+    #[test]
+    fn a_spawned_builder_carries_the_charges_production_priced() {
+        // `Game::builder_charges` is the number the survey prices; spawning
+        // must hand out exactly the same count or the valuation is priced
+        // against a unit that does not exist.
+        let mut game = Game::new_full(1, 20, 14, 71_006, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let pos = game.units[&settler].pos;
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let uid = game.spawn_unit("builder", 0, pos);
+        assert_eq!(game.units[&uid].charges, game.builder_charges(0));
+        assert!(game.builder_charges(0) >= 1);
+    }
+
+    #[test]
+    fn the_builder_survey_prices_work_where_the_quota_priced_headcount() {
+        let mut game = Game::new_full(1, 20, 14, 71_008, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let frozen = AdvancedAi::new();
+        let counts = frozen.counts(&game, 0);
+        let quota = frozen.production_value(&game, 0, city, &builder, &plan, &counts);
+
+        let mut surveyed = AdvancedAi::new();
+        surveyed.enable_builder_reward_survey();
+        let priced = surveyed.production_value(&game, 0, city, &builder, &plan, &counts);
+
+        // A fresh capital ringed by unimproved tiles has real jobs open, so
+        // the survey bids a real number — and a different one from the flat
+        // quota, which is the fires-check that the flag reaches the arm.
+        let rewards = surveyed.builder_job_rewards(&game, 0, game.cities[&city].pos, plan.strategy);
+        assert!(
+            !rewards.is_empty(),
+            "a fresh capital must have open builder jobs"
+        );
+        assert!(
+            rewards.windows(2).all(|pair| pair[0] >= pair[1]),
+            "job rewards must come back best-first"
+        );
+        assert!(priced > 0.0);
+        assert!(
+            (priced - quota).abs() > 1e-9,
+            "the survey arm must not silently reproduce the quota"
+        );
+
+        // The Builders already alive claim the head of the job list: each
+        // additional live Builder must never raise the next one's price.
+        let mut fewer_jobs = counts;
+        fewer_jobs.builders = 3;
+        let saturated = surveyed.production_value(&game, 0, city, &builder, &plan, &fewer_jobs);
+        assert!(
+            saturated <= priced,
+            "a fourth builder cannot be worth more than the first"
+        );
+    }
+
+    #[test]
+    fn a_first_luxury_outbids_a_duplicate_and_a_worked_tile_outbids_an_idle_one() {
+        let mut game = Game::new_full(1, 20, 14, 71_010, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        // Any luxury the ruleset ties to a builder improvement; BTreeMap
+        // order keeps the pick deterministic.
+        let (resource, improvement) = game
+            .rules
+            .improvements
+            .iter()
+            .filter(|(_, spec)| spec.builder_buildable)
+            .flat_map(|(name, spec)| {
+                spec.resources
+                    .iter()
+                    .map(move |resource| (*resource, *name))
+            })
+            .find(|(resource, _)| {
+                game.rules
+                    .resources
+                    .get(resource.as_str())
+                    .is_some_and(|spec| spec.class == "luxury")
+            })
+            .expect("the ruleset ties at least one luxury to a builder improvement");
+        let pos = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource);
+
+        let ai = AdvancedAi::new();
+        let strategy = GrandStrategy::Expansion;
+        let holder = game.cities[&city].clone();
+        let first =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
+
+        // Connect a second copy elsewhere: the survey must now price this
+        // tile as a duplicate.
+        let other = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|p| *p != pos && *p != game.cities[&city].pos)
+            .unwrap();
+        {
+            let tile = game.map.tiles.get_mut(&other).unwrap();
+            tile.resource = Some(resource);
+            tile.improvement = Some(improvement);
+        }
+        let duplicate =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
+        assert!(
+            first > duplicate,
+            "a first {resource} must outbid a duplicate ({first:.1} vs {duplicate:.1})"
+        );
+
+        // And the worked-likelihood weight: the same job on a tile no
+        // citizen works keeps its connection value but sheds yield value.
+        let idle =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, false, 2);
+        assert!(
+            first >= idle,
+            "an unworked tile cannot be worth more than a worked one"
+        );
+    }
+
+    #[test]
+    fn the_civs_own_unique_unit_earns_its_window() {
+        let mut game = Game::new_full(1, 20, 14, 71_012, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.players[0].civ = "Sumeria".to_string();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let war_cart = Item::Unit {
+            unit: crate::name!("war_cart"),
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let frozen = AdvancedAi::new();
+        let counts = frozen.counts(&game, 0);
+        let base = frozen.production_value(&game, 0, city, &war_cart, &plan, &counts);
+
+        let mut credited = AdvancedAi::new();
+        credited.enable_unit_cost_efficiency();
+        let windowed = credited.production_value(&game, 0, city, &war_cart, &plan, &counts);
+        assert!(
+            windowed > base,
+            "Sumeria's own War Cart must earn the unique window ({windowed:.1} vs {base:.1})"
+        );
+
+        // A rival civilization gets no credit for someone else's unique.
+        game.players[0].civ = "Rome".to_string();
+        let foreign = credited.production_value(&game, 0, city, &war_cart, &plan, &counts);
+        assert!(
+            foreign < windowed,
+            "the window is the owner's alone ({foreign:.1} vs {windowed:.1})"
         );
     }
 
