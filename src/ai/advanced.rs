@@ -1049,6 +1049,11 @@ const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
 /// See `recon_flight`.
 const RECON_FLIGHT_RISK: f64 = 12.0;
 
+/// At most this many already-built, unlinked ships may be assigned to chart
+/// the sea. The production arm still buys only the first hull; this cap makes
+/// a spare ship useful without turning an ordinary fleet into endless scouts.
+const NAVAL_RECON_EXPLORER_MAX: usize = 2;
+
 /// A sparse-map fallback may keep one reachable global site alive when every
 /// ordinary candidate is below the normal score floor. It is only considered
 /// after the normal site set is empty, so this cannot make a mediocre distant
@@ -2452,10 +2457,13 @@ pub struct AdvancedAi {
     ///
     /// With this on, the pass stops at the first placement whose score is
     /// negative and journals what it banked; the next city-state met (whose
-    /// first-meet envoy is already standing there) can be taken outright. A
-    /// rival bidding a held suzerainty back up makes the defence positive
-    /// again, so held city-states are still defended. Bridge-only
-    /// (`civvis_orders` sets it); off for ordinary and frozen controllers.
+    /// first-meet envoy is already standing there) can be taken outright. The
+    /// same deliberately idle pool may also ask a non-objective hostile
+    /// Suzerain for peace when that immediately makes one of its city-states
+    /// available to take. A rival bidding a held suzerainty back up makes the
+    /// defence positive again, so held city-states are still defended.
+    /// Bridge-only (`civvis_orders` sets it); off for ordinary and frozen
+    /// controllers.
     pub bank_envoys: bool,
     /// Do not found a colony beyond the empire's Loyalty reach on ground the
     /// seat has not explored.
@@ -12079,6 +12087,75 @@ impl AdvancedAi {
         true
     }
 
+    /// Return the cheapest city-state that an idle Envoy pool can take once a
+    /// peace with `other` ends the Suzerain-derived war.
+    ///
+    /// Envoys run before diplomacy. Any pool that remains here therefore
+    /// survived the ordinary positive-placement pass; this is a bridge-only
+    /// way to turn that deliberately banked remainder into an immediate
+    /// city-state investment. A direct city-state war does not qualify: peace
+    /// with its Suzerain would not make Envoys legal there.
+    fn banked_envoy_reclaim_after_peace(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(usize, i64)> {
+        if !self.bank_envoys {
+            return None;
+        }
+        let held = g.players.get(pid)?.envoys_free;
+        let active_campaign = plan.target_player == Some(other)
+            || self
+                .war_plan
+                .as_ref()
+                .is_some_and(|war| war.target_player == other);
+        let hostile_suzerain = g.players.get(other).is_some_and(|player| {
+            player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && !player.is_free_city
+        });
+        if held <= 0 || active_campaign || !hostile_suzerain {
+            return None;
+        }
+
+        g.players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && !minor.is_free_city
+                    && g.has_met(pid, minor.id)
+                    && g.is_at_war(pid, minor.id)
+                    && !g
+                        .at_war
+                        .contains(&(pid.min(minor.id), pid.max(minor.id)))
+                    && g.suzerain_of(minor.id) == Some(other)
+            })
+            .filter_map(|minor| {
+                let ours = g.envoys_at(pid, minor.id);
+                let rival = g
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && !player.is_free_city
+                    })
+                    .map(|player| g.envoys_at(player.id, minor.id))
+                    .max()
+                    .unwrap_or_default();
+                let needed = (3_i64.max(rival.saturating_add(1)) - ours).max(1);
+                (held >= needed).then_some((minor.id, needed))
+            })
+            .min_by_key(|(minor, needed)| (*needed, *minor))
+    }
+
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         let incoming: Vec<u32> = g
@@ -12337,6 +12414,7 @@ impl AdvancedAi {
                         || (deal.from == *other && deal.to == pid))
                     && deal.expires >= g.turn
             });
+            let envoy_reclaim = self.banked_envoy_reclaim_after_peace(g, pid, *other, plan);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -12350,23 +12428,30 @@ impl AdvancedAi {
                         && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
-                        && g.player_city_ids(*other).len() > 1))
+                        && g.player_city_ids(*other).len() > 1)
+                    || envoy_reclaim.is_some())
             {
                 self.peace_offers.insert(*other);
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let their_power = g.military_power(*other);
-                    let because = if my_power < their_power * 0.62 {
-                        "outmatched"
+                    let because = if let Some((minor, needed)) = envoy_reclaim {
+                        format!(
+                            "the plan has no campaign there and {needed} banked Envoy{} can immediately take {} after the Suzerain war ends",
+                            if needed == 1 { "" } else { "s" },
+                            g.players[minor].civ
+                        )
+                    } else if my_power < their_power * 0.62 {
+                        "outmatched".to_string()
                     } else if overwhelmed_on_multiple_fronts {
-                        "multiple major fronts overwhelm the recovery army"
+                        "multiple major fronts overwhelm the recovery army".to_string()
                     } else if plan.strategy == GrandStrategy::Recovery {
-                        "this is not the war the recovery plan is fighting"
+                        "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                     {
-                        "the religion plan cannot spread into a war"
+                        "the religion plan cannot spread into a war".to_string()
                     } else {
-                        "the war has stalled"
+                        "the war has stalled".to_string()
                     };
                     think!(self.journal(), Diplomacy, Decision,
                            "Offering peace to {}", g.players[*other].civ;
@@ -15907,6 +15992,72 @@ impl AdvancedAi {
                 "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
                 "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
                 short_cities, city_ids.len(), total_shortfall);
+        }
+    }
+
+    /// Reserve one otherwise idle coastal city for the sea-recon arm before
+    /// the strategic governor fills every empty queue with infrastructure.
+    /// A major naval war raises that arm to two eyes in `BasicAi`: the first
+    /// ship may be fighting, while the second keeps opening contacts and
+    /// city-states. This deliberately never replaces an active build, a
+    /// threatened city's queue, or the earlier defense, Envoy, religion,
+    /// Science, Culture, and Amenity reservations.
+    fn reserve_idle_naval_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // A second eye is valuable only while it does not deepen the live
+        // war-economy deficit. The ordinary governor's recovery branch takes
+        // precedence unless the existing emergency-garrison exception applies.
+        if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+            || !self.base.naval_recon_is_the_missing_arm(g, pid)
+        {
+            return;
+        }
+        let mut best: Option<(f64, u32, String)> = None;
+        for city in g.player_city_ids(pid) {
+            let current = &g.cities[&city];
+            let threatened = plan.threatened_city == Some(city)
+                || (current.last_attacked > 0
+                    && g.turn.saturating_sub(current.last_attacked) <= 4);
+            if current.queue.first().is_some() || threatened {
+                continue;
+            }
+            let Some(unit) = self.base.best_naval_recon(g, pid, city) else {
+                continue;
+            };
+            let item = Item::Unit {
+                unit: Name::new(&unit),
+            };
+            let turns = g.item_remaining_cost_for_city(pid, city, &item)
+                / g.city_yields(city).production.max(1.0);
+            let replace = best.as_ref().is_none_or(|(old_turns, old_city, old_unit)| {
+                turns + f64::EPSILON < *old_turns
+                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                        && (city, unit.as_str()) < (*old_city, old_unit.as_str()))
+            });
+            if replace {
+                best = Some((turns, city, unit));
+            }
+        }
+        let Some((turns, city, unit)) = best else {
+            return;
+        };
+        let item = Item::Unit {
+            unit: Name::new(&unit),
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} as a sea scout", city_name, Self::plain_item(&item);
+                "unexplored water still needs a naval eye; this is the fastest viable launch ({turns:.1} turns)");
         }
     }
 
@@ -24532,10 +24683,14 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
 
-        // A ship is the sea's scout when it is the empire's only one and there
-        // is water left to chart. See `naval_explorer`.
+        // Up to two free ships are the sea's scouts while water remains dark.
+        // Combat, escort, and recovery already had their chance above, so this
+        // only spends hulls that have no more immediate job. See
+        // `naval_explorer`.
         let naval_explorer =
-            self.base.naval_recon && spec.domain.as_deref() == Some("sea") && self.naval_explorer(g, pid) == Some(uid);
+            self.base.naval_recon
+                && spec.domain.as_deref() == Some("sea")
+                && self.naval_explorer(g, pid).contains(&uid);
         if (doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true))
             || naval_explorer
         {
@@ -25426,17 +25581,24 @@ impl AdvancedAi {
         }
     }
 
-    /// The one ship that explores: the empire's lowest-numbered unlinked sea
-    /// military unit with an open route, while water it has never seen
-    /// remains. A lake-bound hull cannot hold the job over a real scout. A
-    /// fleet keeps every other hull for the war lane; an empire with no ship
-    /// has no explorer and `naval_recon_is_the_missing_arm` buys one. See
-    /// `BasicAi::naval_recon`.
-    fn naval_explorer(&self, g: &Game, pid: usize) -> Option<u32> {
+    /// The bounded set of ships that explore: the first two movable, unlinked
+    /// sea military units with an open route while water remains unseen. A
+    /// lake-bound hull cannot hold the job over a real scout. The production
+    /// arm still buys only the first ship; this merely lets a spare hull open
+    /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
+    fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
         if !self.base.naval_recon {
-            return None;
+            return Vec::new();
         }
-        let ship = g
+        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+        });
+        if !water_left {
+            return Vec::new();
+        }
+        let mut ships = g
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
@@ -25444,21 +25606,22 @@ impl AdvancedAi {
                 let spec = &g.rules.units[unit.kind];
                 spec.class == "military"
                     && spec.domain.as_deref() == Some("sea")
+                    && unit.moves_left > 0.0
                     && unit.linked_to.is_none()
                     && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
             })
-            .min()?;
-        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
-            !g.players[pid].explored.contains(pos)
-                && g.rules.is_passable(tile)
-                && g.rules.is_water(tile)
-        });
-        water_left.then_some(ship)
+            .collect::<Vec<_>>();
+        ships.sort_unstable();
+        ships.truncate(NAVAL_RECON_EXPLORER_MAX);
+        ships
     }
 
     /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
     /// the tile it stands on is threatened and a reachable neighbour lowers the
-    /// risk; `None` leaves the turn to the explore step. See `recon_flight`.
+    /// risk; `None` leaves the turn to the explore step. Once the live movement
+    /// recorder has proved the retreat is circling, a step back into that
+    /// footprint is not a retreat at all: let exploration's loop-aware scorer
+    /// select an outward route instead. See `recon_flight`.
     fn recon_flight_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         let current = g.units[&uid].pos;
         // A city defends the unit standing in it.
@@ -25483,12 +25646,22 @@ impl AdvancedAi {
             .collect();
         let clearance = |pos: Pos| hostiles.iter().map(|h| g.wdist(pos, *h)).min().unwrap_or(i32::MAX);
         let room_here = clearance(current);
+        let escaping_loop = self.base.live_livelock_route_escape(uid);
         // An improving step lowers the risk, or keeps it while opening more
         // ground between the unit and the nearest hostile — the whole approach
         // band prices alike, and walking out of it takes more than one step.
         let mut flight: Option<(f64, i32, Pos)> = None;
         for step in g.nbrs(current) {
             if !g.can_move(uid, step) {
+                continue;
+            }
+            // A tie-risk step can be correct while the Scout is actually
+            // retreating. After six fruitless turns in two or three tiles it
+            // is evidence of the opposite: repeating it buys no safety and
+            // prevents the committed explorer from finding the next frontier.
+            // This gate is live-bridge-only, preserving tournament and frozen
+            // controller movement exactly.
+            if escaping_loop && self.base.livelock_penalty(uid, step) < 0.0 {
                 continue;
             }
             let risk = self.settlement_tile_risk_with_support(g, pid, None, step, &visible, false);
@@ -26383,6 +26556,11 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
+            // A fighting Galley cannot also be the empire's sole eye. This
+            // claims only one idle, safe queue after all higher-priority
+            // strategic reservations, before generic production buries the
+            // reconnaissance gap under another building or wonder.
+            self.reserve_idle_naval_recon(g, pid, &plan);
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.
@@ -26520,6 +26698,93 @@ mod tests {
         assert!(bridged.religion_sues_peace);
         bridged.disable_religion_sues_peace();
         assert!(!bridged.religion_sues_peace);
+    }
+
+    #[test]
+    fn banked_envoys_reclaim_a_nonobjective_hostile_suzerain_city_state() {
+        // A city-state that follows its hostile Suzerain into war cannot take
+        // an Envoy until peace with that major lands. The live bridge should
+        // make that one tactical peace offer when its deliberately idle pool
+        // can immediately flip the city-state, but never trade away an active
+        // campaign or mistake a direct city-state war for a derived one.
+        let mut game = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+        let city_state = game
+            .players
+            .iter()
+            .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("fixture needs a city-state");
+        game.turn = 80;
+        game.current = 0;
+        game.record_contact(0, 1);
+        game.record_contact(0, city_state);
+        game.players[0].envoys = vec![(city_state, 4)];
+        game.players[1].envoys = vec![(city_state, 5)];
+        game.players[0].envoys_free = 2;
+        game.at_war.insert((0, 1));
+        assert_eq!(game.suzerain_of(city_state), Some(1));
+        assert!(game.is_at_war(0, city_state));
+        assert!(
+            !game.can_send_envoy(0, city_state),
+            "a Suzerain-derived war makes the city-state Envoy-ineligible"
+        );
+
+        let nonobjective = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut live_game = game.clone();
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_diplomacy(&mut live_game, 0, &nonobjective);
+        assert!(
+            live.peace_offers.contains(&1),
+            "two banked Envoys take the city-state after peace with its Suzerain"
+        );
+        // The host reserves this exact cost while it submits the major peace.
+        // On the authoritative post-peace frame the normal Envoy pass spends
+        // it and flips the city-state.
+        live_game.at_war.remove(&(0, 1));
+        live.advanced_envoys(&mut live_game, 0, GrandStrategy::Science, None);
+        assert_eq!(live_game.envoys_at(0, city_state), 6);
+        assert_eq!(live_game.suzerain_of(city_state), Some(0));
+
+        let mut stock_game = game.clone();
+        let mut stock = AdvancedAi::new();
+        stock.advanced_diplomacy(&mut stock_game, 0, &nonobjective);
+        assert!(
+            !stock.peace_offers.contains(&1),
+            "ordinary controllers retain their historical diplomacy"
+        );
+
+        let active_campaign = StrategicPlan {
+            target_player: Some(1),
+            ..nonobjective.clone()
+        };
+        let mut campaign_game = game.clone();
+        let mut protecting = AdvancedAi::new();
+        protecting.enable_bank_envoys();
+        protecting.advanced_diplomacy(&mut campaign_game, 0, &active_campaign);
+        assert!(
+            !protecting.peace_offers.contains(&1),
+            "a city-state investment must not abandon the active campaign"
+        );
+
+        let mut direct_war_game = game;
+        direct_war_game.at_war.insert((0, city_state));
+        let mut direct_war = AdvancedAi::new();
+        direct_war.enable_bank_envoys();
+        direct_war.advanced_diplomacy(&mut direct_war_game, 0, &nonobjective);
+        assert!(
+            !direct_war.peace_offers.contains(&1),
+            "peace with a Suzerain cannot unlock Envoys during a direct city-state war"
+        );
     }
 
     #[test]
@@ -28235,14 +28500,14 @@ mod tests {
         assert_eq!(game.units[&galley].linked_to, None);
     }
 
-    /// ★★★★ The one Galley of run civvis-20260816T110555Z sailed ten turns and
-    /// died; nothing else ever charted the sea and one rival of five was met
-    /// by t142. See `BasicAi::naval_recon` and `naval_explorer`. A lone
-    /// unlinked ship on an unexplored sea is the explorer and moves toward
-    /// water it has never seen; a second hull leaves the lowest-numbered one
-    /// as the explorer; a charted sea has none; the withheld arm names none.
+    /// ★★★★ Several viable caravels existed in run
+    /// civvis-20260816T223457Z, but only the lowest-id one was assigned to
+    /// explore; the others stood down or circled while six city-states stayed
+    /// uncontacted. See `BasicAi::naval_recon` and `naval_explorer`. A lone
+    /// unlinked ship on an unexplored sea explores; a spare eligible hull joins
+    /// it; a charted sea has none; the withheld arm names none.
     #[test]
-    fn a_lone_ship_on_an_unexplored_sea_is_the_empires_explorer() {
+    fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
         // At war: the wartime unit path is the one the live seat spends most
         // of its turns in, and it is where a ship never explored before.
         let mut game = Game::new_full(2, 20, 14, 71_001, 30, 0, false);
@@ -28279,21 +28544,18 @@ mod tests {
 
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
+        // The Firaxis order adapter also commits explorers to separated fog
+        // goals, so exercise the two-hull branch under its shipped settings.
+        live.enable_explore_commit();
         assert!(live.naval_recon(), "the live seat carries the treatment");
-        assert_eq!(live.naval_explorer(&game, 0), Some(galley), "the lone ship explores");
+        assert_eq!(live.naval_explorer(&game, 0), vec![galley], "the lone ship explores");
 
-        let plan = live.assess(&game, 0);
-        let before = game.units[&galley].pos;
-        let explored_before = game.players[0].explored.len();
-        assert!(
-            live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
-            "the explorer acts"
-        );
-        let after = game.units[&galley].pos;
-        assert!(
-            after != before || game.players[0].explored.len() > explored_before,
-            "it moved toward the dark water ({before:?} -> {after:?})"
-        );
+        // A second hull joins the first. Both are already built, unlinked, and
+        // can chart; this does not ask production for another one.
+        let second = game.spawn_test_unit("galley", 0, water);
+        let mut expected = vec![galley, second];
+        expected.sort_unstable();
+        assert_eq!(live.naval_explorer(&game, 0), expected);
 
         // The withheld arm at war leaves the same ship where it is: the war
         // path never explored before this treatment.
@@ -28312,21 +28574,140 @@ mod tests {
             );
         }
 
-        // A second hull: the lowest-numbered unlinked ship keeps the job.
-        let second = game.spawn_test_unit("galley", 0, water);
-        assert_eq!(live.naval_explorer(&game, 0), Some(galley.min(second)));
+        let plan = live.assess(&game, 0);
+        let before = game.units[&galley].pos;
+        let explored_before = game.players[0].explored.len();
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
+            "the explorer acts"
+        );
+        let after = game.units[&galley].pos;
+        assert!(
+            after != before || game.players[0].explored.len() > explored_before,
+            "it moved toward the dark water ({before:?} -> {after:?})"
+        );
+        let plan = live.assess(&game, 0);
+        let second_before = game.units[&second].pos;
+        let explored_before = game.players[0].explored.len();
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, second, &plan, false),
+            "the second explorer acts"
+        );
+        assert!(
+            game.units[&second].pos != second_before
+                || game.players[0].explored.len() > explored_before,
+            "the second hull also moves toward dark water"
+        );
 
         // A charted sea has no explorer; the withheld arm names none.
         let mut charted = game.clone();
         let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
         charted.players[0].explored.extend(all);
-        assert_eq!(live.naval_explorer(&charted, 0), None);
+        assert!(live.naval_explorer(&charted, 0).is_empty());
         let mut withheld = AdvancedAi::new();
         withheld.enable_live_bridge();
         withheld.disable_naval_recon();
-        assert_eq!(withheld.naval_explorer(&game, 0), None);
+        assert!(withheld.naval_explorer(&game, 0).is_empty());
         assert!(!AdvancedAi::new().naval_recon());
         assert!(!AdvancedAi::legacy().naval_recon());
+    }
+
+    #[test]
+    fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
+        let mut game = Game::new_full(2, 30, 18, 71_003, 100, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("the first major starts with a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the fixture founds a capital");
+        for uid in game.player_unit_ids(0) {
+            game.remove_unit(uid);
+        }
+        let city = game.player_city_ids(0)[0];
+        let city_pos = game.cities[&city].pos;
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let mut waterway = Vec::new();
+        let mut current = city_pos;
+        for distance in 1..=super::super::NAVAL_RECON_MIN_WATERWAY_TILES {
+            current = game
+                .nbrs(current)
+                .into_iter()
+                .find(|pos| {
+                    game.map.tiles.contains_key(pos)
+                        && game.wdist(city_pos, *pos) == distance as i32
+                })
+                .expect("an interior city has a straight coastal launch route");
+            game.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
+            waterway.push(current);
+        }
+        game.players[0].explored.remove(waterway.last().unwrap());
+        game.players[0].techs.insert(crate::name!("sailing"));
+        game.at_war.insert((0, 1));
+        game.spawn_test_unit("galley", 1, *waterway.last().unwrap());
+        game.spawn_test_unit("galley", 0, waterway[0]);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.naval_recon_is_the_missing_arm(&game, 0));
+
+        // The spare eye must not leapfrog the shared recovery rule. One
+        // existing Galley covers the emergency-garrison exception on this
+        // one-city war, so a bankrupt empire repairs its balance first.
+        let mut bankrupt = game.clone();
+        bankrupt.players[0].gold = 0.0;
+        bankrupt.players[0].gold_per_turn = -1.0;
+        assert!(live.live_war_economy_requires_recovery(
+            &bankrupt,
+            0,
+            &live.counts(&bankrupt, 0)
+        ));
+        live.reserve_idle_naval_recon(&mut bankrupt, 0, &plan);
+        assert!(
+            bankrupt.cities[&city].queue.is_empty(),
+            "a naval scout cannot bypass the live war-economy recovery path"
+        );
+
+        let mut stock_game = game.clone();
+        let stock = AdvancedAi::new();
+        stock.reserve_idle_naval_recon(&mut stock_game, 0, &plan);
+        assert!(
+            stock_game.cities[&city].queue.is_empty(),
+            "the frozen controller does not reserve a naval scout"
+        );
+
+        live.reserve_idle_naval_recon(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "galley"
+        ));
+        live.reserve_idle_naval_recon(&mut game, 0, &plan);
+        assert_eq!(
+            game.cities[&city]
+                .queue
+                .iter()
+                .filter(|item| matches!(item, Item::Unit { unit } if unit == "galley"))
+                .count(),
+            1,
+            "the queued hull completes the bounded second-eye reservation"
+        );
     }
 
     #[test]
@@ -28399,7 +28780,7 @@ mod tests {
         live.enable_live_bridge();
         assert_eq!(
             live.naval_explorer(&game, 0),
-            Some(free),
+            vec![free],
             "a trapped lower-id Galley cannot take the explorer job from the open-water hull"
         );
     }
@@ -41327,6 +41708,91 @@ mod tests {
         // Defaults: off for the stock and frozen controllers.
         assert!(!AdvancedAi::new().recon_flight);
         assert!(!AdvancedAi::legacy().recon_flight);
+    }
+
+    /// In the live win, Scout 60 spent turns 204–251 issuing equal-risk flight
+    /// moves between the same two tiles while six city-states remained unseen.
+    /// The per-turn flight choice was locally safe, but after the motion window
+    /// proves the loop it must yield to the explorer's outward route instead of
+    /// retracing the safe-looking half of the circuit.
+    #[test]
+    fn a_looping_live_scout_does_not_repeat_an_equal_risk_flight_step() {
+        let mut game = Game::new_full(2, 20, 14, 91_483, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let start = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| game.wdisk(*pos, 2).len() == 19 && game.city_at(*pos).is_none())
+            .expect("fixture needs an open land tile away from each city");
+        let toward_threat = game.nbrs(start)[0];
+        let threat = game
+            .nbrs(toward_threat)
+            .into_iter()
+            .find(|pos| *pos != start && game.wdist(start, *pos) == 2)
+            .expect("the open tile has a second-ring threat post");
+        let retreat = game
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| game.wdist(*pos, threat) == 3)
+            .expect("the opposite neighbour increases clearance");
+        // The hostile-facing tile stays open so the threat is visible. The
+        // retreat is the only flight candidate that does not enter more risk.
+        for pos in game.nbrs(start) {
+            if pos != toward_threat && pos != retreat {
+                game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+            }
+        }
+        game.spawn_test_unit("warrior", 1, threat);
+        let scout = game.spawn_test_unit("scout", 0, start);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        for (offset, pos) in [start, retreat, start, retreat, start, retreat, start]
+            .into_iter()
+            .enumerate()
+        {
+            game.turn = 100 + offset as u32;
+            let unit = game.units.get_mut(&scout).unwrap();
+            unit.pos = pos;
+            unit.moves_left = 2.0;
+            unit.moved = false;
+            live.base.begin_movement_turn(&game, 0);
+        }
+        assert!(
+            live.base.live_livelock_route_escape(scout),
+            "the recorded two-tile circuit is a proven live loop"
+        );
+
+        let visible = live.battlefront_visibility(&game, 0);
+        assert!(game.sees(&visible, threat));
+        let here =
+            live.settlement_tile_risk_with_support(&game, 0, None, start, &visible, false);
+        let retreat_risk =
+            live.settlement_tile_risk_with_support(&game, 0, None, retreat, &visible, false);
+        assert!(here >= RECON_FLIGHT_RISK, "the hostile threatens the Scout ({here})");
+        assert!(
+            retreat_risk <= here && game.wdist(retreat, threat) > game.wdist(start, threat),
+            "the looped retreat is exactly the equal-or-lower-risk flight the old chooser repeated"
+        );
+
+        assert_eq!(
+            live.recon_flight_step(&mut game, 0, scout),
+            None,
+            "a proven loop defers to exploration instead of issuing its exhausted flight step"
+        );
+        assert_eq!(game.units[&scout].pos, start, "the forbidden circuit was not replayed");
     }
 
     /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,

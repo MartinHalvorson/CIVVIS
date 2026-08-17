@@ -1313,7 +1313,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// predicate therefore returns on the same first-line flag check in every
 /// frozen game; the anchor's production decisions remain byte-identical.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf44c_9200_47bb_3ca5;
+/// A second already-built sea hull may explore only behind `naval_recon`, which
+/// `AdvancedAi::legacy()` leaves off. The frozen anchor still gets an empty
+/// explorer set before inspecting units, so its movement decisions are
+/// byte-identical. Compatibility re-pin; the Elo protocol does not move.
+/// The recon-flight loop escape is reached only from `recon_flight`; that
+/// live-only flag is false in `AdvancedAi::legacy()`, so a frozen Scout keeps
+/// its historical flight and exploration behavior. Compatibility re-pin; the
+/// Elo protocol does not move.
+/// The hostile-Suzerain peace path is reached only through `bank_envoys`,
+/// which the Firaxis order bridge enables after profitable Envoy placements
+/// have already run. `AdvancedAi::legacy()` keeps that gate false, so its
+/// diplomacy remains historical. Compatibility re-pin; the Elo protocol does
+/// not move.
+/// The wartime second naval eye and its idle-city reservation are both reached
+/// only through `naval_recon`, which `AdvancedAi::legacy()` leaves false.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f84_9122_1eab_12c1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
