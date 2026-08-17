@@ -327,9 +327,7 @@ pub fn paint(wm: &mut WorldMap, plan: &Plan) {
         if water || tile.terrain.as_str() == "mountain" {
             tile.hills = false;
             tile.improvement = None;
-            if water && tile.feature.as_deref() != Some("reef") {
-                tile.feature = None;
-            } else if !water {
+            if !water || tile.feature.as_deref() != Some("reef") {
                 tile.feature = None;
             }
         }
@@ -345,14 +343,7 @@ fn mirror_edges(wm: &mut WorldMap) {
         .tiles
         .values()
         .flat_map(|tile| {
-            (0..6).map(move |dir| {
-                (
-                    tile.pos,
-                    dir,
-                    tile.river_edges[dir],
-                    tile.cliff_edges[dir],
-                )
-            })
+            (0..6).map(move |dir| (tile.pos, dir, tile.river_edges[dir], tile.cliff_edges[dir]))
         })
         .filter(|(_, _, river, cliff)| *river || *cliff)
         .collect();
@@ -394,9 +385,7 @@ pub fn front_tiles(wm: &WorldMap, plan: &Plan, side: usize, water: bool) -> Vec<
     let mut tiles: Vec<(u64, Pos)> = wm
         .tiles
         .values()
-        .filter(|tile| {
-            is_water_name(&tile.terrain) == water && tile.terrain.as_str() != "mountain"
-        })
+        .filter(|tile| is_water_name(&tile.terrain) == water && tile.terrain.as_str() != "mountain")
         .map(|tile| {
             let (col, row) = hex::axial_to_offset(tile.pos.0, tile.pos.1);
             let at = (col as f32, row as f32);
@@ -413,7 +402,10 @@ pub fn front_tiles(wm: &WorldMap, plan: &Plan, side: usize, water: bool) -> Vec<
                 }
             };
             let off = distance_to_segment(at, (fx, fy), (tx, ty));
-            ((off * 64.0) as u64 * 4096 + (along * 512.0) as u64, tile.pos)
+            (
+                (off * 64.0) as u64 * 4096 + (along * 512.0) as u64,
+                tile.pos,
+            )
         })
         .collect();
     tiles.sort_by_key(|(rank, pos)| (*rank, *pos));
@@ -447,7 +439,7 @@ pub fn sides_afloat(
         scenario.forces[side]
             .units
             .first()
-            .and_then(|kind| rules.units.get(*kind))
+            .and_then(|kind| rules.units.get(kind))
             .is_some_and(|spec| spec.domain.as_deref() == Some("sea"))
     };
     [afloat(0), afloat(1)]
@@ -527,17 +519,17 @@ mod tests {
                 for paint in stroke.paint {
                     match paint {
                         Paint::Terrain(name) => assert!(
-                            rules.terrains.contains_key(*name),
+                            rules.terrains.contains_key(name),
                             "{} paints unknown terrain {name}",
                             plan.id
                         ),
                         Paint::Feature(Some(name)) => assert!(
-                            rules.features.contains_key(*name),
+                            rules.features.contains_key(name),
                             "{} paints unknown feature {name}",
                             plan.id
                         ),
                         Paint::Improvement(Some(name)) => assert!(
-                            rules.improvements.contains_key(*name),
+                            rules.improvements.contains_key(name),
                             "{} paints unknown improvement {name}",
                             plan.id
                         ),
@@ -565,11 +557,7 @@ mod tests {
             let (ax, ay) = hex::axial_to_offset(starts[0].0, starts[0].1);
             let (bx, by) = hex::axial_to_offset(starts[1].0, starts[1].1);
             let apart = (ax - bx).abs().max((ay - by).abs());
-            assert!(
-                apart >= 4,
-                "{} seats both sides {apart} apart",
-                scenario.id
-            );
+            assert!(apart >= 4, "{} seats both sides {apart} apart", scenario.id);
         }
     }
 
@@ -626,8 +614,7 @@ mod tests {
                 scenario.turns,
                 0,
             );
-            options.map_script =
-                crate::historical_scenarios::script_from_id(scenario.id).unwrap();
+            options.map_script = crate::historical_scenarios::script_from_id(scenario.id).unwrap();
             options.start_era = scenario.era_index;
             options.barbarians = false;
             let game = crate::game::Game::new_with(options);
@@ -649,7 +636,11 @@ mod tests {
                     })
                     .map(|unit| unit.pos)
                     .collect();
-                assert!(!placed.is_empty(), "{} side {side} deployed nothing", scenario.id);
+                assert!(
+                    !placed.is_empty(),
+                    "{} side {side} deployed nothing",
+                    scenario.id
+                );
                 // Every piece within reach of the segment its side formed on.
                 // Four hexes is loose on purpose: a line spills backward when
                 // its own front is short, and some of these fronts are two
@@ -659,8 +650,7 @@ mod tests {
                 let (tx, ty) = chart_point(&game.map, front.to);
                 for pos in &placed {
                     let (col, row) = hex::axial_to_offset(pos.0, pos.1);
-                    let off =
-                        distance_to_segment((col as f32, row as f32), (fx, fy), (tx, ty));
+                    let off = distance_to_segment((col as f32, row as f32), (fx, fy), (tx, ty));
                     assert!(
                         off <= 4.5,
                         "{} side {side} put a unit {off:.1} from its front at {pos:?}",
@@ -745,15 +735,20 @@ mod tests {
         );
         // Sea to the north, mountain to the south: the two walls of the pass.
         let north = tiles_where(&map, |tile| {
-            hex::axial_to_offset(tile.pos.0, tile.pos.1).1 == 0
-                && is_water_name(&tile.terrain)
+            hex::axial_to_offset(tile.pos.0, tile.pos.1).1 == 0 && is_water_name(&tile.terrain)
         });
         let south = tiles_where(&map, |tile| {
             hex::axial_to_offset(tile.pos.0, tile.pos.1).1 == height - 1
                 && tile.terrain.as_str() == "mountain"
         });
-        assert!(north >= (width / 2) as usize, "the Malian Gulf should hold the north edge");
-        assert!(south >= (width / 2) as usize, "Kallidromos should hold the south edge");
+        assert!(
+            north >= (width / 2) as usize,
+            "the Malian Gulf should hold the north edge"
+        );
+        assert!(
+            south >= (width / 2) as usize,
+            "Kallidromos should hold the south edge"
+        );
     }
 
     /// Marathon's plain is bounded by the sea it was fought beside and the
@@ -805,11 +800,18 @@ mod tests {
             map.tiles.values().filter(move |tile| {
                 let (col, _) = hex::axial_to_offset(tile.pos.0, tile.pos.1);
                 tile.feature.as_deref() == Some("forest")
-                    && if west { col < map.width / 2 } else { col >= map.width / 2 }
+                    && if west {
+                        col < map.width / 2
+                    } else {
+                        col >= map.width / 2
+                    }
             })
         };
         assert!(woods(true).count() >= 6, "the wood on one side is missing");
-        assert!(woods(false).count() >= 6, "the wood on the other side is missing");
+        assert!(
+            woods(false).count() >= 6,
+            "the wood on the other side is missing"
+        );
         assert!(
             tiles_where(&map, |tile| tile.feature.as_deref() == Some("marsh")) >= 8,
             "the ploughed mud that drowned the French advance is missing"

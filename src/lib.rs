@@ -34,8 +34,7 @@ pub mod odds;
 #[cfg(feature = "closed-experiments")]
 pub mod oracle;
 pub mod parallel;
-
-
+#[rustfmt::skip]
 pub mod obs_tensor;
 // The training-data lane (`selfplay` exporter and its 34-wide feature
 // vector) rides the `closed-experiments` feature with the action encoder and

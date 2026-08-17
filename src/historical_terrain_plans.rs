@@ -42,26 +42,77 @@ pub static PLANS: &[Plan] = &[
         base_hills: false,
         strokes: &[
             // The valley floor either side of the river is watered ground.
-            stroke(Area { from: p(0.0, 0.0), to: p(1.0, 1.0) }, &[Terrain("plains")]),
-            stroke(Band { from: p(0.30, 0.0), to: p(0.34, 1.0), reach: 0.10 },
-                   &[Terrain("grassland"), Feature(Some("floodplains"))]),
+            stroke(
+                Area {
+                    from: p(0.0, 0.0),
+                    to: p(1.0, 1.0),
+                },
+                &[Terrain("plains")],
+            ),
+            stroke(
+                Band {
+                    from: p(0.30, 0.0),
+                    to: p(0.34, 1.0),
+                    reach: 0.10,
+                },
+                &[Terrain("grassland"), Feature(Some("floodplains"))],
+            ),
             // The Orontes itself, and the two fords that are the only ways
             // over it: one north below the city, one south where Muwatalli's
             // chariots actually crossed.
-            stroke(Band { from: p(0.42, -0.05), to: p(0.46, 1.05), reach: 0.035 },
-                   &[Terrain("coast"), Feature(None), Hills(false)]),
-            stroke(Blob { at: p(0.44, 0.28), radius: 0.05 },
-                   &[Terrain("grassland"), Feature(None)]),
-            stroke(Blob { at: p(0.45, 0.78), radius: 0.05 },
-                   &[Terrain("grassland"), Feature(None)]),
+            stroke(
+                Band {
+                    from: p(0.42, -0.05),
+                    to: p(0.46, 1.05),
+                    reach: 0.035,
+                },
+                &[Terrain("coast"), Feature(None), Hills(false)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.44, 0.28),
+                    radius: 0.05,
+                },
+                &[Terrain("grassland"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.45, 0.78),
+                    radius: 0.05,
+                },
+                &[Terrain("grassland"), Feature(None)],
+            ),
             // The tell of Kadesh: a walled mound on the east bank that the
             // Hittite army forms up behind.
-            stroke(Blob { at: p(0.60, 0.44), radius: 0.10 }, RIDGE),
-            stroke(Blob { at: p(0.60, 0.44), radius: 0.05 },
-                   &[Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.44),
+                    radius: 0.10,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.44),
+                    radius: 0.05,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
             // Dry scrub rising to the eastern hills the ambush came around.
-            stroke(Beyond { from: p(1.0, 0.05), to: p(0.78, 1.0) }, &[Terrain("plains"), Hills(true)]),
-            stroke(Blob { at: p(0.16, 0.30), radius: 0.07 }, &[Improvement(Some("camp"))]),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.05),
+                    to: p(0.78, 1.0),
+                },
+                &[Terrain("plains"), Hills(true)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.16, 0.30),
+                    radius: 0.07,
+                },
+                &[Improvement(Some("camp"))],
+            ),
         ],
         fronts: [
             // The Egyptian camp faces east across the river toward the city.
@@ -81,23 +132,78 @@ pub static PLANS: &[Plan] = &[
         base: "grassland",
         base_hills: false,
         strokes: &[
-            stroke(Beyond { from: p(0.84, 0.0), to: p(0.88, 1.0) }, SEA),
+            stroke(
+                Beyond {
+                    from: p(0.84, 0.0),
+                    to: p(0.88, 1.0),
+                },
+                SEA,
+            ),
             // The Great Marsh at the northern end, where much of the Persian
             // rout drowned.
-            stroke(Blob { at: p(0.74, 0.12), radius: 0.17 }, MUD),
-            stroke(Blob { at: p(0.62, 0.06), radius: 0.10 }, MUD),
+            stroke(
+                Blob {
+                    at: p(0.74, 0.12),
+                    radius: 0.17,
+                },
+                MUD,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.62, 0.06),
+                    radius: 0.10,
+                },
+                MUD,
+            ),
             // The Charadra stream cuts the plain.
-            stroke(Band { from: p(0.30, 0.30), to: p(0.82, 0.44), reach: 0.03 }, &[River]),
+            stroke(
+                Band {
+                    from: p(0.30, 0.30),
+                    to: p(0.82, 0.44),
+                    reach: 0.03,
+                },
+                &[River],
+            ),
             // Agrieliki and Kotroni: the wooded foothills the Greek line came
             // down from and rested its flanks on.
-            stroke(Beyond { from: p(0.20, 1.0), to: p(0.06, 0.0) }, &[Hills(true), Feature(Some("forest"))]),
-            stroke(Blob { at: p(0.10, 0.80), radius: 0.14 }, &[Terrain("mountain"), Feature(None)]),
-            stroke(Blob { at: p(0.12, 0.20), radius: 0.10 }, RIDGE),
+            stroke(
+                Beyond {
+                    from: p(0.20, 1.0),
+                    to: p(0.06, 0.0),
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.10, 0.80),
+                    radius: 0.14,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.12, 0.20),
+                    radius: 0.10,
+                },
+                RIDGE,
+            ),
             // The open running ground itself, kept clear on purpose.
-            stroke(Area { from: p(0.26, 0.22), to: p(0.80, 0.86) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.26, 0.22),
+                    to: p(0.80, 0.86),
+                },
+                OPEN,
+            ),
             // The beach the fleet is drawn up on.
-            stroke(Band { from: p(0.83, 0.20), to: p(0.83, 0.92), reach: 0.03 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Band {
+                    from: p(0.83, 0.20),
+                    to: p(0.83, 0.92),
+                    reach: 0.03,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
         ],
         fronts: [
             // Miltiades' line, strong on the wings and thin in the centre,
@@ -126,22 +232,62 @@ pub static PLANS: &[Plan] = &[
             // The Malian Gulf holds the whole northern edge; Kallidromos the
             // whole southern one. Everything between them is the road, and
             // every gate below is the mountain reaching north toward the water.
-            stroke(Beyond { from: p(0.0, 0.27), to: p(1.0, 0.27) }, SEA),
-            stroke(Beyond { from: p(1.0, 0.75), to: p(0.0, 0.75) }, CRAG),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.27),
+                    to: p(1.0, 0.27),
+                },
+                SEA,
+            ),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.75),
+                    to: p(0.0, 0.75),
+                },
+                CRAG,
+            ),
             // The three gates, west to east. The Middle Gate is the narrowest
             // — it is the one the Greeks stood in — and the two others are a
             // hex wider, against six hexes of open road between them.
-            stroke(Blob { at: p(0.24, 0.73), radius: 0.10 }, CRAG),
-            stroke(Blob { at: p(0.52, 0.69), radius: 0.12 }, CRAG),
-            stroke(Blob { at: p(0.80, 0.73), radius: 0.10 }, CRAG),
+            stroke(
+                Blob {
+                    at: p(0.24, 0.73),
+                    radius: 0.10,
+                },
+                CRAG,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.52, 0.69),
+                    radius: 0.12,
+                },
+                CRAG,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.80, 0.73),
+                    radius: 0.10,
+                },
+                CRAG,
+            ),
             // The hot springs the pass is named for, on the road beside the
             // Middle Gate.
-            stroke(Blob { at: p(0.47, 0.33), radius: 0.03 },
-                   &[Terrain("plains"), Feature(Some("geothermal_fissure"))]),
+            stroke(
+                Blob {
+                    at: p(0.47, 0.33),
+                    radius: 0.03,
+                },
+                &[Terrain("plains"), Feature(Some("geothermal_fissure"))],
+            ),
             // The Phocian wall, rebuilt by the Greeks across the Middle Gate
             // and the position Leonidas actually held.
-            stroke(Blob { at: p(0.55, 0.36), radius: 0.035 },
-                   &[Terrain("plains"), Feature(None), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.55, 0.36),
+                    radius: 0.035,
+                },
+                &[Terrain("plains"), Feature(None), Improvement(Some("fort"))],
+            ),
             // The Anopaea path: the goat track over Kallidromos that the
             // Malians showed Hydarnes. It leaves the western end, climbs the
             // mountain's shoulder, and comes down EAST of the wall — which is
@@ -150,12 +296,30 @@ pub static PLANS: &[Plan] = &[
             // slow, but real, and it decides the battle exactly as it did.
             // Its western end has to touch the road, or the track is a
             // decoration nobody can set foot on.
-            stroke(Band { from: p(0.13, 0.66), to: p(0.46, 0.95), reach: 0.022 },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Band { from: p(0.46, 0.95), to: p(0.82, 0.88), reach: 0.022 },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Band { from: p(0.82, 0.88), to: p(0.88, 0.50), reach: 0.022 },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
+            stroke(
+                Band {
+                    from: p(0.13, 0.66),
+                    to: p(0.46, 0.95),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.46, 0.95),
+                    to: p(0.82, 0.88),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.82, 0.88),
+                    to: p(0.88, 0.50),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
         ],
         fronts: [
             // Leonidas holds the Middle Gate, facing west, the wall at his
@@ -183,17 +347,60 @@ pub static PLANS: &[Plan] = &[
             stroke(All, &[Terrain("plains"), Feature(None), Hills(false)]),
             // The Jebel Maqlub ridge along the northern skyline, behind the
             // Persian position.
-            stroke(Beyond { from: p(0.0, 0.06), to: p(1.0, 0.10) }, RIDGE),
-            stroke(Blob { at: p(0.50, 0.02), radius: 0.10 }, CRAG),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.06),
+                    to: p(1.0, 0.10),
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.02),
+                    radius: 0.10,
+                },
+                CRAG,
+            ),
             // The Bumodus, off the southern edge behind Alexander.
-            stroke(Band { from: p(0.0, 0.95), to: p(1.0, 0.92), reach: 0.03 }, &[River]),
+            stroke(
+                Band {
+                    from: p(0.0, 0.95),
+                    to: p(1.0, 0.92),
+                    reach: 0.03,
+                },
+                &[River],
+            ),
             // Scrub at the margins, so "cleared" reads as a choice rather than
             // as an empty chart.
-            stroke(Blob { at: p(0.06, 0.30), radius: 0.06 }, &[Feature(Some("forest"))]),
-            stroke(Blob { at: p(0.95, 0.72), radius: 0.06 }, &[Feature(Some("forest"))]),
-            stroke(Blob { at: p(0.03, 0.80), radius: 0.05 }, RIDGE),
+            stroke(
+                Blob {
+                    at: p(0.06, 0.30),
+                    radius: 0.06,
+                },
+                &[Feature(Some("forest"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.95, 0.72),
+                    radius: 0.06,
+                },
+                &[Feature(Some("forest"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.03, 0.80),
+                    radius: 0.05,
+                },
+                RIDGE,
+            ),
             // The levelled ground: the last stroke, so nothing survives in it.
-            stroke(Area { from: p(0.12, 0.18), to: p(0.88, 0.84) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.12, 0.18),
+                    to: p(0.88, 0.84),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // Alexander's right, where he rode with the Companions, is the
@@ -220,17 +427,52 @@ pub static PLANS: &[Plan] = &[
             // The Aufidus along the northern edge, with the flood meadow south
             // of it that the Roman right rested on. The channel is kept to a
             // thread: it is a river a line anchors against, not a sea.
-            stroke(Band { from: p(0.0, 0.12), to: p(1.0, 0.18), reach: 0.022 },
-                   &[Terrain("coast"), Feature(None), Hills(false)]),
-            stroke(Band { from: p(0.0, 0.19), to: p(1.0, 0.25), reach: 0.03 },
-                   &[Terrain("grassland"), Feature(Some("floodplains"))]),
+            stroke(
+                Band {
+                    from: p(0.0, 0.12),
+                    to: p(1.0, 0.18),
+                    reach: 0.022,
+                },
+                &[Terrain("coast"), Feature(None), Hills(false)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.19),
+                    to: p(1.0, 0.25),
+                    reach: 0.03,
+                },
+                &[Terrain("grassland"), Feature(Some("floodplains"))],
+            ),
             // The citadel bluff of Cannae, Hannibal's camp and supply.
-            stroke(Blob { at: p(0.88, 0.34), radius: 0.09 }, RIDGE),
-            stroke(Blob { at: p(0.90, 0.32), radius: 0.04 },
-                   &[Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.88, 0.34),
+                    radius: 0.09,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.90, 0.32),
+                    radius: 0.04,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
             // The dusty plain the Volturnus wind blew across.
-            stroke(Area { from: p(0.06, 0.34), to: p(0.94, 0.94) }, OPEN),
-            stroke(Blob { at: p(0.30, 0.95), radius: 0.07 }, &[Hills(true)]),
+            stroke(
+                Area {
+                    from: p(0.06, 0.34),
+                    to: p(0.94, 0.94),
+                },
+                OPEN,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.30, 0.95),
+                    radius: 0.07,
+                },
+                &[Hills(true)],
+            ),
         ],
         fronts: [
             // Hannibal's line, its centre bowed forward toward the Romans and
@@ -257,19 +499,40 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, SEA),
             // Open sea to the west, where Agrippa's line waited.
-            stroke(Area { from: p(0.0, 0.0), to: p(0.22, 1.0) }, DEEP),
+            stroke(
+                Area {
+                    from: p(0.0, 0.0),
+                    to: p(0.22, 1.0),
+                },
+                DEEP,
+            ),
             // The two headlands that make the mouth: Preveza reaching down
             // from the north, the promontory of Actium up from the south. What
             // is between them is the whole battle — a gap a fraction of the
             // open sea's width, which is why numbers and heavier ships could
             // not be brought to bear until a fleet was through it.
-            stroke(Blob { at: p(0.50, 0.06), radius: 0.24 },
-                   &[Terrain("grassland"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.50, 0.94), radius: 0.24 },
-                   &[Terrain("grassland"), Hills(true), Feature(None)]),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.06),
+                    radius: 0.24,
+                },
+                &[Terrain("grassland"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.94),
+                    radius: 0.24,
+                },
+                &[Terrain("grassland"), Hills(true), Feature(None)],
+            ),
             // Antony's camp and the temple of Apollo on the Actian shore.
-            stroke(Blob { at: p(0.52, 0.90), radius: 0.05 },
-                   &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.52, 0.90),
+                    radius: 0.05,
+                },
+                &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))],
+            ),
         ],
         fronts: [
             // Agrippa's line, standing off to the west in the open sea and
@@ -298,19 +561,69 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             // The ridge, and the steeper ground on the two spurs that made the
             // English flanks unturnable.
-            stroke(Band { from: p(0.0, 0.34), to: p(1.0, 0.34), reach: 0.075 }, RIDGE),
-            stroke(Blob { at: p(0.05, 0.34), radius: 0.10 }, &[Terrain("mountain")]),
-            stroke(Blob { at: p(0.95, 0.34), radius: 0.10 }, &[Terrain("mountain")]),
+            stroke(
+                Band {
+                    from: p(0.0, 0.34),
+                    to: p(1.0, 0.34),
+                    reach: 0.075,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.05, 0.34),
+                    radius: 0.10,
+                },
+                &[Terrain("mountain")],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.95, 0.34),
+                    radius: 0.10,
+                },
+                &[Terrain("mountain")],
+            ),
             // The Andredsweald behind the English line.
-            stroke(Beyond { from: p(0.0, 0.16), to: p(1.0, 0.16) }, WOOD),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.16),
+                    to: p(1.0, 0.16),
+                },
+                WOOD,
+            ),
             // The marshy bottom the Normans had to cross to reach the slope,
             // and the Malfosse gully on the English left.
-            stroke(Band { from: p(0.10, 0.60), to: p(0.90, 0.62), reach: 0.05 }, MUD),
-            stroke(Blob { at: p(0.72, 0.52), radius: 0.06 }, MUD),
+            stroke(
+                Band {
+                    from: p(0.10, 0.60),
+                    to: p(0.90, 0.62),
+                    reach: 0.05,
+                },
+                MUD,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.72, 0.52),
+                    radius: 0.06,
+                },
+                MUD,
+            ),
             // The open slope between them: the killing ground the shieldwall
             // looked down on.
-            stroke(Area { from: p(0.12, 0.40), to: p(0.88, 0.56) }, OPEN),
-            stroke(Area { from: p(0.10, 0.70), to: p(0.90, 1.0) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.12, 0.40),
+                    to: p(0.88, 0.56),
+                },
+                OPEN,
+            ),
+            stroke(
+                Area {
+                    from: p(0.10, 0.70),
+                    to: p(0.90, 1.0),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // The shieldwall along the crest. (Seat 0 is the English.)
@@ -333,23 +646,81 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("plains"), Feature(None), Hills(false)]),
             // The dry plateau the Crusaders were caught on.
-            stroke(Area { from: p(0.10, 0.10), to: p(0.72, 0.90) }, SAND),
+            stroke(
+                Area {
+                    from: p(0.10, 0.10),
+                    to: p(0.72, 0.90),
+                },
+                SAND,
+            ),
             // The Horns of Hattin: two hills side by side, the ground the
             // last of the army was driven onto.
-            stroke(Blob { at: p(0.60, 0.40), radius: 0.075 }, RIDGE),
-            stroke(Blob { at: p(0.60, 0.60), radius: 0.075 }, RIDGE),
-            stroke(Blob { at: p(0.60, 0.40), radius: 0.03 }, &[Terrain("mountain")]),
-            stroke(Blob { at: p(0.60, 0.60), radius: 0.03 }, &[Terrain("mountain")]),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.40),
+                    radius: 0.075,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.60),
+                    radius: 0.075,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.40),
+                    radius: 0.03,
+                },
+                &[Terrain("mountain")],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.60, 0.60),
+                    radius: 0.03,
+                },
+                &[Terrain("mountain")],
+            ),
             // The Sea of Galilee beyond the eastern edge, and the springs of
             // Hattin below the Horns — the water the army never reached.
-            stroke(Beyond { from: p(0.94, 0.0), to: p(0.98, 1.0) }, SEA),
-            stroke(Blob { at: p(0.82, 0.50), radius: 0.05 },
-                   &[Terrain("desert"), Feature(Some("oasis")), Hills(false)]),
+            stroke(
+                Beyond {
+                    from: p(0.94, 0.0),
+                    to: p(0.98, 1.0),
+                },
+                SEA,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.82, 0.50),
+                    radius: 0.05,
+                },
+                &[Terrain("desert"), Feature(Some("oasis")), Hills(false)],
+            ),
             // The springs of Turan behind them, which they had left at dawn.
-            stroke(Blob { at: p(0.06, 0.50), radius: 0.045 },
-                   &[Terrain("desert"), Feature(Some("oasis")), Hills(false)]),
-            stroke(Blob { at: p(0.30, 0.20), radius: 0.06 }, RIDGE),
-            stroke(Blob { at: p(0.34, 0.82), radius: 0.06 }, RIDGE),
+            stroke(
+                Blob {
+                    at: p(0.06, 0.50),
+                    radius: 0.045,
+                },
+                &[Terrain("desert"), Feature(Some("oasis")), Hills(false)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.30, 0.20),
+                    radius: 0.06,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.34, 0.82),
+                    radius: 0.06,
+                },
+                RIDGE,
+            ),
         ],
         fronts: [
             // Saladin's army, standing between the Crusaders and the lake.
@@ -374,18 +745,57 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // The two woods, converging toward the southern (English) end.
-            stroke(Band { from: p(0.06, 0.0), to: p(0.28, 1.0), reach: 0.11 }, WOOD),
-            stroke(Band { from: p(0.94, 0.0), to: p(0.72, 1.0), reach: 0.11 }, WOOD),
+            stroke(
+                Band {
+                    from: p(0.06, 0.0),
+                    to: p(0.28, 1.0),
+                    reach: 0.11,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.94, 0.0),
+                    to: p(0.72, 1.0),
+                    reach: 0.11,
+                },
+                WOOD,
+            ),
             // The ploughed field between them, sodden after the rain: the
             // heart of the corridor is mud, and the mud is the killing.
-            stroke(Area { from: p(0.30, 0.28), to: p(0.70, 0.78) }, MUD),
-            stroke(Band { from: p(0.50, 0.30), to: p(0.50, 0.76), reach: 0.10 }, MUD),
+            stroke(
+                Area {
+                    from: p(0.30, 0.28),
+                    to: p(0.70, 0.78),
+                },
+                MUD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.50, 0.30),
+                    to: p(0.50, 0.76),
+                    reach: 0.10,
+                },
+                MUD,
+            ),
             // Firm ground at either mouth, where the two armies formed up.
             // Kept inside the treelines: a wider patch here would cut away the
             // very convergence that squeezed the French, which is the point of
             // the ground.
-            stroke(Area { from: p(0.42, 0.82), to: p(0.60, 1.0) }, TILLED),
-            stroke(Area { from: p(0.22, 0.0), to: p(0.78, 0.18) }, TILLED),
+            stroke(
+                Area {
+                    from: p(0.42, 0.82),
+                    to: p(0.60, 1.0),
+                },
+                TILLED,
+            ),
+            stroke(
+                Area {
+                    from: p(0.22, 0.0),
+                    to: p(0.78, 0.18),
+                },
+                TILLED,
+            ),
         ],
         fronts: [
             // Henry's line: men-at-arms in the centre with the archers and
@@ -414,22 +824,75 @@ pub static PLANS: &[Plan] = &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // The Golden Horn to the north and the Marmara to the south: the
             // walls run between two seas, so there are no flanks at all.
-            stroke(Beyond { from: p(0.0, 0.14), to: p(1.0, 0.10) }, SEA),
-            stroke(Beyond { from: p(1.0, 0.88), to: p(0.0, 0.92) }, SEA),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.14),
+                    to: p(1.0, 0.10),
+                },
+                SEA,
+            ),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.88),
+                    to: p(0.0, 0.92),
+                },
+                SEA,
+            ),
             // The ridges the walls were built along, and the Lycus valley
             // cutting through them at the middle.
-            stroke(Band { from: p(0.46, 0.12), to: p(0.46, 0.88), reach: 0.05 }, RIDGE),
-            stroke(Band { from: p(0.0, 0.50), to: p(1.0, 0.50), reach: 0.055 },
-                   &[Hills(false), Feature(None)]),
+            stroke(
+                Band {
+                    from: p(0.46, 0.12),
+                    to: p(0.46, 0.88),
+                    reach: 0.05,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.50),
+                    to: p(1.0, 0.50),
+                    reach: 0.055,
+                },
+                &[Hills(false), Feature(None)],
+            ),
             // The walls themselves, and the moat before them.
-            stroke(Band { from: p(0.48, 0.13), to: p(0.48, 0.87), reach: 0.022 },
-                   &[Terrain("grassland"), Hills(true), Feature(None), Improvement(Some("fort"))]),
-            stroke(Band { from: p(0.42, 0.13), to: p(0.42, 0.87), reach: 0.02 }, MUD),
+            stroke(
+                Band {
+                    from: p(0.48, 0.13),
+                    to: p(0.48, 0.87),
+                    reach: 0.022,
+                },
+                &[
+                    Terrain("grassland"),
+                    Hills(true),
+                    Feature(None),
+                    Improvement(Some("fort")),
+                ],
+            ),
+            stroke(
+                Band {
+                    from: p(0.42, 0.13),
+                    to: p(0.42, 0.87),
+                    reach: 0.02,
+                },
+                MUD,
+            ),
             // The city behind the walls.
-            stroke(Area { from: p(0.56, 0.16), to: p(1.0, 0.84) },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
-            stroke(Blob { at: p(0.84, 0.50), radius: 0.09 },
-                   &[Terrain("plains"), Improvement(Some("fort")), Hills(false)]),
+            stroke(
+                Area {
+                    from: p(0.56, 0.16),
+                    to: p(1.0, 0.84),
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.84, 0.50),
+                    radius: 0.09,
+                },
+                &[Terrain("plains"), Improvement(Some("fort")), Hills(false)],
+            ),
         ],
         fronts: [
             // The Ottoman assault columns and the bombard battery, massed
@@ -453,14 +916,44 @@ pub static PLANS: &[Plan] = &[
         base_hills: false,
         strokes: &[
             stroke(All, SEA),
-            stroke(Beyond { from: p(0.0, 0.12), to: p(1.0, 0.10) }, &[Terrain("grassland"), Hills(true)]),
-            stroke(Beyond { from: p(1.0, 0.88), to: p(0.0, 0.90) }, &[Terrain("grassland"), Hills(true)]),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.12),
+                    to: p(1.0, 0.10),
+                },
+                &[Terrain("grassland"), Hills(true)],
+            ),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.88),
+                    to: p(0.0, 0.90),
+                },
+                &[Terrain("grassland"), Hills(true)],
+            ),
             // The shoal water off the northern shore, clear of the beach so
             // the wings still have a coast to anchor on.
-            stroke(Blob { at: p(0.30, 0.24), radius: 0.075 }, &[Terrain("coast"), Feature(Some("reef"))]),
-            stroke(Blob { at: p(0.15, 0.28), radius: 0.055 }, &[Terrain("coast"), Feature(Some("reef"))]),
+            stroke(
+                Blob {
+                    at: p(0.30, 0.24),
+                    radius: 0.075,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.15, 0.28),
+                    radius: 0.055,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
             // Open, deep water down the middle of the gulf.
-            stroke(Area { from: p(0.10, 0.30), to: p(0.90, 0.70) }, &[Terrain("ocean"), Feature(None)]),
+            stroke(
+                Area {
+                    from: p(0.10, 0.30),
+                    to: p(0.90, 0.70),
+                },
+                &[Terrain("ocean"), Feature(None)],
+            ),
         ],
         fronts: [
             // Don John's line, the galleasses pushed out in front of it.
@@ -483,16 +976,53 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, DEEP),
             // The English shore along the north.
-            stroke(Beyond { from: p(0.0, 0.10), to: p(1.0, 0.07) }, &[Terrain("grassland"), Hills(true)]),
-            stroke(Band { from: p(0.0, 0.12), to: p(1.0, 0.09), reach: 0.03 }, SEA),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.10),
+                    to: p(1.0, 0.07),
+                },
+                &[Terrain("grassland"), Hills(true)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.12),
+                    to: p(1.0, 0.09),
+                    reach: 0.03,
+                },
+                SEA,
+            ),
             // The Flemish coast and the banks off it: shoal water a great ship
             // driven to leeward could not come off.
-            stroke(Beyond { from: p(1.0, 0.94), to: p(0.55, 0.99) }, &[Terrain("grassland"), Hills(false)]),
-            stroke(Band { from: p(0.55, 0.90), to: p(1.0, 0.84), reach: 0.06 },
-                   &[Terrain("coast"), Feature(Some("reef"))]),
-            stroke(Blob { at: p(0.78, 0.78), radius: 0.10 }, &[Terrain("coast"), Feature(Some("reef"))]),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.94),
+                    to: p(0.55, 0.99),
+                },
+                &[Terrain("grassland"), Hills(false)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.55, 0.90),
+                    to: p(1.0, 0.84),
+                    reach: 0.06,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.78, 0.78),
+                    radius: 0.10,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
             // The open Channel between them.
-            stroke(Area { from: p(0.05, 0.20), to: p(0.95, 0.66) }, DEEP),
+            stroke(
+                Area {
+                    from: p(0.05, 0.20),
+                    to: p(0.95, 0.66),
+                },
+                DEEP,
+            ),
         ],
         fronts: [
             // The Armada's crescent, crowded toward the banks after the
@@ -521,23 +1051,89 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // The two ridges.
-            stroke(Band { from: p(0.06, 0.30), to: p(0.94, 0.30), reach: 0.055 }, RIDGE),
-            stroke(Band { from: p(0.06, 0.76), to: p(0.94, 0.76), reach: 0.05 }, RIDGE),
+            stroke(
+                Band {
+                    from: p(0.06, 0.30),
+                    to: p(0.94, 0.30),
+                    reach: 0.055,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Band {
+                    from: p(0.06, 0.76),
+                    to: p(0.94, 0.76),
+                    reach: 0.05,
+                },
+                RIDGE,
+            ),
             // The valley of standing rye between them, and the mud it had
             // become after the night's rain.
-            stroke(Area { from: p(0.05, 0.42), to: p(0.95, 0.64) }, OPEN),
-            stroke(Band { from: p(0.20, 0.56), to: p(0.80, 0.58), reach: 0.035 }, MUD),
+            stroke(
+                Area {
+                    from: p(0.05, 0.42),
+                    to: p(0.95, 0.64),
+                },
+                OPEN,
+            ),
+            stroke(
+                Band {
+                    from: p(0.20, 0.56),
+                    to: p(0.80, 0.58),
+                    reach: 0.035,
+                },
+                MUD,
+            ),
             // The three strongpoints, west to east.
-            stroke(Blob { at: p(0.20, 0.50), radius: 0.045 },
-                   &[Terrain("grassland"), Feature(None), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.50, 0.46), radius: 0.04 },
-                   &[Terrain("grassland"), Feature(None), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.80, 0.48), radius: 0.045 },
-                   &[Terrain("grassland"), Feature(None), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.20, 0.50),
+                    radius: 0.045,
+                },
+                &[
+                    Terrain("grassland"),
+                    Feature(None),
+                    Improvement(Some("fort")),
+                ],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.46),
+                    radius: 0.04,
+                },
+                &[
+                    Terrain("grassland"),
+                    Feature(None),
+                    Improvement(Some("fort")),
+                ],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.80, 0.48),
+                    radius: 0.045,
+                },
+                &[
+                    Terrain("grassland"),
+                    Feature(None),
+                    Improvement(Some("fort")),
+                ],
+            ),
             // Hougoumont's wood and orchard, which took a French corps all day.
-            stroke(Blob { at: p(0.16, 0.58), radius: 0.055 }, WOOD),
+            stroke(
+                Blob {
+                    at: p(0.16, 0.58),
+                    radius: 0.055,
+                },
+                WOOD,
+            ),
             // The Bois de Paris on the eastern flank: the Prussian approach.
-            stroke(Beyond { from: p(0.92, 0.30), to: p(0.96, 1.0) }, WOOD),
+            stroke(
+                Beyond {
+                    from: p(0.92, 0.30),
+                    to: p(0.96, 1.0),
+                },
+                WOOD,
+            ),
         ],
         fronts: [
             // The French, drawn up on the southern ridge with the Guard behind.
@@ -562,25 +1158,101 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // Cemetery Ridge, running south, with the hook at its northern end.
-            stroke(Band { from: p(0.66, 0.20), to: p(0.70, 0.82), reach: 0.05 }, RIDGE),
-            stroke(Band { from: p(0.58, 0.14), to: p(0.74, 0.20), reach: 0.05 }, RIDGE),
+            stroke(
+                Band {
+                    from: p(0.66, 0.20),
+                    to: p(0.70, 0.82),
+                    reach: 0.05,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Band {
+                    from: p(0.58, 0.14),
+                    to: p(0.74, 0.20),
+                    reach: 0.05,
+                },
+                RIDGE,
+            ),
             // The Round Tops: the flank anchor, and the ground the line would
             // have been rolled up from had it been lost.
-            stroke(Blob { at: p(0.70, 0.86), radius: 0.055 }, &[Hills(true), Feature(Some("forest"))]),
-            stroke(Blob { at: p(0.72, 0.96), radius: 0.06 }, &[Terrain("mountain"), Feature(None)]),
+            stroke(
+                Blob {
+                    at: p(0.70, 0.86),
+                    radius: 0.055,
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.72, 0.96),
+                    radius: 0.06,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
             // Seminary Ridge opposite, where Lee's line and its guns stood.
-            stroke(Band { from: p(0.28, 0.18), to: p(0.30, 0.84), reach: 0.045 }, RIDGE),
-            stroke(Band { from: p(0.26, 0.20), to: p(0.28, 0.70), reach: 0.03 }, WOOD),
+            stroke(
+                Band {
+                    from: p(0.28, 0.18),
+                    to: p(0.30, 0.84),
+                    reach: 0.045,
+                },
+                RIDGE,
+            ),
+            stroke(
+                Band {
+                    from: p(0.26, 0.20),
+                    to: p(0.28, 0.70),
+                    reach: 0.03,
+                },
+                WOOD,
+            ),
             // The open fields between the ridges — Pickett's ground.
-            stroke(Area { from: p(0.36, 0.26), to: p(0.60, 0.66) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.36, 0.26),
+                    to: p(0.60, 0.66),
+                },
+                OPEN,
+            ),
             // The Peach Orchard, the Wheatfield and Devil's Den, south of it.
-            stroke(Blob { at: p(0.46, 0.74), radius: 0.05 }, WOOD),
-            stroke(Blob { at: p(0.56, 0.80), radius: 0.05 }, OPEN),
-            stroke(Blob { at: p(0.64, 0.88), radius: 0.045 }, &[Hills(true), Feature(Some("forest"))]),
+            stroke(
+                Blob {
+                    at: p(0.46, 0.74),
+                    radius: 0.05,
+                },
+                WOOD,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.56, 0.80),
+                    radius: 0.05,
+                },
+                OPEN,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.64, 0.88),
+                    radius: 0.045,
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
             // Willoughby Run and the town at the northern end.
-            stroke(Band { from: p(0.20, 0.10), to: p(0.24, 0.60), reach: 0.02 }, &[River]),
-            stroke(Blob { at: p(0.50, 0.10), radius: 0.07 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Band {
+                    from: p(0.20, 0.10),
+                    to: p(0.24, 0.60),
+                    reach: 0.02,
+                },
+                &[River],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.10),
+                    radius: 0.07,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
         ],
         fronts: [
             // The Army of the Potomac along the ridge, from the hook southward
@@ -607,29 +1279,84 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("plains"), Feature(None), Hills(false)]),
             // The Volga, and the sandbanks in it that the crossings used.
-            stroke(Beyond { from: p(0.90, 0.0), to: p(0.94, 1.0) }, SEA),
-            stroke(Blob { at: p(0.90, 0.44), radius: 0.05 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Beyond {
+                    from: p(0.90, 0.0),
+                    to: p(0.94, 1.0),
+                },
+                SEA,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.90, 0.44),
+                    radius: 0.05,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // Mamayev Kurgan in the centre: the height the whole battle turned
             // on, because whoever held it could see the crossings.
-            stroke(Blob { at: p(0.62, 0.50), radius: 0.085 }, RIDGE),
+            stroke(
+                Blob {
+                    at: p(0.62, 0.50),
+                    radius: 0.085,
+                },
+                RIDGE,
+            ),
             // The factory district: ruined works, walls and rubble that turned
             // the fight into a room-by-room one.
-            stroke(Area { from: p(0.52, 0.06), to: p(0.88, 0.34) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.62, 0.12), radius: 0.06 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.72, 0.20), radius: 0.06 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.80, 0.28), radius: 0.055 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Area {
+                    from: p(0.52, 0.06),
+                    to: p(0.88, 0.34),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.62, 0.12),
+                    radius: 0.06,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.72, 0.20),
+                    radius: 0.06,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.80, 0.28),
+                    radius: 0.055,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
             // The rest of the city, west and south of the works.
-            stroke(Area { from: p(0.56, 0.60), to: p(0.88, 0.94) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
+            stroke(
+                Area {
+                    from: p(0.56, 0.60),
+                    to: p(0.88, 0.94),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
             // The Tsaritsa gully cutting in from the west.
-            stroke(Band { from: p(0.20, 0.66), to: p(0.86, 0.70), reach: 0.025 }, &[River]),
+            stroke(
+                Band {
+                    from: p(0.20, 0.66),
+                    to: p(0.86, 0.70),
+                    reach: 0.025,
+                },
+                &[River],
+            ),
             // Open steppe west of the city, where the German approach lay.
-            stroke(Area { from: p(0.0, 0.10), to: p(0.44, 0.90) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.0, 0.10),
+                    to: p(0.44, 0.90),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // The 62nd Army, backed against the river bank. (Seat 0 is the
@@ -653,34 +1380,149 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // The Channel, the obstacle belt, and the beach itself.
-            stroke(Beyond { from: p(0.0, 0.22), to: p(1.0, 0.22) }, SEA),
-            stroke(Band { from: p(0.0, 0.235), to: p(1.0, 0.235), reach: 0.022 },
-                   &[Terrain("coast"), Feature(Some("reef"))]),
-            stroke(Band { from: p(0.0, 0.30), to: p(1.0, 0.30), reach: 0.045 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.22),
+                    to: p(1.0, 0.22),
+                },
+                SEA,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.235),
+                    to: p(1.0, 0.235),
+                    reach: 0.022,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.30),
+                    to: p(1.0, 0.30),
+                    reach: 0.045,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // The bluffs above the beach, with cliff edges facing the sea.
-            stroke(Band { from: p(0.0, 0.40), to: p(1.0, 0.40), reach: 0.05 },
-                   &[Terrain("grassland"), Hills(true), Feature(None), Cliff]),
+            stroke(
+                Band {
+                    from: p(0.0, 0.40),
+                    to: p(1.0, 0.40),
+                    reach: 0.05,
+                },
+                &[Terrain("grassland"), Hills(true), Feature(None), Cliff],
+            ),
             // The draws: the few cuts through the bluff a vehicle can use.
-            stroke(Band { from: p(0.22, 0.34), to: p(0.22, 0.48), reach: 0.022 }, OPEN),
-            stroke(Band { from: p(0.52, 0.34), to: p(0.52, 0.48), reach: 0.022 }, OPEN),
-            stroke(Band { from: p(0.80, 0.34), to: p(0.80, 0.48), reach: 0.022 }, OPEN),
+            stroke(
+                Band {
+                    from: p(0.22, 0.34),
+                    to: p(0.22, 0.48),
+                    reach: 0.022,
+                },
+                OPEN,
+            ),
+            stroke(
+                Band {
+                    from: p(0.52, 0.34),
+                    to: p(0.52, 0.48),
+                    reach: 0.022,
+                },
+                OPEN,
+            ),
+            stroke(
+                Band {
+                    from: p(0.80, 0.34),
+                    to: p(0.80, 0.48),
+                    reach: 0.022,
+                },
+                OPEN,
+            ),
             // Strongpoints sited to cover them.
-            stroke(Blob { at: p(0.30, 0.40), radius: 0.035 },
-                   &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.62, 0.40), radius: 0.035 },
-                   &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.30, 0.40),
+                    radius: 0.035,
+                },
+                &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.62, 0.40),
+                    radius: 0.035,
+                },
+                &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))],
+            ),
             // The bocage inland: a lattice of hedged fields.
-            stroke(Area { from: p(0.0, 0.54), to: p(1.0, 1.0) }, OPEN),
-            stroke(Band { from: p(0.0, 0.62), to: p(1.0, 0.62), reach: 0.022 }, WOOD),
-            stroke(Band { from: p(0.0, 0.78), to: p(1.0, 0.78), reach: 0.022 }, WOOD),
-            stroke(Band { from: p(0.0, 0.94), to: p(1.0, 0.94), reach: 0.022 }, WOOD),
-            stroke(Band { from: p(0.16, 0.54), to: p(0.16, 1.0), reach: 0.018 }, WOOD),
-            stroke(Band { from: p(0.44, 0.54), to: p(0.44, 1.0), reach: 0.018 }, WOOD),
-            stroke(Band { from: p(0.72, 0.54), to: p(0.72, 1.0), reach: 0.018 }, WOOD),
+            stroke(
+                Area {
+                    from: p(0.0, 0.54),
+                    to: p(1.0, 1.0),
+                },
+                OPEN,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.62),
+                    to: p(1.0, 0.62),
+                    reach: 0.022,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.78),
+                    to: p(1.0, 0.78),
+                    reach: 0.022,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.94),
+                    to: p(1.0, 0.94),
+                    reach: 0.022,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.16, 0.54),
+                    to: p(0.16, 1.0),
+                    reach: 0.018,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.44, 0.54),
+                    to: p(0.44, 1.0),
+                    reach: 0.018,
+                },
+                WOOD,
+            ),
+            stroke(
+                Band {
+                    from: p(0.72, 0.54),
+                    to: p(0.72, 1.0),
+                    reach: 0.018,
+                },
+                WOOD,
+            ),
             // The flooded meadows the Germans made behind the beaches.
-            stroke(Blob { at: p(0.08, 0.70), radius: 0.07 }, MUD),
-            stroke(Blob { at: p(0.90, 0.86), radius: 0.07 }, MUD),
+            stroke(
+                Blob {
+                    at: p(0.08, 0.70),
+                    radius: 0.07,
+                },
+                MUD,
+            ),
+            stroke(
+                Blob {
+                    at: p(0.90, 0.86),
+                    radius: 0.07,
+                },
+                MUD,
+            ),
         ],
         fronts: [
             // The assault waves, still in the water and on the sand.
@@ -707,13 +1549,39 @@ pub static PLANS: &[Plan] = &[
             stroke(All, DEEP),
             // Midway atoll: the lagoon, the reef around it, and the two islets
             // carrying the airstrip.
-            stroke(Blob { at: p(0.50, 0.82), radius: 0.115 },
-                   &[Terrain("coast"), Feature(Some("reef"))]),
-            stroke(Blob { at: p(0.50, 0.82), radius: 0.07 }, &[Terrain("coast"), Feature(None)]),
-            stroke(Blob { at: p(0.47, 0.83), radius: 0.032 },
-                   &[Terrain("plains"), Feature(None), Hills(false), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.55, 0.80), radius: 0.022 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.82),
+                    radius: 0.115,
+                },
+                &[Terrain("coast"), Feature(Some("reef"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.82),
+                    radius: 0.07,
+                },
+                &[Terrain("coast"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.47, 0.83),
+                    radius: 0.032,
+                },
+                &[
+                    Terrain("plains"),
+                    Feature(None),
+                    Hills(false),
+                    Improvement(Some("fort")),
+                ],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.55, 0.80),
+                    radius: 0.022,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
         ],
         fronts: [
             // Fletcher and Spruance, north-east of the atoll and upwind of the
@@ -740,25 +1608,82 @@ pub static PLANS: &[Plan] = &[
             stroke(All, SEA),
             // Open water to the west, and the tidal mud that surrounds the
             // approach: the reason the landing could only be made on two tides.
-            stroke(Area { from: p(0.0, 0.0), to: p(0.20, 1.0) }, DEEP),
-            stroke(Area { from: p(0.22, 0.0), to: p(0.62, 0.26) }, MUD),
-            stroke(Area { from: p(0.22, 0.74), to: p(0.62, 1.0) }, MUD),
+            stroke(
+                Area {
+                    from: p(0.0, 0.0),
+                    to: p(0.20, 1.0),
+                },
+                DEEP,
+            ),
+            stroke(
+                Area {
+                    from: p(0.22, 0.0),
+                    to: p(0.62, 0.26),
+                },
+                MUD,
+            ),
+            stroke(
+                Area {
+                    from: p(0.22, 0.74),
+                    to: p(0.62, 1.0),
+                },
+                MUD,
+            ),
             // The buoyed channel through it, dead straight, the only way in.
-            stroke(Band { from: p(0.18, 0.50), to: p(0.60, 0.50), reach: 0.06 }, SEA),
+            stroke(
+                Band {
+                    from: p(0.18, 0.50),
+                    to: p(0.60, 0.50),
+                    reach: 0.06,
+                },
+                SEA,
+            ),
             // Wolmi-do, and its causeway to the city.
-            stroke(Blob { at: p(0.56, 0.50), radius: 0.075 },
-                   &[Terrain("grassland"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.56, 0.50), radius: 0.035 },
-                   &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Band { from: p(0.62, 0.50), to: p(0.74, 0.50), reach: 0.022 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Blob {
+                    at: p(0.56, 0.50),
+                    radius: 0.075,
+                },
+                &[Terrain("grassland"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.56, 0.50),
+                    radius: 0.035,
+                },
+                &[Terrain("grassland"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Band {
+                    from: p(0.62, 0.50),
+                    to: p(0.74, 0.50),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // The seawall, and the city behind it.
-            stroke(Band { from: p(0.74, 0.10), to: p(0.74, 0.90), reach: 0.022 },
-                   &[Terrain("plains"), Hills(true), Feature(None), Cliff]),
-            stroke(Area { from: p(0.78, 0.06), to: p(1.0, 0.94) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.90, 0.50), radius: 0.08 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Band {
+                    from: p(0.74, 0.10),
+                    to: p(0.74, 0.90),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(true), Feature(None), Cliff],
+            ),
+            stroke(
+                Area {
+                    from: p(0.78, 0.06),
+                    to: p(1.0, 0.94),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.90, 0.50),
+                    radius: 0.08,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
         ],
         fronts: [
             // The landing force at the head of the channel, against Wolmi-do's
@@ -786,32 +1711,119 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("grassland"), Feature(None), Hills(false)]),
             // The hills, closing the valley on every side.
-            stroke(Beyond { from: p(0.0, 0.16), to: p(1.0, 0.16) }, &[Hills(true), Feature(Some("forest"))]),
-            stroke(Beyond { from: p(1.0, 0.84), to: p(0.0, 0.84) }, &[Hills(true), Feature(Some("forest"))]),
-            stroke(Beyond { from: p(0.18, 1.0), to: p(0.18, 0.0) }, &[Hills(true), Feature(Some("forest"))]),
-            stroke(Beyond { from: p(0.82, 0.0), to: p(0.82, 1.0) }, &[Hills(true), Feature(Some("forest"))]),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.16),
+                    to: p(1.0, 0.16),
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
+            stroke(
+                Beyond {
+                    from: p(1.0, 0.84),
+                    to: p(0.0, 0.84),
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
+            stroke(
+                Beyond {
+                    from: p(0.18, 1.0),
+                    to: p(0.18, 0.0),
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
+            stroke(
+                Beyond {
+                    from: p(0.82, 0.0),
+                    to: p(0.82, 1.0),
+                },
+                &[Hills(true), Feature(Some("forest"))],
+            ),
             // The peaks the guns were dug into.
-            stroke(Blob { at: p(0.50, 0.05), radius: 0.07 }, &[Terrain("mountain"), Feature(None)]),
-            stroke(Blob { at: p(0.08, 0.50), radius: 0.07 }, &[Terrain("mountain"), Feature(None)]),
-            stroke(Blob { at: p(0.92, 0.50), radius: 0.07 }, &[Terrain("mountain"), Feature(None)]),
-            stroke(Blob { at: p(0.50, 0.95), radius: 0.07 }, &[Terrain("mountain"), Feature(None)]),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.05),
+                    radius: 0.07,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.08, 0.50),
+                    radius: 0.07,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.92, 0.50),
+                    radius: 0.07,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.50, 0.95),
+                    radius: 0.07,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
             // The valley floor, and the Nam Yum through it.
-            stroke(Area { from: p(0.24, 0.24), to: p(0.76, 0.76) }, OPEN),
-            stroke(Band { from: p(0.56, 0.20), to: p(0.52, 0.80), reach: 0.022 }, &[River]),
+            stroke(
+                Area {
+                    from: p(0.24, 0.24),
+                    to: p(0.76, 0.76),
+                },
+                OPEN,
+            ),
+            stroke(
+                Band {
+                    from: p(0.56, 0.20),
+                    to: p(0.52, 0.80),
+                    reach: 0.022,
+                },
+                &[River],
+            ),
             // The airstrip: the camp's only line of supply, and the thing the
             // hills' guns could see.
-            stroke(Band { from: p(0.44, 0.34), to: p(0.44, 0.64), reach: 0.028 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Band {
+                    from: p(0.44, 0.34),
+                    to: p(0.44, 0.64),
+                    reach: 0.028,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // The outlying strongpoints — Beatrice, Gabrielle, Isabelle and the
             // rest — sited on low rises around the strip.
-            stroke(Blob { at: p(0.36, 0.30), radius: 0.035 },
-                   &[Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.62, 0.32), radius: 0.035 },
-                   &[Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.34, 0.66), radius: 0.035 },
-                   &[Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.64, 0.68), radius: 0.035 },
-                   &[Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.36, 0.30),
+                    radius: 0.035,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.62, 0.32),
+                    radius: 0.035,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.34, 0.66),
+                    radius: 0.035,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.64, 0.68),
+                    radius: 0.035,
+                },
+                &[Hills(true), Improvement(Some("fort"))],
+            ),
         ],
         fronts: [
             // The garrison on the valley floor, around the strip. (Seat 0 is
@@ -835,25 +1847,76 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, SAND),
             // The central massif, with the two passes cut through it.
-            stroke(Band { from: p(0.42, 0.0), to: p(0.38, 1.0), reach: 0.075 },
-                   &[Terrain("mountain"), Feature(None)]),
-            stroke(Band { from: p(0.30, 0.28), to: p(0.52, 0.30), reach: 0.03 },
-                   &[Terrain("desert"), Feature(None), Hills(true)]),
-            stroke(Band { from: p(0.28, 0.70), to: p(0.50, 0.72), reach: 0.03 },
-                   &[Terrain("desert"), Feature(None), Hills(true)]),
+            stroke(
+                Band {
+                    from: p(0.42, 0.0),
+                    to: p(0.38, 1.0),
+                    reach: 0.075,
+                },
+                &[Terrain("mountain"), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.30, 0.28),
+                    to: p(0.52, 0.30),
+                    reach: 0.03,
+                },
+                &[Terrain("desert"), Feature(None), Hills(true)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.28, 0.70),
+                    to: p(0.50, 0.72),
+                    reach: 0.03,
+                },
+                &[Terrain("desert"), Feature(None), Hills(true)],
+            ),
             // The dune sea in the south, and the coastal strip in the north.
-            stroke(Blob { at: p(0.66, 0.88), radius: 0.16 }, &[Terrain("desert"), Hills(true)]),
-            stroke(Beyond { from: p(0.0, 0.07), to: p(1.0, 0.07) }, SEA),
-            stroke(Band { from: p(0.0, 0.12), to: p(1.0, 0.12), reach: 0.035 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Blob {
+                    at: p(0.66, 0.88),
+                    radius: 0.16,
+                },
+                &[Terrain("desert"), Hills(true)],
+            ),
+            stroke(
+                Beyond {
+                    from: p(0.0, 0.07),
+                    to: p(1.0, 0.07),
+                },
+                SEA,
+            ),
+            stroke(
+                Band {
+                    from: p(0.0, 0.12),
+                    to: p(1.0, 0.12),
+                    reach: 0.035,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // Fortified positions covering the eastern approaches.
-            stroke(Blob { at: p(0.70, 0.22), radius: 0.05 },
-                   &[Terrain("desert"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.74, 0.52), radius: 0.05 },
-                   &[Terrain("desert"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.70, 0.22),
+                    radius: 0.05,
+                },
+                &[Terrain("desert"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.74, 0.52),
+                    radius: 0.05,
+                },
+                &[Terrain("desert"), Hills(true), Improvement(Some("fort"))],
+            ),
             // Wells and the odd oasis: the only water on the board.
-            stroke(Blob { at: p(0.20, 0.46), radius: 0.04 },
-                   &[Terrain("desert"), Feature(Some("oasis")), Hills(false)]),
+            stroke(
+                Blob {
+                    at: p(0.20, 0.46),
+                    radius: 0.04,
+                },
+                &[Terrain("desert"), Feature(Some("oasis")), Hills(false)],
+            ),
         ],
         fronts: [
             // The Israeli armoured columns, entering from the north-east.
@@ -880,24 +1943,71 @@ pub static PLANS: &[Plan] = &[
             stroke(All, SAND),
             // The Persian Gulf on the eastern edge, and the sabkha flats along
             // it that armour avoids.
-            stroke(Beyond { from: p(0.95, 0.0), to: p(0.98, 1.0) }, SEA),
-            stroke(Band { from: p(0.90, 0.0), to: p(0.93, 1.0), reach: 0.035 }, MUD),
+            stroke(
+                Beyond {
+                    from: p(0.95, 0.0),
+                    to: p(0.98, 1.0),
+                },
+                SEA,
+            ),
+            stroke(
+                Band {
+                    from: p(0.90, 0.0),
+                    to: p(0.93, 1.0),
+                    reach: 0.035,
+                },
+                MUD,
+            ),
             // The border berm and its trench line, facing south.
-            stroke(Band { from: p(0.42, 0.56), to: p(0.92, 0.56), reach: 0.028 },
-                   &[Terrain("desert"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.58, 0.56), radius: 0.045 },
-                   &[Terrain("desert"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.76, 0.56), radius: 0.045 },
-                   &[Terrain("desert"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Band {
+                    from: p(0.42, 0.56),
+                    to: p(0.92, 0.56),
+                    reach: 0.028,
+                },
+                &[Terrain("desert"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.58, 0.56),
+                    radius: 0.045,
+                },
+                &[Terrain("desert"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.76, 0.56),
+                    radius: 0.045,
+                },
+                &[Terrain("desert"), Hills(true), Improvement(Some("fort"))],
+            ),
             // The Wadi al-Batin, the one piece of ground on the map, running
             // down toward the border.
-            stroke(Band { from: p(0.34, 0.10), to: p(0.40, 0.56), reach: 0.025 }, &[River]),
+            stroke(
+                Band {
+                    from: p(0.34, 0.10),
+                    to: p(0.40, 0.56),
+                    reach: 0.025,
+                },
+                &[River],
+            ),
             // The burning oil field in the east.
-            stroke(Blob { at: p(0.80, 0.28), radius: 0.09 },
-                   &[Terrain("desert"), Hills(true), Feature(None)]),
+            stroke(
+                Blob {
+                    at: p(0.80, 0.28),
+                    radius: 0.09,
+                },
+                &[Terrain("desert"), Hills(true), Feature(None)],
+            ),
             // The empty west: the flank the hook went round, kept deliberately
             // featureless because that emptiness is the operational fact.
-            stroke(Area { from: p(0.02, 0.10), to: p(0.30, 0.94) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.02, 0.10),
+                    to: p(0.30, 0.94),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // VII Corps, coming up out of the empty desert in the west.
@@ -922,28 +2032,85 @@ pub static PLANS: &[Plan] = &[
             stroke(All, SAND),
             // The Euphrates along the west, with its green belt of irrigated
             // ground and palm groves.
-            stroke(Beyond { from: p(0.10, 1.0), to: p(0.07, 0.0) }, SEA),
-            stroke(Band { from: p(0.14, 0.0), to: p(0.12, 1.0), reach: 0.05 },
-                   &[Terrain("grassland"), Feature(Some("forest")), Hills(false)]),
+            stroke(
+                Beyond {
+                    from: p(0.10, 1.0),
+                    to: p(0.07, 0.0),
+                },
+                SEA,
+            ),
+            stroke(
+                Band {
+                    from: p(0.14, 0.0),
+                    to: p(0.12, 1.0),
+                    reach: 0.05,
+                },
+                &[Terrain("grassland"), Feature(Some("forest")), Hills(false)],
+            ),
             // The built-up city: dense blocks, walls and roofs.
-            stroke(Area { from: p(0.24, 0.10), to: p(0.92, 0.94) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
+            stroke(
+                Area {
+                    from: p(0.24, 0.10),
+                    to: p(0.92, 0.94),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
             // The wide routes through it, north–south and east–west.
-            stroke(Band { from: p(0.40, 0.06), to: p(0.40, 0.96), reach: 0.022 },
-                   &[Terrain("plains"), Hills(false), Feature(None)]),
-            stroke(Band { from: p(0.66, 0.06), to: p(0.66, 0.96), reach: 0.022 },
-                   &[Terrain("plains"), Hills(false), Feature(None)]),
-            stroke(Band { from: p(0.22, 0.52), to: p(0.94, 0.52), reach: 0.022 },
-                   &[Terrain("plains"), Hills(false), Feature(None)]),
+            stroke(
+                Band {
+                    from: p(0.40, 0.06),
+                    to: p(0.40, 0.96),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(false), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.66, 0.06),
+                    to: p(0.66, 0.96),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(false), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.22, 0.52),
+                    to: p(0.94, 0.52),
+                    reach: 0.022,
+                },
+                &[Terrain("plains"), Hills(false), Feature(None)],
+            ),
             // Strongpoints in the old quarter, where the defence was deepest.
-            stroke(Blob { at: p(0.52, 0.68), radius: 0.06 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.78, 0.74), radius: 0.05 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Blob {
+                    at: p(0.52, 0.68),
+                    radius: 0.06,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.78, 0.74),
+                    radius: 0.05,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
             // The open desert outside the city on the north and east, where the
             // cordon sat.
-            stroke(Area { from: p(0.20, 0.0), to: p(1.0, 0.07) }, OPEN),
-            stroke(Area { from: p(0.94, 0.06), to: p(1.0, 1.0) }, OPEN),
+            stroke(
+                Area {
+                    from: p(0.20, 0.0),
+                    to: p(1.0, 0.07),
+                },
+                OPEN,
+            ),
+            stroke(
+                Area {
+                    from: p(0.94, 0.06),
+                    to: p(1.0, 1.0),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // The assault, forming up on the northern edge. (Seat 0 is the
@@ -967,29 +2134,83 @@ pub static PLANS: &[Plan] = &[
         strokes: &[
             stroke(All, &[Terrain("plains"), Feature(None), Hills(false)]),
             // The Tigris.
-            stroke(Band { from: p(0.48, 0.0), to: p(0.52, 1.0), reach: 0.035 }, SEA),
+            stroke(
+                Band {
+                    from: p(0.48, 0.0),
+                    to: p(0.52, 1.0),
+                    reach: 0.035,
+                },
+                SEA,
+            ),
             // The crossings: two damaged bridges, the only ways over.
-            stroke(Blob { at: p(0.49, 0.30), radius: 0.035 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
-            stroke(Blob { at: p(0.51, 0.70), radius: 0.035 },
-                   &[Terrain("plains"), Feature(None), Hills(false)]),
+            stroke(
+                Blob {
+                    at: p(0.49, 0.30),
+                    radius: 0.035,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.51, 0.70),
+                    radius: 0.035,
+                },
+                &[Terrain("plains"), Feature(None), Hills(false)],
+            ),
             // East Mosul: modern blocks, wide streets.
-            stroke(Area { from: p(0.58, 0.10), to: p(0.94, 0.90) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Band { from: p(0.56, 0.46), to: p(0.96, 0.46), reach: 0.025 },
-                   &[Terrain("plains"), Hills(false), Feature(None)]),
+            stroke(
+                Area {
+                    from: p(0.58, 0.10),
+                    to: p(0.94, 0.90),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Band {
+                    from: p(0.56, 0.46),
+                    to: p(0.96, 0.46),
+                    reach: 0.025,
+                },
+                &[Terrain("plains"), Hills(false), Feature(None)],
+            ),
             // The Old City on the west bank: the densest ground on any chart
             // in this catalogue, and the last to fall.
-            stroke(Area { from: p(0.18, 0.30), to: p(0.46, 0.78) },
-                   &[Terrain("plains"), Hills(true), Feature(None)]),
-            stroke(Blob { at: p(0.32, 0.54), radius: 0.09 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
-            stroke(Blob { at: p(0.24, 0.40), radius: 0.05 },
-                   &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
+            stroke(
+                Area {
+                    from: p(0.18, 0.30),
+                    to: p(0.46, 0.78),
+                },
+                &[Terrain("plains"), Hills(true), Feature(None)],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.32, 0.54),
+                    radius: 0.09,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
+            stroke(
+                Blob {
+                    at: p(0.24, 0.40),
+                    radius: 0.05,
+                },
+                &[Terrain("plains"), Hills(true), Improvement(Some("fort"))],
+            ),
             // Irrigated ground and the airport in the south-west outskirts.
-            stroke(Blob { at: p(0.14, 0.84), radius: 0.09 },
-                   &[Terrain("grassland"), Feature(Some("forest")), Hills(false)]),
-            stroke(Area { from: p(0.04, 0.06), to: p(0.40, 0.24) }, OPEN),
+            stroke(
+                Blob {
+                    at: p(0.14, 0.84),
+                    radius: 0.09,
+                },
+                &[Terrain("grassland"), Feature(Some("forest")), Hills(false)],
+            ),
+            stroke(
+                Area {
+                    from: p(0.04, 0.06),
+                    to: p(0.40, 0.24),
+                },
+                OPEN,
+            ),
         ],
         fronts: [
             // The Iraqi divisions, working in from the east. (Seat 0 is the

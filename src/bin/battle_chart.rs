@@ -11,9 +11,9 @@
 //! `.` grassland, `:` plains, `_` desert, `#` an improvement, `1`/`2` the two
 //! sides' opening positions.
 
+use civvis::hex;
 use civvis::historical_scenarios;
 use civvis::historical_terrain;
-use civvis::hex;
 use civvis::setup::{MapPoles, MapTopology};
 
 fn glyph(tile: &civvis::world::Tile) -> char {
@@ -69,9 +69,15 @@ fn draw(id: &str) {
     );
     let afloat = historical_terrain::sides_afloat(&rules, scenario);
     let starts = historical_terrain::major_starts(&map, plan, afloat).unwrap_or_default();
-    println!("\n{} — {} ({})", scenario.name, scenario.location, scenario.date);
+    println!(
+        "\n{} — {} ({})",
+        scenario.name, scenario.location, scenario.date
+    );
     println!("  {}", scenario.map);
-    println!("  {} vs {}", scenario.forces[0].label, scenario.forces[1].label);
+    println!(
+        "  {} vs {}",
+        scenario.forces[0].label, scenario.forces[1].label
+    );
     for row in 0..map.height {
         let mut line = String::new();
         // Offset rows are staggered on a hex chart; the half-space keeps the
