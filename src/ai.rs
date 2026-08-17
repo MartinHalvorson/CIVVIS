@@ -10623,9 +10623,7 @@ impl BasicAi {
             // when the war-half withhold removed that flag (2026-08-14) the
             // committed walk silently lost its documented depth and ranked
             // the first fogged ring alone. Both flags open the deeper scan.
-            if !(self.tactical_strategy || self.explore_commit)
-                || radius >= first + lookahead
-            {
+            if !(self.tactical_strategy || self.explore_commit) || radius >= first + lookahead {
                 break;
             }
             radius += 1;
