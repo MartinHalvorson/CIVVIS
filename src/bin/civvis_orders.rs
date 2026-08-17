@@ -1860,6 +1860,7 @@ fn withhold_live_treatment(
         "counter-in-lane" => ai.disable_counter_in_lane(),
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
+        "culture-building-debt" => ai.disable_culture_building_debt(),
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
         "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "tally-great-people" => ai.disable_tally_great_people(),
@@ -4211,6 +4212,13 @@ mod tests {
         withhold_live_treatment(&mut ai, "tally-culture")
             .expect("the tally-culture control arm is registered");
         assert!(!ai.tally_culture, "the named tally-culture control must hold it off");
+        assert!(ai.culture_building_debt);
+        withhold_live_treatment(&mut ai, "culture-building-debt")
+            .expect("the culture-building-debt control arm is registered");
+        assert!(
+            !ai.culture_building_debt,
+            "the named culture-building-debt control must hold it off"
+        );
 
         assert!(ai.frontier_loyalty);
         withhold_live_treatment(&mut ai, "frontier-loyalty")
