@@ -6960,10 +6960,22 @@ mod tests {
         // battlefield never spends its first seconds offering Tactics. Since
         // the viewer split, app.js (loaded first) cannot call syncModeLink at
         // its own load time — the chip settles in app_setup.js's deferred
-        // cross-file init, the last statements of the second script, still
-        // ahead of boot's first /state answer.
+        // cross-file init, the last statements of the second script. `boot()`
+        // has already yielded at its first `/rules` fetch at that point, so
+        // the calls run before the promise continuation can request `/state`.
         assert!(EMBEDDED_INDEX.contains("initAdvancedSettings();\nsyncModeLink();"));
         assert!(EMBEDDED_INDEX.contains("\nboot();"));
+        assert!(EMBEDDED_APP_JS.contains("RULES = await fetchJSON(\"/rules\");"));
+        let deferred_init = EMBEDDED_INDEX
+            .rfind("initAdvancedSettings();\nsyncModeLink();")
+            .expect("the deferred cross-file init is embedded");
+        let boot = EMBEDDED_INDEX
+            .rfind("\nboot();")
+            .expect("the viewer starts boot from app.js");
+        assert!(
+            boot < deferred_init,
+            "the second script follows boot's first await"
+        );
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
         const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
