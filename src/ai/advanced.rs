@@ -28604,12 +28604,12 @@ mod tests {
         // capture pass converts it the same turn.
         armed.snatch_exposed_civilian(&mut game, 0);
         assert!(game.is_at_war(0, 1));
-        assert!(armed.base.capture_adjacent_civilian(&mut game, 0, warrior, false));
+        assert!(armed
+            .base
+            .capture_adjacent_civilian(&mut game, 0, warrior, false));
         assert_eq!(game.units[&warrior].pos, theirs);
         assert!(
-            game.units
-                .get(&settler)
-                .is_none_or(|unit| unit.owner == 0),
+            game.units.get(&settler).is_none_or(|unit| unit.owner == 0),
             "the exposed settler must be captured or removed, not left to player 1"
         );
     }
