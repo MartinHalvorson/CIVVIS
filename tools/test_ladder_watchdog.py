@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""The watchdog restarts a stopped ladder loop, and only for the right reason."""
+"""The keeper starts a stopped ladder loop, stops a wedged one, and does neither
+for the wrong reason."""
 
 from __future__ import annotations
 
 import contextlib
 import io
 import json
+import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -20,8 +22,8 @@ import civ6_ladder  # noqa: E402
 import ladder_watchdog  # noqa: E402
 
 
-class FakeLaunchctl:
-    """Records the launchctl argv the watchdog would run."""
+class FakeRunner:
+    """Records the argv the keeper would run, e.g. `open -a Terminal ...`."""
 
     def __init__(self, returncode: int = 0):
         self.calls: list[list[str]] = []
@@ -36,7 +38,7 @@ class FakeLaunchctl:
         done = Done()
         done.returncode = self.returncode
         done.stdout = ""
-        done.stderr = "" if self.returncode == 0 else "Could not find service"
+        done.stderr = "" if self.returncode == 0 else "could not open"
         return done
 
 
@@ -56,8 +58,8 @@ def ledger_with(tmp: Path, ages_hours: list[float], *,
     return runs
 
 
-class WatchdogTestCase(unittest.TestCase):
-    """Every subprocess this module would run, captured and then restored.
+class KeeperTestCase(unittest.TestCase):
+    """Every subprocess and every stop the keeper would issue, captured.
 
     ⚠ `ladder_watchdog.subprocess` IS the stdlib module, so assigning
     `ladder_watchdog.subprocess.run = fake` does not patch this module — it
@@ -65,104 +67,145 @@ class WatchdogTestCase(unittest.TestCase):
     way first, and the damage showed up nowhere near here: `test_memguard` and
     `test_spectator_supervisor` both failed in the full discovery run and both
     passed in isolation, because by then every `subprocess.run` in the process
-    was returning this file's fake launchctl. Patch through `mock`, which
-    restores.
+    was returning this file's fake. Patch through `mock`, which restores.
     """
 
     def setUp(self):
-        self.launchctl = FakeLaunchctl()
-        patch = mock.patch.object(ladder_watchdog.subprocess, "run",
-                                  self.launchctl)
-        patch.start()
-        self.addCleanup(patch.stop)
+        self.runner = FakeRunner()
+        self.stopped: list[int] = []
+        for patch in (
+            mock.patch.object(ladder_watchdog.subprocess, "run", self.runner),
+            mock.patch.object(ladder_watchdog, "stop_supervisor",
+                              lambda pid, **kw: (self.stopped.append(pid),
+                                                 (True, f"SIGTERM to {pid}"))[1]),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     @property
-    def calls(self):
-        return self.launchctl.calls
+    def starts(self):
+        return [c for c in self.runner.calls if c[:3] == ["open", "-a", "Terminal"]]
+
+    def live_lock(self, tmp: Path) -> Path:
+        """A lock directory naming a process that really is alive: this one."""
+        lock = tmp / "supervisor.lock"
+        lock.mkdir()
+        (lock / "pid").write_text(f"{os.getpid()}\n")
+        return lock
+
+    def dead_lock(self, tmp: Path) -> Path:
+        """A lock left behind by a supervisor that was killed, pid long gone."""
+        lock = tmp / "supervisor.lock"
+        lock.mkdir()
+        (lock / "pid").write_text("999999\n")
+        return lock
 
 
-class WatchdogDecides(WatchdogTestCase):
-    def test_a_loop_that_is_playing_is_left_alone(self):
-        with TemporaryDirectory() as raw:
-            tmp = Path(raw)
-            runs = ledger_with(tmp, [0.5, 4.0])
-            fake = self.launchctl
-            code = ladder_watchdog.main([
-                "--runs", str(runs), "--stale-hours", "3",
-                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
-            self.assertEqual(code, 0)
-            self.assertEqual(fake.calls, [],
-                             "a ladder recording attempts must not be kicked")
+class WhenNoLoopIsRunning(KeeperTestCase):
+    def test_the_loop_is_started_through_terminal(self):
+        """Not `zsh script`. A LaunchAgent's child cannot install the mod.
 
-    def test_a_stopped_loop_is_restarted(self):
-        with TemporaryDirectory() as raw:
-            tmp = Path(raw)
-            runs = ledger_with(tmp, [14.3])
-            fake = self.launchctl
-            code = ladder_watchdog.main([
-                "--runs", str(runs), "--stale-hours", "3",
-                "--label", "com.example.ladder",
-                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
-            self.assertEqual(code, 1)
-            kicks = [c for c in fake.calls if c[0] == "launchctl"]
-            self.assertEqual(len(kicks), 1, f"expected one kick, got {fake.calls}")
-            self.assertIn("com.example.ladder", kicks[0][-1])
-
-    def test_the_kick_is_a_restart_not_a_no_op(self):
-        """`launchctl kickstart` without -k does nothing to a running job.
-
-        The wedged case this exists to clear is a job that IS running. Without
-        `-k` the watchdog would report success every interval and change
-        nothing, which is the failure it was built to end.
+        Measured 2026-08-17: from a bare LaunchAgent the mod install fails with
+        "Operation not permitted", so every attempt plays no turns. `open -a
+        Terminal` hands it to the one app on the host holding the grant.
         """
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
             runs = ledger_with(tmp, [14.3])
-            fake = self.launchctl
-            ladder_watchdog.main([
+            code = ladder_watchdog.main([
                 "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
                 "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
-            self.assertIn("-k", fake.calls[0])
+            self.assertEqual(code, 1)
+            self.assertEqual(len(self.starts), 1, self.runner.calls)
+            self.assertEqual(self.starts[0][-1], "/x/supervisor.sh")
 
-    def test_a_second_kick_waits_for_the_cooldown(self):
+    def test_a_lock_from_a_dead_supervisor_is_not_a_supervisor(self):
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
             runs = ledger_with(tmp, [14.3])
-            state = tmp / "state.json"
-            fake = self.launchctl
-            argv = ["--runs", str(runs), "--stale-hours", "3",
-                    "--cooldown-hours", "2",
-                    "--state", str(state), "--log", str(tmp / "log")]
-            ladder_watchdog.main(argv)
-            ladder_watchdog.main(argv)
-            ladder_watchdog.main(argv)
-            kicks = [c for c in fake.calls if "kickstart" in c]
-            self.assertEqual(len(kicks), 1,
-                             "a wedge this cannot clear must not be kicked "
-                             "every interval until morning")
-
-    def test_the_cooldown_expires(self):
-        with TemporaryDirectory() as raw:
-            tmp = Path(raw)
-            runs = ledger_with(tmp, [14.3])
-            state = tmp / "state.json"
-            long_ago = (datetime.now(timezone.utc)
-                        - timedelta(hours=9)).isoformat(timespec="seconds")
-            state.write_text(json.dumps({"last_kick_utc": long_ago, "kicks": 1}))
-            fake = self.launchctl
             ladder_watchdog.main([
                 "--runs", str(runs), "--stale-hours", "3",
-                "--cooldown-hours", "2",
-                "--state", str(state), "--log", str(tmp / "log")])
-            self.assertTrue([c for c in fake.calls if "kickstart" in c])
+                "--lock", str(self.dead_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(len(self.starts), 1,
+                             "a pid file is a claim, not an answer")
 
-    def test_an_unrecorded_summary_is_not_a_reason_to_restart(self):
-        """`check` exits 1 for three problems; only one is the supervisor's.
+    def test_a_fresh_ledger_with_no_loop_still_starts_one(self):
+        """The last game finished, then the supervisor died.
 
-        A summary on disk that the ledger has not imported wants `sync`, and a
+        Waiting for the ledger to go stale would throw away every hour between
+        now and the staleness limit, for a condition already visible.
+        """
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.2])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 1)
+            self.assertEqual(len(self.starts), 1)
+
+    def test_a_failed_start_is_reported_not_swallowed(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            self.runner.returncode = 1
+            ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertIn("could not start the loop", log.read_text())
+
+
+class WhenTheLoopIsAliveButNotPlaying(KeeperTestCase):
+    def test_a_wedged_supervisor_is_stopped(self):
+        """KeepAlive can never see this: to the process table it is healthy."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 1)
+            self.assertEqual(self.stopped, [os.getpid()])
+            self.assertEqual(self.starts, [],
+                             "the next tick starts the replacement, not this one")
+
+    def test_a_loop_that_is_playing_is_left_entirely_alone(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.5, 4.0])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 0)
+            self.assertEqual(self.stopped, [])
+            self.assertEqual(self.runner.calls, [])
+
+    def test_an_empty_ledger_counts_as_stopped(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 1)
+            self.assertEqual(self.stopped, [os.getpid()])
+
+    def test_an_unrecorded_summary_is_not_a_reason_to_act(self):
+        """`check` exits 1 for three problems; only one is the loop's.
+
+        A summary on disk the ledger has not imported wants `sync`, and a
         trailing snapshot wants `publish`. Restarting the game loop fixes
-        neither, so keying this watchdog on that exit code would kill a healthy
-        game every ten minutes for a paperwork problem.
+        neither, so keying this on that exit code would kill a healthy game
+        every ten minutes for a paperwork problem.
         """
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
@@ -177,92 +220,102 @@ class WatchdogDecides(WatchdogTestCase):
                                          snapshot=tmp / "absent.json")
             self.assertEqual(reported, 1, "check must still see the paperwork")
 
-            fake = self.launchctl
             code = ladder_watchdog.main([
                 "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
                 "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
             self.assertEqual(code, 0)
-            self.assertEqual(fake.calls, [])
+            self.assertEqual(self.stopped, [])
 
-    def test_an_empty_ledger_counts_as_stopped(self):
-        with TemporaryDirectory() as raw:
-            tmp = Path(raw)
-            runs = ledger_with(tmp, [])
-            fake = self.launchctl
-            code = ladder_watchdog.main([
-                "--runs", str(runs), "--stale-hours", "3",
-                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
-            self.assertEqual(code, 1)
-            self.assertTrue([c for c in fake.calls if "kickstart" in c])
 
-    def test_a_failed_restart_is_reported_not_swallowed(self):
+class TheCooldownBoundsTheActing(KeeperTestCase):
+    def test_a_wedge_is_not_restarted_every_interval(self):
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
             runs = ledger_with(tmp, [14.3])
-            log = tmp / "log"
-            fake = self.launchctl
-            fake.returncode = 113
-            code = ladder_watchdog.main([
-                "--runs", str(runs), "--stale-hours", "3",
-                "--state", str(tmp / "state.json"), "--log", str(log)])
-            self.assertEqual(code, 1)
-            self.assertIn("could not restart", log.read_text())
-
-
-class AFailedKickIsNotACooldown(WatchdogTestCase):
-    """The cooldown protects against restarting a wedge, not against retrying.
-
-    Measured on this host at 2026-08-17T20:41:48Z: the watchdog's first kick
-    failed because the supervisor job was not loaded yet, and recording it as a
-    kick parked the retry for two hours — extending the exact outage the
-    watchdog exists to end.
-    """
-
-    def test_a_failed_kick_is_retried_next_interval(self):
-        with TemporaryDirectory() as raw:
-            tmp = Path(raw)
-            runs = ledger_with(tmp, [14.3])
-            self.launchctl.returncode = 113
             argv = ["--runs", str(runs), "--stale-hours", "3",
                     "--cooldown-hours", "2",
-                    "--state", str(tmp / "state.json"),
-                    "--log", str(tmp / "log")]
-            ladder_watchdog.main(argv)
-            ladder_watchdog.main(argv)
-            kicks = [c for c in self.calls if "kickstart" in c]
-            self.assertEqual(len(kicks), 2,
-                             "a kick that never reached launchd changed "
-                             "nothing and must be tried again")
+                    "--lock", str(self.live_lock(tmp)),
+                    "--state", str(tmp / "state.json"), "--log", str(tmp / "log")]
+            for _ in range(3):
+                ladder_watchdog.main(argv)
+            self.assertEqual(len(self.stopped), 1,
+                             "a wedge this cannot clear must escalate to one "
+                             "report, not restart until morning")
 
-    def test_a_failed_kick_is_counted_separately(self):
+    def test_the_cooldown_expires(self):
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
             runs = ledger_with(tmp, [14.3])
             state = tmp / "state.json"
-            self.launchctl.returncode = 113
+            long_ago = (datetime.now(timezone.utc)
+                        - timedelta(hours=9)).isoformat(timespec="seconds")
+            state.write_text(json.dumps({"last_kick_utc": long_ago, "kicks": 1}))
             ladder_watchdog.main([
                 "--runs", str(runs), "--stale-hours", "3",
+                "--cooldown-hours", "2",
+                "--lock", str(self.live_lock(tmp)),
                 "--state", str(state), "--log", str(tmp / "log")])
-            recorded = json.loads(state.read_text())
-            self.assertEqual(recorded.get("failed_kicks"), 1)
-            self.assertNotIn("last_kick_utc", recorded,
-                             "a failure must not start the cooldown clock")
+            self.assertEqual(len(self.stopped), 1)
 
-    def test_a_kick_that_lands_still_holds_the_cooldown(self):
+    def test_a_failed_action_does_not_start_the_cooldown(self):
+        """Measured 2026-08-17T20:41:48Z: the first restart failed because the
+        job it addressed was not loaded, and the failure took the full cooldown
+        with it — extending the outage the keeper exists to end."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            state = tmp / "state.json"
+            self.runner.returncode = 1
+            argv = ["--runs", str(runs), "--stale-hours", "3",
+                    "--cooldown-hours", "2",
+                    "--lock", str(tmp / "absent"),
+                    "--state", str(state), "--log", str(tmp / "log")]
+            ladder_watchdog.main(argv)
+            ladder_watchdog.main(argv)
+            self.assertEqual(len(self.starts), 2,
+                             "an action that never took effect changed nothing")
+            recorded = json.loads(state.read_text())
+            self.assertEqual(recorded.get("failed_kicks"), 2)
+            self.assertNotIn("last_kick_utc", recorded)
+
+    def test_an_action_that_lands_does_start_the_cooldown(self):
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
             runs = ledger_with(tmp, [14.3])
             argv = ["--runs", str(runs), "--stale-hours", "3",
                     "--cooldown-hours", "2",
-                    "--state", str(tmp / "state.json"),
-                    "--log", str(tmp / "log")]
+                    "--lock", str(tmp / "absent"),
+                    "--state", str(tmp / "state.json"), "--log", str(tmp / "log")]
             ladder_watchdog.main(argv)
             ladder_watchdog.main(argv)
-            kicks = [c for c in self.calls if "kickstart" in c]
-            self.assertEqual(len(kicks), 1)
+            self.assertEqual(len(self.starts), 1)
 
 
-class TheLogIsWrittenOnce(WatchdogTestCase):
+class StoppingIsGentle(unittest.TestCase):
+    def test_a_wedged_supervisor_gets_TERM_not_KILL(self):
+        """The supervisor's own header: hard kills wedge the Civ 6 core.
+
+        A remedy that leaves the game unable to start a gameplay context has
+        become the fault. TERM is trapped; the supervisor releases its lock.
+        """
+        import signal
+        sent = []
+        ok, detail = ladder_watchdog.stop_supervisor(
+            4242, killer=lambda pid, sig: sent.append((pid, sig)))
+        self.assertTrue(ok)
+        self.assertEqual(sent, [(4242, signal.SIGTERM)])
+
+    def test_a_process_that_already_exited_is_not_an_error(self):
+        def gone(pid, sig):
+            raise ProcessLookupError
+
+        ok, detail = ladder_watchdog.stop_supervisor(4242, killer=gone)
+        self.assertTrue(ok)
+        self.assertIn("already gone", detail)
+
+
+class TheLogIsWrittenOnce(KeeperTestCase):
     """launchd points StandardOutPath at the same file `log()` appends to."""
 
     def test_a_non_tty_run_does_not_double_every_line(self):
@@ -274,18 +327,19 @@ class TheLogIsWrittenOnce(WatchdogTestCase):
             with contextlib.redirect_stdout(captured):
                 ladder_watchdog.main([
                     "--runs", str(runs), "--stale-hours", "3",
+                    "--lock", str(tmp / "absent"),
                     "--state", str(tmp / "state.json"), "--log", str(log)])
-            stale = [line for line in log.read_text().splitlines()
-                     if "STALE" in line]
-            self.assertEqual(len(stale), 1, log.read_text())
+            opened = [line for line in log.read_text().splitlines()
+                      if "starting the loop" in line]
+            self.assertEqual(len(opened), 1, log.read_text())
             self.assertEqual(captured.getvalue(), "",
                              "under launchd stdout IS the log file")
 
 
 class StalenessHasOneDefinition(unittest.TestCase):
-    """`check` reports it, the watchdog acts on it, both call the same function."""
+    """`check` reports it, the keeper acts on it, both call the same function."""
 
-    def test_check_and_watchdog_agree_at_the_boundary(self):
+    def test_check_and_keeper_agree_at_the_boundary(self):
         now = datetime.now(timezone.utc)
         for age, stale in ((2.9, False), (3.1, True)):
             state = {"attempts": [{
