@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 186] = [
+pub const EVAL_ONLY_AIS: [&str; 187] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -202,6 +202,7 @@ pub const EVAL_ONLY_AIS: [&str; 186] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
     // survey of the work it would do, and military units credited for
     // strength-per-production and the civ's own unique window. Reserved
@@ -715,6 +716,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
@@ -2996,6 +2998,21 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // The reconnaissance quartet the live bridge has carried since its
+        // repair era, applied to stock native production: rebuild a lost
+        // scout (`recon_is_the_missing_arm` is dead code without
+        // `recon_replacement`), slip a threatened one away, put a hull on
+        // unseen water, and bring embarked explorers ashore. The native
+        // fleet peaks at 1.83 concurrent recon units and wins ~13% of the
+        // board's villages; this arm prices giving it the bridge's eyes.
+        "advanced_recon_fleet" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_recon_replacement();
+            ai.enable_recon_flight();
+            ai.enable_naval_recon();
+            ai.enable_come_ashore();
+            Box::new(ai)
+        }
         "advanced_settler_founds_when_stalled" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settler_founds_when_stalled();
@@ -3989,6 +4006,12 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedReconFleet => &[
+                "recon-replacement",
+                "recon-flight",
+                "naval-recon",
+                "come-ashore",
+            ],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
@@ -4469,6 +4492,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_recon_fleet" => (Vec::new(), "advanced_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
@@ -5681,7 +5705,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 90] = [
+            const SCRIPTED: [&str; 91] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5748,6 +5772,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_recon_fleet",
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
