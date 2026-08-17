@@ -2449,6 +2449,47 @@ pub struct AdvancedAi {
     /// Settler seat's tally; the native lanes keep their bred weights. Off for
     /// ordinary and frozen controllers.
     pub tally_culture: bool,
+    /// A city with no Theater Square is a culture hole, the way a city with no
+    /// Campus is a research hole.
+    ///
+    /// ★★★★ `tally_culture` FIXED THE PRICE OF A POINT OF CULTURE AND LEFT THE
+    /// COVERAGE ALONE, AND THE COVERAGE IS THE WHOLE GAP. Two terms in the
+    /// district table belong to the Campus and to nothing else:
+    /// `research_coverage` pays up to `RESEARCH_CAMPUS_COVERAGE` in every lane
+    /// for a city that holds none, and `campus_every_city` exempts it from
+    /// `balanced_core`'s half-the-empire cliff. The Theater Square has neither,
+    /// so it wins the odd bid and never the empire.
+    ///
+    /// Measured over the twenty-five live games that reached turn 180 — 204
+    /// cities — the two chains are the same shape three sizes apart:
+    ///
+    /// | rung | science | culture |
+    /// |---|---|---|
+    /// | district | Campus **82%** | Theater Square **27%** |
+    /// | first building | Library 72% | Amphitheater 21% |
+    /// | second | University 53% | Museum 7% |
+    /// | third | Research Lab 23% | Broadcast Center **1%** |
+    ///
+    /// End-of-game culture ran 95–175 a turn against rivals' 190–546, and
+    /// civics 42–48 against 47–55. Both halves of that cost the tally: a civic
+    /// is three points where a tech is two, and the score-tally losses of this
+    /// lane are 50–450 points wide. It also costs the game outright — a rival
+    /// culture victory must out-tour the best DOMESTIC tourism on the board,
+    /// which is our accumulated culture, so being the quietest civilization is
+    /// what makes the bar low enough to clear. Run civvis-20260817T022159Z led
+    /// **1,239 to 1,005** and lost at t197 to the Cree, whose tourism ran
+    /// 93 → 172 → 245 over the forty turns nobody answered.
+    ///
+    /// With this on the Theater Square gets the Campus's two terms — the same
+    /// empire-wide coverage payment on its `CULTURE_THEATER_COVERAGE` rung,
+    /// scaled by the same payback horizon, and the same exemption from the
+    /// cliff so the empire is never told half is enough. The coverage is held
+    /// back until the city already carries a specialty district, so the Campus
+    /// (or the Harbor, or the Commercial Hub) still goes in first and a
+    /// one-district town is not handed a Theater Square instead. Firaxis-only,
+    /// with `tally_culture`: it prices the Settler seat's tally; the native
+    /// lanes keep their bred weights. Off for ordinary and frozen controllers.
+    pub culture_coverage: bool,
     /// Bank an envoy the plan has no positive use for.
     ///
     /// ★★★★ `advanced_envoys` spends EVERY held envoy each turn (`while
@@ -2905,6 +2946,13 @@ const RESEARCH_CITIZEN_TILT: f64 = 0.28;
 
 /// A city with no Campus, in any lane, once one is legal here.
 const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
+
+/// What an empire-wide culture hole is worth on the tally seat, on the same
+/// payback horizon as `RESEARCH_CAMPUS_COVERAGE`. Held one rung under the
+/// Campus's: science compounds through a tree that unlocks the districts,
+/// buildings and units the rest of the table prices, where the civic tree's
+/// return is the tally itself. See `culture_coverage`.
+const CULTURE_THEATER_COVERAGE: f64 = 240.0;
 
 /// How long a Campus takes to repay itself, as a fraction of the turn budget.
 ///
@@ -3394,6 +3442,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             tally_culture: false,
+            culture_coverage: false,
             bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
@@ -4278,6 +4327,9 @@ impl AdvancedAi {
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
+        // And the coverage that price alone never bought. See
+        // `culture_coverage`.
+        self.enable_culture_coverage();
         // And no colony beyond the empire's Loyalty reach on fogged ground.
         // See `frontier_loyalty`.
         self.enable_frontier_loyalty();
@@ -4708,6 +4760,16 @@ impl AdvancedAi {
 
     pub fn disable_tally_culture(&mut self) {
         self.tally_culture = false;
+    }
+
+    /// Pay for the Theater Square the empire has not got. See
+    /// `culture_coverage`.
+    pub fn enable_culture_coverage(&mut self) {
+        self.culture_coverage = true;
+    }
+
+    pub fn disable_culture_coverage(&mut self) {
+        self.culture_coverage = false;
     }
 
     /// Bank an envoy the plan has no positive use for. See `bank_envoys`.
@@ -17967,7 +18029,13 @@ impl AdvancedAi {
                 // every city. The other four families are untouched.
                 let core_capped = district_count * 2 >= city_count;
                 let campus_keeps_asking = self.campus_every_city && family == "campus";
-                let balanced_core = if !core_capped || campus_keeps_asking {
+                // See `culture_coverage`: the same exemption, for the same
+                // reason — the civic tree cascades out of the Theater Square
+                // the way the tech tree cascades out of the Campus, and being
+                // told half the empire is enough is what stopped both.
+                let theater_keeps_asking = self.culture_coverage && family == "theater_square";
+                let balanced_core = if !core_capped || campus_keeps_asking || theater_keeps_asking
+                {
                     match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
@@ -18208,6 +18276,24 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                // The same sentence for the other tree. See `culture_coverage`:
+                // a city with no Theater Square is an empire-wide culture hole,
+                // and on this tally a civic is worth three points where a tech
+                // is worth two. Held back until a specialty district already
+                // stands, so the Campus still goes in first and a one-district
+                // town is not handed a Theater Square instead.
+                let culture_coverage = if self.culture_coverage
+                    && family == "theater_square"
+                    && g.city_specialty_district_count(city) >= 1
+                    && !city
+                        .districts
+                        .keys()
+                        .any(|built| g.district_family(*built) == family)
+                {
+                    CULTURE_THEATER_COVERAGE * Self::campus_payback_horizon(g)
+                } else {
+                    0.0
+                };
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
                     + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
@@ -18235,6 +18321,7 @@ impl AdvancedAi {
                     + effect_value
                     + development_penalty
                     + research_coverage
+                    + culture_coverage
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -36301,6 +36388,96 @@ mod tests {
         assert!(!frozen.tally_culture);
     }
 
+    /// ★★★★ `tally_culture` fixed the PRICE of culture and left the COVERAGE
+    /// alone, and over 204 cities in 25 live games the coverage is the gap:
+    /// Campus 82% of cities, Theater Square 27%; Library 72%, Amphitheater 21%;
+    /// University 53%, Museum 7%; Research Lab 23%, Broadcast Center 1%. Two
+    /// terms belong to the Campus alone — `research_coverage` and the
+    /// `campus_every_city` exemption from `balanced_core`'s half-the-empire
+    /// cliff. See `culture_coverage`: the tally seat gives the Theater Square
+    /// both, once a specialty district already stands in the city, and stock
+    /// and frozen controllers are unchanged.
+    #[test]
+    fn a_city_without_a_theater_square_is_a_culture_hole_on_the_tally_seat() {
+        let (mut game, capital, _home) = empire_with_a_capital(71_113);
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        let theater_site = game
+            .district_sites(capital, crate::name!("theater_square"))
+            .into_iter()
+            .next()
+            .expect("the capital has a plot for a Theater Square");
+        let theater = Item::District {
+            district: crate::name!("theater_square"),
+            pos: theater_site,
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = EmpireCounts::default();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.culture_coverage, "the live seat carries the treatment");
+        live.refresh_research_weight(&game);
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_culture_coverage();
+        withheld.refresh_research_weight(&game);
+
+        // A city with no specialty district yet keeps the Campus first: the
+        // hole is not paid until the city has somewhere to put the rest.
+        assert_eq!(
+            game.city_specialty_district_count(&game.cities[&capital]),
+            0,
+            "the fresh capital carries no specialty district"
+        );
+        assert_eq!(
+            live.production_value(&game, 0, capital, &theater, &plan, &counts),
+            withheld.production_value(&game, 0, capital, &theater, &plan, &counts),
+            "a one-district town is not handed a Theater Square instead of its Campus"
+        );
+
+        // With a Campus standing the hole is real and the treated seat pays it.
+        install_ai_test_district(&mut game, capital, "campus");
+        let hole = live.production_value(&game, 0, capital, &theater, &plan, &counts)
+            - withheld.production_value(&game, 0, capital, &theater, &plan, &counts);
+        assert!(hole > 0.0, "the culture hole is priced on the tally seat: {hole}");
+
+        // Once the Theater Square stands the coverage payment stops — it buys
+        // the first one, not a second. What is left of the gap is the other
+        // half of the treatment: this one-city empire is now past
+        // `balanced_core`'s half-the-empire cliff, and only the treated seat
+        // keeps asking. The Campus has had exactly that exemption since
+        // `campus_every_city`, and it is why Campus coverage reached 82% of
+        // cities while the Theater Square stopped at 27%.
+        install_ai_test_district(&mut game, capital, "theater_square");
+        let cliff = live.production_value(&game, 0, capital, &theater, &plan, &counts)
+            - withheld.production_value(&game, 0, capital, &theater, &plan, &counts);
+        assert!(
+            cliff > 0.0 && cliff < hole,
+            "coverage stops at the first Theater Square and the cliff exemption \
+             remains: {cliff} left of {hole}"
+        );
+        assert!(
+            live.campus_every_city,
+            "the Campus has had exactly this exemption on the same seat"
+        );
+
+        assert!(!AdvancedAi::new().culture_coverage);
+        assert!(!AdvancedAi::legacy().culture_coverage);
+        assert!(
+            CULTURE_THEATER_COVERAGE < RESEARCH_CAMPUS_COVERAGE,
+            "the culture hole is held one rung under the research hole"
+        );
+    }
+
     #[test]
     fn a_regional_amenity_building_counts_the_cities_it_reaches() {
         // `found_nearby_test_city` sites a city 4–10 tiles out; keep seeding
@@ -48614,10 +48791,16 @@ mod research_probe {
         );
     }
 
-    /// The `balanced_core` cliff is exempted for the Campus ONLY. The other
-    /// four families keep the half-empire cap they were written with.
+    /// The `balanced_core` cliff is exempted for the two research/civic trees
+    /// ONLY, and each exemption must be gated on its own named treatment. The
+    /// Commercial Hub, Harbor and Industrial Zone keep the half-empire cap they
+    /// were written with: their effects are empire-wide, so half the empire
+    /// really is enough. The Campus and the Theater Square each carry their own
+    /// building chain and a tree that cascades out of them, and the empire
+    /// stopping at half is what measured 50 of 100 cities for the Campus and 27%
+    /// for the Theater Square. See `campus_every_city` and `culture_coverage`.
     #[test]
-    fn only_the_campus_is_exempt_from_the_half_empire_cliff() {
+    fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
         let src = include_str!("advanced.rs");
         let block = src
             .split("let core_capped = district_count * 2 >= city_count;")
@@ -48626,16 +48809,26 @@ mod research_probe {
             .split("};")
             .next()
             .expect("the balanced_core block ends");
-        assert!(
-            block.contains("self.campus_every_city && family == \"campus\""),
-            "the exemption must name the Campus and nothing else"
-        );
-        for family in ["theater_square", "commercial_hub", "harbor", "industrial_zone"] {
+        for (flag, family) in [
+            ("self.campus_every_city", "campus"),
+            ("self.culture_coverage", "theater_square"),
+        ] {
+            assert!(
+                block.contains(&format!("{flag} && family == \"{family}\"")),
+                "the {family} exemption must be gated on {flag}"
+            );
+        }
+        for family in ["commercial_hub", "harbor", "industrial_zone"] {
             assert!(
                 !block.contains(&format!("family == \"{family}\"")),
                 "{family} must keep the half-empire cap"
             );
         }
+        // Both exemptions are live-bridge treatments; a stock controller keeps
+        // the cliff for every family.
+        let stock = AdvancedAi::new();
+        assert!(!stock.campus_every_city);
+        assert!(!stock.culture_coverage);
     }
     /// Off by default, set only by the live bridge, holdable off on its own.
     #[test]

@@ -224,7 +224,7 @@ pub const EVAL_ONLY_AIS: [&str; 158] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 64] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 65] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -281,6 +281,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 64] = [
     "counter-in-lane",
     "era-paced-expansion",
     "tally-culture",
+    "culture-coverage",
     "frontier-loyalty",
     "settler-target-hysteresis",
     "tally-great-people",
@@ -323,7 +324,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 14] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 15] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -351,6 +352,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 14] = [
     // Prices the Settler seat's tally (three a civic, two a tech); the native
     // lanes keep their bred yield weights.
     "tally-culture",
+    // Pays the Settler seat's tally for the Theater Square the empire has not
+    // got; the native lanes keep their bred district coverage.
+    "culture-coverage",
     // Reads the live mirror's fog around a settle site; the native forecast
     // sees every rival city.
     "frontier-loyalty",
@@ -6016,7 +6020,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 14] = [
+        const EXCLUDED: [&str; 15] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -6040,6 +6044,9 @@ mod tests {
             "era_paced_expansion",
             // The Settler seat's tally weights; the native lanes stay bred.
             "tally_culture",
+            // The Settler seat's tally price of the coverage those weights
+            // never bought.
+            "culture_coverage",
             // Reads the live mirror's fog around a settle site.
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
