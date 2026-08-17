@@ -15259,11 +15259,25 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     // tile at a time. The movement points are real; tile movement is not the
     // operation that spends them.
     //
-    // ⚠ This does NOT silence the spy, exactly as the trader clause does not
-    // silence trade: `AssignSpy`, `SpyMission` and `PromoteSpy` are separate
-    // actions, are already translated by the bridge, and are untouched. What
-    // stops is the walking it was never able to do — and with it a decision the
-    // planner spent on that unit every single turn.
+    // ⚠⚠⚠ THIS COMMENT USED TO CLAIM THE SPY STILL ACTS, AND IT DOES NOT.
+    // It read "`AssignSpy`, `SpyMission` and `PromoteSpy` … are already
+    // translated by the bridge, and are untouched", by analogy with the trader
+    // clause. The trader half of that analogy is true (`Action::TradeRoute`
+    // really is translated); the spy half was never true. `civvis_orders`'
+    // `translate` has no arm for any of the three, so they fall to its `_ =>
+    // None` and are counted untranslatable, and the mod's resolved-operation
+    // table carries no `UNITOPERATION_SPY_*` verb to receive one.
+    //
+    // What actually stops here is the walking the spy was never able to do —
+    // and with it a decision the planner spent on that unit every turn. What
+    // was ALREADY stopped, everywhere else, is the whole espionage layer: a
+    // live Civilization VI Spy is an ordinary `UNIT_SPY` this mirror imports,
+    // so `Game::spies` — the only structure `AdvancedAi::advanced_spies` and
+    // `BasicAi::spies` iterate — stays empty for the entire game. The engine
+    // models twelve missions and the AI aims them at the denial target; on the
+    // live bridge none of it can fire. Say so here rather than imply otherwise:
+    // the disruption a leading rival should be answered with is the axis this
+    // comment sent readers away from.
     //
     // ⚠ Mirror only. `data/units.json` still gives `spy` its 1 move, so
     // `Rules::source_fingerprint` does not shift and an ordinary CIVVIS game is
