@@ -1321,7 +1321,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live-only flag is false in `AdvancedAi::legacy()`, so a frozen Scout keeps
 /// its historical flight and exploration behavior. Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa43c_f521_770d_261f;
+/// The hostile-Suzerain peace path is reached only through `bank_envoys`,
+/// which the Firaxis order bridge enables after profitable Envoy placements
+/// have already run. `AdvancedAi::legacy()` keeps that gate false, so its
+/// diplomacy remains historical. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe5eb_61a7_feb8_b289;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

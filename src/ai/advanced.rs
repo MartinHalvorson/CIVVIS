@@ -2457,10 +2457,13 @@ pub struct AdvancedAi {
     ///
     /// With this on, the pass stops at the first placement whose score is
     /// negative and journals what it banked; the next city-state met (whose
-    /// first-meet envoy is already standing there) can be taken outright. A
-    /// rival bidding a held suzerainty back up makes the defence positive
-    /// again, so held city-states are still defended. Bridge-only
-    /// (`civvis_orders` sets it); off for ordinary and frozen controllers.
+    /// first-meet envoy is already standing there) can be taken outright. The
+    /// same deliberately idle pool may also ask a non-objective hostile
+    /// Suzerain for peace when that immediately makes one of its city-states
+    /// available to take. A rival bidding a held suzerainty back up makes the
+    /// defence positive again, so held city-states are still defended.
+    /// Bridge-only (`civvis_orders` sets it); off for ordinary and frozen
+    /// controllers.
     pub bank_envoys: bool,
     /// Do not found a colony beyond the empire's Loyalty reach on ground the
     /// seat has not explored.
@@ -12084,6 +12087,75 @@ impl AdvancedAi {
         true
     }
 
+    /// Return the cheapest city-state that an idle Envoy pool can take once a
+    /// peace with `other` ends the Suzerain-derived war.
+    ///
+    /// Envoys run before diplomacy. Any pool that remains here therefore
+    /// survived the ordinary positive-placement pass; this is a bridge-only
+    /// way to turn that deliberately banked remainder into an immediate
+    /// city-state investment. A direct city-state war does not qualify: peace
+    /// with its Suzerain would not make Envoys legal there.
+    fn banked_envoy_reclaim_after_peace(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(usize, i64)> {
+        if !self.bank_envoys {
+            return None;
+        }
+        let held = g.players.get(pid)?.envoys_free;
+        let active_campaign = plan.target_player == Some(other)
+            || self
+                .war_plan
+                .as_ref()
+                .is_some_and(|war| war.target_player == other);
+        let hostile_suzerain = g.players.get(other).is_some_and(|player| {
+            player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && !player.is_free_city
+        });
+        if held <= 0 || active_campaign || !hostile_suzerain {
+            return None;
+        }
+
+        g.players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && !minor.is_free_city
+                    && g.has_met(pid, minor.id)
+                    && g.is_at_war(pid, minor.id)
+                    && !g
+                        .at_war
+                        .contains(&(pid.min(minor.id), pid.max(minor.id)))
+                    && g.suzerain_of(minor.id) == Some(other)
+            })
+            .filter_map(|minor| {
+                let ours = g.envoys_at(pid, minor.id);
+                let rival = g
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && !player.is_free_city
+                    })
+                    .map(|player| g.envoys_at(player.id, minor.id))
+                    .max()
+                    .unwrap_or_default();
+                let needed = (3_i64.max(rival.saturating_add(1)) - ours).max(1);
+                (held >= needed).then_some((minor.id, needed))
+            })
+            .min_by_key(|(minor, needed)| (*needed, *minor))
+    }
+
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         crate::ai::choose_dedications(g, pid, self.base.w.dedication_choice);
         let incoming: Vec<u32> = g
@@ -12342,6 +12414,7 @@ impl AdvancedAi {
                         || (deal.from == *other && deal.to == pid))
                     && deal.expires >= g.turn
             });
+            let envoy_reclaim = self.banked_envoy_reclaim_after_peace(g, pid, *other, plan);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -12355,23 +12428,30 @@ impl AdvancedAi {
                         && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
-                        && g.player_city_ids(*other).len() > 1))
+                        && g.player_city_ids(*other).len() > 1)
+                    || envoy_reclaim.is_some())
             {
                 self.peace_offers.insert(*other);
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let their_power = g.military_power(*other);
-                    let because = if my_power < their_power * 0.62 {
-                        "outmatched"
+                    let because = if let Some((minor, needed)) = envoy_reclaim {
+                        format!(
+                            "the plan has no campaign there and {needed} banked Envoy{} can immediately take {} after the Suzerain war ends",
+                            if needed == 1 { "" } else { "s" },
+                            g.players[minor].civ
+                        )
+                    } else if my_power < their_power * 0.62 {
+                        "outmatched".to_string()
                     } else if overwhelmed_on_multiple_fronts {
-                        "multiple major fronts overwhelm the recovery army"
+                        "multiple major fronts overwhelm the recovery army".to_string()
                     } else if plan.strategy == GrandStrategy::Recovery {
-                        "this is not the war the recovery plan is fighting"
+                        "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                     {
-                        "the religion plan cannot spread into a war"
+                        "the religion plan cannot spread into a war".to_string()
                     } else {
-                        "the war has stalled"
+                        "the war has stalled".to_string()
                     };
                     think!(self.journal(), Diplomacy, Decision,
                            "Offering peace to {}", g.players[*other].civ;
@@ -26547,6 +26627,93 @@ mod tests {
         assert!(bridged.religion_sues_peace);
         bridged.disable_religion_sues_peace();
         assert!(!bridged.religion_sues_peace);
+    }
+
+    #[test]
+    fn banked_envoys_reclaim_a_nonobjective_hostile_suzerain_city_state() {
+        // A city-state that follows its hostile Suzerain into war cannot take
+        // an Envoy until peace with that major lands. The live bridge should
+        // make that one tactical peace offer when its deliberately idle pool
+        // can immediately flip the city-state, but never trade away an active
+        // campaign or mistake a direct city-state war for a derived one.
+        let mut game = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
+        let city_state = game
+            .players
+            .iter()
+            .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("fixture needs a city-state");
+        game.turn = 80;
+        game.current = 0;
+        game.record_contact(0, 1);
+        game.record_contact(0, city_state);
+        game.players[0].envoys = vec![(city_state, 4)];
+        game.players[1].envoys = vec![(city_state, 5)];
+        game.players[0].envoys_free = 2;
+        game.at_war.insert((0, 1));
+        assert_eq!(game.suzerain_of(city_state), Some(1));
+        assert!(game.is_at_war(0, city_state));
+        assert!(
+            !game.can_send_envoy(0, city_state),
+            "a Suzerain-derived war makes the city-state Envoy-ineligible"
+        );
+
+        let nonobjective = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut live_game = game.clone();
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_diplomacy(&mut live_game, 0, &nonobjective);
+        assert!(
+            live.peace_offers.contains(&1),
+            "two banked Envoys take the city-state after peace with its Suzerain"
+        );
+        // The host reserves this exact cost while it submits the major peace.
+        // On the authoritative post-peace frame the normal Envoy pass spends
+        // it and flips the city-state.
+        live_game.at_war.remove(&(0, 1));
+        live.advanced_envoys(&mut live_game, 0, GrandStrategy::Science, None);
+        assert_eq!(live_game.envoys_at(0, city_state), 6);
+        assert_eq!(live_game.suzerain_of(city_state), Some(0));
+
+        let mut stock_game = game.clone();
+        let mut stock = AdvancedAi::new();
+        stock.advanced_diplomacy(&mut stock_game, 0, &nonobjective);
+        assert!(
+            !stock.peace_offers.contains(&1),
+            "ordinary controllers retain their historical diplomacy"
+        );
+
+        let active_campaign = StrategicPlan {
+            target_player: Some(1),
+            ..nonobjective.clone()
+        };
+        let mut campaign_game = game.clone();
+        let mut protecting = AdvancedAi::new();
+        protecting.enable_bank_envoys();
+        protecting.advanced_diplomacy(&mut campaign_game, 0, &active_campaign);
+        assert!(
+            !protecting.peace_offers.contains(&1),
+            "a city-state investment must not abandon the active campaign"
+        );
+
+        let mut direct_war_game = game;
+        direct_war_game.at_war.insert((0, city_state));
+        let mut direct_war = AdvancedAi::new();
+        direct_war.enable_bank_envoys();
+        direct_war.advanced_diplomacy(&mut direct_war_game, 0, &nonobjective);
+        assert!(
+            !direct_war.peace_offers.contains(&1),
+            "peace with a Suzerain cannot unlock Envoys during a direct city-state war"
+        );
     }
 
     #[test]
