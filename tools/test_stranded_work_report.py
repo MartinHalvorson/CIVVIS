@@ -115,6 +115,40 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse(actionable)
         self.assertEqual(body.count("Nothing stranded here today."), 3)
 
+    def test_rows_link_directly_to_the_pr_and_branch_for_triage(self):
+        with (
+            patch.object(
+                report,
+                "commentless_closes",
+                lambda now: [
+                    "- [#42](https://github.com/MartinHalvorson/CIVVIS/pull/42) closed"
+                ],
+            ),
+            patch.object(
+                report,
+                "idle_branches",
+                lambda now: [
+                    "- [agent/example/task]"
+                    "(https://github.com/MartinHalvorson/CIVVIS/tree/"
+                    "agent/example/task) idle"
+                ],
+            ),
+            patch.object(report, "rescue_refs", lambda: []),
+        ):
+            body, _ = report.compose(self.NOW)
+        self.assertIn("github.com/MartinHalvorson/CIVVIS/pull/42", body)
+        self.assertIn(
+            "github.com/MartinHalvorson/CIVVIS/tree/agent/example/task", body
+        )
+
+
+class LinkTests(unittest.TestCase):
+    def test_github_url_encodes_agent_branch_slashes(self):
+        self.assertEqual(
+            report.github_url("tree", "agent/example/task"),
+            "https://github.com/MartinHalvorson/CIVVIS/tree/agent/example/task",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

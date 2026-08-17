@@ -389,6 +389,25 @@ on somebody's own machine. Workflow runs from outside contributors already
 require approval (`Settings → Actions → Fork pull request workflows`), and that
 setting should stay on.
 
+### Quality and queue hygiene
+
+The rust-quality workflow runs beside cargo-test on pull requests and pushes
+to main. It checks only Rust files changed by that revision: rustfmt must pass,
+and compiler or clippy warnings whose spans land in a changed file fail the
+job. This is intentional incremental enforcement. The repository's older
+formatting and lint debt is still measurable with cargo fmt --all -- --check
+and cargo clippy --all-targets --all-features --locked -- -D warnings, but it
+does not make unrelated work unmergeable; every new Rust change must leave its
+own files clean.
+
+The scheduled stranded-work-report workflow remains the queue's source of
+truth. It updates one issue in place, reopens it only when a commentless close
+or idle branch needs action, and links each row directly to the PR or branch
+that needs triage. Rescue snapshots are preserved history and do not reopen
+the issue by themselves. Operators should either open a PR, hand the branch
+off, or close it with a reason after reviewing the linked work; do not delete a
+worktree before checking that its commits exist on GitHub.
+
 Both `cargo-test` and `collaboration-policy` are required checks. The latter
 rejects ambiguous branch names, missing or mismatched machine/agent identity,
 changes outside claimed paths, undeclared file overlap with another open PR,
