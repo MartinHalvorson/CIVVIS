@@ -548,6 +548,49 @@ def base_staleness(status: str, behind_by: int) -> Optional[Tuple[str, str]]:
     )
 
 
+def comparison_or_reason(fetch) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Run one compare request. ``(comparison, "")`` or ``(None, why not)``.
+
+    ⚠⚠⚠ AN ADVISORY THAT CANNOT RUN MUST NOT BLOCK A MERGE, AND FOR ONE
+    AFTERNOON THIS ONE BLOCKED EVERY MERGE IN THE REPOSITORY.
+    `/repos/.../compare/A...B` began returning 404 for this repository on
+    2026-08-17 — for a PR head one commit ahead of `main`, and for two
+    adjacent commits *on* `main`, while `/commits/<sha>` resolved both SHAs
+    fine. Whatever the cause, it is not something a branch can fix. The call
+    was unguarded in all three of its call sites, so the exception escaped
+    `check_pr_action`, `collaboration-policy` exited 1, and a required check
+    nobody could turn green stopped the fleet.
+
+    The staleness check this feeds is deliberately advisory below
+    `STALE_BASE_LIMIT` (see `base_staleness`), which makes the failure mode
+    doubly wrong: an *unmeasurable* distance was reported as a *violation*,
+    and the one distance that is a real refusal — 150+ commits behind — is
+    precisely the one this function cannot confirm when it returns `None`.
+    So the callers degrade to the advisory, never to the error: "could not
+    measure" is not "measured as bad", and the remedy is the same one
+    ordinary staleness asks for.
+
+    A body without ``status`` is treated as no answer for the same reason —
+    ``base_staleness("")`` would silently read as "not current" and invent a
+    verdict out of a malformed response.
+    """
+    try:
+        comparison = fetch()
+    except CommandError as exc:
+        return None, str(exc)
+    if not isinstance(comparison, dict) or not comparison.get("status"):
+        return None, "GitHub returned a comparison with no status"
+    return comparison, ""
+
+
+UNMEASURED_BASE_ADVISORY = (
+    "could not measure how far this branch trails main ({reason}). Treating "
+    "it as ordinary staleness rather than a violation: a check that cannot "
+    "run must not block a merge. Merging main before ship is on the author — "
+    "run: git fetch origin main && git merge origin/main"
+)
+
+
 def github_json(path: str, token: str) -> Any:
     url = f"https://api.github.com{path}"
     request = urllib.request.Request(
@@ -666,16 +709,22 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         base_sha = str(current.get("base", {}).get("sha") or "")
         head_sha = str(current.get("head", {}).get("sha") or "")
         if base_sha and head_sha:
-            comparison = github_json(
-                f"/repos/{repository}/compare/{base_sha}...{head_sha}", token
+            comparison, unmeasured = comparison_or_reason(
+                lambda: github_json(
+                    f"/repos/{repository}/compare/{base_sha}...{head_sha}", token
+                )
             )
-            verdict = base_staleness(
-                str(comparison.get("status") or ""),
-                int(comparison.get("behind_by") or 0),
-            )
-            if verdict is not None:
-                kind, message = verdict
-                (errors if kind == "error" else advisories).append(message)
+            if comparison is None:
+                advisories.append(
+                    UNMEASURED_BASE_ADVISORY.format(reason=unmeasured))
+            else:
+                verdict = base_staleness(
+                    str(comparison.get("status") or ""),
+                    int(comparison.get("behind_by") or 0),
+                )
+                if verdict is not None:
+                    kind, message = verdict
+                    (errors if kind == "error" else advisories).append(message)
     branch_match = BRANCH_RE.fullmatch(str(current["headRefName"]))
     registry = machine_registry()
     if branch_match and registry is not None:
@@ -1342,29 +1391,39 @@ def merged_pr_gate_errors(number: int, base_sha: str = "") -> List[str]:
         return ["merged PR metadata is incomplete"]
     errors: List[str] = []
     if base_sha:
-        comparison = gh_json(
-            (
-                "api",
-                f"repos/{REPOSITORY}/compare/{base_sha}...{head_sha}",
+        comparison, unmeasured = comparison_or_reason(
+            lambda: gh_json(
+                (
+                    "api",
+                    f"repos/{REPOSITORY}/compare/{base_sha}...{head_sha}",
+                )
             )
         )
-        # Merging a few commits behind main is the designed outcome, not a
-        # violation: `strict: false` admits it, `ship` deliberately stops
-        # refreshing the head while the gate runs (every refresh cancelled the
-        # in-flight run — 44% of all runs on 2026-08-06), and the push to
-        # `main` reruns the full gate on the actual squash result. The hard
-        # line is the same one `base_staleness` draws pre-merge: past
-        # STALE_BASE_LIMIT the merged tree is a combination no CI run has
-        # even approximated.
-        behind_by = int(comparison.get("behind_by") or 0)
-        if (
-            not compare_status_is_current(str(comparison.get("status") or ""))
-            and behind_by >= STALE_BASE_LIMIT
-        ):
+        if comparison is None:
+            # A post-merge audit finding, not a gate, and phrased as what is
+            # actually known: the distance is UNKNOWN, not over the limit. See
+            # `comparison_or_reason`.
             errors.append(
-                f"PR head was {behind_by} commits behind main at merge, past "
-                f"the {STALE_BASE_LIMIT}-commit staleness limit"
-            )
+                f"could not measure how far PR #{number} trailed main at "
+                f"merge ({unmeasured}); staleness unverified")
+        else:
+            # Merging a few commits behind main is the designed outcome, not a
+            # violation: `strict: false` admits it, `ship` deliberately stops
+            # refreshing the head while the gate runs (every refresh cancelled
+            # the in-flight run — 44% of all runs on 2026-08-06), and the push
+            # to `main` reruns the full gate on the actual squash result. The
+            # hard line is the same one `base_staleness` draws pre-merge: past
+            # STALE_BASE_LIMIT the merged tree is a combination no CI run has
+            # even approximated.
+            behind_by = int(comparison.get("behind_by") or 0)
+            if (
+                not compare_status_is_current(str(comparison.get("status") or ""))
+                and behind_by >= STALE_BASE_LIMIT
+            ):
+                errors.append(
+                    f"PR head was {behind_by} commits behind main at merge, past "
+                    f"the {STALE_BASE_LIMIT}-commit staleness limit"
+                )
     payload = gh_json(
         (
             "api",
@@ -2484,14 +2543,28 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
             if not view.get("isDraft") and main_sha:
                 head_sha = str(view.get("headRefOid") or "")
                 if head_sha:
-                    comparison = gh_json(
-                        (
-                            "api",
-                            f"repos/{REPOSITORY}/compare/{main_sha}...{head_sha}",
-                        ),
-                        cwd=root,
+                    comparison, unmeasured = comparison_or_reason(
+                        lambda: gh_json(
+                            (
+                                "api",
+                                f"repos/{REPOSITORY}/compare/"
+                                f"{main_sha}...{head_sha}",
+                            ),
+                            cwd=root,
+                        )
                     )
-                    if not compare_status_is_current(
+                    if comparison is None:
+                        # ⚠ THIS IS THE CALL THAT KILLED THE WHOLE AUDIT. One
+                        # PR GitHub would not compare raised out of the loop
+                        # and `audit` printed no findings at all — not the
+                        # other PRs' violations, not the branch checks below,
+                        # nothing. A report that reports nothing when one row
+                        # is awkward is worse than the row.
+                        warnings.append(
+                            f"PR #{number}: could not compare against main "
+                            f"({unmeasured}); freshness unverified"
+                        )
+                    elif not compare_status_is_current(
                         str(comparison.get("status") or "")
                     ):
                         # Transient, and enforced by GitHub at merge time. See
