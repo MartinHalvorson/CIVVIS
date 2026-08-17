@@ -291,6 +291,11 @@ def build_config(args: argparse.Namespace) -> dict:
         "WarFromTurn": args.war_from_turn,
         "WarArmy": args.war_army,
         "MilitaryPerCity": args.military_per_city,
+        # The fallback ladder's army row weighs the strongest MET major in
+        # peacetime (below half its strength, grow by two, still under
+        # ArmyCap). `losingWar` arms only after a declaration, and the wars
+        # that end runs are declared on us.
+        "PeaceDeterrence": args.peace_deterrence,
         "ExploreUntilTurn": args.explore_until_turn,
         # Domination on a four-civ map needs ALL THREE enemy original capitals.
         # A score victory at the turn limit needs only to be ahead, and warring
@@ -2833,6 +2838,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--war-from-turn", type=int, default=25)
     ap.add_argument("--war-army", type=int, default=4)
     ap.add_argument("--military-per-city", type=float, default=1.5)
+    ap.add_argument("--peace-deterrence", action="store_true", default=True,
+                    help="the fallback ladder's army row weighs the strongest met "
+                         "major in peacetime; below half its strength the army "
+                         "grows two units at a time, still under ArmyCap")
+    ap.add_argument("--no-peace-deterrence", dest="peace_deterrence",
+                    action="store_false",
+                    help="withhold the peacetime deterrence lift (the A/B arm)")
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")

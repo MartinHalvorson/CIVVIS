@@ -2587,7 +2587,7 @@ pub struct AdvancedAi {
     /// host's very first export and flipped at t172; Lugdunum, founded at t203
     /// eleven tiles out, the same −19 and gone at t211. Every city that held
     /// stood four to six tiles from another Roman city and read +18 to +21.
-    /// The mirror's own forecast (`settle_site_is_loyalty_doomed`) said
+    /// The mirror's own forecast (`settle_site_loyalty_verdict`) said
     /// nothing, because it sums pressure over the cities on the board and the
     /// rivals pressing those two sites had never been seen — 143 and 101
     /// unexplored plots lay within nine tiles of them. Two settlers, two
@@ -20814,10 +20814,6 @@ impl AdvancedAi {
     /// revolt before it repays its Settler? This asks the engine's complete
     /// Loyalty calculation of a speculative city, using the same -8/turn
     /// emergency threshold as the live mirror's current-plot protection.
-    fn settle_site_is_loyalty_doomed(&self, g: &Game, pid: usize, site: Pos) -> bool {
-        self.settle_site_loyalty_verdict(g, pid, site).is_some()
-    }
-
     /// Why a site would not hold, if it would not: the forecast revolt, or —
     /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
     /// ground. `None` when the site is judged sound.
@@ -38252,7 +38248,7 @@ mod tests {
             .settle_site_loyalty_verdict(&game, 0, far)
             .expect("the live seat dooms the far fogged site");
         assert!(why.contains("beyond the empire's Loyalty reach"), "{why}");
-        assert!(live.settle_site_is_loyalty_doomed(&game, 0, far));
+        assert!(live.settle_site_loyalty_verdict(&game, 0, far).is_some());
         assert!(
             live.settle_site_loyalty_verdict(&game, 0, near).is_none(),
             "a site inside the halo with no rival near is sound"
@@ -42197,7 +42193,6 @@ mod tests {
             .is_empty());
     }
 
-    #[test]
     /// The census this guards: at the deployment shape the seat parked 36% of
     /// its envoys at exactly one per city-state and held 0.3 suzerainties,
     /// because the scorer amortises the next type bonus over the envoys needed
@@ -46164,7 +46159,7 @@ mod tests {
         let warrior = game.spawn_test_unit("warrior", 0, home);
 
         assert!(
-            !BasicAi::barbarian_presence_at_home(&game, 0),
+            !BasicAi::barbarian_presence_at_home_with_camp_radius(&game, 0, crate::ai::HOME_THREAT_RADIUS),
             "at the raider radius a camp eight tiles out is nobody's business"
         );
         assert!(
@@ -46398,7 +46393,7 @@ mod tests {
         let soldier = game.spawn_test_unit("warrior", 0, soldier_at);
 
         assert!(
-            BasicAi::barbarian_presence_at_home(&game, 0),
+            BasicAi::barbarian_presence_at_home_with_camp_radius(&game, 0, crate::ai::HOME_THREAT_RADIUS),
             "precondition: the raider stands within the home threat radius"
         );
         assert!(
@@ -46559,7 +46554,7 @@ mod tests {
         ai.battlefront_observation = false;
 
         assert!(
-            BasicAi::barbarian_presence_at_home(&game, 0),
+            BasicAi::barbarian_presence_at_home_with_camp_radius(&game, 0, crate::ai::HOME_THREAT_RADIUS),
             "precondition: the barbarian is inside Rome's home-threat ring"
         );
         assert!(
@@ -50168,7 +50163,7 @@ mod research_probe {
         beside_rival.sort_unstable();
         let doomed = beside_rival[0];
         assert!(
-            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed),
+            AdvancedAi::new().settle_site_loyalty_verdict(&game, 0, doomed).is_some(),
             "the fixture must put the candidate below the live emergency threshold"
         );
         let mut beside_home: Vec<Pos> = game
@@ -50180,7 +50175,7 @@ mod research_probe {
             .collect();
         beside_home.sort_unstable();
         assert!(
-            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, beside_home[0]),
+            !AdvancedAi::new().settle_site_loyalty_verdict(&game, 0, beside_home[0]).is_some(),
             "the fixture must retain a holdable alternative"
         );
 
@@ -50200,7 +50195,7 @@ mod research_probe {
         if let Some(target) = live.settler_targets.get(&settler).copied() {
             assert!(!retired.contains_key(&target));
             assert!(
-                !live.settle_site_is_loyalty_doomed(&game, 0, target),
+                !live.settle_site_loyalty_verdict(&game, 0, target).is_some(),
                 "a retained target must survive the same forecast"
             );
         }
@@ -50274,7 +50269,7 @@ mod research_probe {
         // enough to make the target untenable.
         game.cities.get_mut(&theirs).unwrap().pop = 1;
         assert!(
-            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            !AdvancedAi::new().settle_site_loyalty_verdict(&game, 0, target).is_some(),
             "the cached target must begin viable"
         );
 
@@ -50282,7 +50277,7 @@ mod research_probe {
         // the mirror. At arrival the same target is now a clear loss.
         game.cities.get_mut(&theirs).unwrap().pop = 12;
         assert!(
-            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            AdvancedAi::new().settle_site_loyalty_verdict(&game, 0, target).is_some(),
             "the arrival board must make the formerly safe target untenable"
         );
         let cities_before = game.player_city_ids(0).len();
@@ -50367,7 +50362,7 @@ mod research_probe {
             .collect();
         beside_rival.sort_unstable();
         let doomed = beside_rival[0];
-        assert!(AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed));
+        assert!(AdvancedAi::new().settle_site_loyalty_verdict(&game, 0, doomed).is_some());
         // Give the sole candidate a deliberately strong first two rings. The
         // test must exercise a real target pick, not pass because the normal
         // value threshold rejects every flat, frontier site before Loyalty is
@@ -51225,7 +51220,7 @@ mod research_probe {
             .thoughts
             .iter()
             .any(|thought| thought.detail.contains("strong enough to take what a neighbour has")));
-        let mut frozen = AdvancedAi::legacy();
+        let frozen = AdvancedAi::legacy();
         assert!(!frozen.no_elective_war);
         assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
 
@@ -51379,7 +51374,7 @@ mod research_probe {
             .map(|(position, _)| *position)
             .collect::<Vec<_>>();
         sites.sort();
-        let mut found_next = |game: &mut Game| {
+        let found_next = |game: &mut Game| {
             let site = sites
                 .iter()
                 .copied()
@@ -51415,7 +51410,7 @@ mod research_probe {
             .iter()
             .any(|thought| thought.detail.contains("a Prophet is a finite race")));
 
-        let mut frozen = AdvancedAi::legacy();
+        let frozen = AdvancedAi::legacy();
         assert!(!frozen.expansion_before_prophet);
         assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Religion);
 

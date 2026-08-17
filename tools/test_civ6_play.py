@@ -1090,6 +1090,42 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class PeaceDeterrenceConfigTests(unittest.TestCase):
+    """⚠ A flag the mod never receives is a flag that does nothing (#1098's
+    lesson): the key has to reach the baked config, and the Lua has to read it.
+    """
+
+    @staticmethod
+    def _config(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[],
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", **changes))
+
+    def test_the_flag_reaches_the_baked_mod_config(self):
+        self.assertIs(self._config(peace_deterrence=True)["PeaceDeterrence"], True)
+        self.assertIs(self._config(peace_deterrence=False)["PeaceDeterrence"], False)
+
+    def test_the_lua_gate_is_bounded_and_withholdable(self):
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        self.assertIn("if cfg.PeaceDeterrence and not atWar and strongestMet > 0", lua)
+        self.assertIn("and ourStrength * 2 < strongestMet then", lua)
+        # Bounded: unlike the losingWar lift, deterrence stays under ArmyCap.
+        gate = lua.split("if cfg.PeaceDeterrence and not atWar", 1)[1]
+        gate = gate.split("-- ★★★ A BATTERING RAM", 1)[0]
+        self.assertIn("math.min((counts.military or 0) + 2,", gate)
+        self.assertIn("cfg.ArmyCap or ((cfg.WarArmy or 4) + 6)));", gate)
+        # And the strength it weighs is met-gated, war or peace.
+        self.assertIn("try(function() return diplomacy:HasMet(otherId); end, false)", lua)
+        self.assertIn("return atWar, ours, worst, strongestMet;", lua)
+
+
 class SupervisedBrainCommandTests(unittest.TestCase):
     """Every flag that reaches the decision worker is decided in one builder."""
 
