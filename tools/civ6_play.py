@@ -2759,6 +2759,28 @@ def _play(args: argparse.Namespace) -> int:
         "seat": state["seat"],
         "outcome": outcome or None,
         "game_stopped": game_stopped,
+        # ★★★★★ WHICH VICTORY THIS RUN WAS PLAYING FOR.
+        #
+        # The summary is the artefact the ladder is built from, and until now it
+        # recorded every setting of the game — difficulty, size, speed, modes,
+        # max turns — and not the one setting that says what the AGENT was
+        # trying to do. `civ6_civvis_climb.py` stamps `victory_target` on its own
+        # JSONL row, but that is a different file from this one and the published
+        # ladder is built from this one, so `docs/civ6_ladder.json` has 307 rows
+        # and no lane on any of them.
+        #
+        # That was survivable while the launchers offered one workable lane. It
+        # is not survivable now: #1871 made all six of `VictoryTarget`'s variants
+        # selectable, so rows from here on can differ in objective, and a record
+        # that cannot separate them cannot answer the only question anyone asks
+        # of it — which lane wins. Every comment in this tree about rows being
+        # "NOT comparable" across a configuration change is describing exactly
+        # this failure, and this is the column that ends it.
+        #
+        # ⚠ This is what was ASKED FOR, not what the agent did. `civvis` means
+        # no target was pinned and the agent chose; it is not a seventh victory
+        # condition. The victory a game actually ended on is `outcome.victory`.
+        "victory_target": args.civvis_victory if args.civvis_decides else None,
     }
     # Bridge health rides in the summary: how much of what CIVVIS said the
     # engine actually did. Summed from this run's own turn events so the

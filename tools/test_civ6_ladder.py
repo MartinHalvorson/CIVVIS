@@ -485,6 +485,48 @@ class RedrawingIsNotPublishing(LedgerCase):
         self.assertIn("landed", tags)
 
 
+class EveryRowSaysWhichLaneItPlayed(LedgerCase):
+    """★★★★★ 307 rows and no column for the objective.
+
+    The summary recorded every setting of the GAME — difficulty, size, speed,
+    modes, turn cap — and not the one setting that says what the AGENT was
+    trying to do. That was survivable while the launchers offered one workable
+    lane. #1871 made all six of `VictoryTarget`'s variants selectable, so rows
+    from here on can differ in objective, and a ledger that cannot separate them
+    cannot answer the only question anyone asks of it.
+    """
+
+    def test_the_asked_for_lane_reaches_the_ledger_row(self):
+        entry = civ6_ladder.entry_from(summary("aimed", victory_target="religious"))
+        self.assertEqual(entry["victory_target"], "religious")
+
+    def test_a_row_from_before_the_column_existed_reads_absent_not_wrong(self):
+        self.assertIsNone(civ6_ladder.entry_from(summary("older"))["victory_target"])
+
+    def test_what_was_asked_for_and_what_was_won_are_different_columns(self):
+        """`civvis` is the absence of a pinned target, not a seventh victory
+        condition, so it must never be confused with the outcome."""
+        entry = civ6_ladder.entry_from(summary(
+            "chose", won=True, victory_target="civvis",
+            outcome={"kind": "victory", "won": True, "victory": 4},
+            seat={"victory_types": [{"index": 4, "type": "VICTORY_RELIGIOUS"}]}))
+        self.assertEqual(entry["victory_target"], "civvis")
+        self.assertEqual(entry["victory"], 4)
+        self.assertEqual(entry["victory_type"], "VICTORY_RELIGIOUS")
+
+    def test_the_attempt_table_shows_the_lane(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("shown", victory_target="diplomatic")))
+        table = civ6_ladder.markdown_for(self.state())
+        self.assertIn("| playing for |", table)
+        row = next(line for line in table.splitlines() if "`shown`" in line)
+        self.assertIn("| diplomatic |", row)
+
+    def test_a_row_without_a_lane_renders_a_dash_not_none(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary("older")))
+        self.assertNotIn("None", civ6_ladder.markdown_for(self.state()))
+
+
 class TheCensusSaysWhichLanesComplete(unittest.TestCase):
     """Which victory conditions have ended a game here — the record's only
     empirical evidence about lane reachability inside the turn budget."""
