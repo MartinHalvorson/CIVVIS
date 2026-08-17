@@ -859,3 +859,54 @@ against stock on the deployment profile, and re-read `culture_building_debt` on
 a Culture-targeted seat where it can actually fire. The measurement route and
 its integrity rules are in `docs/EVAL.md`; the standing prior on this ledger is
 that most such repairs measure null.
+
+## 2026-08-17 the `live` evaluator arm is five flags short of the agent that plays
+
+★★★★★ **The one comparison that is supposed to be exact, is not.**
+
+`AdvancedAi::enable_live_bridge` carries an explicit instruction
+(`src/ai/advanced.rs:4349`):
+
+> ⚠ ADD NEW BRIDGE FLAGS HERE, not in the binary, or the arm silently stops
+> matching the deployment
+
+Five flags are set in the binary. `src/bin/civvis_orders.rs` calls
+`enable_live_bridge()` and then turns on five more:
+
+| flag | in `LIVE_TREATMENTS` | has a `disable_*` twin |
+|---|---|---|
+| `parallel_settlers` | no | **no** |
+| `host_settler_pop` | no | **no** |
+| `explore_dead_targets` | no | **no** |
+| `explore_commit` | no | yes |
+| `bank_envoys` | no | yes |
+
+`enable_live_bridge` turns on 68 flags and `LIVE_TREATMENTS` has 68 rows, so the
+registry test `live_bundle_and_registry_agree` (`advanced.rs:27912`) passes — it
+walks the *bundle*, and a flag set outside the bundle is invisible to it. The
+test enforces the rule only against people who already followed it.
+
+Three consequences, all unmeasured:
+
+1. **`elo.rs`'s `live` controller is a different agent from the one that plays
+   Civilization VI.** It is sold as the deployment's twin and is five flags
+   short of it. Every `live` vs `live_without_*` reading is therefore taken
+   against a base that is not the deployment.
+2. **None of the five can be withheld.** `--without` resolves against
+   `LIVE_TREATMENTS` (#1884), so these five ship unpriceable — the same defect
+   the eleven missing control arms had, one level up.
+3. **The per-run provenance line under-reports the deployed configuration by
+   five**, so a ladder row's own record of what it ran is incomplete.
+
+**The remedy, and why it is not a one-line move.** Registering them means
+writing three new `disable_*` methods, adding five `LIVE_TREATMENTS` rows,
+bumping the array to 73, and moving the five `enable_*` calls out of the binary
+into the bundle. The deployed agent does not change — the same flags end up on —
+but the **`live` arm does**, by gaining the five it should always have had.
+That makes prior `live`-arm readings non-comparable with later ones, which is a
+decision to register rather than a change to slip in: rows either side of it are
+not comparable, and the entry that makes the move should say so in `docs/EVAL.md`
+the way every other identity change here does.
+
+Recorded now because #1884 has just made the eleven *registered* treatments
+withholdable, and these five are what is left.
