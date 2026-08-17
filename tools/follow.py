@@ -803,7 +803,8 @@ def main():
         stale = (time.time() - mtime) > RUN_FRESH_SECONDS
         if run_dir != current_run:
             log(f"following run {os.path.basename(run_dir)}"
-                + (" (idle; showing its last position)" if stale else ""))
+                + (" (already idle; leaving the port free until it says more)"
+                   if stale else ""))
             # ⚠ Take the PREVIOUS game down before adopting this one. Leaving it
             # served makes the two windows show different games for as long as
             # the new attempt takes to export a map. See `stop_visible_server`.
@@ -817,10 +818,24 @@ def main():
         # RUN_FRESH_SECONDS -- it is over, and the supervisor is between games
         # (pulling, building) rather than about to say more. Take it down and
         # leave the port free until the next attempt has a map.
-        if stale and server_alive(PORT):
-            log(f"run {os.path.basename(run_dir)} has been idle for "
-                f"{int(RUN_FRESH_SECONDS)}s; taking its finished game down")
-            stop_visible_server()
+        #
+        # ⚠⚠ THE `continue` IS UNCONDITIONAL ON PURPOSE. Until 2026-08-17 this
+        # whole branch was gated on `server_alive(PORT)`, so the tick that
+        # followed a teardown found the port free, fell through to the start
+        # path below -- which has no staleness guard of its own -- and re-served
+        # the very game just taken off the screen. The follower then oscillated
+        # forever at a fixed cost: take down, start, take down, start, one
+        # 21 MB `civvis play` process spawned every ~6 seconds for as long as
+        # the seat sat between games. Measured on the idle
+        # science-domination-20260817T010000Z seat: the mirror pid advanced
+        # 38418 -> 38584 -> 38620 -> 38657 inside 20 seconds, and the browser
+        # tab pointing at `?instance=<server_pid>` was stale the moment it
+        # loaded, because that pid had already been replaced.
+        if stale:
+            if server_alive(PORT):
+                log(f"run {os.path.basename(run_dir)} has been idle for "
+                    f"{int(RUN_FRESH_SECONDS)}s; taking its finished game down")
+                stop_visible_server()
             time.sleep(POLL_SECONDS)
             continue
 
