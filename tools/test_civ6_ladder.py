@@ -407,3 +407,61 @@ class ThePublishedPairAgrees(unittest.TestCase):
             civ6_ladder.markdown_for(state),
             "docs/CIV6_LADDER.md is out of step with docs/civ6_ladder.json; "
             "run `python3 tools/civ6_ladder.py publish` and land both files")
+
+
+class LatestCodeGuarantee(LedgerCase):
+    """The run's revision history reaches the ledger; the watcher's silence
+    fails check."""
+
+    def test_decider_revisions_read_start_and_handoffs_deduplicated(self):
+        updates = self.runs / "runtime_updates.jsonl"
+        rows = [
+            {"kind": "runtime_update", "status": "start", "to_revision": "aaa"},
+            {"kind": "runtime_update", "status": "handoff",
+             "from_revision": "aaa", "to_revision": "bbb"},
+            # The handoff re-execs the brain, whose fresh start repeats bbb.
+            {"kind": "runtime_update", "status": "start", "to_revision": "bbb"},
+            {"kind": "runtime_update", "status": "failed_reexec",
+             "to_revision": "ccc"},  # not a code change; the bridge stayed old
+            {"kind": "runtime_update", "status": "handoff",
+             "from_revision": "bbb", "to_revision": "ddd"},
+        ]
+        updates.write_text("\n".join(json.dumps(r) for r in rows))
+        self.assertEqual(civ6_ladder.decider_revisions(updates),
+                         ["aaa", "bbb", "ddd"])
+        self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
+
+    def test_the_revision_history_is_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("tracked", decider_revisions=["aaa", "bbb"])))
+        self.assertEqual(self.state()["attempts"][0]["revisions"],
+                         ["aaa", "bbb"])
+
+    def heartbeat_problem(self, payload, minutes=10,
+                          now=datetime(2026, 8, 17, 12, 0,
+                                       tzinfo=timezone.utc)):
+        beat = self.runs / "cache" / "heartbeat.json"
+        beat.parent.mkdir(parents=True, exist_ok=True)
+        if payload is not None:
+            beat.write_text(json.dumps(payload))
+        return civ6_ladder.runtime_heartbeat_problem(beat, minutes, now=now)
+
+    def test_a_machine_without_the_runtime_cache_is_nobodys_problem(self):
+        absent = self.runs / "never-existed" / "heartbeat.json"
+        self.assertIsNone(
+            civ6_ladder.runtime_heartbeat_problem(absent, 10))
+
+    def test_a_cache_with_no_heartbeat_fails(self):
+        problem = self.heartbeat_problem(None)
+        self.assertIn("no heartbeat", problem)
+
+    def test_a_fresh_clean_heartbeat_passes_and_a_stale_one_fails(self):
+        fresh = {"utc": "2026-08-17T11:55:00Z", "last_error": ""}
+        self.assertIsNone(self.heartbeat_problem(fresh))
+        stale = {"utc": "2026-08-17T09:00:00Z", "last_error": ""}
+        self.assertIn("old", self.heartbeat_problem(stale))
+
+    def test_a_reported_refresh_error_fails_even_when_fresh(self):
+        beat = {"utc": "2026-08-17T11:59:00Z",
+                "last_error": "cargo build failed (101): expected `;`"}
+        self.assertIn("cargo build failed", self.heartbeat_problem(beat))

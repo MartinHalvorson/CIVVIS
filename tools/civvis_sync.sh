@@ -294,6 +294,21 @@ else
   problems=$((problems+1))
 fi
 
+# The live verification game must provably track origin/main. The brain's
+# updater hands the running game a fresh decider at turn boundaries and writes
+# a heartbeat every refresh cycle; `check --heartbeat-minutes` fails when that
+# heartbeat is stale, unreadable, or reporting a refresh error — and passes
+# untouched on machines that have never run the live loop (no runtime cache).
+# Ten minutes of slack over the 30s refresh means only real silence alarms.
+ladder="$REPO/tools/civ6_ladder.py"
+if [[ -f $ladder ]]; then
+  while IFS= read -r line; do
+    [[ -z $line || $line != LADDER:* ]] && continue
+    say "$line"
+    problems=$((problems+1))
+  done < <(python3 "$ladder" watch --minutes 10 2>>$LOG)
+fi
+
 if [[ $problems == 0 ]]; then
   say "in sync with GitHub at $tip"
   exit 0
