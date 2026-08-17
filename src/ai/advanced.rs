@@ -18001,13 +18001,15 @@ impl AdvancedAi {
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
-                    && site.is_some()
                 {
-                    let site = site.expect("the Settler gate just checked for a site");
-                    if self.coupled_expansion {
-                        self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
+                    if let Some(site) = site {
+                        if self.coupled_expansion {
+                            self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
+                        } else {
+                            (920.0 + site.1 * 4.0) * self.settler_price
+                        }
                     } else {
-                        (920.0 + site.1 * 4.0) * self.settler_price
+                        -10_000.0
                     }
                 } else {
                     -10_000.0
