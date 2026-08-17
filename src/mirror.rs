@@ -9874,7 +9874,8 @@ fn apply_live_great_person_activation_needs(
     game.players[0].live_great_person_activation_needs = needs;
 }
 
-/// Carry only a hard, named live-offer prerequisite into the simulator.
+/// Carry the host's current Great Person classes and hard named prerequisites
+/// into the simulator.
 ///
 /// The class label is not enough: Firaxis offers Hildegard of Bingen as a
 /// Great Scientist but requires a Holy Site, and Mary Leakey as a Great
@@ -9894,9 +9895,11 @@ fn apply_live_great_person_offer_blockers(
         // A persistent mirror may have received this field last turn from a
         // newer mod and omit it after a rollback. Never keep a stale live-only
         // refusal alive when the current host frame no longer knows it.
+        game.players[0].live_great_person_offers = None;
         game.players[0].live_great_person_offer_blockers.clear();
         return;
     };
+    let mut offered_classes = BTreeSet::new();
 
     for (class, offer) in offers {
         let Some(kind) = class
@@ -9910,6 +9913,7 @@ fn apply_live_great_person_offer_blockers(
             }
             continue;
         };
+        offered_classes.insert(kind.clone());
         let Some(required_district) = offer
             .required_district
             .as_deref()
@@ -9963,6 +9967,7 @@ fn apply_live_great_person_offer_blockers(
             ),
         );
     }
+    game.players[0].live_great_person_offers = Some(offered_classes);
     game.players[0].live_great_person_offer_blockers = blockers;
 }
 
@@ -16500,6 +16505,23 @@ mod host_fact_tests {
                 .is_some_and(BTreeMap::is_empty),
             "the same Lua empty-map trap must not lose a new named-offer field"
         );
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 4,
+            height: 4,
+            chunk: 1,
+            plots: vec![host_grass(2, 2)],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+        assert_eq!(
+            rebuilt.players[0].live_great_person_offers,
+            Some(BTreeSet::new()),
+            "an empty host table means no class is recruitable, not an old export"
+        );
+        assert!(
+            !rebuilt.great_person_class_offered_now(0, "scientist"),
+            "the native roster must not reopen a truly empty host screen"
+        );
 
         // The populated and absent forms keep working.
         let populated: StateSnapshot = serde_json::from_str(
@@ -16990,6 +17012,17 @@ mod host_fact_tests {
             ..StateSnapshot::default()
         };
         let mut game = rebuild_from_state(&snapshot, &campus_only, 2, 1, 250, 0).game;
+
+        assert_eq!(
+            game.players[0].live_great_person_offers,
+            Some(["scientist".to_string()].into_iter().collect()),
+            "the host's named screen, not CIVVIS's whole roster, is the live offer set"
+        );
+        assert!(game.great_person_class_offered_now(0, "scientist"));
+        assert!(
+            !game.great_person_class_offered_now(0, "merchant"),
+            "a class omitted from Firaxis's table cannot receive a local order"
+        );
 
         let blocker = game
             .live_great_person_offer_blocker(0, "scientist")

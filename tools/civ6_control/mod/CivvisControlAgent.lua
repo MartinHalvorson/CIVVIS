@@ -6907,8 +6907,11 @@ local function exportState(player, pid, turn)
 		-- directly above. The timeline includes later people in each class; its
 		-- lowest-cost unclaimed entry is the one the Recruit operation would
 		-- judge.
-		-- And return nil rather than an empty map: the encoder writes `{}` as
-		-- `[]`, which cannot deserialize as Rust's BTreeMap.
+		-- An empty table encodes as `[]`; Rust deliberately accepts that shape
+		-- for this field so it can distinguish an authoritative empty Great
+		-- People screen from an older control mod that omitted the field. That
+		-- distinction prevents the local fallback roster from claiming a class
+		-- after Firaxis has exhausted every offer.
 		great_person_offers = try(function()
 			local greatPeople = Game.GetGreatPeople();
 			if greatPeople == nil then return nil; end
@@ -6934,7 +6937,7 @@ local function exportState(player, pid, turn)
 					end
 				end
 			end
-			if not any then return nil; end
+			if not any then return {}; end
 			return out;
 		end, nil),
 		governor_points = governor_points,

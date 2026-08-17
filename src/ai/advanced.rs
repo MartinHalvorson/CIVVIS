@@ -12938,6 +12938,12 @@ impl AdvancedAi {
             let Some((_, person)) = g.current_great_person(kind) else {
                 continue;
             };
+            // The local named roster is only a fallback model. When the
+            // Firaxis mirror names its current screen, patronage can target
+            // exactly those classes and must leave every other class alone.
+            if !g.great_person_class_offered_now(pid, kind) {
+                continue;
+            }
             if !g.can_activate_current_great_person(pid, kind) {
                 continue;
             }
@@ -38989,6 +38995,67 @@ mod tests {
         assert!(native.players[0].live_great_person_exhausted.is_none());
         live.advanced_great_people(&mut native, 0, GrandStrategy::Science);
         assert_eq!(native.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 1);
+    }
+
+    /// A host class can remain recruitable later in the timeline without
+    /// being on its Great People screen now. At t241 of
+    /// `civvis-20260817T030352Z`, Rome had 1,339 Faith and a local Scientist
+    /// race ready to claim, while Firaxis actually offered Engineer, Merchant,
+    /// Admiral, and Musician. The wrong-class Scientist order was refused and
+    /// the treasury stayed idle. Restricting candidate generation to the live
+    /// offer list sends the spend to an actual offer instead.
+    #[test]
+    fn live_offer_list_patronizes_an_offered_class_instead_of_a_native_one() {
+        let mut game = Game::new(2, 24, 16, 7_106, 200, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+
+        let scientist_cost = game.gp_cost(0, "scientist");
+        let merchant_cost = game.gp_cost(0, "merchant");
+        game.players[0]
+            .gpp
+            .insert("scientist".to_string(), (scientist_cost * 0.30).floor());
+        game.players[0]
+            .gpp
+            .insert("merchant".to_string(), (merchant_cost * 0.30).floor());
+        game.players[0].live_great_person_offers =
+            Some(["merchant".to_string()].into_iter().collect());
+        game.players[0].gold = 0.0;
+        let merchant_price = game
+            .great_person_patronage_price(0, "merchant", "faith")
+            .expect("the current Merchant has a Faith quote");
+        assert_eq!(
+            game.great_person_patronage_price(0, "scientist", "faith"),
+            None,
+            "a native roster entry outside the host screen must not quote a buyout"
+        );
+        game.players[0].faith = merchant_price + 100.0 + 50.0;
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.advanced_great_people(&mut game, 0, GrandStrategy::Science);
+
+        assert_eq!(
+            game.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
+            0,
+            "the high-affinity native Scientist is not on Firaxis's offer screen"
+        );
+        assert_eq!(
+            game.players[0].gp_claimed.get("merchant").copied().unwrap_or(0),
+            1,
+            "the live controller turns banked Faith into the offered Merchant"
+        );
+        assert!(
+            game.players[0].faith >= 100.0 - f64::EPSILON,
+            "the live reserve remains after the productive Faith spend ({})",
+            game.players[0].faith
+        );
     }
 
     #[test]
