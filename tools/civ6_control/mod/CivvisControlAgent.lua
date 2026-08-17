@@ -385,6 +385,20 @@ local function survey()
 			religious = try(function() return Game.IsVictoryEnabled("VICTORY_RELIGIOUS"); end, nil),
 			diplomatic = try(function() return Game.IsVictoryEnabled("VICTORY_DIPLOMATIC"); end, nil),
 		},
+		-- ★★ THE HOST'S OWN VICTORY TABLE, index -> type, so the raw integer the
+		-- `TeamVictory` event reports is self-describing inside every run's own
+		-- record. `docs/CIV6_LADDER.md` refuses guessed names for that integer —
+		-- rightly; joining 180 ladder rows to the Hall of Fame's `VictoryType`
+		-- strings measured 0=SCORE 3=CULTURE 4=RELIGIOUS 5=TECHNOLOGY
+		-- 6=DIPLOMATIC on this install — and this export replaces the join with
+		-- the table the indices come from.
+		victory_types = try(function()
+			local types = {};
+			for row in GameInfo.Victories() do
+				types[#types + 1] = { index = row.Index, type = row.VictoryType };
+			end
+			return #types > 0 and types or nil;
+		end, nil),
 		players = try(function() return #PlayerManager.GetAliveMajorIDs(); end, -1),
 		-- Reserve every configured city-state seat in the persistent mirror. The
 		-- `minors` state list contains only actors already met, so sizing from that
@@ -6098,6 +6112,54 @@ local function exportState(player, pid, turn)
 				science = try(function() return other:GetTechs():GetScienceYield(); end, -1),
 				culture = try(function() return other:GetCulture():GetCultureYield(); end, -1),
 				tourism = try(function() return other:GetStats():GetTourism(); end, -1),
+				-- ★★★★ RIVAL VICTORY PROGRESS, AS THE SHIPPED SCREEN SHOWS IT.
+				--
+				-- Five of the twelve runs this seat was LEADING on 2026-08-16/17
+				-- ended at t229-245 by a rival completing a culture, technology
+				-- or diplomatic victory the mirror could not see coming: rival
+				-- space programs and tourist counts never crossed the bridge, so
+				-- the victory tracker read zero for every rival on exactly the
+				-- lanes that end games early. Every accessor here is one the
+				-- shipped World Rankings screen calls on OTHER players
+				-- (`GetNumProjectsAdvanced` per space-race project,
+				-- `GetCulture():GetTouristsTo()`, `GetCulture():
+				-- GetStaycationers()`, WorldRankings.lua:1674-1675), so the seat
+				-- learns nothing a player at the keyboard could not read there.
+				--
+				-- Only the space-race milestones that screen lists — Manhattan
+				-- and Ivy are strategic programs, not victory progress, and are
+				-- not public the same way. nil (absent) on a build without the
+				-- APIs; an empty list is a real "no milestone yet".
+				science_projects = try(function()
+					local stats = other:GetStats();
+					if stats == nil then return nil; end
+					local done = {};
+					for _, projectType in ipairs({
+						"PROJECT_LAUNCH_EARTH_SATELLITE",
+						"PROJECT_LAUNCH_MOON_LANDING",
+						"PROJECT_LAUNCH_MARS_REACTOR",
+						"PROJECT_LAUNCH_MARS_HABITATION",
+						"PROJECT_LAUNCH_MARS_HYDROPONICS",
+						"PROJECT_LAUNCH_MARS_BASE",
+						"PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+					}) do
+						local project = GameInfo.Projects[projectType];
+						if project ~= nil
+								and (stats:GetNumProjectsAdvanced(project.Index) or 0) > 0 then
+							done[#done + 1] = projectType;
+						end
+					end
+					return done;
+				end, nil),
+				-- The culture victory's own two numbers: tourists visiting THEM,
+				-- and their staycationers (which set the bar every rival must
+				-- clear). -1 on failure, as everywhere here.
+				foreign_tourists = try(function()
+					return other:GetCulture():GetTouristsTo();
+				end, -1),
+				domestic_tourists = try(function()
+					return other:GetCulture():GetStaycationers();
+				end, -1),
 				gold = try(function() return other:GetTreasury():GetGoldBalance(); end, -1),
 				-- Net, like our own `gold_per_turn` below (yield minus maintenance).
 				gold_per_turn = try(function()
