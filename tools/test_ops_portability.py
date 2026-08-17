@@ -93,6 +93,17 @@ class ServicesRunWhereTheyAreInstalled(unittest.TestCase):
         self.assertIn("REPO=$HEAD_REPO", source,
                       "the `head` pin must resolve to the derived tree")
 
+    def test_the_supervisor_refuses_a_treeless_repo(self):
+        # `cd /` succeeds, so a wrong derivation (the script run from a copy
+        # whose three-dirnames-up is not a repo) is otherwise a silent 120s
+        # build-fail loop with an empty sha. The cycle must check the tree is
+        # buildable and say how to fix the derivation it used.
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        self.assertIn('Cargo.toml" ]]', source,
+                      "the cycle must verify $REPO is a buildable tree")
+        self.assertIn("set CIVVIS_HEAD_REPO", source,
+                      "the refusal must name the override that fixes it")
+
 
 class LegacyDebtOnlyFalls(unittest.TestCase):
     def test_no_script_gains_a_hardcoded_home(self):
