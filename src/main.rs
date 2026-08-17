@@ -2423,14 +2423,14 @@ mod tests {
     /// one of those commands honour it.
     #[test]
     fn the_victories_flag_reaches_the_shared_game_builder() {
-        let asked = [
-            "--victories".to_string(),
-            "science,score".to_string(),
-        ];
+        let asked = ["--victories".to_string(), "science,score".to_string()];
         let options = game_options(&asked, 2, 11, TurnStructure::Sequential);
         assert!(options.victory_conditions.science);
         assert!(options.victory_conditions.score);
-        assert!(!options.victory_conditions.religious, "religion was not asked for");
+        assert!(
+            !options.victory_conditions.religious,
+            "religion was not asked for"
+        );
         assert!(!options.victory_conditions.culture);
         assert!(!options.victory_conditions.diplomatic);
         assert!(!options.victory_conditions.domination);
