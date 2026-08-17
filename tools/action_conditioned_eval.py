@@ -103,6 +103,12 @@ class LinearModel:
     keep: str
     interactions: str
     weights: tuple[float, ...]
+    # Action-policy artifacts carry their abstention decision in the artifact
+    # itself.  Keeping it beside the model prevents a later evaluator command
+    # from tuning the threshold on the profile it is reporting.  Historical
+    # q-advantage artifacts leave this unset and continue to require an
+    # explicit fixed score margin on the command line.
+    override_probability: float | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> "LinearModel":
@@ -114,9 +120,10 @@ class LinearModel:
         if not isinstance(payload, dict):
             raise EvaluationError(f"model {source}: expected a JSON object")
         schema = payload.get("schema")
-        if schema != "civvis-q-advantage-v1":
+        if schema not in {"civvis-q-advantage-v1", "civvis-action-policy-v1"}:
             raise EvaluationError(
-                f"model {source}: expected civvis-q-advantage-v1, found {schema!r}"
+                f"model {source}: expected civvis-q-advantage-v1 or "
+                f"civvis-action-policy-v1, found {schema!r}"
             )
         feature_width = payload.get("feature_width")
         keep = payload.get("keep")
@@ -131,6 +138,7 @@ class LinearModel:
         if keep not in {
             "state",
             "action",
+            "all",
             "kind",
             "geometry",
             "legacy-geometry",
@@ -154,6 +162,25 @@ class LinearModel:
                 raise EvaluationError(f"model {source}: weight {index} is not finite")
             weights.append(float(raw))
         expected_width = transformed_width(interactions)
+        if schema == "civvis-action-policy-v1":
+            if keep != "all" or interactions != "none" or feature_width != RAW_WIDTH:
+                raise EvaluationError(
+                    f"model {source}: action policy must use the full {RAW_WIDTH}-wide "
+                    "state/action contract"
+                )
+            raw_probability = payload.get("min_probability")
+            if (
+                isinstance(raw_probability, bool)
+                or not isinstance(raw_probability, (int, float))
+                or not math.isfinite(float(raw_probability))
+                or not 0.5 < float(raw_probability) < 1.0
+            ):
+                raise EvaluationError(
+                    f"model {source}: min_probability must be finite and in (0.5, 1)"
+                )
+            override_probability = float(raw_probability)
+        else:
+            override_probability = None
         if feature_width != expected_width:
             raise EvaluationError(
                 f"model {source}: width {feature_width} does not match current "
@@ -165,6 +192,7 @@ class LinearModel:
             keep=keep,
             interactions=interactions,
             weights=tuple(weights),
+            override_probability=override_probability,
         )
 
     def score(self, features: Sequence[float]) -> float:
@@ -380,7 +408,9 @@ def _mask(features: Sequence[float], keep: str) -> list[float]:
         for index in range(max(0, start), min(len(row), end)):
             row[index] = 0.0
 
-    if keep == "state":
+    if keep == "all":
+        pass
+    elif keep == "state":
         blank(state, len(row))
     elif keep == "action":
         blank(0, state)
@@ -447,11 +477,27 @@ def evaluate(
     dataset: Dataset,
     model: LinearModel,
     *,
-    min_margin: float,
+    min_margin: float | None,
     label: str = "evaluation",
 ) -> Report:
-    if not math.isfinite(min_margin):
+    declared_margin = (
+        math.log(model.override_probability / (1.0 - model.override_probability))
+        if model.override_probability is not None
+        else None
+    )
+    if min_margin is None:
+        if declared_margin is None:
+            raise EvaluationError(
+                "min_margin is required for legacy q-advantage artifacts"
+            )
+        min_margin = declared_margin
+    elif not math.isfinite(min_margin):
         raise EvaluationError("min_margin must be finite")
+    elif declared_margin is not None and abs(min_margin - declared_margin) > 1e-9:
+        raise EvaluationError(
+            "command-line min_margin differs from the action artifact's "
+            "declared min_probability"
+        )
     games: dict[int, _GameAccumulator] = {}
     for decision in dataset.decisions:
         scores = [
@@ -589,8 +635,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-margin",
         type=float,
-        required=True,
-        help="fixed score margin; no threshold sweep is implemented",
+        help=(
+            "fixed score margin for legacy q-advantage artifacts; action-policy "
+            "artifacts use their declared min_probability"
+        ),
     )
     parser.add_argument(
         "--min-coverage",
@@ -605,7 +653,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not math.isfinite(args.min_margin):
+    if args.min_margin is not None and not math.isfinite(args.min_margin):
         parser.error("--min-margin must be finite")
     if not 0.0 <= args.min_coverage <= 1.0:
         parser.error("--min-coverage must be between 0 and 1")
@@ -616,6 +664,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--data-seed and --data-games must be supplied together")
     try:
         model = LinearModel.load(args.model)
+        if args.min_margin is None and model.override_probability is None:
+            parser.error(
+                "--min-margin is required for civvis-q-advantage-v1 artifacts"
+            )
         primary = load_dataset(args.data)
         if args.data_seed is not None:
             validate_game_range(primary, args.data_seed, args.data_games, "data")
