@@ -33,6 +33,39 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("production_progress = prodProgress", exporter)
         self.assertIn("production_cost = prodCost", exporter)
 
+    def test_state_export_has_fog_safe_public_empire_totals_for_every_major(self) -> None:
+        """A standings row needs empire totals even when its cities are unseen.
+
+        The detail loop remains visibility-gated, while this aggregate carries
+        no city or unit identity/location. Keep the distinction in the export:
+        losing the aggregate makes every fogged rival look like a zero-city
+        empire in the player HUD.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+        rivals = exporter.split("-- Rivals:", 1)[1].split(
+            "-- Met city-states", 1
+        )[0]
+        rival_record = rivals.split("rivals[#rivals + 1] = {", 1)[1]
+
+        self.assertIn("local function publicEmpireStats(subject, suzerainCounts)", exporter)
+        self.assertIn("city:GetYield(YieldTypes.FOOD)", exporter)
+        self.assertIn("city:GetYield(YieldTypes.PRODUCTION)", exporter)
+        self.assertIn("weapons:GetWeaponCount(definition.Index)", exporter)
+        self.assertIn("local function publicSuzerainCounts()", exporter)
+        self.assertIn("public_stats = publicStats,", exporter)
+        self.assertIn("public_stats = otherPublicStats,", rivals)
+        self.assertIn("government = try(function()", rival_record)
+        self.assertIn("culture:GetCurrentGovernment()", rival_record)
+        self.assertIn("Game.GetEras():HasDarkAge(otherId)", rival_record)
+        self.assertIn("Game.GetEras():HasGoldenAge(otherId)", rival_record)
+        self.assertIn("Game.GetEras():HasHeroicGoldenAge(otherId)", rival_record)
+        self.assertLess(
+            rivals.index("local otherPublicStats = publicEmpireStats(other, suzerainCounts);"),
+            rivals.index("for _, city in other:GetCities():Members() do"),
+        )
+        self.assertIn("local seen = plotRevealed(pid, cx, cy);", rivals)
+
     def test_state_export_keeps_completed_strategic_projects_out_of_city_queues(self) -> None:
         """A fresh mirror needs player history, not just the current queue.
 
@@ -394,6 +427,161 @@ class ProtectedInstallTest(unittest.TestCase):
         # The Prophet branch of the Great Person routine retires through the same gate.
         self.assertIn('and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then', source)
 
+    def test_civvis_envoy_orders_place_one_token_through_a_fresh_handle(self) -> None:
+        # The bridge translates CIVVIS's SendEnvoy into an `envoy` order once
+        # `envoys_free` is mirrored; the mod places exactly one token per order
+        # through the shipped CityStates.lua accessors, reads every handle fresh
+        # inside the order, and never writes the prompt-clearing flag — the
+        # stale-handle write is the one defect the old lane's crash was pinned on.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('if kind == "envoy" then', source)
+        handler = source.split('if kind == "envoy" then', 1)[1].split("\n\t-- ★★★★★ CIVVIS'S OWN POLICY", 1)[0]
+        self.assertIn("PlayerOperations.GIVE_INFLUENCE_TOKEN", handler)
+        self.assertIn("PlayerOperations.PARAM_PLAYER_ONE", handler)
+        self.assertIn("player:GetInfluence()", handler)
+        self.assertIn("influence:GetTokensToGive()", handler)
+        self.assertIn("influence:CanGiveInfluence()", handler)
+        self.assertIn("influence:CanGiveTokensToPlayer(subject)", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, giveOp, params)", handler)
+        # One token per order: no loop over the held count in this arm.
+        self.assertNotIn("for _ = 1,", handler)
+        # The decision is CIVVIS's — this arm neither chooses a target nor clears the prompt.
+        self.assertNotIn("SetGivingTokensConsidered", handler)
+        self.assertNotIn("envoySpendOrder", handler)
+        self.assertNotIn("cfg.EnvoyEnabled", handler)
+        # Issuing-side telemetry only: no same-frame "after" count, which read equal
+        # to `held` on every live placement while the tokens were landing; the
+        # receiving side is the next export's envoys_free / minors[].envoys.
+        self.assertIn('emit("envoy"', handler)
+        self.assertIn('source = "civvis"', handler)
+        self.assertNotIn("after =", handler)
+        self.assertNotIn("player:GetInfluence():GetTokensToGive();", handler)
+        # And a refusal names its reason.
+        for reason in ("envoy_target_unmapped", "envoy_no_operation", "envoy_none_held", "envoy_cannot_give", "envoy_refused_"):
+            self.assertIn(reason, handler)
+
+    def test_civvis_levy_orders_pay_the_host_quote_through_a_fresh_handle(self) -> None:
+        # LevyMilitary crosses as a `levy` order once the seat holds a
+        # suzerainty; the mod gates on CanLevyMilitary and Firaxis's own cost
+        # against the treasury, one LEVY_MILITARY request per order.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('if kind == "levy" then', source)
+        handler = source.split('if kind == "levy" then', 1)[1].split("\n\t-- ★★★★★ CIVVIS'S OWN POLICY", 1)[0]
+        self.assertIn("PlayerOperations.LEVY_MILITARY", handler)
+        self.assertIn("PlayerOperations.PARAM_PLAYER_ONE", handler)
+        self.assertIn("influence:CanLevyMilitary(subject)", handler)
+        self.assertIn("influence:GetLevyMilitaryCost(subject)", handler)
+        self.assertIn("player:GetTreasury():GetGoldBalance()", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, levyOp, params)", handler)
+        self.assertNotIn("SetGivingTokensConsidered", handler)
+        self.assertNotIn("cfg.EnvoyLevy", handler)
+        self.assertIn('emit("levy"', handler)
+        for reason in ("levy_target_unmapped", "levy_no_operation", "levy_refused_", "levy_unaffordable"):
+            self.assertIn(reason, handler)
+
+    def test_trade_route_exports_use_firaxis_own_origin_yield_sum(self) -> None:
+        """Fogged destination districts must not make the mirror guess a route."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local tradeRoutes = {};", 1)[1].split("local queue = try(function()", 1)[0]
+        for api in (
+            "CalculateOriginYieldsFromPotentialRoute",
+            "CalculateOriginYieldsFromPath",
+            "CalculateOriginYieldsFromModifiers",
+        ):
+            self.assertIn(api, exporter)
+        # TradeSupport.lua indexes the returned one-based arrays by
+        # `yieldIndex`, but `GetInternationalYieldModifier` takes its zero-based
+        # YieldTypes index. Keep both sides of that contract explicit.
+        self.assertIn("fromRoute[index + 1]", exporter)
+        self.assertIn("GetInternationalYieldModifier(index)", exporter)
+        self.assertIn("yields = routeYields", exporter)
+
+    def test_a_stuck_screens_retries_walk_the_whole_exit_ladder_again(self) -> None:
+        # Two leading games died on the 900 s watchdog under a late first-contact
+        # leader scene: after twenty tries every 30 s retry called only the tail
+        # rungs, because the failure count was passed as the rung number. The
+        # rung cycles; the count still drives the desktop/stuck thresholds; and a
+        # diplomacy view reports the mode/session/fade/popup it is stuck in.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;", shim)
+        self.assertIn("pcall(function() ended = endScreen(rung); end);", shim)
+        self.assertNotIn("endScreen(closes)", shim)
+        self.assertIn("if closes >= DESKTOP_AFTER and not desktopReported then", shim)
+        self.assertIn("if closes >= GIVE_UP_AFTER then", shim)
+        for field in ('"rung":%d', '"mode":%d', '"session":%d', '"fading":%s', '"popup":%s'):
+            self.assertIn(field, shim)
+        self.assertIn("ms_currentViewMode", shim)
+        self.assertIn("ms_ActiveSessionID", shim)
+        self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
+
+    def test_the_congress_outcome_is_reported_once_per_session(self) -> None:
+        # Seven diplomatic losses in a day and no record of what each session
+        # resolved: the mod now emits `wc_outcome` from the shipped review data
+        # (GetReview) once per change of content, with every voter, the
+        # emergency results and every civ's DVP; read-only, nothing here votes.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        block = source.split("-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED", 1)[1].split("-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED", 1)[0]
+        self.assertIn("wc:GetReview(pid)", block)
+        self.assertIn("review.Resolutions", block)
+        self.assertIn("review.Discussions", block)
+        self.assertIn("r.PlayerSelections", block)
+        self.assertIn("prop.PlayerVotes", block)
+        self.assertIn("v.PlayerType", block)
+        self.assertIn("envoyTally.wc_review_signature", block)
+        self.assertIn('emit("wc_outcome"', block)
+        self.assertIn("GetDiplomaticVictoryPoints()", block)
+        self.assertNotIn("RequestPlayerOperation", block)
+
+    def test_the_congress_ballot_is_cast_from_the_popup_moment(self) -> None:
+        # The blocker-time votes never registered (favor never fell, wc_outcome
+        # read the core's default `option 1, votes 1` on every resolution); the
+        # shim asks the agent to vote from inside the popup right before its
+        # OnAccept, through a LuaEvent, and the agent answers with the same voter.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        # Both WorldCongressPopup rungs raise it, and the OnPass rung — the one
+        # that actually runs for the session popup, since the shipped script
+        # defines OnPass as well as OnAccept — raises it before it closes.
+        for closer in ("OnPass", "OnAccept"):
+            rung = shim.split(f'if NAME == "WorldCongressPopup" and type({closer}) == "function" then', 1)[1].split("return true;", 1)[0]
+            self.assertIn("LuaEvents.CivvisCongressBallot()", rung, closer)
+            self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index(f"{closer}();"),
+                            f"the ballot goes in before {closer}")
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        # One shared ballot, two triggers: the core's own stage-1 event and the
+        # shim's popup event; once per turn, only latched when something was cast.
+        self.assertIn("local function castBallot(trigger)", source)
+        ballot = source.split("local function castBallot(trigger)", 1)[1].split("if not envoyTally.ballot_hooked then", 1)[0]
+        self.assertIn("voteWorldCongress(ballotPid)", ballot)
+        self.assertIn("envoyTally.ballot_turn", ballot)
+        self.assertIn("favor_before = before", ballot)
+        self.assertIn('LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);', source)
+        self.assertIn('Events.WorldCongressStage1.Add(function(playerID)', source)
+        self.assertIn('castBallot("stage1")', source)
+        self.assertIn('emit("wc_ballot_hooked"', source)
+        # The blocker path defers to the triggers and falls back a cycle later.
+        blocker = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local parked = UNIT_BLOCKERS[name]", 1)[0]
+        self.assertIn("if envoyTally.ballot_turn == turn then", blocker)
+        self.assertIn("elseif seen.forfeits >= 2 then", blocker)
+        self.assertIn('source = "blocker"', blocker)
+
+    def test_the_state_export_carries_the_emergencies(self) -> None:
+        # The leader's +8 in one session came from World Fair / World Games
+        # resolving — competitions the seat never entered because nothing said
+        # they were running. The state now carries Firaxis's own crisis table.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+        block = exporter.split("emergencies = try(function()", 1)[1].split("end, nil),", 1)[0]
+        self.assertIn("Game.GetEmergencyManager():GetEmergencyInfoTable(pid)", block)
+        for field in ("crisis.EmergencyType", "crisis.TargetID", "crisis.TurnsLeft",
+                      "crisis.HasBegun", "crisis.bSuccess", "crisis.MemberIDs",
+                      "crisis.ScoresTables", "crisis.MemberTiers", "crisis.GoalsTable",
+                      "crisis.TargetGoalsTable", "crisis.ScoreSourcesTable"):
+            self.assertIn(field, block)
+        for key in ("turns_left =", "members = members", "scores = scores", "ours = {",
+                    "goals = goals", "score_sources = sources"):
+            self.assertIn(key, block)
+        self.assertNotIn("RequestPlayerOperation", block)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
@@ -417,6 +605,62 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('emit("wc_vote"', forfeit)
         # And the state now carries the points and the favor.
         self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
+
+    def test_the_ballot_claims_the_diplomatic_points_when_the_bank_outvotes_every_block(self) -> None:
+        """Decoded `wc_outcome` rows (T205104Z, T223457Z): option A of the
+        Diplomatic Victory resolution wins every session because each rival
+        votes A for itself with 6-11 votes and the target is the biggest block,
+        so a B ballot against the leader changes nothing while 640-1441 Favor
+        sat unspent. When the bank affords `DiploVictoryClaimVotes` (12) the
+        ballot is A with every vote targeting us; below that the floor rule
+        stands; the mode reaches `wc_vote`.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
+        self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
+        self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
+        self.assertIn("if ourIdx ~= nil and affordable >= claim then", arm)
+        claim = arm.index("if ourIdx ~= nil and affordable >= claim then")
+        tail = arm[claim:]
+        self.assertIn("option = 1;", tail)
+        self.assertIn("selection = ourIdx;", tail)
+        self.assertIn("n = affordable;", tail)
+        self.assertIn('mode = "claim";', tail)
+        # The claim overrides the floor rule, so it comes after it and before
+        # the votes are committed.
+        gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
+        commit = arm.index("votes = n;")
+        self.assertLess(gate, claim)
+        self.assertLess(claim, commit)
+        # The bank is measured on its own ladder, not the floor-gated one.
+        self.assertIn("costs[affordable] <= favor", arm)
+        # And the mode is reported on every ballot row.
+        self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)
+        self.assertGreaterEqual(source.count("mode = mode"), 2)
+
+    def test_favor_is_banked_until_a_congress_leader_is_within_reach(self) -> None:
+        """Run civvis-20260816T123936Z spent 180/220/220/264 Favor against
+        leaders on 8/11/14/15 points and still lost to a diplomatic victory at
+        t239: the extra votes are on a rising cost ladder, so the bank buys the
+        most at the sessions a leader can win from. Below the floor only the
+        free vote is cast against the leader; from the floor the bank is spent.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
+        self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
+        self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
+        # The paid ladder sits inside the floor gate; the free vote (n = 1) and
+        # the leader selection do not.
+        gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
+        ladder = arm.index("costs[n] <= favor")
+        free = arm.index("local n = 1;")
+        selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        self.assertLess(selection, gate)
+        self.assertLess(free, gate)
+        self.assertLess(gate, ladder)
+
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
 
@@ -945,6 +1189,53 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("cfg.MaxSoftBlockerForfeits or 3", self.escalation)
         self.assertIn("seen.forfeits < cap", self.escalation)
         self.assertIn('emit("wedged"', self.escalation)
+
+    def test_the_residual_answer_is_bounded_before_the_forfeit(self) -> None:
+        """A residual ladder answer that leaves the blocker standing is tried
+        twice, then the forfeit runs.
+
+        Run `civvis-20260816T115139Z` -- the seat's best game, 804 against 715 --
+        wedged at turn 178: `civvis_complete`, the ladder's `units` answer,
+        `residual_unblock ... forfeits 0`, and the same blocker back, seven
+        times, because the residual arm reset `attempts` and never fell through
+        to the forfeit. The outside watchdog killed it after 900 s.
+        """
+        self.assertIn(
+            '(seen.residuals or 0) < (cfg.MaxResidualAnswers or 2)',
+            self.escalation,
+        )
+        self.assertIn("seen.residuals = (seen.residuals or 0) + 1", self.escalation)
+        # The bound is checked BEFORE the ladder is asked, so an exhausted
+        # residual budget yields a nil pick and the forfeit branch below runs.
+        bound = self.escalation.index("(seen.residuals or 0) < (cfg.MaxResidualAnswers or 2)")
+        ask = self.escalation.index("residual_pick = answerBlocker(player, pid, blocker, turn, true)")
+        forfeit = self.escalation.index("(not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then")
+        self.assertLess(bound, ask)
+        self.assertLess(ask, forfeit)
+
+    def test_a_units_blocker_forfeits_in_the_same_pass_as_its_residual_answer(self) -> None:
+        """A quiet board never ticks again.
+
+        Run civvis-20260816T151716Z wedged at turn 111 WITH the residual bound
+        in place: two residual `units` answers, then no further game-core
+        event, so the forfeit the next sighting was to bring never ran. For
+        the units family the forfeit runs in the same pass; research and
+        production keep the two-step.
+        """
+        self.assertIn("local residual_taken = false;", self.escalation)
+        self.assertIn("residual_taken = true;", self.escalation)
+        self.assertIn(
+            "if (not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then",
+            self.escalation,
+        )
+        self.assertIn("elseif not residual_taken and seen.forfeits == cap then", self.escalation)
+        # The residual answer is issued BEFORE the forfeit in the same pass, so
+        # its own requests are queued ahead of the forced end of turn.
+        taken = self.escalation.index("residual_taken = true;")
+        forfeit = self.escalation.index("(not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then")
+        forced = self.escalation.index('REASON = "UserForced"', forfeit)
+        self.assertLess(taken, forfeit)
+        self.assertLess(forfeit, forced)
 
     def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
         """A board sitting on a blocker publishes almost nothing.

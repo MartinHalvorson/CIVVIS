@@ -4788,6 +4788,94 @@ local function exportState(player, pid, turn)
 	end
 	if cfg.ExportState ~= true then return; end
 
+	-- A met rival's detailed city list stays gated on actual map sight below.
+	-- These totals are different: they are the public standings a player can
+	-- compare without learning where the underlying cities, Wonders or weapons
+	-- are. Keep the two channels separate so a full HUD never turns into a
+	-- fog-of-war leak.
+	local wonderBuildingIndices = {};
+	for building in GameInfo.Buildings() do
+		if building.IsWonder then
+			wonderBuildingIndices[#wonderBuildingIndices + 1] = building.Index;
+		end
+	end
+	local function publicSuzerainCounts()
+		return try(function()
+			local counts = {};
+			for _, minor in ipairs(PlayerManager.GetAliveMinors()) do
+				local minorId = minor:GetID();
+				local civ = PlayerConfigurations[minorId]:GetCivilizationTypeName();
+				if civ ~= "CIVILIZATION_FREE_CITIES" and civ ~= "CIVILIZATION_BARBARIAN" then
+					local influence = minor:GetInfluence();
+					if influence == nil then return nil; end
+					local holder = influence:GetSuzerain();
+					if type(holder) ~= "number" then return nil; end
+					if holder >= 0 then
+						counts[holder] = (counts[holder] or 0) + 1;
+					end
+				end
+			end
+			return counts;
+		end, nil);
+	end
+	local function publicEmpireStats(subject, suzerainCounts)
+		local subjectId = try(function() return subject:GetID(); end, -1);
+		local stats = {
+			city_count = -1, population = -1, food = -1, production = -1,
+			wonder_count = -1,
+			suzerain_count = suzerainCounts ~= nil and (suzerainCounts[subjectId] or 0) or -1,
+			nuclear_devices = -1, thermonuclear_devices = -1,
+		};
+		local totals = try(function()
+			local subjectsCities = subject:GetCities();
+			if subjectsCities == nil then return nil; end
+			local tally = {
+				city_count = 0, population = 0, food = 0, production = 0, wonder_count = 0,
+			};
+			for _, city in subjectsCities:Members() do
+				local population = city:GetPopulation();
+				local food = city:GetYield(YieldTypes.FOOD);
+				local production = city:GetYield(YieldTypes.PRODUCTION);
+				local buildings = city:GetBuildings();
+				if type(population) ~= "number" or type(food) ~= "number"
+						or type(production) ~= "number" or buildings == nil then
+					return nil;
+				end
+				tally.city_count = tally.city_count + 1;
+				tally.population = tally.population + population;
+				tally.food = tally.food + food;
+				tally.production = tally.production + production;
+				for _, buildingIndex in ipairs(wonderBuildingIndices) do
+					local built = buildings:HasBuilding(buildingIndex);
+					if built == nil then return nil; end
+					if built then tally.wonder_count = tally.wonder_count + 1; end
+				end
+			end
+			return tally;
+		end, nil);
+		if totals ~= nil then
+			stats.city_count = totals.city_count;
+			stats.population = totals.population;
+			stats.food = totals.food;
+			stats.production = totals.production;
+			stats.wonder_count = totals.wonder_count;
+		end
+		local weapons = try(function() return subject:GetWMDs(); end, nil);
+		local nuclear = try(function()
+			local definition = GameInfo.WMDs["WMD_NUCLEAR_DEVICE"];
+			return weapons ~= nil and definition ~= nil
+				and weapons:GetWeaponCount(definition.Index) or nil;
+		end, nil);
+		local thermonuclear = try(function()
+			local definition = GameInfo.WMDs["WMD_THERMONUCLEAR_DEVICE"];
+			return weapons ~= nil and definition ~= nil
+				and weapons:GetWeaponCount(definition.Index) or nil;
+		end, nil);
+		if type(nuclear) == "number" then stats.nuclear_devices = nuclear; end
+		if type(thermonuclear) == "number" then stats.thermonuclear_devices = thermonuclear; end
+		return stats;
+	end
+
 	local cities = {};
 	-- Firaxis leaves a Trader unit on the map while it travels, so its position
 	-- alone cannot say whether it is available for a new route.  Export the
@@ -4817,8 +4905,23 @@ local function exportState(player, pid, turn)
 						for _, route in ipairs(theirRoutes or {}) do
 							if try(function() return route.DestinationCityPlayer; end, -1) == pid then
 								local dest = try(function() return route.DestinationCityID; end, -1);
-								incomingRoutes[dest] = incomingRoutes[dest] or { foreign = 0, domestic = 0 };
+								incomingRoutes[dest] = incomingRoutes[dest]
+									or { foreign = 0, domestic = 0, origins = {} };
 								incomingRoutes[dest].foreign = incomingRoutes[dest].foreign + 1;
+								-- The ORIGIN city and its owner, so the mirror can seat
+								-- the route on the board (owner = the rival's seat, origin
+								-- = the rival city at these coordinates) instead of only
+								-- counting it: alliance/treaty/Great-Merchant yields at
+								-- the destination all read `game.routes`, which carried
+								-- only OUR routes until run civvis-20260816T200454Z showed
+								-- Cumae's "+4 from Incoming Trade Routes" (World Congress
+								-- Trade Policy A) that the model could not see.
+								local origins = incomingRoutes[dest].origins;
+								origins[#origins + 1] = {
+									x = try(function() return theirCity:GetX(); end, -1),
+									y = try(function() return theirCity:GetY(); end, -1),
+									player = otherId,
+								};
 							end
 						end
 					end
@@ -4841,9 +4944,72 @@ local function exportState(player, pid, turn)
 			end, nil);
 			if destinationPlayer == pid and destinationID ~= nil and destinationID >= 0 then
 				incomingRoutes[destinationID] = incomingRoutes[destinationID]
-					or { foreign = 0, domestic = 0 };
+					or { foreign = 0, domestic = 0, origins = {} };
 				incomingRoutes[destinationID].domestic = incomingRoutes[destinationID].domestic + 1;
 			end
+			-- The Trading Posts on the route's OWN path, which is the host's
+			-- pathfinder's and not a straight line: Ostia -> Aquileia (run
+			-- civvis-20260816T200454Z, t144-154) read "+2 from Outgoing Trade
+			-- Routes" against a model that walked the straight line and found
+			-- one post — the road runs through Cumae. `GetTradeRoutePath` is
+			-- what the shipped TradeRouteChooser draws; each city plot on it
+			-- (the origin excluded, the destination included) is asked
+			-- `HasActiveTradingPost(pid)` and filed by owner, since a post at
+			-- home pays only under Rome's trait and a post abroad pays
+			-- `TRADING_POST_GOLD_IN_FOREIGN_CITY`. nil when unreadable.
+			local postsOwn, postsForeign = nil, nil;
+			pcall(function()
+				local manager = Game.GetTradeManager();
+				if manager == nil then return; end
+				local path = manager:GetTradeRoutePath(pid, originID, destinationPlayer, destinationID);
+				if type(path) ~= "table" then return; end
+				local own, foreign = 0, 0;
+				for _, plotIndex in ipairs(path) do
+					local plot = Map.GetPlotByIndex(plotIndex);
+					if plot ~= nil and plot:IsCity() then
+						local there = Cities.GetCityInPlot(plot:GetX(), plot:GetY());
+						if there ~= nil
+							and not (there:GetOwner() == pid and there:GetID() == originID)
+							and there:GetTrade():HasActiveTradingPost(pid) then
+							if there:GetOwner() == pid then own = own + 1; else foreign = foreign + 1; end
+						end
+					end
+				end
+				postsOwn, postsForeign = own, foreign;
+			end);
+			-- What the route PAYS its origin, summed the way the shipped
+			-- TradeSupport.lua sums it for the Trade Overview: yields from the
+			-- route (destination districts), from the path (Trading Posts) and
+			-- from modifiers (policies, Great People, wonders), each yield under
+			-- the origin player's international multiplier. The model cannot
+			-- always derive this — a destination's Campus may stand on ground
+			-- the seat has never seen (Ostia -> Stockholm read "+1 Science",
+			-- run civvis-20260816T233226Z t177+) — so the host's figure is
+			-- carried and stands in for the model's. nil when unreadable.
+			local routeYields = nil;
+			pcall(function()
+				local manager = Game.GetTradeManager();
+				if manager == nil then return; end
+				local fromRoute = manager:CalculateOriginYieldsFromPotentialRoute(pid, originID, destinationPlayer, destinationID);
+				local fromPath = manager:CalculateOriginYieldsFromPath(pid, originID, destinationPlayer, destinationID);
+				local fromModifiers = manager:CalculateOriginYieldsFromModifiers(pid, originID, destinationPlayer, destinationID);
+				if type(fromRoute) ~= "table" then return; end
+				local playerTrade = destinationPlayer ~= pid and player:GetTrade() or nil;
+				local out = {};
+				local names = { food = "FOOD", production = "PRODUCTION", gold = "GOLD", science = "SCIENCE", culture = "CULTURE", faith = "FAITH" };
+				for key, tag in pairs(names) do
+					local index = YieldTypes[tag];
+					if index ~= nil then
+						local total = (fromRoute[index + 1] or 0)
+							+ ((type(fromPath) == "table" and fromPath[index + 1]) or 0)
+							+ ((type(fromModifiers) == "table" and fromModifiers[index + 1]) or 0);
+						local mult = playerTrade and playerTrade:GetInternationalYieldModifier(index) or 1;
+						if type(mult) ~= "number" or mult <= 0 then mult = 1; end
+						out[key] = total * mult;
+					end
+				end
+				routeYields = out;
+			end);
 			tradeRoutes[#tradeRoutes + 1] = {
 				trader = try(function() return route.TraderUnitID; end, -1),
 				origin = originID,
@@ -4853,6 +5019,9 @@ local function exportState(player, pid, turn)
 				origin_y = try(function() return city:GetY(); end, -1),
 				destination_x = try(function() return destination and destination:GetX(); end, -1),
 				destination_y = try(function() return destination and destination:GetY(); end, -1),
+				posts_own = postsOwn,
+				posts_foreign = postsForeign,
+				yields = routeYields,
 			};
 		end
 		local queue = try(function()
@@ -5432,6 +5601,71 @@ local function exportState(player, pid, turn)
 		};
 	end);
 
+	-- Empty Great Work slots by the object type they accept, empire-wide.
+	-- `GetActivationHighlightPlots` highlights a cultural person's district
+	-- whether or not a compatible slot is free, so seven people stood on one
+	-- Theater plot for thirty-plus turns on run civvis-20260817T010950Z with
+	-- `can_activate` false and the needs machinery blind to them — the plot
+	-- list was non-empty, so nothing ever asked the empire to build slots.
+	-- Counting the empty slots is the honest question: a Writer with zero
+	-- empty writing slots anywhere is blocked however many plots highlight.
+	-- `GreatWork_ValidSubTypes` is the game's own slot-accepts-object table
+	-- (it is what makes Palace slots accept all three kinds); if it or the
+	-- slot-type accessor is missing in this context the count stays nil and
+	-- the bridge keeps its old behaviour.
+	local emptySlotsByObject = nil;
+	do
+		local accepts = try(function()
+			local map = {};
+			for row in GameInfo.GreatWork_ValidSubTypes() do
+				local slotMap = map[row.GreatWorkSlotType] or {};
+				slotMap[row.GreatWorkObjectType] = true;
+				map[row.GreatWorkSlotType] = slotMap;
+			end
+			return map;
+		end, nil);
+		if accepts ~= nil and next(accepts) ~= nil then
+			emptySlotsByObject = {};
+			eachCity(player, function(city)
+				local blds = try(function() return city:GetBuildings(); end, nil);
+				if blds == nil then return; end
+				for buildingInfo in GameInfo.Buildings() do
+					if try(function() return blds:HasBuilding(buildingInfo.Index); end, false) then
+						local slots = try(function()
+							return blds:GetNumGreatWorkSlots(buildingInfo.Index);
+						end, 0) or 0;
+						for slot = 0, slots - 1 do
+							local occupied = try(function()
+								return blds:GetGreatWorkInSlot(buildingInfo.Index, slot);
+							end, -1);
+							if occupied == nil or occupied < 0 then
+								local slotType = try(function()
+									local index = blds:GetGreatWorkSlotType(
+										buildingInfo.Index, slot);
+									local row = GameInfo.GreatWorkSlotTypes[index];
+									return row and row.GreatWorkSlotType or nil;
+								end, nil);
+								for object in pairs((slotType ~= nil
+										and accepts[slotType]) or {}) do
+									emptySlotsByObject[object] =
+										(emptySlotsByObject[object] or 0) + 1;
+								end
+							end
+						end
+					end
+				end
+			end);
+		end
+	end
+	-- The work object each slot-consuming class creates. Classes absent here
+	-- (merchants, engineers, scientists, generals...) do not spend slots and
+	-- keep `empty_slots` nil.
+	local GP_CLASS_WORK_OBJECT = {
+		GREAT_PERSON_CLASS_WRITER = "GREAT_WORK_OBJECT_WRITING",
+		GREAT_PERSON_CLASS_ARTIST = "GREAT_WORK_OBJECT_ART",
+		GREAT_PERSON_CLASS_MUSICIAN = "GREAT_WORK_OBJECT_MUSIC",
+	};
+
 	local units = {};
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
@@ -5464,10 +5698,22 @@ local function exportState(player, pid, turn)
 			local class = try(function() return gp:GetClass(); end, -1);
 			local individualRow = GameInfo.GreatPersonIndividuals[individual];
 			local classRow = GameInfo.GreatPersonClasses[class];
+			-- How many empty slots the empire has that this person's work
+			-- fits. nil for classes that do not consume slots, and nil when
+			-- the slot tables were unreadable — never 0 by default, because
+			-- 0 is a claim ("build capacity") and nil is an absence.
+			local classType = classRow ~= nil and classRow.GreatPersonClassType or nil;
+			local workObject = classType ~= nil
+				and GP_CLASS_WORK_OBJECT[classType] or nil;
+			local emptySlots = nil;
+			if workObject ~= nil and emptySlotsByObject ~= nil then
+				emptySlots = emptySlotsByObject[workObject] or 0;
+			end
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
-				class = classRow ~= nil and classRow.GreatPersonClassType or nil,
+				class = classType,
+				empty_slots = emptySlots,
 				-- The timeline moves on as soon as this person is recruited, so the
 				-- current offer cannot tell the planner what district this physical
 				-- unit still needs. Carry the exact per-individual database gate.
@@ -5526,6 +5772,9 @@ local function exportState(player, pid, turn)
 		};
 	end);
 
+	local suzerainCounts = publicSuzerainCounts();
+	local publicStats = publicEmpireStats(player, suzerainCounts);
+
 	-- Rivals: only what we have actually met, so the mirror never contains
 	-- knowledge the seat has not earned.
 	local rivals = {};
@@ -5534,6 +5783,7 @@ local function exportState(player, pid, turn)
 		if otherId ~= pid and diplomacy ~= nil
 				and try(function() return diplomacy:HasMet(otherId); end, false) then
 			local other = Players[otherId];
+			local otherPublicStats = publicEmpireStats(other, suzerainCounts);
 			local theirCities = {};
 			pcall(function()
 				for _, city in other:GetCities():Members() do
@@ -5643,6 +5893,26 @@ local function exportState(player, pid, turn)
 				leader = try(function()
 					return PlayerConfigurations[otherId]:GetLeaderTypeName();
 				end, ""),
+				-- These are the rival's public diplomacy-ribbon facts. They carry no
+				-- city, unit or research detail, but without them CivVis renders every
+				-- fogged rival as Normal Age with an unformed government.
+				government = try(function()
+					local culture = other:GetCulture();
+					if culture == nil then return nil; end
+					local index = culture:GetCurrentGovernment();
+					if type(index) ~= "number" or index < 0 then return nil; end
+					local row = GameInfo.Governments[index];
+					return row ~= nil and row.GovernmentType or nil;
+				end, nil),
+				dark_age = try(function()
+					return Game.GetEras():HasDarkAge(otherId);
+				end, nil),
+				golden_age = try(function()
+					return Game.GetEras():HasGoldenAge(otherId);
+				end, nil),
+				heroic_golden_age = try(function()
+					return Game.GetEras():HasHeroicGoldenAge(otherId);
+				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
 				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
 				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
@@ -5704,6 +5974,28 @@ local function exportState(player, pid, turn)
 					end
 					return n;
 				end, -1),
+				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
+				-- techs and civics say how far ahead a rival is; these say how
+				-- fast it is moving. Every accessor is one the shipped World
+				-- Rankings and Deal screens call on OTHER players (`GetTechs():
+				-- GetScienceYield`, `GetCulture():GetCultureYield`, `GetStats():
+				-- GetTourism`, `GetTreasury():GetGoldBalance`), so the seat learns
+				-- nothing a player at the keyboard could not read. Without them
+				-- the mirror's rival science and culture were CIVVIS's own guess
+				-- from a rival's visible cities — the one part of the standings a
+				-- viewer could never trust. -1 on failure, as everywhere here.
+				science = try(function() return other:GetTechs():GetScienceYield(); end, -1),
+				culture = try(function() return other:GetCulture():GetCultureYield(); end, -1),
+				tourism = try(function() return other:GetStats():GetTourism(); end, -1),
+				gold = try(function() return other:GetTreasury():GetGoldBalance(); end, -1),
+				-- Net, like our own `gold_per_turn` below (yield minus maintenance).
+				gold_per_turn = try(function()
+					local treasury = other:GetTreasury();
+					return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
+				end, -1),
+				faith = try(function() return other:GetReligion():GetFaithBalance(); end, -1),
+				faith_per_turn = try(function() return other:GetReligion():GetFaithYield(); end, -1),
+				public_stats = otherPublicStats,
 				cities = theirCities,
 				units = theirUnits,
 			};
@@ -6117,6 +6409,16 @@ local function exportState(player, pid, turn)
 	local founded_religions = {};
 	local religion_beliefs = {};
 	local taken_religion_beliefs = {};
+	-- ★★★★ EACH RELIGION WITH ITS OWN BELIEFS AND FOUNDER. `taken_religion_beliefs`
+	-- is the union and says only what is no longer available; it cannot say
+	-- WHICH religion holds Divine Inspiration. A city following Catholicism gets
+	-- Catholicism's follower beliefs whoever founded it, and the mirror had that
+	-- belief parked on whichever seat happened to be zipped with the religion —
+	-- Rome's three Wonders paid 12 Faith under Divine Inspiration for the whole
+	-- of run civvis-20260816T123936Z while the model saw none of it. Same source
+	-- as the Religion screen: `Game.GetReligion():GetReligions()`, each entry
+	-- {Religion, Founder, Beliefs}. Empty list when nothing is founded.
+	local religions = {};
 	local allReligions = try(function() return Game.GetReligion():GetReligions(); end, {}) or {};
 	for _, religion in ipairs(allReligions) do
 		local religionRow = GameInfo.Religions[religion.Religion];
@@ -6127,20 +6429,29 @@ local function exportState(player, pid, turn)
 			if religion.Founder == pid then
 				founded_religion = religionRow.ReligionType;
 			end
+			local own = {};
 			for _, beliefIndex in ipairs(religion.Beliefs or {}) do
 				local beliefRow = GameInfo.Beliefs[beliefIndex];
 				if beliefRow ~= nil then
 					taken_religion_beliefs[#taken_religion_beliefs + 1] = beliefRow.BeliefType;
+					own[#own + 1] = beliefRow.BeliefType;
 					if religion.Founder == pid then
 						religion_beliefs[#religion_beliefs + 1] = beliefRow.BeliefType;
 					end
 				end
 			end
+			table.sort(own);
+			religions[#religions + 1] = {
+				type = religionRow.ReligionType,
+				founder = religion.Founder,
+				beliefs = own,
+			};
 		end
 	end
 	table.sort(founded_religions);
 	table.sort(religion_beliefs);
 	table.sort(taken_religion_beliefs);
+	table.sort(religions, function(a, b) return a.type < b.type; end);
 	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
 	--
 	-- The third instance of one shape tonight, after the government and the pantheon:
@@ -6256,6 +6567,7 @@ local function exportState(player, pid, turn)
 		founded_religions = founded_religions,
 		religion_beliefs = religion_beliefs,
 		taken_religion_beliefs = taken_religion_beliefs,
+		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
 		policy_slots = policy_slots,
@@ -6292,8 +6604,31 @@ local function exportState(player, pid, turn)
 			return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
 		end, nil),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
+		-- ★★★★ FAITH PER TURN, THE TOP BAR'S OWN FIGURE. `GetFaithYield()` is
+		-- what TopPanel prints beside the Faith balance, and it is NOT the sum
+		-- of the cities: Firaxis pays every Great Person point of a class the
+		-- empire can no longer earn out again as Faith
+		-- (`GetFaithFromUnusedGreatPeoplePoints` in the game core), and adds
+		-- founder-belief, envoy and suzerain income at the player level. On
+		-- run civvis-20260816T123936Z the balance grew 100–113 a turn from
+		-- t231 while every city together made 49; without this field the
+		-- mirror had no host figure to be corrected to. Same nil-not-0 rule as
+		-- `gold_per_turn`: a missing answer is not break-even.
+		faith_per_turn = try(function() return player:GetReligion():GetFaithYield(); end, nil),
+		-- The host's own Faith ledger — "+N from Cities / Beliefs / Envoys /
+		-- city-states you are Suzerain of / Other" — compacted the same way as
+		-- the per-city `yield_sources`, so a gap between the two games is named
+		-- rather than guessed at.
+		faith_sources = try(function()
+			local text = player:GetReligion():GetFaithYieldToolTip();
+			if text == nil then return nil; end
+			text = tostring(text):gsub("%[ICON_[%w_]+%]", "");
+			text = text:gsub("%[NEWLINE%]", "\n"):gsub("[ \t]+", " ");
+			return (text:gsub("^%s+", ""):gsub("%s+$", "")):sub(1, 400);
+		end, nil),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
+		public_stats = publicStats,
 		score = try(function() return player:GetScore(); end, -1),
 		-- Diplomatic-victory points and the Favor that buys congress votes; see
 		-- `voteWorldCongress`.
@@ -6345,6 +6680,66 @@ local function exportState(player, pid, turn)
 		golden_age = try(function() return Game.GetEras():HasGoldenAge(pid); end, nil),
 		heroic_golden_age = try(function()
 			return Game.GetEras():HasHeroicGoldenAge(pid);
+		end, nil),
+		-- ★★★★ WHICH DEDICATIONS ARE ACTIVE. The age flags above say whether a
+		-- Golden Age is on; this says what it PAYS. `GetPlayerActiveCommemorations`
+		-- is what the shipped EraProgressPanel lists, and every yield the mirror
+		-- models for a Dedication (`Game::dedication_active`) was inert without it:
+		-- Heartbeat of Steam's Campus Production ("+10 from Campus" in the host's
+		-- own production ledger, run civvis-20260816T132247Z) is the whole
+		-- production gap of that game's Golden Age. Type names, so the mirror
+		-- maps them onto its own dedication ids without guessing an index.
+		dedications = try(function()
+			local names = {};
+			for _, active in ipairs(Game.GetEras():GetPlayerActiveCommemorations(pid) or {}) do
+				local row = GameInfo.CommemorationTypes[active];
+				names[#names + 1] = row and row.CommemorationType or tostring(active);
+			end
+			return names;
+		end, nil),
+		-- ★★★★ THE WORLD CONGRESS RESOLUTIONS IN EFFECT, every turn. The
+		-- `wc_outcome` event says what the last session decided; this says what
+		-- is binding NOW, in the shape the mirror maps onto its own
+		-- `active_congress_effects` (`Game::congress_effect_active`). Run
+		-- civvis-20260816T200454Z: Trade Policy A on us for t82-101 paid Cumae
+		-- "+4 from Incoming Trade Routes" per foreign route and +1 route
+		-- capacity, and the model, with no Congress on the board, could not
+		-- explain either. `GetResolutions(pid)` is what the shipped
+		-- CityPanel_Expansion2 reads between sessions (it checks Border Control
+		-- B against `ChosenOption`/`ChosenThing`); the same call returns the
+		-- ballot DURING a session, whose entries have no `ChosenOption` yet, so
+		-- only entries with a chosen option are in effect. `option` is 1 (A) /
+		-- 2 (B) by matching the chosen LOC key against the resolution's two
+		-- effect descriptions; `target` is `ChosenThing` verbatim (a player id
+		-- for PLAYER-targeted resolutions, a type name otherwise).
+		resolutions = try(function()
+			local out = {};
+			local wc = Game.GetWorldCongress();
+			if wc == nil then return out; end
+			for i, r in pairs(wc:GetResolutions(pid) or {}) do
+				if type(i) == "number" and type(r) == "table" and r.Type ~= nil
+					and type(r.ChosenOption) == "string" and r.ChosenOption ~= "" then
+					local info = GameInfo.Resolutions[r.Type];
+					local option = 0;
+					if info ~= nil then
+						if r.ChosenOption == info.Effect1Description then option = 1;
+						elseif r.ChosenOption == info.Effect2Description then option = 2; end
+					end
+					out[#out + 1] = {
+						type = tostring(info and info.ResolutionType or r.Type),
+						option = option,
+						target = tostring(r.ChosenThing or ""),
+					};
+				end
+			end
+			return out;
+		end, nil),
+		-- Turns until the next regular session, i.e. how long the resolutions
+		-- above stay binding (`GetMeetingStatus().TurnsLeft`, the number the
+		-- shipped congress button counts down).
+		congress_turns_left = try(function()
+			local status = Game.GetWorldCongress():GetMeetingStatus();
+			return status and tonumber(status.TurnsLeft) or nil;
 		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
@@ -6410,6 +6805,61 @@ local function exportState(player, pid, turn)
 			-- player has zero Great Person points on turn 1, so this fired in
 			-- every game immediately.
 			if not any then return nil; end
+			return out;
+		end, nil),
+		-- The same classes' points PER TURN, the host's own rate: what the
+		-- Great People screen prints under each class. It is the figure the
+		-- Faith above is paid from once a class runs out of people, so the
+		-- model's own derivation can be checked against it. Same `Index`
+		-- rule and the same nil-not-`{}` rule as `great_person_points`.
+		great_person_points_per_turn = try(function()
+			local points = player:GetGreatPeoplePoints();
+			if points == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.GreatPersonClasses() do
+				local rate = points:GetPointsPerTurn(row.Index);
+				if rate ~= nil and rate > 0 then
+					out[row.GreatPersonClassType] = rate;
+					any = true;
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
+		-- ★★★★ THE CLASSES WITH NOBODY LEFT TO RECRUIT. Civilization VI pays
+		-- every Great Person point of such a class out again as Faith, one for
+		-- one (`GetFaithFromUnusedGreatPeoplePoints` in the game core; the
+		-- top bar's "from Other"): the last Great Scientist anywhere claimed,
+		-- and the Campus keeps paying, in Faith. Run civvis-20260816T123936Z
+		-- banked 100–113 Faith a turn from t231 against 49 from every city.
+		-- A class is exhausted when the timeline has no unclaimed entry for
+		-- it. `great_person_costs` below already implies this (a class with
+		-- points and no cost) — except on the turn EVERY class is gone, when
+		-- that map is nil and cannot be told from an older export. So say it
+		-- outright, and as a LIST: an empty list encodes as `[]`, which is a
+		-- real answer here ("everyone still available"), unlike the maps.
+		great_person_exhausted = try(function()
+			local greatPeople = Game.GetGreatPeople();
+			if greatPeople == nil then return nil; end
+			local timeline = greatPeople:GetTimeline();
+			if timeline == nil then return nil; end
+			local available = {};
+			for _, entry in ipairs(timeline) do
+				if entry.Individual ~= nil and entry.Claimant == nil then
+					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
+					if info ~= nil and info.GreatPersonClassType ~= nil then
+						available[info.GreatPersonClassType] = true;
+					end
+				end
+			end
+			local out = {};
+			for row in GameInfo.GreatPersonClasses() do
+				if not available[row.GreatPersonClassType] then
+					out[#out + 1] = row.GreatPersonClassType;
+				end
+			end
+			table.sort(out);
 			return out;
 		end, nil),
 		-- The live RECRUIT COST of each class's current unclaimed Great
@@ -6534,6 +6984,61 @@ local function exportState(player, pid, turn)
 		envoys_free = try(function()
 			return player:GetInfluence():GetTokensToGive();
 		end, -1),
+		-- ★★★★ THE EMERGENCIES AND SCORED COMPETITIONS, WHICH DECIDE THE
+		-- DIPLOMATIC RACE AS MUCH AS THE VOTES DO. `wc_outcome` on
+		-- civvis-20260816T205104Z: the leader's +8 in one session (12→20,
+		-- victory at t202) was +2 from the victory resolution and the rest from
+		-- WORLD_FAIR (passed t162) and WORLD_GAMES (passed t182) resolving —
+		-- competitions the seat, the production and gold leader of that game,
+		-- never entered. Nothing said they were running. This is Firaxis's own
+		-- crisis table (`GetEmergencyInfoTable`, what the World Crisis popup
+		-- and tracker read): per emergency its type, target, turns left (<0 =
+		-- completed), whether it has begun/succeeded, every member's score and
+		-- tier, our own standing, the goals with their completion, and how
+		-- score is earned. Read-only; membership and the aid gold are the
+		-- agent's or CIVVIS's decision, made elsewhere.
+		emergencies = try(function()
+			local out = {};
+			local crises = Game.GetEmergencyManager():GetEmergencyInfoTable(pid);
+			for _, crisis in ipairs(crises or {}) do
+				local members, scores = {}, {};
+				local ourScore, ourTier, member = nil, nil, false;
+				for _, id in ipairs(crisis.MemberIDs or {}) do
+					local mid = tonumber(id) or -1;
+					members[#members + 1] = mid;
+					local score = tonumber((crisis.ScoresTables or {})[mid]) or 0;
+					local tier = tonumber((crisis.MemberTiers or {})[mid]);
+					scores[#scores + 1] = { player = mid, score = score, tier = tier };
+					if mid == pid then ourScore, ourTier, member = score, tier, true; end
+				end
+				local goals = {};
+				local goalTable = (tonumber(crisis.TargetID) == pid)
+					and crisis.TargetGoalsTable or crisis.GoalsTable;
+				for _, goal in ipairs(goalTable or {}) do
+					if type(goal) == "table" and goal.Name ~= nil and goal.Name ~= "" then
+						goals[#goals + 1] = { name = tostring(goal.Name), done = goal.Completed == true };
+					end
+				end
+				local sources = {};
+				for _, line in ipairs(crisis.ScoreSourcesTable or {}) do
+					sources[#sources + 1] = tostring(line);
+				end
+				out[#out + 1] = {
+					type = tostring(crisis.EmergencyType),
+					name = tostring(crisis.NameText or ""),
+					target = tonumber(crisis.TargetID) or -1,
+					target_city = tostring(crisis.TargetCityName or ""),
+					turns_left = tonumber(crisis.TurnsLeft) or -1,
+					begun = crisis.HasBegun == true,
+					success = crisis.bSuccess == true,
+					members = members, scores = scores,
+					ours = { member = member, target = tonumber(crisis.TargetID) == pid,
+					         score = ourScore, tier = ourTier },
+					goals = goals, score_sources = sources,
+				};
+			end
+			return out;
+		end, nil),
 	});
 end
 
@@ -6771,6 +7276,48 @@ local function exportTiles(player, pid, turn)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★★ WHAT STANDS ON THE OTHER CIVILIZATIONS' GROUND. A rival
+						-- city record is name, size, health, walls and capital; its
+						-- districts and wonders were never exported, so a rival's
+						-- economy and defence were modelled from population alone
+						-- and the mirror could not tell an Encampment from a farm.
+						-- The plot knows (`GetDistrictType`, `GetWonderType`) for
+						-- any revealed ground, ours included; sent only where one
+						-- stands, nil elsewhere, so an empty plot costs no bytes.
+						-- Our own cities' districts still cross with the city record
+						-- (with completion and pillage); the mirror reads these
+						-- for rivals and city-states.
+						d = try(function()
+							local kind = plot:GetDistrictType();
+							if kind == nil or kind < 0 then return nil; end
+							local row = GameInfo.Districts[kind];
+							return row and row.DistrictType or nil;
+						end, nil),
+						-- ★★★★ ...AND WHETHER IT IS FINISHED. `GetDistrictType` answers
+						-- for a district the moment it is PLACED, and a placed
+						-- district is not adjacent to anything until it is built:
+						-- Puteoli's Commercial Hub read "+2" beside a placed Campus
+						-- for eleven turns and "+3" the turn the Campus completed
+						-- (run civvis-20260816T223457Z t108-119; Arpinum's Campus
+						-- 4→6 at t140, Ostia's at t198 the same way). Ravenna's
+						-- Hub read one adjacency point over the host for thirty
+						-- turns beside a city-state Encampment this flag would
+						-- have said was unbuilt. `CityManager.GetDistrictAt` is
+						-- what the shipped CityBannerManager reads for any owner's
+						-- plot; sent only beside `d`, true/false.
+						dc = try(function()
+							local kind = plot:GetDistrictType();
+							if kind == nil or kind < 0 then return nil; end
+							local district = CityManager.GetDistrictAt(x, y);
+							if district == nil then return nil; end
+							return district:IsComplete() and true or false;
+						end, nil),
+						wo = try(function()
+							local kind = plot:GetWonderType();
+							if kind == nil or kind < 0 then return nil; end
+							local row = GameInfo.Buildings[kind];
+							return row and row.BuildingType or nil;
+						end, nil),
 					};
 					if index >= (cfg.TileChunk or 250) then
 						flush(); index = 0;
@@ -7914,6 +8461,106 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
+	-- met city-state, decided on the reconstructed board by `advanced_envoys`
+	-- (type-aware, suzerainty-priced, denial-aware) now that `envoys_free`
+	-- crosses the export into the mirror. Until this arm existed the seat
+	-- finished every Settler game holding 40–70 unspent envoys with no
+	-- suzerainty — the largest measured headroom in the project (an oracle
+	-- suzerainty wins 56.7% against 22.7%) forfeited for free.
+	--
+	-- ⚠⚠ THIS IS NOT `chooseEnvoy`. That lane decides in Lua and stays behind
+	-- `cfg.EnvoyEnabled` (off) as the isolation experiment its comment asks
+	-- for; running both would have two deciders bidding the same purse. Here
+	-- the mod places what it is told and reports what happened, nothing more.
+	--
+	-- ⚠⚠ A FRESH `GetInfluence()` HANDLE PER ORDER, READ THEN DROPPED. The one
+	-- concrete defect ever pinned on the crash that took the old lane out of
+	-- deployment was a gameplay sub-object pointer held across the
+	-- `UI.RequestPlayerOperation` calls that rewrite it. Every read here goes
+	-- through a handle fetched inside this order and nothing is written
+	-- through it after the operation is issued. The prompt-clearing write
+	-- (`SetGivingTokensConsidered`) is deliberately NOT made: with the tokens
+	-- spent the `GIVE_INFLUENCE_TOKEN` blocker is not raised, and when CIVVIS
+	-- keeps one back the known-stable skip in SOFT_BLOCKERS still stands.
+	--
+	-- Every accessor is the shipped `CityStates.lua`'s: `GetTokensToGive`,
+	-- `CanGiveInfluence`, `CanGiveTokensToPlayer`, and one
+	-- `GIVE_INFLUENCE_TOKEN` request per token with `PARAM_PLAYER_ONE`.
+	if kind == "envoy" then
+		if subject < 0 then return false, "envoy_target_unmapped"; end
+		local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
+		local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+		if giveOp == nil or oneParam == nil then return false, "envoy_no_operation"; end
+		local influence = try(function() return player:GetInfluence(); end);
+		if influence == nil then return false, "envoy_no_influence"; end
+		local held = try(function() return influence:GetTokensToGive(); end, 0) or 0;
+		if held < 1 then return false, "envoy_none_held"; end
+		if not try(function() return influence:CanGiveInfluence(); end, false) then
+			return false, "envoy_cannot_give";
+		end
+		if not try(function() return influence:CanGiveTokensToPlayer(subject); end, false) then
+			return false, "envoy_refused_" .. tostring(subject);
+		end
+		local params = {};
+		params[oneParam] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, giveOp, params);
+		end);
+		-- ⚠ NO SAME-FRAME "AFTER" COUNT. The first version of this event read
+		-- `GetTokensToGive()` again right after the request and reported it as
+		-- `after`; the core applies the operation later in the frame, so it read
+		-- equal to `held` on every one of the first 23 live placements
+		-- (civvis-20260816T142911Z t49–t196) while the tokens WERE landing —
+		-- `envoys_free` 0 in every export and 28 envoys standing on two
+		-- city-states by t200. A receiving-side reading that cannot tell
+		-- "applied later" from "ignored" is a false alarm waiting to fire, and
+		-- it fired. The receiving side is the NEXT export: `envoys_free` there
+		-- has fallen by the number placed and `minors[].envoys` has risen by
+		-- it; the bridge prints both every turn (`envoys unspent N placed M`).
+		if ok then
+			emit("envoy", { turn = turn, target = subject, source = "civvis", held = held });
+		end
+		return ok, ok and "envoy_placed" or "throw";
+	end
+
+	-- ★★★★ CIVVIS'S OWN LEVY. `LevyMilitary` was the single most-skipped
+	-- action of the pre-envoy bridge (44 a game) — moot while the seat held no
+	-- suzerainty, live now that it places its envoys. Firaxis's own quote is
+	-- the price and `CanLevyMilitary` the gate (cooldown, suzerainty, war
+	-- state), exactly as `chooseEnvoy`'s levy scan reads them; one
+	-- `LEVY_MILITARY` request per order, through a fresh handle, nothing
+	-- written through it afterwards. The treasury check is the receiving
+	-- side's, not the mirror's — a levy the plan priced from a partial view
+	-- of the city-state's army is refused by name, not bought blind.
+	if kind == "levy" then
+		if subject < 0 then return false, "levy_target_unmapped"; end
+		local levyOp = try(function() return PlayerOperations.LEVY_MILITARY; end);
+		local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+		if levyOp == nil or oneParam == nil then return false, "levy_no_operation"; end
+		local influence = try(function() return player:GetInfluence(); end);
+		if influence == nil then return false, "levy_no_influence"; end
+		if not try(function() return influence:CanLevyMilitary(subject); end, false) then
+			return false, "levy_refused_" .. tostring(subject);
+		end
+		local cost = try(function() return influence:GetLevyMilitaryCost(subject); end, -1) or -1;
+		local purse = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, 0) or 0;
+		if cost < 0 or purse < cost then
+			return false, "levy_unaffordable";
+		end
+		local params = {};
+		params[oneParam] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, levyOp, params);
+		end);
+		if ok then
+			emit("levy", { turn = turn, target = subject, source = "civvis", cost = cost, purse = purse });
+		end
+		return ok, ok and "levy_bought" or "throw";
 	end
 
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
@@ -10025,6 +10672,114 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
+	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
+	--
+	-- Seven Settler games of 2026-08-16 ended early on a rival's DIPLOMATIC
+	-- victory, the last one (civvis-20260816T184500Z, 1058 vs 1087 at t222, the
+	-- lane's best game) probably a win otherwise. The voter's own ledger says
+	-- what WE cast (`wc_vote`: votes and favor against the leader) and the state
+	-- export says the leader's DVP afterwards, but nothing says what the session
+	-- RESOLVED: which option won each resolution and for whom, who voted how,
+	-- which emergencies and aid requests passed against whom, and every civ's
+	-- points across the session. Canada went 6→9→13→14→18→22 at successive
+	-- sessions whether we cast the free vote or twelve; without the outcome
+	-- there is no telling whether the +3/+4 was the victory resolution, a
+	-- resolution it led the votes on, an aid competition, or all three — and
+	-- so no telling whether option B against the leader is the right vote.
+	--
+	-- `Game.GetWorldCongress():GetReview(pid)` is what the shipped
+	-- `WorldCongressPopup.lua` "Last Results" tab reads (`PopulateReview` /
+	-- `PopulateReviewProposals`): `.Resolutions[i]` carries `Type`,
+	-- `ChosenOption`, `ChosenThing`, `ChosenLabel`, `RejectedLabel`,
+	-- `TargetType`, `IsNew`, `PlayerSelections[{PlayerID, OptionChosen,
+	-- Votes}]`; `.Discussions[proposalType].ProposalsOfType[]` carries
+	-- `TypeName`, `TargetPlayer`, `PlayerVotes[{PlayerType, Votes}]` (negative
+	-- = against).
+	-- The review is stable between sessions, so it is emitted once per change
+	-- of content — i.e. once per session, on the first turn after it — keyed
+	-- by a signature hung off `envoyTally` (a file-scope local would cross the
+	-- 200-register main-chunk ceiling). DVP per alive major is read the way the
+	-- voter already reads it. Read-only; nothing here votes.
+	pcall(function()
+		local wc = Game.GetWorldCongress();
+		if wc == nil then return; end
+		local review = wc:GetReview(pid);
+		if type(review) ~= "table" then return; end
+		local resolutions, signature = {}, {};
+		for i, r in pairs(review.Resolutions or {}) do
+			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
+				local info = GameInfo.Resolutions[r.Type];
+				local rtype = tostring(info and info.ResolutionType or r.Type);
+				local a, b, ours, voters = 0, 0, nil, {};
+				for _, sel in pairs(r.PlayerSelections or {}) do
+					if type(sel) == "table" then
+						local who = tonumber(sel.PlayerID) or -1;
+						local votes = tonumber(sel.Votes) or 0;
+						local option = tonumber(sel.OptionChosen) or 0;
+						if option == 1 then a = a + votes; else b = b + votes; end
+						voters[#voters + 1] = { player = who, option = option, votes = votes };
+						if who == pid then ours = { option = option, votes = votes }; end
+					end
+				end
+				local won = a > b and 1 or (b > a and 2 or 0);
+				resolutions[#resolutions + 1] = {
+					type = rtype,
+					target_type = tostring(r.TargetType or ""),
+					target = tostring(r.ChosenThing or ""),
+					chosen = tostring(r.ChosenLabel or ""),
+					won = won, a = a, b = b,
+					ours = ours, voters = voters,
+					new = (r.IsNew ~= nil and r.IsNew ~= 0 and r.IsNew ~= false) or false,
+				};
+				signature[#signature + 1] = rtype .. ":" .. tostring(r.ChosenThing or "") .. ":" .. a .. "/" .. b;
+			end
+		end
+		local proposals = {};
+		for ptype, category in pairs(review.Discussions or {}) do
+			if type(category) == "table" then
+				for _, prop in pairs(category.ProposalsOfType or {}) do
+					if type(prop) == "table" then
+						-- `PlayerVotes` entries carry `PlayerType` (the voter's id)
+						-- and a signed `Votes` (negative = against), as the
+						-- shipped review reads them.
+						local up, down, ours = 0, 0, nil;
+						for _, v in pairs(prop.PlayerVotes or {}) do
+							if type(v) == "table" then
+								local votes = tonumber(v.Votes) or 0;
+								if votes > 0 then up = up + votes; elseif votes < 0 then down = down - votes; end
+								if tonumber(v.PlayerType) == pid then ours = votes; end
+							end
+						end
+						local target = tonumber(prop.TargetPlayer) or -1;
+						local ptypeName = tostring(prop.TypeName or ptype);
+						proposals[#proposals + 1] = {
+							type = ptypeName, target = target,
+							passed = up > down, up = up, down = down, ours = ours,
+						};
+						signature[#signature + 1] = ptypeName .. "@" .. target .. ":" .. up .. "/" .. down;
+					end
+				end
+			end
+		end
+		if #resolutions == 0 and #proposals == 0 then return; end
+		table.sort(signature);
+		local key = table.concat(signature, "|");
+		if envoyTally.wc_review_signature == key then return; end
+		envoyTally.wc_review_signature = key;
+		local dvp = {};
+		for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+			local id = tonumber(other);
+			if id ~= nil then
+				dvp[#dvp + 1] = { player = id, points = tonumber(try(function()
+					return Players[id]:GetStats():GetDiplomaticVictoryPoints();
+				end, 0)) or 0 };
+			end
+		end
+		emit("wc_outcome", {
+			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
+			favor = tonumber(try(function() return player:GetFavor(); end, 0)) or 0,
+		});
+	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--
 	-- Run civvis-20260730T170738Z ended on Civilization VI's DEFEAT screen at turn 80,
@@ -10403,6 +11158,10 @@ local function tick()
 				return a.rtype < b.rtype;
 			end);
 			local cast, spent = 0, 0;
+			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
+			-- "claim" (A for us with the bank), "deny" (B against the leader
+			-- with the bank), "free" (the one free vote against the leader).
+			local mode = nil;
 			for _, entry in ipairs(list) do
 				local r, info, rtype = entry.r, entry.info, entry.rtype;
 				do
@@ -10413,10 +11172,61 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == leader then selection = idx; end
 						end
+						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
+						--
+						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
+						-- Diplomatic Victory -- the sixth early diplomatic loss on the
+						-- Settler seat -- and the ledger of this voter reads: 180 Favor
+						-- spent at t161 against a leader on 8 points, 220 at t181 (11),
+						-- 220 at t201 (14), 264 at t221 (15); the leader then went 15
+						-- -> 19 -> 20 in the two sessions that decided it while the
+						-- treasury it faced was whatever had trickled in since the
+						-- last spend. Extra votes cost Favor on a rising ladder, so the
+						-- same Favor buys the most votes when spent at once, and it
+						-- only matters at the sessions a leader can win from. Below
+						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
+						-- twenty) the free vote is still cast against the leader and
+						-- nothing is spent; from there every session spends the bank.
+						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						local n = 1;
-						while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-							n = n + 1;
+						if (tonumber(leaderPoints) or 0) >= floor then
+							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
+								n = n + 1;
+							end
+						end
+						mode = (n > 1) and "deny" or "free";
+						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
+						--
+						-- The resolution's winner is the option with more votes, and
+						-- its target the player with the most votes ON that option.
+						-- Decoded `wc_outcome` rows (runs T205104Z, T223457Z): option
+						-- A ("+2 to the target") wins every session by 23–43 votes to
+						-- ≤15 because each rival votes A for ITSELF with 6–11 votes,
+						-- and the target is simply the rival with the biggest block —
+						-- so a B ballot against the leader changes nothing until the
+						-- rivals themselves turn on a leader at 17. Meanwhile our
+						-- Favor sat at 640–1441 unspent. Twelve votes (780 Favor on
+						-- the shipped ladder) beat every block seen; when the bank
+						-- affords that many, vote A with all of them targeting US: the
+						-- +2 lands on this seat and the leader gets nothing that
+						-- session. `DiploVictoryClaimVotes` is that bar; below it the
+						-- floor rule above stands.
+						local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;
+						local ourIdx = nil;
+						for idx, t in pairs(targets) do
+							if tonumber(t) == pid then ourIdx = idx; end
+						end
+						local affordable = 1;
+						while affordable + 1 <= maxVotes and costs[affordable] ~= nil
+						      and costs[affordable] <= favor do
+							affordable = affordable + 1;
+						end
+						if ourIdx ~= nil and affordable >= claim then
+							option = 1;
+							selection = ourIdx;
+							n = affordable;
+							mode = "claim";
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
@@ -10444,10 +11254,73 @@ local function tick()
 			pcall(function()
 				UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {});
 			end);
-			return cast, spent, nil, leader, leaderPoints, leaderScore;
+			return cast, spent, nil, leader, leaderPoints, leaderScore, mode;
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
+		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
+		-- APPEARS. `voteWorldCongress` below is also called from the blocker
+		-- ladder, and that call has never registered a vote: `wc_vote` says
+		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
+		-- 822→829→836 across it; `wc_outcome` shows our selection on every
+		-- resolution as the core's default `option 1, votes 1` — the free vote
+		-- cast FOR the diplomatic leader. The shipped screen votes from inside
+		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
+		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
+		-- before its `OnAccept`, and this is the handler. Registered once, from
+		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
+		-- local would cross the 200-register ceiling); the flag hangs off
+		-- `envoyTally` for the same reason. `source` on the event tells the two
+		-- call sites apart in the ledger; the popup one is the one that counts.
+		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
+		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
+		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
+		-- `OnAccept` one the event was raised in. Two triggers now, either of
+		-- which casts once per turn: the game core's own
+		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
+		-- popup opens on, i.e. the earliest moment a person could vote — and
+		-- the shim's ballot event, now raised from the rung that runs.
+		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
+		-- latch and is only set when something was cast, so a trigger that
+		-- arrives before the resolutions are readable does not spend the turn.
+		-- The blocker path below defers to these and only falls back a forfeit
+		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
+		-- and Favor before, so the next `wc_outcome` says which moment took.
+		local function castBallot(trigger)
+			local ballotPlayer, ballotPid = localPlayer();
+			if ballotPlayer == nil then return; end
+			local ballotTurn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+			if envoyTally.ballot_turn == ballotTurn then
+				emit("wc_vote", { turn = ballotTurn, source = trigger, cast = 0, spent = 0,
+				                  why = "already_cast" });
+				return;
+			end
+			local stage = try(function()
+				local r = Game.GetWorldCongress():GetResolutions(ballotPid);
+				return r and r.Stage or nil;
+			end, nil);
+			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
+			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
+			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
+			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
+			                  why = why, leader = leader,
+			                  leader_points = leaderPoints,
+			                  leader_score = leaderScore, source = trigger,
+			                  stage = stage, favor_before = before, mode = mode });
+		end
+		if not envoyTally.ballot_hooked then
+			envoyTally.ballot_hooked = true;
+			local hookedLua = pcall(function()
+				LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);
+			end);
+			local hookedStage = pcall(function()
+				Events.WorldCongressStage1.Add(function(playerID)
+					if tonumber(playerID) == pid then castBallot("stage1"); end
+				end);
+			end);
+			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+			                           popup = hookedLua, stage1 = hookedStage });
+		end
 		if not try(function() return player:IsTurnActive(); end, false) then return; end
 
 		local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
@@ -10603,16 +11476,54 @@ local function tick()
 					-- budgets, counted in `residualAnswers`, overridable by
 					-- CIVVIS at the next export. Only a pass that produced
 					-- nothing falls through to the dismissal ladder below.
+					-- ⚠⚠⚠ AND THE RESIDUAL ANSWER IS BOUNDED TOO, OR IT IS THE WEDGE.
+					--
+					-- Run `civvis-20260816T115139Z` -- the seat's best game, 804
+					-- against 715 and the score leader -- wedged at turn 178 on
+					-- `ENDTURN_BLOCKING_UNITS`: `civvis_complete`, then the ladder's
+					-- `units` answer, `residual_unblock ... forfeits 0`, and the same
+					-- blocker back again -- SEVEN times, because a residual answer
+					-- that is not nil and not `civvis_complete` reset `attempts` and
+					-- never reached the forfeit below, so neither the parking pass,
+					-- the dismissal, the forced end turn nor the 40-attempt drop ever
+					-- ran. The outside watchdog killed the attempt after 900 s.
+					-- The ladder's own per-name `spend` budgets did not bound it,
+					-- and must not be relied on to. Two residual answers that leave
+					-- the blocker standing are the proof; the third sighting-pair
+					-- forfeits like any other inert answer.
 					local residual_pick = nil;
-					if answered == "civvis_complete" then
+					if answered == "civvis_complete"
+							and (seen.residuals or 0) < (cfg.MaxResidualAnswers or 2) then
 						residual_pick = answerBlocker(player, pid, blocker, turn, true);
 					end
+					local residual_taken = false;
 					if residual_pick ~= nil and residual_pick ~= "civvis_complete" then
+						seen.residuals = (seen.residuals or 0) + 1;
 						emit("residual_unblock", { turn = turn, blocker = name,
 						                           answered = residual_pick,
-						                           forfeits = seen.forfeits });
+						                           forfeits = seen.forfeits,
+						                           residuals = seen.residuals });
 						attempts = 0;
-					elseif seen.forfeits < cap then
+						residual_taken = true;
+					end
+					-- ⚠⚠⚠ A UNITS BLOCKER FORFEITS IN THE SAME PASS AS ITS RESIDUAL
+					-- ANSWER, because a quiet board never ticks again. Run
+					-- `civvis-20260816T151716Z` wedged at turn 111 with the bound
+					-- above in place: `civvis_complete`, residual `units`,
+					-- `residuals: 1`, then `residuals: 2` -- and then NOTHING. The
+					-- residual pass had no unit left to order, so it issued no
+					-- request, the game core published no event, and this function
+					-- -- driven only by game-core events, a per-frame update does
+					-- not run in this context (see the note above `onGameCoreTick`)
+					-- -- was never called again to reach the forfeit that the third
+					-- sighting-pair was supposed to bring. The outside watchdog
+					-- killed the attempt after 900 s, at 342 against 403. For the
+					-- units family the forfeit therefore runs in THIS pass, after
+					-- the residual answer's own requests are queued: park what is
+					-- still ready, dismiss, and force the end of turn. Research and
+					-- production keep the two-step, since their answers always
+					-- move the board and a forced end turn is refused under them.
+					if (not residual_taken or UNIT_BLOCKERS[name]) and seen.forfeits < cap then
 						-- BOUNDED RETRY. Re-arming after `bound` more sightings
 						-- covers a forfeit that did not stick -- the engine can
 						-- raise a fresh units notification for the same units --
@@ -10625,12 +11536,26 @@ local function tick()
 						-- through to the dismissal exactly as before.
 						if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 								and seen.voted_turn ~= turn then
-							seen.voted_turn = turn;
-							local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
-							emit("wc_vote", { turn = turn, cast = cast, spent = spent,
-							                  why = why, leader = leader,
-							                  leader_points = leaderPoints,
-							                  leader_score = leaderScore });
+							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
+							-- VOTING (its ballot never registered; see `castBallot`
+							-- above), so it defers: if the stage-1/popup ballot has
+							-- cast this turn there is nothing to do, and otherwise
+							-- it waits one forfeit cycle for those triggers before
+							-- falling back to the old vote-and-submit, so a session
+							-- that neither trigger reaches still ends.
+							if envoyTally.ballot_turn == turn then
+								seen.voted_turn = turn;
+								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
+								                  why = "cast_at_stage1", source = "blocker" });
+							elseif seen.forfeits >= 2 then
+								seen.voted_turn = turn;
+								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
+								emit("wc_vote", { turn = turn, cast = cast, spent = spent,
+								                  why = why, leader = leader,
+								                  leader_points = leaderPoints,
+								                  leader_score = leaderScore, source = "blocker",
+								                  mode = mode });
+							end
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						local dropped = dismissBlocker(pid, blocker);
@@ -10646,7 +11571,7 @@ local function tick()
 								                 { REASON = "UserForced" });
 							end);
 						end
-					elseif seen.forfeits == cap then
+					elseif not residual_taken and seen.forfeits == cap then
 						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
 						-- Say so, once, in the run's own event log. Issue #1374
 						-- died as 900 s of silence that read as a slow machine;

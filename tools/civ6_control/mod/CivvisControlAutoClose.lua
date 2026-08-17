@@ -239,6 +239,17 @@ local function endScreen(attempt)
 	-- special-session notification pending, so the same screen can immediately
 	-- return.  Use the complete Firaxis path a person pressing Pass would use.
 	if NAME == "WorldCongressPopup" and type(OnPass) == "function" then
+		-- ⚠⚠ THIS IS THE RUNG THAT RUNS FOR THE SESSION POPUP TOO. The shipped
+		-- WorldCongressPopup defines BOTH `OnPass` (the emergency-proposal
+		-- review's Pass button) and `OnAccept` (the session's submit), and this
+		-- rung sits first — so the `OnAccept` rung below, and the ballot event
+		-- it raises, never ran for a session: batch-9 game
+		-- civvis-20260816T223457Z shows the popup closing here 0.05 s after it
+		-- opened at t61/81/101/121 with no `source:"popup"` ballot anywhere.
+		-- The ballot is raised here as well; the agent's handler ignores a
+		-- second call in the same turn, and between sessions (the review
+		-- popup) it finds no resolutions and casts nothing.
+		pcall(function() LuaEvents.CivvisCongressBallot(); end);
 		OnPass();
 		return true;
 	end
@@ -262,6 +273,23 @@ local function endScreen(attempt)
 	-- shape of the decline-everything policy every diplomacy closer here
 	-- already applies, and the measured alternative is a dead attempt.
 	if NAME == "WorldCongressPopup" and type(OnAccept) == "function" then
+		-- ★★★★★ THE AGENT'S BALLOT IS CAST HERE, NOW — THE MOMENT A PERSON VOTES.
+		--
+		-- The agent used to vote when it first saw the WORLD_CONGRESS_SESSION
+		-- blocker, before this popup (or even the intro) had opened, and every
+		-- one of those votes was silently refused: across
+		-- civvis-20260816T184500Z and T205104Z the `wc_vote` ledger read
+		-- `spent 760 / 924 / 420` while Favor never fell (822→829→836), and the
+		-- `wc_outcome` review showed our selection on EVERY resolution — the
+		-- diplomatic-victory one included — as `option 1, votes 1`: the core's
+		-- default free vote, cast FOR the leader gaining two points. The
+		-- shipped screen votes from inside this popup in stage 1 and submits
+		-- with `OnAccept`; so the agent is asked to vote from exactly here,
+		-- through a LuaEvent (the contexts do not share globals; LuaEvents are
+		-- what crosses them, synchronously), and `OnAccept` submits what it
+		-- cast. `pcall`, so an agent that is not loaded still gets the
+		-- abstain-and-submit this rung always did.
+		pcall(function() LuaEvents.CivvisCongressBallot(); end);
 		OnAccept();
 		return true;
 	end
@@ -480,8 +508,27 @@ else
 		remaining = SECONDS;
 		shown = 0;
 		closes = closes + 1;
+		-- ★★★★★ THE RUNG NUMBER CYCLES; THE FAILURE COUNT DOES NOT.
+		--
+		-- Every bounded rung in `endScreen` is `attempt <= N` with N ≤ 18, and
+		-- `closes` used to be passed straight through — so from the 19th try
+		-- on, and on EVERY 30-second retry after `autoclose_stuck`, the only
+		-- rungs that ran were the tail (`OnHideScreen`/`OnClose`/`Close`), which
+		-- for a diplomacy view is `CloseFocusedState(false)` again and again.
+		-- Measured on civvis-20260816T175306Z (leading a batch-7 game, 731 vs
+		-- 958 at t207) and civvis-20260816T115139Z (leading 804 vs 715 at
+		-- t178): a late FIRST-CONTACT leader scene, the twenty tries spent
+		-- inside ~5 s while the intro was still fading in (`gone:false` on all),
+		-- then `autoclose … ended:true gone:false` every 30 s for the rest of
+		-- the 900 s watchdog — `CloseSession`, the CHOICE_* answers and the
+		-- initial-statement exit never ran again, the forced end turn could not
+		-- take past the open session, and both games died on the clock. The
+		-- rung is now `((closes - 1) % GIVE_UP_AFTER) + 1`, so a retry burst
+		-- walks the whole ladder again; `closes` keeps counting failures for
+		-- the desktop and stuck thresholds and the back-off.
+		local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;
 		local ended = false;
-		pcall(function() ended = endScreen(closes); end);
+		pcall(function() ended = endScreen(rung); end);
 		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
 		-- ⚠ `ended` IS NOT EVIDENCE THAT THE SCREEN CLOSED. It is whatever
 		-- `endScreen` returned, and every rung in there returns true when its
@@ -498,8 +545,33 @@ else
 		-- because the next tick resets the counter -- so COUNT is the signal:
 		-- one line means closed, twenty mean stuck.
 		local gone = not isUp();
-		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s',
-		                                  upFor, tostring(ended), tostring(gone)));
+		-- ⚠ SAY WHICH STATE A DIPLOMACY VIEW IS STUCK IN. Twenty `gone:false`
+		-- lines could not tell a first-contact cinema still fading in from a
+		-- conversation waiting on an answer from a session the core has already
+		-- closed — and those need different rungs. `ms_currentViewMode`,
+		-- `ms_ActiveSessionID`, the black-fade animation and the popup dialog
+		-- are the shipped script's own globals/controls, read only.
+		local detail = "";
+		if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
+			local mode = -1;
+			pcall(function() if type(ms_currentViewMode) == "number" then mode = ms_currentViewMode; end end);
+			local session = -1;
+			pcall(function() if type(ms_ActiveSessionID) == "number" then session = ms_ActiveSessionID; end end);
+			local fading = "nil";
+			pcall(function()
+				if Controls ~= nil and Controls.BlackFadeAnim ~= nil then
+					fading = tostring(not Controls.BlackFadeAnim:IsStopped());
+				end
+			end);
+			local popup = "nil";
+			pcall(function()
+				if m_PopupDialog ~= nil then popup = tostring(m_PopupDialog:IsOpen()); end
+			end);
+			detail = string.format(',"rung":%d,"mode":%d,"session":%d,"fading":%s,"popup":%s',
+			                       rung, mode, session, fading, popup);
+		end
+		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s%s',
+		                                  upFor, tostring(ended), tostring(gone), detail));
 		-- ★★★★★ A CLOSE THAT WORKED MUST CLEAR THE COUNTER HERE, NOT LATER.
 		--
 		-- `closes` is meant to count consecutive FAILURES, and the `not isUp()`

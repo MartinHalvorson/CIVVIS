@@ -48,7 +48,8 @@ class CityComparisonTest(unittest.TestCase):
         records = drift.city_comparisons(state, dump)
         self.assertEqual([r["name"] for r in records], ["Rome"])
         self.assertEqual(records[0]["delta"]["food"], 2.0)
-        self.assertEqual(records[0]["housing_delta"], 1.5)
+        # 9.5 floors to the 9 the host would show, one above its 8.
+        self.assertEqual(records[0]["housing_delta"], 1.0)
         self.assertEqual(records[0]["amenities_delta"], 2)
 
     def test_the_mods_could_not_read_sentinel_is_not_a_housing_claim(self):
@@ -108,9 +109,11 @@ class EpisodeTest(unittest.TestCase):
 class StateChangeTest(unittest.TestCase):
     def test_names_city_and_empire_changes_between_two_states(self):
         before = {"policies": ["POLICY_A"], "techs": ["TECH_X"], "government": "G1",
+                  "resolutions": [],
                   "cities": [{"name": "Rome", "buildings": ["BUILDING_MONUMENT"],
                               "districts": [], "worked": [{"x": 1, "y": 1}], "pop": 3}]}
         after = {"policies": ["POLICY_B"], "techs": ["TECH_X", "TECH_Y"], "government": "G1",
+                 "resolutions": [{"type": "WC_RES_TRADE_TREATY", "option": 1, "target": "0"}],
                  "cities": [{"name": "Rome",
                              "buildings": ["BUILDING_MONUMENT", "BUILDING_GRANARY"],
                              "pillaged_buildings": ["BUILDING_MONUMENT"],
@@ -123,6 +126,8 @@ class StateChangeTest(unittest.TestCase):
         self.assertIn("worked: -[(1, 1)] +[(1, 2)]", joined)
         self.assertIn("state.policies: -['POLICY_A'] +['POLICY_B']", joined)
         self.assertIn("state.techs: -[] +['TECH_Y']", joined)
+        self.assertIn("state.resolutions: -[] +[{'option': 1, 'target': '0', "
+                      "'type': 'WC_RES_TRADE_TREATY'}]", joined)
         self.assertNotIn("government", joined)
 
     def test_first_turn_has_nothing_to_compare(self):
@@ -145,6 +150,74 @@ class YieldSourceParserTest(unittest.TestCase):
     def test_empty_or_missing_text_is_no_rows(self):
         self.assertEqual(drift.parse_yield_sources(""), [])
         self.assertEqual(drift.parse_yield_sources(None), [])
+
+
+class PlayerFaithTest(unittest.TestCase):
+    """The empire-level Faith figure: the host's `faith_per_turn` against the
+    model's cities + unused Great Person points + founder beliefs."""
+
+    def test_the_host_rate_wins_and_the_balance_is_the_older_exports_fallback(self):
+        states = {
+            10: {"faith": 100, "faith_per_turn": 61.5},
+            11: {"faith": 160},
+            12: {"faith": 40},        # a purchase: nothing can be read at 11
+            13: {"faith": 45},
+        }
+        self.assertEqual(drift.host_faith_income(states, 10), (61.5, "faith_per_turn"))
+        self.assertEqual(drift.host_faith_income(states, 11), (None, None))
+        self.assertEqual(drift.host_faith_income(states, 12), (5.0, "balance"))
+        self.assertEqual(drift.host_faith_income(states, 13), (None, None))
+
+    def test_the_model_is_split_into_cities_unused_points_and_beliefs(self):
+        states = {
+            230: {
+                "faith": 500, "faith_per_turn": 113.0,
+                "faith_sources": "+49 from Cities\n+60 from Other",
+                "great_person_points_per_turn": {
+                    "GREAT_PERSON_CLASS_SCIENTIST": 30, "GREAT_PERSON_CLASS_PROPHET": 4,
+                },
+            },
+        }
+        dump = {
+            "model_empire_yields": yields(faith=114.6),
+            "player_extras": yields(faith=66.0),
+            "unused_great_person_faith": 66.0,
+            "unused_great_person_classes": ["prophet", "scientist"],
+            "great_person_points_per_turn": {"scientist": 31.0, "prophet": 4.0},
+        }
+        record = drift.player_comparison(states, 230, dump)
+        self.assertEqual(record["source"], "faith_per_turn")
+        self.assertEqual(record["delta"], 1.6)
+        self.assertEqual(record["cities"], 48.6)
+        self.assertEqual(record["unused_gpp"], 66.0)
+        self.assertEqual(record["beliefs"], 0.0)
+        self.assertEqual(record["gpp_host"], {"scientist": 30.0, "prophet": 4.0})
+        self.assertEqual(record["gpp_model"], {"scientist": 31.0, "prophet": 4.0})
+        self.assertIn("from Other", record["sources"])
+        # A dump older than the split still compares the totals.
+        self.assertIsNone(drift.player_comparison(states, 230, {}))
+
+    def test_a_balance_read_cannot_resolve_below_one_faith(self):
+        states = {50: {"faith": 45}, 51: {"faith": 48}}
+        dump = {"model_empire_yields": yields(faith=2.9), "player_extras": yields(faith=2.0),
+                "unused_great_person_faith": 2.0}
+        record = drift.player_comparison(states, 50, dump)
+        self.assertEqual(record["source"], "balance")
+        self.assertEqual(record["delta"], 0.0)
+        dump["model_empire_yields"] = yields(faith=1.0)
+        self.assertEqual(drift.player_comparison(states, 50, dump)["delta"], -2.0)
+
+    def test_the_report_returns_only_persistent_episodes(self):
+        rows = {t: {"host": 10.0, "source": "faith_per_turn", "model": 12.0, "delta": 2.0,
+                    "cities": 8.0, "unused_gpp": 4.0, "beliefs": 0.0,
+                    "unused_classes": ["prophet"], "gpp_model": {}}
+                for t in range(1, 6)}
+        rows[6] = dict(rows[5], delta=0.0, model=10.0)
+        rows[7] = None
+        persistent = drift.report_player_faith(rows, 3)
+        self.assertEqual(len(persistent), 1)
+        self.assertEqual((persistent[0]["start"], persistent[0]["end"]), (1, 5))
+        self.assertEqual(drift.report_player_faith({}, 3), [])
 
 
 if __name__ == "__main__":

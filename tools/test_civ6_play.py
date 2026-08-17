@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -798,6 +799,89 @@ class Civ6PlayTest(unittest.TestCase):
             click.call_args_list,
             [call(869, 441), call(1111, 255), call(1156, 299),
              call(1058, 181), call(1073, 491)],
+        )
+
+    def test_latest_autosave_is_by_mtime_and_bounded_by_the_attempt_start(self) -> None:
+        # The numbering wraps, so the newest file can carry a lower number; and a
+        # resume must never reload a save from some earlier game.
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            older = folder / "AutoSave_0149.Civ6Save"
+            newer = folder / "AutoSave_0003.Civ6Save"
+            stray = folder / "notes.txt"
+            for path in (older, newer, stray):
+                path.write_bytes(b"x")
+            os.utime(older, (1_000, 1_000))
+            os.utime(newer, (2_000, 2_000))
+            os.utime(stray, (3_000, 3_000))
+            self.assertEqual(civ6_play.latest_autosave(folder), newer)
+            self.assertEqual(civ6_play.latest_autosave(folder, newer_than=1_500), newer)
+            self.assertIsNone(civ6_play.latest_autosave(folder, newer_than=2_500),
+                              "nothing written since the attempt began")
+            self.assertIsNone(civ6_play.latest_autosave(folder / "missing"))
+
+    @needs_pillow
+    def test_saved_game_bootstrap_ticks_the_autosaves_filter_when_the_row_is_hidden(self) -> None:
+        # Measured on civvis-20260815T230003Z-cont: the Load Game list opens with
+        # the Autosaves filter off, "(Quick Save)" alone, and the resume refused
+        # "not visible" three times with AutoSave_0098 on disk.
+        bounds = (756, 33, 756, 480)
+        observations = [
+            [{"text": "Single Player", "x": 0.72, "y": 0.255,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "Single Player", "x": 0.72, "y": 0.255,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "Load Game", "x": 0.75, "y": 0.30,
+              "width": 0.03, "height": 0.01}],
+            # The panel: filter unticked, no autosave row — read once for the
+            # row (not found) and once more for the filter label.
+            [{"text": "Autosaves", "x": 0.71, "y": 0.155,
+              "width": 0.03, "height": 0.01},
+             {"text": "(Quick Save)", "x": 0.71, "y": 0.20,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "Autosaves", "x": 0.71, "y": 0.155,
+              "width": 0.03, "height": 0.01},
+             {"text": "(Quick Save)", "x": 0.71, "y": 0.20,
+              "width": 0.03, "height": 0.01}],
+            # After the tick: the row is listed (OCR drops the underscore).
+            [{"text": "Autosaves", "x": 0.71, "y": 0.155,
+              "width": 0.03, "height": 0.01},
+             {"text": "AutoSave 0102", "x": 0.68, "y": 0.21,
+              "width": 0.04, "height": 0.01}],
+            [
+                {"text": "LOAD GAME", "x": 0.73, "y": 0.11,
+                 "width": 0.04, "height": 0.01},
+                {"text": "Load Game", "x": 0.69, "y": 0.49,
+                 "width": 0.04, "height": 0.02},
+            ],
+        ]
+
+        class Tail:
+            def poll(self):
+                return [{"ctx": "agent", "kind": "loaded"}]
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "game_window", return_value=bounds), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]), \
+             patch.object(civ6_play.env, "game_pids", return_value=[123]), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play, "click_at") as click:
+            loaded = civ6_play.bootstrap_saved_game(
+                Tail(), lambda _event: None, Path(temporary),
+                args(load_save="/saves/auto/AutoSave_0102.Civ6Save"),
+            )
+
+        self.assertTrue(loaded)
+        # main-menu button, Single Player, Load Game, the Autosaves filter, the
+        # row, then the lower Load Game action button.
+        self.assertEqual(
+            click.call_args_list,
+            [call(869, 441), call(1111, 255), call(1156, 299),
+             call(1096, 157), call(1058, 211), call(1073, 491)],
         )
 
     def test_seat_match_requires_map_and_leader(self) -> None:

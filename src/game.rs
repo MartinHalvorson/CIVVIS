@@ -5043,6 +5043,19 @@ mod belief_runtime_tests {
             assert_eq!(abroad.culture, culture, "{district} Culture");
         }
 
+        // A pillaged destination district still pays its row (Rome's pillaged
+        // Holy Site and Campus kept paying Cumae's route, run
+        // civvis-20260816T200454Z t81-95): the row is for the district's
+        // existence, not its working state.
+        {
+            let mut probe = game.clone();
+            let campus = place_district(&mut probe, dest, "campus");
+            let paid = probe.route_yields(dest, true);
+            probe.map.tiles.get_mut(&campus).unwrap().pillaged = true;
+            assert_eq!(probe.route_yields(dest, true), paid, "a pillaged Campus still pays");
+            assert_eq!(probe.route_yields(dest, false).science, 1.0);
+        }
+
         // Encampment, Industrial Zone and Entertainment Complex are the three
         // that pay the SAME yield to both kinds of route rather than splitting
         // a domestic yield from an international one.
@@ -5553,6 +5566,58 @@ mod belief_runtime_tests {
         game.players[0].religion_beliefs = vec!["pilgrimage".to_string()];
         assert_eq!(game.founder_belief_yields(0).faith, 4.0);
 
+        // Lay Ministry: +1 Faith per Holy Site and +1 Culture per Theater
+        // Square in cities following the religion (BELIEF_YIELD_PER_DISTRICT);
+        // Sacred Places: +2 of every yield per following city with a Wonder
+        // (BELIEF_YIELD_PER_CITY_WITH_WONDER). Both are founder income.
+        let holy_site = game
+            .cities[&cities[0]]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&cities[0]].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&holy_site).unwrap().district = Some(crate::name!("holy_site"));
+        game.map.tiles.get_mut(&holy_site).unwrap().improvement = None;
+        game.cities
+            .get_mut(&cities[0])
+            .unwrap()
+            .districts
+            .insert(crate::name!("holy_site"), holy_site);
+        game.players[0].religion_beliefs = vec!["lay_ministry".to_string()];
+        assert_eq!(game.founder_belief_yields(0).faith, 1.0);
+        assert_eq!(game.founder_belief_yields(0).culture, 0.0);
+        let second_center = game.cities[&cities[1]].pos;
+        game.cities
+            .get_mut(&cities[1])
+            .unwrap()
+            .wonders
+            .insert(crate::name!("stonehenge"), second_center);
+        game.players[0].religion_beliefs = vec!["sacred_places".to_string()];
+        let sacred = game.founder_belief_yields(0);
+        assert_eq!((sacred.faith, sacred.culture, sacred.science, sacred.gold), (2.0, 2.0, 2.0, 2.0));
+        // Divine Inspiration is a follower belief: +4 Faith per Wonder in the
+        // city that follows, paid in that city's own yields — even a rival's.
+        game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+        let without = {
+            game.players[0].religion_beliefs.clear();
+            game.city_yields(cities[1]).faith
+        };
+        game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+        assert_eq!(game.city_yields(cities[1]).faith, without + 4.0);
+        // Reliquaries triples a Relic's Faith in a following city.
+        game.players[0].religion_beliefs.clear();
+        game.grant_great_work(1, "relic", 0, "test");
+        let plain_relic = game.city_yields(cities[1]).faith;
+        game.players[0].religion_beliefs = vec!["reliquaries".to_string()];
+        let housed = game
+            .housed_great_works(1)
+            .get(&cities[1])
+            .and_then(|works| works.get("relic").copied())
+            .unwrap_or(0) as f64;
+        assert_eq!(game.city_yields(cities[1]).faith, plain_relic + 3.0 * 4.0 * housed);
+        assert!(housed >= 1.0, "the relic has to be housed for the belief to show");
+
         game.players[1].is_minor = true;
         game.players[0].religion_beliefs = vec!["religious_unity".to_string()];
         game.award_religious_unity_envoys();
@@ -5698,6 +5763,24 @@ mod governor_runtime_tests {
         assert_eq!(district.count, 1);
         assert_eq!(district.yields.science, 0.0);
         assert_eq!(district.raw.science, 0.5);
+
+        // A second adjacent district completes the pair — and a PILLAGED one
+        // does not count: live Rome's Campus lost its district point the turn
+        // after its Holy Site was pillaged and got it back on repair (run
+        // civvis-20260816T200454Z, t82-96).
+        let holy_site = ring[2];
+        set_district(&mut game, capital, holy_site, "holy_site");
+        let paired = game.district_adjacency_sources(crate::name!("campus"), site);
+        let district = paired.iter().find(|source| source.source == "district").unwrap();
+        assert_eq!((district.count, district.yields.science), (2, 1.0));
+        game.map.tiles.get_mut(&holy_site).unwrap().pillaged = true;
+        let broken = game.district_adjacency_sources(crate::name!("campus"), site);
+        let district = broken.iter().find(|source| source.source == "district").unwrap();
+        assert_eq!((district.count, district.yields.science), (1, 0.0), "a pillaged district is not adjacent");
+        game.map.tiles.get_mut(&holy_site).unwrap().pillaged = false;
+        game.map.tiles.get_mut(&holy_site).unwrap().district = None;
+        game.cities.get_mut(&capital).unwrap().districts.remove(&crate::name!("holy_site"));
+        let sources = game.district_adjacency_sources(crate::name!("campus"), site);
 
         let sum = |sources: &[AdjacencySource]| {
             let mut total = Yields::default();
@@ -6331,6 +6414,75 @@ mod governor_runtime_tests {
         assert_eq!(earned(&mut game, "military_organization", "general"), 6.0);
     }
 
+    /// Civilization VI turns the points of a Great Person class the empire
+    /// can no longer earn into Faith, one for one, each turn — the game core's
+    /// `GetFaithFromUnusedGreatPeoplePoints`. Measured on the live Settler
+    /// seat across seven games (run civvis-20260816T123936Z t219–239: the
+    /// balance grew by the Campus rate to the point once the last Great
+    /// Scientist anywhere was claimed, and by the Holy Site's Prophet rate
+    /// from the turn the map ran out of religions). The model banked the
+    /// points and paid nothing, so the empire's Faith read half the host's.
+    #[test]
+    fn unused_great_person_points_are_paid_out_as_faith() {
+        let mut game = Game::new_full(1, 24, 16, 91_921, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let center = game.cities[&city].pos;
+        let sites: Vec<Pos> = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != center)
+            .collect();
+        set_district(&mut game, city, sites[0], "campus");
+        set_district(&mut game, city, sites[1], "holy_site");
+        let rate = game.great_person_points_per_turn(0);
+        let scientist = rate["scientist"];
+        let prophet = rate["prophet"];
+        assert!(scientist > 0.0 && prophet > 0.0, "the two districts pay points: {rate:?}");
+
+        // Every class still has someone to recruit: points bank, no Faith.
+        assert!(game.great_person_class_earnable(0, "scientist"));
+        assert!(game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), 0.0);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before);
+        assert_eq!(game.players[0].gpp["scientist"], scientist);
+
+        // The host's timeline no longer lists a Great Scientist: the Campus
+        // points are still counted (Firaxis's `GetPointsTotal` keeps growing)
+        // and are paid out as Faith as well.
+        game.players[0].live_great_person_exhausted =
+            Some(["scientist".to_string()].into_iter().collect());
+        assert!(!game.great_person_class_earnable(0, "scientist"));
+        assert!(game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), scientist);
+        assert_eq!(game.player_yield_extras(0).faith, scientist);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before + scientist);
+        assert_eq!(game.players[0].gpp["scientist"], 2.0 * scientist);
+
+        // An empire that holds a religion cannot earn another Prophet: the
+        // Holy Site's points become Faith too, whatever the host still offers.
+        game.players[0].religion = Some("test_faith".to_string());
+        assert!(!game.great_person_class_earnable(0, "prophet"));
+        assert_eq!(game.unused_great_person_faith(0), scientist + prophet);
+        game.players[0].religion = None;
+        // ...and so is one whose Prophet is already pending.
+        game.players[0].prophet_pending = true;
+        assert!(!game.great_person_class_earnable(0, "prophet"));
+        game.players[0].prophet_pending = false;
+        assert!(game.great_person_class_earnable(0, "prophet"));
+
+        // Nothing is paid under Anarchy: the empire collects no Faith at all.
+        game.players[0].anarchy_turns = 2;
+        assert_eq!(game.unused_great_person_faith(0), 0.0);
+        let faith_before = game.players[0].faith;
+        game.process_great_people(0);
+        assert_eq!(game.players[0].faith, faith_before);
+    }
+
     #[test]
     fn pingala_executes_population_gpp_space_and_curator_effects() {
         let mut game = Game::new_full(1, 24, 16, 91_784, 200, 0, false);
@@ -6475,6 +6627,41 @@ mod governor_runtime_tests {
         // A small city with a low-adjacency Campus gets nothing at all. Under
         // the old flat +100% the Library's 2 Science doubled here.
         assert_eq!(game.city_yields(city).science, plain);
+        // Nor does doubling that low adjacency with Natural Philosophy reach
+        // the clause: REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT reads the
+        // district's own adjacency, before the percentage cards (live Ostia's
+        // Campus at "+6" — 3 doubled — earned nothing from Rationalism, run
+        // civvis-20260816T233226Z t153-169).
+        {
+            // Two mountains beside the Campus: raw adjacency 2 (plus the
+            // banked half-point of the adjacent centre), doubled to 4+.
+            let ring: Vec<Pos> = game
+                .nbrs(site)
+                .into_iter()
+                .filter(|position| *position != game.cities[&city].pos && game.map.get(*position).is_some())
+                .collect();
+            for position in ring.iter().take(2) {
+                let tile = game.map.tiles.get_mut(position).unwrap();
+                tile.terrain = crate::name!("mountain");
+                tile.feature = None;
+                tile.hills = false;
+                tile.improvement = None;
+                tile.district = None;
+            }
+            let raw = game.district_yields(crate::name!("campus"), site).science;
+            assert!(raw >= 2.0 && raw < 4.0, "raw adjacency below the clause: {raw}");
+            game.players[0].policies.insert(crate::name!("natural_philosophy"));
+            assert!(game.district_yields(crate::name!("campus"), site).science >= 4.0);
+            let with_both = game.city_yields(city).science;
+            game.players[0].policies.remove(&crate::name!("rationalism"));
+            let philosophy_alone = game.city_yields(city).science;
+            assert!(
+                (with_both - philosophy_alone).abs() < 1e-9,
+                "a doubled adjacency does not open the clause: {philosophy_alone} -> {with_both}"
+            );
+            game.players[0].policies.remove(&crate::name!("natural_philosophy"));
+            game.players[0].policies.insert(crate::name!("rationalism"));
+        }
 
         // Fifteen Population pays one half of the card, and exactly half:
         // doubling the card's rating doubles what that half is worth.
@@ -9138,10 +9325,16 @@ mod project_runtime_tests {
             project: crate::name!("campus_research_grants"),
         };
         assert!(game.can_produce(0, city, &project));
-        game.cities.get_mut(&city).unwrap().queue = vec![project.clone()];
         let base = game.city_yields(city);
+        game.cities.get_mut(&city).unwrap().queue = vec![project.clone()];
+        // The conversion is a city yield (the host lists "+N from Campus
+        // Research Grants" in the city's own ledger), so `city_yields` carries
+        // it while the project runs, and turn processing pays exactly that.
+        let running = game.city_yields(city);
+        assert!((running.science - base.science - 0.15 * base.production).abs() < 1e-9,
+            "15% of the Production rate as Science: {} -> {}", base.science, running.science);
         let observed = game.process_city(0, city);
-        assert!((observed.science - base.science - 0.15 * base.production).abs() < 1e-9);
+        assert!((observed.science - running.science).abs() < 1e-9);
 
         game.cities.get_mut(&city).unwrap().production = 0.0;
         game.map.tiles.get_mut(&positions[0]).unwrap().pillaged = true;
@@ -16278,6 +16471,26 @@ pub struct LiveGreatPersonActivationNeed {
     pub required_district: Option<String>,
 }
 
+/// Aggregate public standings reported by an authoritative host for one
+/// civilization.
+///
+/// A live mirror deliberately keeps fogged cities and units out of the board,
+/// but Civilization VI's standings expose these empire-wide totals. Keeping
+/// them separate from the reconstructed objects lets the HUD be exact without
+/// manufacturing hidden locations, infrastructure, or armies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ObservedPublicEmpireStats {
+    pub city_count: Option<usize>,
+    pub population: Option<i32>,
+    pub wonder_count: Option<usize>,
+    pub suzerain_count: Option<usize>,
+    pub nuclear_devices: Option<i64>,
+    pub thermonuclear_devices: Option<i64>,
+    pub techs: Option<usize>,
+    pub civics: Option<usize>,
+    pub tourism_per_turn: Option<f64>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -16431,6 +16644,15 @@ pub struct Player {
     /// engine and old-save behavior.
     #[serde(default)]
     pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
+    /// The Great Person classes the mirrored Civilization VI game has nobody
+    /// left to recruit in, when the host says. `None` in headless games and
+    /// on older exports: the engine then falls back to its own roster
+    /// (`current_great_person`). `Some(set)` is the host's answer — a class in
+    /// it has no unclaimed individual anywhere on the timeline, and its
+    /// points are the ones Firaxis turns into Faith
+    /// (`great_person_class_earnable`, `unused_great_person_faith`).
+    #[serde(default)]
+    pub live_great_person_exhausted: Option<BTreeSet<String>>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -16658,6 +16880,7 @@ impl Player {
             gpp: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
+            live_great_person_exhausted: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -17864,6 +18087,11 @@ pub struct Game {
     /// counterfactual deltas when the AI evaluates a policy or build on a clone.
     #[serde(default)]
     pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    /// Public empire-wide figures from an authoritative host which cannot be
+    /// reconstructed from fog-limited city and unit records. Native games leave
+    /// this empty and derive every standing from their full board.
+    #[serde(default)]
+    pub observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
     /// Per-city host-to-model corrections and exact citizen assignments for a
     /// mirrored Firaxis turn. Native games leave these empty. Corrections are
     /// additive so counterfactual buildings, policies, and assignments still
@@ -17894,6 +18122,27 @@ pub struct Game {
     /// leave this empty.
     #[serde(default)]
     pub observed_tile_yield_adjustments: BTreeMap<Pos, crate::rules::Yields>,
+    /// Trading Posts on the host's own path for one of our routes, keyed by
+    /// (origin, destination) city and filed (own cities, foreign cities). The
+    /// host's pathfinder follows roads the model's straight-line walk does
+    /// not; where the mirror knows the host's answer it is the one that pays
+    /// (`trading_post_route_gold`). Empty on a native game.
+    #[serde(default)]
+    pub observed_route_posts: BTreeMap<(u32, u32), (i64, i64)>,
+    /// Where the host houses this seat's Great Works, by city and kind, when
+    /// the mirror has read it: the host's own placement is the one that
+    /// pays, not the model's best-slot heuristic (a Relic the host kept in
+    /// Rome's Palace read "+6 from GreatWorks" there while the model housed
+    /// it in Mediolanum's St. Basil's, run civvis-20260816T233226Z t154+).
+    /// `None` on a native game or an export without the works.
+    #[serde(default)]
+    pub observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
+    /// What the host says one of our routes pays its ORIGIN, keyed by
+    /// (origin, destination) city — the Trade Overview's own sum of route,
+    /// path and modifier yields under the international multiplier. Stands
+    /// in for the model's route yield where present; empty on a native game.
+    #[serde(default)]
+    pub observed_route_yields: BTreeMap<(u32, u32), crate::rules::Yields>,
     #[serde(default)]
     pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18236,7 +18485,7 @@ pub struct Game {
     pub events: EventLog,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TradeRoute {
     pub origin: u32,
     pub dest: u32,
@@ -18380,6 +18629,8 @@ struct GameSer {
     #[serde(default)]
     observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
     #[serde(default)]
+    observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    #[serde(default)]
     observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
     #[serde(default)]
     observed_city_amenity_adjustments: BTreeMap<u32, i64>,
@@ -18388,6 +18639,12 @@ struct GameSer {
     /// A list, not a map: JSON cannot key an object by a tuple.
     #[serde(default)]
     observed_tile_yield_adjustments: Vec<(Pos, crate::rules::Yields)>,
+    #[serde(default)]
+    observed_route_posts: Vec<((u32, u32), (i64, i64))>,
+    #[serde(default)]
+    observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
+    #[serde(default)]
+    observed_route_yields: Vec<((u32, u32), crate::rules::Yields)>,
     #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18557,10 +18814,14 @@ impl From<GameSer> for Game {
             observed_trade_capacity: s.observed_trade_capacity,
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
+            observed_public_empire_stats: s.observed_public_empire_stats,
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: s.observed_tile_yield_adjustments.into_iter().collect(),
+            observed_route_posts: s.observed_route_posts.into_iter().collect(),
+            observed_great_work_housing: s.observed_great_work_housing,
+            observed_route_yields: s.observed_route_yields.into_iter().collect(),
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -18751,10 +19012,14 @@ impl From<Game> for GameSer {
             observed_trade_capacity: g.observed_trade_capacity,
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
+            observed_public_empire_stats: g.observed_public_empire_stats,
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: g.observed_tile_yield_adjustments.into_iter().collect(),
+            observed_route_posts: g.observed_route_posts.into_iter().collect(),
+            observed_great_work_housing: g.observed_great_work_housing,
+            observed_route_yields: g.observed_route_yields.into_iter().collect(),
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -18818,6 +19083,9 @@ impl Game {
         self.observed_city_amenity_adjustments.clear();
         self.observed_city_housing_adjustments.clear();
         self.observed_tile_yield_adjustments.clear();
+        self.observed_route_posts.clear();
+        self.observed_great_work_housing = None;
+        self.observed_route_yields.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -19140,10 +19408,14 @@ impl Game {
             observed_trade_capacity: BTreeMap::new(),
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
+            observed_public_empire_stats: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
             observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_housing_adjustments: BTreeMap::new(),
             observed_tile_yield_adjustments: BTreeMap::new(),
+            observed_route_posts: BTreeMap::new(),
+            observed_great_work_housing: None,
+            observed_route_yields: BTreeMap::new(),
             observed_city_worked_tiles: BTreeMap::new(),
             observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
@@ -24031,15 +24303,13 @@ impl Game {
             ys.production += 1.0; // city center
         } else {
             ys.gold += 3.0;
-            if self.congress_effect_active("trade_policy", "A", &city.owner.to_string()) {
-                ys.gold += 4.0;
-            }
         }
-        for (d, _) in city
-            .districts
-            .iter()
-            .filter(|(district, position)| self.district_is_active(city, district, **position))
-        {
+        // Every completed destination district pays its row, PILLAGED OR NOT:
+        // Rome's pillaged Holy Site and Campus kept paying Cumae's domestic
+        // route "+6 from Outgoing Trade Routes" for t81-95 of run
+        // civvis-20260816T200454Z (the model, skipping them, read +4/+5), and
+        // the ledger fell back into step exactly as each was repaired.
+        for (d, _) in city.districts.iter() {
             match (self.district_family(*d).as_str(), domestic) {
                 ("campus", true)
                 | ("holy_site", true)
@@ -24365,6 +24635,13 @@ impl Game {
         // `TRADING_POST_GOLD_IN_FOREIGN_CITY`, a shipped GlobalParameter.
         let foreign_post_gold = 1.0;
         let own_post_gold = self.civ_effect(owner, "own_trading_post_route_gold");
+        // Where the host has told the mirror which posts its own path
+        // crosses, that answer stands in for the walk below: the pathfinder
+        // follows roads (Ostia -> Aquileia by way of Cumae, run
+        // civvis-20260816T200454Z t144-154) and a straight line does not.
+        if let Some(&(own, foreign)) = self.observed_route_posts.get(&(origin, dest)) {
+            return own as f64 * own_post_gold + foreign as f64 * foreign_post_gold;
+        }
         let free_own_posts = self.civ_effect(owner, "free_trading_posts") > 0.0;
         let mut gold = 0.0;
         for cid in self.route_path_cities(origin_city.pos, dest_city.pos) {
@@ -24672,16 +24949,53 @@ impl Game {
             .map(|city| self.religious_followers_in_city(city, religion))
             .sum::<f64>();
         let effect = |name| self.religion_belief_effect(religion, name);
+        // Lay Ministry and Sacred Places (`BELIEF_YIELD_PER_DISTRICT`,
+        // `BELIEF_YIELD_PER_CITY_WITH_WONDER`): counted over the cities that
+        // follow the religion, wherever they stand, and paid to the founder.
+        let (holy_sites, theater_squares, wonder_cities) = if effect("faith_per_holy_site")
+            + effect("culture_per_theater_square")
+            + effect("yield_per_wonder_city")
+            > 0.0
+        {
+            self.cities
+                .values()
+                .filter(|city| self.city_religion(city) == Some(religion))
+                .fold((0.0, 0.0, 0.0), |(holy, theater, wonders), city| {
+                    let districts = |family: &str| {
+                        city.districts
+                            .iter()
+                            .filter(|(district, position)| {
+                                self.district_is_family(district, Name::new(family))
+                                    && self.district_is_active(city, district, **position)
+                            })
+                            .count() as f64
+                    };
+                    (
+                        holy + districts("holy_site"),
+                        theater + districts("theater_square"),
+                        wonders + if city.wonders.is_empty() { 0.0 } else { 1.0 },
+                    )
+                })
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let sacred_places = effect("yield_per_wonder_city") * wonder_cities;
         Yields {
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
-                + effect("gold_per_foreign_city") * foreign_following,
+                + effect("gold_per_foreign_city") * foreign_following
+                + sacred_places,
             culture: (effect("culture_per_followers") * followers).floor()
-                + (effect("culture_per_foreign_followers") * foreign_followers).floor(),
+                + (effect("culture_per_foreign_followers") * foreign_followers).floor()
+                + effect("culture_per_theater_square") * theater_squares
+                + sacred_places,
             // Cross-Cultural Dialogue counts followers abroad only.
-            science: (effect("science_per_foreign_followers") * foreign_followers).floor(),
+            science: (effect("science_per_foreign_followers") * foreign_followers).floor()
+                + sacred_places,
             faith: effect("faith_per_city") * following
-                + effect("faith_per_foreign_city") * foreign_following,
+                + effect("faith_per_foreign_city") * foreign_following
+                + effect("faith_per_holy_site") * holy_sites
+                + sacred_places,
             ..Yields::default()
         }
     }
@@ -25819,13 +26133,111 @@ impl Game {
             .any(|position| self.can_found_corporation(pid, position))
     }
 
-    /// Accrue great person points and auto-claim on reaching the threshold
-    /// (simplified: generic named-less great people with instant effects).
-    fn process_great_people(&mut self, pid: usize) {
-        if self.players[pid].is_minor {
-            return;
+    /// Whether this empire can still recruit a Great Person of `kind`.
+    ///
+    /// Civilization VI stops paying a class into the bank the moment nobody of
+    /// that class is left to earn: a Great Prophet once the empire holds a
+    /// religion (or one is pending, or every religion the map allows has been
+    /// founded), and any other class once the last named individual anywhere
+    /// has been claimed. On a mirrored seat the host's own timeline is the
+    /// authority for the latter (`live_great_person_exhausted`); headless
+    /// games ask CIVVIS's roster. What such a class earns is not lost — see
+    /// [`Self::unused_great_person_faith`].
+    pub fn great_person_class_earnable(&self, pid: usize, kind: &str) -> bool {
+        if kind == "prophet" {
+            let player = &self.players[pid];
+            if player.religion.is_some() || player.prophet_pending {
+                return false;
+            }
+            let claimed = self.religions_founded()
+                + self.players.iter().filter(|player| player.prophet_pending).count();
+            return claimed < self.max_religions();
         }
+        if let Some(exhausted) = self.players[pid].live_great_person_exhausted.as_ref() {
+            return !exhausted.contains(kind);
+        }
+        self.current_great_person(kind).is_some()
+    }
+
+    /// Faith Civilization VI grants each turn for Great Person points nobody
+    /// can spend: every point per turn of a class this empire can no longer
+    /// earn (`great_person_class_earnable`) becomes one Faith, the engine's
+    /// `GetFaithFromUnusedGreatPeoplePoints`. Measured on the live Settler
+    /// seat across seven games: after the last Great Scientist was claimed the
+    /// balance grew by the Campus points to the point (ratio 0.97–1.10, run
+    /// civvis-20260816T123936Z t219–239: 23–60 a turn, more than every city
+    /// together), and a Holy Site's Prophet points arrive as Faith from the
+    /// turn the empire has a religion or the map runs out of them. Zero under
+    /// Anarchy, when the empire collects no Faith at all.
+    pub fn unused_great_person_faith(&self, pid: usize) -> f64 {
+        if self.players[pid].is_minor || self.in_anarchy(pid) {
+            return 0.0;
+        }
+        self.great_person_points_per_turn(pid)
+            .iter()
+            .filter(|(kind, _)| !self.great_person_class_earnable(pid, kind))
+            .map(|(_, points)| points.max(0.0))
+            .sum()
+    }
+
+    /// Player-level yields the empire collects each turn beside its cities:
+    /// founder-belief income, the Faith from unused Great Person points, and
+    /// the policy income that pays per Envoy or per tributary. All sit on
+    /// Civilization VI's top bar next to the city sum, so every reader of
+    /// "yields per turn" adds this to the cities.
+    pub fn player_yield_extras(&self, pid: usize) -> Yields {
+        let mut extras = self.founder_belief_yields(pid);
+        extras.faith += self.unused_great_person_faith(pid);
+        extras.add(self.player_policy_yields(pid));
+        extras
+    }
+
+    /// Policy income paid to the PLAYER rather than to any city: Merchant
+    /// Confederation's and an Emergency's Gold per placed Envoy
+    /// (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN`) and
+    /// Raj's Science, Culture, Faith and Gold per tributary
+    /// (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_TRIBUTARY`). None of it is a
+    /// line of a city's ledger — the host's capital showed no trace of 27
+    /// Envoys' Gold — so it is banked with the founder-belief income at turn
+    /// end and reported beside the city sum, not inside the Palace city.
+    pub fn player_policy_yields(&self, pid: usize) -> Yields {
+        let mut yields = Yields::default();
+        let Some(player) = self.players.get(pid) else { return yields };
+        if player.is_minor || player.is_barbarian {
+            return yields;
+        }
+        let envoys: i64 = player.envoys.iter().map(|(_, count)| *count).sum();
+        yields.gold += envoys as f64 * self.policy_effect(pid, "gold_per_envoy");
+        yields.gold += envoys as f64
+            * player
+                .counters
+                .get("emergency_gold_per_envoy")
+                .copied()
+                .unwrap_or(0) as f64;
+        let suzerains = self
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.is_minor && !minor.is_barbarian && self.suzerain_of(minor.id) == Some(pid)
+            })
+            .count() as f64;
+        let raj = suzerains * self.policy_effect(pid, "suzerain_all_yields");
+        yields.gold += raj;
+        yields.science += raj;
+        yields.culture += raj;
+        yields.faith += raj;
+        yields
+    }
+
+    /// Great Person points this empire earns per turn, by class, after every
+    /// multiplier (Governor, government, World Congress Patronage) — the
+    /// figure Civilization VI's `GetPointsPerTurn` reports. Pure: what
+    /// `process_great_people` banks each turn, readable without a turn.
+    pub fn great_person_points_per_turn(&self, pid: usize) -> BTreeMap<String, f64> {
         let mut earn: BTreeMap<String, f64> = BTreeMap::new();
+        if self.players[pid].is_minor {
+            return earn;
+        }
         for c in self.cities.values().filter(|c| c.owner == pid) {
             let mut city_earn: BTreeMap<String, f64> = BTreeMap::new();
             for position in &c.owned_tiles {
@@ -26045,6 +26457,17 @@ impl Game {
                 *earn.entry(kind.to_string()).or_insert(0.0) += amount;
             }
         }
+        // Exodus of the Evangelists' Golden Age half:
+        // COMMEMORATION_RELIGIOUS_GA_GREAT_PROPHET_POINTS, +4 Great Prophet
+        // points per turn at the player level. Live Rome (run
+        // civvis-20260816T223457Z, t66) earned 8.04 Prophet points a turn
+        // from a Holy Site, Shrine and Temple under Classical Republic —
+        // (3 + 4) × 1.15 — where the model made 3.45; and with the Prophet
+        // class exhausted the four became "+8 from excess Great Person
+        // points" of Faith the model was short by.
+        if self.dedication_active(pid, "exodus_of_the_evangelists") {
+            *earn.entry("prophet".to_string()).or_insert(0.0) += 4.0;
+        }
         let divine_spark = self.pantheon_effect(pid, "district_gpp");
         if divine_spark > 0.0 {
             for c in self.cities.values().filter(|c| c.owner == pid) {
@@ -26066,21 +26489,48 @@ impl Game {
                 }
             }
         }
-        let mult = 1.0 + self.gov_effects(pid).great_people_pct / 100.0;
-        for (t, amt) in earn {
-            let congress_mult = if self.congress_effect_active("patronage", "A", &t) {
+        let mult = 1.0
+            + (self.gov_effects(pid).great_people_pct + self.policy_effect(pid, "great_people_pct"))
+                / 100.0;
+        for (t, amt) in earn.iter_mut() {
+            let congress_mult = if self.congress_effect_active("patronage", "A", t) {
                 2.0
-            } else if self.congress_effect_active("patronage", "B", &t) {
+            } else if self.congress_effect_active("patronage", "B", t) {
                 0.0
             } else {
                 1.0
             };
-            *self.players[pid].gpp.entry(t).or_insert(0.0) += amt * mult * congress_mult;
+            *amt *= mult * congress_mult;
+        }
+        earn
+    }
+
+    /// Accrue great person points and auto-claim on reaching the threshold
+    /// (simplified: generic named-less great people with instant effects).
+    ///
+    /// Points of a class the empire can no longer earn still land in the
+    /// bank — Firaxis's `GetPointsTotal` keeps counting them (773 Scientist
+    /// points banked against a 660 cost, twenty turns after the last
+    /// Scientist was claimed) — and are paid out again as Faith, one for one,
+    /// which is where a late-game empire's Faith actually comes from
+    /// (`unused_great_person_faith`).
+    fn process_great_people(&mut self, pid: usize) {
+        if self.players[pid].is_minor {
+            return;
+        }
+        let earn = self.great_person_points_per_turn(pid);
+        let anarchy = self.in_anarchy(pid);
+        for (t, amt) in earn {
+            if !anarchy && !self.great_person_class_earnable(pid, &t) {
+                self.players[pid].faith += amt.max(0.0);
+            }
+            *self.players[pid].gpp.entry(t).or_insert(0.0) += amt;
         }
         let due: Vec<String> = self.players[pid]
             .gpp
             .iter()
             .filter(|(t, pts)| **pts >= self.gp_cost(pid, t))
+            .filter(|(t, _)| self.great_person_class_earnable(pid, t))
             .map(|(t, _)| t.clone())
             .collect();
         for t in due {
@@ -27502,10 +27952,17 @@ impl Game {
 
     fn envoy_yields(&self, pid: usize, city: &City) -> Yields {
         let mut yields = Yields::default();
+        // A city-state at war with the seat suspends its type bonuses for the
+        // war's length: Ostia's "+2 from Consulate" Culture (Caguana, three
+        // Envoys) went to nothing on the turn Caguana's new Suzerain brought it
+        // into a war against us (run civvis-20260816T223457Z t90) and came
+        // back the turn peace was made (t98); Rome's capital point from the
+        // same city-state went and returned with it.
         for state in self
             .players
             .iter()
             .filter(|state| state.is_minor && !state.is_barbarian && state.alive)
+            .filter(|state| !self.is_at_war(pid, state.id))
         {
             yields.add(self.envoy_type_yields_for_count(
                 city,
@@ -27829,6 +28286,8 @@ impl Game {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
                 let spec = &self.rules.units[unit];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
+                // Flower Power's ADJUST_UNIT_PRODUCTION_MODIFIER (-100).
+                bonus += self.policy_effect(pid, "unit_production_pct") / 100.0;
                 if spec.class == "military" {
                     bonus += economic.military_unit_production_pct / 100.0;
                 }
@@ -28032,6 +28491,18 @@ impl Game {
                     bonus +=
                         self.governor_effect(pid, cid, "nuclear_armament_production_pct") / 100.0;
                 }
+                // Rogue State: the four ROGUESTATE_*_PRODUCTION rows.
+                if matches!(
+                    project.as_str(),
+                    "manhattan_project"
+                        | "operation_ivy"
+                        | "build_nuclear_device"
+                        | "build_thermonuclear_device"
+                ) {
+                    bonus += self.policy_effect(pid, "nuclear_project_production_pct") / 100.0;
+                }
+                // Automated Workforce: ADJUST_ALL_PROJECTS_PRODUCTION.
+                bonus += self.policy_effect(pid, "project_production_pct") / 100.0;
                 if self.congress_effect_active("public_works_program", "A", project) {
                     bonus += 1.0;
                 } else if self.congress_effect_active("public_works_program", "B", project) {
@@ -28841,6 +29312,8 @@ impl Game {
             h += self.rules.wonders[wonder].housing;
         }
         h += self.empire_wonder_effect(city.owner, "empire_housing");
+        // Collectivism's COLLECTIVISM_ADD_HOUSING: +2 in every city.
+        h += self.policy_effect(city.owner, "city_housing");
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
             h += self.policy_effect(city.owner, "housing_at_2_districts");
@@ -37135,6 +37608,18 @@ impl Game {
             .and_then(|tile| tile.continent)
     }
 
+    /// Whether two plots share a continent (both known and equal); water and
+    /// unknown ground are on no continent and never match.
+    fn same_continent(&self, a: Pos, b: Pos) -> bool {
+        match (
+            self.map.get(a).and_then(|tile| tile.continent),
+            self.map.get(b).and_then(|tile| tile.continent),
+        ) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }
+    }
+
     fn on_foreign_continent(&self, pid: usize, position: Pos) -> bool {
         self.home_continent(pid).is_some_and(|home| {
             self.map
@@ -37702,13 +38187,19 @@ impl Game {
                         .count(),
                     // City Centers are districts but are represented by the
                     // city index instead of `Tile::district`.
+                    // A PILLAGED district is not adjacent to anything: live
+                    // Rome's Campus (run civvis-20260816T200454Z) read "+8
+                    // from Campus" beside a Government Plaza and a Holy Site,
+                    // "+6" from the turn after the Holy Site was pillaged
+                    // (t82) until it was repaired (t96), Natural Philosophy
+                    // doubling a base that had lost its district pair.
                     "district" => cached_district_count.unwrap_or_else(|| {
                         neighbors
                             .iter()
                             .flatten()
                             .filter(|t| {
                                 !gaul
-                                    && (t.district.is_some()
+                                    && ((t.district.is_some() && !t.pillaged)
                                         || self.city_at(t.pos).is_some()
                                         || assume.is_some_and(|plan| {
                                             plan.treats_as_city_center(t.pos)
@@ -37778,9 +38269,11 @@ impl Game {
                             .iter()
                             .flatten()
                             .filter(|t| {
-                                t.district.is_some_and(|district| {
-                                    self.district_is_family(district, Name::new(district_family))
-                                }) || assume.is_some_and(|plan| {
+                                (!t.pillaged
+                                    && t.district.is_some_and(|district| {
+                                        self.district_is_family(district, Name::new(district_family))
+                                    }))
+                                    || assume.is_some_and(|plan| {
                                     plan.foundations
                                         && t.district_foundation.as_ref().is_some_and(
                                             |foundation| {
@@ -38658,6 +39151,10 @@ impl Game {
             Some("fishing_boats") => {
                 yields.food += self.tree_effect(pid, "fishing_boats_food");
                 yields.gold += self.tree_effect(pid, "fishing_boats_gold");
+                // Colonialism's +1 Production (Improvement_BonusYieldChanges,
+                // the row a duplicate Id hid from the audit — see
+                // civ6_fidelity.py TABLE_KEYS).
+                yields.production += self.tree_effect(pid, "fishing_boats_production");
                 // Each adjacent Seastead lifts its neighbouring Fishing Boats.
                 yields.production += self
                     .nbrs(pos)
@@ -39983,8 +40480,18 @@ impl Game {
         center.production = center.production.max(1.0);
         ys.add(center);
         let citizen_plan = self.city_citizen_plan_weighted(cid, weights);
+        let employed = citizen_plan.worked_tiles.len() + citizen_plan.specialists.len();
+        // Collectivism's COLLECTIVISM_FARM_FOOD_MODIFIER is a plot yield on
+        // Farm plots, so it is paid where a citizen works one.
+        let farm_food = self.policy_effect(city.owner, "farm_food");
         for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
+            if farm_food != 0.0 {
+                let tile = &self.map.tiles[&pos];
+                if !tile.pillaged && tile.improvement.as_deref() == Some("farm") {
+                    ys.food += farm_food;
+                }
+            }
         }
         let specialist_jobs = self.city_specialist_jobs(city);
         for family in citizen_plan.specialists {
@@ -39995,6 +40502,13 @@ impl Game {
                 ys.add(*specialist_yields);
             }
         }
+        // A citizen with no tile and no slot still pays half a Gold. Measured
+        // on live Rome (run civvis-20260816T200454Z): with every workable plot
+        // taken and no specialist slot, the host's Gold ledger read "+0.5 from
+        // Population" for one unemployed citizen (t81-96), "+1" for two
+        // (t97-106) and nothing once new plots were worked (t107) — the only
+        // per-citizen Gold in the game, and nothing in the other five ledgers.
+        ys.gold += 0.5 * (city.pop as f64 - employed as f64).max(0.0);
         for (dname, dpos) in &city.districts {
             if self.map.tiles[dpos].pillaged
                 || (self.district_is_family(dname, crate::name!("encampment")) && city.encampment_pillaged)
@@ -40002,6 +40516,29 @@ impl Game {
                 continue;
             }
             ys.add(self.district_yields(dname, *dpos));
+        }
+        // Nan Madol's `MODIFIER_PLAYER_DISTRICTS_ADJUST_YIELD_CHANGE` reaches
+        // every district plot on or beside Coast — the City Center and each
+        // wonder's plot included, which `district_yields` above never sees.
+        // The host's culture ledger on live run civvis-20260816T155856Z read
+        // "+2 from City Center" in Rome and "+2 from Wonder" in Mediolanum
+        // beside the specialty districts the model already paid, two Culture
+        // short in every coastal city for a hundred turns.
+        if self.grants_city_state_unique_bonus(city.owner, "Nan Madol") {
+            let coastal = |pos: Pos| {
+                matches!(self.map.tiles[&pos].terrain.as_str(), "coast" | "lake")
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                    })
+            };
+            if coastal(city.pos) {
+                ys.culture += 2.0;
+            }
+            for (_, wonder_pos) in city.wonders.iter() {
+                if coastal(*wonder_pos) {
+                    ys.culture += 2.0;
+                }
+            }
         }
         for b in &city.buildings {
             if city.pillaged_buildings.contains(b)
@@ -40068,7 +40605,13 @@ impl Game {
             // Rationalism, Free Market, Grand Opera and Simultaneum each pay
             // in two halves in Gathering Storm rather than one flat double:
             // half where the city has 15 Population, half where the district
-            // already earns 4 of that yield from adjacency.
+            // already earns 4 of that yield from adjacency —
+            // REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4, read on
+            // the district's OWN adjacency, before Natural Philosophy and its
+            // kin double it: live Ostia's Campus showed "+6" (3 doubled) and
+            // Antium's "+4" (2 doubled) with Rationalism slotted, and neither
+            // city's Library or University earned a point from it (run
+            // civvis-20260816T233226Z t153-169).
             if let Some(family) = building.district {
                 let (key, yield_of) = match family.as_str() {
                     "campus" => ("campus_building_science_pct", 0),
@@ -40086,7 +40629,13 @@ impl Game {
                     if self
                         .city_district_family_position(city, family)
                         .map(|position| {
-                            let adjacency = self.district_yields(Name::new(family.as_str()), position);
+                            let placed = self.map.tiles[&position].district.unwrap_or(family);
+                            let mut adjacency = Yields::default();
+                            for source in self.district_adjacency_sources(placed, position) {
+                                if source.source != "adjacency_bonus" {
+                                    adjacency.add(source.yields);
+                                }
+                            }
                             match yield_of {
                                 0 => adjacency.science,
                                 1 => adjacency.gold,
@@ -40248,6 +40797,10 @@ impl Game {
         } else {
             4.0
         };
+        // Reliquaries: `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` on Relics,
+        // ScalingFactor 300 — triple Faith in a city following the religion.
+        let relic_faith = relic_faith
+            * (1.0 + self.city_religion_belief_effect(city, "relic_faith_pct") / 100.0);
         if let Some(works) = self.housed_great_works(city.owner).get(&cid) {
             for (kind, count) in works {
                 let count = *count as f64;
@@ -40348,34 +40901,17 @@ impl Game {
                     self.policy_effect(city.owner, "neighborhood_breathtaking_production");
             }
         }
-        if self.city_has_palace(city) {
-            let envoys: i64 = self.players[city.owner]
-                .envoys
-                .iter()
-                .map(|(_, count)| *count)
-                .sum();
-            ys.gold += envoys as f64 * self.policy_effect(city.owner, "gold_per_envoy");
-            ys.gold += envoys as f64
-                * self.players[city.owner]
-                    .counters
-                    .get("emergency_gold_per_envoy")
-                    .copied()
-                    .unwrap_or(0) as f64;
-            let suzerains = self
-                .players
-                .iter()
-                .filter(|minor| {
-                    minor.is_minor
-                        && !minor.is_barbarian
-                        && self.suzerain_of(minor.id) == Some(city.owner)
-                })
-                .count() as f64;
-            let raj = suzerains * self.policy_effect(city.owner, "suzerain_all_yields");
-            ys.gold += raj;
-            ys.science += raj;
-            ys.culture += raj;
-            ys.faith += raj;
-        }
+        // Merchant Confederation's Gold per Envoy, an Emergency's Gold per
+        // Envoy and Raj's yields per tributary are PLAYER-level income
+        // (`MODIFIER_PLAYER_ADJUST_YIELD_CHANGE_PER_USED_INFLUENCE_TOKEN`,
+        // `..._PER_TRIBUTARY`), collected on the top bar beside the city sum —
+        // never a line of any city's ledger. They used to be paid into the
+        // Palace city here; measured on live run civvis-20260816T155856Z the
+        // capital read 44 Gold modelled against 17 reported for thirty turns,
+        // the whole of it 27 placed Envoys under Merchant Confederation, while
+        // the host's own capital ledger carried no such line. They now sit in
+        // `player_policy_yields`, read by every consumer of the per-turn
+        // figure alongside founder-belief income.
         for r in self.routes.iter().filter(|r| r.origin == cid) {
             if let Some(dc) = self.cities.get(&r.dest) {
                 let domestic = dc.owner == city.owner;
@@ -40435,6 +40971,14 @@ impl Game {
                 if domestic {
                     // Isolationism pays only at home, and pays all three.
                     rys.food += self.policy_effect(city.owner, "domestic_trade_food");
+                    // Isolationism's rows carry `Intercontinental=0`: only a
+                    // domestic route that stays on one continent pays them.
+                    if self.same_continent(city.pos, dc.pos) {
+                        rys.food +=
+                            self.policy_effect(city.owner, "domestic_same_continent_trade_food");
+                        rys.production += self
+                            .policy_effect(city.owner, "domestic_same_continent_trade_production");
+                    }
                     rys.production += self.policy_effect(city.owner, "domestic_trade_production");
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
@@ -40520,8 +41064,12 @@ impl Game {
                         rys.gold += religious_community * (1 + holy_site_buildings) as f64;
                     }
                 }
-                if self.dedication_active(city.owner, "reform_the_coinage") {
-                    rys.gold += 3.0;
+                // Reform the Coinage's Golden Age half is
+                // `COMMEMORATION_ECONOMIC_GA_TRADE_ROUTE_YIELDS`: +3 Gold PER
+                // SPECIALTY DISTRICT in the destination, international routes
+                // only — not a flat 3 on every route.
+                if !domestic && self.dedication_active(city.owner, "reform_the_coinage") {
+                    rys.gold += 3.0 * self.city_specialty_district_count(dc) as f64;
                 }
                 if let Some(alliance) = self.alliance_with(city.owner, dc.owner) {
                     match alliance.kind.as_str() {
@@ -40629,6 +41177,20 @@ impl Game {
                     rys.production +=
                         self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
+                // Letters of Marque: -50% of what this seat's routes earn at
+                // their origin (twelve `ADJUST_TRADE_ROUTE_YIELD_MODIFIER`
+                // rows, `Origin=1`); the `Destination=1` half is below.
+                rys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
+                // Where the host has said what THIS route pays its origin
+                // (`observed_route_yields`, from `CalculateOriginYields…` the
+                // way the shipped Trade Overview sums them), that figure stands
+                // in for the model's — the destination's districts may sit on
+                // ground the seat has never seen (Ostia's route to Stockholm
+                // read "+1 Science" from a Campus on an unrevealed plot, run
+                // civvis-20260816T233226Z t177+).
+                if let Some(observed) = self.observed_route_yields.get(&(cid, r.dest)) {
+                    rys = *observed;
+                }
                 ys.add(rys);
             }
         }
@@ -40638,31 +41200,51 @@ impl Game {
             .iter()
             .filter(|route| route.dest == cid && route.owner != city.owner)
             .count() as f64;
+        // What this city earns as a DESTINATION, gathered so Letters of
+        // Marque's `Destination=1` half can dock it as one figure.
+        let mut iys = Yields::default();
         for route in self.routes.iter().filter(|route| route.dest == cid) {
             let government = self.gov_effects(route.owner);
             if self.government_trade_partner(route.owner, city.owner) {
-                ys.food += government.allied_suzerain_trade_food;
-                ys.production += government.allied_suzerain_trade_production;
+                iys.food += government.allied_suzerain_trade_food;
+                iys.production += government.allied_suzerain_trade_production;
                 // ...and the destination half, paid to the city receiving it.
-                ys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
-                ys.production +=
+                iys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
+                iys.production +=
                     self.policy_effect(route.owner, "allied_suzerain_trade_production");
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
-                    "research" => ys.science += 1.0,
-                    "cultural" => ys.culture += 1.0,
-                    "economic" => ys.gold += 2.0,
-                    "religious" => ys.faith += 1.0,
+                    "research" => iys.science += 1.0,
+                    "cultural" => iys.culture += 1.0,
+                    "economic" => iys.gold += 2.0,
+                    "religious" => iys.faith += 1.0,
                     _ => {}
                 }
             }
             if route.owner != city.owner {
-                ys.gold += city.great_person_foreign_route_gold;
+                iys.gold += city.great_person_foreign_route_gold;
             }
         }
-        ys.gold += incoming_foreign_routes
+        iys.gold += incoming_foreign_routes
             * self.governor_effect(city.owner, city.id, "incoming_foreign_trade_gold");
+        // World Congress Trade Policy A. The resolution's text says the SENDER
+        // earns +4 Gold; what Firaxis ships is `INCREASES_TRADE_TO_GOLD`, an
+        // `EFFECT_ADJUST_TRADE_ROUTE_YIELD_FROM_OTHERS` (Amount 4) attached to
+        // the chosen player — the same destination-side effect Zhang Qian's
+        // "+2 Gold from incoming foreign routes" and Cleopatra's Egypt use —
+        // and the host's own ledger agrees: the chosen player's city reads
+        // "+4 from Incoming Trade Routes" per foreign route (Cumae, run
+        // civvis-20260816T200454Z t87-101) while a domestic incoming route
+        // pays nothing and the sender's origin nothing extra. The +1 route
+        // capacity half of the resolution is in `trade_capacity`.
+        if incoming_foreign_routes > 0.0
+            && self.congress_effect_active("trade_policy", "A", &city.owner.to_string())
+        {
+            iys.gold += 4.0 * incoming_foreign_routes;
+        }
+        iys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
+        ys.add(iys);
         if incoming_routes > 0.0 && city.wonders
 .contains_key(&crate::name!("university_of_sankore")) {
             ys.science += incoming_routes
@@ -40690,6 +41272,16 @@ impl Game {
                     ys.culture += self.rules.buildings[building].yields.faith * choral_music;
                     ys.food += temple_food;
                 }
+            }
+            // Divine Inspiration: `MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`
+            // +4 Faith per Wonder standing in a city that follows the religion —
+            // whoever founded it. Rome under Catholicism read 35 Faith in the
+            // host and 23 in the model until this line: three Wonders, twelve
+            // Faith (run civvis-20260816T123936Z t231-239), and Ostia's
+            // Mausoleum the same four more.
+            let wonder_faith = self.city_religion_belief_effect(city, "wonder_faith");
+            if wonder_faith > 0.0 {
+                ys.faith += wonder_faith * city.wonders.len() as f64;
             }
             let work_ethic =
                 self.city_religion_belief_effect(city, "holy_site_production_from_adjacency");
@@ -40752,17 +41344,25 @@ impl Game {
                 ys.science += (total.gold - base.gold).max(0.0);
             }
         }
+        // Heartbeat of Steam's Golden Age half is
+        // `COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`: every Campus grants
+        // Production equal to its Science adjacency (the wonder +10% lives with
+        // production). It was paying +1 Science per Industrial Zone building,
+        // which no row grants. Measured on live run civvis-20260816T132247Z:
+        // the host's ledgers read "+10 from Campus" under PRODUCTION in Cumae
+        // and "+8 from Campus" in Arretium for the whole Golden Age, the largest
+        // persistent gaps of the game.
         if self.dedication_active(city.owner, "heartbeat_of_steam") {
-            ys.science += city
-                .buildings
-                .iter()
-                .filter(|building| {
-                    self.rules.buildings[building]
-                        .district
-
-                        .is_some_and(|district| self.district_family(district) == "industrial_zone")
-                })
-                .count() as f64;
+            for (district, position) in &city.districts {
+                if !self.district_is_active(city, district, *position)
+                    || self.district_family(*district) != "campus"
+                {
+                    continue;
+                }
+                let total = self.district_yields(district, *position);
+                let base = self.rules.districts[district].yields;
+                ys.production += (total.science - base.science).max(0.0);
+            }
         }
         let eff = self.gov_effects(city.owner);
         ys.production += eff.production_per_pop * city.pop as f64;
@@ -40835,43 +41435,45 @@ impl Game {
         } else {
             0.0
         };
-        ys.production *= 1.0 + (eff.production_pct + district_production_pct) / 100.0;
-        ys.science *= 1.0 + eff.science_pct / 100.0;
-        ys.gold *= 1.0 + eff.gold_pct / 100.0;
+        // ★★★★ PERCENTAGE MODIFIERS SUM; THEY DO NOT CHAIN. Every
+        // `EFFECT_ADJUST_CITY_YIELD_MODIFIER` on a city — government, policy,
+        // wonder, Governor, suzerain bonus, the Amenity band, Loyalty — is one
+        // term of a single sum applied once to the base. Live Rome (run
+        // civvis-20260816T200454Z, t146) read "+25 (+4.5) from Modifiers" on
+        // a base of 18: Merchant Republic's 10 (`CITY_HAS_GOVERNOR`) plus
+        // Kilwa's 15 = 25 → 22.5, where the model's ×1.10 × ×1.15 read 22.77;
+        // and at t150 "-10 (-2) from Amenities | +10 (+2) from Modifiers" on
+        // 21 read exactly 21.0, which ×0.9 × ×1.1 would have made 20.79.
+        // `pct` collects them; they land at the end of this function.
+        let mut pct = Yields::default();
+        pct.production += eff.production_pct + district_production_pct;
+        pct.science += eff.science_pct;
+        pct.gold += eff.gold_pct;
         if self.city_has_established_governor(city.owner, city.id) {
-            ys.gold *= 1.0 + eff.governor_gold_pct / 100.0;
+            pct.gold += eff.governor_gold_pct;
         }
-        ys.science *= 1.0 + self.governor_effect(city.owner, city.id, "science_pct") / 100.0;
-        ys.culture *= 1.0 + self.governor_effect(city.owner, city.id, "culture_pct") / 100.0;
+        pct.science += self.governor_effect(city.owner, city.id, "science_pct");
+        pct.culture += self.governor_effect(city.owner, city.id, "culture_pct");
         // Dark Age cards buy their strength with an empire-wide penalty.
-        ys.science *= 1.0 + self.policy_effect(city.owner, "city_science_pct") / 100.0;
-        ys.culture *= 1.0 + self.policy_effect(city.owner, "city_culture_pct") / 100.0;
-        // Monasticism's two halves carry the *same* Holy Site requirement, but
-        // the Culture one is inverted: MONASTICISM_HOLYSITE_SCIENCE tests
-        // REQUIREMENT_CITY_HAS_DISTRICT with Inverse 0 and
-        // MONASTICISM_CULTURE_MODIFIER tests it with Inverse 1. So the Science
-        // is paid where there is a Holy Site and the Culture is docked where
-        // there is not — the card pushes Culture out of the cities it makes
-        // Scientific, rather than taxing the same city twice.
+        pct.science += self.policy_effect(city.owner, "city_science_pct");
+        pct.culture += self.policy_effect(city.owner, "city_culture_pct");
+        // Monasticism (shipped GS `PolicyModifiers`): MONASTICISM_HOLYSITE_SCIENCE
+        // is +75% Science under CITY_HAS_HOLY_SITE; MONASTICISM_CULTURE_MODIFIER
+        // is -25% Culture with NO requirement set — every city, Holy Site or
+        // not — and so rides the plain `city_culture_pct` term above.
         if self.city_has_active_district_family(city, crate::name!("holy_site")) {
-            ys.science *=
-                1.0 + self.policy_effect(city.owner, "holy_site_city_science_pct") / 100.0;
-        } else {
-            ys.culture *=
-                1.0 + self.policy_effect(city.owner, "no_holy_site_city_culture_pct") / 100.0;
+            pct.science += self.policy_effect(city.owner, "holy_site_city_science_pct");
         }
-        // Robber Barons pays both halves on the same condition, and it is a
-        // TEST_ANY over two buildings: ROBBERBARONS_BANK_OR_SHIPYARD_GOLD and
-        // ..._PRODUCTION each require a Bank *or* a Shipyard. CIVVIS keyed the
-        // Gold on a Stock Exchange and the Production on a Factory, so the card
-        // paid in the wrong cities and at the wrong point in the game.
-        if self.city_has_active_building_family(city, crate::name!("bank"))
-            || self.city_has_active_building_family(city, crate::name!("shipyard"))
-        {
-            ys.gold *=
-                1.0 + self.policy_effect(city.owner, "bank_or_shipyard_city_gold_pct") / 100.0;
-            ys.production *= 1.0
-                + self.policy_effect(city.owner, "bank_or_shipyard_city_production_pct") / 100.0;
+        // Robber Barons, as the shipped rows read: ROBBERBARONS_STOCKEXCHANGE_GOLD
+        // (+50% Gold) requires BUILDING_IS_STOCK_EXCHANGE and
+        // ROBBERBARONS_FACTORY_PRODUCTION (+25% Production) requires
+        // BUILDING_IS_FACTORY. There is no Bank-or-Shipyard set anywhere in
+        // the Expansion data; the note this code used to carry was wrong.
+        if self.city_has_active_building_family(city, crate::name!("stock_exchange")) {
+            pct.gold += self.policy_effect(city.owner, "stock_exchange_city_gold_pct");
+        }
+        if self.city_has_active_building_family(city, crate::name!("factory")) {
+            pct.production += self.policy_effect(city.owner, "factory_city_production_pct");
         }
         let local_wonder_effect = |effect: &str| {
             city.wonders
@@ -40885,19 +41487,18 @@ impl Game {
                 })
                 .sum::<f64>()
         };
-        ys.production *= 1.0 + local_wonder_effect("city_production_pct") / 100.0;
-        ys.science *= 1.0 + local_wonder_effect("city_science_pct") / 100.0;
-        ys.culture *= 1.0 + local_wonder_effect("city_culture_pct") / 100.0;
-        ys.faith *= 1.0 + local_wonder_effect("city_faith_pct") / 100.0;
+        pct.production += local_wonder_effect("city_production_pct");
+        pct.science += local_wonder_effect("city_science_pct");
+        pct.culture += local_wonder_effect("city_culture_pct");
+        pct.faith += local_wonder_effect("city_faith_pct");
         if self.city_governor_active(city.owner, city.id)
             && self.on_foreign_continent(city.owner, city.pos)
         {
-            let pct = self
-                .empire_wonder_effect(city.owner, "governor_foreign_continent_yields_pct")
-                / 100.0;
-            ys.production *= 1.0 + pct;
-            ys.gold *= 1.0 + pct;
-            ys.faith *= 1.0 + pct;
+            let abroad =
+                self.empire_wonder_effect(city.owner, "governor_foreign_continent_yields_pct");
+            pct.production += abroad;
+            pct.gold += abroad;
+            pct.faith += abroad;
         }
         let mut science_pct = self.empire_wonder_effect(city.owner, "empire_science_pct");
         let mut production_pct = self.empire_wonder_effect(city.owner, "empire_production_pct");
@@ -40934,8 +41535,8 @@ impl Game {
                 production_pct *= 2.0;
             }
         }
-        ys.science *= 1.0 + science_pct / 100.0;
-        ys.production *= 1.0 + production_pct / 100.0;
+        pct.science += science_pct;
+        pct.production += production_pct;
         if self.players[city.owner]
             .counters
             .get("warlords_throne_until")
@@ -40947,12 +41548,11 @@ impl Game {
                 .filter(|source| source.owner == city.owner)
                 .map(|source| self.city_building_effect(source, "capture_city_production_pct"))
                 .sum::<f64>();
-            ys.production *= 1.0 + capture_pct / 100.0;
+            pct.production += capture_pct;
         }
         if self.on_foreign_continent(city.owner, city.pos) {
-            ys.gold *= 1.0 + self.policy_effect(city.owner, "foreign_continent_gold_pct") / 100.0;
-            ys.production *=
-                1.0 + self.policy_effect(city.owner, "foreign_continent_production_pct") / 100.0;
+            pct.gold += self.policy_effect(city.owner, "foreign_continent_gold_pct");
+            pct.production += self.policy_effect(city.owner, "foreign_continent_production_pct");
         }
         let suzerains = self
             .players
@@ -40963,30 +41563,17 @@ impl Game {
                     && self.suzerain_of(minor.id) == Some(city.owner)
             })
             .count() as f64;
-        ys.science *=
-            1.0 + suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain") / 100.0;
-        ys.culture *=
-            1.0 + suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain") / 100.0;
+        pct.science += suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain");
+        pct.culture += suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain");
         let economic_yields = self.city_resource_industry_effects(city).city_yield_pct;
-        ys.food *= 1.0 + economic_yields.food / 100.0;
-        ys.production *= 1.0 + economic_yields.production / 100.0;
-        ys.gold *= 1.0 + economic_yields.gold / 100.0;
-        ys.science *= 1.0 + economic_yields.science / 100.0;
-        ys.culture *= 1.0 + economic_yields.culture / 100.0;
-        ys.faith *= 1.0 + economic_yields.faith / 100.0;
-        if self.dedication_active(city.owner, "sky_and_stars")
-            && (self.city_has_district_family(city, crate::name!("aerodrome"))
-                || self.city_has_district_family(city, crate::name!("spaceport")))
-        {
-            ys.science *= 1.10;
-            ys.production *= 1.10;
-        }
-        let mut m = self.amenity_yield_mult(city);
-        m *= match self.players[city.owner].age.as_str() {
-            "golden" | "heroic" => 1.10,
-            "dark" => 0.95,
-            _ => 1.0,
-        };
+        pct.add(economic_yields);
+        // No age multiplies yields. Gathering Storm's `Modifiers` carry no
+        // yield term keyed on PLAYER_HAS_GOLDEN_AGE or a Dark Age beyond the
+        // named commemorations (and Suleiman's trait, Tsikhe); the ×1.10 /
+        // ×0.95 this line used to apply, and Sky and Stars' ×1.10 in
+        // Aerodrome/Spaceport cities (`COMMEMORATION_AERONAUTICAL_GA_*` grants
+        // tech boosts, air-unit XP and Aluminum, no yield), were CIVVIS's own.
+        let band = (self.amenity_yield_mult(city) - 1.0) * 100.0;
         // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
         // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
         // (0.75 / 0.25 / 0) is what a disloyal city pays, and
@@ -40996,20 +41583,20 @@ impl Game {
         // "from Wavering Loyalty" appears on culture, faith, gold, production
         // and science every time and on food never — a city in Unrest read
         // "+7 from Worked Tiles", total 7, while the model paid it **0**.
-        m *= Self::loyalty_yield_mult(city.loyalty);
-        ys.production *= m;
-        ys.gold *= m;
-        ys.science *= m;
-        ys.culture *= m;
-        ys.faith *= m;
+        let band = band + (Self::loyalty_yield_mult(city.loyalty) - 1.0) * 100.0;
+        pct.production += band;
+        pct.gold += band;
+        pct.science += band;
+        pct.culture += band;
+        pct.faith += band;
         if self.grants_city_state_unique_bonus(city.owner, "Geneva")
             && !self.at_war_with_any_civilization(city.owner)
         {
-            ys.science *= 1.15;
+            pct.science += 15.0;
         }
         if self.grants_city_state_unique_bonus(city.owner, "Antananarivo") {
             let great_people = self.players[city.owner].great_people.len().min(15) as f64;
-            ys.culture *= 1.0 + 0.02 * great_people;
+            pct.culture += 2.0 * great_people;
         }
         if self.grants_city_state_unique_bonus(city.owner, "Taruga") {
             // +5% Science per *different* improved Strategic resource the
@@ -41031,20 +41618,55 @@ impl Game {
                     (spec.class == "strategic" && improved).then_some(resource)
                 })
                 .collect();
-            ys.science *= 1.0 + 0.05 * kinds.len() as f64;
+            pct.science += 5.0 * kinds.len() as f64;
         }
-        ys.science *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "scientific") / 100.0;
-        ys.culture *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "cultural") / 100.0;
-        ys.gold *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "trade") / 100.0;
-        ys.faith *= 1.0 + self.kilwa_type_bonus_pct(city.owner, city, "religious") / 100.0;
-        // The difficulty handicap lands last, on top of everything the
-        // civilization actually earned.
+        pct.science += self.kilwa_type_bonus_pct(city.owner, city, "scientific");
+        pct.culture += self.kilwa_type_bonus_pct(city.owner, city, "cultural");
+        pct.gold += self.kilwa_type_bonus_pct(city.owner, city, "trade");
+        pct.faith += self.kilwa_type_bonus_pct(city.owner, city, "religious");
+        // The difficulty handicap is one more term of the same sum.
         let handicap = self.handicap_yield_pct(city.owner);
-        ys.production *= 1.0 + handicap.production / 100.0;
-        ys.gold *= 1.0 + handicap.gold / 100.0;
-        ys.science *= 1.0 + handicap.science / 100.0;
-        ys.culture *= 1.0 + handicap.culture / 100.0;
-        ys.faith *= 1.0 + handicap.faith / 100.0;
+        pct.production += handicap.production;
+        pct.gold += handicap.gold;
+        pct.science += handicap.science;
+        pct.culture += handicap.culture;
+        pct.faith += handicap.faith;
+        // The one application. A sum below -100 (Unrest on top of a Dark
+        // Age card) pays nothing rather than a negative yield.
+        let apply = |value: f64, percent: f64| value * (1.0 + percent / 100.0).max(0.0);
+        ys.production = apply(ys.production, pct.production);
+        // A running district project converts a share of the city's
+        // PRODUCTION RATE into its yield every turn — Firaxis
+        // `Project_YieldConversions.PercentOfProductionRate` (Commercial Hub
+        // Investment 30% Gold; Campus/Theater/Holy Site 15%; Encampment and
+        // Harbor 15% Gold) — and the host's own ledger files it as a base
+        // line ("+7.7 from Commercial Hub Investment" on 26 Production, Rome,
+        // run civvis-20260816T223457Z t112) that the Amenity band then scales
+        // with the rest. It used to be paid only at turn processing, so the
+        // city's yield read short of the host for every project turn.
+        if let Some(Item::Project { project }) = city.queue.first() {
+            if let Some(spec) = self.rules.projects.get(project) {
+                if self.project_has_active_district(city, spec) {
+                    for (kind, percent) in &spec.ongoing_yields {
+                        let amount = ys.production * percent / 100.0;
+                        match kind.as_str() {
+                            "science" => ys.science += amount,
+                            "culture" => ys.culture += amount,
+                            "gold" => ys.gold += amount,
+                            "faith" => ys.faith += amount,
+                            "food" => ys.food += amount,
+                            "production" => ys.production += amount,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        ys.food = apply(ys.food, pct.food);
+        ys.gold = apply(ys.gold, pct.gold);
+        ys.science = apply(ys.science, pct.science);
+        ys.culture = apply(ys.culture, pct.culture);
+        ys.faith = apply(ys.faith, pct.faith);
         if apply_observation {
             if let Some(adjustment) = self.observed_city_yield_adjustments.get(&cid) {
                 ys.add(*adjustment);
@@ -42133,7 +42755,9 @@ impl Game {
         };
         let progress = self.game_progress_ratio(pid);
         let city_multiplier = 1.0 + self.governor_effect(pid, cid, "great_people_pct") / 100.0;
-        let empire_multiplier = 1.0 + self.gov_effects(pid).great_people_pct / 100.0;
+        let empire_multiplier = 1.0
+            + (self.gov_effects(pid).great_people_pct + self.policy_effect(pid, "great_people_pct"))
+                / 100.0;
         spec.completion_gpp
             .iter()
             .map(|(kind, base_points)| {
@@ -45582,6 +46206,11 @@ impl Game {
         {
             bonus += self.policy_effect(u.owner, "different_religion_combat");
         }
+        // Cyber Warfare: CYBER_WARFARE_INFO_FUTURE_BUFF, +10 against a
+        // civilization in the Information Era or later.
+        if self.player_era(opponent.owner) >= 7 {
+            bonus += self.policy_effect(u.owner, "combat_vs_information_era");
+        }
         if spec.promotion_class == "anti_cavalry"
             && (matches!(
                 other.promotion_class.as_str(),
@@ -47540,7 +48169,10 @@ impl Game {
             return None;
         }
         self.rock_concert_venue_details(pid, Some(unit), unit.pos)
-            .map(|(tourism, _, _)| tourism)
+            .map(|(tourism, _, _)| {
+                // Flower Power: ROCK_BAND_TOURISM_BOMB_VALUE_PEACE +50%.
+                tourism * (1.0 + self.policy_effect(pid, "rock_band_concert_tourism_pct") / 100.0)
+            })
     }
 
     fn add_targeted_tourism(&mut self, pid: usize, target: usize, tourism: f64) {
@@ -48823,6 +49455,13 @@ impl Game {
             purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
         } else {
             purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
+        }
+        // Flower Power: every unit costs +100% to buy (ADJUST_UNITS_PURCHASE_COST
+        // -100 with IncludeCivilian) except a Rock Band, which is free.
+        purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
+        if unit == "rock_band" {
+            purchase_discount += self.policy_effect(pid, "unit_purchase_cost_pct")
+                + self.policy_effect(pid, "rock_band_purchase_discount_pct");
         }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(city) {
@@ -53368,6 +54007,11 @@ impl Game {
             if self.is_at_war(pid, offender) {
                 continue;
             }
+            // Cyber Warfare's DISABLE_GRIEVANCE_DECAY: what others hold
+            // against its bearer never wears off.
+            if self.policy_effect(offender, "no_grievance_decay") > 0.0 {
+                continue;
+            }
             let occupation_modifier = |founder: usize, occupier: usize| {
                 let occupied = self
                     .cities
@@ -53565,6 +54209,15 @@ impl Game {
             + alliance_favor
             + buildings
             + self.policy_effect(pid, "diplomatic_favor_per_turn")
+            + self.policy_effect(pid, "favor_per_broadcast_center")
+                * self
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == pid)
+                    .filter(|city| {
+                        self.city_has_active_building_family(city, crate::name!("broadcast_center"))
+                    })
+                    .count() as f64
             - diplomatic_penalty;
         self.players[pid].diplomatic_favor = (self.players[pid].diplomatic_favor + favor).max(0.0);
         *self.players[pid]
@@ -53604,11 +54257,15 @@ impl Game {
                     .count() as f64
             })
             .unwrap_or(0.0);
-        let influence = (base_influence
+        let mut influence = (base_influence
             + economic_alliance_influence
             + self.policy_effect(pid, "influence_per_turn")
             + building_effect("influence_points"))
             * (1.0 + self.gov_effects(pid).influence_pct / 100.0);
+        // Rogue State: ROGUESTATE_DISABLE_INFLUENCE — no points, no Envoys.
+        if self.policy_effect(pid, "no_influence") > 0.0 {
+            influence = 0.0;
+        }
         let player = &mut self.players[pid];
         player.influence += influence;
         while threshold > 0.0
@@ -54302,6 +54959,8 @@ impl Game {
         if self.on_foreign_continent(pid, cpos) {
             delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
         }
+        // Automated Workforce's ADJUST_IDENTITY_PER_TURN (-5), every city.
+        delta += self.policy_effect(pid, "city_loyalty");
         delta += self
             .cities
             .values()
@@ -56236,6 +56895,10 @@ impl Game {
         } else {
             1.0
         };
+        if kind == "relic" {
+            // Reliquaries triples a Relic's Tourism as it triples its Faith.
+            multiplier *= 1.0 + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
+        }
         if kind == "relic" && city.wonders
 .contains_key(&crate::name!("st_basils_cathedral")) {
             multiplier *= 1.0
@@ -56475,7 +57138,7 @@ impl Game {
 
     /// Housing Great Works assigns them across every city the player owns, and
     /// `city_yields` runs the whole assignment to read one city's entry.
-    fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+    pub(crate) fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
         if let Some(memo) = self.query_memo.housed_works.borrow().as_ref() {
             if let Some(value) = memo.get(&pid) {
                 return value.clone();
@@ -56489,6 +57152,17 @@ impl Game {
     }
 
     fn housed_great_works_uncached(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+        // The host's placement, where the mirror has read it (seat 0 only:
+        // the export names our own cities' works).
+        if pid == 0 {
+            if let Some(observed) = &self.observed_great_work_housing {
+                return observed
+                    .iter()
+                    .filter(|(city, _)| self.cities.get(*city).is_some_and(|c| c.owner == pid))
+                    .map(|(city, kinds)| (*city, kinds.clone()))
+                    .collect();
+            }
+        }
         self.housed_great_works_with_extra(pid, None)
     }
 
@@ -56644,6 +57318,10 @@ impl Game {
                 ) {
                     value *=
                         1.0 + self.governor_effect(pid, city.id, "great_work_tourism_pct") / 100.0;
+                }
+                if kind == "relic" {
+                    value *= 1.0
+                        + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
                 }
                 if kind == "relic" && city.wonders
 .contains_key(&crate::name!("st_basils_cathedral")) {
@@ -57394,6 +58072,13 @@ impl Game {
         cul += founder_yields.culture;
         gold += founder_yields.gold;
         faith += founder_yields.faith;
+        // Policy income paid to the player, not to a city — see
+        // `player_policy_yields`.
+        let policy_yields = self.player_policy_yields(pid);
+        sci += policy_yields.science;
+        cul += policy_yields.culture;
+        gold += policy_yields.gold;
+        faith += policy_yields.faith;
         let cultural_alliance_partner = self.alliance_partner(pid, "cultural", 3);
         if let Some(partner) = cultural_alliance_partner {
             cul += self
@@ -58337,29 +59022,9 @@ impl Game {
             let city = &self.cities[&cid];
             self.item_prod_mult(pid, cid, city.queue.first())
         };
-        let active_project = self.cities[&cid].queue.first().and_then(|item| {
-            let Item::Project { project } = item else {
-                return None;
-            };
-            let spec = self.rules.projects.get(project)?;
-            self.project_has_active_district(&self.cities[&cid], spec)
-                .then_some(spec)
-        });
-        if let Some(project) = active_project {
-            let invested = base_produced * production_multiplier;
-            for (kind, percent) in &project.ongoing_yields {
-                let amount = invested * percent / 100.0;
-                match kind.as_str() {
-                    "science" => ys.science += amount,
-                    "culture" => ys.culture += amount,
-                    "gold" => ys.gold += amount,
-                    "faith" => ys.faith += amount,
-                    "food" => ys.food += amount,
-                    "production" => ys.production += amount,
-                    _ => {}
-                }
-            }
-        }
+        // A running district project's per-turn conversion is part of
+        // `city_yields` now (it is a city yield the host lists in the city's
+        // own ledger), so nothing is added here.
         let district_project_stalled = matches!(
             self.cities[&cid].queue.first(),
             Some(Item::Project { project })
@@ -60408,18 +61073,23 @@ impl Game {
         } else {
             0.0
         };
+        let observed = self.observed_public_empire_stats.get(&pid);
 
         VictoryRaces {
             science,
             science_projects: completed_projects,
             science_project_target: science_projects.len(),
             exoplanet_distance: player.exoplanet_distance,
-            techs: player.techs.len(),
+            techs: observed
+                .and_then(|stats| stats.techs)
+                .unwrap_or(player.techs.len()),
             tech_total: self.rules.techs.len(),
             culture,
             foreign_tourists,
             culture_target,
-            civics: player.civics.len(),
+            civics: observed
+                .and_then(|stats| stats.civics)
+                .unwrap_or(player.civics.len()),
             civic_total: self.rules.civics.len(),
             domestic_tourists: self.domestic_tourists(pid),
             rival_domestic,
@@ -60931,6 +61601,63 @@ mod production_catalog_tests {
 #[cfg(test)]
 mod dedication_era_tests {
     use super::*;
+
+    /// A Golden Age multiplies nothing by itself; Heartbeat of Steam pays
+    /// Production equal to each Campus's Science adjacency; Reform the Coinage
+    /// pays +3 Gold per specialty district in the destination of an
+    /// INTERNATIONAL route. All three read off `CommemorationModifiers`
+    /// (`COMMEMORATION_INUDSTRIAL_GA_CAMPUS_MODIFIER`,
+    /// `COMMEMORATION_ECONOMIC_GA_TRADE_ROUTE_YIELDS`) and off the absence of
+    /// any yield modifier keyed on PLAYER_HAS_GOLDEN_AGE / a Dark Age; the
+    /// ×1.10 / ×0.95 this engine used to apply, and Sky and Stars' ×1.10, were
+    /// its own invention.
+    #[test]
+    fn a_golden_age_pays_only_what_its_dedication_says() {
+        let mut g = Game::new_full(2, 26, 16, 4_217, 300, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .expect("a settler to found with");
+        let cid = g.found_city_for(0, g.units[&settler].pos, None);
+        g.players[0].age = "normal".to_string();
+        let normal = g.city_yields(cid);
+        g.players[0].age = "golden".to_string();
+        let golden = g.city_yields(cid);
+        assert!((normal.production - golden.production).abs() < 1e-9, "no age multiplier: {normal:?} vs {golden:?}");
+        assert!((normal.science - golden.science).abs() < 1e-9);
+        g.players[0].age = "dark".to_string();
+        let dark = g.city_yields(cid);
+        assert!((normal.production - dark.production).abs() < 1e-9);
+
+        // Heartbeat of Steam: place a Campus, note its adjacency, dedicate.
+        g.players[0].age = "golden".to_string();
+        let city_pos = g.cities[&cid].pos;
+        let site = g
+            .cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| {
+                *pos != city_pos
+                    && g.map.get(*pos).is_some_and(|tile| {
+                        !g.rules.is_water(tile) && tile.district.is_none() && tile.wonder.is_none()
+                    })
+            })
+            .expect("a land tile to hold the Campus");
+        g.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("campus"), site);
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        let before = g.city_yields(cid);
+        g.players[0].dedications.insert("heartbeat_of_steam".to_string());
+        let after = g.city_yields(cid);
+        let adjacency = g.district_yields(crate::name!("campus"), site).science
+            - g.rules.districts["campus"].yields.science;
+        assert!(
+            (after.production - before.production - adjacency.max(0.0)).abs() < 1e-9,
+            "Campus Science adjacency {adjacency} must arrive as Production: {before:?} -> {after:?}"
+        );
+        assert!((after.science - before.science).abs() < 1e-9, "and nothing as Science");
+    }
 
     #[test]
     fn every_dedication_opens_in_the_eras_its_commemoration_ships_for() {
@@ -68543,6 +69270,74 @@ mod victory_conditions {
     }
 
     #[test]
+    fn an_unemployed_citizen_pays_half_a_gold_and_nothing_else() {
+        // Live Rome (run civvis-20260816T200454Z): every workable plot taken,
+        // no specialist slot, and the host's Gold ledger read "+0.5 from
+        // Population" for one idle citizen, "+1" for two, nothing for none;
+        // the other five ledgers never moved. A capital with more citizens
+        // than tiles is the same shape here.
+        let mut g = game_with_capitals(2, 4_217, 300);
+        let cid = g.player_city_ids(0)[0];
+        g.cities.get_mut(&cid).unwrap().loyalty = 100.0;
+        // Hold the Amenity band still across the growth by supplying it.
+        g.observed_city_amenity_adjustments.insert(cid, 40);
+        let workable = g.city_citizen_plan(cid).worked_tiles.len().max(1);
+        let mut pin = |pop: i32| {
+            g.cities.get_mut(&cid).unwrap().pop = pop;
+            let plan = g.city_citizen_plan(cid);
+            (plan.worked_tiles.len() + plan.specialists.len(), g.city_yields(cid))
+        };
+        // Grow until the plan can no longer employ everyone.
+        let mut pop = workable as i32;
+        let (mut employed, mut full) = pin(pop);
+        while employed >= pop as usize && pop < 60 {
+            pop += 1;
+            let (e, y) = pin(pop);
+            employed = e;
+            full = y;
+        }
+        assert!(employed < pop as usize, "the fixture never ran out of tiles at pop {pop}");
+        let (employed_more, more) = pin(pop + 2);
+        assert_eq!(employed_more, employed, "two more citizens found no work either");
+        // The half-Gold is a base yield, so it wears the city's Amenity band
+        // and difficulty handicap like every other Gold.
+        let scale = 1.0
+            + ((g.amenity_yield_mult(&g.cities[&cid]) - 1.0) * 100.0 + g.handicap_yield_pct(0).gold)
+                / 100.0;
+        assert!((more.gold - full.gold - 1.0 * scale).abs() < 1e-9,
+            "two idle citizens are +1 Gold (x{scale}): {} -> {}", full.gold, more.gold);
+        // Science and Culture per citizen are paid whether or not the citizen
+        // works (the host's "+6 from Population" Science on a pop-12 Rome
+        // with two idle); Food, Production and Faith are not per citizen.
+        assert!((more.food - full.food).abs() < 1e-9);
+        assert!((more.production - full.production).abs() < 1e-9);
+        assert!((more.faith - full.faith).abs() < 1e-9);
+        assert!(more.science > full.science);
+    }
+
+    #[test]
+    fn the_hosts_route_posts_replace_the_straight_line_walk() {
+        // Ostia -> Aquileia (run civvis-20260816T200454Z, t144-154) read "+2
+        // from Outgoing Trade Routes": the host's road ran through Cumae's
+        // post, the model's straight line did not. Where the mirror knows the
+        // host's path, its posts pay — a Roman own-city post at the trait's
+        // Gold, a foreign one at TRADING_POST_GOLD_IN_FOREIGN_CITY.
+        let mut g = game_with_capitals(2, 4_218, 300);
+        g.players[0].civ = "Rome".to_string();
+        let origin = g.player_city_ids(0)[0];
+        let dest = g.player_city_ids(1)[0];
+        let walked = g.trading_post_route_gold(0, origin, dest);
+        g.observed_route_posts.insert((origin, dest), (2, 1));
+        let own = g.civ_effect(0, "own_trading_post_route_gold");
+        assert!(own > 0.0, "the fixture is Roman");
+        assert_eq!(g.trading_post_route_gold(0, origin, dest), 2.0 * own + 1.0);
+        // Only that route: nothing is known about the reverse one.
+        assert!(!g.observed_route_posts.contains_key(&(dest, origin)));
+        g.observed_route_posts.clear();
+        assert_eq!(g.trading_post_route_gold(0, origin, dest), walked);
+    }
+
+    #[test]
     fn capital_citizens_double_their_loyalty_pressure_and_still_decay() {
         let mut game = game_with_capitals(2, 9_311, 300);
         let rival_capital = game.player_city_ids(1)[0];
@@ -69441,10 +70236,26 @@ mod victory_conditions {
             normal_cost * 0.5
         );
 
+        // Trade Policy A pays the CHOSEN player's destination city, not the
+        // sender: the shipped effect is `EFFECT_ADJUST_TRADE_ROUTE_YIELD_FROM_OTHERS`
+        // on the chosen player, and the host's city ledger reads "+4 from
+        // Incoming Trade Routes" per foreign route.
         let route_gold = g.route_yields(rival_city, false).gold;
+        let rival_gold_before = g.city_yields(rival_city).gold;
+        g.routes.push(TradeRoute {
+            origin: city,
+            dest: rival_city,
+            owner: 0,
+            ends: g.turn + 30,
+        });
+        let rival_gold_with_route = g.city_yields(rival_city).gold;
         g.active_congress_effects
             .push(effect("trade_policy", "A", "1"));
-        assert_eq!(g.route_yields(rival_city, false).gold, route_gold + 4.0);
+        assert_eq!(g.route_yields(rival_city, false).gold, route_gold);
+        assert_eq!(g.city_yields(rival_city).gold, rival_gold_with_route + 4.0);
+        assert!(rival_gold_with_route >= rival_gold_before);
+        g.routes.pop();
+        assert_eq!(g.city_yields(rival_city).gold, rival_gold_before);
 
         let writing = g.great_work_tourism(0, "writing");
         g.active_congress_effects
@@ -69459,10 +70270,7 @@ mod victory_conditions {
 
         let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!(restored.active_congress_effects, g.active_congress_effects);
-        assert_eq!(
-            restored.route_yields(rival_city, false).gold,
-            route_gold + 4.0
-        );
+        assert!(restored.congress_effect_active("trade_policy", "A", "1"));
     }
 
     #[test]
@@ -71462,7 +72270,12 @@ mod district_mechanics {
         assert_eq!(game.route_yields(city, false).gold, 6.0);
         game.map.tiles.get_mut(&commercial).unwrap().pillaged = true;
         assert_eq!(game.trade_capacity(0), 1);
-        assert_eq!(game.route_yields(city, false).gold, 3.0);
+        // The route row is for the district's existence, not its working
+        // state: a route made to Aquileia while its Diplomatic Quarter lay
+        // pillaged paid the Quarter's Food and Production from its first turn
+        // (run civvis-20260816T200454Z, t144), and Rome's pillaged Holy Site
+        // and Campus never stopped paying Cumae's.
+        assert_eq!(game.route_yields(city, false).gold, 6.0);
     }
 
     #[test]
@@ -74258,17 +75071,23 @@ mod district_mechanics {
         assert_eq!(game.players[2].diplomatic_favor, 200.0);
         assert_eq!(game.players[2].counters["emergency_gold_per_envoy"], 1);
         assert_eq!(game.players[3].diplomatic_favor, 0.0);
+        // The reward pays the PLAYER per placed Envoy (a top-bar term, like
+        // Merchant Confederation), never a line of the capital's ledger.
         let member_capital = game.player_city_ids(2)[0];
         let mut without_reward = game.clone();
         without_reward.players[2]
             .counters
             .remove("emergency_gold_per_envoy");
         assert!(
-            (game.city_yields(member_capital).gold
-                - without_reward.city_yields(member_capital).gold
-                - 3.0)
+            (game.player_policy_yields(2).gold - without_reward.player_policy_yields(2).gold - 3.0)
                 .abs()
                 < 1e-9
+        );
+        assert!(
+            (game.city_yields(member_capital).gold - without_reward.city_yields(member_capital).gold)
+                .abs()
+                < 1e-9,
+            "the capital's own yields carry none of it"
         );
     }
 

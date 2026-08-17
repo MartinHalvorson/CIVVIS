@@ -10091,6 +10091,93 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const projection = planetGroundProjection();"));
     }
 
+    /// The CITY figure in the standings is a count, and clicking it answers
+    /// "which ones?" with rows rather than with a change of view: that
+    /// empire's cities open directly under its seat, one per row on the
+    /// table's own tracks, ordered by whatever fact the table itself is
+    /// sorted on. Only one empire's list is open at a time.
+    #[test]
+    fn browser_standings_city_count_opens_that_empires_cities_under_its_row() {
+        // One open list, held as the seat it belongs to; a second count
+        // clicked replaces it, and clicking the lit count closes it.
+        assert!(EMBEDDED_INDEX.contains("let hudOpenCityList = null;"));
+        assert!(EMBEDDED_INDEX.contains("function togglePlayerHudCityList(id)"));
+        assert!(
+            EMBEDDED_INDEX.contains("hudOpenCityList = hudOpenCityList === id ? null : id;"),
+            "one empire's city list is open at a time, and its own count closes it"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(
+                "if (hudOpenCityList !== null && !majors.some(p => p.id === hudOpenCityList))\n    hudOpenCityList = null;"
+            ),
+            "a list stays open only for a seat still in the table"
+        );
+        // The count is the control: it carries the cities action instead of
+        // the watch action every other value cell answers with, says whether
+        // its list is open, and stays lit while it is.
+        assert!(EMBEDDED_INDEX.contains("if (kind === \"cities\") {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"ribbon-stat cities hud-city-toggle${isLeader ? \" category-leader\" : \"\"}\" data-hud-col=\"cities\" `"
+        ));
+        assert!(EMBEDDED_INDEX.contains("`data-hud-action=\"cities\" data-hud-civ=\"${p.id}\" aria-expanded=\"${open}\" `"));
+        assert!(EMBEDDED_INDEX.contains(
+            "else if (target.dataset.hudAction === \"cities\") togglePlayerHudCityList(id);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .hud-city-toggle[aria-expanded=\"true\"] { background: #ffffff10; }"));
+        // The rows are rows of the same table — the same card class on the
+        // same shared tracks — directly after the seat's own card, and the
+        // seat's card says its list is open.
+        assert!(EMBEDDED_INDEX.contains("function playerHudCityRows(player, cities, hidden, visibleColumns)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "(citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : \"\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains("${citiesOpen ? \" cities-open\" : \"\"}"));
+        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-card hud-city-row${capital ? \" capital\" : \"\"}\""));
+        // The name runs on across every silent identity cell after it rather
+        // than being crushed into one narrow track beside a row of blanks.
+        assert!(EMBEDDED_INDEX.contains(
+            "while (index + span < visibleColumns.length && silent(visibleColumns[index + span])) span++;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"grid-column:span ${span}\""));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.hud-city-row {"));
+        // The list follows the table's sort wherever a city has the fact, and
+        // an unavailable reading sorts below every observed one exactly as it
+        // does for a seat. Under a head no city has a reading for, the empire's
+        // own order carries the list: capital, then the largest.
+        assert!(EMBEDDED_INDEX.contains("function playerHudCitySortValue(city, key)"));
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudCities(cities)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "sortedPlayerHudCities((state.cities || []).filter(city => city.owner === openCityPlayer.id))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const leftValue = playerHudCitySortValue(left, key);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (key === \"population\") return playerHudCityFigure(city.pop);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (PLAYER_HUD_CITY_YIELD_KEYS.has(key)) return playerHudCityFigure(city.yields?.[key]);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "return Number(Boolean(right.is_capital)) - Number(Boolean(left.is_capital)) ||"
+        ), "the capital leads the fallback order");
+        assert_eq!(
+            EMBEDDED_INDEX.matches("if (leftValue !== rightValue) return leftValue === null ? 1 : -1;").count(),
+            2,
+            "seats and cities keep the same rule for an unavailable reading"
+        );
+        // A city's name goes to the map as the civilization's goes to its
+        // capital, and the count that the frame cannot account for under fog
+        // is said in words rather than left as a shorter list.
+        assert!(EMBEDDED_INDEX.contains("function focusHudCity(cityId)"));
+        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"city\") {"));
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"city\" data-hud-city=\"${city.id}\""));
+        assert!(EMBEDDED_INDEX.contains("more under fog"));
+        // The seats always fit the masthead as they did; the open list may grow
+        // it only to its share of the map, and scrolls past that.
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_CITY_LIST_MAP_SHARE = .6;"));
+        assert!(EMBEDDED_INDEX.contains("const rows = Math.max(1, majors.length + cityRowsShown);"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
+    }
+
     #[test]
     fn browser_orders_controls_interface_setup_and_logs() {
         // Readability is a shared interface contract, not a collection of
@@ -16412,6 +16499,90 @@ mod tests {
             }
         }
         assert!(checked > 10, "the route scan found almost nothing to check");
+    }
+
+    /// Every field `decorate` attaches to `/state` is either mirrored by the
+    /// browser build's `decorate_browser` or on the deliberate list below
+    /// with the reason it is not. The failure this exists for is silent by
+    /// construction and invisible where features are developed: a local
+    /// `civvis play` fills a new field, the viewer row built on it works in
+    /// every test its author runs, and the same row sits on its placeholder
+    /// on civvis.ai for the life of the tab — host telemetry shipped two
+    /// permanent "Unavailable" rows exactly this way (#1301).
+    #[test]
+    fn every_decorated_state_field_reaches_the_browser_build_or_says_why_not() {
+        fn body_of<'a>(source: &'a str, signature: &str) -> &'a str {
+            let start = source.find(signature).expect(signature);
+            let rest = &source[start..];
+            let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
+            &rest[..end]
+        }
+        fn emitted_keys(body: &str) -> std::collections::BTreeSet<String> {
+            body.split("o[\"")
+                .skip(1)
+                .filter_map(|tail| tail.split_once('"'))
+                .map(|(key, _)| key.to_string())
+                .collect()
+        }
+
+        let native = emitted_keys(body_of(include_str!("server.rs"), "fn decorate("));
+        let browser =
+            emitted_keys(body_of(include_str!("wasm.rs"), "fn decorate_browser("));
+        assert!(
+            native.len() >= 10 && browser.len() >= 5,
+            "the scan found too little to mean anything: {native:?} / {browser:?}"
+        );
+
+        // Native-only, each with the mechanism that stands in for it on the
+        // published build. "No consumer" is only acceptable while it is true —
+        // building a viewer row on such a field moves it out of this list.
+        let native_only: std::collections::BTreeMap<&str, &str> = [
+            ("restart_in", "beta/shim.js synthesizes the finale countdown"),
+            ("restart_in_ms", "beta/shim.js synthesizes the finale countdown"),
+            ("restart_hold", "beta/shim.js re-arms and counts its own holds"),
+            ("turn_ms", "the page times its own turn interval (#1301 pattern)"),
+            ("turn_compute_ms", "page-side observation stands in (#1301)"),
+            ("tactics_match", "native match series; no viewer consumer today"),
+            ("spectator_paused", "the session carries it on both lanes; \
+             decorate only forces it during a supervisor swap"),
+        ]
+        .into_iter()
+        .collect();
+
+        for key in native.difference(&browser) {
+            assert!(
+                native_only.contains_key(key.as_str()),
+                "`decorate` attaches {key:?} and `decorate_browser` does not — \
+                 mirror it in src/wasm.rs, give the viewer a page-side stand-in, \
+                 or add it to this test's native-only list with the reason. \
+                 Without one of those the field is permanently empty on civvis.ai \
+                 while working everywhere the feature was developed."
+            );
+        }
+        for (key, reason) in &native_only {
+            assert!(
+                native.contains(*key),
+                "the native-only list says {key:?} ({reason}) but `decorate` no \
+                 longer attaches it; delete the stale row"
+            );
+            assert!(
+                !browser.contains(*key),
+                "{key:?} is mirrored in the browser now; its native-only row \
+                 ({reason}) is stale and hides future drift"
+            );
+        }
+        // The browser may attach extras of its own, but only ones the native
+        // lane also serves somewhere — a browser-only field would fail on the
+        // native lane in exactly the mirrored way.
+        for key in browser.difference(&native) {
+            assert!(
+                include_str!("server.rs").contains(&format!("o[\"{key}\"]"))
+                    || include_str!("server.rs").contains(&format!("\"{key}\":")),
+                "`decorate_browser` attaches {key:?} and the native lane never \
+                 serves it; the local `civvis play` viewer would be the one \
+                 with the permanently empty row"
+            );
+        }
     }
 
     /// A world nobody is steering can turn on its own — once asked. It holds

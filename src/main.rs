@@ -1211,7 +1211,129 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The adjacent-guard march is behind `stacked_escort`/`settlement_safety`,
 /// which `AdvancedAi::legacy()` leaves off. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x11ae_cdbd_98b7_8d2a;
+/// The fog-read city ceiling is behind `fog_land_capacity` under
+/// `wide_map_capacity`, both live-only and off for `AdvancedAi::legacy()`
+/// (asserted); a native board carries no unknown terrain, so the estimate
+/// equals the count there. Compatibility re-pin; the Elo protocol does not
+/// move.
+/// The recon flight step is behind `recon_flight`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's scouts explore
+/// exactly as before. Compatibility re-pin; the Elo protocol does not move.
+/// The embarked-settler sea link is skipped only under `stacked_escort`,
+/// which `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor
+/// still links a ship to a settler at sea. Compatibility re-pin; the Elo
+/// protocol does not move.
+/// The turn-limit horizon on the space race and the nuclear lane is behind
+/// `score_horizon`, off for `AdvancedAi::legacy()` (asserted); the frozen
+/// anchor races and arms exactly as before. Compatibility re-pin; the Elo
+/// protocol does not move.
+/// The sea's recon arm — the one-ship purchase and the naval explorer — is
+/// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
+/// frozen anchor's ships and production are unchanged. Its viable-waterway
+/// and lake-bound-hull refinements remain behind that same gate. Compatibility
+/// re-pin; the Elo protocol does not move.
+/// The in-lane answer to a Science or score leader is behind
+/// `counter_in_lane`, which the live bridge now enables and
+/// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
+/// declares. Compatibility re-pin; the Elo protocol does not move.
+/// The era-paced city cadence is behind `era_paced_expansion`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
+/// per ninety standard turns. Compatibility re-pin; the Elo protocol does
+/// not move.
+/// The tally price of culture is behind `tally_culture`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
+/// bred yield weights and district table. Compatibility re-pin; the Elo
+/// protocol does not move.
+/// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
+/// unchanged. Compatibility re-pin; the Elo protocol does not move.
+/// The banked envoy and its final-tier, secure-suzerain marginal-return cap
+/// are behind `bank_envoys`, and the committed outward exploration goal
+/// behind `BasicAi::explore_commit`, all set only by the Civilization VI
+/// bridge and off for `AdvancedAi::new()` and `AdvancedAi::legacy()`
+/// (asserted); the frozen anchor spends every envoy and re-derives its
+/// scout's goal each turn as before. Compatibility re-pin; the Elo protocol
+/// does not move.
+/// The settler-target hysteresis is behind `settler_target_hysteresis`, off
+/// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
+/// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
+/// not move.
+/// The tally price of a Great Person is behind `tally_great_people`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's patronage keeps its
+/// closeness limit. Compatibility re-pin; the Elo protocol does not move.
+/// The frontier-loyalty rule is now a distance test (own city within nine
+/// tiles), still behind `frontier_loyalty` and off for `AdvancedAi::legacy()`
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
+/// The barbarian-scout exemption in the settlement risk model is behind
+/// `barbarian_scouts_are_scouts`, off for `AdvancedAi::legacy()` (asserted);
+/// the frozen anchor prices every hostile as before. Compatibility re-pin;
+/// the Elo protocol does not move.
+/// The nine-tile camp reach is behind `BasicAi::camp_reach`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's home guard keeps
+/// the six-tile radius for camps and raiders alike. Compatibility re-pin;
+/// the Elo protocol does not move.
+/// The frontier-loyalty reach moves from nine to seven tiles, still behind
+/// `frontier_loyalty` and off for `AdvancedAi::legacy()` (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+/// The strategic governor's Expansion routing is behind `governor_every_lane`,
+/// off for `AdvancedAi::legacy()` (asserted); the frozen anchor's baseline
+/// still governs its Expansion lane. Compatibility re-pin; the Elo protocol
+/// does not move.
+/// The settler stack discipline (settlers decide before the engagement,
+/// capture priced as capture, only a guard on the tile counts, bound guards
+/// kept out of the joint plan) is behind `settler_stack_discipline`, and the
+/// peacetime camp party (the whole field army answers home threats, a camp in
+/// reach outranks the countryside, the party sized to the camp's defender)
+/// behind `BasicAi::camp_party`; both off for `AdvancedAi::legacy()`
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
+/// `recon_is_the_missing_arm` counts a recon unit already in a city queue as
+/// the arm being rebuilt (still behind `recon_replacement`, off for
+/// `AdvancedAi::legacy()`), and `BasicAi::skip_opening_book` lets a decider
+/// restarted mid-game leave the four-build book behind it — the frozen
+/// anchor's opening is unchanged. Compatibility re-pin; the Elo protocol does
+/// not move.
+/// The live envoy bank gates both the plan-aware scorer and the later
+/// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
+/// paths enabled. Compatibility re-pin; the Elo protocol does not move.
+/// A looped reconnaissance target is retired only behind
+/// `explore_dead_targets`, which the Firaxis order bridge explicitly enables;
+/// `AdvancedAi::legacy()` keeps that flag off. Compatibility re-pin; the Elo
+/// protocol does not move.
+/// The idle Entertainment Complex reservation is behind
+/// `amenity_project_preemption`, which both `AdvancedAi::legacy()` and the
+/// stock constructor keep off (asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`). Compatibility re-pin;
+/// the Elo protocol does not move.
+/// A repeatable district project waits behind the Library, University,
+/// Research Lab or Workshop its city can already build, behind
+/// `buildings_before_projects`, off for `AdvancedAi::legacy()` (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+/// The live recon arm keeps a second Scout only after city two, still behind
+/// `recon_replacement`, which `AdvancedAi::legacy()` leaves off. Its missing-arm
+/// predicate therefore returns on the same first-line flag check in every
+/// frozen game; the anchor's production decisions remain byte-identical.
+/// Compatibility re-pin; the Elo protocol does not move.
+/// A second already-built sea hull may explore only behind `naval_recon`, which
+/// `AdvancedAi::legacy()` leaves off. The frozen anchor still gets an empty
+/// explorer set before inspecting units, so its movement decisions are
+/// byte-identical. Compatibility re-pin; the Elo protocol does not move.
+/// The recon-flight loop escape is reached only from `recon_flight`; that
+/// live-only flag is false in `AdvancedAi::legacy()`, so a frozen Scout keeps
+/// its historical flight and exploration behavior. Compatibility re-pin; the
+/// Elo protocol does not move.
+/// The hostile-Suzerain peace path is reached only through `bank_envoys`,
+/// which the Firaxis order bridge enables after profitable Envoy placements
+/// have already run. `AdvancedAi::legacy()` keeps that gate false, so its
+/// diplomacy remains historical. Compatibility re-pin; the Elo protocol does
+/// not move.
+/// The wartime second naval eye and its idle-city reservation are both reached
+/// only through `naval_recon`, which `AdvancedAi::legacy()` leaves false.
+/// Compatibility re-pin; the Elo protocol does not move.
+/// Patronage skips a Great Person class the mirrored host reports exhausted
+/// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
+/// native boards carry no such list and are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb35_d678_5504_e0a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2876,6 +2998,37 @@ fn main() {
                 }
             }
         }
+        "arena" => {
+            // A batch rating event: refit the corrected contextual model over
+            // the league's standardized games and publish an anchored table
+            // that moves only when an arena runs. `src/arena.rs` says why.
+            let dir = arg_text(
+                &args,
+                "--dir",
+                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
+            );
+            // 0 = the history's modal table size, printed in the report.
+            let seats = arg(&args, "--seats", 0).max(0) as usize;
+            let anchors: Vec<String> = arg_text(&args, "--anchors", "advanced,basic")
+                .split(',')
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect();
+            let anchor_elo = arg_f64(&args, "--anchor-elo", 1500.0);
+            match civvis::arena::run_dir(
+                &dir,
+                seats,
+                &anchors,
+                anchor_elo,
+                std::time::SystemTime::now(),
+            ) {
+                Ok(report) => print!("{report}"),
+                Err(error) => {
+                    eprintln!("arena failed: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         "league" => {
             let players = arg(&args, "--players", 4).max(2);
             let defaults = civvis::league::LeagueCfg::default();
@@ -3388,7 +3541,7 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|arena|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
@@ -3787,6 +3940,24 @@ mod tests {
             fingerprint, ADVANCED_V1_SOURCE_CONTRACT_FNV,
             "BasicAi/AdvancedAi changed under the advanced_v1 anchor: if the legacy path changed, bump ELO_PROTOCOL_VERSION and start a new ledger; otherwise review the gating and deliberately re-pin this source contract"
         );
+    }
+
+    /// The sea's live-only reconnaissance arm is sourced from the same AI
+    /// files as the frozen anchor, so pin its gate independently of the
+    /// broader repair bundle.
+    #[test]
+    fn naval_recon_cannot_reach_the_frozen_anchor() {
+        for (name, ai) in [
+            ("advanced_v1", civvis::ai::AdvancedAi::legacy()),
+            ("advanced", civvis::ai::AdvancedAi::new()),
+        ] {
+            assert!(
+                !ai.naval_recon(),
+                "{name} carries live-only naval reconnaissance: the source-contract \
+                 re-pin is valid only while this arm stays unreachable from the \
+                 frozen rating anchor"
+            );
+        }
     }
 
     /// The re-pin above claims the engine-repair bundle cannot reach the

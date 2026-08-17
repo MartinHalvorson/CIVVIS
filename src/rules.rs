@@ -53,6 +53,16 @@ pub struct Yields {
 }
 
 impl Yields {
+    /// Multiply every yield by one factor.
+    pub fn scale(&mut self, factor: f64) {
+        self.food *= factor;
+        self.production *= factor;
+        self.gold *= factor;
+        self.science *= factor;
+        self.culture *= factor;
+        self.faith *= factor;
+    }
+
     pub fn add(&mut self, o: Yields) {
         self.food += o.food;
         self.production += o.production;
@@ -3011,9 +3021,35 @@ mod tests {
         // read +1 Gold in the host and 0 in the model for its whole life. A
         // real simulation change for Rome seats only; every other row is
         // untouched.
+        // Moved by two `Improvement_BonusYieldChanges` grants the audit could
+        // not see: `civ6_fidelity.py` keyed that table by `Id`, and the shipped
+        // table carries a duplicate (Id 225 is both Camp/Gold/Synthetic
+        // Materials and Fishing Boats/Production/Colonialism), so Colonialism's
+        // +1 Production on Fishing Boats was never audited and never modelled —
+        // every worked boat read one Production under the host for fifty turns
+        // of run civvis-20260816T115139Z. And the XML route never applied the
+        // expansions' `<Expansion>_RemoveData.xml` (Priority 1 in the modinfo),
+        // so a retired base row — Robotics granting Pasture Production, moved to
+        // Replaceable Parts by Gathering Storm — kept "confirming" a grant the
+        // game no longer makes. Both are corrected in `tree_effects.json`;
+        // confirmed against the compiled gameplay database.
+        // Moved by four beliefs the shipped database has and `beliefs.json`
+        // did not: Divine Inspiration (follower, +4 Faith per Wonder in a
+        // following city — `MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`
+        // 4), Reliquaries (follower, Relics ×4 Faith and Tourism —
+        // `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` ScalingFactor 300),
+        // Lay Ministry (founder, +1 Faith per Holy Site and +1 Culture per
+        // Theater Square in following cities — `BELIEF_YIELD_PER_DISTRICT`)
+        // and Sacred Places (founder, +2 of each yield per following city
+        // with a Wonder — `BELIEF_YIELD_PER_CITY_WITH_WONDER`). Measured
+        // first on live run civvis-20260816T123936Z: Rome followed a
+        // Catholicism it had not founded and read 35 Faith in the host, 23 in
+        // the model, for its last twenty turns — three Wonders under Divine
+        // Inspiration. A real change for every simulated seat: the Prophet
+        // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:daa3f93b9b203e23"
+            "fnv1a64:0e2a4f8234db4bfa"
         );
     }
 
@@ -3570,12 +3606,13 @@ mod tests {
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
-        // 118 civic-unlocked cards plus the seven Dark Age cards, which no
-        // civic unlocks — a Dark Age is what puts them on offer.
-        assert_eq!(rules.policies.len(), 125);
+        // 118 civic-unlocked cards plus the thirteen Dark Age cards
+        // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
+        // Dark Age is what puts them on offer.
+        assert_eq!(rules.policies.len(), 131);
         assert_eq!(
             rules.policies.values().filter(|spec| spec.dark_age).count(),
-            7
+            13
         );
         assert_eq!(rules.governments.len(), 13);
 

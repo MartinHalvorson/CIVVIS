@@ -114,14 +114,43 @@ class MirrorCheckTest(unittest.TestCase):
     def test_public_scores_military_and_empire_yields_are_exact(self) -> None:
         state = {
             "score": 177, "military": 2, "science": 6.75, "culture": 6.03125,
-            "gold": 25, "faith": 100, "trade_capacity": 3,
-            "rivals": [{"score": 926, "military": 995}],
+            "gold": 25, "gold_per_turn": -3.25, "faith": 100, "trade_capacity": 3,
+            "government": "GOVERNMENT_MONARCHY",
+            "dark_age": False, "golden_age": True, "heroic_golden_age": False,
+            "public_stats": {
+                "city_count": 3, "population": 22, "food": 26.25, "production": 16.75,
+                "wonder_count": 1, "suzerain_count": 2,
+                "nuclear_devices": 0, "thermonuclear_devices": 1,
+            },
+            "rivals": [{
+                "score": 926, "military": 995, "science": 41.5, "culture": 23,
+                "faith_per_turn": 19, "gold": 512, "gold_per_turn": -3,
+                "faith": 88, "techs": 53, "civics": 44, "tourism": 61,
+                "government": "GOVERNMENT_FASCISM",
+                "dark_age": False, "golden_age": False, "heroic_golden_age": True,
+                "public_stats": {
+                    "city_count": 7, "population": 49, "food": 76, "production": 43,
+                    "wonder_count": 5, "suzerain_count": 2,
+                    "nuclear_devices": 4, "thermonuclear_devices": 1,
+                },
+            }],
         }
         board = {"me": {"trade_capacity": 3}, "players": [
             {"id": 0, "score": 177, "military": 2, "observed_military": 2,
-             "gold": 25.0, "faith": 100.0,
-             "yields": {"science": 6.8, "culture": 6.0}},
-            {"id": 1, "score": 926, "military": 995, "observed_military": 995},
+             "gold": 25.0, "gold_per_turn": -3.25, "faith": 100.0,
+             "government": "monarchy", "age": "golden",
+             "cities": 3, "population": 22, "wonder_count": 1, "suzerain_count": 2,
+             "nuclear_devices": 0, "thermonuclear_devices": 1,
+             "yields": {"food": 26.3, "production": 16.8, "science": 6.8, "culture": 6.0}},
+            {"id": 1, "score": 926, "military": 995, "observed_military": 995,
+             "gold": 512.0, "gold_per_turn": -3.0, "faith": 88.0,
+             "government": "fascism", "age": "heroic",
+             "cities": 7, "population": 49, "wonder_count": 5, "suzerain_count": 2,
+             "nuclear_devices": 4, "thermonuclear_devices": 1,
+             "tourism_per_turn": 61.0,
+             "yields": {"food": 76.0, "production": 43.0, "science": 41.5,
+                        "culture": 23.0, "faith": 19.0},
+             "victories": {"science": {"techs": 53}, "culture": {"civics": 44}}},
         ]}
         self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
         board["players"][1]["observed_military"] = 64
@@ -131,6 +160,54 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertIn(
             "trade_capacity", civ6_mirror_check.public_fact_mismatches(state, board)[0]
         )
+        board["me"]["trade_capacity"] = 3
+
+        board["players"][1]["population"] = 48
+        self.assertIn(
+            "seat 1 population Civ6=49",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["population"] = 49
+        board["players"][1]["victories"]["science"]["techs"] = 52
+        self.assertIn(
+            "seat 1 techs Civ6=53",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["victories"]["science"]["techs"] = 53
+        board["players"][1]["tourism_per_turn"] = 60.5
+        self.assertIn(
+            "seat 1 tourism/turn Civ6=61",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["tourism_per_turn"] = 61.0
+
+        board["players"][1]["government"] = "democracy"
+        self.assertIn(
+            "seat 1 government Civ6=fascism",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["government"] = "fascism"
+        board["players"][1]["age"] = "normal"
+        self.assertIn(
+            "seat 1 age Civ6=heroic",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["age"] = "heroic"
+
+        # Faith PER TURN is a rate like science and culture, and it is not the
+        # city sum: the host pays unrecruitable Great Person points as Faith.
+        # An older export has no key and a missing host answer is null; both
+        # are silence, not disagreement.
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+        state["faith_per_turn"] = None
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+        state["faith_per_turn"] = 114.6
+        self.assertIn(
+            "seat 0 faith/turn Civ6=114.6",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][0]["yields"]["faith"] = 114.6
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
 
     def test_a_stronger_own_strength_model_is_not_a_bridge_disagreement(self) -> None:
         """`military_power` is max(observed, our own sum), so for our OWN seat it

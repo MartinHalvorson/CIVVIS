@@ -93,6 +93,7 @@ proving they overlap has already produced one confident, wrong finding.
 import argparse
 import glob
 import json
+import math
 import os
 import subprocess
 import sys
@@ -294,6 +295,26 @@ def leader_id_matches(civ6, civvis):
     return civ6 == civvis or civ6.removesuffix("_alt") == civvis or aliases.get(civ6) == civvis
 
 
+def public_age(source):
+    """Return a host-confirmed public age, or None for an older export."""
+    if source.get("heroic_golden_age") is True:
+        return "heroic"
+    if source.get("golden_age") is True:
+        return "golden"
+    if source.get("dark_age") is True:
+        return "dark"
+    age_flags = ("heroic_golden_age", "golden_age", "dark_age")
+    if all(source.get(flag) is False for flag in age_flags):
+        return "normal"
+    return None
+
+
+def public_government(source):
+    """Normalize a host-confirmed government to the board's vocabulary."""
+    government = source.get("government")
+    return civ6_id(government, "GOVERNMENT_") if isinstance(government, str) else None
+
+
 def rival_identity_mismatches(state, board):
     """Compare each exported rival with the compact CIVVIS seat that owns it."""
     players = {player.get("id"): player for player in board.get("players") or []}
@@ -334,7 +355,7 @@ def rival_identity_mismatches(state, board):
 
 
 def public_fact_mismatches(state, board):
-    """Compare diplomacy-ribbon facts and the viewed empire's live economy."""
+    """Compare public player-HUD facts against the host's current export."""
     players = {player.get("id"): player for player in board.get("players") or []}
     # Same compacted-seat rule as `rival_identity_mismatches`. See the note there,
     # including why re-indexing this to `rival["player"]` was a mistake.
@@ -342,6 +363,17 @@ def public_fact_mismatches(state, board):
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
+        government = public_government(source)
+        if government and player.get("government") != government:
+            mismatches.append(
+                f"seat {seat} government Civ6={government} "
+                f"CIVVIS={player.get('government')!r}"
+            )
+        age = public_age(source)
+        if age and player.get("age") != age:
+            mismatches.append(
+                f"seat {seat} age Civ6={age} CIVVIS={player.get('age')!r}"
+            )
         # ⚠ COMPARE THE MAPPING, NOT THE MODEL. `military` on the board is
         # `military_power`, which is deliberately `max(observed, our own strength
         # sum)`. For our OWN seat we can see every unit, so that sum can win the
@@ -360,6 +392,75 @@ def public_fact_mismatches(state, board):
             if isinstance(want, (int, float)) and want >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
                 mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+        public_stats = source.get("public_stats") or {}
+        if isinstance(public_stats, dict):
+            for key, board_key in (
+                    ("city_count", "cities"),
+                    ("population", "population"),
+                    ("wonder_count", "wonder_count"),
+                    ("suzerain_count", "suzerain_count"),
+                    ("nuclear_devices", "nuclear_devices"),
+                    ("thermonuclear_devices", "thermonuclear_devices")):
+                want = public_stats.get(key)
+                got = player.get(board_key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
+                    label = "cities" if key == "city_count" else key
+                    mismatches.append(
+                        f"seat {seat} {label} Civ6={want:g} CIVVIS={got!r}"
+                    )
+            player_yields = player.get("yields") or {}
+            for key in ("food", "production"):
+                want = public_stats.get(key)
+                got = player_yields.get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    mismatches.append(
+                        f"seat {seat} {key}/turn Civ6={want:g} CIVVIS={got!r}"
+                    )
+        # A rival's per-turn Science and Culture and its treasury cross the
+        # bridge too (the host reads them for every player, as its World
+        # Rankings does); the board carries them the same way as seat 0's, so
+        # a rival seat must agree to the rounding as well. Seat 0's own are
+        # compared below from the state's top-level fields.
+        if seat > 0:
+            rival_yields = player.get("yields") or {}
+            for key in ("science", "culture", "faith_per_turn"):
+                want = source.get(key)
+                board_key = "faith" if key == "faith_per_turn" else key
+                got = rival_yields.get(board_key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    label = "faith" if key == "faith_per_turn" else key
+                    mismatches.append(f"seat {seat} {label}/turn Civ6={want:g} CIVVIS={got!r}")
+            for key in ("gold", "faith"):
+                want = source.get(key)
+                got = player.get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+            # Gold per turn is a rate, and unlike the treasury can genuinely
+            # be negative. The rival wire has historically used a finite
+            # sentinel when the host refuses the query, so compare every
+            # finite value exactly as the mirror maps it.
+            want = source.get("gold_per_turn")
+            got = player.get("gold_per_turn")
+            if isinstance(want, (int, float)) and math.isfinite(want) \
+                    and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                mismatches.append(f"seat {seat} gold/turn Civ6={want:g} CIVVIS={got!r}")
+            for key, victory in (("techs", "science"), ("civics", "culture")):
+                want = source.get(key)
+                got = ((player.get("victories") or {}).get(victory) or {}).get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
+                    mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+            want = source.get("tourism")
+            got = player.get("tourism_per_turn")
+            if isinstance(want, (int, float)) and want >= 0 \
+                    and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                mismatches.append(
+                    f"seat {seat} tourism/turn Civ6={want:g} CIVVIS={got!r}"
+                )
 
     ours = players.get(0, {})
     yields = ours.get("yields") or {}
@@ -369,12 +470,28 @@ def public_fact_mismatches(state, board):
         if isinstance(want, (int, float)) and want > 0 \
                 and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
             mismatches.append(f"seat 0 {key}/turn Civ6={want:g} CIVVIS={got!r}")
+    # Faith per turn is a RATE like science and culture, and it is NOT the
+    # sum of the cities: the host pays the Great Person points of a class the
+    # empire can no longer earn out as Faith (run civvis-20260816T123936Z: 100+
+    # a turn banked against 49 from every city together). The mod exports it
+    # from `GetReligion():GetFaithYield()`; an older export has no key, and a
+    # missing answer is `null` — neither is a disagreement.
+    want = state.get("faith_per_turn")
+    got = yields.get("faith")
+    if isinstance(want, (int, float)) and want >= 0 \
+            and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+        mismatches.append(f"seat 0 faith/turn Civ6={want:g} CIVVIS={got!r}")
     for key in ("gold", "faith"):
         want = state.get(key)
         got = ours.get(key)
         if isinstance(want, (int, float)) and want >= 0 \
                 and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
             mismatches.append(f"seat 0 {key} Civ6={want:g} CIVVIS={got!r}")
+    want = state.get("gold_per_turn")
+    got = ours.get("gold_per_turn")
+    if isinstance(want, (int, float)) and math.isfinite(want) \
+            and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+        mismatches.append(f"seat 0 gold/turn Civ6={want:g} CIVVIS={got!r}")
     capacity = state.get("trade_capacity")
     mirrored_capacity = (board.get("me") or {}).get("trade_capacity")
     if isinstance(capacity, (int, float)) and capacity >= 0 \
@@ -1220,7 +1337,7 @@ def main(argv=None):
         problems.append("public facts")
         print("PUBLIC   ⚠ " + "; ".join(public_mismatches))
     else:
-        print("PUBLIC   score, military, treasury, faith, science and culture   OK")
+        print("PUBLIC   HUD identity, totals, military, economy, research and tourism   OK")
 
     civ6_cities = {(c["x"], c["y"]) for c in state.get("cities") or []}
     board_cities = {tuple(c["pos"]) for c in board.get("cities", [])

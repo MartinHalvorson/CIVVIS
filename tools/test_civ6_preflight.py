@@ -133,3 +133,31 @@ class BundleSignatureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissingInstalledFileTest(unittest.TestCase):
+    """A file the harness will install at attempt start must not fail preflight.
+
+    Failing it is a chicken-and-egg that halts the ladder: only an attempt
+    installs the file, and a fail refuses every attempt (measured 2026-08-16,
+    four instant no-turn failures over two newly merged test scripts)."""
+
+    def test_a_missing_installed_file_warns_instead_of_failing(self) -> None:
+        import io
+        import tempfile
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "mod"
+            installed = Path(tmp) / "installed"
+            mod.mkdir()
+            installed.mkdir()
+            (mod / "present.lua").write_text("print('ok')\n")
+            (mod / "fresh_from_main.lua").write_text("print('new')\n")
+            (installed / "present.lua").write_text("print('ok')\n")
+            report = civ6_preflight.Report()
+            with mock.patch.object(civ6_preflight, "MOD", mod), \
+                 mock.patch.object(civ6_preflight, "INSTALLED", installed), \
+                 redirect_stdout(io.StringIO()):
+                civ6_preflight.check_installed(report)
+            self.assertEqual(report.failures, [])
+            self.assertTrue(any("fresh_from_main.lua" in w for w in report.warnings))
