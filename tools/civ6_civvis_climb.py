@@ -1093,6 +1093,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--civvis-strategy", args.strategy]
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
+        + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
@@ -1149,6 +1150,10 @@ def main() -> int:
                          "defaults to 0 for a pinned batch of more than one "
                          "attempt and to the brain's live-upgrade cadence "
                          "otherwise (see batch_refresh_seconds)")
+    ap.add_argument("--no-peace-deterrence", action="store_true", default=False,
+                    help="withhold the fallback ladder's peacetime deterrence "
+                         "for this batch — the control arm of the Lua army "
+                         "target's met-major lift")
     ap.add_argument("--campus-specialist", action="store_true", default=False,
                     help="move one citizen into a Campus specialist slot where a Library "
                          "already stands; read the outcome from civvis_campus_specialist")

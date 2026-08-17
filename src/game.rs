@@ -47607,7 +47607,7 @@ impl Game {
         // citizen strategy, then turn processing asks for both again to apply
         // growth. Keep those immutable answers in one memo scope before any
         // city state changes make them stale.
-        let (mut ys, housing, am) = {
+        let (ys, housing, am) = {
             let _memo = self.query_memo();
             (
                 self.city_yields(cid),
