@@ -1332,6 +1332,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The bounded Envoy liquidity reserve is reached only through `bank_envoys`,
 /// false in `AdvancedAi::legacy()`. Compatibility re-pin; the Elo protocol
 /// does not move.
+/// A campaign-target Suzerain cannot make the peace needed for an Envoy
+/// reclaim, so it no longer inflates that live-only liquidity reserve.
+/// Compatibility re-pin; the Elo protocol does not move.
 /// The developed-city-state contact sweep's third Scout stays behind
 /// `recon_replacement`, false in `AdvancedAi::legacy()`. Compatibility re-pin;
 /// the Elo protocol does not move.
@@ -1339,7 +1342,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
 /// native boards carry no such list and are unchanged. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa642_7097_dd90_2cf1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2f40_46d4_47d7_effc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

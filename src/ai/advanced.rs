@@ -12639,6 +12639,21 @@ impl AdvancedAi {
         if !self.bank_envoys {
             return 0;
         }
+        // A campaign that names the hostile Suzerain deliberately keeps that
+        // war: `banked_envoy_reclaim_after_peace` will not offer it away just
+        // to reclaim the city-state. Such a minor cannot justify holding more
+        // than the ordinary discovery reserve. Keep this eligibility check
+        // local, alongside the other reserve-specific checks, rather than
+        // weakening the campaign-protection contract in the peace helper.
+        let campaign_owns_suzerain = |suzerain| {
+            self.plan
+                .as_ref()
+                .is_some_and(|plan| plan.target_player == Some(suzerain))
+                || self
+                    .war_plan
+                    .as_ref()
+                    .is_some_and(|war| war.target_player == suzerain)
+        };
         let reclaim = g
             .players
             .iter()
@@ -12662,6 +12677,7 @@ impl AdvancedAi {
                     || owner.is_minor
                     || owner.is_barbarian
                     || owner.is_free_city
+                    || campaign_owns_suzerain(suzerain)
                 {
                     return None;
                 }
@@ -40915,6 +40931,63 @@ mod tests {
             live.banked_envoy_liquidity_reserve(&game, 0),
             9,
             "the concrete reclaim price outranks the ordinary six-Envoy reserve"
+        );
+    }
+
+    #[test]
+    fn live_envoy_bank_spends_past_the_reserve_for_an_active_campaigns_suzerain() {
+        // A derived-war reclaim only pays after peace with its Suzerain. When
+        // that Suzerain is the active campaign target, peace is deliberately
+        // unavailable, so its nine-Envoy price must not become an inert pool.
+        let mut game = Game::new_full(2, 24, 16, 4_247, 120, 2, false);
+        let minors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert!(minors.len() >= 2, "the fixture needs two city-states");
+        let hostile_minor = minors[0];
+        let safe_minor = minors[1];
+        game.record_contact(0, 1);
+        for minor in &minors {
+            game.record_contact(0, *minor);
+        }
+        game.players[0].envoys = vec![(safe_minor, 8)];
+        game.players[1].envoys = vec![(hostile_minor, 8)];
+        game.players[0].envoys_free = 10;
+        game.players[safe_minor].civ = "Cahokia".to_string();
+        game.at_war.insert((0, 1));
+        assert_eq!(game.suzerain_of(hostile_minor), Some(1));
+        assert!(game.is_at_war(0, hostile_minor));
+
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        assert_eq!(
+            live.banked_envoy_liquidity_reserve(&game, 0),
+            BANKED_ENVOY_LIQUIDITY_RESERVE,
+            "an active campaign cannot promise the peace required for this reclaim"
+        );
+
+        live.advanced_envoys(&mut game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            game.players[0].envoys_free,
+            BANKED_ENVOY_LIQUIDITY_RESERVE,
+            "Envoys above the real discovery reserve must be invested"
+        );
+        assert_eq!(
+            game.envoys_at(0, safe_minor),
+            12,
+            "the four formerly unreachable Envoys reinforce a met city-state"
         );
     }
 
