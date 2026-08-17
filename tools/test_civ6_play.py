@@ -59,6 +59,21 @@ class Civ6PlayTest(unittest.TestCase):
             "ctx": "agent", "kind": "seat"
         }))
 
+    def test_only_a_live_board_can_end_a_missing_intro_probe(self) -> None:
+        """The intro modal may coexist with the agent's early lifecycle events."""
+        self.assertFalse(civ6_play.board_event_proves_intro_is_gone({
+            "ctx": "agent", "kind": "loaded"
+        }))
+        self.assertFalse(civ6_play.board_event_proves_intro_is_gone({
+            "ctx": "agent", "kind": "seat"
+        }))
+        self.assertTrue(civ6_play.board_event_proves_intro_is_gone({
+            "ctx": "agent", "kind": "state", "turn": 1
+        }))
+        self.assertTrue(civ6_play.board_event_proves_intro_is_gone({
+            "ctx": "agent", "kind": "turn", "turn": 1
+        }))
+
     @staticmethod
     def _fake_clock():
         """A clock that only moves when the code under test sleeps.
@@ -290,6 +305,30 @@ class Civ6PlayTest(unittest.TestCase):
             864 + int(864 * civ6_play.LEADER_INTRO_BEGIN[0]),
             33 + int(542 * civ6_play.LEADER_INTRO_BEGIN[1]),
         )
+
+    def test_leader_intro_stops_probing_once_the_board_is_confirmed(self) -> None:
+        """A map state is safe to trust only after the screen rejected the card."""
+        bounds = (864, 33, 864, 542)
+        ready = iter([False, True])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False), \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            self.assertFalse(
+                civ6_play.advance_leader_intro(
+                    bounds, "LEADER_TRAJAN", Path(temporary), 2,
+                    retries=4, board_ready=lambda: next(ready),
+                )
+            )
+
+        self.assertEqual(
+            screenshot.call_args_list,
+            [
+                call(Path(temporary) / "leader-intro-attempt2-0.png"),
+                call(Path(temporary) / "leader-intro-attempt2-1.png"),
+            ],
+        )
+        sleep.assert_called_once_with(1.0)
 
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \

@@ -426,6 +426,14 @@ const SUZERAIN_PRIZE: i64 = 180;
 /// narrow suzerainty remains more valuable than this cap.
 const UNCONTESTED_POST_TIER_ENVOY_PENALTY: i64 = 300;
 
+/// Keep a small, spendable Envoy reserve for the city-states exploration will
+/// uncover. First contact supplies one Envoy at the city-state, so six held
+/// tokens can still make three ordinary three-Envoy suzerainty bids. Above
+/// this reserve, a negative marginal score is not a reason to let dozens of
+/// Envoys become inert; the excess reinforces the best available city-state.
+/// A concrete derived-war reclaim can reserve more than this exact floor.
+const BANKED_ENVOY_LIQUIDITY_RESERVE: i64 = 6;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -2460,8 +2468,9 @@ pub struct AdvancedAi {
     /// first-meet envoy is already standing there) can be taken outright. The
     /// same deliberately idle pool may also ask a non-objective hostile
     /// Suzerain for peace when that immediately makes one of its city-states
-    /// available to take. A rival bidding a held suzerainty back up makes the
-    /// defence positive again, so held city-states are still defended.
+    /// available to take. Its liquidity reserve is bounded, so a discovery
+    /// fund cannot grow into fifty idle Envoys; a rival bidding a held
+    /// suzerainty back up also makes the defence positive again.
     /// Bridge-only (`civvis_orders` sets it); off for ordinary and frozen
     /// controllers.
     pub bank_envoys: bool,
@@ -12618,6 +12627,65 @@ impl AdvancedAi {
         }
     }
 
+    /// The live bank is a reserve for discovery, not an unlimited vault. Keep
+    /// its normal floor small, but preserve the exact price of the cheapest
+    /// city-state that a negotiated Suzerain peace could immediately reclaim.
+    ///
+    /// Production and Envoy allocation run before diplomacy, so the pool must
+    /// retain the option until that pass decides whether the peace is
+    /// acceptable. Keep this check local: the recently shipped peace helper is
+    /// deliberately left intact rather than mechanically refactored here.
+    fn banked_envoy_liquidity_reserve(&self, g: &Game, pid: usize) -> i64 {
+        if !self.bank_envoys {
+            return 0;
+        }
+        let reclaim = g
+            .players
+            .iter()
+            .filter_map(|minor| {
+                if !minor.alive
+                    || !minor.is_minor
+                    || minor.is_barbarian
+                    || minor.is_free_city
+                    || !g.has_met(pid, minor.id)
+                    || !g.is_at_war(pid, minor.id)
+                    || g
+                        .at_war
+                        .contains(&(pid.min(minor.id), pid.max(minor.id)))
+                {
+                    return None;
+                }
+                let suzerain = g.suzerain_of(minor.id)?;
+                let owner = g.players.get(suzerain)?;
+                if suzerain == pid
+                    || !owner.alive
+                    || owner.is_minor
+                    || owner.is_barbarian
+                    || owner.is_free_city
+                {
+                    return None;
+                }
+                let ours = g.envoys_at(pid, minor.id);
+                let rival = g
+                    .players
+                    .iter()
+                    .filter(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && !player.is_free_city
+                    })
+                    .map(|player| g.envoys_at(player.id, minor.id))
+                    .max()
+                    .unwrap_or_default();
+                Some((3_i64.max(rival.saturating_add(1)) - ours).max(1))
+            })
+            .min()
+            .unwrap_or_default();
+        BANKED_ENVOY_LIQUIDITY_RESERVE.max(reclaim)
+    }
+
     fn advanced_envoys(
         &self,
         g: &mut Game,
@@ -12625,6 +12693,7 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         denied_rival: Option<usize>,
     ) {
+        let liquidity_reserve = self.banked_envoy_liquidity_reserve(g, pid);
         while g.players[pid].envoys_free > 0 {
             let target = g
                 .players
@@ -12736,15 +12805,21 @@ impl AdvancedAi {
                 .max()
                 .map(|(score, _, _, id)| (id, score));
             let Some((target, score)) = target else { break };
-            // See `bank_envoys`: nothing on the board is worth an envoy, so the
-            // held ones wait for the next city-state met.
-            if self.bank_envoys && score < 0 {
+            // See `bank_envoys`: retain the bounded discovery/reclaim reserve
+            // once nothing on the board is worth an Envoy. Any surplus has a
+            // productive opportunity cost, so it reinforces the best available
+            // city-state instead of accumulating indefinitely.
+            if self.bank_envoys
+                && score < 0
+                && g.players[pid].envoys_free <= liquidity_reserve
+            {
                 think!(self.journal(), Diplomacy, Decision,
                        "Banking {} envoy{}", g.players[pid].envoys_free,
                        if g.players[pid].envoys_free == 1 { "" } else { "s" };
                        "the best placement left is {} at {score}: every met city-state is \
                         either securely ours past its paying tier or contested beyond its \
-                        worth, so the next city-state met gets them",
+                        worth, so this {liquidity_reserve}-Envoy reserve stays ready for the \
+                        next discovery or immediate reclaim",
                        g.players[target].civ);
                 break;
             }
@@ -40763,6 +40838,84 @@ mod tests {
             fresh_game.players[0].envoys
         );
         assert_eq!(fresh_game.players[0].envoys_free, 0);
+    }
+
+    #[test]
+    fn live_envoy_bank_invests_the_pool_above_its_liquidity_reserve() {
+        // The live historical failure was 50–80 Envoys held after every met
+        // city-state was safely ours. Preserve a discovery-sized reserve, but
+        // make the rest reinforce a real city-state rather than remaining an
+        // unbounded zero-yield balance.
+        let mut game = Game::new(2, 24, 16, 4_245, 80, 2);
+        let minors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert!(minors.len() >= 2, "the fixture needs two city-states");
+        for minor in &minors {
+            game.record_contact(0, *minor);
+        }
+        game.players[0].envoys = minors.iter().map(|minor| (*minor, 8)).collect();
+        game.players[0].envoys_free = BANKED_ENVOY_LIQUIDITY_RESERVE + 4;
+
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        assert_eq!(
+            live.banked_envoy_liquidity_reserve(&game, 0),
+            BANKED_ENVOY_LIQUIDITY_RESERVE,
+            "no derived-war city-state needs a larger reclaim reserve"
+        );
+        live.advanced_envoys(&mut game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            game.players[0].envoys_free,
+            BANKED_ENVOY_LIQUIDITY_RESERVE,
+            "only the bounded discovery reserve remains idle"
+        );
+        assert_eq!(
+            game.players[0]
+                .envoys
+                .iter()
+                .map(|(_, count)| *count)
+                .sum::<i64>(),
+            8 * minors.len() as i64 + 4,
+            "every Envoy above the reserve was invested in a city-state"
+        );
+    }
+
+    #[test]
+    fn live_envoy_bank_keeps_the_price_of_a_derived_war_reclaim() {
+        // Do not cap away the concrete use that the bank already supports:
+        // after peace with this hostile Suzerain, nine Envoys immediately
+        // reclaim its city-state. That price legitimately exceeds the normal
+        // discovery reserve.
+        let mut game = Game::new_full(2, 24, 16, 4_246, 120, 1, false);
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture needs a city-state");
+        game.record_contact(0, 1);
+        game.record_contact(0, minor);
+        game.players[0].envoys.clear();
+        game.players[1].envoys = vec![(minor, 8)];
+        game.at_war.insert((0, 1));
+        assert_eq!(game.suzerain_of(minor), Some(1));
+        assert!(game.is_at_war(0, minor));
+        assert!(
+            !game.at_war.contains(&(0, minor)),
+            "the city-state war is derived from the hostile Suzerain"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        assert_eq!(
+            live.banked_envoy_liquidity_reserve(&game, 0),
+            9,
+            "the concrete reclaim price outranks the ordinary six-Envoy reserve"
+        );
     }
 
     #[test]
