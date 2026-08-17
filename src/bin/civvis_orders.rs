@@ -1137,13 +1137,20 @@ fn bound_envoy_orders(orders: Vec<Order>) -> (Vec<Order>, usize) {
 struct GreatPersonStall {
     on_cooldown: usize,
     no_activation_plot: usize,
+    /// Slot-consuming people (Writers, Artists, Musicians) the host says have
+    /// ZERO compatible empty Great Work slots anywhere. Their highlight plots
+    /// still list the district, so before this counter existed they sat in
+    /// `on_cooldown` forever — seven of them, thirty-plus turns, on run
+    /// civvis-20260817T010950Z. This bucket is a build order the mirror's
+    /// needs machinery is already placing, not a wait.
+    no_empty_slot: usize,
     /// Founded zero-charge Prophets sent for retirement this frame.
     retired_prophets: usize,
 }
 
 impl GreatPersonStall {
     fn total(self) -> usize {
-        self.on_cooldown + self.no_activation_plot
+        self.on_cooldown + self.no_activation_plot + self.no_empty_slot
     }
 }
 
@@ -1193,6 +1200,15 @@ fn great_person_orders(
                 verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
                 pos: None,
             });
+            continue;
+        }
+        // Zero compatible empty slots empire-wide is not a cooldown and not a
+        // marching problem: nothing this unit can do fixes it, and walking to
+        // a highlighted-but-full district is motion without progress. Stand
+        // still and let the mirror's activation-needs machinery build the
+        // capacity (the host counts the slots itself; see `empty_slots`).
+        if person.empty_slots == Some(0) {
+            stall.no_empty_slot += 1;
             continue;
         }
         // A command that just resolved can remain unavailable for the rest of
@@ -2175,10 +2191,11 @@ fn decide(
         // split alongside: one of these two numbers is a cooldown frame and the
         // other is a Great Person the empire cannot use at all.
         note_bits.push(format!(
-            "great_people_without_activation_target={} (cooldown={} no_plot={})",
+            "great_people_without_activation_target={} (cooldown={} no_plot={} no_empty_slot={})",
             great_person_stall.total(),
             great_person_stall.on_cooldown,
             great_person_stall.no_activation_plot,
+            great_person_stall.no_empty_slot,
         ));
     }
 
@@ -5449,6 +5466,93 @@ mod tests {
         assert_eq!(orders[1].subject, Some(71));
         assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
         assert_eq!(orders[1].pos, Some((11, 12)));
+    }
+
+    /// Seven cultural people stood on one Theater plot for thirty-plus turns
+    /// on run civvis-20260817T010950Z: `GetActivationHighlightPlots` lists the
+    /// district whether or not a compatible Great Work slot is free, so the
+    /// cooldown branch swallowed them forever and no one built the slots.
+    /// With the host's own empty-slot count, a slot-starved person stands
+    /// still under an explicit counter — and never marches to a full building.
+    #[test]
+    fn a_person_with_no_empty_slot_anywhere_stalls_explicitly_not_as_cooldown() {
+        let on_plot = StateActivationPlot { x: 25, y: 23, distance: 0 };
+        let far_plot = StateActivationPlot { x: 30, y: 20, distance: 7 };
+        let state = StateSnapshot {
+            units: vec![
+                // Standing on the highlighted Theater, zero writing slots free.
+                StateUnit {
+                    id: 80,
+                    kind: "UNIT_GREAT_WRITER".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(0),
+                        activation_plots: vec![on_plot.clone(), far_plot.clone()],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                // Slot-starved and NOT on a plot: marching cannot help either.
+                StateUnit {
+                    id: 81,
+                    kind: "UNIT_GREAT_ARTIST".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(0),
+                        activation_plots: vec![far_plot],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                // Slots exist: standing on the plot is the benign cooldown
+                // frame, exactly as before this field existed.
+                StateUnit {
+                    id: 82,
+                    kind: "UNIT_GREAT_MUSICIAN".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        empty_slots: Some(2),
+                        activation_plots: vec![on_plot],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert!(
+            orders.is_empty(),
+            "no order helps a slot-starved person, and a cooldown is a wait \
+             ({} issued)",
+            orders.len()
+        );
+        assert_eq!(stall.no_empty_slot, 2);
+        assert_eq!(stall.on_cooldown, 1);
+        assert_eq!(stall.no_activation_plot, 0);
+        assert_eq!(stall.total(), 3);
+    }
+
+    /// The host answering `can_activate` outranks its slot arithmetic: if the
+    /// engine will take Activate here and now, press it.
+    #[test]
+    fn can_activate_outranks_a_zero_slot_count() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 83,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    can_activate: true,
+                    empty_slots: Some(0),
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let (orders, stall) = great_person_orders(&state);
+        assert_eq!(stall.total(), 0);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
     }
 
     #[test]
