@@ -3254,6 +3254,16 @@ impl AdvancedAi {
         // consumed by whichever rival reaches it first. Carry it on its own
         // flag; `advanced_without_hut_collection` prices the withhold.
         ai.base.hut_collection = true;
+        // Committed exploration goals, chosen for reveal value and held until
+        // reached or written off, instead of re-deriving the nearest fringe
+        // every turn. Measured on the live-bridge configuration
+        // (`explore_commit_sweeps_more_ground`, 16 six-seat Continents boards
+        // at the live size): revealed plots at t30/t50/t70 208/333/474
+        // against 181/284/384 (+15%/+17%/+23%). The bridge has run it since
+        // #1769; native production adopts the same rule so the league plays
+        // the agent the bridge deploys. `advanced_without_explore_commit`
+        // prices the withhold.
+        ai.base.explore_commit = true;
         ai
     }
 
@@ -3827,6 +3837,13 @@ impl AdvancedAi {
     /// `advanced_without_hut_collection` can price it.
     pub fn disable_hut_collection(&mut self) {
         self.base.hut_collection = false;
+    }
+
+    /// Withhold the committed exploration goal that production Advanced
+    /// carries by default (see `BasicAi::explore_commit`), so the evaluator
+    /// arm `advanced_without_explore_commit` can price it.
+    pub fn disable_explore_commit(&mut self) {
+        self.base.explore_commit = false;
     }
 
     /// Let a unit retain its campaign objective and a short, threat-driven
@@ -29463,6 +29480,11 @@ mod tests {
                 frozen.base.hut_collection,
                 production.base.hut_collection,
             ),
+            (
+                "explore_commit",
+                frozen.base.explore_commit,
+                production.base.explore_commit,
+            ),
         ] {
             assert!(
                 !on_anchor,
@@ -41846,12 +41868,14 @@ mod tests {
             g.players[0].envoys_free = 3;
         };
 
-        // Bridge-only: neither the stock nor the frozen controller carries
-        // either of the two bridge flags this PR added.
+        // `bank_envoys` stays bridge-only. `explore_commit` was bridge-only
+        // when this PR added it and was promoted into production later (see
+        // `promoted_policy_envoy`); the frozen anchor still never carries it.
         for controller in [AdvancedAi::new(), AdvancedAi::legacy()] {
             assert!(!controller.bank_envoys);
-            assert!(!controller.base.explore_commit);
         }
+        assert!(AdvancedAi::new().base.explore_commit);
+        assert!(!AdvancedAi::legacy().base.explore_commit);
 
         let (mut stock_game, minors) = board();
         secure_everything(&mut stock_game, &minors);
