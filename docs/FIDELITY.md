@@ -880,6 +880,35 @@ district completed, then moved it. The tiles export now carries `dc`
 `apply_foreign_infrastructure` plants only what is built; our own cities'
 records already carried completion.
 
+### Round 10: a district project's per-turn yield is a city yield (2026-08-16, run `civvis-20260816T223457Z`)
+
+Rome read 32.17 Gold against a model 25.20 for the three turns it ran
+Commercial Hub Investment (t112-114), Ravenna 14.17 against 11.70 — the
+host's ledger line is "+7.7 from Commercial Hub Investment", 30% of the
+city's Production rate (`Project_YieldConversions.PercentOfProductionRate`:
+Commercial Hub 30% Gold; Campus/Theater/Holy Site 15%; Encampment and
+Harbor 15% Gold), filed as a base line the Amenity band then scales. The
+engine already paid the conversion, but only inside turn processing; the
+city's yield never carried it, so every project turn read short. It is now
+computed in `city_yields_inner` from the finished Production rate, before
+the percentage sum, and turn processing adds nothing on top.
+
+**A city-state at war with the seat suspends its Envoy bonuses.** Ostia's
+"+2 from Consulate" Culture (Caguana, three Envoys) went to nothing the turn
+Caguana's new Suzerain brought it into a war against us (t90) and came back
+the turn peace was made (t98); Rome's capital point from the same city-state
+went and returned with it. `envoy_yields` now skips a city-state the seat is
+at war with — the mirror already carries `minors[].at_war` onto the board.
+
+**Exodus of the Evangelists pays +4 Great Prophet points a turn.** The
+player-level Faith block read the host 3.7–4.6 a turn over the model for
+t65-91: "+8 from excess Great Person points" against a model 3.45. Rome's
+Holy Site, Shrine and Temple make 3 a turn; the Golden Age dedication
+(`COMMEMORATION_RELIGIOUS_GA_GREAT_PROPHET_POINTS`, Amount 4) makes it 7,
+and Classical Republic's 15% makes it 8.05 — the host's 8.04. With the
+Prophet class exhausted every one of those points is Faith. Now in
+`great_person_points_per_turn`.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

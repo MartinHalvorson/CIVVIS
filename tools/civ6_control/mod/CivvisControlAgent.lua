@@ -11047,6 +11047,10 @@ local function tick()
 				return a.rtype < b.rtype;
 			end);
 			local cast, spent = 0, 0;
+			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
+			-- "claim" (A for us with the bank), "deny" (B against the leader
+			-- with the bank), "free" (the one free vote against the leader).
+			local mode = nil;
 			for _, entry in ipairs(list) do
 				local r, info, rtype = entry.r, entry.info, entry.rtype;
 				do
@@ -11080,6 +11084,39 @@ local function tick()
 								n = n + 1;
 							end
 						end
+						mode = (n > 1) and "deny" or "free";
+						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
+						--
+						-- The resolution's winner is the option with more votes, and
+						-- its target the player with the most votes ON that option.
+						-- Decoded `wc_outcome` rows (runs T205104Z, T223457Z): option
+						-- A ("+2 to the target") wins every session by 23–43 votes to
+						-- ≤15 because each rival votes A for ITSELF with 6–11 votes,
+						-- and the target is simply the rival with the biggest block —
+						-- so a B ballot against the leader changes nothing until the
+						-- rivals themselves turn on a leader at 17. Meanwhile our
+						-- Favor sat at 640–1441 unspent. Twelve votes (780 Favor on
+						-- the shipped ladder) beat every block seen; when the bank
+						-- affords that many, vote A with all of them targeting US: the
+						-- +2 lands on this seat and the leader gets nothing that
+						-- session. `DiploVictoryClaimVotes` is that bar; below it the
+						-- floor rule above stands.
+						local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;
+						local ourIdx = nil;
+						for idx, t in pairs(targets) do
+							if tonumber(t) == pid then ourIdx = idx; end
+						end
+						local affordable = 1;
+						while affordable + 1 <= maxVotes and costs[affordable] ~= nil
+						      and costs[affordable] <= favor do
+							affordable = affordable + 1;
+						end
+						if ourIdx ~= nil and affordable >= claim then
+							option = 1;
+							selection = ourIdx;
+							n = affordable;
+							mode = "claim";
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;
@@ -11106,7 +11143,7 @@ local function tick()
 			pcall(function()
 				UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {});
 			end);
-			return cast, spent, nil, leader, leaderPoints, leaderScore;
+			return cast, spent, nil, leader, leaderPoints, leaderScore, mode;
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
@@ -11152,13 +11189,13 @@ local function tick()
 				return r and r.Stage or nil;
 			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
-			local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(ballotPid);
+			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
 			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
 			                  why = why, leader = leader,
 			                  leader_points = leaderPoints,
 			                  leader_score = leaderScore, source = trigger,
-			                  stage = stage, favor_before = before });
+			                  stage = stage, favor_before = before, mode = mode });
 		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
@@ -11401,11 +11438,12 @@ local function tick()
 								                  why = "cast_at_stage1", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
-								local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
+								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
 								emit("wc_vote", { turn = turn, cast = cast, spent = spent,
 								                  why = why, leader = leader,
 								                  leader_points = leaderPoints,
-								                  leader_score = leaderScore, source = "blocker" });
+								                  leader_score = leaderScore, source = "blocker",
+								                  mode = mode });
 							end
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;

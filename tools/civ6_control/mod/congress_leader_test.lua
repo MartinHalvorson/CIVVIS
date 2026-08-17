@@ -83,7 +83,7 @@ check("world congress calls tested selector",
 check("world congress samples DVP in the vote handler",
 	src:find("GetDiplomaticVictoryPoints()", 1, true) ~= nil, true)
 check("world congress returns selected score",
-	src:find("return cast, spent, nil, leader, leaderPoints, leaderScore;", 1, true) ~= nil,
+	src:find("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", 1, true) ~= nil,
 	true)
 check("world congress telemetry records score",
 	src:find("leader_score = leaderScore", 1, true) ~= nil, true)
