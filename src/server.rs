@@ -6972,7 +6972,10 @@ mod tests {
         let boot = EMBEDDED_INDEX
             .rfind("\nboot();")
             .expect("the viewer starts boot from app.js");
-        assert!(boot < deferred_init, "the second script follows boot's first await");
+        assert!(
+            boot < deferred_init,
+            "the second script follows boot's first await"
+        );
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
         const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
