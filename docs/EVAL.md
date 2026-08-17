@@ -10207,3 +10207,36 @@ the internal engine, not a strength claim and not a host result. Moving the
 ladder's default is a separate decision needing a pre-registered live batch on
 disjoint seeds; what this establishes is that three lanes are now worth spending
 ladder attempts on and one demonstrably is not.
+
+## The civilian snatch prices as a null; the arm was not kept (2026-08-17)
+
+The strategic-scouting axis's aggression item: declare a surprise war on a
+rival whose Settler or Builder stands beside this seat's military with
+movement left, so the ordinary capture pass takes it the same turn. Guards:
+first `standard_duration(100)` turns only, victim visible now, rival military
+power not above ours, one declaration per turn. Implemented and measured as
+entrant `advanced_civilian_snatch` in **PR #1864 (closed unmerged; the
+implementation is preserved at `refs/pull/1864/head`)**.
+
+`ai_eval advanced_civilian_snatch advanced`, 6p 74×46, 9 city-states, online,
+250 turns:
+
+| pairs / seed | paired | Elo (CI) | terminal direction |
+|---|---|---|---|
+| 20 / 80000000 | 42.5% | −53 (−202..+97) | 8/11, p=0.65 |
+| 60 / 90000000 (disjoint) | 52.5% | +17 (−70..+104) | 22/29, p=0.40 |
+| **pooled 80** | **50.0%** | ~0 | 30/40 |
+
+The mechanism itself works (a focused test in the PR declares and captures
+the same turn, and declines a stronger rival), and the immediate-convert and
+power-parity guards bound the cost the war-trap ledger predicts — but the
+snatch arm still ran conquest↔recovery strategy transitions at 288 against
+the control's 186 over 60 seats, because `at_war → Conquest` locks the grand
+strategy regardless of how bounded the war's purpose was. The prize does not
+pay for that churn: a clean null on both seeds. The arm was closed rather
+than carried, per the measured-null pruning line (#1838).
+
+**If the axis is re-opened, the lever is not a wider snatch.** It is a war
+gate keyed on conversion (damage dealt, walls down, captures) rather than
+military power, so a war whose one objective is already converted can release
+the grand strategy back to the economic branches.
