@@ -5567,6 +5567,71 @@ local function exportState(player, pid, turn)
 		};
 	end);
 
+	-- Empty Great Work slots by the object type they accept, empire-wide.
+	-- `GetActivationHighlightPlots` highlights a cultural person's district
+	-- whether or not a compatible slot is free, so seven people stood on one
+	-- Theater plot for thirty-plus turns on run civvis-20260817T010950Z with
+	-- `can_activate` false and the needs machinery blind to them — the plot
+	-- list was non-empty, so nothing ever asked the empire to build slots.
+	-- Counting the empty slots is the honest question: a Writer with zero
+	-- empty writing slots anywhere is blocked however many plots highlight.
+	-- `GreatWork_ValidSubTypes` is the game's own slot-accepts-object table
+	-- (it is what makes Palace slots accept all three kinds); if it or the
+	-- slot-type accessor is missing in this context the count stays nil and
+	-- the bridge keeps its old behaviour.
+	local emptySlotsByObject = nil;
+	do
+		local accepts = try(function()
+			local map = {};
+			for row in GameInfo.GreatWork_ValidSubTypes() do
+				local slotMap = map[row.GreatWorkSlotType] or {};
+				slotMap[row.GreatWorkObjectType] = true;
+				map[row.GreatWorkSlotType] = slotMap;
+			end
+			return map;
+		end, nil);
+		if accepts ~= nil and next(accepts) ~= nil then
+			emptySlotsByObject = {};
+			eachCity(player, function(city)
+				local blds = try(function() return city:GetBuildings(); end, nil);
+				if blds == nil then return; end
+				for buildingInfo in GameInfo.Buildings() do
+					if try(function() return blds:HasBuilding(buildingInfo.Index); end, false) then
+						local slots = try(function()
+							return blds:GetNumGreatWorkSlots(buildingInfo.Index);
+						end, 0) or 0;
+						for slot = 0, slots - 1 do
+							local occupied = try(function()
+								return blds:GetGreatWorkInSlot(buildingInfo.Index, slot);
+							end, -1);
+							if occupied == nil or occupied < 0 then
+								local slotType = try(function()
+									local index = blds:GetGreatWorkSlotType(
+										buildingInfo.Index, slot);
+									local row = GameInfo.GreatWorkSlotTypes[index];
+									return row and row.GreatWorkSlotType or nil;
+								end, nil);
+								for object in pairs((slotType ~= nil
+										and accepts[slotType]) or {}) do
+									emptySlotsByObject[object] =
+										(emptySlotsByObject[object] or 0) + 1;
+								end
+							end
+						end
+					end
+				end
+			end);
+		end
+	end
+	-- The work object each slot-consuming class creates. Classes absent here
+	-- (merchants, engineers, scientists, generals...) do not spend slots and
+	-- keep `empty_slots` nil.
+	local GP_CLASS_WORK_OBJECT = {
+		GREAT_PERSON_CLASS_WRITER = "GREAT_WORK_OBJECT_WRITING",
+		GREAT_PERSON_CLASS_ARTIST = "GREAT_WORK_OBJECT_ART",
+		GREAT_PERSON_CLASS_MUSICIAN = "GREAT_WORK_OBJECT_MUSIC",
+	};
+
 	local units = {};
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
@@ -5599,10 +5664,22 @@ local function exportState(player, pid, turn)
 			local class = try(function() return gp:GetClass(); end, -1);
 			local individualRow = GameInfo.GreatPersonIndividuals[individual];
 			local classRow = GameInfo.GreatPersonClasses[class];
+			-- How many empty slots the empire has that this person's work
+			-- fits. nil for classes that do not consume slots, and nil when
+			-- the slot tables were unreadable — never 0 by default, because
+			-- 0 is a claim ("build capacity") and nil is an absence.
+			local classType = classRow ~= nil and classRow.GreatPersonClassType or nil;
+			local workObject = classType ~= nil
+				and GP_CLASS_WORK_OBJECT[classType] or nil;
+			local emptySlots = nil;
+			if workObject ~= nil and emptySlotsByObject ~= nil then
+				emptySlots = emptySlotsByObject[workObject] or 0;
+			end
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
-				class = classRow ~= nil and classRow.GreatPersonClassType or nil,
+				class = classType,
+				empty_slots = emptySlots,
 				-- The timeline moves on as soon as this person is recruited, so the
 				-- current offer cannot tell the planner what district this physical
 				-- unit still needs. Carry the exact per-individual database gate.

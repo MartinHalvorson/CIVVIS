@@ -8358,6 +8358,13 @@ pub struct StateGreatPerson {
     pub can_activate: bool,
     #[serde(default)]
     pub activation_plots: Vec<StateActivationPlot>,
+    /// Empty Great Work slots anywhere in the empire that this person's work
+    /// fits, counted by the host through its own `GreatWork_ValidSubTypes`
+    /// table. `None` for classes that do not consume slots, and for exports
+    /// from a mod that could not read the slot tables — never a defaulted 0,
+    /// because 0 is a claim ("build capacity") and `None` is an absence.
+    #[serde(default)]
+    pub empty_slots: Option<u32>,
 }
 
 /// One currently recruitable entry in Firaxis's Great Person timeline.
@@ -9730,7 +9737,21 @@ fn apply_live_great_person_activation_needs(
         let Some(person) = unit.great_person.as_ref() else {
             continue;
         };
-        if person.can_activate || !person.activation_plots.is_empty() {
+        if person.can_activate {
+            continue;
+        }
+        // A non-empty plot list is only proof of a *place*, not of a use:
+        // `GetActivationHighlightPlots` highlights a cultural person's
+        // district whether or not a compatible Great Work slot is free.
+        // Seven Writers, Artists and Musicians stood on one Theater plot for
+        // thirty-plus turns on run civvis-20260817T010950Z, unactivatable,
+        // while this gate read their nine highlighted plots as "nothing to
+        // build". The host's own empty-slot count is the tiebreaker: zero
+        // compatible empty slots empire-wide is a need exactly as surely as
+        // no plot at all — including the moment a person's previous work
+        // fills the last slot, which is when the next building should start.
+        let slot_starved = person.empty_slots == Some(0);
+        if !person.activation_plots.is_empty() && !slot_starved {
             continue;
         }
         let kind = person
@@ -16686,6 +16707,7 @@ mod host_fact_tests {
                     charges: 1,
                     can_activate: false,
                     activation_plots: Vec::new(),
+                    empty_slots: None,
                 }),
                 ..StateUnit::default()
             }],
@@ -16717,6 +16739,61 @@ mod host_fact_tests {
             game.players[0].live_great_person_activation_needs.is_empty(),
             "a host-valid destination clears the production demand immediately"
         );
+    }
+
+    /// A highlighted plot is a *place*, not a *use*. Firaxis highlights a
+    /// cultural person's district whether or not a compatible Great Work slot
+    /// is free, so seven Writers/Artists/Musicians stood on one Theater plot
+    /// for thirty-plus turns on run civvis-20260817T010950Z while the old
+    /// plots-non-empty gate read them as needing nothing. The host's own
+    /// empty-slot count is the tiebreaker: zero compatible slots anywhere is
+    /// a production need exactly as surely as no plot at all.
+    #[test]
+    fn a_slot_starved_person_with_highlighted_plots_is_still_a_need() {
+        let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
+        let person = |empty_slots: Option<u32>, can_activate: bool| StateGreatPerson {
+            individual: Some("GREAT_PERSON_INDIVIDUAL_MARK_TWAIN".to_string()),
+            class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
+            required_district: None,
+            charges: 0,
+            can_activate,
+            activation_plots: vec![StateActivationPlot { x: 25, y: 23, distance: 0 }],
+            empty_slots,
+        };
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 90,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(person(Some(0), false)),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut unmapped = Vec::new();
+
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs.len(),
+            1,
+            "zero empty slots with highlighted plots is a need"
+        );
+        assert_eq!(game.players[0].live_great_person_activation_needs[0].kind, "writer");
+
+        // Slots free: the highlighted plot really is actionable — no need.
+        state.units[0].great_person = Some(person(Some(3), false));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
+
+        // An older mod that cannot count slots sends nothing: old behaviour,
+        // no need while plots are listed.
+        state.units[0].great_person = Some(person(None, false));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
+
+        // And the host saying "activate now" outranks its slot arithmetic.
+        state.units[0].great_person = Some(person(Some(0), true));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
     }
 
     /// The government HISTORY must reach the planner, so a return switch is
