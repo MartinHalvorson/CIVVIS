@@ -1,17 +1,30 @@
 import math
 import unittest
 
-from .action_conditioned_eval import Candidate, Dataset, Decision, DecisionKey, RAW_WIDTH
-from .action_policy_train import (
-    DEFAULT_MIN_PROBABILITY,
-    EvaluationError,
-    Policy,
-    evaluate,
-    fit,
-    make_pairs,
-    pair_target,
-    split_by_game,
-)
+try:
+    from action_conditioned_eval import Candidate, Dataset, Decision, DecisionKey, RAW_WIDTH
+    from action_policy_train import (
+        DEFAULT_MIN_PROBABILITY,
+        EvaluationError,
+        Policy,
+        evaluate,
+        fit,
+        make_pairs,
+        pair_target,
+        split_by_game,
+    )
+except ImportError:  # Package-style test invocation.
+    from .action_conditioned_eval import Candidate, Dataset, Decision, DecisionKey, RAW_WIDTH
+    from .action_policy_train import (
+        DEFAULT_MIN_PROBABILITY,
+        EvaluationError,
+        Policy,
+        evaluate,
+        fit,
+        make_pairs,
+        pair_target,
+        split_by_game,
+    )
 
 
 def decision(game: int, sibling_value: float = 1.0) -> Decision:
