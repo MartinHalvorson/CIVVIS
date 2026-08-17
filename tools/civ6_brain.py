@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -80,6 +81,10 @@ class LiveRuntime:
     revision: str
     binary: Path
     brain: Path
+
+
+def _utc_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class GitHubRuntimeUpdater:
@@ -223,6 +228,7 @@ class GitHubRuntimeUpdater:
                     print(f"[brain] GitHub runtime refresh failed; keeping the "
                           f"verified runtime: {detail}", flush=True)
                     self._last_error = detail
+            self._write_heartbeat()
             self._stop.wait(self.refresh_seconds)
 
     def start(self) -> None:
@@ -238,6 +244,34 @@ class GitHubRuntimeUpdater:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+
+    def heartbeat_path(self) -> Path:
+        return self.cache_root / "heartbeat.json"
+
+    def _write_heartbeat(self) -> None:
+        """One small file that says the watcher is alive and what it believes.
+
+        A refresh failure used to be a print line in a log nobody tails; a
+        fetch or build that kept failing left the game silently playing old
+        code with nothing to alarm on. The heartbeat is written every cycle,
+        success or failure, so `civ6_ladder.py check` can floor its age and
+        surface its last error — the same make-silence-loud contract as the
+        ladder's own staleness check.
+        """
+        try:
+            self.cache_root.mkdir(parents=True, exist_ok=True)
+            with self._lock:
+                payload = {
+                    "utc": _utc_stamp(),
+                    "current_revision": self._current_revision,
+                    "offered_revision": self._offered_revision,
+                    "last_error": self._last_error,
+                }
+            temporary = self.cache_root / f".heartbeat.{os.getpid()}.tmp"
+            temporary.write_text(json.dumps(payload, sort_keys=True) + "\n")
+            os.replace(temporary, self.heartbeat_path())
+        except OSError:
+            pass  # the heartbeat must never hurt the game it watches
 
     def take_ready(self) -> LiveRuntime | None:
         with self._lock:
@@ -673,6 +707,7 @@ def record_runtime_event(run_dir: Path, status: str, turn: int | None,
     payload = {
         "kind": "runtime_update",
         "status": status,
+        "utc": _utc_stamp(),
         "turn": turn,
         "from_revision": from_revision,
         "to_revision": runtime.revision,
@@ -843,6 +878,17 @@ def main() -> int:
         print(f"[brain] watching GitHub origin/main every "
               f"{args.github_refresh_seconds:g}s; verified builds publish from "
               f"{updater.cache_root}", flush=True)
+    if args.mode == "civvis" and binary is not None:
+        # The first row of runtime_updates.jsonl names the revision the run
+        # OPENED on, so a run with zero handoffs still records what code
+        # played it and the ledger can carry the whole revision history. A
+        # handoff re-execs this brain, whose fresh start writes the next
+        # start row with the new revision — consecutive duplicates are the
+        # reader's to collapse.
+        record_runtime_event(
+            run_dir, "start", None, None,
+            LiveRuntime(revision=runtime_revision or "unverified",
+                        binary=binary, brain=Path(__file__).resolve()))
 
     deadline = time.time() + args.seconds
     offset = 0

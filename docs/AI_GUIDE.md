@@ -73,15 +73,15 @@ the deterministic lightweight agent used by city-states and barbarians. All
 three read full state (cheat on fog); fair-play agents should restrict
 themselves to `civvis::obs::observation(&game, pid)`.
 
-### Policy and envoy production default (2026-08-01)
+### Policy and envoy production default (2026-08-17)
 
-`advanced` now includes the independently confirmed three-part policy/envoy
-composite: `policy-deck-live`, `envoy-infrastructure`, and `envoy-priority`.
-The live deck re-evaluates available policy cards; the production route can
-reserve an idle adaptive city for the first legal, useful Diplomatic Quarter,
-Consulate, or Chancery stage. It still yields to an existing queue, Recovery,
-local danger, an active rush, and major war. The promotion does **not** include
-the separate `pol_influence` numerical weight.
+`advanced` retains the independently confirmed Live policy deck and the
+reachable `envoy-priority` reservation. The route can reserve an idle adaptive
+city for the first legal, useful Diplomatic Quarter, Consulate, or Chancery
+stage. It still yields to an existing queue, Recovery, local danger, an active
+rush, and major war. The promotion does **not** include the separate
+`pol_influence` numerical weight, and the measured-null `envoy-infrastructure`
+valuation term is now off in production.
 
 This was not inferred from favorable component results. The pre-registered
 `advanced_policy_envoy_priority` composite passed its independent matrix
@@ -93,7 +93,10 @@ e-process crossing the promotion threshold at map 42. See
 [`POLICY_ENVOY_COMPOSITE.md`](POLICY_ENVOY_COMPOSITE.md) for the pre-registration,
 discovery, and confirmation records, and
 [`POLICY_ENVOY_PROMOTION.md`](POLICY_ENVOY_PROMOTION.md) for the production
-boundary and compatibility checks.
+boundary and compatibility checks. The composite record is historical: its
+`envoy-infrastructure` component was subsequently confirmed null at 800 games
+and retired from the production constructor on 2026-08-17; the explicit
+evaluator arm remains available.
 
 The historical composite name remains selectable only as an exact alias of
 `advanced`, so an evaluator reports it as self-play instead of quietly testing
@@ -652,10 +655,20 @@ roster keeps `strategic` as an offline-only anchor.
 - Keep `random` in the pool as a sanity floor.
 - `soak` flags anomalies (no tech progress, minor winners) across seeds.
 
+### 2026-08-17 cleanup status
+
+The historical composite still explains the 2026-08-01 promotion, but the
+current production controller is Live policy plus `envoy-priority`. The
+`envoy-infrastructure` valuation and `bounded_recovery` repair both remain
+reachable only through explicit evaluator/live-bridge constructors after null
+results (800 and 600 maps respectively). This is a production-work reduction,
+not a deletion of the controls or their evidence.
+
 ### 2026-08-01 full-prefix status
 
-The confirmed policy/envoy composite is production `advanced`; no other
-unconfirmed evaluator behavior is promoted by this change.
+The confirmed policy/envoy composite was production `advanced`; no other
+unconfirmed evaluator behavior was promoted by that change. The later cleanup
+above removed its measured-null infrastructure term.
 
 | comparison | matrix sample | compact | deployment | production consequence |
 |---|---:|---:|---:|---|
@@ -673,20 +686,21 @@ accepted, but the deployment profile was only 50.6% (+4 Elo-equivalent, 95%
 Wilson 45.0%..56.2%; 83 champion-favored versus 82 stock-favored map
 directions). It did not pass either required deployment strength check.
 
-Production `advanced` consequently remains the stock-weight, live-policy and
-envoy-production composite. The revised embedded snapshot remains an
-evaluator-only candidate; its positive compact result is not a deployment
-strength claim. The exact command and complete outcome are recorded in
+Production `advanced` consequently remained the stock-weight, live-policy and
+envoy-production composite at that historical point. The revised embedded
+snapshot remains an evaluator-only candidate; its positive compact result is
+not a deployment strength claim. The exact command and complete outcome are recorded in
 [`EVAL.md`](EVAL.md).
 
-The historical controls now mean the following relative to the promoted
-default: `advanced_policy_live_control` turns off both envoy-production
-mechanisms; `advanced_envoy_policy` also adds the previously excluded influence
-weight; `advanced_envoy_infrastructure` restores the Legacy deck and turns off
-priority; `advanced_envoy_priority` restores only the Legacy deck; and
-`advanced_envoy_economy` adds influence while turning off priority. This makes
-future mechanism checks explicit rather than allowing ordinary constructors to
-silently inherit the promoted behavior.
+The historical controls now mean the following relative to the cleaned
+default: `advanced_policy_live_control` turns off the retained priority
+reservation; `advanced_envoy_policy` also adds the previously excluded
+influence weight; `advanced_envoy_infrastructure` restores the Legacy deck,
+turns on the measured valuation, and turns off priority;
+`advanced_envoy_priority` restores the Legacy deck and valuation; and
+`advanced_envoy_economy` adds influence and valuation while turning off
+priority. This makes future mechanism checks explicit rather than allowing
+ordinary constructors to silently inherit the promoted behavior.
 
 Evaluator-only fallbacks now report what they actually build: champion-backed
 netless policy arms are `advanced_evolved`, and champion-backed netless neural

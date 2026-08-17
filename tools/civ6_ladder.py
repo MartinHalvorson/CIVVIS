@@ -242,6 +242,72 @@ def final_standing(events_path: Path) -> tuple[int, int] | None:
     return last
 
 
+def decider_revisions(updates_path: Path) -> list[str] | None:
+    """Ordered, consecutive-deduplicated revisions that decided this run.
+
+    The brain writes a `start` row when it opens and a `handoff` row each time
+    it re-execs onto a newer origin/main mid-game, so the file is the run's
+    whole code history. None when the file is absent (an older brain, or a
+    stock-mode run): absence must stay distinct from an empty history.
+    """
+    if not updates_path.is_file():
+        return None
+    revisions: list[str] = []
+    with updates_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("kind") != "runtime_update":
+                continue
+            if event.get("status") not in ("start", "handoff"):
+                continue
+            revision = event.get("to_revision")
+            if revision and (not revisions or revisions[-1] != revision):
+                revisions.append(revision)
+    return revisions or None
+
+
+def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
+                              now: datetime | None = None) -> str | None:
+    """Why the origin/main watcher is not provably alive, or None.
+
+    The watcher writes its heartbeat every refresh cycle, success or failure.
+    A machine that has never run the live loop has no cache directory and is
+    nobody's problem; a cache directory with a missing, stale, or erroring
+    heartbeat means the verification game may be silently playing old code —
+    the exact silence this check exists to make loud.
+    """
+    if not heartbeat.parent.is_dir():
+        return None
+    if not heartbeat.is_file():
+        return (f"the live-runtime watcher has no heartbeat at {heartbeat} "
+                f"(cache exists; the brain's updater is not running)")
+    try:
+        beat = json.loads(heartbeat.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"unreadable runtime heartbeat {heartbeat}: {exc}"
+    now = now or datetime.now(timezone.utc)
+    stamp = beat.get("utc")
+    try:
+        age = (now - datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
+               .replace(tzinfo=timezone.utc)).total_seconds() / 60
+    except (TypeError, ValueError):
+        return f"runtime heartbeat carries no readable utc: {stamp!r}"
+    if age > max_minutes:
+        return (f"runtime heartbeat is {age:.0f} min old (limit "
+                f"{max_minutes:g}) — the game may be playing old code")
+    error = (beat.get("last_error") or "").strip()
+    if error:
+        return f"runtime refresh is failing: {error[:200]}"
+    return None
+
+
+RUNTIME_HEARTBEAT_DEFAULT = (Path.home() / ".cache" / "civvis"
+                             / "live-game-runtime" / "heartbeat.json")
+
+
 def applied_pct(summary: dict) -> float | None:
     """Bridge health as one number: applied orders over issued, in percent."""
     seen = summary.get("orders_seen")
@@ -266,6 +332,7 @@ def entry_from(summary: dict) -> dict:
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
         "applied_pct": applied_pct(summary),
+        "revisions": summary.get("decider_revisions"),
         "rival_best": summary.get("rival_best"),
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None
@@ -400,7 +467,9 @@ def publish(ledger: Path, snapshot: Path | None = None,
 
 def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           snapshot: Path | None = None, now: datetime | None = None,
-          min_applied: float | None = None) -> int:
+          min_applied: float | None = None,
+          heartbeat_minutes: float | None = None,
+          heartbeat: Path | None = None) -> int:
     """Exit nonzero when the record is behind the truth on disk.
 
     Three separate failures, reported together, because they have three
@@ -463,6 +532,12 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                     f"orders applied on {latest.get('tag')} (floor "
                     f"{min_applied:g}%) — read the refusal ledger, "
                     f"docs/CIV6_COMPUTER_CONTROL.md")
+
+    if heartbeat_minutes is not None:
+        problem = runtime_heartbeat_problem(
+            heartbeat or RUNTIME_HEARTBEAT_DEFAULT, heartbeat_minutes, now=now)
+        if problem:
+            problems.append(problem)
 
     for problem in problems:
         print(f"LADDER: {problem}")
@@ -569,6 +644,14 @@ def main(argv: list[str] | None = None) -> int:
     chk.add_argument("--min-applied", type=float, default=None,
                      help="fail when the newest measured run applied under "
                           "this percentage of its orders")
+    wat = sub.add_parser(
+        "watch",
+        help="only the origin/main watcher probe, for loops that poll it")
+    wat.add_argument("--minutes", type=float, default=10.0)
+    chk.add_argument("--heartbeat-minutes", type=float, default=None,
+                     help="fail when the origin/main watcher's heartbeat is "
+                          "older than this, unreadable, or reporting an "
+                          "error (skipped on machines with no runtime cache)")
     sub.add_parser("show")
     sub.add_parser("next")
     args = ap.parse_args(argv)
@@ -585,7 +668,15 @@ def main(argv: list[str] | None = None) -> int:
         return publish(ledger)
     if args.command == "check":
         return check(args.runs, ledger, args.stale_hours,
-                     min_applied=args.min_applied)
+                     min_applied=args.min_applied,
+                     heartbeat_minutes=args.heartbeat_minutes)
+    if args.command == "watch":
+        problem = runtime_heartbeat_problem(
+            RUNTIME_HEARTBEAT_DEFAULT, args.minutes)
+        if problem:
+            print(f"LADDER: {problem}")
+            return 1
+        return 0
     if args.command == "next":
         return next_rung(ledger)
     return show(ledger)
