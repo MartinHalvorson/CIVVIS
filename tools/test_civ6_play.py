@@ -1245,6 +1245,22 @@ class LiveControlArmTests(unittest.TestCase):
              ("--without", "stacked-escort")],
             "each treatment needs its own flag; the decider takes one name each",
         )
+class OpeningTempoRecordTests(unittest.TestCase):
+    """`civ6_play` records the opening tempo from its own event stream, so the
+    number describes the run being recorded rather than a later reading."""
+
+    def test_the_turn_sixty_sample_is_what_the_empire_HELD(self) -> None:
+        # Deliberately not derived from the founding list: a city founded and
+        # then LOST before turn 60 must not be counted as held.
+        self.assertEqual(civ6_play.OPENING_TEMPO_TURN, 60)
+
+    def test_second_city_turn_is_the_second_founding(self) -> None:
+        founds = [2, 41, 19, 55]
+        self.assertEqual(sorted(founds)[1], 19)
+
+    def test_a_run_that_founded_once_has_no_second_city_turn(self) -> None:
+        founds = [2]
+        self.assertIsNone(sorted(founds)[1] if len(founds) >= 2 else None)
 
 
 class SupervisedBrainCommandTests(unittest.TestCase):

@@ -189,6 +189,42 @@ class LiveArmAttributionTests(unittest.TestCase):
         self.assertIsNone(entry["mod_arms"])
         full = civ6_ladder.entry_from({"tag": "new", "last_turn": 250, "withheld": []})
         self.assertEqual(full["withheld"], [])
+class OpeningTempoTests(unittest.TestCase):
+    """The ladder's strongest measured correlate, watched instead of
+    reconstructed: cities at t60 (r=+0.69 with final lead) and the second
+    city's founding turn (r=-0.49)."""
+
+    def test_the_tempo_columns_ride_the_entry(self) -> None:
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-x", "difficulty": "DIFFICULTY_SETTLER",
+            "configured": True, "last_turn": 250, "last_score": 900,
+            "city_two_turn": 21, "cities_at_60": 6,
+        })
+        self.assertEqual(entry["city_two_turn"], 21)
+        self.assertEqual(entry["cities_at_60"], 6)
+
+    def test_a_summary_without_the_columns_records_none(self) -> None:
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        self.assertIsNone(entry["city_two_turn"])
+        self.assertIsNone(entry["cities_at_60"])
+
+    def test_a_slow_opening_is_alarmed_on_the_median_not_one_run(self) -> None:
+        # Nine fast runs and one very late founding: ordinary map variance,
+        # and the alarm must stay silent.
+        attempts = [{"city_two_turn": t} for t in [20, 22, 19, 25, 21, 20, 23, 24, 22, 66]]
+        self.assertIsNone(civ6_ladder.opening_tempo_problem(attempts, 30))
+        # A window whose MIDDLE has slipped is the empire, not the map.
+        slow = [{"city_two_turn": t} for t in [41, 44, 39, 54, 57, 45, 48, 40, 52, 43]]
+        problem = civ6_ladder.opening_tempo_problem(slow, 30)
+        self.assertIsNotNone(problem)
+        self.assertIn("opening tempo regressed", problem)
+
+    def test_too_few_rows_says_nothing_rather_than_passing(self) -> None:
+        # A ledger recorded before the column existed must not read as healthy
+        # OR as broken; there is simply nothing to say.
+        thin = [{"city_two_turn": 50}, {"city_two_turn": 60}]
+        self.assertIsNone(civ6_ladder.opening_tempo_problem(thin, 30))
+        self.assertIsNone(civ6_ladder.opening_tempo_problem([{"turns": 250}] * 40, 30))
 
 if __name__ == "__main__":
     unittest.main()

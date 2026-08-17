@@ -384,6 +384,14 @@ def entry_from(summary: dict) -> dict:
         # the same claim as "nothing was withheld".
         "withheld": summary.get("withheld"),
         "mod_arms": summary.get("mod_arms"),
+        # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
+        # completed runs of 2026-08-16/17 these were the strongest correlates
+        # the live ladder has produced: cities at t60 r=+0.69 with final lead,
+        # second-city founding turn r=-0.49, with total city count EQUAL
+        # between the groups. Carried per row so a tempo regression is visible
+        # without reconstructing it from events.jsonl.
+        "city_two_turn": summary.get("city_two_turn"),
+        "cities_at_60": summary.get("cities_at_60"),
         "rival_best": summary.get("rival_best"),
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None
@@ -602,11 +610,39 @@ def staleness_problem(state: dict, stale_hours: float,
     return None
 
 
+def opening_tempo_problem(attempts: list[dict], floor: float,
+                          window: int = 10) -> str | None:
+    """The tempo alarm: has the opening gone slow across the recent window?
+
+    Reads the MEDIAN second-city turn over the newest `window` rows that carry
+    one, because a single late founding is ordinary map variance — six of the
+    35 runs measured sat past t35 and three of those still finished within 250
+    points. A median that slips is the empire, not the map.
+
+    Returns None when too few rows carry the column to say anything, which is
+    the honest answer for a ledger recorded before the column existed.
+    """
+    turns = [a["city_two_turn"] for a in attempts
+             if isinstance(a.get("city_two_turn"), int)]
+    if len(turns) < window:
+        return None
+    recent = sorted(turns[-window:])
+    middle = len(recent) // 2
+    median = (recent[middle] if len(recent) % 2
+              else (recent[middle - 1] + recent[middle]) / 2)
+    if median <= floor:
+        return None
+    return (f"opening tempo regressed: median second city at turn {median:g} "
+            f"over the last {window} recorded runs (floor {floor:g}) — the "
+            f"ladder's strongest correlate with final lead")
+
+
 def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           snapshot: Path | None = None, now: datetime | None = None,
           min_applied: float | None = None,
           heartbeat_minutes: float | None = None,
-          heartbeat: Path | None = None) -> int:
+          heartbeat: Path | None = None,
+          max_city_two_turn: float | None = None) -> int:
     """Exit nonzero when the record is behind the truth on disk.
 
     Three separate failures, reported together, because they have three
@@ -659,6 +695,11 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                     f"orders applied on {latest.get('tag')} (floor "
                     f"{min_applied:g}%) — read the refusal ledger, "
                     f"docs/CIV6_COMPUTER_CONTROL.md")
+
+    if max_city_two_turn is not None:
+        problem = opening_tempo_problem(state["attempts"], max_city_two_turn)
+        if problem:
+            problems.append(problem)
 
     if heartbeat_minutes is not None:
         problem = runtime_heartbeat_problem(
@@ -919,6 +960,12 @@ def main(argv: list[str] | None = None) -> int:
         "watch",
         help="only the origin/main watcher probe, for loops that poll it")
     wat.add_argument("--minutes", type=float, default=10.0)
+    chk.add_argument("--max-city-two-turn", type=float, default=None,
+                     help="fail when the MEDIAN second-city founding turn over "
+                          "the last ten recorded runs exceeds this — the "
+                          "ladder's strongest measured correlate with final "
+                          "lead (r=-0.49; by t30 median lead -59, after t30 "
+                          "-717)")
     chk.add_argument("--heartbeat-minutes", type=float, default=None,
                      help="fail when the origin/main watcher's heartbeat is "
                           "older than this, unreadable, or reporting an "
@@ -942,7 +989,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return check(args.runs, ledger, args.stale_hours,
                      min_applied=args.min_applied,
-                     heartbeat_minutes=args.heartbeat_minutes)
+                     heartbeat_minutes=args.heartbeat_minutes,
+                     max_city_two_turn=args.max_city_two_turn)
     if args.command == "watch":
         problem = runtime_heartbeat_problem(
             RUNTIME_HEARTBEAT_DEFAULT, args.minutes)
