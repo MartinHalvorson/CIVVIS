@@ -366,6 +366,11 @@ def entry_from(summary: dict) -> dict:
         # event reported and stays the primary key; the name is the host's
         # gloss on it, and rows recorded before the export have none.
         "victory_type": victory_type(summary),
+        # And what the run ASKED the agent to play for, which is a different
+        # question from what it ended on. Rows recorded before #1871 have none;
+        # rows recorded after it can differ from each other, and a ledger that
+        # cannot separate the lanes cannot say which one wins.
+        "victory_target": summary.get("victory_target"),
         "turns": summary.get("last_turn"),
         "score": summary.get("last_score"),
         "map_size": summary.get("map_size"),
@@ -828,14 +833,15 @@ def markdown_for(state: dict) -> str:
         lines += [
             "## Every attempt",
             "",
-            "| run | difficulty | configured | outcome | turns | score | ended |",
-            "|---|---|---|---|---|---|---|",
+            "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for a in attempts[-40:]:
             outcome = "win" if a["won"] else cell(a.get("reason"))
             difficulty = NAMES.get(a.get("difficulty"), a.get("difficulty"))
             lines.append(
                 f"| `{a.get('tag')}` | {cell(difficulty)} "
+                f"| {cell(a.get('victory_target'))} "
                 f"| {'yes' if a['configured'] else 'NO'} | {outcome} "
                 f"| {cell(a.get('turns'))} | {cell(a.get('score'))} "
                 f"| {cell(a.get('utc'))} |")

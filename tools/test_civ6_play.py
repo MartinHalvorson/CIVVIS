@@ -1253,6 +1253,29 @@ class SupervisedBrainCommandTests(unittest.TestCase):
                 self.assertEqual(cmd[cmd.index("--victory") + 1], lane)
 
 
+class TheSummaryNamesTheObjective(unittest.TestCase):
+    """The summary is what the ladder is built from, so the lane has to be in it.
+
+    ⚠ `civ6_civvis_climb.py` stamps `victory_target` on its own JSONL row, which
+    is a DIFFERENT FILE from the summary `civ6_ladder.py` reads — which is why
+    `docs/civ6_ladder.json` carried 307 rows and no lane on any of them.
+    """
+
+    def test_the_builder_writes_the_lane_it_was_told_to_play(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"victory_target": args.civvis_victory if args.civvis_decides',
+                      source)
+
+    def test_a_run_that_is_not_civvis_deciding_claims_no_lane(self):
+        """The flag names what the CIVVIS worker plays for. A run the worker did
+        not decide has no lane to report, and reporting one would file a Firaxis
+        AI game under an objective CIVVIS never held."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("if args.civvis_decides else None", source)
+
+
 class VictoryLaneListTests(unittest.TestCase):
     """The launchers' objective list against the engine's own.
 
