@@ -616,6 +616,37 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("index = row.Index", block)
         self.assertIn("type = row.VictoryType", block)
 
+    def test_the_penalty_resolutions_name_the_victory_leader(self) -> None:
+        # Every player-targeted resolution except Diplomatic Victory used to
+        # select THIS SEAT with option 1 — the option that BUFFS its target —
+        # so the three ballots carrying a real penalty were spent on a small
+        # bonus for us. 232 such ballots across 39 live games.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        block = source.split('elseif r.TargetType == "PlayerType" then', 1)[1]
+        block = block.split("local params = {}", 1)[0]
+        # The three the host's own Expansion2_Congress.xml gives a penalty on
+        # effect 2. Deliberately an allowlist: option 2 is not the penalty on
+        # every player-targeted resolution, and a blanket rule would guess.
+        for res in ("WC_RES_TRADE_TREATY", "WC_RES_BORDER_CONTROL",
+                    "WC_RES_MIGRATION_TREATY"):
+            self.assertIn(res, block)
+        self.assertIn("tonumber(t) == threat", block)
+        self.assertIn("option = 2", block)
+        # The old self-buff must remain the behaviour below the bar.
+        self.assertIn("tonumber(t) == pid", block)
+        self.assertIn("cfg.CounterResolutionBar", block)
+        self.assertIn("cfg.CounterResolutions ~= false", block)
+
+    def test_the_victory_threat_selector_is_exported_for_its_regression(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        # A bare global, like its sibling: the UI sandbox has no `_G` and the
+        # chunk is near Civ 6's 200-register file-scope local ceiling.
+        self.assertIn("CivvisSelectVictoryThreat = function(candidates)", source)
+        self.assertNotIn("local CivvisSelectVictoryThreat", source)
+        # Both lanes that actually end our games reach the selector.
+        self.assertIn("GetTouristsTo()", source)
+        self.assertIn("GetStaycationers()", source)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
