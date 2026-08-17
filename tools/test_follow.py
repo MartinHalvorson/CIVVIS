@@ -283,3 +283,87 @@ class FollowTest(unittest.TestCase):
                 follow.subprocess.TimeoutExpired(cmd="osascript", timeout=30),
             ]
             self.assertIsNone(follow.mirror_on_screen())
+
+
+class FinishedRunStaysOffTheScreen(unittest.TestCase):
+    """A run that has stopped writing must not be put back on the screen.
+
+    2026-08-17: the stale-run teardown was gated on `server_alive(PORT)` while
+    the start path below it carried no staleness guard of its own. The tick
+    that took a finished game down left the port free, so the next tick fell
+    through and served that same finished run again — a 21 MB `civvis play`
+    process spawned every ~6 seconds for as long as the seat sat between
+    games. Measured on the idle science-domination-20260817T010000Z seat: the
+    mirror pid advanced 38418 -> 38584 -> 38620 -> 38657 inside 20 seconds,
+    and a tab on `?instance=<server_pid>` was stale the moment it loaded.
+    """
+
+    def drive_idle_seat(self, *, serving: bool, ticks: int = 10) -> dict:
+        """Run `main()` over a run whose events file is older than the window."""
+        seat = {"up": serving, "starts": 0, "stops": 0, "reads": 0}
+
+        def start(_run_dir, _players) -> bool:
+            seat["starts"] += 1
+            seat["up"] = True
+            return True
+
+        def stop() -> bool:
+            seat["stops"] += 1
+            seat["up"] = False
+            return True
+
+        def read_events(_run_dir):
+            seat["reads"] += 1
+            return ([b"{}"], 222, 6, 38, True)  # a finished game HAS a map
+
+        with mock.patch.object(follow, "newest_run",
+                               return_value=("/run/science-domination", 0.0)), \
+             mock.patch.object(follow, "ensure_on_screen", return_value=0), \
+             mock.patch.object(follow, "ensure_watching", return_value=None), \
+             mock.patch.object(follow, "read_events", side_effect=read_events), \
+             mock.patch.object(follow, "server_alive", lambda _p: seat["up"]), \
+             mock.patch.object(follow, "start_visible_server", side_effect=start), \
+             mock.patch.object(follow, "stop_visible_server", side_effect=stop), \
+             mock.patch.object(follow, "log", lambda _m: None), \
+             mock.patch.object(follow.time, "sleep",
+                               side_effect=[None] * ticks + [StopIteration]):
+            with self.assertRaises(StopIteration):
+                follow.main()
+        return seat
+
+    def test_a_finished_run_is_taken_down_once_and_never_re_served(self) -> None:
+        seat = self.drive_idle_seat(serving=True)
+
+        self.assertEqual(seat["stops"], 1, "take the finished game down once")
+        self.assertEqual(seat["starts"], 0, "never re-serve a finished run")
+        self.assertFalse(seat["up"], "the port stays free for the next attempt")
+
+    def test_an_idle_seat_with_a_free_port_is_left_alone(self) -> None:
+        """Steady state after the teardown: no start, no redundant stop."""
+        seat = self.drive_idle_seat(serving=False)
+
+        self.assertEqual(seat["starts"], 0)
+        self.assertEqual(seat["stops"], 0)
+
+    def test_an_idle_seat_does_not_reread_its_events_file(self) -> None:
+        """The stale tick returns before reopening a 17 MB events.jsonl."""
+        seat = self.drive_idle_seat(serving=False)
+
+        self.assertEqual(seat["reads"], 0)
+
+    def test_a_live_run_with_a_map_still_goes_on_screen(self) -> None:
+        """The guard against over-correcting into never serving anything."""
+        with mock.patch.object(follow, "newest_run",
+                               return_value=("/run/live", time.time())), \
+             mock.patch.object(follow, "ensure_on_screen", return_value=0), \
+             mock.patch.object(follow, "ensure_watching", return_value=None), \
+             mock.patch.object(follow, "read_events",
+                               return_value=([b"{}"], 7, 6, 38, True)), \
+             mock.patch.object(follow, "server_alive", return_value=False), \
+             mock.patch.object(follow, "start_visible_server") as start, \
+             mock.patch.object(follow, "log", lambda _m: None), \
+             mock.patch.object(follow.time, "sleep", side_effect=[StopIteration]):
+            with self.assertRaises(StopIteration):
+                follow.main()
+
+        start.assert_called_once()

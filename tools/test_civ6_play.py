@@ -1090,5 +1090,39 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class SupervisedBrainCommandTests(unittest.TestCase):
+    """Every flag that reaches the decision worker is decided in one builder."""
+
+    @staticmethod
+    def _args(**changes):
+        values = {
+            "civvis_victory": "science",
+            "civvis_strategy": "auto",
+            "civvis_war_from_plan": False,
+            "civvis_refresh_seconds": None,
+            "timeout": 7200.0,
+        }
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def _command(self, **changes):
+        return civ6_play.supervised_brain_command(
+            self._args(**changes), Path("/tmp/run"),
+            Path("/tmp/orders.sqlite"), Path("/tmp/civvis_orders"))
+
+    def test_the_brain_default_cadence_is_left_alone(self):
+        self.assertNotIn("--github-refresh-seconds", self._command())
+
+    def test_refresh_seconds_reach_the_brain(self):
+        cmd = self._command(civvis_refresh_seconds=120.0)
+        self.assertEqual(cmd[cmd.index("--github-refresh-seconds") + 1], "120.0")
+
+    def test_zero_is_a_choice_not_an_absence(self):
+        # 0 is falsy, and 0 is exactly the value a pinned batch depends on —
+        # an `if args.civvis_refresh_seconds:` implementation would drop it.
+        cmd = self._command(civvis_refresh_seconds=0.0)
+        self.assertEqual(cmd[cmd.index("--github-refresh-seconds") + 1], "0.0")
+
+
 if __name__ == "__main__":
     unittest.main()
