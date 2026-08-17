@@ -32,6 +32,8 @@ as a production generation. It applies the four bounded doctrine perturbations
 to one base genome and reports marginal and paired uncertainty, prefix ranks,
 disjoint block winners, and alternative objectives.
 
+⚠ `evolve_probe` was removed in #1278 as an unreferenced binary. The command below is kept as the record of how this was measured — it does not run against this tree. Restoring it follows the pattern in #1876: bring the source back with tests, so the audit's question and the real one agree.
+
 ```sh
 cargo run --profile ci --bin evolve_probe -- \
   --games 64 --players 4 --width 24 --height 16 --turns 200 \
