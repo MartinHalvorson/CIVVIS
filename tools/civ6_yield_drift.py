@@ -39,7 +39,23 @@ compares the thing the correction hides.
 - SOURCES  when the export carries `yield_sources` (the host's own per-yield
            tooltip), the host's ledger for each city in a persistent gap.
 - HOUSING / AMENITIES  host count against the model's own derivation (the
-           board applies a correction; the model does not).
+           board applies a correction; the model does not). Housing is also
+           broken down BY SOURCE — the host has always exported
+           `housing_from_water`, `_buildings`, `_districts`, `_improvements`,
+           `_civics`, `_great_people`, `_great_works` and `_starting_era`, and
+           `Game::city_housing_sources` now produces the same categories, so a
+           gap names the rule to read instead of only its size. A category off
+           by less than one Housing is reported apart from the rest: the model
+           carries the half-Housing of Farms and Pastures and the host
+           publishes whole numbers, which is presentation, not a rule.
+
+           Open residuals as of 2026-08-17, on run civvis-20260817T030352Z:
+           `improvements` reads HIGH (Ostia +1.5, Cumae +2, Aquileia +1) and
+           Rome's `districts` reads 2 LOW on 15 of 24 sampled turns while Rome
+           holds no housing-granting district in this ruleset at all — Campus,
+           Wonder, City Center, Commercial Hub, Industrial Zone. `other` is
+           CIVVIS-only (resource industries, wall levels) and has no host
+           counterpart by construction.
 - PLAYER   Faith PER TURN at the empire level: the host's top-bar figure
            (`faith_per_turn`, `GetFaithYield`) against the model's — the
            cities plus what the empire collects beside them: founder-belief
@@ -146,6 +162,41 @@ def yield_delta(host: dict, model: dict) -> dict:
             for key in YIELDS}
 
 
+# The host's own housing categories, in the order Civilization VI reports them.
+# Every `state` record has carried these since the mod shipped and the totals it
+# publishes are exactly their sum; the model grew the same names in
+# `Game::city_housing_sources` so the two can be read against each other without
+# a mapping anyone has to remember.
+HOUSING_SOURCES = (
+    "water", "buildings", "districts", "improvements",
+    "civics", "great_people", "great_works", "starting_era",
+)
+
+
+def housing_source_delta(host: dict, city: dict) -> dict:
+    """`model - host` per housing category, for the categories both report.
+
+    ⚠ THE TOTAL WAS NEVER ENOUGH TO NAME A RULE. A city persistently two
+    Housing short says only that something is wrong; the same city short by two
+    in `buildings` and right everywhere else says which line of the ruleset to
+    read. `other` is CIVVIS-only — resource industries, wall levels — so it is
+    reported as a model-side figure with no host counterpart rather than
+    silently compared against zero.
+    """
+    model = city.get("model_housing_sources")
+    if not isinstance(model, dict):
+        return {}
+    out = {}
+    for source in HOUSING_SOURCES:
+        host_value = host.get(f"housing_from_{source}")
+        if not isinstance(host_value, (int, float)):
+            continue
+        out[source] = round(float(model.get(source, 0.0)) - float(host_value), 2)
+    if model.get("other"):
+        out["other"] = round(float(model["other"]), 2)
+    return out
+
+
 def city_comparisons(state: dict, dump: dict) -> list:
     """One record per city present on both sides, keyed by host coordinates.
 
@@ -174,6 +225,7 @@ def city_comparisons(state: dict, dump: dict) -> list:
             # any export), while the model carries the half-Housing of Farms
             # and Pastures; compare what the host would show.
             record["housing_delta"] = round(math.floor(city["model_housing"] + 1e-9) - housing, 2)
+            record["housing_source_delta"] = housing_source_delta(host, city)
         amenities = host.get("amenities")
         if isinstance(amenities, (int, float)) and amenities >= 0 \
                 and isinstance(city.get("model_amenities"), (int, float)):
@@ -387,6 +439,55 @@ def player_comparison(states: dict, turn: int, dump: dict) -> dict | None:
     return record
 
 
+
+def report_housing_sources(series: dict) -> None:
+    """Name the category, not just the total.
+
+    A city persistently two Housing short says only that something is wrong.
+    The same city short by two in `buildings` and right everywhere else says
+    which line of the ruleset to read, which is the difference between an open
+    question and a piece of work.
+    """
+    if not series:
+        print("         (export carries no per-source breakdown; rebuild "
+              "civvis_orders for model_housing_sources)")
+        return
+    # ⚠ THE MODEL CARRIES HALF-HOUSING AND THE HOST PUBLISHES INTEGERS. A Farm
+    # is worth +0.5 Housing in this ruleset and Civilization VI reports every
+    # `housing_from_*` as a whole number, so a category off by less than one is
+    # a presentation difference, not a rule CIVVIS gets wrong. Reporting those
+    # beside real gaps would make every farming city look broken — six of seven
+    # cities showed a spurious `improvements +0.5` before this split.
+    by_source: dict = collections.defaultdict(list)
+    rounding: dict = collections.defaultdict(set)
+    for (city, source), by_turn in series.items():
+        off = [(t, d) for t, d in sorted(by_turn.items()) if abs(d) > TOLERANCE]
+        whole = [(t, d) for t, d in off if abs(d) >= 1.0 - TOLERANCE]
+        if whole:
+            by_source[source].append((city, len(whole), len(by_turn), whole[-1]))
+        elif off:
+            rounding[source].add(city)
+    if not by_source and not rounding:
+        print("         every category agrees")
+        return
+    # Loudest category first: the one to read is the one that is wrong most.
+    order = sorted(by_source, key=lambda k: -sum(n for _, n, _, _ in by_source[k]))
+    for source in order:
+        cities = sorted(by_source[source], key=lambda row: -row[1])
+        detail = "; ".join(
+            f"{city} {off}/{total} turns (last t{last[0]}: {last[1]:+g})"
+            for city, off, total, last in cities[:6]
+        )
+        more = len(cities) - 6
+        print(f"  from {source:13} {detail}" + (f"; +{more} more" if more > 0 else ""))
+    for source, cities in sorted(rounding.items()):
+        if source in by_source:
+            continue
+        print(f"  from {source:13} under 1 Housing in {len(cities)} city(ies) "
+              f"({', '.join(sorted(cities)[:4])}) — the model's half-Housing "
+              f"against the host's whole numbers, not a rule")
+
+
 def report_player_faith(player_turns: dict, min_len: int) -> list:
     """Print the PLAYER block and return its persistent episodes."""
     rows = {t: r for t, r in player_turns.items() if r}
@@ -451,6 +552,7 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
         return 2
     series: dict = collections.defaultdict(dict)
     housing_series: dict = collections.defaultdict(dict)
+    housing_source_series: dict = collections.defaultdict(dict)
     amenity_series: dict = collections.defaultdict(dict)
     per_turn = {}
     player_turns = {}
@@ -474,6 +576,8 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
                 series[(name, key)][turn] = record["delta"][key]
             if "housing_delta" in record:
                 housing_series[name][turn] = record["housing_delta"]
+                for source, delta in (record.get("housing_source_delta") or {}).items():
+                    housing_source_series[(name, source)][turn] = delta
             if "amenities_delta" in record:
                 amenity_series[name][turn] = record["amenities_delta"]
             for diff in tile_diffs(record["host"], record["model"], plots):
@@ -574,6 +678,8 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
                 rows.append(f"{name} off on {len(off)}/{len(by_turn)} turns "
                             f"(last {off[-1][0]}: model-host {off[-1][1]:+g})")
         print(f"{label:9}" + ("; ".join(rows) if rows else "model agrees with host on every turn"))
+        if label == "HOUSING" and rows:
+            report_housing_sources(housing_source_series)
 
     # --- PLAYER ---------------------------------------------------------
     print()
@@ -585,6 +691,8 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
             "episodes": all_episodes,
             "tiles": [{"turn": t, "city": n, **d} for t, n, d in tile_reports],
             "housing": {n: v for n, v in housing_series.items()},
+            "housing_sources": {f"{n}/{k}": v
+                                for (n, k), v in housing_source_series.items()},
             "amenities": {n: v for n, v in amenity_series.items()},
             "player": {str(t): v for t, v in player_turns.items() if v},
             "player_episodes": player_episodes,

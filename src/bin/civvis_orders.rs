@@ -3642,6 +3642,11 @@ fn main() {
                 .get(&city.id)
                 .copied()
                 .unwrap_or(0.0);
+            let housing_sources = serde_json::json!(game
+                .city_housing_sources(city)
+                .named()
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>());
             let amenities = game.city_amenities(city);
             let amenity_adjustment = game
                 .observed_city_amenity_adjustments
@@ -3661,6 +3666,12 @@ fn main() {
                 "ledger": ledger_json,
                 "housing": housing,
                 "model_housing": housing - housing_adjustment,
+                // The host exports `housing_from_water`, `_buildings`,
+                // `_districts` and the rest on every city of every state. Until
+                // this twin existed the instrument could only compare the two
+                // totals, so a persistent gap named no rule and nobody could
+                // act on it. Same categories, same names.
+                "model_housing_sources": housing_sources,
                 "amenities": amenities,
                 "model_amenities": amenities - amenity_adjustment,
                 "amenities_required": civvis::game::Game::city_amenities_required(city),
