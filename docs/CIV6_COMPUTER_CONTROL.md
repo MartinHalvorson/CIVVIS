@@ -457,6 +457,28 @@ that way.
 
 See `docs/CIV6_LADDER.md` for the current standing.
 
+### The run always tests the latest code
+
+Two mechanisms, one guarantee. Between games, the supervisor pulls and
+rebuilds head before every attempt. Mid-game, the brain's
+`GitHubRuntimeUpdater` fetches origin/main every 30 seconds, builds it in a
+dedicated worktree, and hands the running game a fresh decider at the next
+turn boundary — re-execing the brain itself from the new revision's tree, so
+the Python harness follows too. Only the Lua mod waits for the next game
+(Civilization VI loads it once, at game start).
+
+The guarantee is *provable*, not assumed:
+
+- `runtime_updates.jsonl` in the run directory opens with a `start` row
+  naming the revision the run began on and adds a `handoff` row (with UTC)
+  for every mid-game advance; the summary carries the whole list as
+  `decider_revisions` and the ladder entry records it as `revisions`.
+- The updater writes `~/.cache/civvis/live-game-runtime/heartbeat.json`
+  every refresh cycle, success or failure. `civ6_ladder.py watch
+  --minutes 10` fails when the heartbeat is missing, stale, or reporting a
+  refresh error; `civvis_sync.sh` runs it every cycle, gated on a live
+  brain process so build gaps between games cannot cry wolf.
+
 ## The host itself is part of the bridge (macOS 26, measured 2026-08-07)
 
 A Steam reinstall on macOS 26.5.1 established four host facts that sit UNDER

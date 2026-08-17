@@ -2705,6 +2705,14 @@ def _play(args: argparse.Namespace) -> int:
         standing = civ6_ladder.final_standing(run_dir / "events.jsonl")
         if standing:
             summary["rival_best"] = standing[1]
+        # Which code actually decided this run: the brain's start row plus
+        # every mid-game origin/main handoff. On the ledger, so "was the
+        # verification game testing the latest code" is a column, not a log
+        # excavation.
+        revisions = civ6_ladder.decider_revisions(
+            run_dir / "runtime_updates.jsonl")
+        if revisions:
+            summary["decider_revisions"] = revisions
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
