@@ -3344,6 +3344,14 @@ impl AdvancedAi {
         // removal is the unit-tactics pair, which measured null on its own
         // (+11, p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
         // re-adds all four as a treatment so the axis stays measurable.
+        //
+        // The tribal-village pickup shipped inside `tactical_strategy` (#1386)
+        // and left production with the war-half withhold — collateral, not
+        // measured: the village is an economy prize (techs, boosts, builders,
+        // envoys, era score), not war machinery, and an unclaimed one is
+        // consumed by whichever rival reaches it first. Carry it on its own
+        // flag; `advanced_without_hut_collection` prices the withhold.
+        ai.base.hut_collection = true;
         ai
     }
 
@@ -3928,6 +3936,13 @@ impl AdvancedAi {
     /// it.
     pub fn enable_tactical_strategy(&mut self) {
         self.base.tactical_strategy = true;
+    }
+
+    /// Withhold the tribal-village pickup that production Advanced carries by
+    /// default (see `BasicAi::hut_collection`), so the evaluator arm
+    /// `advanced_without_hut_collection` can price it.
+    pub fn disable_hut_collection(&mut self) {
+        self.base.hut_collection = false;
     }
 
     /// Let a unit retain its campaign objective and a short, threat-driven
@@ -29660,6 +29675,11 @@ mod tests {
                 "amenity_districts",
                 frozen.base.amenity_districts,
                 production.base.amenity_districts,
+            ),
+            (
+                "hut_collection",
+                frozen.base.hut_collection,
+                production.base.hut_collection,
             ),
         ] {
             assert!(

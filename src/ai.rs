@@ -2145,6 +2145,14 @@ pub struct BasicAi {
     /// Per unit: the committed exploration goal and the turn it was chosen.
     /// See `explore_commit`.
     explore_goal: RefCell<HashMap<u32, (Pos, u32)>>,
+    /// Walk an exploring unit onto a tribal village it can see and reach this
+    /// turn before it marches past toward fog. This pickup shipped inside
+    /// `tactical_strategy` (#1386) and left production with the 2026-08-14
+    /// war-half withhold — a war flag it never belonged to, since the village
+    /// is an economy prize (techs, boosts, builders, envoys, era score) that
+    /// rivals consume first when unclaimed. Production Advanced turns this on;
+    /// Basic and the frozen `advanced_v1` anchor keep the historical rule.
+    pub(crate) hut_collection: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3421,6 +3429,7 @@ impl BasicAi {
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
+            hut_collection: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -3558,6 +3567,7 @@ impl BasicAi {
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
+            hut_collection: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -10669,12 +10679,14 @@ impl BasicAi {
         let upos = g.units[&uid].pos;
         // A tribal village the scout can already reach this turn is a
         // one-off reward, so production recon should not march past it toward
-        // an arbitrary fogged tile. `tactical_strategy` is false for Basic and
-        // the frozen `advanced_v1` anchor, while production Advanced enables
-        // it. `Game` contains the whole board for simulation purposes; use live
+        // an arbitrary fogged tile. `hut_collection` carries the pickup for
+        // production Advanced now that `tactical_strategy` has left it; both
+        // are false for Basic and the frozen `advanced_v1` anchor. `Game`
+        // contains the whole board for simulation purposes; use live
         // player vision here so reconnaissance does not gain a route to huts
         // it has never actually seen.
-        let nearby_hut = (self.tactical_strategy && !g.players[pid].is_barbarian)
+        let nearby_hut = ((self.tactical_strategy || self.hut_collection)
+            && !g.players[pid].is_barbarian)
             .then(|| {
                 let visible = g.player_vision_now(pid);
                 g.reachable(uid)
@@ -16493,6 +16505,7 @@ mod tests {
         // This is a production improvement, not a rewrite of the frozen
         // Basic/advanced_v1 route: their scout keeps pursuing the unseen tile.
         assert!(!BasicAi::new().tactical_strategy);
+        assert!(!BasicAi::new().hut_collection);
         let mut frozen = g.clone();
         let mut frozen_ai = BasicAi::new();
         assert!(frozen_ai.military_step(&mut frozen, 0, scout));
@@ -16501,6 +16514,16 @@ mod tests {
             frozen.map.tiles[&hut].improvement.as_deref(),
             Some("goody_hut")
         );
+
+        // `hut_collection` alone carries the pickup — the flag production
+        // Advanced ships on since the war-half withhold took
+        // `tactical_strategy` (and, silently, this behaviour) out of it.
+        let mut collected = g.clone();
+        let mut collector = BasicAi::new();
+        collector.hut_collection = true;
+        assert!(collector.military_step(&mut collected, 0, scout));
+        assert_eq!(collected.units[&scout].pos, hut);
+        assert!(collected.map.tiles[&hut].improvement.is_none());
 
         let mut ai = BasicAi::new();
         ai.tactical_strategy = true;

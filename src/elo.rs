@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 173] = [
+pub const EVAL_ONLY_AIS: [&str; 174] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -193,6 +193,7 @@ pub const EVAL_ONLY_AIS: [&str; 173] = [
     "advanced_legacy_policy_deck",
     "advanced_without_builder_floor",
     "advanced_without_settler_deadline",
+    "advanced_without_hut_collection",
     "advanced_price_suzerainty",
     "advanced_without_unit_tactics",
     "advanced_league_top",
@@ -676,6 +677,7 @@ define_arm_kinds! {
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
     AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
     AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
+    AdvancedWithoutHutCollection => "advanced_without_hut_collection",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -2870,6 +2872,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_production_builder_floor();
             Box::new(ai)
         }
+        "advanced_without_hut_collection" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_hut_collection();
+            Box::new(ai)
+        }
         "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
         // The declared aliases of `advanced` (the war-half withhold trio,
         // `advanced_plan_city_target`, `advanced_without_city_target_floor`,
@@ -3873,6 +3880,7 @@ impl ArmKind {
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
             Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
             Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
+            Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
@@ -4347,6 +4355,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_city_defence" => (Vec::new(), "advanced"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
+        "advanced_without_hut_collection" => (Vec::new(), "advanced_without_hut_collection"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
@@ -5542,7 +5551,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 79] = [
+            const SCRIPTED: [&str; 80] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5614,6 +5623,7 @@ mod tests {
                 "advanced_legacy_policy_deck",
                 "advanced_without_builder_floor",
                 "advanced_without_settler_deadline",
+                "advanced_without_hut_collection",
                 "advanced_price_suzerainty",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
