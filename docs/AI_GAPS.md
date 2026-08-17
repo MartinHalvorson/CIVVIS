@@ -133,14 +133,17 @@ learned controller that wins.
 
 ### 1. Production agents cheat on fog
 
-`BasicAi` and production `AdvancedAi` read the full `Game`, including
+`BasicAi` and stock production `AdvancedAi` still read the full `Game`, including
 information a seated player cannot observe. The HTTP observation and spatial
-tensor honor fog, but the production policy does not consume either. This
-prevents a fair-play claim and removes scouting, memory, and uncertainty from
-the decision problem. `advanced_belief_pressure` now proves one bounded
-evaluator-only use of player-visible memory in the repaired city-pressure path,
-but it neither replaces the controller's other full-state reads nor cleared its
-whole-game promotion gate.
+tensor honor fog, but the incumbent policy does not consume either. The new
+opt-in `AdvancedAi::fog_honest()` closes that architecture gap for a complete
+major turn: it plans production, diplomacy, campaign, and tactics on one
+turn-start fog-redacted world, carries controller-owned belief memory, and
+replays only the resulting actions on the authoritative game. It is a
+correctness implementation, not yet a strength-promoted replacement; the
+incumbent remains unchanged until a paired deployment screen resolves the
+cost. `advanced_belief_pressure` remains the narrower evaluator arm for
+isolating the memory term inside stock `AdvancedAi`.
 
 ### 2. No learned policy ships
 
@@ -468,11 +471,12 @@ that boundary rather than re-running the old stringly comparisons.
 
 ## Ranked next work after the turn-frame repair
 
-The current-main battlefront follow-up freezes the already-promoted observation
-boundary for one major turn. It removes a same-turn inconsistency, but it does
-not make the production controller fog honest, prove a strength gain, or change
-the incumbent/champion distinction. The next work remains ordered by the
-largest remaining decision risk rather than by how local the next code edit is:
+The current-main battlefront follow-up froze the already-promoted observation
+boundary for one major turn. The opt-in `AdvancedAi::fog_honest()` arm now
+extends that boundary across the complete major turn; it does not yet prove a
+strength gain or change the incumbent/champion distinction. The next work
+remains ordered by the largest remaining decision risk rather than by how local
+the next code edit is:
 
 1. **Separate discovery from confirmation effect sizes.** Keep promotion as a
    decision and quote effect sizes only from a disjoint, pre-registered
@@ -480,9 +484,9 @@ largest remaining decision risk rather than by how local the next code edit is:
 2. **Test one rational composite.** Evaluate the live policy deck plus direct
    envoy production on new stable deployment and compact prefixes, preserving
    the matrix gate and recording build opportunity costs.
-3. **Build a fog-honest major controller.** Extend the existing observation and
-   belief surfaces end-to-end. The turn-start battlefront frame is only a
-   coherence prerequisite inside this larger item.
+3. **Screen the fog-honest major controller.** Run the opt-in arm on disjoint
+   compact and deployment prefixes, measure replay refusals and throughput,
+   and promote it only if the matrix gate pays for the information boundary.
 4. **Learn action-conditioned advantage with abstention.** Expand the action
    corpus, hold deployment out for calibration, and fall back to scripted play
    outside the supported distribution.
@@ -792,3 +796,22 @@ count of production behaviours priced by removal rises to two shipped removals
 (`city_target_floor` −41, the war half ~+32..+38 across 1,400 pairs on three
 disjoint seed streams; see `docs/EVAL.md` 2026-08-14, "the war half leaves the
 shipped controller").
+
+## 2026-08-17 end-to-end fog-honest major
+
+The first complete fair-play controller now exists as the opt-in
+`AdvancedAi::fog_honest()` arm. At the beginning of a major turn it refreshes
+the controller-owned `BeliefState`, opts into persistent player map memory,
+and creates one disposable planning world from current visibility plus those
+last-known tiles. Hidden foreign units are absent; unseen terrain is an
+explicit unknown prior; and a foreign City Center is represented only by its
+last-seen owner, health, walls, and displayed combat strength. Production,
+diplomacy, campaign selection, and tactics all consume that same world. The
+action tape is then replayed against the authoritative game, where hidden
+blockers and combat remain the legality authority.
+
+This closes the architecture gap without silently changing the incumbent:
+the mode is default-off and has no strength claim yet. Focused tests prove
+redaction, invariance to unseen enemy movement/health changes, and a short
+two-major replay. A paired deployment-shaped gameplay screen remains the next
+step before promotion.
