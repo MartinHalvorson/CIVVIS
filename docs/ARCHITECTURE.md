@@ -22,10 +22,20 @@ CLI / HTTP server / browser / WASM / evaluation tools
 - **World generation** — `src/mapgen.rs`, `src/world.rs`, `src/fractal.rs`, and
   `src/sphere.rs`. Flat maps and geodesic Planet worlds share the same `Pos` and
   adjacency-facing game APIs.
-- **Game** — `src/game.rs`. `Game` owns authoritative state: players, map,
+- **Game** — `src/game.rs`, with `src/game/` beside it. `Game` owns
+  authoritative state: players, map,
   units, cities, diplomacy, victory state, event log, and the serialized RNG.
   All player-visible mutation goes through `Game::apply(pid, &Action)`.
   Illegal actions return an error without becoming a second mutation path.
+
+  `src/game/` holds the production submodules (`adjacency`, `quests`) and
+  **every test module**, one file each. Tests used to be written inline, which
+  is why `game.rs` reached 77k lines with 27k of them test code interleaved
+  through the production body: a change to a method and a change to a test two
+  hundred lines away were edits to the same file, and at this repository's
+  merge rate that is a conflict. A new test module belongs in `src/game/` as
+  `#[cfg(test)] mod name;` — `super` still resolves to `game`, so nothing about
+  writing the test changes.
 - **Observation** — `src/obs.rs` produces the fog-filtered JSON view used by a
   seated player and the HTTP API. `src/obs_tensor.rs` produces a fog-honest
   spatial tensor for offline learning. The spectator has an explicitly
