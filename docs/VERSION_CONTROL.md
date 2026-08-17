@@ -518,6 +518,38 @@ Two rules this encodes, both learned by getting them wrong:
 A `wip/` ref is a rescue, not a contribution. Nothing merges from one; the
 owning agent commits its own work properly or the branch is discarded.
 
+### Reaping finished worktrees
+
+The same tool removes what is finished. `ship` deletes the **remote** branch
+and stops; nothing ever removed the local worktree, its branch, or its ~4 GB
+`target/`. Measured on `mbp-m5-max-128` on 2026-08-17: **143 worktrees, 135 of
+them clean with their HEAD already on GitHub, 960 GB**, on a machine with
+702 GiB of 1.8 TiB left. At a hundred merged pull requests a day that is an
+accumulation the fleet cannot outrun.
+
+```bash
+python3 tools/civvis_worktree_audit.py --reap            # what it would remove
+python3 tools/civvis_worktree_audit.py --reap --apply    # remove it
+```
+
+The bar is the one this document already sets — **does GitHub have the
+content**, not "is it merged" — so the reaper reuses `on_github` and inherits
+the `refs/pull/*/head` fetch. It refuses four ways, and the self-test asserts
+every refusal rather than only the removal:
+
+- anything the audit flagged (dirty, commit-not-on-GitHub, missing) — the
+  rescue path owns those and the reaper must not race it;
+- the repository root and the `main` management worktree;
+- a tree edited within `--idle-minutes`, because a landed HEAD says nothing
+  about whether somebody is working in the directory right now;
+- everything, unless `--apply` is given. A destructive default is how a tool
+  like this ends up famous.
+
+On the fleet those refusals are not theoretical: the first dry run declined the
+repository root, the `main` worktree, three worktrees belonging to in-flight
+pull requests, another agent's live tree and a clippy scratch directory —
+each by a different guard.
+
 ## Hotspots and conflict reduction
 
 Several files aggregate many responsibilities and therefore need explicit PR

@@ -105,6 +105,17 @@ def newest_edit(path: str) -> float:
     for root, dirs, files in os.walk(path):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for f in files:
+            # ⚠ In a LINKED worktree `.git` is a file, not a directory, so
+            # `SKIP_DIRS` never excluded it and `os.walk` handed it over as
+            # source. Its mtime is set when the worktree is created, which
+            # makes a tree that has never been edited look freshly worked on.
+            # Old trees are unaffected — measured on this fleet, `.git` there
+            # is as old as everything else — so this is not the reason a
+            # worktree went unreported; it is the reason a NEW one reads as
+            # active for its first `--idle-minutes`, which is exactly the
+            # window `--reap` has to get right.
+            if f == ".git":
+                continue
             try:
                 newest = max(newest, os.stat(os.path.join(root, f)).st_mtime)
             except OSError:
@@ -268,6 +279,76 @@ def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
     return findings
 
 
+def reap(repo: str, findings: list[dict], idle_minutes: int,
+         apply: bool) -> list[dict]:
+    """Remove worktrees whose work is already safe on GitHub.
+
+    ⚠⚠⚠ THE FLEET NEVER REMOVED A FINISHED WORKTREE, AND IT ADDS ONE PER TASK.
+    `ship` deletes the REMOTE branch and stops; nothing has ever removed the
+    local worktree, its branch, or its ~4 GB `target/`. Measured on
+    `mbp-m5-max-128` on 2026-08-17: **142 worktrees, 120 of them on branches
+    whose pull request had already merged, none of them dirty, 960 GB** — and
+    the machine had 702 GiB of 1.8 TiB left. At ~100 merged PRs a day this is
+    not drift, it is an accumulation the fleet cannot outrun.
+
+    ⚠ THE SAFETY BAR IS THE ONE AGENTS.md ALREADY SETS, and it is not
+    "is it merged". Squash merge rewrites commits, so `git branch --merged`
+    and `git cherry` both call long-landed work unlanded — measured at 98 false
+    alarms out of 110 here. The question is whether GITHUB HAS THE CONTENT,
+    which `on_github` answers over `refs/remotes` and `refs/civvis` after a
+    fetch that includes `refs/pull/*/head`. A closed pull request keeps its
+    content at `refs/pull/N/head` forever, so "closed" does not mean lost
+    either.
+
+    Four refusals, each because it has cost something somewhere:
+
+      * anything the audit flagged — DIRTY, COMMIT-NOT-ON-GITHUB or MISSING —
+        is never a candidate. The rescue path exists for those and this must
+        not race it;
+      * the `main` management worktree and the repository root are never
+        touched;
+      * a worktree edited within `idle_minutes` is left alone, because an agent
+        may be mid-task in a tree whose HEAD happens to be landed;
+      * `--reap` reports; `--reap --apply` removes. A destructive default is
+        how a tool like this ends up famous.
+    """
+    flagged = {f.get("path") for f in findings}
+    root = os.path.realpath(repo)
+    main_tree = None
+    for path in worktrees(repo):
+        if git("rev-parse", "--abbrev-ref", "HEAD", repo=path) == "main":
+            main_tree = os.path.realpath(path)
+
+    now = time.time()
+    reaped = []
+    for path in worktrees(repo):
+        real = os.path.realpath(path)
+        if real == root or real == main_tree or path in flagged:
+            continue
+        if not os.path.isdir(path):
+            continue
+        branch = git("rev-parse", "--abbrev-ref", "HEAD", repo=path) or "HEAD"
+        head = git("rev-parse", "HEAD", repo=path)
+        if not head or not on_github(repo, head):
+            continue
+        if git("status", "--porcelain", repo=path).strip():
+            continue
+        idle_for = (now - newest_edit(path)) / 60.0
+        if idle_for < idle_minutes:
+            continue
+        row = {"path": path, "branch": branch, "head": head,
+               "idle_minutes": idle_for, "removed": False}
+        if apply:
+            # `--force` because a task worktree legitimately holds build output
+            # git does not track; the clean check above is the real gate.
+            git("worktree", "remove", "--force", path, repo=repo)
+            if branch not in ("HEAD", "main"):
+                git("branch", "-D", branch, repo=repo)
+            row["removed"] = True
+        reaped.append(row)
+    return reaped
+
+
 # --- self-test ---------------------------------------------------------------
 # ⚠ There is no CIVVIS fleet in CI, so this builds a throwaway repo with a real
 # remote, a real worktree and a real unstaged edit, and asserts the audit sees it.
@@ -354,6 +435,63 @@ def selftest() -> int:
         after = audit(work, idle_minutes=30, rescue=False)
         assert not any(f["kind"] == "COMMIT-NOT-ON-GITHUB" for f in after), \
             f"a preserved commit must no longer be reported, got {after}"
+        # --- the reaper ------------------------------------------------------
+        # ⚠ EVERY ASSERTION BELOW IS A REFUSAL. The removal itself is one line
+        # of git; what makes this safe to run unattended is the four cases it
+        # declines, and a test that only proved it can delete would be a test
+        # of the dangerous half.
+        #
+        # Start from the state the loop above leaves: `wt` is clean and its
+        # HEAD is preserved on the remote, so it IS reapable.
+        os.utime(os.path.join(wt, "a.txt"), (0, 0))   # make it look idle
+
+        # 1. It refuses without --apply, and says what it would do.
+        planned = reap(work, audit(work, 30, False), idle_minutes=30, apply=False)
+        assert [os.path.basename(r["path"]) for r in planned] == ["wt"], planned
+        assert not planned[0]["removed"], "a dry run must not remove"
+        assert os.path.isdir(wt), "a dry run must leave the worktree on disk"
+
+        # 2. It refuses a worktree the audit flagged. Dirty it and it drops out
+        #    of the candidate list entirely — the rescue path owns that case and
+        #    this must not race it.
+        open(os.path.join(wt, "a.txt"), "w").write("one\ntwo\nthree\nfour\n")
+        os.utime(os.path.join(wt, "a.txt"), (0, 0))
+        assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+            "a dirty worktree must never be reaped"
+        assert os.path.isdir(wt), "the dirty worktree must still be there"
+
+        # 3. It refuses a commit GitHub does not have, even when clean.
+        subprocess.run(["git", "-C", wt, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", wt, *cfg, "commit", "-qm", "unpushed"], check=True)
+        os.utime(os.path.join(wt, "a.txt"), (0, 0))
+        assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+            "a worktree holding a commit no remote has must never be reaped"
+        assert os.path.isdir(wt), "the unpushed worktree must still be there"
+
+        # 4. It refuses a tree an agent touched recently, even when everything
+        #    else is safe: HEAD being landed says nothing about whether somebody
+        #    is working in the directory right now.
+        subprocess.run(["git", "-C", wt, "push", "-q", "origin", "feat"], check=True)
+        subprocess.run(["git", "-C", work, "fetch", "-q", "origin"], check=True)
+        os.utime(os.path.join(wt, "a.txt"), None)     # touched just now
+        assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+            "a worktree edited inside the idle window must never be reaped"
+        assert os.path.isdir(wt), "the active worktree must still be there"
+
+        # 5. And with all four satisfied it removes the worktree AND its branch.
+        os.utime(os.path.join(wt, "a.txt"), (0, 0))
+        done = reap(work, audit(work, 30, False), idle_minutes=30, apply=True)
+        assert [r["removed"] for r in done] == [True], done
+        assert not os.path.isdir(wt), "the reaped worktree must be gone from disk"
+        heads_left = git("for-each-ref", "--format=%(refname:short)", "refs/heads",
+                         repo=work)
+        assert "feat" not in heads_left.split(), \
+            f"the reaped branch must be gone too, heads are {heads_left!r}"
+        # ⚠ And the work must still be reachable — that is the whole premise.
+        assert subprocess.run(["git", "-C", remote, "rev-parse", "refs/heads/feat"],
+                              capture_output=True).returncode == 0, \
+            "reaping must never be the last copy: the remote still has the branch"
+
         print("selftest: ok")
         return 0
     finally:
@@ -370,6 +508,12 @@ def main() -> int:
     ap.add_argument("--rescue", action="store_true",
                     help="push a wip/<branch> snapshot of every dirty worktree "
                          "without touching it")
+    ap.add_argument("--reap", action="store_true",
+                    help="list worktrees whose work GitHub already has and which "
+                         "are therefore safe to remove; add --apply to remove them")
+    ap.add_argument("--apply", action="store_true",
+                    help="with --reap, actually remove. Off by default: a "
+                         "destructive default is how a tool like this ends up famous")
     ap.add_argument("--no-fetch", action="store_true",
                     help="skip the fetch; only for tests, a stale ref voids the run")
     ap.add_argument("--quiet", action="store_true", help="print only problems")
@@ -394,6 +538,19 @@ def main() -> int:
     # working and its bytes are already on GitHub. Everything else needs a person.
     unresolved = [f for f in findings
                   if not (f["kind"] == "DIRTY-ACTIVE" and f.get("saved"))]
+    if args.reap:
+        reaped = reap(args.repo, findings, args.idle_minutes, args.apply)
+        verb = "removed" if args.apply else "would remove"
+        for row in reaped:
+            print(f"REAP: {verb} {os.path.basename(row['path'])} "
+                  f"({row['branch'][:60]}, idle {row['idle_minutes']:.0f} min, "
+                  f"HEAD {row['head'][:8]} is on GitHub)")
+        if reaped:
+            print(f"{verb} {len(reaped)} worktree(s) whose work GitHub already has"
+                  + ("" if args.apply else "; re-run with --apply"))
+        else:
+            print("nothing to reap")
+
     if not unresolved:
         if not args.quiet:
             print(f"nothing exists only on this disk "
