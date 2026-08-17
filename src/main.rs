@@ -1055,7 +1055,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The local-defense handoff is likewise live-only: `garrison_under_fire`
 /// changes the emergency chooser from a generic military pick to a
 /// melee-capable land defender, lets the queue release replace a siege piece,
-/// and lets it start a defender after clearing a host-owned queue.
+/// lets it start a defender after clearing a host-owned queue, and spends Gold
+/// on that immediate defense before upgrades, patronage, or the ordinary
+/// purchaser can choose a Builder or preserve its strategic reserve.
 /// `AdvancedAi::legacy()` also leaves `amenity_project_preemption` false, so
 /// it never reads the host-calibrated Amenity ledger or reserves an idle Arena
 /// queue. The stricter broad-wartime reservation uses that same gate before it
@@ -1350,7 +1352,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `great_person_class_earnable`) and one absent from its current
 /// `live_great_person_offers` screen; native boards carry neither list and are
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x11b3_3eeb_16e5_9d3c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc6a8_ccc4_007f_a98c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

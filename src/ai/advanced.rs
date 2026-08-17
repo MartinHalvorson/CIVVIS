@@ -13148,6 +13148,111 @@ impl AdvancedAi {
         actions
     }
 
+    /// Spend Gold on the one thing that can still keep a besieged city alive
+    /// before upgrades, patronage, or the ordinary strategic purchaser can
+    /// compare it with development.
+    ///
+    /// The live garrison doctrine already identifies the exact immediate
+    /// defense — Walls first, otherwise a land melee defender — and reclaims
+    /// an unsafe production queue for it.  A completed purchase is faster
+    /// than that queue.  In the live Rome siege at turn 136, however, the
+    /// generic Gold evaluator chose a Builder in the capital at 171/200 city
+    /// damage; the Pike and Shot it had just queued needed nine turns.  That
+    /// is an emergency, not a normal reserve decision.
+    ///
+    /// This deliberately shares `garrison_under_fire` with the production
+    /// response.  Frozen controllers leave that live-only flag false, so they
+    /// return before enumerating a city, a threat, or a purchase menu.
+    fn emergency_city_defense_purchase(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if !self.base.garrison_under_fire {
+            return false;
+        }
+
+        let mut candidates: Vec<(
+            (i32, i32, i32, std::cmp::Reverse<u32>),
+            u32,
+            String,
+            Item,
+        )> = Vec::new();
+        for city_id in g.player_city_ids(pid) {
+            let Some(defence) = self.base.besieged_city_item(g, pid, city_id) else {
+                continue;
+            };
+            let city = &g.cities[&city_id];
+            let city_damage = CITY_MAX_HP.saturating_sub(city.hp);
+            let wall_damage = g.city_max_wall_hp(city).saturating_sub(city.wall_hp);
+            let combined_damage = city_damage.saturating_add(wall_damage);
+            // A city already losing health is the first rescue; a known
+            // threatened city then breaks ties ahead of a merely nearby raid.
+            let rank = (
+                city_damage,
+                combined_damage,
+                i32::from(plan.threatened_city == Some(city_id)),
+                std::cmp::Reverse(city_id),
+            );
+            candidates.push((rank, city_id, city.name.clone(), defence));
+        }
+
+        if candidates.is_empty() {
+            return false;
+        }
+        candidates.sort_by(|left, right| right.0.cmp(&left.0));
+        let purchases = self.legal_purchase_actions(g, pid);
+        let Some((rank, action, city_name, defence)) = candidates.into_iter().find_map(
+            |(rank, city_id, city_name, defence)| {
+                let action = purchases
+                    .iter()
+                    .find(|action| match (action, &defence) {
+                        (
+                            Action::Buy {
+                                city,
+                                unit,
+                                formation,
+                                currency,
+                            },
+                            Item::Unit { unit: wanted },
+                        ) => {
+                            *city == city_id
+                                && *formation == 0
+                                && currency == "gold"
+                                && unit == wanted
+                        }
+                        (
+                            Action::BuyBuilding {
+                                city,
+                                building,
+                                currency,
+                            },
+                            Item::Building { building: wanted },
+                        ) => *city == city_id && currency == "gold" && building == wanted,
+                        _ => false,
+                    })
+                    .cloned()?;
+                Some((rank, action, city_name, defence))
+            },
+        )
+        else {
+            return false;
+        };
+        let (city_damage, combined_damage, _, _) = rank;
+        let before = g.players[pid].gold;
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let spent = (before - g.players[pid].gold).max(0.0);
+            think!(self.journal(), Economy, Decision,
+                "Buying emergency {} for {}", Self::plain_item(&defence), city_name;
+                "{spent:.0} Gold defends a city with {city_damage} city and {combined_damage} combined health missing before ordinary purchases");
+        }
+        true
+    }
+
     /// Convert a deep treasury into immediate tempo gains. Candidate
     /// units, buildings, and Governor-enabled districts reuse the strategic
     /// production evaluator, but are scored at their undiscounted positional
@@ -13158,6 +13263,9 @@ impl AdvancedAi {
     /// purchase consumes, so buy a bounded series and recompute needs after
     /// every item instead of carrying an ever-growing inert treasury.
     fn advanced_gold_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
+        if self.emergency_city_defense_purchase(g, pid, plan) {
+            return true;
+        }
         let city_count = g.player_city_ids(pid).len();
         let reserve = match plan.strategy {
             GrandStrategy::Diplomacy | GrandStrategy::Culture => {
@@ -26670,8 +26778,14 @@ impl AdvancedAi {
         }
         self.census.count(plan.strategy);
         self.advanced_research(g, pid, &plan);
-        // The turn a breakthrough arrives, the appointed predecessors upgrade
-        // before Great Person patronage, purchases, diplomacy, or movement.
+        // A city that can fall next turn cannot wait for an upgrade, Great
+        // Person patronage, or a generic reserve-aware purchase scorer. The
+        // emergency spends at most one action and suppresses that later
+        // generic pass for this turn.
+        let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan);
+        // Once a city-saving purchase has had its one action, the turn a
+        // breakthrough arrives still upgrades appointed predecessors before
+        // Great Person patronage, ordinary purchases, diplomacy, or movement.
         self.execute_war_upgrades(g, pid);
         if self.victory_planning {
             let denied_rival = plan
@@ -26711,7 +26825,7 @@ impl AdvancedAi {
         // purchase pass; otherwise the adaptive agents are limited to the
         // baseline building/unit buyer and can carry thousands of Gold past
         // an immediately affordable plan-critical district.
-        if self.victory_planning {
+        if self.victory_planning && !emergency_city_defense {
             self.advanced_gold_spending(g, pid, &plan);
         }
         self.strategic_policies(g, pid, plan.strategy);
@@ -39663,6 +39777,101 @@ mod tests {
             .buildings
             .contains(&crate::name!("library")));
         assert!(game.players[0].gold >= 300.0);
+    }
+
+    #[test]
+    fn live_gold_purchase_spends_through_the_reserve_to_save_a_besieged_city() {
+        // At t136 of the live Rome siege, the capital had 29 of 200 city HP
+        // left, a Pike and Shot nine turns from completion, and enough Gold
+        // for a defender. The generic purchase scorer instead bought a
+        // Builder. Make the normal Science reserve larger than the defender's
+        // entire cost: only the live emergency may spend this treasury.
+        let (mut game, city, home) = empire_with_a_capital(71_121);
+        let city_pos = game.cities[&city].pos;
+        let state = game.cities.get_mut(&city).expect("capital exists");
+        state.buildings.push(crate::name!("walls"));
+        state.wall_hp = 100;
+        state.hp = 29;
+        let attackers: Vec<Pos> = game
+            .wdisk(home, 2)
+            .into_iter()
+            .filter(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .take(2)
+            .collect();
+        assert_eq!(attackers.len(), 2, "fixture needs two visible besiegers");
+        for position in attackers {
+            game.spawn_test_unit("warrior", 1, position);
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut live = AdvancedAi::new();
+        live.enable_garrison_under_fire();
+        game.players[0].gold = 1_000.0;
+        let defence = live
+            .base
+            .besieged_city_item(&game, 0, city)
+            .expect("the bleeding walled city needs a local defender");
+        let Item::Unit { unit: wanted } = defence else {
+            panic!("walls already stand, so the live doctrine must ask for a defender");
+        };
+        let action = live
+            .legal_purchase_actions(&game, 0)
+            .into_iter()
+            .find(|action| match action {
+                Action::Buy {
+                    city: action_city,
+                    unit,
+                    formation,
+                    currency,
+                } => {
+                    *action_city == city
+                        && unit == &wanted
+                        && *formation == 0
+                        && currency == "gold"
+                }
+                _ => false,
+            })
+            .expect("the local defender has a Gold purchase action");
+        let mut quote = game.clone();
+        let before_quote = quote.players[0].gold;
+        quote
+            .apply(0, &action)
+            .expect("the defender quote applies");
+        let cost = before_quote - quote.players[0].gold;
+        assert!(cost > 0.0 && cost < 300.0, "fixture must sit below reserve: {cost}");
+        game.players[0].gold = cost;
+
+        let stock = AdvancedAi::new();
+        let mut stock_game = game.clone();
+        assert!(
+            !stock.emergency_city_defense_purchase(&mut stock_game, 0, &plan),
+            "the frozen/default controller must leave the live emergency gate off"
+        );
+        assert_eq!(stock_game.players[0].gold, cost);
+
+        assert!(live.advanced_gold_spending(&mut game, 0, &plan));
+        let purchased = game.player_unit_ids(0);
+        assert_eq!(purchased.len(), 1, "the emergency spends one action, not a Builder");
+        let unit = &game.units[&purchased[0]];
+        let spec = &game.rules.units[unit.kind];
+        assert_eq!(unit.kind, wanted);
+        assert_eq!(unit.pos, city_pos, "the defender appears in the city it saves");
+        assert!(
+            spec.class == "military" && spec.is_melee_capable() && !spec.siege,
+            "the emergency must buy a local land defender, not civilian infrastructure"
+        );
+        assert_eq!(game.players[0].gold, 0.0, "saving the city outranks the reserve");
     }
 
     #[test]
