@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 162] = [
+pub const EVAL_ONLY_AIS: [&str; 177] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -105,6 +105,21 @@ pub const EVAL_ONLY_AIS: [&str; 162] = [
     "live_without_tally_culture",
     "live_without_wide_map_capacity",
     "live_without_wonder_ring_settle_value",
+    "live_without_live_trader_route_adapter",
+    "live_without_live_religious_purchase_guard",
+    "live_without_recorded_tactical_step",
+    "live_without_strike_opening",
+    "live_without_ranged_needs_line_of_sight",
+    "live_without_one_launch_pad",
+    "live_without_culture_building_debt",
+    "live_without_culture_coverage",
+    "live_without_settler_target_hysteresis",
+    "live_without_tally_great_people",
+    "live_without_barbarian_scouts_are_scouts",
+    "live_without_camp_reach",
+    "live_without_settler_stack_discipline",
+    "live_without_camp_party",
+    "live_without_buildings_before_projects",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -582,6 +597,21 @@ define_arm_kinds! {
     LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
+    LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
+    LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
+    LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
+    LiveWithoutStrikeOpening => "live_without_strike_opening",
+    LiveWithoutRangedNeedsLineOfSight => "live_without_ranged_needs_line_of_sight",
+    LiveWithoutOneLaunchPad => "live_without_one_launch_pad",
+    LiveWithoutCultureBuildingDebt => "live_without_culture_building_debt",
+    LiveWithoutCultureCoverage => "live_without_culture_coverage",
+    LiveWithoutSettlerTargetHysteresis => "live_without_settler_target_hysteresis",
+    LiveWithoutTallyGreatPeople => "live_without_tally_great_people",
+    LiveWithoutBarbarianScoutsAreScouts => "live_without_barbarian_scouts_are_scouts",
+    LiveWithoutCampReach => "live_without_camp_reach",
+    LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
+    LiveWithoutCampParty => "live_without_camp_party",
+    LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBuildFirst => "advanced_build_first",
@@ -3109,318 +3139,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_live_bridge();
             Box::new(ai)
         }
-        "live_without_amenity_project_preemption" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_amenity_project_preemption();
-            Box::new(ai)
-        }
-        "live_without_amenity_district_path" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_amenity_district_path();
-            Box::new(ai)
-        }
-        "live_without_governor_every_lane" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_governor_every_lane();
-            Box::new(ai)
-        }
-        "live_without_live_wonder_race" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_live_wonder_race();
-            Box::new(ai)
-        }
-        "live_without_expansion_before_prophet" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_expansion_before_prophet();
-            Box::new(ai)
-        }
-        "live_without_no_elective_war" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_no_elective_war();
-            Box::new(ai)
-        }
-        "live_without_fog_land_capacity" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_fog_land_capacity();
-            Box::new(ai)
-        }
-        "live_without_stacked_escort" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_stacked_escort();
-            Box::new(ai)
-        }
-        "live_without_home_defense" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_home_defense();
-            Box::new(ai)
-        }
-        "live_without_joint_tactics" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_joint_tactics();
-            Box::new(ai)
-        }
-        "live_without_loyalty_policy_defence" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_loyalty_policy_defence();
-            Box::new(ai)
-        }
-        "live_without_solvent_faith_army" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_solvent_faith_army();
-            Box::new(ai)
-        }
-        "live_without_siege_muster" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_siege_muster();
-            Box::new(ai)
-        }
-        "live_without_district_coverage" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_district_coverage();
-            Box::new(ai)
-        }
-        "live_without_slot_kind_tiebreak" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_slot_kind_tiebreak();
-            Box::new(ai)
-        }
-        "live_without_bounded_recovery" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_bounded_recovery();
-            Box::new(ai)
-        }
-        "live_without_army_target_weighs_enemy" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_army_target_weighs_the_enemy();
-            Box::new(ai)
-        }
-        "live_without_peacetime_deterrence" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_peacetime_deterrence();
-            Box::new(ai)
-        }
-        "live_without_siege_tracks_wall" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_siege_tracks_the_wall();
-            Box::new(ai)
-        }
-        "live_without_siege_role" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_siege_role();
-            Box::new(ai)
-        }
-        "live_without_come_ashore" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_come_ashore();
-            Box::new(ai)
-        }
-        "live_without_suzerain_cards" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_suzerain_cards_need_a_suzerainty();
-            Box::new(ai)
-        }
-        "live_without_relief_targets_the_siege" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_relief_targets_the_siege();
-            Box::new(ai)
-        }
-        "live_without_blind_objective_units" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_blind_objective_units();
-            Box::new(ai)
-        }
-        "live_without_muster_at_command_radius" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_muster_at_command_radius();
-            Box::new(ai)
-        }
-        "live_without_blind_objective_strength" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_blind_objective_strength();
-            Box::new(ai)
-        }
-        "live_without_loyalty_rate_alarm" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_loyalty_rate_alarm();
-            Box::new(ai)
-        }
-        "live_without_housing_districts" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_housing_districts();
-            Box::new(ai)
-        }
-        "live_without_housing_buildings" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_housing_buildings();
-            Box::new(ai)
-        }
-        "live_without_campus_every_city" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_campus_every_city();
-            Box::new(ai)
-        }
-        "live_without_housing_cards" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_housing_cards();
-            Box::new(ai)
-        }
-        "live_without_housing_research" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_housing_research();
-            Box::new(ai)
-        }
-        "live_without_war_economy" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_war_economy();
-            Box::new(ai)
-        }
-        "live_without_war_reinforcement" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_war_reinforcement();
-            Box::new(ai)
-        }
-        "live_without_war_patience" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_war_patience();
-            Box::new(ai)
-        }
-        "live_without_endgame_war_runway" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_endgame_war_runway();
-            Box::new(ai)
-        }
-        "live_without_counter_in_lane" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_counter_in_lane();
-            Box::new(ai)
-        }
-        "live_without_era_paced_expansion" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_era_paced_expansion();
-            Box::new(ai)
-        }
-        "live_without_escort_unstick" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_escort_unstick();
-            Box::new(ai)
-        }
-        "live_without_frontier_loyalty" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_frontier_loyalty();
-            Box::new(ai)
-        }
-        "live_without_garrison_under_fire" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_garrison_under_fire();
-            Box::new(ai)
-        }
-        "live_without_garrison_walls" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_garrison_walls();
-            Box::new(ai)
-        }
-        "live_without_naval_recon" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_naval_recon();
-            Box::new(ai)
-        }
-        "live_without_recon_flight" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_recon_flight();
-            Box::new(ai)
-        }
-        "live_without_recon_replacement" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_recon_replacement();
-            Box::new(ai)
-        }
-        "live_without_religion_sues_peace" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_religion_sues_peace();
-            Box::new(ai)
-        }
-        "live_without_score_horizon" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_score_horizon();
-            Box::new(ai)
-        }
-        "live_without_siege_commitment" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_siege_commitment();
-            Box::new(ai)
-        }
-        "live_without_stranded_settler_discount" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_stranded_settler_discount();
-            Box::new(ai)
-        }
-        "live_without_tally_culture" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_tally_culture();
-            Box::new(ai)
-        }
-        "live_without_wide_map_capacity" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_wide_map_capacity();
-            Box::new(ai)
-        }
-        "live_without_wonder_ring_settle_value" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_wonder_ring_settle_value();
-            Box::new(ai)
-        }
         "random" => Box::new(RandomAi::new(seed)),
         // Named so provenance collapse checks compare controller *and*
         // weights instead of dropping the genome. (Historically also the
@@ -3736,7 +3454,33 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "basic" => Box::new(BasicAi::new()),
-        _ => unreachable!("registered arm {} has no factory row", kind.name()),
+        // Every `live_without_*` arm, derived from `LIVE_TREATMENTS` rather
+        // than written out.
+        //
+        // ⚠⚠⚠ FIFTY-TWO IDENTICAL FOUR-LINE CASES STOOD HERE, AND THE
+        // FIFTEEN THAT DID NOT ARE WHY THIS IS A LOOKUP NOW. Each was
+        // `AdvancedAi::new()`, `enable_live_bridge()`, one `disable_*()`,
+        // `Box::new(ai)` — and writing one by hand was six other edits as
+        // well, so fifteen of the sixty-seven treatments the live seat ships
+        // never got one. A third of the bundle could not be priced by the
+        // paired evaluator and nothing said so. Deriving them means a
+        // treatment reaches the bundle with its withholding arm or does not
+        // compile.
+        name => {
+            let withheld = name
+                .strip_prefix("live_without_")
+                .expect("registered arm has no factory row");
+            let (_, _, disable) = crate::ai::LIVE_TREATMENTS
+                .iter()
+                .find(|(treatment, _, _)| *treatment == withheld)
+                .unwrap_or_else(|| {
+                    panic!("{name} withholds {withheld}, which is not a live treatment")
+                });
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            disable(&mut ai);
+            Box::new(ai)
+        }
     }
 }
 
@@ -4052,6 +3796,21 @@ impl ArmKind {
             Self::LiveWithoutTallyCulture => live_without("tally-culture"),
             Self::LiveWithoutWideMapCapacity => live_without("wide-map-capacity"),
             Self::LiveWithoutWonderRingSettleValue => live_without("wonder-ring-settle-value"),
+            Self::LiveWithoutLiveTraderRouteAdapter => live_without("live-trader-route"),
+            Self::LiveWithoutLiveReligiousPurchaseGuard => live_without("live-religious-purchase"),
+            Self::LiveWithoutRecordedTacticalStep => live_without("recorded-tactical-step"),
+            Self::LiveWithoutStrikeOpening => live_without("strike-opening"),
+            Self::LiveWithoutRangedNeedsLineOfSight => live_without("ranged-line-of-sight"),
+            Self::LiveWithoutOneLaunchPad => live_without("one-launch-pad"),
+            Self::LiveWithoutCultureBuildingDebt => live_without("culture-building-debt"),
+            Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
+            Self::LiveWithoutSettlerTargetHysteresis => live_without("settler-target-hysteresis"),
+            Self::LiveWithoutTallyGreatPeople => live_without("tally-great-people"),
+            Self::LiveWithoutBarbarianScoutsAreScouts => live_without("barbarian-scouts-are-scouts"),
+            Self::LiveWithoutCampReach => live_without("camp-reach"),
+            Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
+            Self::LiveWithoutCampParty => live_without("camp-party"),
+            Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4564,60 +4323,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_amenity_district_path" => {
             (Vec::new(), "live_without_amenity_district_path")
         }
-        "live_without_governor_every_lane" => (Vec::new(), "live_without_governor_every_lane"),
-        "live_without_live_wonder_race" => (Vec::new(), "live_without_live_wonder_race"),
         "live_without_expansion_before_prophet" => {
             (Vec::new(), "live_without_expansion_before_prophet")
         }
-        "live_without_no_elective_war" => (Vec::new(), "live_without_no_elective_war"),
-        "live_without_fog_land_capacity" => (Vec::new(), "live_without_fog_land_capacity"),
-        "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
-        "live_without_joint_tactics" => (Vec::new(), "live_without_joint_tactics"),
         "live_without_loyalty_policy_defence" => {
             (Vec::new(), "live_without_loyalty_policy_defence")
         }
-        "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
-        "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
-        "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
-        "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
-        "live_without_peacetime_deterrence" => (Vec::new(), "live_without_peacetime_deterrence"),
-        "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
-        "live_without_siege_role" => (Vec::new(), "live_without_siege_role"),
-        "live_without_come_ashore" => (Vec::new(), "live_without_come_ashore"),
-        "live_without_suzerain_cards" => (Vec::new(), "live_without_suzerain_cards"),
-        "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
-        "live_without_muster_at_command_radius" => (Vec::new(), "live_without_muster_at_command_radius"),
-        "live_without_relief_targets_the_siege" => (Vec::new(), "live_without_relief_targets_the_siege"),
-        "live_without_blind_objective_units" => (Vec::new(), "live_without_blind_objective_units"),
-        "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
-        "live_without_district_coverage" => (Vec::new(), "live_without_district_coverage"),
-        "live_without_slot_kind_tiebreak" => (Vec::new(), "live_without_slot_kind_tiebreak"),
-        "live_without_housing_districts" => (Vec::new(), "live_without_housing_districts"),
-        "live_without_housing_buildings" => (Vec::new(), "live_without_housing_buildings"),
-        "live_without_campus_every_city" => (Vec::new(), "live_without_campus_every_city"),
-        "live_without_housing_cards" => (Vec::new(), "live_without_housing_cards"),
-        "live_without_housing_research" => (Vec::new(), "live_without_housing_research"),
-        "live_without_war_economy" => (Vec::new(), "live_without_war_economy"),
-        "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
-        "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
-        "live_without_endgame_war_runway" => (Vec::new(), "live_without_endgame_war_runway"),
-        "live_without_stacked_escort" => (Vec::new(), "live_without_stacked_escort"),
-        "live_without_counter_in_lane" => (Vec::new(), "live_without_counter_in_lane"),
-        "live_without_era_paced_expansion" => (Vec::new(), "live_without_era_paced_expansion"),
-        "live_without_escort_unstick" => (Vec::new(), "live_without_escort_unstick"),
-        "live_without_frontier_loyalty" => (Vec::new(), "live_without_frontier_loyalty"),
-        "live_without_garrison_under_fire" => (Vec::new(), "live_without_garrison_under_fire"),
-        "live_without_garrison_walls" => (Vec::new(), "live_without_garrison_walls"),
-        "live_without_naval_recon" => (Vec::new(), "live_without_naval_recon"),
-        "live_without_recon_flight" => (Vec::new(), "live_without_recon_flight"),
-        "live_without_recon_replacement" => (Vec::new(), "live_without_recon_replacement"),
-        "live_without_religion_sues_peace" => (Vec::new(), "live_without_religion_sues_peace"),
-        "live_without_score_horizon" => (Vec::new(), "live_without_score_horizon"),
-        "live_without_siege_commitment" => (Vec::new(), "live_without_siege_commitment"),
-        "live_without_stranded_settler_discount" => (Vec::new(), "live_without_stranded_settler_discount"),
-        "live_without_tally_culture" => (Vec::new(), "live_without_tally_culture"),
-        "live_without_wide_map_capacity" => (Vec::new(), "live_without_wide_map_capacity"),
-        "live_without_wonder_ring_settle_value" => (Vec::new(), "live_without_wonder_ring_settle_value"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
@@ -4730,6 +4441,20 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
         "basic" => (Vec::new(), "basic"),
+        // Every `live_without_*` arm is itself: it builds the live bundle with
+        // one treatment withheld, which is not an alias of anything.
+        //
+        // ⚠ THIS ROW USED TO BE FIFTY-TWO ROWS AND THE DEFAULT BELOW WAS THE
+        // TRAP. A registered arm with no row here fell to `"basic"`, so the
+        // provenance said "this is the lightweight agent" about a live-bundle
+        // controller while the alias table said it was itself. The
+        // `debug_assert` under this match is the only thing that catches it —
+        // and `release` compiles debug assertions out, which is why the `ci`
+        // profile turns them back on (see Cargo.toml). Derived, the two
+        // cannot disagree.
+        live_without if live_without.starts_with("live_without_") => {
+            (Vec::new(), live_without)
+        }
         _ => (Vec::new(), "basic"),
     };
     let effective = artifact_effective_alias_from(kind, champion, net, league).name();
@@ -5866,13 +5591,12 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 135] = [
+            const SCRIPTED: [&str; 83] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
-                "live_without_joint_tactics",
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -5954,58 +5678,7 @@ mod tests {
                 // Scripted composites of bridge flags: built from code, no
                 // weights artifact and no value net.
                 "live",
-                "live_without_amenity_project_preemption",
-                "live_without_amenity_district_path",
-                "live_without_governor_every_lane",
-                "live_without_live_wonder_race",
-                "live_without_expansion_before_prophet",
-                "live_without_no_elective_war",
-                "live_without_fog_land_capacity",
-                "live_without_home_defense",
-                "live_without_loyalty_policy_defence",
-                "live_without_siege_muster",
-                "live_without_bounded_recovery",
-                "live_without_army_target_weighs_enemy",
-                "live_without_peacetime_deterrence",
-                "live_without_siege_tracks_wall",
-                "live_without_siege_role",
-                "live_without_come_ashore",
-                "live_without_suzerain_cards",
-                "live_without_blind_objective_strength",
-                "live_without_muster_at_command_radius",
-                "live_without_relief_targets_the_siege",
-                "live_without_blind_objective_units",
-                "live_without_loyalty_rate_alarm",
-                "live_without_solvent_faith_army",
                 "random",
-                "live_without_district_coverage",
-                "live_without_slot_kind_tiebreak",
-                "live_without_housing_districts",
-                "live_without_housing_buildings",
-                "live_without_campus_every_city",
-                "live_without_housing_cards",
-                "live_without_housing_research",
-                "live_without_war_economy",
-                "live_without_war_reinforcement",
-                "live_without_war_patience",
-                "live_without_endgame_war_runway",
-                "live_without_stacked_escort",
-                "live_without_counter_in_lane",
-                "live_without_era_paced_expansion",
-                "live_without_escort_unstick",
-                "live_without_frontier_loyalty",
-                "live_without_garrison_under_fire",
-                "live_without_garrison_walls",
-                "live_without_naval_recon",
-                "live_without_recon_flight",
-                "live_without_recon_replacement",
-                "live_without_religion_sues_peace",
-                "live_without_score_horizon",
-                "live_without_siege_commitment",
-                "live_without_stranded_settler_discount",
-                "live_without_tally_culture",
-                "live_without_wide_map_capacity",
-                "live_without_wonder_ring_settle_value",
             ];
             const SCRIPTED_ALIASES: [&str; 8] = [
                 "advanced_policy_envoy_priority",
@@ -6024,6 +5697,14 @@ mod tests {
             ];
             assert!(
                 !resolved.artifacts.is_empty()
+                    // Every `live_without_*` arm is scripted by construction:
+                    // it is the live bundle with one treatment withheld, and
+                    // it loads no artifact. Matched by prefix rather than
+                    // listed, because the list this replaces was the eighth
+                    // place a new treatment had to be written down and the
+                    // comment below already said a name list "stops
+                    // discriminating as it grows".
+                    || name.starts_with("live_without_")
                     || SCRIPTED.contains(name)
                     || SCRIPTED_ALIASES.contains(name),
                 "{name} has no provenance row and inherited the catch-all"

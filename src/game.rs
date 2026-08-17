@@ -5028,6 +5028,14 @@ pub struct ObservedPublicEmpireStats {
     pub techs: Option<usize>,
     pub civics: Option<usize>,
     pub tourism_per_turn: Option<f64>,
+    /// The culture victory's two public counters as the host's World Rankings
+    /// screen shows them for every major: tourists visiting this civilization,
+    /// and its own staycationers (the bar every rival must clear).
+    /// `#[serde(default)]` keeps saves from before these fields loadable.
+    #[serde(default)]
+    pub foreign_tourists: Option<usize>,
+    #[serde(default)]
+    pub domestic_tourists: Option<usize>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
