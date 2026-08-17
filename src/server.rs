@@ -421,18 +421,23 @@ fn host_memory_percent() -> Option<f64> {
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
-/// The whole page source — the document plus its one external script — as a
+const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
+/// The whole page source — the document plus its two external scripts — as a
 /// single searchable string. Only the source-contract tests read it: they
 /// assert against this combined source, which is the same contract they
-/// checked when the script block was inline. The server itself ships the two
-/// parts separately at `/` and `/assets/app.js`. (The split exists because
+/// checked when the script block was inline. The server itself ships the three
+/// parts separately at `/`, `/assets/app.js`, and `/assets/app_setup.js`.
+/// (The first split exists because
 /// the script was a 1.35 MB block inside `web/index.html`, making that file
 /// the repository's largest history payer at ~1 MB of pack growth per edit.)
 #[cfg(test)]
 static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
+    let mut page = String::with_capacity(
+        EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len() + EMBEDDED_APP_SETUP_JS.len(),
+    );
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_JS);
+    page.push_str(EMBEDDED_APP_SETUP_JS);
     page
 });
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
@@ -3332,8 +3337,9 @@ impl Session {
 }
 
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
+const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 
-/// Give each native server's application script a new URL.
+/// Give each native server's application scripts a new URL.
 ///
 /// A follower can replace the local HTTP process while the operator's Chrome
 /// tab remains open.  `Cache-Control: no-store` normally makes a document
@@ -3341,7 +3347,11 @@ const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 /// with an older cache entry cannot keep executing the former server's UI.
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
-    page.replacen(APP_JS_TAG, &app_tag, 1).into_bytes()
+    let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
+    page
+        .replacen(APP_JS_TAG, &app_tag, 1)
+        .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
+        .into_bytes()
 }
 
 fn index_html() -> Vec<u8> {
@@ -3360,6 +3370,15 @@ fn app_js() -> Vec<u8> {
         }
     }
     EMBEDDED_APP_JS.as_bytes().to_vec()
+}
+
+fn app_setup_js() -> Vec<u8> {
+    for p in ["web/assets/app_setup.js"] {
+        if let Ok(b) = std::fs::read(p) {
+            return b;
+        }
+    }
+    EMBEDDED_APP_SETUP_JS.as_bytes().to_vec()
 }
 
 fn feature_atlas() -> Vec<u8> {
@@ -4515,6 +4534,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &app_js(),
             );
         }
+        ("GET", "/assets/app_setup.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_setup_js(),
+            );
+        }
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());
         }
@@ -5376,8 +5403,8 @@ mod tests {
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
         BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
-        EMBEDDED_APP_JS, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-        EMBEDDED_INDEX,
+        EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
         MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
@@ -5402,12 +5429,30 @@ mod tests {
 
     #[test]
     fn served_index_tags_the_app_script_with_its_server_instance() {
-        let page = r#"<html><script src="/assets/app.js"></script></html>"#;
+        let page = r#"<html><script src="/assets/app.js"></script><script src="/assets/app_setup.js"></script></html>"#;
         let served = String::from_utf8(index_with_app_instance(page, 4242))
             .expect("the HTML fixture is UTF-8");
 
         assert!(served.contains(r#"<script src="/assets/app.js?instance=4242"></script>"#));
         assert!(!served.contains(r#"<script src="/assets/app.js"></script>"#));
+        assert!(served.contains(r#"<script src="/assets/app_setup.js?instance=4242"></script>"#));
+        assert!(!served.contains(r#"<script src="/assets/app_setup.js"></script>"#));
+    }
+
+    #[test]
+    fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
+        assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
+        for symbol in [
+            "function syncSetupMode()",
+            "async function startNewSimulation(",
+            "async function startCiv6Game()",
+            "document.getElementById(\"newgame-options\").addEventListener",
+        ] {
+            assert!(EMBEDDED_APP_SETUP_JS.contains(symbol), "missing setup symbol: {symbol}");
+        }
+        assert!(!EMBEDDED_APP_JS.contains("function syncSetupMode()"));
+        assert!(!EMBEDDED_APP_JS.contains("async function startNewSimulation("));
+        assert!(EMBEDDED_INDEX.contains("/assets/app_setup.js"));
     }
 
     #[test]
@@ -8761,6 +8806,7 @@ mod tests {
     /// its own list rather than as a flag on every script row.
     #[test]
     fn the_setup_payload_names_the_scenario_maps() {
+        let js = format!("{EMBEDDED_APP_JS}{EMBEDDED_APP_SETUP_JS}");
         let scenarios = scenario_map_scripts();
         assert_eq!(scenarios.len(), crate::historical_scenarios::SCENARIOS.len());
         assert_eq!(scenarios[0].id, "trafalgar");
@@ -8790,7 +8836,7 @@ mod tests {
             "document.body.classList.toggle(\"tactics-preset\", !!scenario);",
         ] {
             assert!(
-                EMBEDDED_APP_JS.contains(control),
+                js.contains(control),
                 "the browser lost its scenario handling: {control}"
             );
         }
@@ -8813,28 +8859,29 @@ mod tests {
         // (`Game::script_disaster_allowed`), so a brief that said "calm"
         // everywhere would be noise and one that said nothing here would hide
         // the one storm that is history.
-        assert!(EMBEDDED_APP_JS.contains("const SCENARIO_WEATHER_LABELS = {"));
-        assert!(EMBEDDED_APP_JS.contains("Historical weather: ${escapeAttr(weather)}"));
+        assert!(js.contains("const SCENARIO_WEATHER_LABELS = {"));
+        assert!(js.contains("Historical weather: ${escapeAttr(weather)}"));
     }
 
     /// Nothing the setup panel runs during page load may read a module
     /// constant that has not been initialised yet.
     ///
-    /// `syncSetupMode()` is called from a top-level statement partway down
-    /// `app.js`. A `function` declaration hoists, so it can call anything; a
-    /// top-level `const` or `let` further down the file does **not** — it sits
-    /// in its temporal dead zone until execution reaches it, and reading one
-    /// throws a `ReferenceError`. Thrown from a top-level statement, that
-    /// error takes the rest of the module with it: every listener, the render
-    /// loop and the state fetch below it never run, and the page comes up
-    /// blank with one line in the console. #1447 shipped exactly that.
+    /// `syncSetupMode()` is called from a top-level statement in the setup
+    /// asset. A `function` declaration hoists, so it can call anything; a
+    /// top-level `const` or `let` further down that same classic script does
+    /// **not** — it sits in its temporal dead zone until execution reaches it,
+    /// and reading one throws a `ReferenceError`. The renderer script has
+    /// already finished by then, so its bindings are initialized; setup's own
+    /// late bindings are the ones this scan protects. Thrown from a top-level
+    /// statement, that error leaves the page with dead setup controls. #1447
+    /// shipped exactly that.
     ///
     /// So this walks what load actually reaches and checks it against what is
     /// not initialised yet. It is a coarse text scan rather than a parse, and
     /// it is one-directional: it can miss a path, but what it reports is real.
     #[test]
     fn nothing_the_setup_panel_runs_at_load_reads_an_uninitialised_constant() {
-        let js = EMBEDDED_APP_JS;
+        let js = format!("{EMBEDDED_APP_JS}{EMBEDDED_APP_SETUP_JS}");
         let call = "\nsyncSetupMode();\n";
         let load_at = js.find(call).expect("the load-time syncSetupMode() call") + 1;
 
@@ -8857,12 +8904,13 @@ mod tests {
                 }
             }
         }
-        // The load call sits near the end of the file, so only a tail of the
-        // module is still unborn at that moment. A named canary from that tail
+        // The setup call sits near the start of the setup asset, so its own
+        // later bindings are still unborn. A named canary from that tail
         // catches a scan that has quietly stopped finding anything, which
-        // would otherwise make this test pass by seeing nothing.
+        // would otherwise make this test pass by seeing nothing. Bindings in
+        // app.js are intentionally before the call and therefore initialized.
         assert!(
-            unborn.contains(&"MAX_ANIMATION_PAINT_SHARE"),
+            unborn.contains(&"newSimulationBusy"),
             "the scan no longer finds late top-level constants ({} found)",
             unborn.len()
         );
@@ -16547,7 +16595,8 @@ mod tests {
                 .any(|method| source.contains(&format!("(\"{method}\", \"{path}\")")))
         }
 
-        let paths = viewer_paths(EMBEDDED_APP_JS);
+        let viewer_source = format!("{EMBEDDED_APP_JS}{EMBEDDED_APP_SETUP_JS}");
+        let paths = viewer_paths(&viewer_source);
         assert!(
             paths.len() >= 20,
             "the viewer route scan found too little to protect: {paths:?}"
