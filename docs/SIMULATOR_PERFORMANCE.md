@@ -410,3 +410,98 @@ borrowed string and therefore retain the original string comparison. It was
 removed. A future retry needs one profiled high-frequency caller that can carry
 a `Name` all the way to the map lookup; broad key conversion on its own is not
 a standing target.
+
+## 2026-08-17 profile — one settler owns a fifth of the game
+
+The ranking table above is from July and its top row (intern effect and rules
+keys) is no longer where the time is. This is a fresh `sample` profile of the
+current head, taken the same way: `ci`-built `release` binary, one 6-player
+74×46 nine-city-state online game at `--jobs 1`, `sample` at 1 ms.
+
+⚠ **Read the `--jobs 1` caveat first.** `sample` counts blocked threads, so the
+persistent pool's idle workers show up as `semaphore_wait_trap` — 5,505 of
+10,542 samples in the first run. Every percentage below is against the working
+main thread, not that total.
+
+### Where the time is
+
+| subsystem | % of main thread |
+| --- | ---: |
+| `AdvancedAi::take_turn` (all deliberation) | **95.2%** |
+| ├ `advanced_units` | 24.4% |
+| ├ `advance_unit_serial` | 20.4% |
+| ├ `settle_sites_with_limit_cached` | 13.4% |
+| ├ `production_value` | 7.8% |
+| ├ `research_with_government` | 6.1% |
+| ├ `policy_card_score` | 5.3% |
+| └ `legal_purchase_actions` | 3.1% |
+| `Game::do_end_turn` (the engine's own turn) | 4.6% |
+| `refresh_all_visibility` | 4.2% |
+
+**The rules are not the cost.** Everything the engine does to advance a turn is
+under ten percent; the rest is the controller deciding what to do. That agrees
+with the 2026-07-31 allocation census (two thirds of allocations inside
+`AdvancedAi`) and sharpens it.
+
+### One settler owns a fifth of the game
+
+`advance_unit_serial` is 20.4% of the run, and it decomposes almost entirely
+into a single unit's target search:
+
+| step | % of the `advance_unit_serial` block |
+| --- | ---: |
+| `advanced_settler_step` | **98.6%** |
+| └ `best_settler_target` | 85.5% |
+| &nbsp;&nbsp;└ `best_reachable_settle_site_except_cached` | 79.7% |
+| &nbsp;&nbsp;&nbsp;&nbsp;├ `settlement_atlas_values` | 65.4% |
+| &nbsp;&nbsp;&nbsp;&nbsp;├ `settlement_static_value_uncached` | 38.3% |
+| &nbsp;&nbsp;&nbsp;&nbsp;├ `settlement_adjacency_summary_from_positions` | 23.7% |
+| &nbsp;&nbsp;&nbsp;&nbsp;└ `district_adjacency_assuming_…_cached` | 21.9% + 12.4% |
+
+Every other unit in the empire together costs less than the settler's choice of
+destination. The shape is `sites × disk × districts`: a scan considers ~154
+candidate sites, each valued over its radius-2 disk of 19 plots, and each plot
+is tested against every plannable district for adjacency yield. That is roughly
+35,000 adjacency evaluations per scan, and a 150-turn game runs 965 scans.
+
+### What was measured and rejected
+
+Two plausible causes were tested and are **not** the problem. Recording them so
+the next reader does not re-derive them:
+
+- **Atlas thrashing.** `SettlementAtlas` invalidates on `(turn, map_epoch, pid)`
+  and `WorldMap::get_mut` bumps the epoch on *any* mutable tile access, so the
+  cache looked certain to be destroyed by ordinary unit movement. Instrumented:
+  **428 rebuilds across 906 player-turns**, a 68% hit rate, and forcing the
+  atlas to persist across turns and epochs changed misses by only 3% (96,052 →
+  92,884) and did not reduce runtime. The turn/player key, not the epoch, is
+  what bounds it, and it is behaving.
+- **Measured-null flags.** `battlefront_observation`, `deny_leaders` and
+  `plan_city_target` are recorded null or near-inert in
+  `docs/AI_GAPS.md`, so they looked like free savings. They do not appear in the
+  profile at all — under 0.1% each. They are null in value *and* in cost;
+  removing them is hygiene, not speed. `plannable_districts`, recomputed once
+  per candidate site, is likewise 0.12%.
+
+### Largest remaining opportunities, superseding the July table
+
+| opportunity | current signal | main constraint |
+| --- | --- | --- |
+| Narrow the settlement candidate set | the settler search is 20% of the run and scores ~154 sites to move one unit | breadth is the score's quality; a prefilter that changes the chosen site changes play |
+| Memoize district adjacency per plot | `district_adjacency_assuming_…` is ~7% of the run, re-derived per candidate site over overlapping disks | the "assuming" argument is a counterfactual city center, so the memo key must carry it |
+| Allocation volume in the controller | allocator and `memmove`/`memcmp` leaves are ~18% of working samples | unchanged from 2026-07-31; two thirds of it is `AdvancedAi` |
+| Existence vs ranking queries | **done** — `settle_site_exists` (#1911) took −4.0% wall with byte-identical play | none; the pattern generalises to any `.is_some()` on a ranked scan |
+
+### The cost-versus-value question
+
+`docs/AI_GAPS.md` records that of the twenty-three production behaviours priced
+by withholding, **two were worth keeping and one was actively harmful**; and
+that expansion specifically is "the second replicated oracle ceiling" where
+**seven decision treatments failed**. Set beside this profile, that is the
+uncomfortable pair worth stating plainly: the single most expensive subsystem in
+the simulator is the one whose decision treatments have most consistently failed
+to demonstrate strength.
+
+That is an argument for measuring the settlement search's *value* at its current
+breadth — not for cutting it blind. A narrower scan is a play change and has to
+clear the same gate as any other.

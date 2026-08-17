@@ -2445,7 +2445,7 @@ impl Session {
         }
     }
 
-    fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
+    pub(crate) fn set_view_player(&mut self, player: Option<usize>) -> Result<(), String> {
         if let Some(pid) = player {
             let Some(candidate) = self.game.players.get(pid) else {
                 return Err(format!("unknown player {pid}"));
@@ -4865,28 +4865,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // on whether that move is legal now.
         ("POST", "/route") => {
             let session = sh.session.lock().unwrap();
-            let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
-            let to = parsed["to"]
-                .as_array()
-                .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
-            let answer = match (unit, to) {
-                (Some(unit), Some(to)) => {
-                    let owned = session
-                        .game
-                        .units
-                        .get(&unit)
-                        .is_some_and(|held| held.owner == 0);
-                    if !owned {
-                        json!({"error": "not your unit"})
-                    } else {
-                        match session.game.route_step(unit, to, 0) {
-                            Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
-                            None => json!({"step": Value::Null, "error": Value::Null}),
-                        }
-                    }
-                }
-                _ => json!({"error": "route needs a unit and a destination"}),
-            };
+            let answer = crate::routes::route_step(&session, &parsed);
             drop(session);
             respond_json(stream, &answer);
         }
@@ -5138,44 +5117,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/action") => {
             let mut session = sh.session.lock().unwrap();
-            let ending_turn = parsed["action"]["type"].as_str() == Some("end_turn");
-            let movement_path = serde_json::from_value::<Action>(parsed["action"].clone())
-                .ok()
-                .and_then(|action| match action {
-                    Action::MoveTo { unit, to } => {
-                        let start = session.game.units.get(&unit)?.pos;
-                        let mut path = session.game.path_to(unit, to)?;
-                        path.insert(0, start);
-                        Some((unit, path))
-                    }
-                    _ => None,
-                });
-            let err = session.act(&parsed["action"]);
-            let mut out = session.state();
-            if err.is_none() {
-                if let Some((unit, mut path)) = movement_path {
-                    if let Some(actual) = session.game.units.get(&unit).map(|unit| unit.pos) {
-                        if let Some(end) = path.iter().position(|position| *position == actual) {
-                            path.truncate(end + 1);
-                        } else if let Some(start) = path.first().copied() {
-                            path = vec![start, actual];
-                        }
-                    }
-                    if path.len() > 1 {
-                        out["movement_paths"] = json!({unit.to_string(): path});
-                    }
-                }
-            }
-            let refused = err.is_some();
-            out["error"] = match err {
-                Some(e) => Value::String(e),
-                None => Value::Null,
-            };
+            let spectating = session.params.spectate;
+            let outcome = crate::routes::action(&mut session, &parsed);
+            let autosave = outcome.autosave_due(spectating);
+            let mut out = outcome.out;
             // Civ 6 autosaves at the top of every turn, and the reason is the
             // same here: a single-player game that only exists in one
             // process's memory is one crash away from never having happened.
             // Spectated games are the supervisor's business, not this.
-            if ending_turn && !refused && !session.params.spectate {
+            if autosave {
                 let turn = session.game.turn;
                 let path =
                     std::path::Path::new(SAVE_DIR).join(format!("autosave-t{turn}.save.json"));
@@ -5282,19 +5232,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/view") => {
             let mut session = sh.session.lock().unwrap();
-            let result = match parsed.get("player") {
-                Some(Value::Null) => session.set_view_player(None),
-                Some(value) => value
-                    .as_u64()
-                    .ok_or_else(|| "player must be a non-negative integer or null".to_string())
-                    .and_then(|pid| session.set_view_player(Some(pid as usize))),
-                None => Err("missing player".to_string()),
-            };
-            let mut out = session.state();
-            out["error"] = match result {
-                Ok(()) => Value::Null,
-                Err(error) => Value::String(error),
-            };
+            let out = crate::routes::view(&mut session, &parsed);
+            drop(session);
             respond_json(stream, &out);
         }
         ("POST", "/spectator-status") => {

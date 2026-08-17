@@ -26,6 +26,8 @@ pub mod mapgen;
 pub mod mirror;
 pub mod name;
 pub mod obs;
+pub mod protocol;
+pub mod routes;
 pub mod odds;
 // The oracle's only consumer is `experiments/closed/ablate.rs`, so it rides
 // the same opt-in feature: normal builds and CI skip its ~1,300 lines and 12
@@ -46,7 +48,6 @@ pub mod obs_tensor;
 pub mod decision_features;
 pub mod mods;
 pub mod pedia;
-pub mod protocol;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;
