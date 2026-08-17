@@ -2724,6 +2724,15 @@ fn translate(
             order.verb = Some(format!("IMPROVE:{}", civ6_improvement_type(improvement)));
             order
         }),
+        // A builder repair is a distinct Firaxis unit operation.  Dropping it
+        // strands pillaged improvements even though CIVVIS already chose the
+        // repair and the builder is standing on the target tile.
+        Action::RepairImprovement { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("REPAIR".to_string()),
+            pos: None,
+        }),
         Action::Fortify { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -5670,6 +5679,37 @@ mod tests {
         assert_eq!(spread.kind, "unit");
         assert_eq!(spread.subject, Some(91));
         assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+    }
+
+    #[test]
+    fn builder_repairs_reach_firaxis_unit_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 94,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        let state = StateSnapshot {
+            turn: 94,
+            units: vec![StateUnit {
+                id: 92,
+                kind: "UNIT_BUILDER".to_string(),
+                x: 5,
+                y: 5,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let unit = *mirror.uid_of.get(&92).expect("the Builder is mirrored");
+
+        let repair = translate(&Action::RepairImprovement { unit }, &mirror, &state)
+            .expect("the builder repair crosses");
+        assert_eq!(repair.kind, "unit");
+        assert_eq!(repair.subject, Some(92));
+        assert_eq!(repair.verb.as_deref(), Some("REPAIR"));
+        assert_eq!(repair.pos, None);
     }
 
     #[test]
