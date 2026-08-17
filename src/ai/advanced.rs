@@ -21706,6 +21706,7 @@ impl AdvancedAi {
     ///   sources feed a stockpile capped near 50 and are worth less as the
     ///   cap approaches. The movement scorer's flat 30 cannot tell these
     ///   apart.
+    #[allow(clippy::too_many_arguments)]
     fn surveyed_improvement_value(
         &self,
         g: &Game,
@@ -21754,7 +21755,7 @@ impl AdvancedAi {
                             45.0
                         } else {
                             let headroom = g.strategic_stockpile_capacity(pid)
-                                - g.strategic_stockpile(pid, resource.clone());
+                                - g.strategic_stockpile(pid, *resource);
                             if headroom <= 5.0 { 6.0 } else { 18.0 }
                         }
                     }
@@ -36524,9 +36525,7 @@ mod tests {
             .iter()
             .filter(|(_, spec)| spec.builder_buildable)
             .flat_map(|(name, spec)| {
-                spec.resources
-                    .iter()
-                    .map(move |resource| (resource.clone(), name.clone()))
+                spec.resources.iter().map(move |resource| (*resource, *name))
             })
             .find(|(resource, _)| {
                 game.rules.resources.get(resource.as_str()).is_some_and(|spec| spec.class == "luxury")
@@ -36538,7 +36537,7 @@ mod tests {
             .copied()
             .find(|pos| *pos != game.cities[&city].pos)
             .unwrap();
-        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource.clone());
+        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource);
 
         let ai = AdvancedAi::new();
         let strategy = GrandStrategy::Expansion;
@@ -36557,8 +36556,8 @@ mod tests {
             .unwrap();
         {
             let tile = game.map.tiles.get_mut(&other).unwrap();
-            tile.resource = Some(resource.clone());
-            tile.improvement = Some(improvement.clone());
+            tile.resource = Some(resource);
+            tile.improvement = Some(improvement);
         }
         let duplicate = ai.surveyed_improvement_value(
             &game, 0, &holder, pos, &improvement, strategy, true, 2,
