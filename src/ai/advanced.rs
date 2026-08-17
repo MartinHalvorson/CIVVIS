@@ -28152,7 +28152,10 @@ mod tests {
             !private.units.contains_key(&enemy),
             "an enemy that is not in the turn-start frame must not reach the planner"
         );
-        let redacted = private.map.get(far).expect("redacted tile remains on the map");
+        let redacted = private
+            .map
+            .get(far)
+            .expect("redacted tile remains on the map");
         assert!(private.rules.is_unknown(redacted));
         assert!(redacted.assumed_traversable);
         assert_eq!(redacted.resource, None);
@@ -28268,7 +28271,10 @@ mod tests {
             })
             .map(|tile| tile.pos)
             .expect("fixture needs a second unexplored land tile");
-        let hidden = changed.units.get_mut(&enemy).expect("hidden unit survives the clone");
+        let hidden = changed
+            .units
+            .get_mut(&enemy)
+            .expect("hidden unit survives the clone");
         hidden.pos = other_far;
         hidden.hp = 1;
 
@@ -28310,8 +28316,14 @@ mod tests {
         let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
         let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::fog_honest()];
         run_game(&mut game, &mut ais);
-        assert!(game.turn > 0, "the private planning turn must replay EndTurn");
-        assert!(game.log.iter().any(|(_, action)| matches!(action, Action::EndTurn)));
+        assert!(
+            game.turn > 0,
+            "the private planning turn must replay EndTurn"
+        );
+        assert!(game
+            .log
+            .iter()
+            .any(|(_, action)| matches!(action, Action::EndTurn)));
     }
 
     #[test]

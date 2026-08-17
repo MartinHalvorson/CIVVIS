@@ -23556,8 +23556,7 @@ impl Game {
             .values()
             .filter(|unit| {
                 unit.owner != pid
-                    && !(self.sees(&visible, unit.pos)
-                        && self.unit_visible_to(unit.id, pid))
+                    && !(self.sees(&visible, unit.pos) && self.unit_visible_to(unit.id, pid))
             })
             .map(|unit| unit.id)
             .collect();
