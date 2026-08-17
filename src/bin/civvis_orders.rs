@@ -1861,6 +1861,7 @@ fn withhold_live_treatment(
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
         "culture-building-debt" => ai.disable_culture_building_debt(),
+        "culture-coverage" => ai.disable_culture_coverage(),
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
         "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "tally-great-people" => ai.disable_tally_great_people(),
@@ -4218,6 +4219,13 @@ mod tests {
         assert!(
             !ai.culture_building_debt,
             "the named culture-building-debt control must hold it off"
+        );
+        assert!(ai.culture_coverage);
+        withhold_live_treatment(&mut ai, "culture-coverage")
+            .expect("the culture-coverage control arm is registered");
+        assert!(
+            !ai.culture_coverage,
+            "the named culture-coverage control must hold it off"
         );
 
         assert!(ai.frontier_loyalty);
