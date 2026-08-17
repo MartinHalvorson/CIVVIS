@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 180] = [
+pub const EVAL_ONLY_AIS: [&str; 181] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -194,6 +194,13 @@ pub const EVAL_ONLY_AIS: [&str; 180] = [
     // strength-per-production and the civ's own unique window. Reserved
     // matrix seeds 25000000 (builder survey) and 26000000 (unit
     // efficiency); one pre-registered run each, not swept.
+    // The strategic governor under every lane, applied natively. The flag
+    // ships on the live bridge (#1742/#1793) and has a live withhold arm,
+    // but under Science/Culture/Religion/Diplomacy the NATIVE production
+    // controller still routes through `BasicAi::pick_item`, so every
+    // valuation in advanced.rs is absent exactly where strong games spend
+    // their midgame. Reserved matrix seed 27000000; one pre-registered run.
+    "advanced_every_lane",
     "advanced_builder_survey",
     "advanced_unit_efficiency",
     "advanced_without_unpriced_economy",
@@ -689,6 +696,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
@@ -2942,6 +2950,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // valuation Builder movement uses, luxury novelty and strategic
         // saturation modelled, quota sized from the backlog. Reserved matrix
         // seed 25000000.
+        "advanced_every_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_governor_every_lane();
+            Box::new(ai)
+        }
         "advanced_builder_survey" => {
             let mut ai = AdvancedAi::new();
             ai.enable_builder_reward_survey();
@@ -3931,6 +3944,7 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
@@ -4410,6 +4424,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
@@ -5617,7 +5632,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 85] = [
+            const SCRIPTED: [&str; 86] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5684,6 +5699,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
                 "advanced_without_unpriced_economy",
