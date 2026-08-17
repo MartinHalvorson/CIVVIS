@@ -1420,10 +1420,18 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             campus_specialist=False, envoys=False, envoy_place=False,
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
-            refresh_seconds=None,
+            refresh_seconds=None, no_peace_deterrence=False,
         )
         values.update(changes)
         return SimpleNamespace(**values)
+
+    def test_a_withheld_deterrence_reaches_the_play_command(self):
+        cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--no-peace-deterrence", cmd)
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--no-peace-deterrence", cmd)
 
     def test_the_freeze_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(refresh_seconds=0.0), "t",
