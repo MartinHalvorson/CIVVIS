@@ -4121,6 +4121,7 @@ impl ArmKind {
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
             Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
             Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
+            Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
