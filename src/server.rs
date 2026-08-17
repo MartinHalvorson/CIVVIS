@@ -6964,6 +6964,14 @@ mod tests {
         // ahead of boot's first /state answer.
         assert!(EMBEDDED_INDEX.contains("initAdvancedSettings();\nsyncModeLink();"));
         assert!(EMBEDDED_INDEX.contains("\nboot();"));
+        let deferred_init = EMBEDDED_INDEX
+            .find("initAdvancedSettings();\nsyncModeLink();")
+            .expect("the deferred cross-file init is embedded");
+        let boot = EMBEDDED_INDEX[deferred_init..]
+            .find("\nboot();")
+            .map(|offset| deferred_init + offset)
+            .expect("boot follows the deferred cross-file init");
+        assert!(deferred_init < boot, "the mode chip settles before boot");
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
         const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
