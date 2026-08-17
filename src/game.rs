@@ -21143,6 +21143,13 @@ impl Game {
         match hut.as_deref() {
             Some("goody_hut") => {
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
+                // The historic-moment counter cannot serve as the claim
+                // tally: the Moment is era-gated to the Ancient world era,
+                // so a village popped later would vanish from any census.
+                *self.players[owner]
+                    .counters
+                    .entry("goody_huts_claimed".to_string())
+                    .or_insert(0) += 1;
                 self.roll_goody_reward(owner, uid, pos);
                 self.add_historic_moment(owner, "MOMENT_GOODY_HUT_TRIGGERED");
             }
@@ -21150,6 +21157,10 @@ impl Game {
                 // The crashed meteor is its own goody type with its own
                 // one-entry table (METEOR_GOODIES).
                 self.map.tiles.get_mut(&pos).unwrap().improvement = None;
+                *self.players[owner]
+                    .counters
+                    .entry("meteor_goodies_claimed".to_string())
+                    .or_insert(0) += 1;
                 self.roll_category_reward(owner, uid, pos, "meteor_goodies");
             }
             _ => {}
@@ -63268,6 +63279,35 @@ mod visibility_tests {
             "a later visitor must not receive the first-discovery envoy"
         );
         assert_eq!(game.envoys_at(1, city_state), 1);
+    }
+
+    #[test]
+    fn popping_a_village_counts_in_the_player_counters() {
+        let mut game = Game::new_full(2, 28, 18, 91_032, 120, 0, false);
+        let unit = game
+            .units
+            .iter()
+            .find(|(_, unit)| unit.owner == 0)
+            .map(|(id, _)| *id)
+            .expect("player 0 starts with a unit");
+        let pos = game.units[&unit].pos;
+
+        game.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("goody_hut"));
+        game.maybe_goody_hut(unit);
+        assert_eq!(
+            game.players[0].counters.get("goody_huts_claimed"),
+            Some(&1),
+            "a popped tribal village must be tallied even outside the Ancient era"
+        );
+        assert!(game.map.get(pos).unwrap().improvement.is_none());
+
+        game.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("meteor_goody"));
+        game.maybe_goody_hut(unit);
+        assert_eq!(
+            game.players[0].counters.get("meteor_goodies_claimed"),
+            Some(&1)
+        );
+        assert_eq!(game.players[0].counters.get("goody_huts_claimed"), Some(&1));
     }
 
     #[test]

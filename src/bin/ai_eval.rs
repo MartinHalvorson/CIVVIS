@@ -353,7 +353,21 @@ struct PlanTrace {
     midgame_transitions: BTreeMap<String, usize>,
     last_strategy: Option<String>,
     last_context: Option<StrategyContext>,
+    /// Explored-plot count sampled the first time the seat is observed at or
+    /// past each of `EXPLORATION_MARKS`; `None` when the game ended first.
+    revealed_at_marks: [Option<usize>; EXPLORATION_MARKS.len()],
+    /// Turn each rival (major or minor) was first observed in the seat's met
+    /// set. Attribution lags an opponent-turn contact by at most one
+    /// observation, which is the same for both arms.
+    meet_turns: BTreeMap<usize, u32>,
+    /// Turn the seat's first natural-wonder discovery was observed.
+    first_wonder_turn: Option<u32>,
 }
+
+/// Turns at which each seat's explored-plot count is sampled. These match the
+/// marks `explore_commit_sweeps_more_ground` (src/ai.rs) prints, so harness
+/// numbers and that census read on one scale.
+const EXPLORATION_MARKS: [u32; 3] = [30, 50, 70];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StrategyContext {
@@ -438,6 +452,24 @@ impl PlanTrace {
         self.last_context = Some(context);
     }
 
+    /// Sample the exploration facts that cannot be read from the final
+    /// position: when ground was revealed, and when each contact was made.
+    fn observe_exploration(&mut self, g: &Game, pid: usize) {
+        for (slot, mark) in EXPLORATION_MARKS.iter().enumerate() {
+            if g.turn >= *mark && self.revealed_at_marks[slot].is_none() {
+                self.revealed_at_marks[slot] = Some(g.players[pid].explored.len());
+            }
+        }
+        for other in &g.players[pid].met {
+            self.meet_turns.entry(*other).or_insert(g.turn);
+        }
+        if self.first_wonder_turn.is_none()
+            && !g.players[pid].discovered_natural_wonders.is_empty()
+        {
+            self.first_wonder_turn = Some(g.turn);
+        }
+    }
+
     /// Target used on the most observed player-turns. A tie keeps the final
     /// target, matching the tournament's dominant-strategy attribution.
     fn dominant_target(&self) -> &str {
@@ -515,6 +547,7 @@ fn run_traced_game(
         if pid < traced_players {
             let observation = plan_observation(game, pid, ais[pid].as_ref());
             traces[pid].observe(observation);
+            traces[pid].observe_exploration(game, pid);
         }
         if game.winner.is_none() && game.current == pid {
             let _ = game.apply(pid, &Action::EndTurn);
@@ -613,6 +646,24 @@ struct Metrics {
     war_tech_to_declaration: Vec<u32>,
     war_declaration_to_capture: Vec<u32>,
     war_aborts: BTreeMap<&'static str, u32>,
+    /// Exploration telemetry. Sums over seats; the paired seat counts let a
+    /// mean skip games that ended before a mark or never made the discovery.
+    revealed_at_marks: [f64; EXPLORATION_MARKS.len()],
+    revealed_mark_seats: [usize; EXPLORATION_MARKS.len()],
+    goody_huts_claimed: f64,
+    meteor_goodies_claimed: f64,
+    era_score: f64,
+    natural_wonders_discovered: f64,
+    first_wonder_turn_sum: f64,
+    first_wonder_seats: usize,
+    minors_met: f64,
+    minors_met_by_t50: f64,
+    first_minor_meet_turn_sum: f64,
+    first_minor_meet_seats: usize,
+    majors_met: f64,
+    majors_met_by_t50: f64,
+    first_major_meet_turn_sum: f64,
+    first_major_meet_seats: usize,
 }
 
 impl Metrics {
@@ -760,6 +811,61 @@ impl Metrics {
                 self.queued_cost += g.item_cost_for(pid, item);
             }
         }
+        for (slot, revealed) in trace.revealed_at_marks.iter().enumerate() {
+            if let Some(revealed) = revealed {
+                self.revealed_at_marks[slot] += *revealed as f64;
+                self.revealed_mark_seats[slot] += 1;
+            }
+        }
+        let counter = |name: &str| {
+            g.players[pid].counters.get(name).copied().unwrap_or(0) as f64
+        };
+        self.goody_huts_claimed += counter("goody_huts_claimed");
+        self.meteor_goodies_claimed += counter("meteor_goodies_claimed");
+        self.era_score += g.players[pid].era_score as f64;
+        self.natural_wonders_discovered +=
+            g.players[pid].discovered_natural_wonders.len() as f64;
+        if let Some(turn) = trace.first_wonder_turn {
+            self.first_wonder_turn_sum += turn as f64;
+            self.first_wonder_seats += 1;
+        }
+        let mut first_minor: Option<u32> = None;
+        let mut first_major: Option<u32> = None;
+        for (other, turn) in &trace.meet_turns {
+            let Some(other_player) = g.players.get(*other) else {
+                continue;
+            };
+            if *other == pid || other_player.is_barbarian || other_player.is_free_city {
+                continue;
+            }
+            if other_player.is_minor {
+                self.minors_met += 1.0;
+                self.minors_met_by_t50 += f64::from(u8::from(*turn <= 50));
+                first_minor = Some(first_minor.map_or(*turn, |seen| seen.min(*turn)));
+            } else {
+                self.majors_met += 1.0;
+                self.majors_met_by_t50 += f64::from(u8::from(*turn <= 50));
+                first_major = Some(first_major.map_or(*turn, |seen| seen.min(*turn)));
+            }
+        }
+        if let Some(turn) = first_minor {
+            self.first_minor_meet_turn_sum += turn as f64;
+            self.first_minor_meet_seats += 1;
+        }
+        if let Some(turn) = first_major {
+            self.first_major_meet_turn_sum += turn as f64;
+            self.first_major_meet_seats += 1;
+        }
+    }
+}
+
+/// Mean turn over the seats that made the observation at all, or "-" when
+/// none did — a seat that never met a rival has no meet turn to average.
+fn mean_turn(sum: f64, seats: usize) -> String {
+    if seats == 0 {
+        "-".to_string()
+    } else {
+        format!("t{:.0}", sum / seats as f64)
     }
 }
 
@@ -1882,6 +1988,47 @@ here and any null is uninformative"
             m.trade_capacity / n,
             m.support_units / n,
             m.missionaries / n,
+        );
+    }
+    println!("\nExploration:");
+    println!("AI          rev@t30 rev@t50 rev@t70 villages meteor wonders 1st-wonder era-score");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        let mark = |slot: usize| -> String {
+            if m.revealed_mark_seats[slot] == 0 {
+                "-".to_string()
+            } else {
+                format!(
+                    "{:.0}",
+                    m.revealed_at_marks[slot] / m.revealed_mark_seats[slot] as f64
+                )
+            }
+        };
+        println!(
+            "{name:<11} {:>7} {:>7} {:>7} {:>8.2} {:>6.2} {:>7.2} {:>10} {:>9.1}",
+            mark(0),
+            mark(1),
+            mark(2),
+            m.goody_huts_claimed / n,
+            m.meteor_goodies_claimed / n,
+            m.natural_wonders_discovered / n,
+            mean_turn(m.first_wonder_turn_sum, m.first_wonder_seats),
+            m.era_score / n,
+        );
+    }
+    println!("AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        println!(
+            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9}",
+            m.minors_met / n,
+            m.minors_met_by_t50 / n,
+            mean_turn(m.first_minor_meet_turn_sum, m.first_minor_meet_seats),
+            m.majors_met / n,
+            m.majors_met_by_t50 / n,
+            mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
         );
     }
     println!("\nVictory types:");
