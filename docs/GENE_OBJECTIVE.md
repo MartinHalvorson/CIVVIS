@@ -447,6 +447,8 @@ reported but is not a gate. Any failure ends candidate promotion.
 
 Only a confirmation pass spends the final 120-map mirrored outcome test:
 
+⚠ `policy_eval` was removed in #1278 as an unreferenced binary. The command below is kept as the record of how this was measured — it does not run against this tree. Restoring it follows the pattern in #1876: bring the source back with tests, so the audit's question and the real one agree.
+
 ```sh
 cargo run --release --bin policy_eval -- \
   --base evolved --treatment live --control live \

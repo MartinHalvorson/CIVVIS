@@ -32,6 +32,8 @@ Three diagnostic seams on `AdvancedAi` (`rival_pressure`, `denial_target`,
 second implementation of "who is about to win" is how a HUD and an AI end up
 disagreeing, which is the thing #291 landed `victory_races` to prevent.
 
+⚠ `leader_census` was removed in #1278 as an unreferenced binary. The command below is kept as the record of how this was measured — it does not run against this tree. Restoring it follows the pattern in #1876: bring the source back with tests, so the audit's question and the real one agree.
+
 ```
 cargo run --profile ci --bin leader_census -- \
   --players 6 --maps 16 --width 74 --height 46 --city-states 9 \
