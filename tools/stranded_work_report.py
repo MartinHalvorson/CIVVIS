@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import quote
 import urllib.request
 
 REPOSITORY = "MartinHalvorson/CIVVIS"
@@ -49,6 +50,11 @@ ISSUE_TITLE = "Stranded work report"
 ISSUE_LABEL = "stranded-work"
 CLOSE_WINDOW_DAYS = 7
 IDLE_HOURS = 24
+
+
+def github_url(kind: str, value: str) -> str:
+    """Return an encoded GitHub link suitable for a report row."""
+    return f"https://github.com/{REPOSITORY}/{kind}/{quote(value, safe='/')}"
 
 
 def git(*args: str) -> str:
@@ -87,7 +93,8 @@ def commentless_closes(now: datetime.datetime) -> list[str]:
         if api(f"/repos/{REPOSITORY}/issues/{pull['number']}/comments?per_page=1"):
             continue
         rows.append(
-            f"- #{pull['number']} `{pull['head']['ref']}` closed "
+            f"- [#{pull['number']}]({github_url('pull', str(pull['number']))}) "
+            f"{pull['head']['ref']} closed "
             f"{pull['closed_at'][:16]} with no stated reason — "
             f"{pull['title'][:80]}"
         )
@@ -118,7 +125,8 @@ def idle_branches(now: datetime.datetime) -> list[str]:
             continue
         stat = git("diff", "--shortstat", f"origin/main...{name}").strip()
         rows.append(
-            f"- `{branch}` idle {age_hours / 24:.1f}d, {ahead} commits ahead "
+            f"- [{branch}]({github_url('tree', branch)}) idle "
+            f"{age_hours / 24:.1f}d, {ahead} commits ahead "
             f"({stat or 'no diff'}) — {subject[:70]}"
         )
     return rows

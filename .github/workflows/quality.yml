@@ -1,0 +1,36 @@
+name: rust-quality
+
+# This is an incremental gate. The crate has a large, known formatting and
+# clippy backlog; requiring a clean repository-wide run would make every new
+# PR inherit unrelated debt. New or edited Rust files must nevertheless be
+# formatted and warning-free, so the backlog cannot grow.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check changed Rust files
+        env:
+          QUALITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          QUALITY_HEAD: ${{ github.sha }}
+        run: python3 tools/rust_quality.py
