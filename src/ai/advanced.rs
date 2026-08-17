@@ -25472,7 +25472,10 @@ impl AdvancedAi {
 
     /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
     /// the tile it stands on is threatened and a reachable neighbour lowers the
-    /// risk; `None` leaves the turn to the explore step. See `recon_flight`.
+    /// risk; `None` leaves the turn to the explore step. Once the live movement
+    /// recorder has proved the retreat is circling, a step back into that
+    /// footprint is not a retreat at all: let exploration's loop-aware scorer
+    /// select an outward route instead. See `recon_flight`.
     fn recon_flight_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         let current = g.units[&uid].pos;
         // A city defends the unit standing in it.
@@ -25497,12 +25500,22 @@ impl AdvancedAi {
             .collect();
         let clearance = |pos: Pos| hostiles.iter().map(|h| g.wdist(pos, *h)).min().unwrap_or(i32::MAX);
         let room_here = clearance(current);
+        let escaping_loop = self.base.live_livelock_route_escape(uid);
         // An improving step lowers the risk, or keeps it while opening more
         // ground between the unit and the nearest hostile — the whole approach
         // band prices alike, and walking out of it takes more than one step.
         let mut flight: Option<(f64, i32, Pos)> = None;
         for step in g.nbrs(current) {
             if !g.can_move(uid, step) {
+                continue;
+            }
+            // A tie-risk step can be correct while the Scout is actually
+            // retreating. After six fruitless turns in two or three tiles it
+            // is evidence of the opposite: repeating it buys no safety and
+            // prevents the committed explorer from finding the next frontier.
+            // This gate is live-bridge-only, preserving tournament and frozen
+            // controller movement exactly.
+            if escaping_loop && self.base.livelock_penalty(uid, step) < 0.0 {
                 continue;
             }
             let risk = self.settlement_tile_risk_with_support(g, pid, None, step, &visible, false);
@@ -41359,6 +41372,91 @@ mod tests {
         // Defaults: off for the stock and frozen controllers.
         assert!(!AdvancedAi::new().recon_flight);
         assert!(!AdvancedAi::legacy().recon_flight);
+    }
+
+    /// In the live win, Scout 60 spent turns 204–251 issuing equal-risk flight
+    /// moves between the same two tiles while six city-states remained unseen.
+    /// The per-turn flight choice was locally safe, but after the motion window
+    /// proves the loop it must yield to the explorer's outward route instead of
+    /// retracing the safe-looking half of the circuit.
+    #[test]
+    fn a_looping_live_scout_does_not_repeat_an_equal_risk_flight_step() {
+        let mut game = Game::new_full(2, 20, 14, 91_483, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let start = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| game.wdisk(*pos, 2).len() == 19 && game.city_at(*pos).is_none())
+            .expect("fixture needs an open land tile away from each city");
+        let toward_threat = game.nbrs(start)[0];
+        let threat = game
+            .nbrs(toward_threat)
+            .into_iter()
+            .find(|pos| *pos != start && game.wdist(start, *pos) == 2)
+            .expect("the open tile has a second-ring threat post");
+        let retreat = game
+            .nbrs(start)
+            .into_iter()
+            .find(|pos| game.wdist(*pos, threat) == 3)
+            .expect("the opposite neighbour increases clearance");
+        // The hostile-facing tile stays open so the threat is visible. The
+        // retreat is the only flight candidate that does not enter more risk.
+        for pos in game.nbrs(start) {
+            if pos != toward_threat && pos != retreat {
+                game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+            }
+        }
+        game.spawn_test_unit("warrior", 1, threat);
+        let scout = game.spawn_test_unit("scout", 0, start);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        for (offset, pos) in [start, retreat, start, retreat, start, retreat, start]
+            .into_iter()
+            .enumerate()
+        {
+            game.turn = 100 + offset as u32;
+            let unit = game.units.get_mut(&scout).unwrap();
+            unit.pos = pos;
+            unit.moves_left = 2.0;
+            unit.moved = false;
+            live.base.begin_movement_turn(&game, 0);
+        }
+        assert!(
+            live.base.live_livelock_route_escape(scout),
+            "the recorded two-tile circuit is a proven live loop"
+        );
+
+        let visible = live.battlefront_visibility(&game, 0);
+        assert!(game.sees(&visible, threat));
+        let here =
+            live.settlement_tile_risk_with_support(&game, 0, None, start, &visible, false);
+        let retreat_risk =
+            live.settlement_tile_risk_with_support(&game, 0, None, retreat, &visible, false);
+        assert!(here >= RECON_FLIGHT_RISK, "the hostile threatens the Scout ({here})");
+        assert!(
+            retreat_risk <= here && game.wdist(retreat, threat) > game.wdist(start, threat),
+            "the looped retreat is exactly the equal-or-lower-risk flight the old chooser repeated"
+        );
+
+        assert_eq!(
+            live.recon_flight_step(&mut game, 0, scout),
+            None,
+            "a proven loop defers to exploration instead of issuing its exhausted flight step"
+        );
+        assert_eq!(game.units[&scout].pos, start, "the forbidden circuit was not replayed");
     }
 
     /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,
