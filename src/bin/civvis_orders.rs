@@ -3987,59 +3987,20 @@ fn main() {
                     live = Some(board);
                     reply
                 } else {
-                match live.as_mut() {
-                    None => {
-                        let mut fresh = civvis::mirror::LiveMirror::new(
-                            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
-                        );
-                        host_city_attack_cooldowns.apply(&mut fresh);
-                        host_move_refusals.apply(&mut fresh);
-                        let reply = decide(
-                            &mut fresh,
-                            &mut ai,
-                            &snapshot,
-                            &state,
-                            war_from_plan,
-                            &withheld,
-                            &mut ours,
-                            &mut host_peace_retries,
-                            &mut host_move_refusals,
-                        );
-                        live = Some(fresh);
-                        reply
-                    }
-                    Some(existing) => {
-                        existing.sync(&snapshot, &state, frontier);
-                        host_city_attack_cooldowns.apply(existing);
-                        host_move_refusals.apply(existing);
-                        // `--fresh-ai` isolates the two halves of persistence: keep the
-                        // mirror, throw away the agent. If orders come back, the empty
-                        // turns are the AGENT's carried state; if they stay empty, they
-                        // are the MIRROR's. Guessing between the two cost several
-                        // rebuilds, so it is worth a flag.
-                        if fresh_ai {
-                            // ⚠ This was a SECOND hand-written match, and it did not
-                            // agree with the one that built `ai`: it listed three
-                            // lanes and sent everything else to Domination, so a
-                            // `--fresh-ai` run silently swapped the objective it was
-                            // asked for. `victory` was already validated at startup,
-                            // so the lane always resolves here.
-                            let mut throwaway = victory_lane(&victory)
-                                .expect("--victory was validated at startup");
-                            decide(
-                                existing,
-                                &mut throwaway,
+                    match live.as_mut() {
+                        None => {
+                            let mut fresh = civvis::mirror::LiveMirror::new(
                                 &snapshot,
                                 &state,
-                                war_from_plan,
-                                &withheld,
-                                &mut ours,
-                                &mut host_peace_retries,
-                                &mut host_move_refusals,
-                            )
-                        } else {
-                            decide(
-                                existing,
+                                mirror_players,
+                                1,
+                                mirror_turns,
+                                frontier,
+                            );
+                            host_city_attack_cooldowns.apply(&mut fresh);
+                            host_move_refusals.apply(&mut fresh);
+                            let reply = decide(
+                                &mut fresh,
                                 &mut ai,
                                 &snapshot,
                                 &state,
@@ -4048,10 +4009,54 @@ fn main() {
                                 &mut ours,
                                 &mut host_peace_retries,
                                 &mut host_move_refusals,
-                            )
+                            );
+                            live = Some(fresh);
+                            reply
+                        }
+                        Some(existing) => {
+                            existing.sync(&snapshot, &state, frontier);
+                            host_city_attack_cooldowns.apply(existing);
+                            host_move_refusals.apply(existing);
+                            // `--fresh-ai` isolates the two halves of persistence: keep the
+                            // mirror, throw away the agent. If orders come back, the empty
+                            // turns are the AGENT's carried state; if they stay empty, they
+                            // are the MIRROR's. Guessing between the two cost several
+                            // rebuilds, so it is worth a flag.
+                            if fresh_ai {
+                                // ⚠ This was a SECOND hand-written match, and it did not
+                                // agree with the one that built `ai`: it listed three
+                                // lanes and sent everything else to Domination, so a
+                                // `--fresh-ai` run silently swapped the objective it was
+                                // asked for. `victory` was already validated at startup,
+                                // so the lane always resolves here.
+                                let mut throwaway = victory_lane(&victory)
+                                    .expect("--victory was validated at startup");
+                                decide(
+                                    existing,
+                                    &mut throwaway,
+                                    &snapshot,
+                                    &state,
+                                    war_from_plan,
+                                    &withheld,
+                                    &mut ours,
+                                    &mut host_peace_retries,
+                                    &mut host_move_refusals,
+                                )
+                            } else {
+                                decide(
+                                    existing,
+                                    &mut ai,
+                                    &snapshot,
+                                    &state,
+                                    war_from_plan,
+                                    &withheld,
+                                    &mut ours,
+                                    &mut host_peace_retries,
+                                    &mut host_move_refusals,
+                                )
+                            }
                         }
                     }
-                }
                 }
             }
         };
@@ -4139,7 +4144,10 @@ mod tests {
                     .map(|target| target.as_str()),
             )
             .collect();
-        assert_eq!(super::VICTORY_LANES.split('|').collect::<Vec<_>>(), expected);
+        assert_eq!(
+            super::VICTORY_LANES.split('|').collect::<Vec<_>>(),
+            expected
+        );
     }
 
     /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat
