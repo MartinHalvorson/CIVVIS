@@ -3148,12 +3148,10 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // per-target turn limits are 650 for Domination and 300 for Score, and
         // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
         // targeting domination ended by score at the limit instead.
-        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
-            crate::ai::VictoryTarget::Domination,
-        )),
-        "advanced_target_score" => {
-            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
+        "advanced_target_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
         }
+        "advanced_target_score" => Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score)),
         // The four that had no arm. Each differs from `advanced` only in the
         // lane it is handed, exactly as the two above do.
         "advanced_target_science" => {
