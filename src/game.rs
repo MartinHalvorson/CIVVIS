@@ -6483,6 +6483,41 @@ mod governor_runtime_tests {
         assert_eq!(game.players[0].faith, faith_before);
     }
 
+    /// The turn processor is a separate claim path from the action menu. A
+    /// mirrored board must keep a locally ready native person pending until
+    /// Firaxis actually puts that class on its Great People screen, otherwise
+    /// the reconstruction retires a person the host never granted.
+    #[test]
+    fn live_offer_list_blocks_automatic_native_great_person_claims() {
+        let mut game = Game::new_full(1, 24, 16, 91_923, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let center = game.cities[&city].pos;
+        let campus = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .expect("capital owns a Campus site");
+        set_district(&mut game, city, campus, "campus");
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0].gpp.insert("scientist".to_string(), cost);
+        game.players[0].live_great_person_offers =
+            Some(["merchant".to_string()].into_iter().collect());
+
+        game.process_great_people(0);
+        assert_eq!(
+            game.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
+            0,
+            "a ready local Scientist remains pending while the host offers Merchant"
+        );
+        assert!(!game.retired_great_people.contains("hypatia"));
+
+        game.players[0].live_great_person_offers =
+            Some(["scientist".to_string()].into_iter().collect());
+        game.process_great_people(0);
+        assert_eq!(game.players[0].gp_claimed.get("scientist").copied(), Some(1));
+    }
+
     #[test]
     fn pingala_executes_population_gpp_space_and_curator_effects() {
         let mut game = Game::new_full(1, 24, 16, 91_784, 200, 0, false);
@@ -16632,6 +16667,13 @@ pub struct Player {
     pub envoys_free: i64,
     #[serde(default)]
     pub gpp: BTreeMap<String, f64>, // great person points by type
+    /// The exact Great Person classes Firaxis is offering right now, when a
+    /// live mirror supplied that screen. `None` preserves CIVVIS's native
+    /// global roster for headless games, older exports, and saved games;
+    /// `Some(empty)` is the host's authoritative answer that no class can be
+    /// recruited this turn.
+    #[serde(default)]
+    pub live_great_person_offers: Option<BTreeSet<String>>,
     /// Hard activation prerequisites of the *live* named offer, keyed by
     /// Great Person class. Headless games leave this empty; the Firaxis mirror
     /// fills it only when an offered individual names a completed district the
@@ -16878,6 +16920,7 @@ impl Player {
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
+            live_great_person_offers: None,
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
             live_great_person_exhausted: None,
@@ -26063,6 +26106,9 @@ impl Game {
         kind: &str,
         currency: &str,
     ) -> Option<f64> {
+        if !self.great_person_class_offered_now(pid, kind) {
+            return None;
+        }
         self.current_great_person(kind)?;
         let points = self.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
         let missing = (self.gp_cost(pid, kind) - points).max(0.0);
@@ -26106,6 +26152,7 @@ impl Game {
             || tile.pillaged
             || !self.players[pid].techs.contains(&crate::name!("economics"))
             || self.controlled_resource_count(pid, resource) < 3
+            || !self.great_person_class_offered_now(pid, "merchant")
             || self.current_great_person("merchant").is_none_or(|_| {
                 self.players[pid]
                     .gpp
@@ -26531,6 +26578,7 @@ impl Game {
             .iter()
             .filter(|(t, pts)| **pts >= self.gp_cost(pid, t))
             .filter(|(t, _)| self.great_person_class_earnable(pid, t))
+            .filter(|(t, _)| self.great_person_class_offered_now(pid, t))
             .map(|(t, _)| t.clone())
             .collect();
         for t in due {
@@ -26556,6 +26604,9 @@ impl Game {
     }
 
     fn retire_merchant_for_corporation(&mut self, pid: usize) -> Result<(), String> {
+        if !self.great_person_class_offered_now(pid, "merchant") {
+            return Err("Great Merchant class is not currently offered by the live game".into());
+        }
         let (id, era) = self
             .current_great_person("merchant")
             .map(|(id, spec)| (id.to_string(), spec.era))
@@ -26684,6 +26735,19 @@ impl Game {
             .map(String::as_str)
     }
 
+    /// Whether this class is presently recruitable on the host's Great People
+    /// screen. The live set is intentionally narrower than
+    /// [`Self::great_person_class_earnable`]: a class can have someone later
+    /// in Firaxis's timeline without being today's offer. Native and older
+    /// mirrored boards retain the historical roster because they leave the
+    /// set as `None`.
+    pub fn great_person_class_offered_now(&self, pid: usize, kind: &str) -> bool {
+        self.players[pid]
+            .live_great_person_offers
+            .as_ref()
+            .is_none_or(|offers| offers.contains(kind))
+    }
+
     /// Why this Great Person cannot be claimed right now, if they cannot.
     /// The reasons are written for a person to read: the observation hands
     /// them to the client so a card with enough points but no Recruit button
@@ -26806,6 +26870,9 @@ impl Game {
         kind: &str,
         patronage: Option<&str>,
     ) -> Result<(), String> {
+        if !self.great_person_class_offered_now(pid, kind) {
+            return Err("Great Person class is not currently offered by the live game".into());
+        }
         let (id, spec) = self
             .current_great_person(kind)
             .map(|(id, spec)| (id.to_string(), spec.clone()))
@@ -45091,6 +45158,9 @@ impl Game {
                 let Some(_) = self.current_great_person(&kind) else {
                     continue;
                 };
+                if !self.great_person_class_offered_now(pid, &kind) {
+                    continue;
+                }
                 if !self.can_activate_current_great_person(pid, &kind) {
                     continue;
                 }

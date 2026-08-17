@@ -12542,6 +12542,37 @@ mod tests {
             |action| matches!(action, Action::RecruitGreatPerson { kind } if kind == "scientist")
         ));
 
+        // Firaxis may have a Merchant (or any other class) on its actual
+        // Great People screen while CIVVIS's native roster still has
+        // Hypatia. The free-claim sweep must not emit the latter order merely
+        // because it has enough local points: the host will refuse it and the
+        // unspent resource never reaches an offered person.
+        let mut different_live_offer = game.clone();
+        different_live_offer.players[0].live_great_person_offers =
+            Some(["merchant".to_string()].into_iter().collect());
+        assert!(!different_live_offer.great_person_class_offered_now(0, "scientist"));
+        assert!(!different_live_offer.legal_actions(0).iter().any(
+            |action| matches!(action, Action::RecruitGreatPerson { kind } if kind == "scientist")
+        ));
+        assert_eq!(BasicAi::claim_free_great_people(&mut different_live_offer, 0), 0);
+        assert_eq!(
+            different_live_offer
+                .players[0]
+                .gp_claimed
+                .get("scientist")
+                .copied()
+                .unwrap_or(0),
+            0
+        );
+        assert!(different_live_offer
+            .apply(
+                0,
+                &Action::RecruitGreatPerson {
+                    kind: "scientist".to_string(),
+                },
+            )
+            .is_err());
+
         assert_eq!(BasicAi::claim_free_great_people(&mut game, 0), 1);
         assert_eq!(game.players[0].gp_claimed["scientist"], 1);
         assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
