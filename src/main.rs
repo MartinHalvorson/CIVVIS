@@ -1313,7 +1313,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// predicate therefore returns on the same first-line flag check in every
 /// frozen game; the anchor's production decisions remain byte-identical.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf44c_9200_47bb_3ca5;
+/// Patronage skips a Great Person class the mirrored host reports exhausted
+/// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
+/// native boards carry no such list and are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xeba6_e2d0_d6e4_f63c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
