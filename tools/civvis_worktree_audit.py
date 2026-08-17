@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -140,6 +142,49 @@ def on_github(repo: str, sha: str) -> bool:
     return bool(git("for-each-ref", "--contains", sha, "--count=1",
                     "--format=%(refname)", "refs/remotes", "refs/civvis",
                     repo=repo))
+
+
+def branch_pr_is_merged(branch: str) -> bool:
+    """Has this branch's pull request already merged? False when unknown.
+
+    ⚠⚠⚠ WITHOUT THIS, `ship` MAKES EVERY WORKTREE IT TOUCHES UNREAPABLE.
+    `ship` merges `origin/main` into the branch before marking it ready. That
+    merge commit is created locally and, once the pull request squash-merges
+    and `ship` deletes the remote branch, it is reachable from no ref on
+    GitHub — so `on_github` says no and `--reap` refuses, correctly but
+    uselessly, because the CONTENT is on `main` twice over: the branch side is
+    at `refs/pull/N/head` and the other parent IS `main`.
+
+    Measured on 2026-08-17: after the first reap took 137 worktrees, the two
+    that were left behind were exactly this shape. Every future task that has
+    to merge `main` before shipping would have joined them, which turns the
+    reaper into something that only tidies the tasks that were never busy.
+
+    `AGENTS.md` already draws the line here — "ask whether GitHub has the
+    content, not whether it was merged... a closed PR keeps its content at
+    `refs/pull/N/head` forever" — and a MERGED pull request is the strongest
+    possible answer to that question about a branch.
+
+    ⚠ False on any doubt: no `gh`, no network, no pull request, an open one, a
+    closed-unmerged one, or an unparseable answer all mean "do not reap".
+    """
+    if not branch or branch in ("HEAD", "main"):
+        return False
+    if shutil.which("gh") is None:
+        return False
+    try:
+        out = subprocess.run(
+            ["gh", "pr", "view", branch, "--json", "state,mergedAt"],
+            capture_output=True, text=True, timeout=30)
+    except (subprocess.SubprocessError, OSError):
+        return False
+    if out.returncode != 0:
+        return False
+    try:
+        view = json.loads(out.stdout or "{}")
+    except ValueError:
+        return False
+    return view.get("state") == "MERGED" and bool(view.get("mergedAt"))
 
 
 def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
@@ -312,7 +357,22 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
       * `--reap` reports; `--reap --apply` removes. A destructive default is
         how a tool like this ends up famous.
     """
-    flagged = {f.get("path") for f in findings}
+    # ⚠ A tree flagged ONLY with COMMIT-NOT-ON-GITHUB, whose branch's pull
+    # request has MERGED, is `ship` scaffolding rather than lost work: the
+    # merge commit `ship` made before marking the PR ready is local, but both
+    # its parents are on GitHub and its content reached `main` as the squash.
+    # See `branch_pr_is_merged`. Every other flag still refuses, so a dirty
+    # tree or a missing one is untouched no matter what its PR says.
+    blocking = {}
+    for finding in findings:
+        blocking.setdefault(finding.get("path"), set()).add(finding.get("kind"))
+    flagged = set()
+    for path, kinds in blocking.items():
+        if kinds == {"COMMIT-NOT-ON-GITHUB"} and branch_pr_is_merged(
+            git("rev-parse", "--abbrev-ref", "HEAD", repo=path) if os.path.isdir(path) else ""
+        ):
+            continue
+        flagged.add(path)
     root = os.path.realpath(repo)
     main_tree = None
     for path in worktrees(repo):
@@ -329,7 +389,10 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
             continue
         branch = git("rev-parse", "--abbrev-ref", "HEAD", repo=path) or "HEAD"
         head = git("rev-parse", "HEAD", repo=path)
-        if not head or not on_github(repo, head):
+        if not head:
+            continue
+        reachable = on_github(repo, head)
+        if not reachable and not branch_pr_is_merged(branch):
             continue
         if git("status", "--porcelain", repo=path).strip():
             continue
@@ -337,7 +400,12 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
         if idle_for < idle_minutes:
             continue
         row = {"path": path, "branch": branch, "head": head,
-               "idle_minutes": idle_for, "removed": False}
+               "idle_minutes": idle_for, "removed": False,
+               # Two different claims, and a log a person reads should not
+               # blur them: "GitHub can reach this commit" is not the same
+               # statement as "this branch's pull request merged".
+               "why": "HEAD is on GitHub" if reachable
+                      else "its pull request merged"}
         if apply:
             # `--force` because a task worktree legitimately holds build output
             # git does not track; the clean check above is the real gate.
@@ -492,6 +560,58 @@ def selftest() -> int:
                               capture_output=True).returncode == 0, \
             "reaping must never be the last copy: the remote still has the branch"
 
+        # --- the merged-PR escape ------------------------------------------
+        # ⚠ Every case here is a REFUSAL except the last. The escape exists so
+        # `ship` scaffolding does not pin a worktree forever; it must not
+        # become a way for a merged PR to justify deleting anything else.
+        import unittest.mock as _mock
+
+        wt2 = os.path.join(tmp, "wt2")
+        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "-b", "feat2", wt2],
+                       check=True)
+        subprocess.run(["git", "-C", wt2, "push", "-q", "-u", "origin", "feat2"], check=True)
+        # A commit that exists only here — exactly what `ship`'s merge leaves.
+        open(os.path.join(wt2, "a.txt"), "w").write("scaffold\n")
+        subprocess.run(["git", "-C", wt2, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", wt2, *cfg, "commit", "-qm", "ship merge"], check=True)
+        os.utime(os.path.join(wt2, "a.txt"), (0, 0))
+
+        # 1. With no merged PR it is refused, which is today's behaviour.
+        with _mock.patch(__name__ + ".branch_pr_is_merged", return_value=False):
+            assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+                "a disk-only commit with no merged PR must never be reaped"
+        assert os.path.isdir(wt2), "it must still be there"
+
+        # 2. A merged PR does NOT excuse a dirty tree.
+        open(os.path.join(wt2, "b.txt"), "w").write("uncommitted\n")
+        os.utime(os.path.join(wt2, "b.txt"), (0, 0))
+        with _mock.patch(__name__ + ".branch_pr_is_merged", return_value=True):
+            assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+                "a merged PR must not excuse uncommitted work"
+        assert os.path.isdir(wt2), "the dirty tree must still be there"
+        os.remove(os.path.join(wt2, "b.txt"))
+
+        # 3. A merged PR does NOT excuse a tree an agent is still editing.
+        os.utime(os.path.join(wt2, "a.txt"), None)
+        with _mock.patch(__name__ + ".branch_pr_is_merged", return_value=True):
+            assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
+                "a merged PR must not excuse an active worktree"
+        assert os.path.isdir(wt2), "the active tree must still be there"
+
+        # 4. Clean, idle, and its PR merged: the scaffolding goes.
+        os.utime(os.path.join(wt2, "a.txt"), (0, 0))
+        with _mock.patch(__name__ + ".branch_pr_is_merged", return_value=True):
+            done2 = reap(work, audit(work, 30, False), idle_minutes=30, apply=True)
+        assert [r["removed"] for r in done2] == [True], done2
+        assert not os.path.isdir(wt2), "the scaffolding worktree must be gone"
+
+        # 5. And the real predicate is conservative about anything it cannot
+        #    establish: no branch, no `gh`, no answer all mean "do not reap".
+        assert not branch_pr_is_merged(""), "an empty branch is never merged"
+        assert not branch_pr_is_merged("main"), "main is never a task branch"
+        assert not branch_pr_is_merged("no-such-branch-anywhere"), \
+            "an unknown branch must not read as merged"
+
         print("selftest: ok")
         return 0
     finally:
@@ -544,7 +664,7 @@ def main() -> int:
         for row in reaped:
             print(f"REAP: {verb} {os.path.basename(row['path'])} "
                   f"({row['branch'][:60]}, idle {row['idle_minutes']:.0f} min, "
-                  f"HEAD {row['head'][:8]} is on GitHub)")
+                  f"{row['head'][:8]}: {row['why']})")
         if reaped:
             print(f"{verb} {len(reaped)} worktree(s) whose work GitHub already has"
                   + ("" if args.apply else "; re-run with --apply"))
