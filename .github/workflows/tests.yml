@@ -174,7 +174,35 @@ jobs:
       # The publish pipeline's own tests. #1289 moved the viewer's script to
       # assets/app.js and broke both the stable-lane build and these tests
       # without any gate noticing — the deploy failed days later instead.
-      - run: cd beta && python3 test_cache_bust.py && python3 test_serve.py && python3 test_verify.py && python3 shim_test.py && python3 worker_test.py
+      #
+      # ⚠ DISCOVERED, NOT LISTED — THE LIST WAS THE BUG, for the second time.
+      #
+      # This step named five suites by hand and `beta/` holds six. The unnamed
+      # one, `serve_test.py`, had been broken since `Handler` gained its
+      # required `rating_host` argument and again since the published lane moved
+      # to the root of its directory: it died on the first request and asserted
+      # the landing page was the viewer. Nobody saw it, because nobody ran it.
+      #
+      # This is the same defect `collaboration-policy.yml` documents fixing on
+      # the `tools/` side, and the same answer. `beta/` uses both naming
+      # conventions — `test_*.py` and `*_test.py` — so a single `unittest
+      # discover` pattern would still have missed half of them, and these are
+      # plain scripts rather than test cases. Take every file matching either
+      # convention and fail if the glob comes up empty, so a rename cannot
+      # quietly empty the gate the way a hand-written list quietly shrank it.
+      - name: The publish pipeline's own tests
+        run: |
+          cd beta
+          shopt -s nullglob
+          scripts=(test_*.py *_test.py)
+          if [ ${#scripts[@]} -eq 0 ]; then
+            echo "no beta test scripts discovered — the glob or the naming moved"
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            echo "== $script"
+            python3 "$script"
+          done
 
   # The control mod is ~7k lines of Lua that no gate has ever compiled. It runs
   # inside Civ 6, so a syntax error does not fail a build — it fails a GAME, on
