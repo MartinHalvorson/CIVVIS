@@ -187,7 +187,13 @@ function initAdvancedSettings() {
     event.stopPropagation();
   });
 }
-initAdvancedSettings();
+// ⚠ Not called here: `initAdvancedSettings` reads settings through
+// `readSetting`, which lives in app_setup.js — the script loaded AFTER this
+// one. Calling it during this file's evaluation throws, and the crash cascades:
+// `RULES` never leaves its TDZ, so app_setup.js's own load-time
+// `syncSetupMode()` dies too and the page never registers as a viewer
+// (`/status` viewers stays 0 behind the "Joining the live world" veil).
+// app_setup.js makes this call as its first top-level statement instead.
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
 // Mountain ground is deliberately much darker than workable land: its broad,
@@ -2120,6 +2126,11 @@ function nuclearStandingsInPlay() {
 // battlefield world any more than the nuclear stockpile is a fact of the
 // Ancient Age.
 function worldStandingsInPlay() {
+  // The HUD column roster is composed during this file's own load, before
+  // app_setup.js (which defines watchingBattlefield) has run. No world is
+  // known that early, and the empire columns exist by default until a
+  // battlefield says otherwise.
+  if (typeof watchingBattlefield !== "function") return true;
   return !watchingBattlefield();
 }
 
@@ -30618,9 +30629,11 @@ if (savedSidebarCollapsed === "1") togglePanel(true, false);
 else if (savedSidebarCollapsed === "0") togglePanel(false, false);
 else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
-// Settled before the engine has answered, so the chip is never a link to the
-// mode already on screen during the seconds a wasm world takes to open.
-syncModeLink();
+// syncModeLink() is NOT called here: it lives in app_setup.js, which loads
+// after this file, so a load-time call throws and boot() below never runs —
+// the page stays behind the "Joining the live world" veil with viewers 0.
+// app_setup.js settles the chip at its own load time, still before the
+// engine's first answer (boot's synchronous prefix ends at its first await).
 boot();
 
 // `?setup=1` lands with the sidebar's Game setup drawer open: the home page's
