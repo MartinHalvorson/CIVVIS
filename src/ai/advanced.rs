@@ -12802,6 +12802,23 @@ impl AdvancedAi {
             if !g.can_activate_current_great_person(pid, kind) {
                 continue;
             }
+            // ★★★★ A CLASS THE HOST HAS RUN OUT OF CANNOT BE BOUGHT. Run
+            // civvis-20260816T233226Z ended with 1,999 Faith in the bank and
+            // 26 `gp_class_not_offered` refusals: from t227 the seat asked to
+            // buy out the Artist race four turns running (480/428/375/322
+            // Faith) and the Merchant race at t251, while the export's
+            // `great_person_exhausted` listed both — every named Artist and
+            // Merchant on the map was already claimed — and offered three
+            // Musicians at 660 that were never asked for. CIVVIS's own roster
+            // still had Artists left, so `current_great_person` said yes; the
+            // host's timeline is the authority on a mirrored seat, and
+            // `great_person_class_earnable` already reads it. Native boards
+            // carry no such list and are unchanged.
+            if g.players[pid].live_great_person_exhausted.is_some()
+                && !g.great_person_class_earnable(pid, kind)
+            {
+                continue;
+            }
             let points = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
             let cost = g.gp_cost(pid, kind);
             let missing = (cost - points).max(0.0);
@@ -38658,6 +38675,65 @@ mod tests {
         let mut kept = game.clone();
         withheld.advanced_great_people(&mut kept, 0, GrandStrategy::Science);
         assert_eq!(kept.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 0);
+    }
+
+    /// ★★★★ Run civvis-20260816T233226Z ended with 1,999 Faith banked and 26
+    /// `gp_class_not_offered` refusals: the seat kept buying out the Artist and
+    /// Merchant races the host's `great_person_exhausted` listed as gone,
+    /// while three Musicians it never asked for sat on offer. On a mirrored
+    /// seat the host's list is the authority: an exhausted class is skipped
+    /// and the Faith goes to a class still on offer; a native board (no list)
+    /// keeps CIVVIS's own roster.
+    #[test]
+    fn patronage_skips_a_class_the_host_reports_exhausted() {
+        let mut game = Game::new(2, 24, 16, 7_102, 200, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0]
+            .gpp
+            .insert("scientist".to_string(), (cost * 0.30).floor());
+        game.players[0].gold = 0.0;
+        let price = game
+            .great_person_patronage_price(0, "scientist", "faith")
+            .expect("a faith price is quoted");
+        game.players[0].faith = price + 100.0 + 50.0;
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        // The host says every Scientist is claimed.
+        let mut exhausted = game.clone();
+        exhausted.players[0].live_great_person_exhausted =
+            Some(["scientist".to_string()].into_iter().collect());
+        assert!(!exhausted.great_person_class_earnable(0, "scientist"));
+        live.advanced_great_people(&mut exhausted, 0, GrandStrategy::Science);
+        assert_eq!(
+            exhausted.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
+            0,
+            "a class the host has run out of is not bought"
+        );
+        assert!(
+            exhausted.players[0].faith >= price + 100.0 - f64::EPSILON,
+            "and the Faith stays in the bank for a class still on offer"
+        );
+
+        // The host says Scientists remain: bought as before.
+        let mut offered = game.clone();
+        offered.players[0].live_great_person_exhausted = Some(BTreeSet::new());
+        live.advanced_great_people(&mut offered, 0, GrandStrategy::Science);
+        assert_eq!(offered.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 1);
+
+        // No host list at all (a native board): CIVVIS's own roster decides.
+        let mut native = game.clone();
+        assert!(native.players[0].live_great_person_exhausted.is_none());
+        live.advanced_great_people(&mut native, 0, GrandStrategy::Science);
+        assert_eq!(native.players[0].gp_claimed.get("scientist").copied().unwrap_or(0), 1);
     }
 
     #[test]

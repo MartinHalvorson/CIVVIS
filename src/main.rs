@@ -1329,7 +1329,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wartime second naval eye and its idle-city reservation are both reached
 /// only through `naval_recon`, which `AdvancedAi::legacy()` leaves false.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f84_9122_1eab_12c1;
+/// Patronage skips a Great Person class the mirrored host reports exhausted
+/// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
+/// native boards carry no such list and are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb35_d678_5504_e0a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
