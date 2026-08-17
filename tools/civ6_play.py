@@ -1294,6 +1294,12 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
     reads it consistently. Map the normalized crop observations back into full
     desktop coordinates so the existing click validation remains unchanged.
     """
+    # The tooling CI runner intentionally has no Pillow installation. A
+    # screenshot that never landed is already an unreadable poll, so return
+    # before the optional import; otherwise the missing file is reported as a
+    # dependency failure instead of taking the whole retry loop down.
+    if not path.exists():
+        return []
     try:
         from PIL import Image
 
@@ -1315,12 +1321,7 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop_path = path.with_name(path.stem + "-leader-crop.png")
         crop.save(crop_path)
         observations = macos_ocr.recognize(crop_path)
-    except (OSError, ValueError):
-        # A shot that never landed has nothing to read at any resolution —
-        # the fallback would hand the native OCR a missing file and die on
-        # `OCRUnavailable`. An empty read lets the caller's own retry poll.
-        if not path.exists():
-            return []
+    except (ImportError, OSError, ValueError):
         return macos_ocr.recognize(path)
 
     left, crop_top, right, crop_bottom = rect
