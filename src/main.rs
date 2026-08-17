@@ -1326,7 +1326,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// have already run. `AdvancedAi::legacy()` keeps that gate false, so its
 /// diplomacy remains historical. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe5eb_61a7_feb8_b289;
+/// The wartime second naval eye and its idle-city reservation are both reached
+/// only through `naval_recon`, which `AdvancedAi::legacy()` leaves false.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f84_9122_1eab_12c1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
