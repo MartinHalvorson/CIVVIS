@@ -104,6 +104,22 @@ def startup_event_proves_game_started(event: dict) -> bool:
     )
 
 
+def board_event_proves_intro_is_gone(event: dict) -> bool:
+    """Return whether the live board, not merely the agent, is available.
+
+    The agent UI context loads behind Civilization VI's leader introduction, so
+    its ``loaded`` event must *not* make the launcher skip a verified Begin
+    Game click.  A turn or an exported state, on the other hand, requires the
+    playable board and lets us stop repeatedly OCRing an intro that is already
+    gone.  This keeps the modal safety gate while avoiding a full startup
+    budget of redundant screenshots after a direct host transition.
+    """
+    return (
+        event.get("ctx") == "agent"
+        and event.get("kind") in {"state", "turn"}
+    )
+
+
 def wait_for_agent_start(tail, on_event, seconds: float,
                          still_loading=None) -> bool:
     """Wait for the in-game agent, staying patient while the game LOADS.
@@ -1380,8 +1396,15 @@ def _leader_intro_button_ocr(path: Path,
 
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
-                         *, retries: int = 4, poll_s: float = 1.0) -> bool:
-    """Click the leader card's Begin Game control after visual confirmation."""
+                         *, retries: int = 4, poll_s: float = 1.0,
+                         board_ready=None) -> bool:
+    """Click the leader card's Begin Game control after visual confirmation.
+
+    ``board_ready`` is checked only after the screen has failed the exact intro
+    proof.  It therefore cannot bypass a rendered leader card just because the
+    in-game agent loaded behind it, but it can end the remaining probe budget
+    when a direct host transition has already opened the board.
+    """
     x, y, w, h = bounds
     for retry in range(retries):
         shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
@@ -1392,6 +1415,10 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
             print(f"[setup] verified {leader_display_name(leader or '')} intro; "
                   "clicked Begin Game", flush=True)
             return True
+        if board_ready is not None and board_ready():
+            print("[setup] live board arrived before a leader intro was visible; "
+                  "stopping redundant intro probes", flush=True)
+            return False
         time.sleep(poll_s)
     return False
 
@@ -1676,6 +1703,24 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         return wait_for_agent_start(tail, on_event, seconds,
                                     still_loading=still_loading)
 
+    board_seen = {"value": False}
+
+    def board_is_ready() -> bool:
+        """Drain a full log batch and retain the first playable-board proof.
+
+        ``LogTail.poll`` can return loaded, seat, and state together.  Draining
+        it here is intentional: returning immediately at ``loaded`` would lose
+        the state consumed while the intro probe is yielding, leaving the brain
+        waiting on a board the launcher had already seen.
+        """
+        ready = False
+        for event in tail.poll():
+            on_event(event)
+            if board_event_proves_intro_is_gone(event):
+                ready = True
+        board_seen["value"] = board_seen["value"] or ready
+        return board_seen["value"]
+
     # One pool of extra waiting for the whole bootstrap, spent only against a
     # screen that shows no main menu. See `_loading_probe`.
     patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
@@ -1821,7 +1866,14 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # strand the run behind Begin Game.
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
-                             retries=intro_retries, poll_s=2.0)
+                             retries=intro_retries, poll_s=2.0,
+                             board_ready=board_is_ready)
+        if board_seen["value"]:
+            # A direct host transition can open the board without ever drawing
+            # the leader card.  Its state has already been relayed above, so do
+            # not spend the entire normal startup budget waiting for a second
+            # event that may not arrive until the brain has that state.
+            return True
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
                                                           patience, verify_s)):
             return True
