@@ -582,6 +582,40 @@ class ProtectedInstallTest(unittest.TestCase):
             self.assertIn(key, block)
         self.assertNotIn("RequestPlayerOperation", block)
 
+    def test_the_rival_export_carries_victory_progress(self) -> None:
+        # Five of the twelve runs the seat was leading on 2026-08-16/17 ended
+        # at t229-245 on a rival's culture, technology or diplomatic victory
+        # the mirror could not see coming. Every accessor is one the shipped
+        # World Rankings screen calls on OTHER players.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        block = source.split("science = try(function() return other:GetTechs()", 1)[1]
+        block = block.split("public_stats = otherPublicStats", 1)[0]
+        self.assertIn("science_projects = try(function()", block)
+        self.assertIn("stats:GetNumProjectsAdvanced(project.Index)", block)
+        for project in ("PROJECT_LAUNCH_EARTH_SATELLITE",
+                        "PROJECT_LAUNCH_MOON_LANDING",
+                        "PROJECT_LAUNCH_MARS_BASE",
+                        "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"):
+            self.assertIn(project, block)
+        # Manhattan and Ivy are strategic programs, not public victory rows.
+        self.assertNotIn("PROJECT_MANHATTAN_PROJECT", block)
+        self.assertNotIn("PROJECT_OPERATION_IVY", block)
+        self.assertIn("foreign_tourists = try(function()", block)
+        self.assertIn("other:GetCulture():GetTouristsTo();", block)
+        self.assertIn("domestic_tourists = try(function()", block)
+        self.assertIn("other:GetCulture():GetStaycationers();", block)
+
+    def test_the_seat_event_names_the_hosts_victory_table(self) -> None:
+        # The TeamVictory event reports a raw integer and docs/CIV6_LADDER.md
+        # rightly refuses guessed names for it. The seat event now carries the
+        # host's own Victories table so every run's record is self-describing.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        block = source.split("victory_types = try(function()", 1)[1]
+        block = block.split("end, nil),", 1)[0]
+        self.assertIn("for row in GameInfo.Victories() do", block)
+        self.assertIn("index = row.Index", block)
+        self.assertIn("type = row.VictoryType", block)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
