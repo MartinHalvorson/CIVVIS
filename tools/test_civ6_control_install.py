@@ -502,6 +502,12 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
 
+    def test_builder_repair_uses_firaxis_repair_operation(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn('"UNITOPERATION_REPAIR",', source)
+        self.assertIn('local hash = OP["UNITOPERATION_" .. verb];', source)
+
     def test_unit_formation_bridge_uses_firaxis_unit_panel_signature(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("local units = {};", 1)[1].split("-- Rivals:", 1)[0]
