@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 176] = [
+pub const EVAL_ONLY_AIS: [&str; 177] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -161,6 +161,7 @@ pub const EVAL_ONLY_AIS: [&str; 176] = [
     "advanced_late_expansion",
     "advanced_expansion_dispatch",
     "advanced_expansion_complete",
+    "advanced_coupled_expansion",
     // The victory lane the deployed Civ 6 decider is actually given. Named so
     // `ai_eval` can measure the choice `civ6_civvis_climb.py --victory` makes
     // for every real run; see the constructor arms below.
@@ -640,6 +641,7 @@ define_arm_kinds! {
     AdvancedExpansionComplete => "advanced_expansion_complete",
     AdvancedExpansionDispatch => "advanced_expansion_dispatch",
     AdvancedExpansionPayback => "advanced_expansion_payback",
+    AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
@@ -2472,6 +2474,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.expansion_dispatch = true;
             Box::new(ai)
         }
+        // Treatment for the full paid expansion sequence. It routes the
+        // adaptive Expansion lane through strategic production and charges
+        // production, population, escort, travel, safety, and payback costs
+        // before a Settler can outbid another build.
+        "advanced_coupled_expansion" => Box::new(AdvancedAi::coupled_expansion()),
         // Treatment for the city-target axis: identical to `advanced` except
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
@@ -3860,6 +3867,7 @@ impl ArmKind {
             }
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
+            Self::AdvancedCoupledExpansion => &["coupled-expansion"],
             Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
@@ -4326,6 +4334,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
         "advanced_expansion_complete" => (Vec::new(), "advanced_expansion_complete"),
+        "advanced_coupled_expansion" => (Vec::new(), "advanced_coupled_expansion"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
@@ -5569,7 +5578,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 82] = [
+            const SCRIPTED: [&str; 83] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5604,6 +5613,7 @@ mod tests {
                 "advanced_late_expansion",
                 "advanced_expansion_dispatch",
                 "advanced_expansion_complete",
+                "advanced_coupled_expansion",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
                 "advanced_city_strategy_roles",
