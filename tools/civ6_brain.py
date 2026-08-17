@@ -36,6 +36,11 @@ import time
 from pathlib import Path
 
 from civ6_control.orders import orders_db_path
+# One list, three launchers. `civ6_civvis_climb.py` forwards `--victory` to
+# `civ6_play.py --civvis-victory`, which forwards it here, which forwards it to
+# `civvis_orders --victory`; each restatement of the names was a place for the
+# chain to reject a lane the far end supports, and one of them did.
+from civ6_play import VICTORY_LANES
 
 DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
@@ -792,8 +797,17 @@ def main() -> int:
     # This pins only our controller's objective; it does not alter the host game's
     # enabled victory conditions, so a rival religious win remains a real loss.
     # Rows from direct-brain runs either side of this change are NOT comparable.
+    #
+    # ★★★★★ AND THE LIST ITSELF WAS THE BINDING CONSTRAINT, not the default.
+    # Culture, Religion and Diplomacy are three of `VictoryTarget`'s six variants
+    # and all three are implemented in `advanced.rs`, but this `choices` list
+    # named four, so argparse refused them here — between `civ6_play.py`, which
+    # forwards the string, and `civvis_orders`, which parses it. Every reading
+    # above about "the strongest REACHABLE lane" was taken from a menu that hid
+    # half the lanes. The names now come from `civ6_play.VICTORY_LANES`, which
+    # `test_civ6_play.py` pins against the Rust enum.
     ap.add_argument("--victory", default=DEFAULT_VICTORY,
-                    choices=["domination", "science", "score", "civvis"],
+                    choices=VICTORY_LANES,
                     help="which victory CIVVIS plays for; `civvis` lets it choose. "
                          "⚠ domination is unreachable while no rival city is ever "
                          "revealed -- see the note above; pass it deliberately, "
