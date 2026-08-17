@@ -27,6 +27,7 @@ pub mod mirror;
 pub mod name;
 pub mod obs;
 pub mod protocol;
+pub mod routes;
 pub mod odds;
 // The oracle's only consumer is `experiments/closed/ablate.rs`, so it rides
 // the same opt-in feature: normal builds and CI skip its ~1,300 lines and 12
@@ -45,6 +46,8 @@ pub mod obs_tensor;
 // search's counterfactual sampling reads it directly.
 #[cfg(feature = "closed-experiments")]
 pub mod decision_features;
+pub mod mods;
+pub mod pedia;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;
@@ -60,8 +63,6 @@ pub mod sphere;
 pub mod strategic;
 pub mod trafalgar;
 pub mod valuenet;
-pub mod mods;
-pub mod pedia;
 pub mod validate;
 pub mod world;
 

@@ -165,19 +165,19 @@ fn every_exception_carries_a_reason() {
 
 #[test]
 fn the_shared_handlers_are_called_by_both_front_ends() {
-    // The point of `protocol.rs` is that both sides call it. A handler only one
+    // The point of `routes.rs` is that both sides call it. A handler only one
     // side uses is a handler that has been quietly re-duplicated in the other.
     let native = source("server.rs");
     let wasm = source("wasm.rs");
     for handler in ["route_step", "view", "action"] {
-        let call = format!("crate::protocol::{handler}(");
+        let call = format!("crate::routes::{handler}(");
         assert!(
             native.contains(&call),
-            "server.rs no longer calls protocol::{handler}; the native copy is back"
+            "server.rs no longer calls routes::{handler}; the native copy is back"
         );
         assert!(
             wasm.contains(&call),
-            "wasm.rs no longer calls protocol::{handler}; the browser copy is back"
+            "wasm.rs no longer calls routes::{handler}; the browser copy is back"
         );
     }
 }

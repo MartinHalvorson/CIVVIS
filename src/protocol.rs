@@ -1,160 +1,171 @@
-//! The JSON protocol's handlers, written once for both front ends.
+//! Versioning and compatibility helpers for CIVVIS's external JSON surfaces.
 //!
-//! # Why this module exists
-//!
-//! `server.rs` (native) and `wasm.rs` (civvis.ai) each hand-implemented the
-//! same protocol. Twenty-two routes are served by both, and 224 of their lines
-//! were character-identical — `/action` alone carried a 33-line run that
-//! matched exactly, and `/route` matched in full. Two copies of a rule is two
-//! chances to change one of them, and the drift is already on the board:
-//! `/host-league` and `/next-game` exist only in wasm, `/adjacency` and
-//! `/saves` only in native.
-//!
-//! The roadmap files that as a viewer bug — "panels that read native-only state
-//! are silently dead on civvis.ai" — but it is a protocol-duplication bug, and
-//! it will keep producing viewer bugs for as long as the shared half is written
-//! twice.
-//!
-//! # What belongs here
-//!
-//! The part of a route that is a rule about the game: read the request, ask the
-//! `Session`, shape the answer. What does NOT belong here is anything about the
-//! transport or the deployment — how a session is acquired (a mutex on native,
-//! a thread-local in the browser), how a response is delivered (a socket versus
-//! a returned `Value`), and the genuinely different things the two builds do
-//! with the same outcome. `/action` is the clean example: the whole body is
-//! shared, and then native writes an autosave to disk while the page is told to
-//! save into its own storage, because the page holds the only copy it has.
-//!
-//! A handler here takes `&Session` when it only reads and `&mut Session` when
-//! it acts, and returns the JSON answer. It never touches a socket, a lock, a
-//! file, or a thread-local.
+//! The engine's internal structs are intentionally serialized directly so
+//! saves remain useful to the Rust code.  Anything that crosses an HTTP/WASM
+//! boundary, or is kept as a save file, gets a small envelope instead.  That
+//! gives clients a way to reject a newer contract before interpreting fields,
+//! while the loader still accepts the pre-envelope saves shipped by older
+//! builds.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
-use crate::server::Session;
+use crate::game::Game;
 
-/// `POST /route` — the next step of a unit's path toward a destination.
+/// The name carried by responses and save envelopes.
+pub const PROTOCOL_NAME: &str = "civvis-json";
+/// The highest request/response protocol version this build understands.
+pub const PROTOCOL_VERSION: u32 = 1;
+/// The save envelope version.  This is separate because a save can outlive
+/// the HTTP API that produced it.
+pub const SAVE_FORMAT_VERSION: u32 = 1;
+const SAVE_FORMAT_NAME: &str = "civvis.save";
+
+/// Add the current protocol identity to an externally visible JSON object.
 ///
-/// Read-only, and identical in both front ends down to the last character
-/// before this existed.
-pub fn route_step(session: &Session, parsed: &Value) -> Value {
-    let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
-    let to = parsed["to"]
-        .as_array()
-        .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
-    match (unit, to) {
-        (Some(unit), Some(to)) => {
-            let owned = session
-                .game
-                .units
-                .get(&unit)
-                .is_some_and(|held| held.owner == 0);
-            if !owned {
-                json!({"error": "not your unit"})
-            } else {
-                match session.game.route_step(unit, to, 0) {
-                    Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
-                    None => json!({"step": Value::Null, "error": Value::Null}),
-                }
+/// Responses keep their existing top-level shape: clients can read the fields
+/// they already know and use these two fields to choose whether to continue.
+/// Non-object values are returned unchanged because every current public
+/// response is an object and inventing a wrapper for an array would be a
+/// breaking change of its own.
+pub fn version_response(mut value: Value) -> Value {
+    if let Value::Object(object) = &mut value {
+        object
+            .entry("protocol".to_string())
+            .or_insert_with(|| json!(PROTOCOL_NAME));
+        object
+            .entry("protocol_version".to_string())
+            .or_insert_with(|| json!(PROTOCOL_VERSION));
+    }
+    value
+}
+
+/// Validate the optional version marker on an incoming request.
+///
+/// Missing markers are deliberately accepted for old browser builds and
+/// integrations.  A caller that sends a marker is asking for versioned
+/// behavior, so malformed markers and versions newer than this binary are
+/// refused before any action is decoded.
+pub fn validate_request(value: &Value) -> Result<(), String> {
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    let Some(version) = object.get("protocol_version") else {
+        return Ok(());
+    };
+    let Some(version) = version.as_u64() else {
+        return Err("protocol_version must be a non-negative integer".to_string());
+    };
+    if version == 0 || version > u64::from(PROTOCOL_VERSION) {
+        return Err(format!(
+            "unsupported protocol_version {version}; this server supports {PROTOCOL_VERSION}"
+        ));
+    }
+    Ok(())
+}
+
+/// Serialize a game in the durable save format.
+pub fn save_value(game: &Game) -> serde_json::Result<Value> {
+    Ok(json!({
+        "format": SAVE_FORMAT_NAME,
+        "protocol": PROTOCOL_NAME,
+        "protocol_version": PROTOCOL_VERSION,
+        "save_format_version": SAVE_FORMAT_VERSION,
+        "game": serde_json::to_value(game)?,
+    }))
+}
+
+fn version_field(object: &Map<String, Value>, field: &str, expected: u32) -> Result<(), String> {
+    let Some(value) = object.get(field) else {
+        return Ok(());
+    };
+    let Some(value) = value.as_u64() else {
+        return Err(format!("{field} must be a non-negative integer"));
+    };
+    if value != u64::from(expected) {
+        return Err(format!(
+            "unsupported {field} {value}; this build reads {expected}"
+        ));
+    }
+    Ok(())
+}
+
+/// Decode either a current save envelope or the raw `Game` JSON written by
+/// older CIVVIS builds.
+pub fn game_from_save(value: Value) -> Result<Game, String> {
+    let payload = match value {
+        Value::Object(mut object)
+            if object.contains_key("save_format_version")
+                || object.contains_key("format")
+                || (object.contains_key("protocol_version") && object.contains_key("game")) =>
+        {
+            if object.get("format").and_then(Value::as_str) != Some(SAVE_FORMAT_NAME) {
+                return Err("that save has an unknown format".to_string());
             }
+            version_field(&object, "protocol_version", PROTOCOL_VERSION)?;
+            version_field(&object, "save_format_version", SAVE_FORMAT_VERSION)?;
+            object
+                .remove("game")
+                .ok_or_else(|| "that save has no game payload".to_string())?
         }
-        _ => json!({"error": "route needs a unit and a destination"}),
-    }
-}
-
-/// `POST /view` — seat the viewer on a player, or on the omniscient spectator.
-///
-/// Returns the new state with `error` set, which is the shape both front ends
-/// already produced. The browser decorates the result afterwards; that is its
-/// business, not the protocol's.
-pub fn view(session: &mut Session, parsed: &Value) -> Value {
-    let result = match parsed.get("player") {
-        Some(Value::Null) => session.set_view_player(None),
-        Some(value) => value
-            .as_u64()
-            .ok_or_else(|| "player must be a non-negative integer or null".to_string())
-            .and_then(|pid| session.set_view_player(Some(pid as usize))),
-        None => Err("missing player".to_string()),
-    };
-    let mut out = session.state();
-    out["error"] = match result {
-        Ok(()) => Value::Null,
-        Err(error) => Value::String(error),
-    };
-    out
-}
-
-/// What `POST /action` produced, and the two facts its callers act on.
-///
-/// The autosave decision is deliberately NOT made here. Both builds save at the
-/// top of a turn for the same reason — a single-player game that exists only in
-/// one process's memory is one crash away from never having happened — but they
-/// save to different places, and a handler that knew about either would be a
-/// handler that knew about a deployment.
-pub struct ActionOutcome {
-    /// The state to answer with, carrying `error` and any `movement_paths`.
-    pub out: Value,
-    /// The request asked to end the turn.
-    pub ending_turn: bool,
-    /// The action was refused, so nothing changed.
-    pub refused: bool,
-}
-
-impl ActionOutcome {
-    /// Whether this action is the one a build should autosave after.
-    ///
-    /// A spectated game is the supervisor's business: it is being replayed or
-    /// driven from outside, and saving it would write a file per turn that
-    /// nobody reads.
-    pub fn autosave_due(&self, spectating: bool) -> bool {
-        self.ending_turn && !self.refused && !spectating
-    }
-}
-
-/// `POST /action` — apply one action and answer with the resulting state.
-///
-/// The movement path is captured BEFORE the action is applied and truncated
-/// afterwards to where the unit actually stopped: a move can be cut short by a
-/// zone of control or an ambush, and the client draws the path it really took,
-/// not the one it asked for.
-pub fn action(session: &mut Session, parsed: &Value) -> ActionOutcome {
-    let ending_turn = parsed["action"]["type"].as_str() == Some("end_turn");
-    let movement_path = serde_json::from_value::<crate::game::Action>(parsed["action"].clone())
-        .ok()
-        .and_then(|action| match action {
-            crate::game::Action::MoveTo { unit, to } => {
-                let start = session.game.units.get(&unit)?.pos;
-                let mut path = session.game.path_to(unit, to)?;
-                path.insert(0, start);
-                Some((unit, path))
-            }
-            _ => None,
-        });
-    let err = session.act(&parsed["action"]);
-    let mut out = session.state();
-    if err.is_none() {
-        if let Some((unit, mut path)) = movement_path {
-            if let Some(actual) = session.game.units.get(&unit).map(|unit| unit.pos) {
-                if let Some(end) = path.iter().position(|position| *position == actual) {
-                    path.truncate(end + 1);
-                } else if let Some(start) = path.first().copied() {
-                    path = vec![start, actual];
-                }
-            }
-            if path.len() > 1 {
-                out["movement_paths"] = json!({unit.to_string(): path});
-            }
+        Value::Object(mut object) if object.len() == 1 && object.contains_key("game") => {
+            // The native `/load` request has always accepted `{"game": ...}`.
+            // Keep that wrapper usable when it is supplied as a file too.
+            object
+                .remove("game")
+                .expect("the guard found the game field")
         }
-    }
-    let refused = err.is_some();
-    out["error"] = match err {
-        Some(e) => Value::String(e),
-        None => Value::Null,
+        value => value,
     };
-    ActionOutcome {
-        out,
-        ending_turn,
-        refused,
+
+    serde_json::from_value(payload).map_err(|error| format!("that is not a save: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_save_envelope_round_trips_and_identifies_itself() {
+        let game = Game::new(2, 20, 14, 7, 40, 0);
+        let save = save_value(&game).expect("the game serializes");
+        assert_eq!(save["format"], SAVE_FORMAT_NAME);
+        assert_eq!(save["protocol"], PROTOCOL_NAME);
+        assert_eq!(save["protocol_version"], PROTOCOL_VERSION);
+        assert_eq!(save["save_format_version"], SAVE_FORMAT_VERSION);
+        let restored = game_from_save(save).expect("the envelope loads");
+        assert_eq!(restored.seed, game.seed);
+        assert_eq!(restored.turn, game.turn);
+    }
+
+    #[test]
+    fn a_legacy_raw_game_still_loads() {
+        let game = Game::new(2, 20, 14, 8, 40, 0);
+        let raw = serde_json::to_value(&game).expect("the game serializes");
+        let restored = game_from_save(raw).expect("the legacy save loads");
+        assert_eq!(restored.seed, game.seed);
+    }
+
+    #[test]
+    fn future_save_and_request_versions_fail_before_deserialization() {
+        let game = Game::new(2, 20, 14, 9, 40, 0);
+        let mut save = save_value(&game).expect("the game serializes");
+        save["save_format_version"] = json!(SAVE_FORMAT_VERSION + 1);
+        let error = match game_from_save(save) {
+            Ok(_) => panic!("a future save must be refused"),
+            Err(error) => error,
+        };
+        assert!(error.contains("save_format_version"), "{error}");
+
+        let request = json!({"protocol_version": PROTOCOL_VERSION + 1});
+        let error = validate_request(&request).expect_err("a future request must be refused");
+        assert!(error.contains("protocol_version"), "{error}");
+    }
+
+    #[test]
+    fn version_response_preserves_existing_fields() {
+        let response = version_response(json!({"turn": 7}));
+        assert_eq!(response["turn"], 7);
+        assert_eq!(response["protocol"], PROTOCOL_NAME);
+        assert_eq!(response["protocol_version"], PROTOCOL_VERSION);
     }
 }

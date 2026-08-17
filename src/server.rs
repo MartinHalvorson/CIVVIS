@@ -3428,7 +3428,9 @@ fn write_save(game: &Game, path: &std::path::Path) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let temporary = path.with_extension("writing");
-    std::fs::write(&temporary, serde_json::to_vec(game)?)?;
+    let save = crate::protocol::save_value(game).map_err(std::io::Error::other)?;
+    let bytes = serde_json::to_vec(&save).map_err(std::io::Error::other)?;
+    std::fs::write(&temporary, bytes)?;
     std::fs::rename(&temporary, path)
 }
 
@@ -3444,7 +3446,8 @@ fn list_saves() -> Vec<Value> {
             let path = entry.path();
             let name = path.file_name()?.to_str()?.strip_suffix(".save.json")?.to_string();
             let raw = std::fs::read(&path).ok()?;
-            let game: Game = serde_json::from_slice(&raw).ok()?;
+            let value: Value = serde_json::from_slice(&raw).ok()?;
+            let game = crate::protocol::game_from_save(value).ok()?;
             let leader = game
                 .players
                 .iter()
@@ -3516,12 +3519,30 @@ fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) -> bool
 }
 
 fn respond_json(stream: &mut TcpStream, v: &Value) -> bool {
-    respond(
-        stream,
-        "200 OK",
-        "application/json",
-        v.to_string().as_bytes(),
-    )
+    // Preserve each endpoint's existing top-level shape while making the
+    // protocol identity available to external clients. Insert into the
+    // serialized object rather than cloning a potentially multi-megabyte
+    // `/state` value just to add two fields.
+    let mut body = v.to_string().into_bytes();
+    if matches!(v, Value::Object(object) if !object.contains_key("protocol_version")) {
+        let marker = if body.len() == 2 {
+            format!(
+                "\"protocol\":\"{}\",\"protocol_version\":{}",
+                crate::protocol::PROTOCOL_NAME,
+                crate::protocol::PROTOCOL_VERSION
+            )
+        } else {
+            format!(
+                "\"protocol\":\"{}\",\"protocol_version\":{},",
+                crate::protocol::PROTOCOL_NAME,
+                crate::protocol::PROTOCOL_VERSION
+            )
+        };
+        if body.first() == Some(&b'{') {
+            body.splice(1..1, marker.bytes());
+        }
+    }
+    respond(stream, "200 OK", "application/json", &body)
 }
 
 fn request_path(target: &str) -> &str {
@@ -4517,6 +4538,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         let _ = reader.read_exact(&mut body);
     }
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    if let Err(error) = crate::protocol::validate_request(&parsed) {
+        respond_json(stream, &json!({"error": error}));
+        return;
+    }
 
     match (method.as_str(), path.as_str()) {
         ("GET", path) if viewer_path(path) => {
@@ -4799,7 +4824,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/save") => {
             let session = sh.session.lock().unwrap();
-            let save = serde_json::to_value(&session.game).unwrap();
+            let save = crate::protocol::save_value(&session.game).unwrap();
             respond_json(stream, &save);
         }
         // The district adjacency calculator over the live game: every
@@ -4840,7 +4865,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // on whether that move is legal now.
         ("POST", "/route") => {
             let session = sh.session.lock().unwrap();
-            let answer = crate::protocol::route_step(&session, &parsed);
+            let answer = crate::routes::route_step(&session, &parsed);
             drop(session);
             respond_json(stream, &answer);
         }
@@ -4894,12 +4919,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                         std::fs::read(&path).map_err(|error| format!("cannot read {name}: {error}"))
                     })
                     .and_then(|raw| {
-                        serde_json::from_slice(&raw)
-                            .map_err(|error| format!("{name} is not a save: {error}"))
+                        serde_json::from_slice::<Value>(&raw)
+                            .map_err(|error| format!("{name} is not JSON: {error}"))
                     })
+                    .and_then(crate::protocol::game_from_save)
+                    .map_err(|error| format!("{name} is not a save: {error}"))
             } else if !parsed["game"].is_null() {
-                serde_json::from_value(parsed["game"].clone())
-                    .map_err(|error| format!("that is not a save: {error}"))
+                crate::protocol::game_from_save(parsed["game"].clone())
+            } else if parsed.get("save_format_version").is_some() {
+                crate::protocol::game_from_save(parsed.clone())
             } else {
                 Err("load needs a save name or a game".to_string())
             };
@@ -5090,7 +5118,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/action") => {
             let mut session = sh.session.lock().unwrap();
             let spectating = session.params.spectate;
-            let outcome = crate::protocol::action(&mut session, &parsed);
+            let outcome = crate::routes::action(&mut session, &parsed);
             let autosave = outcome.autosave_due(spectating);
             let mut out = outcome.out;
             // Civ 6 autosaves at the top of every turn, and the reason is the
@@ -5204,7 +5232,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/view") => {
             let mut session = sh.session.lock().unwrap();
-            let out = crate::protocol::view(&mut session, &parsed);
+            let out = crate::routes::view(&mut session, &parsed);
             drop(session);
             respond_json(stream, &out);
         }
@@ -6137,6 +6165,35 @@ mod tests {
         assert_eq!(status["server_instance"], json!(std::process::id()));
         assert_eq!(status["spectator_paused"], json!(false));
         assert_eq!(status["decided"], Value::Null);
+        assert_eq!(status["protocol"], json!(crate::protocol::PROTOCOL_NAME));
+        assert_eq!(
+            status["protocol_version"],
+            json!(crate::protocol::PROTOCOL_VERSION)
+        );
+        let refused: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/action",
+                &json!({"protocol_version": crate::protocol::PROTOCOL_VERSION + 1}).to_string(),
+            )
+            .expect("future protocol request response"),
+        )
+        .expect("future protocol request is JSON");
+        assert!(
+            refused["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("protocol_version")),
+            "{refused}"
+        );
+        let save: Value =
+            serde_json::from_str(&http_get(port, "/save").expect("versioned save response"))
+                .expect("save is JSON");
+        assert_eq!(save["format"], json!("civvis.save"));
+        assert_eq!(
+            save["save_format_version"],
+            json!(crate::protocol::SAVE_FORMAT_VERSION)
+        );
+        assert_eq!(save["game"]["seed"], json!(20_260_807));
     }
 
     /// `/status` has to be able to see auto-play, which it could not.

@@ -742,6 +742,23 @@ def game_finished(state: dict[str, Any] | None) -> bool:
     )
 
 
+def save_payload(value: Any) -> dict[str, Any] | None:
+    """Return the game object from a versioned save or a legacy raw save.
+
+    `/save` now carries a durable envelope so the engine can reject a future
+    format before deserializing it. The supervisor still deals in game
+    fields—progress, terminal state, and resume markers—so keep that concern
+    in one compatibility helper rather than teaching every checkpoint path
+    about the envelope.
+    """
+    if not isinstance(value, dict):
+        return None
+    game = value.get("game")
+    if value.get("format") == "civvis.save" and isinstance(game, dict):
+        return game
+    return value
+
+
 def progress_marker(state: dict[str, Any]) -> tuple[Any, ...]:
     """Identify simulation progress without hashing the large observation."""
     return (
@@ -862,8 +879,8 @@ def capture_checkpoint(port: int, path: Path, timeout: float = 30.0) -> bool:
     try:
         with urlopen(f"http://127.0.0.1:{port}/save", timeout=timeout) as response:
             payload = response.read()
-        value = json.loads(payload)
-        if not isinstance(value, dict) or value.get("seed") is None:
+        value = save_payload(json.loads(payload))
+        if value is None or value.get("seed") is None:
             return False
         path.parent.mkdir(parents=True, exist_ok=True)
         staged = path.with_suffix(path.suffix + ".new")
@@ -886,9 +903,9 @@ def archive_result(
     try:
         with urlopen(f"http://127.0.0.1:{port}/save", timeout=timeout) as response:
             payload = response.read()
-        save = json.loads(payload)
+        save = save_payload(json.loads(payload))
         if (
-            not isinstance(save, dict)
+            save is None
             or save.get("seed") != state.get("seed")
             or not game_finished(save)
         ):
@@ -941,7 +958,8 @@ def checkpoint_marker(path: Path) -> tuple[Any, ...] | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(value, dict) or game_finished(value):
+    value = save_payload(value)
+    if value is None or game_finished(value):
         return None
     return progress_marker(value)
 
