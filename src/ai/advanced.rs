@@ -2475,6 +2475,32 @@ pub struct AdvancedAi {
     /// Settler seat's tally; the native lanes keep their bred weights. Off for
     /// ordinary and frozen controllers.
     pub tally_culture: bool,
+    /// The Theater Square standing without the building that pays for it.
+    ///
+    /// ★★★★ THE SAME DEFECT AS THE DISTRICT, ONE LEVEL DOWN. `research_debt`
+    /// pays `RESEARCH_BUILDING_DEBT` for a Campus building in a city that
+    /// holds a Campus — "the empire having bought the expensive half of a
+    /// research city and declined the cheap half" — and
+    /// `BUILDINGS_BEFORE_PROJECTS` (#1811) caps a repeatable Great Person
+    /// project while a Library, University, Research Lab or Workshop is owed.
+    /// Neither knows the Theater Square exists. Measured over 25 live games
+    /// that reached turn 180, 204 cities: Library 72% of cities against
+    /// Amphitheater 21%, University 53% against Museum 7%, Research Lab 23%
+    /// against Broadcast Center **1%**. A 250-turn A/B replay of
+    /// civvis-20260816T233226Z ordered an Amphitheater, an Art Museum and a
+    /// Broadcast Center **zero times in either arm**.
+    ///
+    /// On this tally a civic is three points where a tech is two, and the
+    /// Theater Square's chain is also the only tourism this seat generates —
+    /// which is the bar a rival culture victory has to clear. With this on a
+    /// Theater Square owes its buildings the way a Campus does, at
+    /// `CULTURE_BUILDING_DEBT`, and a repeatable district project waits behind
+    /// them the way it waits behind the Library. Held one rung under the
+    /// research pair for the same reason as `CULTURE_THEATER_COVERAGE`.
+    /// Firaxis-only, alongside `tally_culture` and `culture_coverage`: it
+    /// prices the Settler seat's tally. Off for ordinary and frozen
+    /// controllers.
+    pub culture_building_debt: bool,
     /// A city with no Theater Square is a culture hole, the way a city with no
     /// Campus is a research hole.
     ///
@@ -3006,6 +3032,10 @@ const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
 /// which pays the same shape only while the empire is fighting.
 const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+/// A Theater Square standing without the building that pays for it, on the same
+/// shape and one rung under the research debt — the same reasoning as
+/// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
+const CULTURE_BUILDING_DEBT: f64 = 190.0;
 /// The most a repeatable district project is worth, before the (7 + turns)
 /// normalisation, while its city can still build a Library, University,
 /// Research Lab or Workshop it lacks. See `buildings_before_projects`. Low
@@ -3015,6 +3045,15 @@ const PROJECT_BEHIND_BUILDINGS_CAP: f64 = 120.0;
 /// The buildings a district project waits behind. See
 /// `buildings_before_projects`.
 const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
+/// The Theater Square's own chain, added to the wait by `culture_building_debt`
+/// and kept out of `BUILDINGS_BEFORE_PROJECTS` so #1811 stays exactly the
+/// treatment it was measured as.
+const CULTURE_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
+    "amphitheater",
+    "art_museum",
+    "archaeological_museum",
+    "broadcast_center",
+];
 
 /// Where the Campus policy multipliers enter a lane's own preference list.
 ///
@@ -3469,6 +3508,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             tally_culture: false,
+            culture_building_debt: false,
             culture_coverage: false,
             bank_envoys: false,
             frontier_loyalty: false,
@@ -4357,6 +4397,8 @@ impl AdvancedAi {
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
+        // And the buildings that chain hangs off. See `culture_building_debt`.
+        self.enable_culture_building_debt();
         // And the coverage that price alone never bought. See
         // `culture_coverage`.
         self.enable_culture_coverage();
@@ -4793,6 +4835,15 @@ impl AdvancedAi {
 
     pub fn disable_tally_culture(&mut self) {
         self.tally_culture = false;
+    }
+
+    /// Make the Theater Square owe its buildings. See `culture_building_debt`.
+    pub fn enable_culture_building_debt(&mut self) {
+        self.culture_building_debt = true;
+    }
+
+    pub fn disable_culture_building_debt(&mut self) {
+        self.culture_building_debt = false;
     }
 
     /// Pay for the Theater Square the empire has not got. See
@@ -8678,7 +8729,12 @@ impl AdvancedAi {
         // ★★★★ THE CHEAP HALF OF A RESEARCH CITY BEFORE THE RACE IN IT. See
         // `buildings_before_projects`.
         if self.buildings_before_projects && spec.repeatable {
-            let owed = BUILDINGS_BEFORE_PROJECTS.iter().any(|building| {
+            let waiting_for = BUILDINGS_BEFORE_PROJECTS.iter().chain(
+                CULTURE_BUILDINGS_BEFORE_PROJECTS
+                    .iter()
+                    .take(if self.culture_building_debt { 4 } else { 0 }),
+            );
+            let owed = waiting_for.into_iter().any(|building| {
                 g.rules.buildings.contains_key(*building)
                     && g.can_produce(
                         pid,
@@ -18018,6 +18074,24 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // The same sentence for the other chain. See
+                    // `culture_building_debt`: a Theater Square standing
+                    // without its Amphitheater is the same declined half, and
+                    // it is the only tourism this seat makes.
+                    let culture_debt = if self.culture_building_debt
+                        && spec
+                            .district
+                            .map(|district| g.district_family(district))
+                            .is_some_and(|family| family == crate::name!("theater_square"))
+                        && city
+                            .districts
+                            .keys()
+                            .any(|built| g.district_family(*built) == crate::name!("theater_square"))
+                    {
+                        CULTURE_BUILDING_DEBT * Self::research_horizon(g)
+                    } else {
+                        0.0
+                    };
                     // A regional amenity building (Zoo, Stadium) reaches every
                     // own city within `regional_range`; priced as one city's
                     // +1 it never outbid a Library. See `amenity_district_path`.
@@ -18027,6 +18101,7 @@ impl AdvancedAi {
                         0.0
                     };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + culture_debt
                         + research_debt
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0 + regional_amenity_reach)
@@ -36579,6 +36654,111 @@ mod tests {
         );
         assert!(!stock.tally_culture);
         assert!(!frozen.tally_culture);
+    }
+
+    /// ★★★★ `research_debt` pays a Campus building 240 for the Campus standing
+    /// over it, and `BUILDINGS_BEFORE_PROJECTS` makes a Great Person race wait
+    /// behind a Library — and neither knows the Theater Square exists. Over 25
+    /// live games and 204 cities: Library 72% against Amphitheater 21%,
+    /// University 53% against Museum 7%, Research Lab 23% against Broadcast
+    /// Center 1%; a 250-turn A/B replay of civvis-20260816T233226Z ordered an
+    /// Amphitheater zero times in either arm. See `culture_building_debt`.
+    #[test]
+    fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
+        let (mut game, capital, _home) = empire_with_a_capital(71_113);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("currency"));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = EmpireCounts::default();
+        let amphitheater = Item::Building {
+            building: crate::name!("amphitheater"),
+        };
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.culture_building_debt, "the live seat carries the treatment");
+        live.refresh_research_weight(&game);
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_culture_building_debt();
+        withheld.refresh_research_weight(&game);
+
+        // No Theater Square: nothing is owed, and the two arms agree.
+        assert_eq!(
+            live.production_value(&game, 0, capital, &amphitheater, &plan, &counts),
+            withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts),
+            "a city with no Theater Square owes it no buildings"
+        );
+
+        // With the district standing the cheap half is owed, exactly as a
+        // Library is owed to a Campus.
+        install_ai_test_district(&mut game, capital, "theater_square");
+        let owed = live.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+        let unowed = withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+        assert!(
+            owed > unowed,
+            "the Theater Square owes its Amphitheater: {owed} vs {unowed}"
+        );
+
+        // And a repeatable Great Person race waits behind it, the way #1811
+        // makes it wait behind a Library. The city holds a Commercial Hub WITH
+        // its Market, so the project's own family owes nothing and only the
+        // culture chain is under test.
+        install_ai_test_district(&mut game, capital, "commercial_hub");
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("market"));
+        game.turn = 60;
+        game.players[0].gpp.insert("merchant".to_string(), 30.0);
+        assert!(
+            game.can_produce(0, capital, &amphitheater),
+            "the Amphitheater is owed and buildable"
+        );
+        for science in ["library", "university", "research_lab", "workshop"] {
+            let owed_science = Item::Building {
+                building: Name::new(science),
+            };
+            if game.can_produce(0, capital, &owed_science) {
+                game.cities
+                    .get_mut(&capital)
+                    .unwrap()
+                    .buildings
+                    .push(Name::new(science));
+            }
+        }
+        let capped =
+            live.district_project_value(&game, 0, capital, "commercial_hub_investment", &plan);
+        let free =
+            withheld.district_project_value(&game, 0, capital, "commercial_hub_investment", &plan);
+        assert!(
+            capped <= PROJECT_BEHIND_BUILDINGS_CAP,
+            "capped while the Amphitheater is owed: {capped}"
+        );
+        assert!(
+            free > capped,
+            "the withheld arm prices the race in full: {free} vs {capped}"
+        );
+
+        // #1811 is left exactly as it was measured: its own list still names
+        // only the science chain.
+        assert_eq!(
+            BUILDINGS_BEFORE_PROJECTS,
+            ["library", "university", "research_lab", "workshop"]
+        );
+        assert!(CULTURE_BUILDING_DEBT < RESEARCH_BUILDING_DEBT);
+        assert!(!AdvancedAi::new().culture_building_debt);
+        assert!(!AdvancedAi::legacy().culture_building_debt);
     }
 
     /// ★★★★ `tally_culture` fixed the PRICE of culture and left the COVERAGE
