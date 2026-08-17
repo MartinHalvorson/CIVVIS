@@ -1332,7 +1332,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The bounded Envoy liquidity reserve is reached only through `bank_envoys`,
 /// false in `AdvancedAi::legacy()`. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd2f0_fe99_9573_dc97;
+/// Patronage skips a Great Person class the mirrored host reports exhausted
+/// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
+/// native boards carry no such list and are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x92ee_3693_d057_0e74;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
