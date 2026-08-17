@@ -43,37 +43,122 @@ class QualityHelpersTests(unittest.TestCase):
                 {(repo / "src/lib.rs").resolve(), (repo / "src/main.rs").resolve()},
             )
 
-    def test_clippy_only_reports_warnings_in_changed_files(self):
+    def test_clippy_only_reports_warnings_on_changed_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
-            warning = {
+            on_changed_lines = {
                 "reason": "compiler-message",
                 "message": {
                     "level": "warning",
                     "code": {"code": "clippy::needless_return"},
                     "message": "remove the return",
                     "rendered": "warning: remove the return",
-                    "spans": [{"file_name": "src/lib.rs"}],
+                    "spans": [
+                        {"file_name": "src/lib.rs", "line_start": 5, "line_end": 6}
+                    ],
                 },
             }
-            unrelated = {
-                **warning,
+            standing_debt_same_file = {
+                **on_changed_lines,
                 "message": {
-                    **warning["message"],
-                    "spans": [{"file_name": "src/other.rs"}],
+                    **on_changed_lines["message"],
+                    "code": {"code": "clippy::type_complexity"},
+                    "spans": [
+                        {"file_name": "src/lib.rs", "line_start": 400, "line_end": 401}
+                    ],
+                },
+            }
+            unrelated_file = {
+                **on_changed_lines,
+                "message": {
+                    **on_changed_lines["message"],
+                    "spans": [
+                        {"file_name": "src/other.rs", "line_start": 5, "line_end": 6}
+                    ],
                 },
             }
             completed = quality.subprocess.CompletedProcess(
                 [],
                 0,
-                "\n".join([json.dumps(warning), json.dumps(unrelated)]),
+                "\n".join(
+                    json.dumps(payload)
+                    for payload in [
+                        on_changed_lines,
+                        standing_debt_same_file,
+                        unrelated_file,
+                    ]
+                ),
                 "",
             )
+            ranges = {(repo / "src/lib.rs").resolve(): [(4, 8)]}
             with patch.object(quality, "run", return_value=completed):
-                diagnostics, raw = quality.clippy(repo, [Path("src/lib.rs")])
+                diagnostics, raw = quality.clippy(repo, ranges)
             self.assertEqual(len(diagnostics), 1)
             self.assertIn("needless_return", diagnostics[0])
             self.assertEqual(raw, "")
+
+    def test_changed_line_ranges_parses_unified_zero_hunks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            diff = (
+                "diff --git a/src/lib.rs b/src/lib.rs\n"
+                "--- a/src/lib.rs\n"
+                "+++ b/src/lib.rs\n"
+                "@@ -10,2 +12,3 @@ fn context()\n"
+                "+a\n+b\n+c\n"
+                "@@ -40 +44,0 @@ fn gone()\n"
+                "-d\n"
+                "@@ -50 +53 @@ fn one()\n"
+                "-e\n+f\n"
+            )
+            completed = quality.subprocess.CompletedProcess([], 0, diff, "")
+            with patch.object(quality, "run", return_value=completed):
+                ranges = quality.changed_line_ranges(repo, "base", "head")
+            key = (repo / "src/lib.rs").resolve()
+            # The pure deletion at old line 40 leaves no head-side range.
+            self.assertEqual(ranges, {key: [(12, 14), (53, 53)]})
+
+    def test_rustfmt_abort_is_a_skip_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            killed = quality.subprocess.CompletedProcess(
+                [], -9, "", "memory allocation of 23788898244 bytes failed"
+            )
+            with patch.object(quality, "run", return_value=killed):
+                failures, skipped = quality.rustfmt(repo, [Path("src/game.rs")], {})
+            self.assertEqual(failures, [])
+            self.assertEqual(len(skipped), 1)
+            self.assertIn("too large", skipped[0])
+
+    def test_rustfmt_reports_only_chunks_overlapping_the_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            resolved = (repo / "src/lib.rs").resolve()
+            output = (
+                f"Diff in {resolved}:5:\n"
+                " context\n-old\n+new\n"
+                f"Diff in {resolved}:200:\n"
+                " context\n-stale\n+debt\n"
+            )
+            completed = quality.subprocess.CompletedProcess([], 1, output, "")
+            ranges = {resolved: [(6, 6)]}
+            with patch.object(quality, "run", return_value=completed):
+                failures, skipped = quality.rustfmt(repo, [Path("src/lib.rs")], ranges)
+            self.assertEqual(skipped, [])
+            self.assertEqual(len(failures), 1)
+            self.assertIn(":5:", failures[0])
+            self.assertNotIn(":200:", failures[0])
+
+    def test_rustfmt_standing_debt_alone_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            resolved = (repo / "src/lib.rs").resolve()
+            output = f"Diff in {resolved}:200:\n context\n-stale\n+debt\n"
+            completed = quality.subprocess.CompletedProcess([], 1, output, "")
+            ranges = {resolved: [(6, 6)]}
+            with patch.object(quality, "run", return_value=completed):
+                failures, skipped = quality.rustfmt(repo, [Path("src/lib.rs")], ranges)
+            self.assertEqual((failures, skipped), ([], []))
 
 
 if __name__ == "__main__":
