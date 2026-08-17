@@ -311,6 +311,13 @@ def build_config(args: argparse.Namespace) -> dict:
         "WarFromTurn": args.war_from_turn,
         "WarArmy": args.war_army,
         "MilitaryPerCity": args.military_per_city,
+        # The World Congress ballots that carry a real penalty (Trade Policy,
+        # Border Control, Migration Treaty) are aimed at the civilization
+        # closest to a victory instead of buffing ourselves. `Bar` is how far
+        # along that rival must be, in percent of a victory, before the free
+        # vote is worth more as a denial than as our own bonus.
+        "CounterResolutions": args.counter_resolutions,
+        "CounterResolutionBar": args.counter_resolution_bar,
         # The fallback ladder's army row weighs the strongest MET major in
         # peacetime (below half its strength, grow by two, still under
         # ArmyCap). `losingWar` arms only after a declaration, and the wars
@@ -2823,6 +2830,7 @@ def _play(args: argparse.Namespace) -> int:
         # which the summary already records field by field.
         "mod_arms": {
             "PeaceDeterrence": args.peace_deterrence,
+            "CounterResolutions": args.counter_resolutions,
             "EnvoyPlace": args.envoy_place,
             "EnvoyLevy": args.envoy_levy,
             "EnvoyConsider": args.envoy_consider,
@@ -2959,6 +2967,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--war-from-turn", type=int, default=25)
     ap.add_argument("--war-army", type=int, default=4)
     ap.add_argument("--military-per-city", type=float, default=1.5)
+    ap.add_argument("--counter-resolutions", action="store_true", default=True,
+                    help="aim the penalty-carrying World Congress resolutions "
+                         "at the civilization closest to a victory instead of "
+                         "buffing ourselves")
+    ap.add_argument("--no-counter-resolutions", dest="counter_resolutions",
+                    action="store_false",
+                    help="withhold counter-resolution targeting (the A/B arm)")
+    ap.add_argument("--counter-resolution-bar", type=float, default=60.0,
+                    help="how far along a rival must be, in percent of a "
+                         "victory, before a penalty ballot names it")
     ap.add_argument("--peace-deterrence", action="store_true", default=True,
                     help="the fallback ladder's army row weighs the strongest met "
                          "major in peacetime; below half its strength the army "

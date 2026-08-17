@@ -10287,6 +10287,44 @@ CivvisApplyOrder = applyOrder;
 --
 -- Exposed for the offline Lua regression.  This must remain a bare global:
 -- another file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+-- Pick the major civilization closest to ANY victory this ballot can punish.
+--
+-- ★★★★ THE PENALTY RESOLUTIONS WERE VOTED AT OURSELVES. Every player-targeted
+-- resolution except the Diplomatic Victory one selected THIS SEAT with option
+-- 1, the option that BUFFS its target -- a free vote, spent on a small bonus,
+-- while the civilization about to end the game took nothing. Measured over the
+-- 39 live games of 2026-08-16/17 that is 232 wasted ballots: Trade Policy 57,
+-- Migration Treaty 55, Border Control 45, Public Relations 75, about six a
+-- game. Meanwhile the host's own record says diplomatic (32) and culture (27)
+-- victories are 83% of every game a rival ended before the turn cap.
+--
+-- `progress` is the share of the way to a victory, so the two lanes that
+-- actually end our games are comparable on one axis: diplomatic points out of
+-- twenty, and the culture race's own ratio (a leader's visiting tourists over
+-- the highest domestic tourist count it must clear). Ties break on score and
+-- then on id, for the same reason `CivvisSelectCongressLeader` does: player
+-- manager order is not a strategic signal.
+--
+-- Exposed for the offline Lua regression. Must remain a bare global -- another
+-- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+CivvisSelectVictoryThreat = function(candidates)
+	local threat, best, bestScore = -1, -1, -1;
+	for _, candidate in ipairs(candidates or {}) do
+		if type(candidate) == "table" then
+			local other = tonumber(candidate.id);
+			local progress = tonumber(candidate.progress) or 0;
+			local score = tonumber(candidate.score) or -1;
+			if other ~= nil and (progress > best
+				or (progress == best and score > bestScore)
+				or (progress == best and score == bestScore
+					and (threat < 0 or other < threat))) then
+				threat, best, bestScore = other, progress, score;
+			end
+		end
+	end
+	return threat, best;
+end
+
 CivvisSelectCongressLeader = function(candidates)
 	local leader, leaderPoints, leaderScore = -1, -1, -1;
 	for _, candidate in ipairs(candidates or {}) do
@@ -11347,6 +11385,41 @@ local function tick()
 			end
 			-- Equal DVP totals use score rather than arbitrary PlayerManager order.
 			local leader, leaderPoints, leaderScore = CivvisSelectCongressLeader(candidates);
+			-- ★★★ AND WHO THE PENALTY BALLOTS SHOULD PUNISH. The culture race is
+			-- a rival's visiting tourists over the highest domestic count it has
+			-- to clear, which is the engine's own formula and reads off the same
+			-- two accessors the state export already calls. Both lanes are
+			-- expressed as a percentage so one selector ranks them.
+			if cfg.CounterResolutions ~= false then
+				local bar = 0;
+				for _, c in ipairs(candidates) do
+					local dom = tonumber(try(function()
+						return Players[c.id]:GetCulture():GetStaycationers();
+					end, 0)) or 0;
+					c.domestic = dom;
+					if dom > bar then bar = dom; end
+				end
+				local ourDom = tonumber(try(function()
+					return Players[pid]:GetCulture():GetStaycationers();
+				end, 0)) or 0;
+				for _, c in ipairs(candidates) do
+					-- The bar a rival must clear excludes its own domestic count.
+					local against = ourDom;
+					for _, other in ipairs(candidates) do
+						if other.id ~= c.id and (other.domestic or 0) > against then
+							against = other.domestic or 0;
+						end
+					end
+					local tourists = tonumber(try(function()
+						return Players[c.id]:GetCulture():GetTouristsTo();
+					end, 0)) or 0;
+					local culture = (against > 0) and (100 * tourists / against) or 0;
+					local diplo = 100 * (tonumber(c.points) or 0) / 20;
+					c.progress = (culture > diplo) and culture or diplo;
+					if c.progress > 100 then c.progress = 100; end
+				end
+			end
+			local threat, threatProgress = CivvisSelectVictoryThreat(candidates);
 			-- Option 1 of these resolutions is the ban; the free vote goes to 2.
 			local BAN_FIRST = {
 				WC_RES_MERCENARY_COMPANIES = true, WC_RES_GLOBAL_ENERGY_TREATY = true,
@@ -11448,10 +11521,44 @@ local function tick()
 						favor = favor - cost;
 						spent = spent + cost;
 					elseif r.TargetType == "PlayerType" then
-						for idx, t in pairs(targets) do
-							if tonumber(t) == pid then selection = idx; end
+						-- ⚠⚠ THE THREE RESOLUTIONS BELOW CARRY A REAL PENALTY ON
+						-- OPTION 2, AND WE SPENT THEM ON OURSELVES. Read from the
+						-- host's own Expansion2_Congress.xml rather than guessed:
+						--   Trade Policy       effect 2 = APPLY_INTERNATIONAL_MAJOR_TRADE_ROUTES_DISABLED
+						--   Border Control     effect 2 = APPLY_NO_CULTURE_BORDER_EXPANSION_TO_PLAYER
+						--   Migration Treaty   effect 2 = APPLY_GROWTH_PENALTY_TO_PLAYER
+						-- The trade embargo is the one that matters most here: a
+						-- live trade route is +25% Tourism toward its partner, so
+						-- disabling a culture leader's international routes cuts
+						-- the tourism it draws from EVERY civilization -- the one
+						-- culture counter that does not require us to hold the
+						-- domestic-tourist bar ourselves, which a post-mortem of
+						-- the first instrumented run measured us holding for 0 of
+						-- 153 contested turns.
+						--
+						-- The free vote costs no Favor, so this spends nothing the
+						-- Diplomatic Victory ballot above wants: it changes only
+						-- WHO the vote names. Below the bar the old self-buff
+						-- stands, because naming a rival who is not close is worth
+						-- less than the bonus.
+						local counter = cfg.CounterResolutions ~= false
+							and threat ~= nil and threat >= 0
+							and (tonumber(threatProgress) or 0)
+								>= (tonumber(cfg.CounterResolutionBar) or 60)
+							and (rtype == "WC_RES_TRADE_TREATY"
+								or rtype == "WC_RES_BORDER_CONTROL"
+								or rtype == "WC_RES_MIGRATION_TREATY");
+						if counter then
+							for idx, t in pairs(targets) do
+								if tonumber(t) == threat then selection = idx; end
+							end
+							option = 2;
+						else
+							for idx, t in pairs(targets) do
+								if tonumber(t) == pid then selection = idx; end
+							end
+							if BAN_FIRST[rtype] then option = 2; end
 						end
-						if BAN_FIRST[rtype] then option = 2; end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
 					end
