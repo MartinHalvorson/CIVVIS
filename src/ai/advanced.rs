@@ -30440,7 +30440,9 @@ mod tests {
         withheld.enable_live_bridge();
         withheld.disable_naval_recon();
         assert!(withheld.naval_explorer(&game, 0).is_empty());
-        assert!(!AdvancedAi::new().naval_recon());
+        // Production carries the fleet since the 2026-08-17 promotion; the
+        // frozen anchor still sails nothing.
+        assert!(AdvancedAi::new().naval_recon());
         assert!(!AdvancedAi::legacy().naval_recon());
     }
 
@@ -30517,11 +30519,13 @@ mod tests {
             "a naval scout cannot bypass the live war-economy recovery path"
         );
 
-        let mut stock_game = game.clone();
-        let stock = AdvancedAi::new();
-        stock.reserve_idle_naval_recon(&mut stock_game, 0, &plan);
+        // Production reserves the hull too since the 2026-08-17 promotion;
+        // only the frozen anchor keeps the historical empty queue.
+        let mut frozen_game = game.clone();
+        let frozen = AdvancedAi::legacy();
+        frozen.reserve_idle_naval_recon(&mut frozen_game, 0, &plan);
         assert!(
-            stock_game.cities[&city].queue.is_empty(),
+            frozen_game.cities[&city].queue.is_empty(),
             "the frozen controller does not reserve a naval scout"
         );
 
@@ -44803,8 +44807,9 @@ mod tests {
             "the withheld arm keeps the historical explore step"
         );
 
-        // Defaults: off for the stock and frozen controllers.
-        assert!(!AdvancedAi::new().recon_flight);
+        // Production flees since the 2026-08-17 promotion; the frozen
+        // controller stands its ground as it always did.
+        assert!(AdvancedAi::new().recon_flight);
         assert!(!AdvancedAi::legacy().recon_flight);
     }
 
@@ -50093,10 +50098,14 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.base.book_pos = 4;
         // Prove the delegated plan, not the production constructor's own
-        // defaults, opens both the target and the speed-aware time window.
+        // defaults, opens both the target and the speed-aware time window —
+        // and keep the promoted recon fleet out of the queue this fixture
+        // reads, since a missing scout would otherwise outrank the Settler.
         ai.base.w.city_target = 1.0;
         ai.base.w.settler_stop_turn = 100.0;
         ai.base.w.builder_per_city = 0.25;
+        ai.disable_recon_replacement();
+        ai.disable_naval_recon();
         ai.delegated_cities(&mut game, 0, &plan);
 
         let defensive_item = game.cities[&city].queue.first().unwrap();
@@ -51329,12 +51338,13 @@ mod research_probe {
         );
     }
 
-    /// Off by default, set only by the live bridge, holdable off on its own —
-    /// the recon-replacement arm follows the same contract as every other
-    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    /// On in production since the 2026-08-17 recon-fleet promotion (matrix
+    /// PASS, see `promoted_policy_envoy`), still holdable off on its own,
+    /// and still off for the frozen `advanced_v1` anchor so its ladder keeps
+    /// replaying the historical controller.
     #[test]
     fn only_the_live_bridge_replaces_the_recon_arm() {
-        assert!(!AdvancedAi::new().base.recon_replacement);
+        assert!(AdvancedAi::new().base.recon_replacement);
         assert!(!AdvancedAi::legacy().base.recon_replacement);
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
