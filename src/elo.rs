@@ -845,7 +845,11 @@ pub fn player_ratings(dir: &std::path::Path) -> BTreeMap<String, PlayerRatings> 
             });
             entry.by_mode.insert(
                 mode.id().to_string(),
-                ModeRating { elo: rating.elo, games: rating.games, wins: rating.wins },
+                ModeRating {
+                    elo: rating.elo,
+                    games: rating.games,
+                    wins: rating.wins,
+                },
             );
         }
     }
@@ -958,7 +962,11 @@ fn tournament_setup_contract(cfg: &TourneyCfg) -> String {
             // the objective joins the profile. Only when it is the flag:
             // every arena ledger written before the shape existed stays
             // matching its own profile.
-            if cfg.tactics.flag { ",objective:flag" } else { "" },
+            if cfg.tactics.flag {
+                ",objective:flag"
+            } else {
+                ""
+            },
         )
     } else {
         String::new()
@@ -1159,14 +1167,13 @@ impl TournamentProfile {
                 .rating_anchor
                 .as_ref()
                 .is_none_or(|anchor| !anchor.trim().is_empty())
-            && self.controller_roster.iter().all(|name| !name.trim().is_empty())
+            && self
+                .controller_roster
+                .iter()
+                .all(|name| !name.trim().is_empty())
             && (self.controller_roster.is_empty()
                 || (self.controller_roster.len() >= self.players_per_game
-                    && self
-                        .controller_roster
-                        .iter()
-                        .collect::<BTreeSet<_>>()
-                        .len()
+                    && self.controller_roster.iter().collect::<BTreeSet<_>>().len()
                         == self.controller_roster.len()))
             && (2..=100).contains(&self.players_per_game)
             && self.width >= 8
@@ -1530,9 +1537,10 @@ impl EloPool {
                 None => true,
             };
             let valid_players = valid_rated_players(&game.players, game.id.is_some())
-                && stored.profile.as_ref().is_none_or(|profile| {
-                    game.players.len() == profile.players_per_game
-                });
+                && stored
+                    .profile
+                    .as_ref()
+                    .is_none_or(|profile| game.players.len() == profile.players_per_game);
             if !valid_id || !valid_players || !game.k.is_finite() || game.k < 0.0 {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -1612,14 +1620,10 @@ impl EloPool {
                 "invalid tournament rating profile",
             ));
         }
-        if self
-            .history
-            .iter()
-            .any(|game| {
-                (game.k - profile.k).abs() > f64::EPSILON
-                    || game.players.len() != profile.players_per_game
-            })
-        {
+        if self.history.iter().any(|game| {
+            (game.k - profile.k).abs() > f64::EPSILON
+                || game.players.len() != profile.players_per_game
+        }) {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
                 "raw game evidence does not match the tournament rating profile",
@@ -1869,8 +1873,7 @@ impl EloPool {
                         }
                     }
                     actual /= comparisons.max(1) as f64;
-                    let expectation =
-                        expected(self.overall[a_name].elo, self.overall[b_name].elo);
+                    let expectation = expected(self.overall[a_name].elo, self.overall[b_name].elo);
                     let change = scale * (actual - expectation);
                     *overall_delta.entry(a_name.clone()).or_default() += change;
                     *overall_delta.entry(b_name.clone()).or_default() -= change;
@@ -2230,20 +2233,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // bodies, upgrade bill, staging, declaration, and objective lifecycle
         // are one controller-owned plan. The production arm remains off until
         // the frozen paired screens establish that this capability wins.
-        "advanced_timing_attack" => {
-            Box::new(AdvancedAi::timing_attack())
-        }
+        "advanced_timing_attack" => Box::new(AdvancedAi::timing_attack()),
         // Selective v2 preserves the same controller-owned executor but may
         // appoint only an organically chosen Conquest target with a prebuilt
         // army, once, and launches from a stronger fully staged position.
-        "advanced_timing_attack_selective" => {
-            Box::new(AdvancedAi::selective_timing_attack())
-        }
+        "advanced_timing_attack_selective" => Box::new(AdvancedAi::selective_timing_attack()),
         // Ready-force v3 only narrows when the same unified campaign may be
         // appointed; every downstream consumer remains the v1/v2 executor.
-        "advanced_timing_attack_rapid" => {
-            Box::new(AdvancedAi::rapid_timing_attack())
-        }
+        "advanced_timing_attack_rapid" => Box::new(AdvancedAi::rapid_timing_attack()),
         // Treatment for the response-shape axis: identical to `advanced`
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
@@ -3027,12 +3024,10 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // per-target turn limits are 650 for Domination and 300 for Score, and
         // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
         // targeting domination ended by score at the limit instead.
-        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
-            crate::ai::VictoryTarget::Domination,
-        )),
-        "advanced_target_score" => {
-            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
+        "advanced_target_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
         }
+        "advanced_target_score" => Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score)),
         // Prices `limitanei` (+2 Loyalty in garrisoned cities), which the hardcoded
         // portfolios in `strategic_policies` never reach. Revolts are 42% of 192
         // observed city losses and holding is worth roughly double the score, but
@@ -3497,9 +3492,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // transfer screen favored the champion 33-27 games and 5-2 map
         // directions; retained evaluator-only for future artifact audits.
         "strategic_deep_default" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::ai::Weights::default(),
-            );
+            let mut ai = crate::strategic::StrategicAi::with_weights(crate::ai::Weights::default());
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
@@ -3798,11 +3791,7 @@ impl AgentSpec {
         if self.evaluator != other.evaluator {
             out.push("evaluator");
         }
-        for treatment in self
-            .treatments
-            .iter()
-            .chain(other.treatments.iter())
-        {
+        for treatment in self.treatments.iter().chain(other.treatments.iter()) {
             if self.treatments.contains(treatment) != other.treatments.contains(treatment)
                 && !out.contains(treatment)
             {
@@ -3935,7 +3924,9 @@ impl ArmKind {
             | Self::StrategicUltra
             | Self::StrategicWarm => {
                 if net {
-                    EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
+                    EvaluatorSource::ValueNet {
+                        width: crate::evolve::FEATURE_WIDTH,
+                    }
                 } else {
                     EvaluatorSource::ScoreShare
                 }
@@ -3955,15 +3946,11 @@ impl ArmKind {
             // bridge table below, so adding a bridge treatment cannot
             // silently miss a control's tag list. The invariant tests pin
             // each arm to bridge-minus-exactly-its-tag.
-            Self::LiveWithoutAmenityProjectPreemption => {
-                live_without("amenity-project-preemption")
-            }
+            Self::LiveWithoutAmenityProjectPreemption => live_without("amenity-project-preemption"),
             Self::LiveWithoutAmenityDistrictPath => live_without("amenity-district-path"),
             Self::LiveWithoutGovernorEveryLane => live_without("governor-every-lane"),
             Self::LiveWithoutLiveWonderRace => live_without("live-wonder-race"),
-            Self::LiveWithoutExpansionBeforeProphet => {
-                live_without("expansion-before-prophet")
-            }
+            Self::LiveWithoutExpansionBeforeProphet => live_without("expansion-before-prophet"),
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
@@ -4024,14 +4011,9 @@ impl ArmKind {
             // priority reservation. The measured-null infrastructure arm is
             // off in production; the retained arms below remain explicit
             // reversion/decomposition controls.
-            Self::AdvancedPolicyLiveControl => {
-                &["envoy-priority-off"]
-            }
+            Self::AdvancedPolicyLiveControl => &["envoy-priority-off"],
             Self::AdvancedPolicyEnvoyPriority => &[],
-            Self::AdvancedEnvoyPolicy => &[
-                "envoy-influence",
-                "envoy-priority-off",
-            ],
+            Self::AdvancedEnvoyPolicy => &["envoy-influence", "envoy-priority-off"],
             Self::AdvancedEnvoyInfrastructure => &[
                 "policy-deck-legacy",
                 "envoy-infrastructure-on",
@@ -4120,25 +4102,35 @@ impl ArmKind {
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
             Self::StrategicDeep => &["search-cadence-20", "search-horizon-80"],
-            Self::StrategicDeepAdaptive => {
-                &["search-cadence-20", "search-horizon-80", "search-adaptive-horizon"]
-            }
-            Self::StrategicDeepCheckmate => {
-                &["search-cadence-20", "search-horizon-80", "religious-checkmate-search"]
-            }
-            Self::StrategicDeepConversion => {
-                &["search-cadence-20", "search-horizon-80", "religious-conversion-search"]
-            }
+            Self::StrategicDeepAdaptive => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "search-adaptive-horizon",
+            ],
+            Self::StrategicDeepCheckmate => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "religious-checkmate-search",
+            ],
+            Self::StrategicDeepConversion => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "religious-conversion-search",
+            ],
             Self::StrategicDeepDefault => &["search-cadence-20", "search-horizon-80"],
             Self::StrategicDeepExpand => {
                 &["search-cadence-20", "search-horizon-80", "doctrine-expand"]
             }
-            Self::StrategicDeepConsolidate => {
-                &["search-cadence-20", "search-horizon-80", "doctrine-consolidate"]
-            }
-            Self::StrategicDeepMilitarize => {
-                &["search-cadence-20", "search-horizon-80", "doctrine-militarize"]
-            }
+            Self::StrategicDeepConsolidate => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "doctrine-consolidate",
+            ],
+            Self::StrategicDeepMilitarize => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "doctrine-militarize",
+            ],
             Self::StrategicDeepLeague => &["search-cadence-20", "search-horizon-80"],
             Self::StrategicDeepRivals => {
                 &["search-cadence-20", "search-horizon-80", "rival-lane-model"]
@@ -4165,8 +4157,8 @@ impl ArmKind {
 
     fn spec(self, dir: &str) -> AgentSpec {
         let champion = crate::evolve::load_champion(dir).is_some();
-        let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH)
-            .is_some();
+        let net =
+            crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
         let league = match self {
             Self::StrategicDeepLeague => league_generalist().is_some(),
             Self::AdvancedLeagueTop => shipped_league_top_advanced().is_some(),
@@ -4255,7 +4247,12 @@ impl AgentProvenance {
             true => format!("plays as {}", self.effective),
             false => format!("plays as {} with untrained defaults", self.requested),
         };
-        format!("{}: {} (missing {})", self.requested, plays, missing.join(", "))
+        format!(
+            "{}: {} (missing {})",
+            self.requested,
+            plays,
+            missing.join(", ")
+        )
     }
 
     fn artifacts_list(&self) -> String {
@@ -4477,18 +4474,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The frozen genome is in code; only the same optional value net read
         // by `strategic_deep` remains in its provenance.
         "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
-        "strategic_deep_tempo" => (
-            vec![genome, value(false)],
-            "strategic_deep_tempo",
-        ),
-        "strategic_deep_conversion" => (
-            vec![genome, value(false)],
-            "strategic_deep_conversion",
-        ),
-        "strategic_deep_checkmate" => (
-            vec![genome, value(false)],
-            "strategic_deep_checkmate",
-        ),
+        "strategic_deep_tempo" => (vec![genome, value(false)], "strategic_deep_tempo"),
+        "strategic_deep_conversion" => (vec![genome, value(false)], "strategic_deep_conversion"),
+        "strategic_deep_checkmate" => (vec![genome, value(false)], "strategic_deep_checkmate"),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
         "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
@@ -4516,9 +4504,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_amenity_project_preemption" => {
             (Vec::new(), "live_without_amenity_project_preemption")
         }
-        "live_without_amenity_district_path" => {
-            (Vec::new(), "live_without_amenity_district_path")
-        }
+        "live_without_amenity_district_path" => (Vec::new(), "live_without_amenity_district_path"),
         "live_without_governor_every_lane" => (Vec::new(), "live_without_governor_every_lane"),
         "live_without_live_wonder_race" => (Vec::new(), "live_without_live_wonder_race"),
         "live_without_expansion_before_prophet" => {
@@ -4534,15 +4520,23 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
         "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
         "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
-        "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
+        "live_without_army_target_weighs_enemy" => {
+            (Vec::new(), "live_without_army_target_weighs_enemy")
+        }
         "live_without_peacetime_deterrence" => (Vec::new(), "live_without_peacetime_deterrence"),
         "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
         "live_without_siege_role" => (Vec::new(), "live_without_siege_role"),
         "live_without_come_ashore" => (Vec::new(), "live_without_come_ashore"),
         "live_without_suzerain_cards" => (Vec::new(), "live_without_suzerain_cards"),
-        "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
-        "live_without_muster_at_command_radius" => (Vec::new(), "live_without_muster_at_command_radius"),
-        "live_without_relief_targets_the_siege" => (Vec::new(), "live_without_relief_targets_the_siege"),
+        "live_without_blind_objective_strength" => {
+            (Vec::new(), "live_without_blind_objective_strength")
+        }
+        "live_without_muster_at_command_radius" => {
+            (Vec::new(), "live_without_muster_at_command_radius")
+        }
+        "live_without_relief_targets_the_siege" => {
+            (Vec::new(), "live_without_relief_targets_the_siege")
+        }
         "live_without_blind_objective_units" => (Vec::new(), "live_without_blind_objective_units"),
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
         "live_without_district_coverage" => (Vec::new(), "live_without_district_coverage"),
@@ -4569,10 +4563,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_religion_sues_peace" => (Vec::new(), "live_without_religion_sues_peace"),
         "live_without_score_horizon" => (Vec::new(), "live_without_score_horizon"),
         "live_without_siege_commitment" => (Vec::new(), "live_without_siege_commitment"),
-        "live_without_stranded_settler_discount" => (Vec::new(), "live_without_stranded_settler_discount"),
+        "live_without_stranded_settler_discount" => {
+            (Vec::new(), "live_without_stranded_settler_discount")
+        }
         "live_without_tally_culture" => (Vec::new(), "live_without_tally_culture"),
         "live_without_wide_map_capacity" => (Vec::new(), "live_without_wide_map_capacity"),
-        "live_without_wonder_ring_settle_value" => (Vec::new(), "live_without_wonder_ring_settle_value"),
+        "live_without_wonder_ring_settle_value" => {
+            (Vec::new(), "live_without_wonder_ring_settle_value")
+        }
         "advanced" => (Vec::new(), "advanced"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
@@ -4596,10 +4594,18 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
         "advanced_city_strategy_roles_raw" => (Vec::new(), "advanced_city_strategy_roles_raw"),
         "advanced_city_strategy_raw" => (Vec::new(), "advanced_city_strategy_raw"),
-        "advanced_city_strategy_bastion_only" => (Vec::new(), "advanced_city_strategy_bastion_only"),
-        "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
-        "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
-        "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
+        "advanced_city_strategy_bastion_only" => {
+            (Vec::new(), "advanced_city_strategy_bastion_only")
+        }
+        "advanced_city_strategy_breadbasket_only" => {
+            (Vec::new(), "advanced_city_strategy_breadbasket_only")
+        }
+        "advanced_city_strategy_comparative_only" => {
+            (Vec::new(), "advanced_city_strategy_comparative_only")
+        }
+        "advanced_city_strategy_pressure_only" => {
+            (Vec::new(), "advanced_city_strategy_pressure_only")
+        }
         "advanced_banking_dedication" => (
             vec![ArtifactStatus {
                 definitional: true,
@@ -4615,7 +4621,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
         "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
-        "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
+        "advanced_roster_live_keep_districts" => {
+            (Vec::new(), "advanced_roster_live_keep_districts")
+        }
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
         // Historical withhold alias: the repair is already off production,
         // so this name now resolves to the stock controller and fails closed.
@@ -4625,9 +4633,13 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
         "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
         "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
-        "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
+        "advanced_without_battlefront_observation" => {
+            (Vec::new(), "advanced_without_battlefront_observation")
+        }
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
-        "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
+        "advanced_settler_founds_when_stalled" => {
+            (Vec::new(), "advanced_settler_founds_when_stalled")
+        }
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
@@ -4670,9 +4682,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_garrison_loyalty" => (Vec::new(), "advanced_garrison_loyalty"),
         "advanced_timing_attack" => (Vec::new(), "advanced_timing_attack"),
-        "advanced_timing_attack_selective" => {
-            (Vec::new(), "advanced_timing_attack_selective")
-        }
+        "advanced_timing_attack_selective" => (Vec::new(), "advanced_timing_attack_selective"),
         "advanced_timing_attack_rapid" => (Vec::new(), "advanced_timing_attack_rapid"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
@@ -5078,9 +5088,7 @@ fn tournament_event_id(
         })
         .collect::<Vec<_>>()
         .join("|");
-    format!(
-        "v{ELO_PROTOCOL_VERSION}:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}"
-    )
+    format!("v{ELO_PROTOCOL_VERSION}:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}")
 }
 
 /// Run a tournament against the latest shared ledger and atomically checkpoint
@@ -5148,9 +5156,7 @@ where
 
 pub fn leaderboard(pool: &EloPool) -> String {
     let mut overall: Vec<(&String, &Rating)> = pool.overall.iter().collect();
-    overall.sort_by(|(name_a, a), (name_b, b)| {
-        b.elo.total_cmp(&a.elo).then(name_a.cmp(name_b))
-    });
+    overall.sort_by(|(name_a, a), (name_b, b)| b.elo.total_cmp(&a.elo).then(name_a.cmp(name_b)));
     let mut out = String::new();
     if let Some(profile) = &pool.profile {
         out.push_str(&format!("rating profile: {}\n", profile.label()));
@@ -5259,7 +5265,10 @@ fn wilson_interval(score: f64, games: usize) -> (f64, f64) {
     let denominator = 1.0 + z2 / n;
     let centre = (p + z2 / (2.0 * n)) / denominator;
     let margin = z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
-    ((centre - margin).clamp(0.0, 1.0), (centre + margin).clamp(0.0, 1.0))
+    (
+        (centre - margin).clamp(0.0, 1.0),
+        (centre + margin).clamp(0.0, 1.0),
+    )
 }
 
 fn performance_elo(base: f64, pair_score: f64) -> f64 {
@@ -5325,24 +5334,21 @@ mod tests {
     use super::{
         builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
-        performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
-        player_ratings, ratings_path_for, win_shares, ArmKind, BuiltinAiBuildError, EloPool,
-        RatedPlayer, Rating, RatingKey, TournamentProfile,
-        TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
-        HISTORICAL_V1_RATINGS_PATH,
-        LIVE_BRIDGE_TREATMENTS,
-        ENGINE_REPAIR_TREATMENTS, ENGINE_REPAIR_WAR_TREATMENTS,
-        ENGINE_REPAIR_ECONOMY_TREATMENTS, FIRAXIS_ONLY_TREATMENTS,
-        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
-        VALUENET_FILE,
+        performance_elo, player_ratings, ratings_path_for, scheduled_seats, seat_schedule,
+        strict_builtin_arm_in, wilson_interval, win_shares, ArmKind, BuiltinAiBuildError, EloPool,
+        RatedPlayer, Rating, RatingKey, TournamentProfile, TourneyCfg, WeightSource, ARTIFACT_DIR,
+        BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_PROTOCOL_VERSION,
+        ELO_SCHEMA_VERSION, ENGINE_REPAIR_ECONOMY_TREATMENTS, ENGINE_REPAIR_TREATMENTS,
+        ENGINE_REPAIR_WAR_TREATMENTS, EVAL_ONLY_AIS, FIRAXIS_ONLY_TREATMENTS,
+        HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
+        LIVE_BRIDGE_TREATMENTS, VALUENET_FILE,
     };
-    use std::collections::BTreeSet;
-    use std::path::Path;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
     use crate::rules::Rules;
     use crate::setup::{GameMode, MapScript};
+    use std::collections::BTreeSet;
+    use std::path::Path;
 
     #[test]
     fn timed_war_arm_is_one_explicit_axis_and_stays_off_for_control_and_minors() {
@@ -5482,10 +5488,7 @@ mod tests {
     /// rather than a 1500 dragging every average toward the middle.
     #[test]
     fn a_player_carries_one_rating_per_mode_and_an_overall() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-mode-ratings-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("civvis-mode-ratings-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch ladder directory");
         let write = |mode: GameMode, rows: &[(&str, f64, u32, u32)]| {
@@ -5497,7 +5500,11 @@ mod tests {
             for (player, elo, games, wins) in rows {
                 pool.overall.insert(
                     (*player).to_string(),
-                    Rating { elo: *elo, games: *games, wins: *wins },
+                    Rating {
+                        elo: *elo,
+                        games: *games,
+                        wins: *wins,
+                    },
                 );
             }
             let name = Path::new(ratings_path_for(mode))
@@ -5516,11 +5523,18 @@ mod tests {
         let advanced = &ratings["advanced"];
         assert_eq!(advanced.by_mode["civ"].elo, 1600.0);
         assert_eq!(advanced.by_mode["tactics"].elo, 1800.0);
-        assert!(!advanced.by_mode.contains_key("simcity"), "an unplayed mode is absent");
+        assert!(
+            !advanced.by_mode.contains_key("simcity"),
+            "an unplayed mode is absent"
+        );
         assert_eq!(advanced.games, 50);
         // Weighted by games played, not a flat mean of the two ladders: forty
         // Civ games at 1600 and ten Tactics games at 1800 is 1640, not 1700.
-        assert!((advanced.overall - 1640.0).abs() < 1e-9, "{}", advanced.overall);
+        assert!(
+            (advanced.overall - 1640.0).abs() < 1e-9,
+            "{}",
+            advanced.overall
+        );
         // A player who has only ever played one mode is that mode's rating.
         let basic = &ratings["basic"];
         assert_eq!(basic.by_mode.len(), 1);
@@ -5550,8 +5564,12 @@ mod tests {
         let civ_profile = ladder_profile(MapScript::Pangaea);
         let arena_profile = ladder_profile(MapScript::Battlefield);
         let mut ledger = EloPool::new(&[], ELO_BASE_RATING);
-        ledger.bind_profile(civ_profile).expect("first run binds the ladder");
-        let refusal = ledger.bind_profile(arena_profile).expect_err("modes must not mix");
+        ledger
+            .bind_profile(civ_profile)
+            .expect("first run binds the ladder");
+        let refusal = ledger
+            .bind_profile(arena_profile)
+            .expect_err("modes must not mix");
         assert!(refusal.to_string().contains("rating profile mismatch"));
 
         let _ = fs::remove_dir_all(&dir);
@@ -5647,7 +5665,7 @@ mod tests {
                 &["advanced_banking_dedication", "advanced_evolved"],
                 ARTIFACT_DIR
             )[0]
-                .2,
+            .2,
             "advanced_evolved"
         );
         assert_eq!(
@@ -5677,8 +5695,8 @@ mod tests {
             "the economy control must expose every change from the cleaned production default"
         );
 
-        let policy_priority = builtin_arm("advanced_policy_envoy_priority")
-            .expect("composite is selectable");
+        let policy_priority =
+            builtin_arm("advanced_policy_envoy_priority").expect("composite is selectable");
         assert_eq!(policy_priority.spec, stock.spec);
         assert_eq!(
             builtin_provenance("advanced_policy_envoy_priority", ARTIFACT_DIR).line(),
@@ -5747,7 +5765,12 @@ mod tests {
         let arms = BUILTIN_AIS
             .iter()
             .chain(EVAL_ONLY_AIS.iter())
-            .map(|name| (*name, builtin_arm(name).expect("every selectable name has a typed arm")))
+            .map(|name| {
+                (
+                    *name,
+                    builtin_arm(name).expect("every selectable name has a typed arm"),
+                )
+            })
             .collect::<Vec<_>>();
         for (index, (left_name, left)) in arms.iter().enumerate() {
             for (right_name, right) in arms.iter().skip(index + 1) {
@@ -6208,7 +6231,11 @@ mod tests {
         // The stamp is only useful if a binary predating a repair emits a
         // shorter list, so every tag must be distinct.
         let unique: BTreeSet<&str> = stamped.iter().copied().collect();
-        assert_eq!(unique.len(), stamped.len(), "a duplicate tag breaks the diff");
+        assert_eq!(
+            unique.len(),
+            stamped.len(),
+            "a duplicate tag breaks the diff"
+        );
     }
 
     /// Each `live_without_*` arm exists to hold exactly ONE mechanism off, so
@@ -6396,9 +6423,7 @@ mod tests {
         assert!(performance_elo(1500.0, 0.0).is_infinite());
         assert!(performance_elo(1500.0, 1.0).is_infinite());
         assert!(
-            (performance_elo(1500.0, low) + performance_elo(1500.0, reverse_high)
-                - 3000.0)
-                .abs()
+            (performance_elo(1500.0, low) + performance_elo(1500.0, reverse_high) - 3000.0).abs()
                 < 1e-9
         );
     }
@@ -6506,7 +6531,10 @@ mod tests {
 
         let alice = &pool.overall["Alice"];
         assert_eq!((alice.games, alice.wins), (2, 1));
-        assert!(alice.elo < 1000.0, "the upset must erase more than the first win added");
+        assert!(
+            alice.elo < 1000.0,
+            "the upset must erase more than the first win added"
+        );
         assert_eq!(
             alice.elo,
             pool.ratings[&RatingKey::new("Alice", "Eleanor", "France")].elo
@@ -6560,8 +6588,14 @@ mod tests {
 
         assert_eq!(pool.overall["Alice"].elo, 1012.0);
         assert_eq!(pool.overall["Bob"].elo, 988.0);
-        assert_eq!((pool.overall["Alice"].games, pool.overall["Alice"].wins), (1, 1));
-        assert_eq!((pool.overall["Bob"].games, pool.overall["Bob"].wins), (1, 0));
+        assert_eq!(
+            (pool.overall["Alice"].games, pool.overall["Alice"].wins),
+            (1, 1)
+        );
+        assert_eq!(
+            (pool.overall["Bob"].games, pool.overall["Bob"].wins),
+            (1, 0)
+        );
     }
 
     #[test]
@@ -6581,11 +6615,10 @@ mod tests {
         assert_eq!(pool.profile, Some(original));
 
         let mut controller_changed = pool.profile.clone().unwrap();
-        controller_changed.controller_roster =
-            ["advanced", "advanced_v1", "basic", "strategic"]
-                .into_iter()
-                .map(str::to_string)
-                .collect();
+        controller_changed.controller_roster = ["advanced", "advanced_v1", "basic", "strategic"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         let error = pool.bind_profile(controller_changed).unwrap_err();
         assert!(error.to_string().contains("rating profile mismatch"));
 
@@ -6704,11 +6737,7 @@ mod tests {
             ..TourneyCfg::default()
         };
         let names = vec!["basic".to_string(), "basic_b".to_string()];
-        let pool = super::run_tournament(
-            &names,
-            |_, seed| builtin_ai("basic", seed),
-            &cfg,
-        );
+        let pool = super::run_tournament(&names, |_, seed| builtin_ai("basic", seed), &cfg);
         assert_eq!(pool.history.len(), 2, "both drawn battles were rated");
         for game in &pool.history {
             assert!(
@@ -6732,11 +6761,18 @@ mod tests {
         assert_eq!(fixed.for_seed(1), 3);
         assert_eq!(fixed.for_seed(999), 3);
 
-        let rolled: Vec<usize> = (0..48).map(|seed| StartEraChoice::RandomPerGame.for_seed(seed)).collect();
-        let replay: Vec<usize> = (0..48).map(|seed| StartEraChoice::RandomPerGame.for_seed(seed)).collect();
+        let rolled: Vec<usize> = (0..48)
+            .map(|seed| StartEraChoice::RandomPerGame.for_seed(seed))
+            .collect();
+        let replay: Vec<usize> = (0..48)
+            .map(|seed| StartEraChoice::RandomPerGame.for_seed(seed))
+            .collect();
         assert_eq!(rolled, replay, "the same seed must replay the same era");
         let distinct: std::collections::BTreeSet<usize> = rolled.iter().copied().collect();
-        assert!(distinct.len() > 1, "a random era choice must actually vary: {distinct:?}");
+        assert!(
+            distinct.len() > 1,
+            "a random era choice must actually vary: {distinct:?}"
+        );
     }
 
     #[test]
@@ -6751,10 +6787,7 @@ mod tests {
     fn old_schema_three_profiles_migrate_to_the_historical_lobby() {
         let mut encoded =
             serde_json::to_value(TournamentProfile::from_cfg(&TourneyCfg::default())).unwrap();
-        encoded
-            .as_object_mut()
-            .unwrap()
-            .remove("setup_contract");
+        encoded.as_object_mut().unwrap().remove("setup_contract");
 
         let migrated: TournamentProfile = serde_json::from_value(encoded).unwrap();
 
@@ -6767,9 +6800,7 @@ mod tests {
     #[test]
     fn persistent_ratings_reject_cloned_or_duplicate_entrants() {
         let cfg = TourneyCfg::default();
-        let make = |_: &str, _: u64| {
-            Box::new(crate::ai::BasicAi::new()) as Box<dyn crate::ai::Ai>
-        };
+        let make = |_: &str, _: u64| Box::new(crate::ai::BasicAi::new()) as Box<dyn crate::ai::Ai>;
         let too_few = vec!["advanced".to_string(), "basic".to_string()];
         let error = super::run_persistent_tournament(
             &too_few,
@@ -6778,7 +6809,9 @@ mod tests {
             "target/elo-test-must-not-exist.json",
         )
         .unwrap_err();
-        assert!(error.to_string().contains("cloned seats change the contest"));
+        assert!(error
+            .to_string()
+            .contains("cloned seats change the contest"));
 
         let duplicate = vec![
             "advanced".to_string(),
@@ -6812,7 +6845,9 @@ mod tests {
             "target/elo-test-must-not-exist.json",
         )
         .unwrap_err();
-        assert!(error.to_string().contains("must be one of the tournament entrants"));
+        assert!(error
+            .to_string()
+            .contains("must be one of the tournament entrants"));
 
         let error = super::run_persistent_tournament(
             &distinct,
@@ -7048,10 +7083,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-elo-tamper-{}-{nonce}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("civvis-elo-tamper-{}-{nonce}", std::process::id()));
         let path = dir.join("ratings.json");
         let mut pool = EloPool::with_base(1500.0);
         pool.record_game_once(
@@ -7092,10 +7125,7 @@ mod tests {
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 1;
         historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
-        assert_eq!(
-            pool.profile,
-            Some(historical_profile)
-        );
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert_eq!(
@@ -7143,17 +7173,13 @@ mod tests {
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 2;
         historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
-        assert_eq!(
-            pool.profile,
-            Some(historical_profile)
-        );
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v2:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v2:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -7202,11 +7228,10 @@ mod tests {
         assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v3:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v3:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -7263,11 +7288,10 @@ mod tests {
         assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v4:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v4:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -7317,7 +7341,13 @@ mod tests {
         let rating = &pool.ratings[&RatingKey::new("advanced", "Trajan", "Rome")];
         assert_eq!((rating.elo, rating.games, rating.wins), (1111.0, 3, 2));
         assert_eq!(pool.overall["advanced"].elo, rating.elo);
-        assert_eq!((pool.overall["advanced"].games, pool.overall["advanced"].wins), (0, 0));
+        assert_eq!(
+            (
+                pool.overall["advanced"].games,
+                pool.overall["advanced"].wins
+            ),
+            (0, 0)
+        );
         assert!(!pool.history_complete);
         pool.save(&path).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
