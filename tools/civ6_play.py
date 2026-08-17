@@ -40,6 +40,9 @@ from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CIVVIS_VICTORY = "science"
+# The turn the opening is scored at. Sixty is where the measured split is
+# sharpest and is still early enough that a treatment has somewhere to act.
+OPENING_TEMPO_TURN = 60
 DEFAULT_CIVVIS_STRATEGY = ""
 
 # Every objective `civvis_orders --victory` accepts, in the spelling its enum
@@ -2410,6 +2413,20 @@ def _play(args: argparse.Namespace) -> int:
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
+        # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
+        # ladder has ever shown. Measured over the 35 completed runs of
+        # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
+        # lead (<=4 cities -> median lead -479, >=5 -> +46), and the founding
+        # turn of the SECOND city correlates r=-0.49 (by t30 -> median -59,
+        # after t30 -> -717). Both groups founded the same total number of
+        # cities, so this is TEMPO, not ambition — the same law `settler_commit`
+        # (+30 Elo for finishing a settler) and `city_target_floor` (-41 Elo
+        # for wanting more) already taught from the engine side.
+        #
+        # Recorded here rather than reconstructed later: every reading above
+        # came from a throwaway script over events.jsonl, which means nothing
+        # watched it between runs and no treatment could ever be judged on it.
+        "founds": [], "cities_at_60": None,
     }
 
     def record(event: dict) -> None:
@@ -2461,10 +2478,19 @@ def _play(args: argparse.Namespace) -> int:
                   f"speed={event.get('speed')} max_turns={event.get('max_turns')} "
                   f"players={event.get('players')} modes={modes} "
                   f"setup={event.get('setup')}")
+        elif kind == "found":
+            turn = event.get("turn")
+            if isinstance(turn, int):
+                state["founds"].append(turn)
         elif kind == "turn":
             state["turn"] = event.get("turn", -1)
             state["score"] = event.get("score", -1)
             state["last_progress"] = time.monotonic()
+            # Sampled at the turn itself, not derived from the founding list:
+            # a city can be LOST before turn 60 and the count is what the
+            # empire actually held.
+            if state["turn"] == OPENING_TEMPO_TURN and event.get("cities") is not None:
+                state["cities_at_60"] = event.get("cities")
             if state["turn"] % args.report_every == 0:
                 actions = event.get("actions") or {}
                 summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
@@ -2781,6 +2807,12 @@ def _play(args: argparse.Namespace) -> int:
         # no target was pinned and the agent chose; it is not a seventh victory
         # condition. The victory a game actually ended on is `outcome.victory`.
         "victory_target": args.civvis_victory if args.civvis_decides else None,
+        # See `state["founds"]`: the opening tempo, recorded per run so the
+        # ladder's strongest correlate is watched instead of reconstructed.
+        # `None` on a run that never reached the turn or never founded twice.
+        "city_two_turn": (sorted(state["founds"])[1]
+                          if len(state["founds"]) >= 2 else None),
+        "cities_at_60": state["cities_at_60"],
     }
     # Bridge health rides in the summary: how much of what CIVVIS said the
     # engine actually did. Summed from this run's own turn events so the
