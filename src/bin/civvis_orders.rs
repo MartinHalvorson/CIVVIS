@@ -1847,93 +1847,51 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
 /// unknown name is a hard error rather than a warning: a typo that silently
 /// produced a control identical to the treatment would report a null and look
 /// exactly like a real one.
-fn withhold_live_treatment(
-    ai: &mut civvis::ai::AdvancedAi,
-    treatment: &str,
-) -> Result<(), String> {
-    match treatment {
-        "home-defense" => ai.disable_home_defense(),
-        "solvent-faith-army" => ai.disable_solvent_faith_army(),
-        "siege-muster" => ai.disable_siege_muster(),
-        "district-coverage" => ai.disable_district_coverage(),
-        "loyalty-rate-alarm" => ai.disable_loyalty_rate_alarm(),
-        "bounded-recovery" => ai.disable_bounded_recovery(),
-        "army-target-weighs-enemy" => ai.disable_army_target_weighs_the_enemy(),
-        "siege-tracks-wall" => ai.disable_siege_tracks_the_wall(),
-        "blind-objective-strength" => ai.disable_blind_objective_strength(),
-        "blind-objective-units" => ai.disable_blind_objective_units(),
-        "siege-role" => ai.disable_siege_role(),
-        "come-ashore" => ai.disable_come_ashore(),
-        "relief-targets-the-siege" => ai.disable_relief_targets_the_siege(),
-        "suzerain-cards" => ai.disable_suzerain_cards_need_a_suzerainty(),
-        // Landed on main while this branch sat unstaged. The invariant below —
-        // a `disable_*` alongside every `enable_*` is picked up here for free —
-        // only holds if the merge actually picks them up.
-        "housing-districts" => ai.disable_housing_districts(),
-        "wide-map-capacity" => ai.disable_wide_map_capacity(),
-        "garrison-under-fire" => ai.disable_garrison_under_fire(),
-        "escort-unstick" => ai.disable_escort_unstick(),
-        "stacked-escort" => ai.disable_stacked_escort(),
-        "religion-sues-peace" => ai.disable_religion_sues_peace(),
-        "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
-        "housing-buildings" => ai.disable_housing_buildings(),
-        "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
-        "amenity-district-path" => ai.disable_amenity_district_path(),
-        "governor-every-lane" => ai.disable_governor_every_lane(),
-        "live-wonder-race" => ai.disable_live_wonder_race(),
-        "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
-        "no-elective-war" => ai.disable_no_elective_war(),
-        "fog-land-capacity" => ai.disable_fog_land_capacity(),
-        "recon-flight" => ai.disable_recon_flight(),
-        "score-horizon" => ai.disable_score_horizon(),
-        "one-launch-pad" => ai.disable_one_launch_pad(),
-        "naval-recon" => ai.disable_naval_recon(),
-        "counter-in-lane" => ai.disable_counter_in_lane(),
-        "era-paced-expansion" => ai.disable_era_paced_expansion(),
-        "tally-culture" => ai.disable_tally_culture(),
-        "culture-building-debt" => ai.disable_culture_building_debt(),
-        "culture-coverage" => ai.disable_culture_coverage(),
-        "frontier-loyalty" => ai.disable_frontier_loyalty(),
-        "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
-        "tally-great-people" => ai.disable_tally_great_people(),
-        "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
-        "camp-reach" => ai.disable_camp_reach(),
-        "settler-stack-discipline" => ai.disable_settler_stack_discipline(),
-        "camp-party" => ai.disable_camp_party(),
-        "buildings-before-projects" => ai.disable_buildings_before_projects(),
-        "housing-cards" => ai.disable_housing_cards(),
-        "housing-research" => ai.disable_housing_research(),
-        "campus-every-city" => ai.disable_campus_every_city(),
-        "muster-at-command-radius" => ai.disable_muster_at_command_radius(),
-        "war-economy" => ai.disable_war_economy(),
-        "war-reinforcement" => ai.disable_war_reinforcement(),
-        "war-patience" => ai.disable_war_patience(),
-        "recon-replacement" => ai.disable_recon_replacement(),
-        "siege-commitment" => ai.disable_siege_commitment(),
-        "wonder-ring-settle-value" => ai.disable_wonder_ring_settle_value(),
-        "garrison-walls" => ai.disable_garrison_walls(),
-        other => {
-            return Err(format!(
-                "unknown --without treatment {other:?}; this binary can withhold: \
-                 home-defense, solvent-faith-army, siege-muster, district-coverage, \
-                 loyalty-rate-alarm, bounded-recovery, army-target-weighs-enemy, \
-                 siege-tracks-wall, blind-objective-strength, blind-objective-units, \
-                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
-                 housing-districts, housing-cards, housing-research, campus-every-city, \
-                 muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
-                 recon-replacement, wide-map-capacity, garrison-under-fire, \
-                 escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
-                 siege-commitment, wonder-ring-settle-value, garrison-walls, \
-                 amenity-project-preemption, amenity-district-path, governor-every-lane, \
-                 live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 era-paced-expansion, tally-culture, frontier-loyalty, \
-                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
-                 camp-reach, settler-stack-discipline, camp-party, buildings-before-projects"
-            ))
+fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> Result<(), String> {
+    // ⚠⚠ THIS WAS A SECOND LIST, AND IT WAS SHORTER THAN THE FIRST.
+    //
+    // `civvis::ai::LIVE_TREATMENTS` is the canonical table and it already
+    // carries the disabler for each row — `(field, kebab-name, fn(&mut
+    // AdvancedAi))` — which is why `elo.rs` builds every `live_without_*` arm by
+    // looking a name up in it rather than by writing the names out again. This
+    // binary wrote them out again: 57 hand-written arms against 68 rows, so
+    // ELEVEN SHIPPED LIVE TREATMENTS HAD NO CONTROL on the only harness where
+    // they fire — `deny-while-targeted`, `endgame-war-runway`, `joint-tactics`,
+    // `live-religious-purchase`, `live-trader-route`, `loyalty-policy-defence`,
+    // `peacetime-deterrence`, `ranged-line-of-sight`, `recorded-tactical-step`,
+    // `slot-kind-tiebreak`, `strike-opening`.
+    //
+    // The usage string was a THIRD copy and shorter still, so several names the
+    // match did accept were undiscoverable from the error that listed them.
+    //
+    // A lookup cannot drift from the table by construction, and a treatment
+    // added to `LIVE_TREATMENTS` now reaches this binary and its usage line at
+    // the same moment it reaches the Elo registry.
+    match civvis::ai::LIVE_TREATMENTS
+        .iter()
+        .find(|(_, name, _)| *name == treatment)
+    {
+        Some((_, _, disable)) => {
+            disable(ai);
+            Ok(())
         }
+        // An unknown name stays a hard error rather than a warning: a typo that
+        // silently produced a control identical to the treatment would report a
+        // null that looks exactly like a real one.
+        None => Err(format!(
+            "unknown --without treatment {treatment:?}; this binary can withhold: {}",
+            withholdable_treatments()
+        )),
     }
-    Ok(())
+}
+
+/// Every treatment `--without` accepts, in table order, for the usage line.
+fn withholdable_treatments() -> String {
+    civvis::ai::LIVE_TREATMENTS
+        .iter()
+        .map(|(_, name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn decide(
@@ -4373,6 +4331,43 @@ mod tests {
             bad.unwrap_err().contains("come-ashore"),
             "the error must name what this binary can actually withhold"
         );
+    }
+
+    /// ⚠⚠ ELEVEN SHIPPED TREATMENTS HAD NO CONTROL ARM ON THE ONLY HARNESS
+    /// WHERE THEY FIRE, and nothing said so: this binary matched 57
+    /// hand-written names against a 68-row table, and its usage string was a
+    /// third, shorter copy again. `deny_while_targeted`, `endgame_war_runway`,
+    /// `joint_tactics`, `live_religious_purchase`, `live_trader_route`,
+    /// `loyalty_policy_defence`, `peacetime_deterrence`, `ranged_line_of_sight`,
+    /// `recorded_tactical_step`, `slot_kind_tiebreak` and `strike_opening` were
+    /// unwithholdable — including the religious-purchase repair, on the lane
+    /// this engine finishes fastest.
+    ///
+    /// The list cannot be short again: it is the table.
+    #[test]
+    fn every_registered_live_treatment_can_be_withheld() {
+        for (field, name, _) in civvis::ai::LIVE_TREATMENTS {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            ai.enable_live_bridge();
+            withhold_live_treatment(&mut ai, name).unwrap_or_else(|error| {
+                panic!("{field} is in LIVE_TREATMENTS but not withholdable: {error}")
+            });
+        }
+    }
+
+    /// And the usage line is the same list, so a name the binary accepts is
+    /// never one the error message hides.
+    #[test]
+    fn the_usage_line_names_every_treatment_the_binary_accepts() {
+        let listed: Vec<String> = super::withholdable_treatments()
+            .split(", ")
+            .map(str::to_string)
+            .collect();
+        let registered: Vec<String> = civvis::ai::LIVE_TREATMENTS
+            .iter()
+            .map(|(_, name, _)| (*name).to_string())
+            .collect();
+        assert_eq!(listed, registered);
     }
 
     use super::*;
