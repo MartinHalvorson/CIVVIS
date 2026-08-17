@@ -61,6 +61,7 @@ pub mod trafalgar;
 pub mod valuenet;
 pub mod mods;
 pub mod pedia;
+pub mod protocol;
 pub mod validate;
 pub mod world;
 

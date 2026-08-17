@@ -2065,10 +2065,16 @@ fn main() {
                         eprintln!("cannot read checkpoint {path}: {error}");
                         std::process::exit(2);
                     });
-                    let game: Game = serde_json::from_str(&raw).unwrap_or_else(|error| {
-                        eprintln!("cannot load checkpoint {path}: {error}");
-                        std::process::exit(2);
-                    });
+                    let value: serde_json::Value =
+                        serde_json::from_str(&raw).unwrap_or_else(|error| {
+                            eprintln!("cannot load checkpoint {path}: {error}");
+                            std::process::exit(2);
+                        });
+                    let game: Game =
+                        civvis::protocol::game_from_save(value).unwrap_or_else(|error| {
+                            eprintln!("cannot load checkpoint {path}: {error}");
+                            std::process::exit(2);
+                        });
                     // A save records the mods it was played under. Resuming
                     // under a different set silently changes the rules
                     // mid-game, so say so rather than pretend otherwise.
