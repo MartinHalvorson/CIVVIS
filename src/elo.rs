@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 176] = [
+pub const EVAL_ONLY_AIS: [&str; 177] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
