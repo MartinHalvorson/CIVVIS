@@ -226,6 +226,27 @@ class GitHubRuntimeUpdaterTest(unittest.TestCase):
             self.assertEqual(event["from_revision"], self.OLD)
             self.assertEqual(event["to_revision"], self.NEW)
             self.assertEqual(event["source"], "origin/main")
+            self.assertRegex(
+                event["utc"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+                "every runtime row carries when, so staleness is computable",
+            )
+
+    def test_the_heartbeat_is_written_on_success_and_carries_a_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            updater = self.updater(root, _RuntimeCommandRunner(self.NEW))
+            updater._write_heartbeat()
+            beat = json.loads(updater.heartbeat_path().read_text())
+            self.assertEqual(beat["current_revision"], self.OLD)
+            self.assertEqual(beat["last_error"], "")
+            self.assertRegex(beat["utc"], r"Z$")
+
+            # A refresh failure reaches the heartbeat, so the ladder check can
+            # say WHY the game may be playing old code, not only that it might.
+            updater._last_error = "cargo build failed (101)"
+            updater._write_heartbeat()
+            beat = json.loads(updater.heartbeat_path().read_text())
+            self.assertEqual(beat["last_error"], "cargo build failed (101)")
 
 
 class Civ6BrainTest(unittest.TestCase):

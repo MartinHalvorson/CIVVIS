@@ -2698,13 +2698,13 @@ pub struct AdvancedAi {
     /// re-firing after `RECOVERY_POSTURE_LIMIT` standard turns and the empire
     /// returns to its own best lane. The threatened-city half is untouched.
     ///
-    /// ⚠ **ON in the shipped agent, despite the struct default below being
-    /// false.** `promoted_policy_envoy` sets it, and `AdvancedAi::new()` routes
-    /// through that constructor, so every `advanced` seat already carries it.
-    /// The comment that used to sit here said native tournament games leave it
-    /// disabled; that was false, and an arm built as "`AdvancedAi::new()` plus
-    /// this flag" is a byte-identical no-op — which is how it was caught.
-    /// Withhold it with `advanced_without_bounded_recovery` to price it.
+    /// **OFF in production after the measured-null cleanup.** The 600-map,
+    /// two-seed outcome record found no win effect, so `AdvancedAi::new()` now
+    /// leaves this repair at its configured default. The live bridge and the
+    /// evaluator's explicit repair constructors still enable it, preserving a
+    /// reachable mechanism without making a null component part of the stock
+    /// controller. `advanced_without_bounded_recovery` is retained as a
+    /// historical alias of `advanced` so old comparisons fail closed.
     pub bounded_recovery: bool,
 
     /// Whether a Science or Expansion threat is simply not reacted to.
@@ -3104,10 +3104,12 @@ impl Default for AdvancedAi {
 }
 
 impl AdvancedAi {
-    /// Production Advanced: the confirmed live-policy and envoy-production
-    /// composite. Keep the three changes together here so every ordinary
-    /// construction path (including weighted and explicitly targeted agents)
-    /// has one auditable definition.
+    /// Production Advanced: the confirmed live-policy and retained
+    /// envoy-priority policy. The measured-null envoy valuation and bounded
+    /// recovery arms are intentionally evaluator/live-bridge-only. Keep the
+    /// production changes together here so every ordinary construction path
+    /// (including weighted and explicitly targeted agents) has one auditable
+    /// definition.
     /// The deployed scripted major.
     ///
     /// ⚠ **Reverted to `Weights::default()` on 2026-08-10.** It briefly carried
@@ -3170,9 +3172,9 @@ impl AdvancedAi {
         // opposite** — "the agent that plays is the one that always played",
         // beside `PolicyDeck::Legacy`. That was true of the default and has not
         // been true of production since this constructor existed. The same
-        // shape of stale comment hid `bounded_recovery` being on, which cost an
-        // evaluation to discover, so it is corrected in both places rather than
-        // only here.
+        // shape of stale comment hid a constructor-only repair, which cost an
+        // evaluation to discover, so the measured-null production arms are
+        // now left at their configured defaults and documented at both sites.
         //
         // The default's comment also records `Live` as a **measured null** — 18
         // map directions to 15, p=0.7283 over 120 mirrored maps — that "costs an
@@ -3197,7 +3199,11 @@ impl AdvancedAi {
             true,
             victory_target,
         );
-        ai.envoy_infrastructure = true;
+        // The 2026-08-17 measured-null cleanup deliberately leaves
+        // `envoy_infrastructure` and `bounded_recovery` at their configured
+        // defaults. The evaluator controls and live bridge still enable those
+        // mechanisms explicitly; production keeps only the reachable
+        // `envoy_priority` reservation from the old composite.
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
@@ -3240,7 +3246,6 @@ impl AdvancedAi {
         // removal is the unit-tactics pair, which measured null on its own
         // (+11, p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
         // re-adds all four as a treatment so the axis stays measurable.
-        ai.bounded_recovery = true;
         ai
     }
 
@@ -3819,8 +3824,9 @@ impl AdvancedAi {
 
     /// Stop the defensive-war posture from becoming permanent.
     ///
-    /// ⚠ Already on for anything built by `AdvancedAi::new()`; this exists for
-    /// constructors that do not route through `promoted_policy_envoy`.
+    /// Production leaves this measured-null repair off. The live bridge and
+    /// explicit evaluator bundles call this method when they need the repair;
+    /// keeping the switch here makes that opt-in auditable.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
     }
@@ -4599,15 +4605,11 @@ impl AdvancedAi {
         self.base.siege_muster = false;
     }
 
-    /// The three production flags that had no withhold and therefore could not
-    /// be priced at all.
-    ///
-    /// `promoted_policy_envoy` turns on thirteen behaviours; only some of them
-    /// had a `disable_*`, which is the gap `disable_bounded_recovery` names
-    /// directly — *"Every flag in `enable_live_bridge` needs one of these or it
-    /// ships unmeasured."* Pricing the bundle found one component costing
-    /// **41 Elo** (`city_target_floor`, removed #1504), so an unpriceable flag
-    /// is not a theoretical problem.
+    /// Hold one of the historical production flags off so an evaluator can
+    /// price it. The original `promoted_policy_envoy` bundle had thirteen
+    /// behaviours and several lacked a `disable_*`; the measured-null cleanup
+    /// removed the two confirmed nulls from production, but the explicit
+    /// evaluator controls remain available for reproducible decomposition.
     pub fn disable_tactical_strategy(&mut self) {
         self.base.tactical_strategy = false;
     }
@@ -22797,9 +22799,9 @@ impl AdvancedAi {
             // and a finishable unit or city remains an Engage posture. The
             // direct tactical scan also runs before this movement posture,
             // so holding the front does not decline an ordinary nearby trade.
-            // `bounded_recovery` is false in the frozen controller, which
-            // preserves its source-contract path while the deployed policy
-            // gets only the temporary global-outmatch case.
+            // `bounded_recovery` is false in both the frozen and stock
+            // production controllers, preserving their source-contract path;
+            // the live bridge gets only the temporary global-outmatch case.
             let global_recovery_holds_front = !arena
                 && self.bounded_recovery
                 && plan.strategy == GrandStrategy::Recovery
@@ -29385,16 +29387,17 @@ mod tests {
     ///
     /// | flag | individual evidence |
     /// |---|---|
-    /// | `bounded_recovery` | **first priced 2026-08-10** — withholding it scores 52.0%, Elo +14 (CI −34..+62), p=0.1849, 200 maps at the deployment shape. Direction favours removal; not established. |
+    /// | `bounded_recovery` | **NULL over 600 maps** on two disjoint seeds; removed from production 2026-08-17. The live bridge and explicit evaluator treatments retain the flag. |
     /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
-    /// | `envoy_infrastructure` | screened 8–12 maps only; the combined economy re-measured 2026-08-10 against its deck control is **null at 800 games** (matrix RETAIN, 1/2 profiles). |
+    /// | `envoy_infrastructure` | **NULL at 800 games** (matrix RETAIN, 1/2 profiles); removed from production 2026-08-17. The explicit evaluator arm retains the valuation for future decomposition. |
     /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
     ///
     /// A composite may legitimately pass a gate while a component is null on
-    /// its own, and the 2026-08-01 promotion was such a composite — so nothing
-    /// here says the bundle is wrong. What it says is that **most of it has
-    /// never been priced apart**, and `disable_bounded_recovery`'s own doc
-    /// already named that as the failure mode: *"Every flag in
+    /// its own, and the 2026-08-01 promotion was such a composite. The two
+    /// confirmed nulls above are now out of the production constructor; what
+    /// remains is that **most of the retained bundle has never been priced
+    /// apart**, and `disable_bounded_recovery`'s own doc already named that as
+    /// the failure mode: *"Every flag in
     /// `enable_live_bridge` needs one of these or it ships unmeasured — which
     /// is how five repairs reached deployment without a single outcome
     /// number."*
@@ -29403,8 +29406,9 @@ mod tests {
     /// trap that cost an evaluation on 2026-08-10: because this constructor
     /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
     /// byte-identical no-op. Withhold, do not add.
-    /// Every default this session made withholdable must be OFF on the frozen
-    /// anchor, and ON in production.
+    /// Every *retained* default this session made withholdable must be OFF on
+    /// the frozen anchor, and ON in production. Measured-null defaults are
+    /// asserted separately below so a retired arm cannot silently return.
     ///
     /// The re-pins for those withholds were justified by comments reasoning
     /// about call paths. A comment claiming a flag cannot reach the anchor is
@@ -29415,10 +29419,10 @@ mod tests {
     /// bundle; this is its counterpart for the five defaults.
     ///
     /// Both halves matter. OFF on `legacy()` is what makes a withhold arm
-    /// unable to move a rating anchor. ON in `new()` is what makes a withhold
-    /// the *only* way to price them — an arm built as `new()` plus one of these
-    /// is a byte-identical no-op, which is how three arms in `elo.rs` came to
-    /// measure nothing.
+    /// unable to move a rating anchor. ON in the relevant production
+    /// constructor is what makes a withhold the *only* way to price a retained
+    /// flag — an arm built as `new()` plus one of these is a byte-identical
+    /// no-op, which is how three arms in `elo.rs` came to measure nothing.
     #[test]
     fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
         let frozen = AdvancedAi::legacy();
@@ -29488,6 +29492,28 @@ mod tests {
     }
 
     #[test]
+    fn production_advanced_omits_measured_null_arms_but_controls_retain_them() {
+        let production = AdvancedAi::new();
+        assert!(!production.bounded_recovery);
+        assert!(!production.envoy_infrastructure);
+        assert!(production.envoy_priority);
+
+        let mut live_bridge = AdvancedAi::new();
+        live_bridge.enable_live_bridge();
+        assert!(
+            live_bridge.bounded_recovery,
+            "the live bridge must keep its explicit repair capability"
+        );
+
+        let mut infrastructure = AdvancedAi::pre_policy_envoy();
+        infrastructure.envoy_infrastructure = true;
+        assert!(
+            infrastructure.envoy_infrastructure,
+            "the evaluator control must keep the measured valuation reachable"
+        );
+    }
+
+    #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
         // ⚠ Three, not six. The production floor was removed on 2026-08-10
@@ -29506,7 +29532,7 @@ mod tests {
         // still carries all four, so the axis stays reachable.
         assert!(!production.base.siege_muster);
         assert!(!production.base.home_defense);
-        assert!(production.bounded_recovery);
+        assert!(!production.bounded_recovery);
         assert!(production.settlement_safety);
         assert!(production.adjacency_site_planning);
 
@@ -29759,7 +29785,7 @@ mod tests {
             PolicyDeck::Legacy,
             "the withhold must actually withhold, or its number measures nothing"
         );
-        assert!(production.envoy_infrastructure);
+        assert!(!production.envoy_infrastructure);
         assert!(production.envoy_priority);
 
         let pre_promotion = AdvancedAi::pre_policy_envoy();
@@ -35950,8 +35976,9 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        // The confirmed production default carries the direct infrastructure
-        // route; this test pins its safety gates rather than a separate arm.
+        // The cleaned production default retains the direct priority route;
+        // infrastructure valuation is a separate, evaluator-only arm. This
+        // test pins the priority safety gates rather than that valuation.
         let treatment = AdvancedAi::new();
 
         let mut unmet = game.clone();
@@ -38410,9 +38437,10 @@ mod tests {
             ..conquest.clone()
         };
         let mut ai = AdvancedAi::new();
+        ai.enable_bounded_recovery();
         assert!(
             ai.bounded_recovery,
-            "the promoted controller carries the bounded Recovery policy"
+            "the explicit bounded-Recovery treatment carries the bounded policy"
         );
 
         ai.rebuild_force_groups(&game, 0, &conquest);
@@ -48442,11 +48470,12 @@ mod tests {
 
     /// The agent a census must measure: the one that ships.
     ///
-    /// Since the 2026-08-01 policy/envoy promotion, `AdvancedAi::new()` is the
-    /// exact production controller: it forces the non-gene policy deck to
-    /// `Live` and enables the two confirmed envoy-production mechanisms. A
-    /// census must not substitute a champion merely because a historical
-    /// champion happened to share the live deck.
+    /// `AdvancedAi::new()` is the exact production controller: it forces the
+    /// non-gene policy deck to `Live` and keeps the reachable envoy-priority
+    /// reservation. The measured-null infrastructure valuation and bounded
+    /// recovery arms are explicit evaluator/live-bridge treatments, not stock
+    /// behavior. A census must not substitute a champion merely because a
+    /// historical champion happened to share the live deck.
     fn deployed_agent() -> AdvancedAi {
         AdvancedAi::new()
     }

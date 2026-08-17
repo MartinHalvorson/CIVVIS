@@ -32,6 +32,45 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// time, and new ones still belong there when a change reaches the shared AI
 /// files. They no longer have to accompany a constant edit: if `advanced_v1`
 /// still plays the same game, the test below stays green on its own.
+///
+/// What `advanced_v1` DOES, hashed — not what its source looks like.
+///
+/// ⚠⚠⚠ THIS REPLACES A BYTE HASH OF `src/ai.rs` AND `src/ai/advanced.rs`, AND
+/// THE REPLACEMENT IS THE POINT. That hash covered every byte of two files
+/// totalling ~70,000 lines — comments and tests included — under an anchor that
+/// deliberately SHARES its implementation with the production controller. So a
+/// typo fix in a doc comment moved it, and the only way past was to re-pin.
+///
+/// Measured over the thirty days to 2026-08-17: **248 of ~1,669 merged pull
+/// requests had to rewrite that one constant**, and the share was climbing —
+/// 14% on 08-04, 40% on 08-15, 48% on 08-16, 6 of 6 on 08-17. Every one of them
+/// also appended to an 808-line doc comment above it, and 173 of the 359 commits
+/// that touched `main.rs` at all touched nothing else. Both edits land at a fixed
+/// point in the file, so concurrent pull requests conflicted structurally rather
+/// than occasionally.
+///
+/// A gate re-pinned reflexively 248 times a month is not protecting anything: it
+/// is a ritual. The claim each of those re-pins actually made — "the frozen
+/// anchor still plays the same game" — is now the thing that is tested, by
+/// playing it. `advanced_v1` runs five profiles from a 2-player 20x14 duel to
+/// the 6-player 54x34 deployment shape, and every action it applies is hashed.
+///
+/// What that buys, measured on this branch:
+///
+/// * flipping `battlefront_observation` on inside `legacy()` moves ALL FIVE
+///   fingerprints and the decision count;
+/// * changing `FIRST_MOVE_SCORE_BONUS` from 4.0 to 5.0 moves all five;
+/// * adding a default-off field cannot move any of them, because the anchor
+///   never reads it — which is exactly what those 248 comments each asserted in
+///   prose and nothing checked.
+///
+/// ⚠ AND WHAT IT DOES NOT BUY, STATED PLAINLY. It catches a change that fires
+/// on these profiles. Changing `WATER_MARCH_PENALTY` from 18.0 to 17.0 moved
+/// nothing on the four land profiles — which is why `MapScript::Islands` is now
+/// one of them, and why a change that fires nowhere in ~17k decisions is a
+/// change this test will call free. The byte hash caught those too, but only by
+/// catching everything, which is how it stopped being read. The targeted
+/// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
 const ANCHOR_BEHAVIOUR_FNV: u64 = 0x87f1_ed28_5af9_e065;
 
