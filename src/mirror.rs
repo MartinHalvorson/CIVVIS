@@ -2208,6 +2208,122 @@ mod tests {
         assert_eq!(mirror.game.players[1].dvp, 19);
     }
 
+    /// Rival victory progress crosses the bridge. Five of the twelve runs the
+    /// seat was leading on 2026-08-16/17 ended at t229-245 on a rival's
+    /// culture, technology or diplomatic victory: rival space programs and
+    /// tourist counts never crossed, so the victory tracker read zero for
+    /// every rival on exactly the lanes that end games early.
+    #[test]
+    fn rival_victory_progress_reaches_rebuild_and_sync() {
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":180,
+            "rivals":[{"player":3,
+                "science_projects":["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                     "PROJECT_LAUNCH_MOON_LANDING"],
+                "foreign_tourists":41, "domestic_tourists":66}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the rival progress wire parses");
+        assert_eq!(state.rivals[0].foreign_tourists, 41.0);
+        assert_eq!(state.rivals[0].domestic_tourists, 66.0);
+        assert!(
+            state.schema_gaps.is_empty(),
+            "rival victory progress must be schema-recognized: {:?}",
+            state.schema_gaps
+        );
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 180,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let expected = BTreeSet::from([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+        ]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(rebuilt.game.players[1].science_projects, expected);
+        let observed = rebuilt
+            .game
+            .observed_public_empire_stats
+            .get(&1)
+            .expect("a rival with progress has observed stats");
+        assert_eq!(observed.foreign_tourists, Some(41));
+        assert_eq!(observed.domestic_tourists, Some(66));
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(mirror.game.players[1].science_projects, expected);
+        state.turn = 181;
+        state.rivals[0].science_projects = Some(vec![
+            "PROJECT_LAUNCH_EARTH_SATELLITE".to_string(),
+            "PROJECT_LAUNCH_MOON_LANDING".to_string(),
+            "PROJECT_LAUNCH_MARS_BASE".to_string(),
+        ]);
+        state.rivals[0].foreign_tourists = 44.0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.players[1]
+                .science_projects
+                .contains("launch_mars_colony"),
+            "a Gathering Storm Mars base must translate exactly as the local seat's does"
+        );
+        let observed = mirror.game.observed_public_empire_stats.get(&1).unwrap();
+        assert_eq!(observed.foreign_tourists, Some(44));
+
+        // An already-loaded older control mod omits the fields, and a refused
+        // host read sends -1. The observed table is honest per snapshot —
+        // unknown reads None — while the player's completed-milestone record
+        // is history and must survive the silence.
+        state.turn = 182;
+        state.rivals[0].science_projects = None;
+        state.rivals[0].foreign_tourists = f64::NAN;
+        state.rivals[0].domestic_tourists = -1.0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.players[1]
+            .science_projects
+            .contains("launch_moon_landing"));
+        let observed = mirror.game.observed_public_empire_stats.get(&1).unwrap();
+        assert_eq!(observed.foreign_tourists, None);
+        assert_eq!(observed.domestic_tourists, None);
+    }
+
+    /// The host's victory checkboxes have crossed the wire in the seat event
+    /// all along and were dropped: a live board always played the all-six
+    /// default, so `victory_strategy_enabled` could authorise a lane the
+    /// lobby had switched off.
+    #[test]
+    fn the_seat_victory_checkboxes_reach_the_mirrored_game() {
+        let seat: Seat = serde_json::from_str(
+            r#"{"local_player":0,
+                "victories":{"conquest":false,"score":true,"technology":true,
+                             "culture":false,"religious":null,"diplomatic":true}}"#,
+        )
+        .expect("the seat victory wire parses");
+        let victories = seat.victories.expect("checkboxes present");
+        assert_eq!(victories.conquest, Some(false));
+        assert_eq!(victories.religious, None, "a refused read stays unknown");
+
+        let mut game = crate::game::Game::new(2, 8, 8, 42, 250, 0);
+        game.victory_conditions = crate::game::VictoryConditions::default();
+        let seat = Seat { victories: Some(victories), ..Seat::default() };
+        apply_seat_victories(&mut game, &seat);
+        assert!(!game.victory_conditions.domination, "conquest off crosses");
+        assert!(!game.victory_conditions.culture);
+        assert!(game.victory_conditions.science, "technology maps to science");
+        assert!(game.victory_conditions.score);
+        assert!(game.victory_conditions.diplomatic);
+        assert!(
+            game.victory_conditions.religious,
+            "an unknown checkbox keeps the default rather than switching a lane off"
+        );
+
+        // An older mod sends no `victories` at all: the default stands whole.
+        let mut untouched = crate::game::Game::new(2, 8, 8, 42, 250, 0);
+        apply_seat_victories(&mut untouched, &Seat::default());
+        assert!(untouched.victory_conditions.domination);
+    }
+
     #[test]
     fn initializing_host_power_cannot_erase_a_visible_starting_warrior() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -8614,6 +8730,24 @@ pub struct StateRival {
     pub culture: f64,
     #[serde(default = "unknown_metric")]
     pub tourism: f64,
+    /// Space-race milestones the host reports for this rival — the rows the
+    /// shipped World Rankings science screen lists for OTHER players
+    /// (`GetNumProjectsAdvanced` per launch project). Five of the twelve runs
+    /// this seat was leading on 2026-08-16/17 ended early on a rival's
+    /// culture, technology or diplomatic victory the tracker read as zero
+    /// progress. `None` means an older control mod could not export the list;
+    /// an empty list is a real "no milestone yet". `#[serde(default)]` is
+    /// load-bearing: without it any older export fails to deserialize whole.
+    #[serde(default)]
+    pub science_projects: Option<Vec<String>>,
+    /// The culture victory's own two numbers as the shipped screen shows them
+    /// for every major: tourists visiting this rival, and its staycationers
+    /// (which set the bar every other civilization must clear). `-1` when the
+    /// host could not be asked; NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub foreign_tourists: f64,
+    #[serde(default = "unknown_metric")]
+    pub domestic_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub gold: f64,
     #[serde(default = "unknown_metric")]
@@ -9332,6 +9466,21 @@ fn apply_rival_public_economy(
         observed.techs = count(rival.techs);
         observed.civics = count(rival.civics);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+        // Like `techs`/`civics`: the observed table is rebuilt from each
+        // snapshot (`apply_observed_host_metrics` clears it), so absent or
+        // refused reads honestly say None for THIS snapshot. The durable
+        // record is the player's `science_projects` below.
+        observed.foreign_tourists = count(rival.foreign_tourists);
+        observed.domestic_tourists = count(rival.domestic_tourists);
+    }
+    // The rival's space-race milestones land on its own player record, exactly
+    // as the local seat's do — `rival_victory_pressure_with_culture` reads
+    // `player.science_projects`, so the science lane of the victory tracker
+    // sees the host's truth instead of an empty reconstruction.
+    if let Some(projects) =
+        completed_strategic_projects(rival.science_projects.as_deref(), unmapped)
+    {
+        game.players[owner].science_projects = projects;
     }
     if known(rival.gold) {
         game.players[owner].gold = rival.gold;
@@ -10132,6 +10281,59 @@ pub struct Seat {
     pub map: String,
     #[serde(default)]
     pub size: String,
+    /// The six victory checkboxes as the host reports them
+    /// (`Game.IsVictoryEnabled`, the shipped WorldRankings check). The mod has
+    /// exported these all along and the mirror dropped them, so a live board's
+    /// `victory_conditions` were always the all-six default and
+    /// `victory_strategy_enabled` could authorise a lane the lobby had
+    /// switched off. `None` (older mod) keeps the default.
+    #[serde(default)]
+    pub victories: Option<SeatVictories>,
+}
+
+/// See [`Seat::victories`]. Each checkbox is independently optional so one
+/// refused `IsVictoryEnabled` read cannot switch the other five off.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+pub struct SeatVictories {
+    #[serde(default)]
+    pub conquest: Option<bool>,
+    #[serde(default)]
+    pub score: Option<bool>,
+    #[serde(default)]
+    pub technology: Option<bool>,
+    #[serde(default)]
+    pub culture: Option<bool>,
+    #[serde(default)]
+    pub religious: Option<bool>,
+    #[serde(default)]
+    pub diplomatic: Option<bool>,
+}
+
+/// Copy the host's victory checkboxes onto the mirrored game. Firaxis's
+/// `technology`/`conquest` names map to CIVVIS's `science`/`domination`.
+fn apply_seat_victories(game: &mut crate::game::Game, seat: &Seat) {
+    let Some(v) = seat.victories.as_ref() else {
+        return;
+    };
+    let conditions = &mut game.victory_conditions;
+    if let Some(on) = v.technology {
+        conditions.science = on;
+    }
+    if let Some(on) = v.culture {
+        conditions.culture = on;
+    }
+    if let Some(on) = v.religious {
+        conditions.religious = on;
+    }
+    if let Some(on) = v.diplomatic {
+        conditions.diplomatic = on;
+    }
+    if let Some(on) = v.conquest {
+        conditions.domination = on;
+    }
+    if let Some(on) = v.score {
+        conditions.score = on;
+    }
 }
 
 /// Civilization VI emits `GAMESPEED_ONLINE`; CIVVIS's setup names it `online`.
@@ -10325,6 +10527,7 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
     if let Some(speed) = civvis_game_speed(&state.seat.speed) {
         game.game_speed = speed;
     }
+    apply_seat_victories(game, &state.seat);
     game.observed_leader_types.clear();
     if !state.seat.leader.is_empty() {
         game.observed_leader_types.insert(0, state.seat.leader.clone());
@@ -10553,6 +10756,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "techs", "civics", "cities", "units",
         "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "public_stats",
+        // Rival victory progress as the shipped World Rankings screen shows it.
+        // `the_schema_allowlists_cover_every_declared_field` fails if a new
+        // StateRival field is missing here.
+        "science_projects", "foreign_tourists", "domestic_tourists",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
@@ -13664,6 +13871,7 @@ pub fn rebuild_from_state(
         game.speed = speed.id().to_string();
         game.game_speed = speed;
     }
+    apply_seat_victories(&mut game, &state.seat);
 
     if let Some(difficulty) = civvis_difficulty(&state.seat.difficulty)
         .filter(|difficulty| game.rules.difficulties.contains_key(difficulty))
