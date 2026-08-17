@@ -10282,8 +10282,10 @@ fifth. It is close to a floor, not a fair incumbent.
 **What this does and does not license.**
 
 - It does **not** license moving the live ladder's default. Simulator-to-host
-  transfer of *strength* is CONFIRMED negative (`docs/AI_GAPS.md:543-660`,
-  −76/−108 Elo, 0/2 profiles), so a headless margin is not a host prediction.
+  transfer of *strength* is CONFIRMED negative on both profiles — the
+  `advanced_synergy` confirmed row in `docs/AI_GAPS.md:588` reads −76
+  (95% CI −140..−13) compact-standard and −108 (95% CI −172..−43)
+  deployment-online — so a headless margin is not a host prediction.
 - It does **not** promote a lane into `advanced`. Nothing changes in the shipped
   controller; these arms are evaluator-only and off by default.
 - It **does** retire the argument that Science is the reachable choice. That
