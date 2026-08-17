@@ -277,6 +277,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 65] = [
     "fog-land-capacity",
     "recon-flight",
     "score-horizon",
+    "one-launch-pad",
     "naval-recon",
     "counter-in-lane",
     "era-paced-expansion",
@@ -401,7 +402,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 28] = [
 ];
 
 /// The economic half: settlement, growth, districts, and the policy deck.
-pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 22] = [
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 23] = [
     "escort-unstick",
     "stacked-escort",
     "settler-stack-discipline",
@@ -423,6 +424,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 22] = [
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
+    "one-launch-pad",
     "settler-target-hysteresis",
 ];
 
@@ -430,7 +432,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 22] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 50] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 51] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -480,6 +482,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 50] = [
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
+    "one-launch-pad",
     "settler-target-hysteresis",
 ];
 

@@ -2173,6 +2173,32 @@ pub struct AdvancedAi {
     /// for ordinary and frozen controllers; on for the live bridge and the
     /// native repair bundle (a native league game ends on the same tally).
     pub score_horizon: bool,
+    /// One launch pad, in the city that will actually run the race.
+    ///
+    /// ★★★ THE 3,000-POINT FIRST-PAD RUNG IS EMPIRE-WIDE BUT COUNTS ONLY
+    /// FINISHED DISTRICTS, so every city claims it at once. `district_count`
+    /// is how many of MY cities hold the family, and a Spaceport under
+    /// construction holds nothing yet — so the turn Rocketry lands, every city
+    /// in a Science empire reads `district_count == 0` and prices the pad at
+    /// 3,000, twelve times a Campus and twice a Settler. Live run
+    /// civvis-20260817T022159Z: Aquileia started one on t144 at 25 production,
+    /// Ostia on t146 at 38, Arretium on t146 at 26, Brundisium on t157 at 25
+    /// with four population — **119 city-turns, 11% of everything the empire
+    /// built, for one usable pad and one launched project**. That game led
+    /// 1,239 to 1,005 and lost at t197 to a rival culture victory; the pads
+    /// were the largest single block of production in it.
+    ///
+    /// The chain is sequential — Earth Satellite, Moon Landing, Mars Colony,
+    /// the expedition — so a second pad launches nothing sooner, and
+    /// `space_race_can_finish` already prices the race at ONE pad and the
+    /// empire's BEST city. With this on the two agree: the 3,000 rung goes to
+    /// the single best-production city with no pad, and only while no other
+    /// city of ours is already building one. Every other city keeps the
+    /// ordinary 250, so a genuine second launch site is still reachable when
+    /// nothing better competes — it just no longer outbids the whole empire's
+    /// build order. Off for ordinary and frozen controllers; on for the live
+    /// bridge and the native repair bundle, where the same rung fires.
+    pub one_launch_pad: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -3419,6 +3445,7 @@ impl AdvancedAi {
             no_elective_war: false,
             recon_flight: false,
             score_horizon: false,
+            one_launch_pad: false,
             wide_map_capacity: false,
             fog_land_capacity: false,
             city_strategy: false,
@@ -4103,6 +4130,9 @@ impl AdvancedAi {
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
+        // And the race that does fit needs one launch pad, not one per city.
+        // See `one_launch_pad`.
+        self.enable_one_launch_pad();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
         // And a camp within nine tiles of a city is home ground the guard clears.
@@ -4448,6 +4478,9 @@ impl AdvancedAi {
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
+        // And the race that does fit needs one launch pad, not one per city.
+        // See `one_launch_pad`.
+        self.enable_one_launch_pad();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
         // And a camp within nine tiles of a city is home ground the guard clears.
@@ -4851,6 +4884,16 @@ impl AdvancedAi {
 
     pub fn disable_score_horizon(&mut self) {
         self.score_horizon = false;
+    }
+
+    /// Give the 3,000-point first-pad rung to one city at a time. See
+    /// `one_launch_pad`.
+    pub fn enable_one_launch_pad(&mut self) {
+        self.one_launch_pad = true;
+    }
+
+    pub fn disable_one_launch_pad(&mut self) {
+        self.one_launch_pad = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -14827,6 +14870,36 @@ impl AdvancedAi {
         production_turns.max(research_turns) + travel_turns <= remaining_turns
     }
 
+    /// The one city that may claim the 3,000-point first-pad rung: the
+    /// empire's best-production city with no Spaceport, and only while no
+    /// other city of ours already has one standing or in its queue. `None`
+    /// once a pad exists or is on its way, which leaves every city on the
+    /// ordinary 250. See `one_launch_pad`.
+    pub(crate) fn launch_pad_site(&self, g: &Game, pid: usize) -> Option<u32> {
+        let pad = crate::name!("spaceport");
+        let mut best: Option<(u32, f64)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if city.districts.contains_key(pad) {
+                return None;
+            }
+            // A pad under construction holds nothing yet, so the finished-
+            // district count cannot see it. It is still the pad the empire is
+            // getting, and the whole point of the rung is to buy exactly one.
+            if city.queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. }
+                         if g.district_family(*district) == pad)
+            }) {
+                return None;
+            }
+            let production = g.city_yields(cid).production;
+            if best.is_none_or(|(_, seen)| production > seen) {
+                best = Some((cid, production));
+            }
+        }
+        best.map(|(cid, _)| cid)
+    }
+
     /// Whether a nuclear project queued now in `cid` can end in a finished
     /// device before the turn limit: the project itself plus the device it
     /// unlocks (or the device alone), at this city's production. Always true
@@ -18184,6 +18257,16 @@ impl AdvancedAi {
                         if self.score_horizon && !self.space_race_can_finish(g, pid) =>
                     {
                         0.0
+                    }
+                    // See `one_launch_pad`: the rung is empire-wide, so it
+                    // belongs to one city — the one the race would actually be
+                    // run in — and it lapses the moment a pad is on its way.
+                    (GrandStrategy::Science, "spaceport")
+                        if district_count == 0
+                            && self.one_launch_pad
+                            && self.launch_pad_site(g, pid) != Some(cid) =>
+                    {
+                        250.0
                     }
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
@@ -35330,6 +35413,116 @@ mod tests {
         // Defaults: off for the stock and frozen controllers.
         assert!(!AdvancedAi::new().score_horizon);
         assert!(!AdvancedAi::legacy().score_horizon);
+    }
+
+    /// ★★★ Four cities claimed the empire-wide first-pad rung at once because
+    /// it counts finished districts only. Live run civvis-20260817T022159Z:
+    /// Aquileia t144, Ostia t146, Arretium t146, Brundisium t157 — 119
+    /// city-turns, 11% of everything that empire built, for one usable pad.
+    /// See `one_launch_pad`. Two cities with Rocketry and no pad: the treated
+    /// seat pays 3,000 only in the better producer and 250 in the other, and
+    /// once the better producer has the pad in its queue neither city claims
+    /// the rung again. The withheld arm pays both, as the historical
+    /// controller does.
+    #[test]
+    fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
+        let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let first = game.player_city_ids(0)[0];
+        let second = found_test_city(&mut game, 0);
+        game.players[0].techs.insert(crate::name!("rocketry"));
+        game.turn = 140;
+        // The turn limit is a separate treatment (`score_horizon`); hold it
+        // far enough away that both cities price a real pad and the rung is
+        // the only thing under test.
+        game.max_turns = 100_000;
+        // The measured shape: one city out-produces the other, and the race
+        // would be run there.
+        install_ai_test_district(&mut game, first, "industrial_zone");
+        game.cities.get_mut(&first).unwrap().pop = 14;
+        game.cities.get_mut(&second).unwrap().pop = 4;
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let pad = Item::District {
+            district: crate::name!("spaceport"),
+            pos: game.cities[&first].pos,
+        };
+        let _ = second;
+
+        let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+        live.enable_live_bridge();
+        assert!(live.one_launch_pad, "the live seat carries the treatment");
+        live.refresh_research_weight(&game);
+        let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
+        withheld.enable_live_bridge();
+        withheld.disable_one_launch_pad();
+        withheld.refresh_research_weight(&game);
+        let counts = live.counts(&game, 0);
+
+        let racer = live
+            .launch_pad_site(&game, 0)
+            .expect("no pad stands or is queued, so one city holds the rung");
+        let passed = *game
+            .player_city_ids(0)
+            .iter()
+            .find(|cid| **cid != racer)
+            .expect("the empire has a second city");
+        assert!(
+            game.city_yields(racer).production >= game.city_yields(passed).production,
+            "the rung goes to the better producer"
+        );
+
+        let held = live.production_value(&game, 0, racer, &pad, &plan, &counts);
+        let passed_over = live.production_value(&game, 0, passed, &pad, &plan, &counts);
+        let unrestrained = withheld.production_value(&game, 0, passed, &pad, &plan, &counts);
+        assert!(
+            unrestrained > passed_over,
+            "the passed-over city drops the 3,000 rung it used to claim: \
+             {unrestrained} withheld vs {passed_over} treated"
+        );
+        assert_eq!(
+            held,
+            withheld.production_value(&game, 0, racer, &pad, &plan, &counts),
+            "the racer keeps the rung untouched"
+        );
+        assert!(passed_over > 0.0, "a second launch site stays a legal fallback");
+
+        // A pad already on its way ends the rung for everyone — including the
+        // city building it, which does not need to be told twice.
+        game.cities.get_mut(&racer).unwrap().queue.push(pad.clone());
+        assert_eq!(
+            live.launch_pad_site(&game, 0),
+            None,
+            "a queued pad is the pad the empire is getting"
+        );
+        let after = live.production_value(&game, 0, racer, &pad, &plan, &counts);
+        assert!(
+            after < held,
+            "no second claim while the first is building: {after} vs {held}"
+        );
+
+        // And a pad that stands ends it too.
+        game.cities.get_mut(&racer).unwrap().queue.clear();
+        install_ai_test_district(&mut game, racer, "spaceport");
+        assert_eq!(live.launch_pad_site(&game, 0), None, "a standing pad is enough");
+
+        // Defaults: off for the stock and frozen controllers.
+        assert!(!AdvancedAi::new().one_launch_pad);
+        assert!(!AdvancedAi::legacy().one_launch_pad);
     }
 
     #[test]
