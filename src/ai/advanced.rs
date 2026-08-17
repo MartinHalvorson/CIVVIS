@@ -322,6 +322,28 @@ const SETTLE_LAG: u32 = 3;
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
 
+/// The bounded horizon over which a paid expansion has to earn back its
+/// investment. This is deliberately longer than the minimum `SETTLE_PAYBACK`
+/// safety check: a city that merely survives fifteen turns is not necessarily
+/// worth the production and population it consumed.
+const COUPLED_EXPANSION_HORIZON: u32 = 90;
+/// Production points are the first, exact cost of a Settler. Keep the
+/// conversion in the same order of magnitude as the production scores below,
+/// while leaving the evaluator arm's policy decision auditable.
+const COUPLED_EXPANSION_PRODUCTION_VALUE: f64 = 4.0;
+/// A population point is both a lost citizen and a delayed growth threshold.
+/// The threshold is added to the measured yield loss in
+/// `coupled_expansion_value` rather than hidden in the site score.
+const COUPLED_EXPANSION_POPULATION_VALUE: f64 = 90.0;
+/// A military body is needed to escort a civilian through a contested map. A
+/// missing escort is a bounded reservation cost, not a hard veto: the army may
+/// be available by the time the Settler completes.
+const COUPLED_EXPANSION_ESCORT_VALUE: f64 = 90.0;
+/// Approximate Settler route length in turns from observed live paths. The
+/// route planner still owns the actual movement after production; this value
+/// only prices the opportunity cost before a unit exists.
+const COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE: f64 = 1.2;
+
 /// A new city has to become more than a map pin. Forecast the first four
 /// citizens because they decide whether it reaches a useful population in time
 /// to pay back the Settler, and because later tiles are too speculative to
@@ -1928,6 +1950,15 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
     pub expansion_pays_back: bool,
+    /// Price a Settler as a coupled investment instead of a free city target.
+    ///
+    /// The treatment subtracts the real production points, the population
+    /// recovery cost, escort availability, route time, visible safety cost,
+    /// and the founding lag from the same site's bounded payback value. It is
+    /// **off by default** and reached by `advanced_coupled_expansion`; the
+    /// production controller therefore keeps the historical score until this
+    /// full-cost arm has a replicated outcome screen.
+    pub coupled_expansion: bool,
     /// Remove only the absolute `standard_duration(300)` cap from adaptive
     /// expansion's existing deadline. Default-off evaluator treatment; the
     /// endgame reserve remains unchanged.
@@ -2379,6 +2410,21 @@ pub struct AdvancedAi {
     /// was bounded; a real cost says the response works and only its timing is
     /// wrong.
     pub deny_leaders: bool,
+
+    /// Whether a seat playing under an assigned victory target may still
+    /// mount a denial against a rival at MATCH POINT. `victory_denial` has
+    /// always stood down entirely whenever `victory_target` is set — right
+    /// for ordinary pressure (the lane keeps its focus), and fatal at the
+    /// wire: the live seat plays `--victory science`, so five of the twelve
+    /// runs it was LEADING on 2026-08-16/17 ended at t229-245 on a rival's
+    /// culture, technology or diplomatic victory with the whole counter
+    /// apparatus — the congress counter, in-lane counters, counter-units —
+    /// gated off. With this on, only `urgent_victory_threat`'s match-point
+    /// bar (progress ≥ 90, or the lane-specific equivalents) overrides the
+    /// target's focus, so ordinary pressure still never distracts the lane.
+    ///
+    /// **Off by default, live-bridge only.**
+    pub deny_while_targeted: bool,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -3172,7 +3218,12 @@ impl Default for AdvancedAi {
 /// than the methods they call and must stay that way, or a published result
 /// stops being findable. Same for the arm names `army_target_weighs_enemy`,
 /// `siege_tracks_wall` and `suzerain_cards`.
-pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
+/// One live treatment: the published arm identity, the provenance tag, and
+/// the call that takes it back out.
+pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
+
+#[rustfmt::skip]
+pub const LIVE_TREATMENTS: [LiveTreatment; 68] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -3240,6 +3291,7 @@ pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
     ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
+    ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
 ];
 
 impl AdvancedAi {
@@ -3284,6 +3336,15 @@ impl AdvancedAi {
     pub fn rapid_timing_attack() -> AdvancedAi {
         let mut ai = Self::selective_timing_attack();
         ai.rapid_timed_war = true;
+        ai
+    }
+
+    /// Evaluator treatment for the full-cost expansion investment. The
+    /// production controller remains on the historical settler score until a
+    /// replicated screen establishes that this bounded model helps.
+    pub fn coupled_expansion() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.enable_coupled_expansion();
         ai
     }
 
@@ -3638,6 +3699,7 @@ impl AdvancedAi {
             parallel_settlers: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
+            coupled_expansion: false,
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
@@ -3667,6 +3729,7 @@ impl AdvancedAi {
             reactor_marginal: false,
             civ_blind: false,
             deny_leaders: true,
+            deny_while_targeted: false,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -3818,6 +3881,20 @@ impl AdvancedAi {
     pub fn enable_parallel_settlers(&mut self) {
         self.parallel_settlers = true;
         self.base.parallel_settlers = true;
+    }
+
+    /// Enable the evaluator-only paid expansion treatment. It also routes the
+    /// adaptive Expansion plan through `advanced_production`; otherwise the
+    /// ordinary Cities governor would never consult the coupled scorer.
+    pub fn enable_coupled_expansion(&mut self) {
+        self.coupled_expansion = true;
+        self.expansion_dispatch = true;
+    }
+
+    /// Withhold the coupled expansion treatment, preserving the stock
+    /// production score and the ordinary adaptive dispatcher setting.
+    pub fn disable_coupled_expansion(&mut self) {
+        self.coupled_expansion = false;
     }
 
     /// Build a Settler at the host's population floor (see
@@ -4210,6 +4287,15 @@ impl AdvancedAi {
     /// their recorded ladders stay comparable.
     pub fn enable_war_patience(&mut self) {
         self.war_patience = true;
+    }
+
+    /// See [`Self::deny_while_targeted`].
+    pub fn enable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = true;
+    }
+
+    pub fn disable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = false;
     }
 
     /// Keep a fresh direct declaration out of the final campaign reserve.
@@ -4642,6 +4728,13 @@ impl AdvancedAi {
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
         self.enable_joint_tactics();
+        // ⚠ The live seat plays under an assigned lane (`--victory science`),
+        // and `victory_denial` stands down entirely for a targeted seat — so
+        // five of the twelve runs the seat was LEADING on 2026-08-16/17 ended
+        // at t229-245 on a rival's culture, technology or diplomatic victory
+        // with the whole counter apparatus gated off. Match point overrides
+        // the lane's focus; ordinary pressure still never does.
+        self.enable_deny_while_targeted();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -7655,11 +7748,21 @@ impl AdvancedAi {
     }
 
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        if !self.deny_leaders || self.active_victory_target(g).is_some() {
+        if !self.deny_leaders {
+            return None;
+        }
+        let targeted = self.active_victory_target(g).is_some();
+        if targeted && !self.deny_while_targeted {
             return None;
         }
         let culture_pressures = self.rival_culture_pressures(g);
-        self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
+        let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
+        // An assigned lane keeps its focus against ordinary pressure; a rival
+        // at match point ends the game for every lane alike.
+        if targeted && !self.urgent_victory_threat(g, denial.0) {
+            return None;
+        }
+        Some(denial)
     }
 
     /// A Conquest denial needs a destination the mirrored army can reach.
@@ -7983,10 +8086,15 @@ impl AdvancedAi {
         // repeating a whole-world tourism scan for every sort comparison.
         let active_victory_target = self.active_victory_target(g);
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let denial = if active_victory_target.is_some() {
+        let denial = if active_victory_target.is_some() && !self.deny_while_targeted {
             None
         } else {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
+                .filter(|(rival, _)| {
+                    // The same match-point bar as `victory_denial`: an
+                    // assigned lane yields only to a rival about to win.
+                    active_victory_target.is_none() || self.urgent_victory_threat(g, *rival)
+                })
         };
         let actionable_denial = denial.filter(|(rival, counter)| {
             self.conquest_denial_actionable(g, pid, *rival, *counter)
@@ -8425,6 +8533,104 @@ impl AdvancedAi {
             },
         ) / production;
         remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
+    }
+
+    /// Price the population point that a completed Settler consumes. The
+    /// engine applies that cost at completion, so the estimate uses the actual
+    /// post-population city yields and the city's food surplus to model the
+    /// recovery interval rather than charging a second production surrogate.
+    fn coupled_expansion_population_cost(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        if !g.settler_consumes_population(pid, cid) {
+            return 0.0;
+        }
+        let population = g.cities[&cid].pop;
+        if population < 2 {
+            return COUPLED_EXPANSION_POPULATION_VALUE * 4.0;
+        }
+        let before = self.yield_value(g.city_yields(cid), plan.strategy);
+        let mut after = g.speculative_clone();
+        after.cities.get_mut(&cid).unwrap().pop -= 1;
+        let after_value = self.yield_value(after.city_yields(cid), plan.strategy);
+        let lost_per_turn = (before - after_value).max(0.0);
+        let yields = g.city_yields(cid);
+        let surplus = (yields.food - 2.0 * population as f64).max(0.5);
+        let recovery_turns = (g.growth_cost((population - 1).max(1)) / surplus)
+            .min(g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64);
+        COUPLED_EXPANSION_POPULATION_VALUE + lost_per_turn * recovery_turns
+    }
+
+    /// Score one legal Settler as a paid, coupled build-settle-payback
+    /// investment. This is intentionally bounded and deterministic: it does
+    /// not clone a terminal game or grant a free city, but it does make every
+    /// material cost visible to the production decision.
+    #[allow(clippy::too_many_arguments)]
+    fn coupled_expansion_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        site: (Pos, f64),
+        build_turns: f64,
+    ) -> f64 {
+        let (site, site_value) = site;
+        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
+        let distance = g.wdist(g.cities[&cid].pos, site) as f64;
+        let travel_turns = (distance * COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE).ceil();
+        let settle_lag = g.standard_duration(SETTLE_LAG) as f64;
+        let delay = build_turns + travel_turns + settle_lag;
+        let payback_turns = remaining - delay;
+        if payback_turns <= g.standard_duration(SETTLE_PAYBACK) as f64 {
+            return -10_000.0;
+        }
+
+        let forecast =
+            self.settlement_growth_forecast_from_positions(g, pid, site, &g.wdisk(site, 2));
+        let horizon = g.standard_duration(COUPLED_EXPANSION_HORIZON).max(1) as f64;
+        let payoff_fraction = (payback_turns / horizon).clamp(0.0, 1.0);
+        // Keep the historical 920/site base as the benefit scale, but make
+        // the forecasted first four jobs contribute to that benefit instead
+        // of treating a legal plot as a free city oracle.
+        let site_quality = (920.0 + site_value * 4.0 + forecast.score.max(0.0) * 5.0).max(0.0);
+        let benefit = site_quality * payoff_fraction;
+
+        let settler_cost = g.item_remaining_cost_for_city(
+            pid,
+            cid,
+            &Item::Unit {
+                unit: "settler".into(),
+            },
+        );
+        let production_cost = settler_cost * COUPLED_EXPANSION_PRODUCTION_VALUE;
+        let population_cost = self.coupled_expansion_population_cost(g, pid, cid, plan);
+        let city_output = self.yield_value(g.city_yields(cid), plan.strategy).max(1.0);
+        let route_cost = travel_turns * city_output * 0.35;
+        let safety_cost = if self.settlement_safety {
+            let visible = self.battlefront_visibility(g, pid);
+            self.settlement_safety_penalty(g, pid, site, &visible) * 1.5
+        } else {
+            0.0
+        };
+        let city_count = g.player_city_ids(pid).len();
+        let escort_cost = if self.settlement_safety && counts.military <= city_count {
+            COUPLED_EXPANSION_ESCORT_VALUE
+        } else {
+            0.0
+        };
+        let net =
+            benefit - production_cost - population_cost - route_cost - safety_cost - escort_cost;
+        if net.is_finite() && net > 0.0 {
+            net
+        } else {
+            -10_000.0
+        }
     }
 
     /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
@@ -17914,9 +18120,16 @@ impl AdvancedAi {
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
-                    && site.is_some()
                 {
-                    (920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)) * self.settler_price
+                    if let Some(site) = site {
+                        if self.coupled_expansion {
+                            self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
+                        } else {
+                            (920.0 + site.1 * 4.0) * self.settler_price
+                        }
+                    } else {
+                        -10_000.0
+                    }
                 } else {
                     -10_000.0
                 }
@@ -33166,6 +33379,92 @@ mod tests {
     }
 
     #[test]
+    fn coupled_expansion_is_opt_in_and_reaches_the_expansion_dispatcher() {
+        let stock = AdvancedAi::new();
+        assert!(!stock.coupled_expansion);
+        assert!(!stock.expansion_dispatch);
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_coupled_expansion();
+        assert!(treated.coupled_expansion);
+        assert!(treated.expansion_dispatch);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 0,
+            rush: false,
+        };
+        assert!(!stock.adaptive_expansion_dispatches(&plan, None));
+        assert!(treated.adaptive_expansion_dispatches(&plan, None));
+    }
+
+    #[test]
+    fn coupled_expansion_charges_the_paid_sequence_and_closes_without_payback() {
+        let mut game = Game::new_full(1, 30, 18, 7_116, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the opening has a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: 0,
+            rush: false,
+        };
+        let treated = AdvancedAi::coupled_expansion();
+        let site = treated
+            .best_settle_site(&game, 0, game.cities[&city].pos, 11)
+            .expect("the shaped map has an in-reach site");
+        let counts = treated.counts(&game, 0);
+        let settler_item = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let build_turns = game.item_remaining_cost_for_city(0, city, &settler_item)
+            / game.city_yields(city).production.max(1.0);
+        let early =
+            treated.coupled_expansion_value(&game, 0, city, &plan, &counts, site, build_turns);
+        assert!(
+            early > -10_000.0,
+            "a healthy early site should remain an auditable paid candidate: {early}"
+        );
+        let forecast = treated.settlement_growth_forecast_from_positions(
+            &game,
+            0,
+            site.0,
+            &game.wdisk(site.0, 2),
+        );
+        let uncoupled_benefit = 920.0 + site.1 * 4.0 + forecast.score.max(0.0) * 5.0;
+        assert!(
+            early < uncoupled_benefit,
+            "the treatment must visibly charge costs (benefit={uncoupled_benefit}, net={early})"
+        );
+
+        game.turn = 195;
+        let late_counts = treated.counts(&game, 0);
+        let late_plan = treated.assess(&game, 0);
+        assert_eq!(
+            treated.production_value(&game, 0, city, &settler_item, &late_plan, &late_counts),
+            -10_000.0,
+            "a Settler that cannot found and repay before the game cap is rejected"
+        );
+    }
+
+    #[test]
     fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
         let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
         for pid in 0..2 {
@@ -34150,6 +34449,62 @@ mod tests {
         assert_eq!(blind.victory_denial(&game, 0), None);
         assert!(!blind.urgent_victory_threat(&game, 1));
         assert!(ai.urgent_victory_threat(&game, 1));
+    }
+
+    /// A seat playing under an assigned victory target has always stood its
+    /// whole denial apparatus down. Five of the twelve runs the live seat was
+    /// LEADING on 2026-08-16/17 ended at t229-245 on a rival's victory the
+    /// counter never engaged — that seat plays `--victory science`. With
+    /// `deny_while_targeted`, match point overrides the lane's focus, and
+    /// ordinary pressure still does not.
+    #[test]
+    fn match_point_overrides_an_assigned_lane_when_enabled() {
+        let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
+        for pid in 0..4 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.players[1].religion = Some("Rival Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = game.player_city_ids(owner)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Rival Faith".to_string(), 1_000.0);
+        }
+
+        let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "an assigned lane keeps its focus while the flag is off"
+        );
+        targeted.enable_deny_while_targeted();
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            Some((1, GrandStrategy::Conquest)),
+            "match point overrides the lane's focus"
+        );
+
+        // Ordinary pressure must not: below the match-point bar the assigned
+        // lane's focus stands, flag or no flag.
+        let city = game.player_city_ids(3)[0];
+        game.cities.get_mut(&city).unwrap().pressure.clear();
+        assert!(!targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "sub-match-point pressure never distracts an assigned lane"
+        );
     }
 
     /// The site score is silent about barbarians and about being out of

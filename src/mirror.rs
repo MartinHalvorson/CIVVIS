@@ -2288,6 +2288,65 @@ mod tests {
         assert_eq!(observed.domestic_tourists, None);
     }
 
+    /// The tourist counters the mirror records must outrank the engine's own
+    /// reconstruction — a live board has no culture history to derive them
+    /// from, so without the preference every rival's culture-victory progress
+    /// reads zero (the lane that stole four led runs on 2026-08-16/17).
+    #[test]
+    fn observed_tourist_counters_outrank_the_reconstruction() {
+        let mut game = crate::game::Game::new(2, 8, 8, 42, 250, 0);
+        let engine_foreign = game.foreign_tourists(1);
+        let engine_domestic = game.domestic_tourists(1);
+        {
+            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            observed.foreign_tourists = Some(41);
+            observed.domestic_tourists = Some(66);
+        }
+        assert_eq!(game.foreign_tourists(1), 41);
+        assert_eq!(game.domestic_tourists(1), 66);
+        // An entry with no counters falls back to the engine's arithmetic.
+        {
+            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            observed.foreign_tourists = None;
+            observed.domestic_tourists = None;
+        }
+        assert_eq!(game.foreign_tourists(1), engine_foreign);
+        assert_eq!(game.domestic_tourists(1), engine_domestic);
+    }
+
+    /// The seat's own two counters ride the state event and land on the
+    /// observed table's local entry, exactly as each rival's do.
+    #[test]
+    fn own_tourist_counters_reach_the_observed_table() {
+        let raw = r#"{"kind":"state", "turn":120,
+                      "foreign_tourists":9, "domestic_tourists":31}"#;
+        let state = state_from_json(raw).expect("the own-counter wire parses");
+        assert_eq!(state.foreign_tourists, 9.0);
+        assert_eq!(state.domestic_tourists, 31.0);
+        assert!(
+            state.schema_gaps.is_empty(),
+            "own tourist counters must be schema-recognized: {:?}",
+            state.schema_gaps
+        );
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let observed = rebuilt
+            .game
+            .observed_public_empire_stats
+            .get(&0)
+            .expect("the local seat has an observed entry");
+        assert_eq!(observed.foreign_tourists, Some(9));
+        assert_eq!(observed.domestic_tourists, Some(31));
+        assert_eq!(rebuilt.game.foreign_tourists(0), 9);
+        assert_eq!(rebuilt.game.domestic_tourists(0), 31);
+    }
+
     /// The host's victory checkboxes have crossed the wire in the seat event
     /// all along and were dropped: a live board always played the all-six
     /// default, so `victory_strategy_enabled` could authorise a lane the
@@ -9147,6 +9206,14 @@ pub struct StateSnapshot {
     /// `None` means unavailable rather than an authoritative zero.
     #[serde(default)]
     pub favor: Option<f64>,
+    /// Our own culture-victory counters, same accessors as each rival's
+    /// (`GetTouristsTo`/`GetStaycationers`): OUR staycationers are the bar
+    /// every rival's visiting tourists must clear. `-1` when the host could
+    /// not be asked; NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub foreign_tourists: f64,
+    #[serde(default = "unknown_metric")]
+    pub domestic_tourists: f64,
     #[serde(default = "unknown_strength")]
     pub military: f64,
     /// Era Score and the age it decides, from Firaxis's own `Game.GetEras()`.
@@ -10699,6 +10766,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         }
     }
 
+    #[rustfmt::skip]
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
         "science_projects", "boosted_techs", "boosted_civics",
@@ -10709,6 +10777,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "faith_sources", "science",
         "culture", "public_stats", "score", "dvp", "favor",
+        "foreign_tourists", "domestic_tourists",
         "military",
         "trade_capacity",
         "great_person_points",
@@ -13725,6 +13794,16 @@ fn apply_observed_host_metrics(
         game.observed_trade_capacity.insert(0, capacity);
     }
     apply_public_empire_stats(game, 0, &state.public_stats);
+    {
+        // Same per-snapshot honesty as the rival counters: unknown is None.
+        let count = |value: f64| {
+            (value.is_finite() && value >= 0.0 && value <= usize::MAX as f64)
+                .then(|| value.round() as usize)
+        };
+        let observed = game.observed_public_empire_stats.entry(0).or_default();
+        observed.foreign_tourists = count(state.foreign_tourists);
+        observed.domestic_tourists = count(state.domestic_tourists);
+    }
 
     apply_observed_city_economy(game, state, unmapped);
 

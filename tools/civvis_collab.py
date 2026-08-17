@@ -1607,9 +1607,14 @@ def bootstrap_command(args: argparse.Namespace) -> int:
     if failure:
         raise CommandError(str(failure))
     service_paths = install_freshness_service(root)
+    guard = install_memory_guard(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
     for path in service_paths:
         print(f"installed CIVVIS freshness service: {path}")
+    if guard is not None:
+        print(f"installed CIVVIS memory guard: {guard}")
+    else:
+        print("memory guard: macOS only, not installed on this platform")
     print_refresh_report(report)
     return 0
 
@@ -2161,6 +2166,102 @@ def windows_freshness_task_command(launcher: Path) -> str:
             "cannot install a windowless Windows freshness task: wscript.exe is missing"
         )
     return subprocess.list2cmdline((wscript, "//B", str(launcher)))
+
+
+#: The memory guard's launchd label and thresholds.
+#:
+#: ⚠⚠⚠ macOS ENFORCES NO MEMORY CEILING, AND THIS FLEET HAS PROVED IT. On
+#: 2026-08-10 two `civvis` benchmark processes reached a **206 GB and a 205 GB
+#: physical footprint each on a 128 GB machine**, and the kernel answered with a
+#: system-wide jetsam that terminated **14,818 processes**. Neither `ulimit -v`
+#: nor `ulimit -d` is honoured on macOS, so nothing in the operating system was
+#: ever going to stop it.
+#:
+#: The guard written that day lived in `~/.local/bin` on the one laptop that had
+#: been hurt, installed by hand, tracked by nothing. Every other machine in the
+#: fleet ran the same benchmarks with no ceiling at all. It ships here now for
+#: the same reason the push guard and the freshness service do: a protection
+#: that exists on one disk protects one disk.
+#:
+#: 32 GB hard on a 128 GB host is roughly a quarter of RAM — far above any
+#: legitimate run measured here, far below the point where the kernel starts
+#: killing things that were not asked. `--soft-gb` only matters once the system
+#: is already short, and the guard reads PHYSICAL FOOTPRINT rather than RSS
+#: because at the moment of that jetsam the offenders held 20 GB resident with
+#: 186 GB parked in the compressor: an RSS limit would never have fired.
+MEMGUARD_LABEL = "com.civvis.memguard"
+MEMGUARD_HARD_GB = "32"
+MEMGUARD_SOFT_GB = "16"
+MEMGUARD_PRESSURE_PCT = "12"
+
+
+def memguard_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "memguard.py"
+
+
+def macos_memguard_plist(guard: Path) -> bytes:
+    """launchd job for the memory guard. Every ten seconds, low-priority I/O."""
+    logs = Path.home() / "Library" / "Logs" / "memguard-agent.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in (
+            sys.executable,
+            str(guard),
+            "--hard-gb",
+            MEMGUARD_HARD_GB,
+            "--soft-gb",
+            MEMGUARD_SOFT_GB,
+            "--pressure-pct",
+            MEMGUARD_PRESSURE_PCT,
+        )
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{MEMGUARD_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>StartInterval</key>\n\t<integer>10</integer>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>LowPriorityIO</key>\n\t<true/>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def install_memory_guard(repo: Path) -> Optional[Path]:
+    """Install the memory guard as a launchd job. `None` where it does not apply.
+
+    macOS only, deliberately: the guard reads `vm_stat` and `ps` footprints,
+    which are Darwin-specific, and the incident it exists to prevent is a
+    Darwin jetsam. On other platforms this returns `None` rather than
+    pretending — a guard reported as installed when it is not is worse than an
+    honest absence.
+    """
+    guard = memguard_source(repo)
+    if not guard.is_file():
+        raise CommandError(f"versioned memory guard is missing: {guard}")
+    if sys.platform != "darwin":
+        return None
+    path = Path.home() / "Library" / "LaunchAgents" / f"{MEMGUARD_LABEL}.plist"
+    domain = f"gui/{os.getuid()}"
+    changed = write_managed_service(path, macos_memguard_plist(guard))
+    loaded = not run(
+        ("launchctl", "print", f"{domain}/{MEMGUARD_LABEL}"), check=False
+    ).returncode
+    if loaded and not changed:
+        return path
+    if loaded:
+        run(("launchctl", "bootout", f"{domain}/{MEMGUARD_LABEL}"), check=False)
+    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+    run(("launchctl", "kickstart", f"{domain}/{MEMGUARD_LABEL}"), check=False)
+    return path
 
 
 def install_freshness_service(repo: Path) -> List[Path]:

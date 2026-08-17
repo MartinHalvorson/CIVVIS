@@ -395,8 +395,9 @@ no tested replacement cleared the deployment gate.
    maximize another state-outcome correlate.
 3. **Cost-aware expansion search.** Expansion is the second replicated oracle
    ceiling, but seven decision treatments failed because the oracle removed
-   settler production and population costs. Search or value the full
-   build-settle-payback sequence instead of raising a city target again.
+   settler production and population costs. The evaluator-ready
+   `advanced_coupled_expansion` arm now values the full paid
+   build-settle-payback sequence; its disjoint outcome screen is still pending.
 4. **Policy-deck transfer confirmation.** The existing live deck, not the new
    influence terms, produced the clearest direction in the envoy decomposition.
    Its first 20-map matrix scored 53.8% (+26) at deployment with 52.1% terminal
@@ -455,10 +456,12 @@ that boundary rather than re-running the old stringly comparisons.
    counterfactual action corpus, reserve deployment as an untouched calibration
    set, and fall back to scripted play out of distribution. A state-value argmax
    is not an action-value policy.
-5. **Search the full expansion investment.** Model settler production,
+5. **Screen the full expansion investment.** The bounded
+   `advanced_coupled_expansion` treatment now models settler production,
    population, escort, travel, settlement, and payback together. The oracle
    ceiling is large, but seven city-target treatments failed because the oracle
-   removed those costs.
+   removed those costs; only a disjoint gameplay screen can decide whether the
+   paid policy earns promotion.
 6. **Price strategic search on deployment.** Compare the searching controller
    with a genome-matched sequential control and keep it out of the live league
    unless its measured gain justifies its roughly 6.4× turn cost.
@@ -510,10 +513,32 @@ for `advanced`, weighted/targeted Advanced variants, and the StrategicAi
 controllers through their shared constructor; the historical `legacy` control
 keeps the old score.
 
-This closes the local site-selection and transit-safety gap. The larger
-**full expansion investment** gap remains: production, population cost, escort
-availability, travel, founding, and city payback still need a coupled
-long-horizon search before expansion can claim a complete economic solution.
+This closes the local site-selection and transit-safety gap. The remaining
+economic question is now isolated behind the evaluator-only
+`advanced_coupled_expansion` arm: it charges production, population cost,
+escort availability, travel, founding lag, visible safety, and city payback
+before a Settler can win a queue. The arm is deliberately not in production and
+has no outcome claim until a disjoint screen resolves it.
+
+## 2026-08-17 coupled expansion is a paid evaluator treatment
+
+The previous expansion score treated a legal Settler as a large fixed prize and
+left the real trade implicit. `AdvancedAi::coupled_expansion` now routes the
+adaptive Expansion lane through strategic production and prices one legal
+Settler as a bounded investment. Its score uses the existing settlement
+forecast for the first four jobs, then subtracts the exact remaining Settler
+production, the population point and recovery interval, estimated travel time,
+escort availability, visible settlement safety, and the founding lag. A
+90-standard-turn payoff horizon closes late candidates that cannot earn back
+the investment.
+
+The implementation does not clone terminal games or grant a free city; the
+closed `expansion_investment` experiment remains the higher-cost terminal
+counterfactual validation harness. `advanced_coupled_expansion` is registered
+as a typed evaluator arm and is **off in production**. The focused tests pin the
+dispatcher seam, a legal early paid candidate, and rejection when the remaining
+turns cannot cover founding and payback. A replicated gameplay result is still
+required before promotion.
 
 ## 2026-08-10 the live-bridge repair bundle does not transfer to native play
 

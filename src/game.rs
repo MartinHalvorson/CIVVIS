@@ -38348,7 +38348,7 @@ impl Game {
                 .strategic_resources
                 .insert(Name::new(&resource), stock - amount);
         }
-        if unit == "settler" && self.governor_effect(pid, cid, "settler_no_population") <= 0.0 {
+        if unit == "settler" && self.settler_consumes_population(pid, cid) {
             self.cities.get_mut(&cid).unwrap().pop -= 1;
         }
         bump(&mut self.players[pid], &format!("trained:{unit}"));
@@ -43183,6 +43183,16 @@ impl Game {
             .sum()
     }
 
+    /// Whether completing a Settler in this city consumes one population.
+    ///
+    /// Production and purchase completion must use the same governor-aware
+    /// rule, and AI estimators need that contract when pricing a Settler as a
+    /// coupled investment. Keeping the decision here prevents those paths
+    /// from drifting apart as governor promotions evolve.
+    pub fn settler_consumes_population(&self, pid: usize, cid: u32) -> bool {
+        self.governor_effect(pid, cid, "settler_no_population") <= 0.0
+    }
+
     fn sync_governor_cities(&mut self, pid: usize) {
         let mut cities: Vec<u32> = self.players[pid]
             .governor_roster
@@ -45320,6 +45330,14 @@ impl Game {
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
+        // See `foreign_tourists`: the host's own counter wins when observed.
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.domestic_tourists)
+        {
+            return observed as i64;
+        }
         let generated = (self.players[pid].culture_lifetime / 100.0).floor() as i64;
         let visiting_elsewhere = self
             .players
@@ -45484,6 +45502,18 @@ impl Game {
     }
 
     pub fn foreign_tourists(&self, pid: usize) -> i64 {
+        // A live mirror cannot reconstruct tourism from culture history, but
+        // the host's World Rankings screen publishes both tourist counters
+        // for every major and the mirror records them. Prefer the observation
+        // exactly as `score` prefers `observed_score`; a native game has no
+        // observed entries and keeps its own arithmetic.
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.foreign_tourists)
+        {
+            return observed as i64;
+        }
         if self.starting_major_count() == 0 || !self.players[pid].alive {
             return 0;
         }
@@ -48133,9 +48163,7 @@ impl Game {
                     self.units.get_mut(&placed).unwrap().charges +=
                         self.governor_effect(pid, cid, "builder_charges") as i32;
                 }
-                if unit == "settler"
-                    && self.governor_effect(pid, cid, "settler_no_population") <= 0.0
-                {
+                if unit == "settler" && self.settler_consumes_population(pid, cid) {
                     self.cities.get_mut(&cid).unwrap().pop -= 1;
                 }
                 bump(&mut self.players[pid], &format!("trained:{unit}"));
