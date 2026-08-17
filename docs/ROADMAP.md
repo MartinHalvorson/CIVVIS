@@ -4,6 +4,10 @@ Where the project actually is, and what it is doing next. History below is
 kept for orientation; the current-state section is the part to trust, and
 `docs/AI_GAPS.md` is the always-current assessment of the AI specifically.
 
+The current evaluation inventory and live-bridge counts are generated in
+[`docs/EVAL_STATUS.md`](EVAL_STATUS.md); do not duplicate those numbers in
+prose. Refresh it with `python3 tools/eval_manifest.py --write`.
+
 ## Where the project is (2026-08-17)
 
 Everything the old roadmap called planned has shipped and then some:
@@ -30,9 +34,9 @@ Everything the old roadmap called planned has shipped and then some:
   was claimed on 2026-08-16** by run `civvis-20260816T054344Z` — a victory
   event naming our own team at turn 251 of a configured 250-turn game, score
   1021. A second Settler win followed the same day (`civvis-20260816T223457Z`,
-  1121 against a best rival's 1031). Winning is not yet reliable: of the 119
-  attempts since 2026-08-10, 70 reached the turn cap and two won. This is the
-  project's front line.
+  1121 against a best rival's 1031). Winning is not yet reliable; the current
+  attempt, terminal, and win counts are generated in `docs/EVAL_STATUS.md`,
+  rather than repeated here. This is the project's front line.
 
 ## Active objectives (ranked 2026-08-17)
 

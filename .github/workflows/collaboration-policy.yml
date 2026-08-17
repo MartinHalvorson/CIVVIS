@@ -42,6 +42,8 @@ jobs:
       # register one is no longer possible.
       - name: Test the repository tooling
         run: python3 -m unittest discover -s tools -p 'test_*.py'
+      - name: Check generated evaluation status
+        run: python3 tools/eval_manifest.py --check
       - name: Validate branch, ownership, overlap, and commits
         if: github.event_name == 'pull_request'
         env:
