@@ -19,10 +19,13 @@ different change than the one that fixes the supervisor:
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -37,6 +40,7 @@ HARDCODED_HOME = re.compile(r"/Users/(?!\$)[A-Za-z][A-Za-z0-9._-]*/")
 # only works on its author's machine is a service that silently does nothing.
 MANAGED = {
     "civvis-game-supervisor.sh",
+    "civvis-ladder-terminal-launcher.sh",
     "ladder_watchdog.py",
 }
 
@@ -135,11 +139,8 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
     """
 
     def _plists(self):
-        repo = Path(__file__).resolve().parent.parent
         return {
             "memguard": civvis_collab.macos_memguard_plist(Path("/x/memguard.py")),
-            "ladder": civvis_collab.macos_ladder_plist(
-                Path("/x/civvis-game-supervisor.sh"), repo),
             "ladder-watchdog": civvis_collab.macos_ladder_watchdog_plist(
                 Path("/x/ladder_watchdog.py")),
         }
@@ -160,22 +161,119 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
                                        b"<integer>11</integer>") + b"\n"
                 civvis_collab.write_managed_service(path, changed)
 
-    def test_the_supervisor_job_keeps_itself_alive(self):
-        repo = Path(__file__).resolve().parent.parent
-        plist = civvis_collab.macos_ladder_plist(Path("/x/sup.sh"), repo).decode()
-        self.assertIn("<key>KeepAlive</key>", plist)
-        self.assertIn("<key>ThrottleInterval</key>", plist,
-                      "a supervisor that dies instantly must not spin")
+    def test_no_launch_agent_runs_the_supervisor_directly(self):
+        """A LaunchAgent cannot install the control mod, so it cannot play.
 
-    def test_the_watchdog_is_a_separate_job(self):
-        """It has to outlive the thing it watches, so it cannot live inside it."""
-        self.assertNotEqual(civvis_collab.LADDER_LABEL,
-                            civvis_collab.LADDER_WATCHDOG_LABEL)
+        Installing the mod writes inside `Civ6.app`; macOS attributes that
+        permission to the responsible process, and a LaunchAgent's children
+        inherit launchd's empty grant set. #1888 shipped a KeepAlive job that
+        ran `civvis-game-supervisor.sh` directly and every attempt under it died
+        at "cannot install .../DLC/CivvisControl" having played no turns, while
+        launchd faithfully restarted a loop that could never work.
+        """
+        self.assertFalse(hasattr(civvis_collab, "macos_ladder_plist"),
+                         "the KeepAlive supervisor job cannot work on macOS")
+        for name, data in self._plists().items():
+            plist = data.decode()
+            self.assertNotIn("civvis-game-supervisor.sh", plist,
+                             f"the {name} job runs the loop from launchd, which "
+                             f"cannot install the mod; start it through Terminal")
+
+    def test_the_keeper_starts_the_loop_through_terminal(self):
+        sys.path.insert(0, str(OPS))
+        import ladder_watchdog  # noqa: PLC0415
+
+        source = (OPS / "ladder_watchdog.py").read_text()
+        self.assertIn('"open", "-a", "Terminal"', source,
+                      "Terminal is the only context here that holds the grant")
+        self.assertTrue(hasattr(ladder_watchdog, "start_supervisor"))
+
+    def test_the_keeper_runs_on_an_interval_not_keepalive(self):
         watchdog = civvis_collab.macos_ladder_watchdog_plist(
             Path("/x/w.py")).decode()
         self.assertIn("<key>StartInterval</key>", watchdog)
-        self.assertNotIn("<key>KeepAlive</key>", watchdog)
+        self.assertNotIn("<key>KeepAlive</key>", watchdog,
+                         "`open` returns immediately; KeepAlive would spin")
+
+    def test_the_broken_keepalive_job_is_retired_on_install(self):
+        """Hosts that took #1888 must not keep restarting a loop that cannot play."""
+        source = civvis_collab.__file__
+        text = Path(source).read_text()
+        self.assertIn("def retire_ladder_keepalive_job", text)
+        self.assertIn("retire_ladder_keepalive_job()", text.split(
+            "def retire_ladder_keepalive_job")[1],
+            "install must actually call it")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# The launcher is zsh, and zsh is what macOS ships. CI runs Linux images that
+# have no /bin/zsh, so these skip there rather than assert about a shell the
+# target host is guaranteed to have and the runner is guaranteed not to.
+HAS_ZSH = Path("/bin/zsh").exists()
+
+
+@unittest.skipUnless(HAS_ZSH, "the launcher is zsh; this runner has no /bin/zsh")
+class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
+    """A Terminal window is not a log.
+
+    Opened directly, the supervisor's shell output lives only in a GUI window
+    that closes when the process ends. On 2026-08-17T21:13Z the loop exited
+    cleanly after one failed attempt and left no evidence on disk about why,
+    because the only copy of its stderr was painted into a window that was gone
+    before anyone looked.
+    """
+
+    LAUNCHER = OPS / "civvis-ladder-terminal-launcher.sh"
+
+    def test_the_keeper_opens_the_launcher_not_the_loop(self):
+        sys.path.insert(0, str(OPS))
+        import ladder_watchdog  # noqa: PLC0415
+
+        self.assertEqual(ladder_watchdog.SUPERVISOR_SCRIPT.name,
+                         "civvis-ladder-terminal-launcher.sh")
+
+    def _run(self, body: str, log: Path) -> subprocess.CompletedProcess:
+        """Run the real launcher against a stub supervisor."""
+        with TemporaryDirectory() as raw:
+            stub = Path(raw) / "stub.sh"
+            stub.write_text("#!/bin/zsh\n" + body)
+            stub.chmod(0o755)
+            return subprocess.run(
+                ["/bin/zsh", str(self.LAUNCHER)],
+                env={**os.environ, "CIVVIS_LADDER_LOG": str(log),
+                     "CIVVIS_LADDER_SUPERVISOR": str(stub)},
+                capture_output=True, text=True, timeout=60)
+
+    def test_the_loops_stdout_and_stderr_land_in_the_file(self):
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            self._run("print -r -- 'on stdout'\nprint -r -- 'on stderr' >&2\n", log)
+            text = log.read_text()
+            self.assertIn("on stdout", text)
+            self.assertIn("on stderr", text,
+                          "stderr is the half that explains an exit")
+
+    def test_the_exit_status_is_a_line_not_the_absence_of_one(self):
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            done = self._run("exit 42\n", log)
+            self.assertIn("supervisor exited with status 42", log.read_text())
+            self.assertEqual(done.returncode, 42,
+                             "the launcher must not swallow the status either")
+
+    def test_a_supervisor_killed_mid_run_still_records_its_exit(self):
+        """The 2026-08-17T21:20Z failure: `{ } | tee` loses the last line.
+
+        `tee` dies with the rest of the pipeline, and the last thing written is
+        exactly the thing worth keeping.
+        """
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            self._run("kill -TERM $$\n", log)
+            self.assertIn("supervisor exited with status", log.read_text())
+
+    def test_the_launcher_derives_its_paths(self):
+        self.assertEqual(hardcoded_homes(self.LAUNCHER), [])
