@@ -3,11 +3,17 @@
 What the controller in `tools/civ6_control` has actually beaten, and when.
 A rung is claimed only by a victory event naming the controller's own team,
 in a game whose settings marker proves it was the game the run configured.
-`tools/civ6_ladder.py` writes this file; do not edit it by hand.
+`tools/civ6_ladder.py` writes this file; do not edit it by hand — a
+test regenerates it from `docs/civ6_ladder.json` and fails if they differ.
+
+`victory` is Civilization VI's own victory identifier as the
+`TeamVictory` event reported it, kept raw on purpose: nothing in this
+repository maps those indices to names, and a guessed name is how an
+unfireable type literal hides (see `.github/workflows/tests.yml`).
 
 | rung | difficulty | beaten (UTC) | victory | turns | run |
 |---|---|---|---|---|---|
-| 1 | Settler | — | | | |
+| 1 | Settler | 2026-08-16T06:49:58Z | 0 | 250 | `civvis-20260816T054344Z` |
 | 2 | Chieftain | — | | | |
 | 3 | Warlord | — | | | |
 | 4 | Prince | — | | | |
@@ -16,49 +22,49 @@ in a game whose settings marker proves it was the game the run configured.
 | 7 | Immortal | — | | | |
 | 8 | Deity | — | | | |
 
-Attempts recorded: 255.
+Attempts recorded: 307.
 
 ## Every attempt
 
 | run | difficulty | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|
-| `civvis-20260812T005633Z` | Settler | yes | stopped | 117 | 148 | 2026-08-12T01:19:23Z |
-| `civvis-20260812T012411Z` | Settler | yes | stopped | 250 | 196 | 2026-08-12T02:08:58Z |
-| `civvis-20260813T030225Z` | Settler | yes | stopped | 250 | 581 | 2026-08-13T03:42:15Z |
-| `civvis-20260813T034253Z` | Settler | yes | stopped | 250 | 277 | 2026-08-13T04:26:29Z |
-| `civvis-20260813T042708Z` | Settler | yes | stopped | 250 | 372 | 2026-08-13T05:10:05Z |
-| `civvis-20260813T051044Z` | Settler | yes | stopped | 250 | 354 | 2026-08-13T05:55:33Z |
-| `civvis-20260813T055613Z` | Settler | yes | stopped | 250 | 508 | 2026-08-13T06:34:04Z |
-| `civvis-20260813T063444Z` | Settler | yes | stopped | 250 | 347 | 2026-08-13T07:19:37Z |
-| `civvis-20260813T072017Z` | Settler | yes | stopped | 250 | 268 | 2026-08-13T08:01:17Z |
-| `civvis-20260813T080157Z` | Settler | yes | stopped | 244 | 275 | 2026-08-13T08:46:19Z |
-| `civvis-20260813T084659Z` | Settler | yes | stopped | 250 | 317 | 2026-08-13T09:32:24Z |
-| `civvis-20260813T093304Z` | Settler | yes | stopped | 222 | 253 | 2026-08-13T10:11:28Z |
-| `civvis-20260813T101211Z` | Settler | yes | stopped | 243 | 426 | 2026-08-13T10:50:00Z |
-| `civvis-20260813T105041Z` | Settler | yes | stopped | 250 | 286 | 2026-08-13T11:36:12Z |
-| `civvis-20260813T113653Z` | Settler | yes | stopped | 250 | 442 | 2026-08-13T12:16:46Z |
-| `civvis-20260813T121725Z` | Settler | yes | stopped | 250 | 412 | 2026-08-13T13:01:12Z |
-| `civvis-20260813T130152Z` | Settler | yes | game exited | -1 | -1 | 2026-08-13T13:07:55Z |
-| `civvis-20260813T134859Z` | Settler | yes | stopped | 250 | 382 | 2026-08-13T14:41:14Z |
-| `civvis-20260814T215409Z` | Settler | yes | game exited | 186 | 387 | 2026-08-14T22:26:38Z |
-| `civvis-20260814T223051Z` | Settler | yes | stopped | 250 | 271 | 2026-08-14T23:09:32Z |
-| `civvis-20260814T231316Z` | Settler | yes | stopped | 250 | 322 | 2026-08-14T23:55:50Z |
-| `civvis-20260814T235931Z` | Settler | yes | stopped | 242 | 202 | 2026-08-15T00:36:05Z |
-| `civvis-20260815T003946Z` | Settler | yes | stopped | 250 | 515 | 2026-08-15T01:19:32Z |
-| `civvis-20260815T012010Z` | Settler | yes | stopped | 250 | 455 | 2026-08-15T01:59:46Z |
-| `civvis-20260815T020330Z` | Settler | yes | stopped | 250 | 476 | 2026-08-15T02:41:35Z |
-| `civvis-20260815T024518Z` | Settler | yes | stopped | 181 | 325 | 2026-08-15T03:33:59Z |
-| `civvis-20260815T033823Z` | Settler | yes | stopped | 250 | 224 | 2026-08-15T04:17:04Z |
-| `civvis-20260815T042130Z` | Settler | yes | stopped | 218 | 296 | 2026-08-15T04:58:08Z |
-| `civvis-20260815T050204Z` | Settler | yes | stopped | 250 | 297 | 2026-08-15T05:42:30Z |
-| `civvis-20260815T054625Z` | Settler | yes | stopped | 250 | 416 | 2026-08-15T06:43:57Z |
-| `civvis-20260815T064825Z` | Settler | yes | stopped | 238 | 364 | 2026-08-15T07:27:10Z |
-| `civvis-20260815T073123Z` | Settler | yes | stopped | 250 | 441 | 2026-08-15T08:11:18Z |
-| `civvis-20260815T081505Z` | Settler | yes | stopped | 242 | 305 | 2026-08-15T08:49:51Z |
-| `civvis-20260815T085340Z` | Settler | yes | stopped | 250 | 343 | 2026-08-15T09:35:40Z |
-| `civvis-20260815T093924Z` | Settler | yes | stopped | 250 | 413 | 2026-08-15T10:21:01Z |
-| `civvis-20260815T102541Z` | Settler | yes | stopped | 241 | 481 | 2026-08-15T11:03:58Z |
-| `civvis-20260815T110747Z` | Settler | yes | stopped | 250 | 457 | 2026-08-15T11:47:07Z |
-| `civvis-20260815T115045Z` | Settler | yes | stopped | 216 | 435 | 2026-08-15T12:26:58Z |
-| `civvis-20260815T123853Z` | Settler | yes | stopped | 250 | 574 | 2026-08-15T13:43:47Z |
-| `civvis-20260815T134733Z` | Settler | yes | stopped | 234 | 468 | 2026-08-15T14:24:42Z |
+| `civvis-20260814T231425Z` | Settler | yes | stopped | 249 | 349 | 2026-08-14T23:57:53Z |
+| `civvis-20260815T000131Z` | Settler | yes | stopped | 250 | 430 | 2026-08-15T00:44:04Z |
+| `civvis-20260815T004758Z` | Settler | yes | stopped | 250 | 551 | 2026-08-15T01:28:07Z |
+| `civvis-20260815T012815Z` | Settler | yes | stopped | 242 | 556 | 2026-08-15T02:03:48Z |
+| `civvis-20260815T024635Z` | Settler | yes | stopped | 242 | 348 | 2026-08-15T03:26:18Z |
+| `civvis-20260815T033005Z` | Settler | yes | stopped | 250 | 461 | 2026-08-15T04:24:46Z |
+| `civvis-20260815T042826Z` | Settler | yes | stopped | 250 | 394 | 2026-08-15T05:13:19Z |
+| `civvis-20260815T051714Z` | Settler | yes | stopped | 242 | 442 | 2026-08-15T05:57:44Z |
+| `civvis-20260815T060130Z` | Settler | yes | stopped | 250 | 290 | 2026-08-15T06:45:08Z |
+| `civvis-20260815T064852Z` | Settler | yes | stopped | 250 | 407 | 2026-08-15T07:32:46Z |
+| `civvis-20260815T073627Z` | Settler | yes | stopped | 250 | 506 | 2026-08-15T08:20:27Z |
+| `civvis-20260815T082408Z` | Settler | yes | stopped | 250 | 427 | 2026-08-15T09:06:25Z |
+| `civvis-20260815T103152Z` | Settler | yes | stopped | 250 | 446 | 2026-08-15T11:18:58Z |
+| `civvis-20260815T112230Z` | Settler | yes | stopped | 222 | 388 | 2026-08-15T12:00:36Z |
+| `civvis-20260815T152011Z` | Settler | yes | stopped | 250 | 565 | 2026-08-15T15:59:51Z |
+| `civvis-20260815T160346Z` | Settler | yes | stopped | 233 | 272 | 2026-08-15T16:45:20Z |
+| `civvis-20260815T164852Z` | Settler | yes | stopped | 250 | 651 | 2026-08-15T17:32:38Z |
+| `civvis-20260815T173621Z` | Settler | yes | stopped | 250 | 547 | 2026-08-15T18:20:20Z |
+| `civvis-20260815T182350Z` | Settler | yes | stopped | 250 | 498 | 2026-08-15T19:05:26Z |
+| `civvis-20260815T190904Z` | Settler | yes | stopped | 241 | 809 | 2026-08-15T19:55:43Z |
+| `civvis-20260815T195951Z` | Settler | yes | stopped | 102 | 153 | 2026-08-15T20:22:21Z |
+| `civvis-20260815T202611Z` | Settler | yes | stopped | 219 | 326 | 2026-08-15T21:04:53Z |
+| `civvis-20260815T210845Z` | Settler | yes | stopped | 225 | 313 | 2026-08-15T22:04:16Z |
+| `civvis-20260815T220819Z` | Settler | yes | stopped | 224 | 775 | 2026-08-15T22:56:29Z |
+| `civvis-20260815T230003Z` | Settler | yes | game exited | 95 | 219 | 2026-08-15T23:18:28Z |
+| `civvis-20260815T233405Z` | Settler | yes | stopped | 250 | 637 | 2026-08-16T00:26:14Z |
+| `civvis-20260816T003229Z` | Settler | yes | stopped | 204 | 639 | 2026-08-16T01:10:38Z |
+| `civvis-20260816T011314Z` | Settler | yes | stopped | 250 | 737 | 2026-08-16T02:10:37Z |
+| `civvis-20260816T021044Z` | Settler | yes | stopped | 242 | 531 | 2026-08-16T03:01:42Z |
+| `civvis-20260816T030249Z` | Settler | yes | stopped | 250 | 940 | 2026-08-16T04:05:35Z |
+| `civvis-20260816T040537Z` | Settler | yes | stopped | 222 | 270 | 2026-08-16T04:53:15Z |
+| `civvis-20260816T045316Z` | Settler | yes | stopped | 233 | 655 | 2026-08-16T05:42:30Z |
+| `civvis-20260816T054344Z` | Settler | yes | win | 250 | 1021 | 2026-08-16T06:49:58Z |
+| `civvis-20260816T075807Z` | Settler | yes | stopped | 250 | 550 | 2026-08-16T08:42:04Z |
+| `civvis-20260816T084206Z` | Settler | yes | stopped | 250 | 486 | 2026-08-16T09:29:10Z |
+| `civvis-20260816T093036Z` | Settler | yes | stopped | 250 | 868 | 2026-08-16T10:15:20Z |
+| `civvis-20260816T101521Z` | Settler | yes | stopped | 250 | 786 | 2026-08-16T11:05:53Z |
+| `civvis-20260816T110555Z` | Settler | yes | stopped | 250 | 619 | 2026-08-16T11:50:26Z |
+| `civvis-20260816T123936Z` | Settler | yes | stopped | 239 | 828 | 2026-08-16T13:22:46Z |
+| `civvis-20260816T132247Z` | Settler | yes | stopped | 250 | 696 | 2026-08-16T14:28:01Z |

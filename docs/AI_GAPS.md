@@ -50,9 +50,12 @@ Two tools reach the real Civilization VI executable, but neither runs the Rust
 agent unchanged. The grounding mod imports only the economic subset of a league
 genome and leaves tactics to Firaxis' AI. The computer-control mod is a separate
 Lua heuristic controller that issues its own orders. The first has two
-explicitly anecdotal 60-turn strategy-transfer datapoints; the second has no
-completed ladder attempt. They establish integration paths, not external
-strength.
+explicitly anecdotal 60-turn strategy-transfer datapoints; the second has
+**claimed the Settler rung twice on 2026-08-16** out of 119 attempts since
+2026-08-10 (`docs/CIV6_LADDER.md`). That is the project's first external
+result and the smallest one available — Settler is the rung where Firaxis'
+AI takes no bonuses. It establishes that the integration path can finish a
+game in front, not that the controller is strong.
 
 ## Where the AI is used well
 
@@ -319,8 +322,16 @@ evaluator-only control and production stays sequential.
 
 League Glicko and tournament Elo compare agents inside CIVVIS. Difficulty
 handicaps test how the same internal controller responds to bonuses; they do not
-calibrate it against a human or Firaxis' AI. The separate Civilization VI Lua
-controller has no recorded completed ladder attempt in `CIV6_LADDER.md`.
+calibrate it against a human or Firaxis' AI.
+
+The first external rung now exists, and it is small. The separate Civilization
+VI Lua controller **beat Settler on 2026-08-16** — `CIV6_LADDER.md` rung 1,
+run `civvis-20260816T054344Z`, a victory event naming our own team at turn 251
+of a configured 250-turn game — and won again the same day. That is a real
+external datapoint and it is the weakest rung of eight, on the difficulty where
+Firaxis' AI receives no bonuses at all. Two wins in the 119 attempts since
+2026-08-10 is not yet a capability, and Settler says nothing about Prince. The
+external ruler now reads one notch above zero; it is still not calibrated.
 
 The fixed-profile, fixed-anchor tournament ledger now gives internal versions a
 replayable longitudinal baseline: compare the order-independent direct Elo and
