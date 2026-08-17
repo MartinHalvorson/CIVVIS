@@ -6057,6 +6057,17 @@ pub struct GameOptions {
     /// to whoever banked the most. Clamped to the number of enabled victory
     /// conditions.
     pub required_victory_types: usize,
+    /// Which victory conditions this world plays with, the lobby's own set of
+    /// checkboxes.
+    ///
+    /// ⚠⚠ THIS FIELD DID NOT EXIST AND `Game::new_with` HARDCODED THE DEFAULT,
+    /// so `--victories` reached exactly one command. `main.rs` parses and
+    /// validates the flag — a bad name is `exit(2)` — and then only the `play`
+    /// server's setup carried it through; `simulate`, `soak`, `odds-audit`,
+    /// `benchmark`, `rollouts` and `selfplay` all played with all six on
+    /// whatever was asked for. A run refused for a typo and then silently given
+    /// the wrong game is the expensive shape of that mistake.
+    pub victory_conditions: VictoryConditions,
     /// What a Tactics arena grants its two sides. Ignored on a world, which
     /// earns its yields rather than being handed them.
     pub tactics: TacticsRules,
@@ -6097,6 +6108,7 @@ impl GameOptions {
             turn_structure: TurnStructure::default(),
             mercy_rule: None,
             required_victory_types: 1,
+            victory_conditions: VictoryConditions::default(),
             tactics: TacticsRules::default(),
         }
     }
@@ -7817,6 +7829,7 @@ impl Game {
             turn_structure,
             mercy_rule,
             required_victory_types,
+            victory_conditions,
             tactics,
         } = options;
         // Only an arena is handed an economy, and only a sane one. A scenario
@@ -7958,7 +7971,7 @@ impl Game {
             winner: None,
             victory_type: None,
             decided: None,
-            victory_conditions: VictoryConditions::default(),
+            victory_conditions,
             mercy_rule,
             mercy_lanes: Vec::new(),
             required_victory_types,
