@@ -139,6 +139,32 @@ class ModelTests(unittest.TestCase):
             with self.assertRaisesRegex(EvaluationError, "does not match"):
                 LinearModel.load(path)
 
+    def test_action_policy_uses_declared_threshold_and_full_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "action-policy.json"
+            weights = [0.0] * RAW_WIDTH
+            weights[34 + 85 + 13] = 1.0
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema": "civvis-action-policy-v1",
+                        "feature_width": RAW_WIDTH,
+                        "keep": "all",
+                        "interactions": "none",
+                        "weights": weights,
+                        "min_probability": 0.70,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            loaded = LinearModel.load(path)
+            self.assertAlmostEqual(loaded.override_probability, 0.70)
+            dataset = parse_dataset(io.StringIO(csv_text()), "policy.csv")
+            report = evaluate(dataset, loaded, min_margin=None)
+            self.assertEqual(report.overrides, 1)
+            with self.assertRaisesRegex(EvaluationError, "differs"):
+                evaluate(dataset, loaded, min_margin=0.1)
+
 
 class MetricTests(unittest.TestCase):
     def test_fixed_margin_abstains_and_reports_game_macro_metrics(self):
