@@ -9290,10 +9290,16 @@ mod project_runtime_tests {
             project: crate::name!("campus_research_grants"),
         };
         assert!(game.can_produce(0, city, &project));
-        game.cities.get_mut(&city).unwrap().queue = vec![project.clone()];
         let base = game.city_yields(city);
+        game.cities.get_mut(&city).unwrap().queue = vec![project.clone()];
+        // The conversion is a city yield (the host lists "+N from Campus
+        // Research Grants" in the city's own ledger), so `city_yields` carries
+        // it while the project runs, and turn processing pays exactly that.
+        let running = game.city_yields(city);
+        assert!((running.science - base.science - 0.15 * base.production).abs() < 1e-9,
+            "15% of the Production rate as Science: {} -> {}", base.science, running.science);
         let observed = game.process_city(0, city);
-        assert!((observed.science - base.science - 0.15 * base.production).abs() < 1e-9);
+        assert!((observed.science - running.science).abs() < 1e-9);
 
         game.cities.get_mut(&city).unwrap().production = 0.0;
         game.map.tiles.get_mut(&positions[0]).unwrap().pillaged = true;
@@ -26390,6 +26396,17 @@ impl Game {
                 *earn.entry(kind.to_string()).or_insert(0.0) += amount;
             }
         }
+        // Exodus of the Evangelists' Golden Age half:
+        // COMMEMORATION_RELIGIOUS_GA_GREAT_PROPHET_POINTS, +4 Great Prophet
+        // points per turn at the player level. Live Rome (run
+        // civvis-20260816T223457Z, t66) earned 8.04 Prophet points a turn
+        // from a Holy Site, Shrine and Temple under Classical Republic —
+        // (3 + 4) × 1.15 — where the model made 3.45; and with the Prophet
+        // class exhausted the four became "+8 from excess Great Person
+        // points" of Faith the model was short by.
+        if self.dedication_active(pid, "exodus_of_the_evangelists") {
+            *earn.entry("prophet".to_string()).or_insert(0.0) += 4.0;
+        }
         let divine_spark = self.pantheon_effect(pid, "district_gpp");
         if divine_spark > 0.0 {
             for c in self.cities.values().filter(|c| c.owner == pid) {
@@ -27874,10 +27891,17 @@ impl Game {
 
     fn envoy_yields(&self, pid: usize, city: &City) -> Yields {
         let mut yields = Yields::default();
+        // A city-state at war with the seat suspends its type bonuses for the
+        // war's length: Ostia's "+2 from Consulate" Culture (Caguana, three
+        // Envoys) went to nothing on the turn Caguana's new Suzerain brought it
+        // into a war against us (run civvis-20260816T223457Z t90) and came
+        // back the turn peace was made (t98); Rome's capital point from the
+        // same city-state went and returned with it.
         for state in self
             .players
             .iter()
             .filter(|state| state.is_minor && !state.is_barbarian && state.alive)
+            .filter(|state| !self.is_at_war(pid, state.id))
         {
             yields.add(self.envoy_type_yields_for_count(
                 city,
@@ -41527,8 +41551,35 @@ impl Game {
         // The one application. A sum below -100 (Unrest on top of a Dark
         // Age card) pays nothing rather than a negative yield.
         let apply = |value: f64, percent: f64| value * (1.0 + percent / 100.0).max(0.0);
-        ys.food = apply(ys.food, pct.food);
         ys.production = apply(ys.production, pct.production);
+        // A running district project converts a share of the city's
+        // PRODUCTION RATE into its yield every turn — Firaxis
+        // `Project_YieldConversions.PercentOfProductionRate` (Commercial Hub
+        // Investment 30% Gold; Campus/Theater/Holy Site 15%; Encampment and
+        // Harbor 15% Gold) — and the host's own ledger files it as a base
+        // line ("+7.7 from Commercial Hub Investment" on 26 Production, Rome,
+        // run civvis-20260816T223457Z t112) that the Amenity band then scales
+        // with the rest. It used to be paid only at turn processing, so the
+        // city's yield read short of the host for every project turn.
+        if let Some(Item::Project { project }) = city.queue.first() {
+            if let Some(spec) = self.rules.projects.get(project) {
+                if self.project_has_active_district(city, spec) {
+                    for (kind, percent) in &spec.ongoing_yields {
+                        let amount = ys.production * percent / 100.0;
+                        match kind.as_str() {
+                            "science" => ys.science += amount,
+                            "culture" => ys.culture += amount,
+                            "gold" => ys.gold += amount,
+                            "faith" => ys.faith += amount,
+                            "food" => ys.food += amount,
+                            "production" => ys.production += amount,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        ys.food = apply(ys.food, pct.food);
         ys.gold = apply(ys.gold, pct.gold);
         ys.science = apply(ys.science, pct.science);
         ys.culture = apply(ys.culture, pct.culture);
@@ -58877,29 +58928,9 @@ impl Game {
             let city = &self.cities[&cid];
             self.item_prod_mult(pid, cid, city.queue.first())
         };
-        let active_project = self.cities[&cid].queue.first().and_then(|item| {
-            let Item::Project { project } = item else {
-                return None;
-            };
-            let spec = self.rules.projects.get(project)?;
-            self.project_has_active_district(&self.cities[&cid], spec)
-                .then_some(spec)
-        });
-        if let Some(project) = active_project {
-            let invested = base_produced * production_multiplier;
-            for (kind, percent) in &project.ongoing_yields {
-                let amount = invested * percent / 100.0;
-                match kind.as_str() {
-                    "science" => ys.science += amount,
-                    "culture" => ys.culture += amount,
-                    "gold" => ys.gold += amount,
-                    "faith" => ys.faith += amount,
-                    "food" => ys.food += amount,
-                    "production" => ys.production += amount,
-                    _ => {}
-                }
-            }
-        }
+        // A running district project's per-turn conversion is part of
+        // `city_yields` now (it is a city yield the host lists in the city's
+        // own ledger), so nothing is added here.
         let district_project_stalled = matches!(
             self.cities[&cid].queue.first(),
             Some(Item::Project { project })

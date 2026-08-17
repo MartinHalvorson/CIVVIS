@@ -683,6 +683,43 @@ fn letters_of_marque_halves_what_a_route_earns_at_both_ends() {
 }
 
 #[test]
+fn exodus_of_the_evangelists_pays_four_prophet_points_a_turn_in_a_golden_age() {
+    // COMMEMORATION_RELIGIOUS_GA_GREAT_PROPHET_POINTS: +4 Great Prophet points
+    // at the player level (live Rome, run civvis-20260816T223457Z t66: 8.04 a
+    // turn from Holy Site + Shrine + Temple under Classical Republic, i.e.
+    // (3 + 4) × 1.15, against a model 3.45).
+    let mut game = two_player_game();
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.current = 0;
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let before = game
+        .great_person_points_per_turn(0)
+        .get("prophet")
+        .copied()
+        .unwrap_or(0.0);
+    game.players[0]
+        .dedications
+        .insert("exodus_of_the_evangelists".to_string());
+    game.players[0].age = "normal".to_string();
+    assert_eq!(
+        game.great_person_points_per_turn(0).get("prophet").copied().unwrap_or(0.0),
+        before,
+        "the Normal-Age half is Era Score, not points"
+    );
+    game.players[0].age = "golden".to_string();
+    let mult = 1.0 + game.gov_effects(0).great_people_pct / 100.0;
+    let golden = game.great_person_points_per_turn(0).get("prophet").copied().unwrap_or(0.0);
+    assert!(
+        (golden - (before + 4.0 * mult)).abs() < 1e-9,
+        "+4 Prophet points a turn, under the government's multiplier: {before} -> {golden}"
+    );
+}
+
+#[test]
 fn robber_barons_costs_amenities_everywhere_it_pays() {
     let mut game = two_player_game();
     game.players[0].age = "dark".to_string();
