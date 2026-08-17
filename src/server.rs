@@ -421,25 +421,21 @@ fn host_memory_percent() -> Option<f64> {
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
-const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
-/// The whole page source — the document plus its two external scripts — as a
+/// The whole page source — the document plus its one external script — as a
 /// single searchable string. Only the source-contract tests read it: they
 /// assert against this combined source, which is the same contract they
-/// checked when the script block was inline. The server itself ships the three
-/// parts separately at `/`, `/assets/app.js`, and `/assets/app_setup.js`.
-/// (The first split exists because
+/// checked when the script block was inline. The server itself ships the two
+/// parts separately at `/` and `/assets/app.js`. (The split exists because
 /// the script was a 1.35 MB block inside `web/index.html`, making that file
 /// the repository's largest history payer at ~1 MB of pack growth per edit.)
 #[cfg(test)]
 static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    let mut page = String::with_capacity(
-        EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len() + EMBEDDED_APP_SETUP_JS.len(),
-    );
+    let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_JS);
-    page.push_str(EMBEDDED_APP_SETUP_JS);
     page
 });
+const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
@@ -3348,8 +3344,7 @@ const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
-    page
-        .replacen(APP_JS_TAG, &app_tag, 1)
+    page.replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .into_bytes()
 }
@@ -5397,19 +5392,15 @@ mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
-        query_value, request_path,
-        save_path, simultaneous_jobs_for,
-        seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
-        strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
-        BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
-        EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
-        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        query_value, request_path, save_path, seat_delay_ms, simultaneous_jobs_for,
+        spectator_frame, spectator_step_completes_frame, staged_next_game_params, strategy_roster,
+        tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
+        FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
+        DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
         MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
-    use crate::game::{
-        Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
-    };
+    use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
         default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
     };
@@ -5448,7 +5439,10 @@ mod tests {
             "async function startCiv6Game()",
             "document.getElementById(\"newgame-options\").addEventListener",
         ] {
-            assert!(EMBEDDED_APP_SETUP_JS.contains(symbol), "missing setup symbol: {symbol}");
+            assert!(
+                EMBEDDED_APP_SETUP_JS.contains(symbol),
+                "missing setup symbol: {symbol}"
+            );
         }
         assert!(!EMBEDDED_APP_JS.contains("function syncSetupMode()"));
         assert!(!EMBEDDED_APP_JS.contains("async function startNewSimulation("));
@@ -8808,10 +8802,17 @@ mod tests {
     fn the_setup_payload_names_the_scenario_maps() {
         let js = format!("{EMBEDDED_APP_JS}{EMBEDDED_APP_SETUP_JS}");
         let scenarios = scenario_map_scripts();
-        assert_eq!(scenarios.len(), crate::historical_scenarios::SCENARIOS.len());
+        assert_eq!(
+            scenarios.len(),
+            crate::historical_scenarios::SCENARIOS.len()
+        );
         assert_eq!(scenarios[0].id, "trafalgar");
-        assert!(battlefield_map_scripts().iter().any(|spec| spec.id == "trafalgar"));
-        assert!(world_map_scripts().iter().all(|spec| spec.id != "trafalgar"));
+        assert!(battlefield_map_scripts()
+            .iter()
+            .any(|spec| spec.id == "trafalgar"));
+        assert!(world_map_scripts()
+            .iter()
+            .all(|spec| spec.id != "trafalgar"));
         // The browser reads the list by this key and greys the settings a
         // scenario fixes; the ids it compares against are the script ids.
         let payload = serde_json::to_value(&scenarios).expect("scenario scripts serialize");
