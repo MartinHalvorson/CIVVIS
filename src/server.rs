@@ -16532,10 +16532,7 @@ mod tests {
                     break;
                 };
                 let literal = &body[..end];
-                let path = literal
-                    .split(['?', '#', '$'])
-                    .next()
-                    .unwrap_or(literal);
+                let path = literal.split(['?', '#', '$']).next().unwrap_or(literal);
                 if path.starts_with('/') {
                     paths.insert(path.to_string());
                 }
@@ -16545,9 +16542,9 @@ mod tests {
         }
 
         fn router_has(source: &str, path: &str) -> bool {
-            ["GET", "POST"].into_iter().any(|method| {
-                source.contains(&format!("(\"{method}\", \"{path}\")"))
-            })
+            ["GET", "POST"]
+                .into_iter()
+                .any(|method| source.contains(&format!("(\"{method}\", \"{path}\")")))
         }
 
         let paths = viewer_paths(EMBEDDED_APP_JS);
