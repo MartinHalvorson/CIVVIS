@@ -10126,3 +10126,67 @@ This is an implementation and fires-check, not an outcome. The arm is off in
 `AdvancedAi::new`, is typed in the Elo registry, and has no promotion claim.
 Run it on a disjoint deployment/compact matrix before changing the shipped
 policy.
+
+## 2026-08-17 — ★★★★★ the ladder's turn budget admits exactly one named victory, and it was the one the launchers could not select
+
+`victory_eval` is the first line of the battery at the top of this file and it
+had not existed since 2026-08-06: #1278 removed 31 binaries with "zero tests and
+zero invocations" and this was one of them. The audit's question — who calls it
+in the tree — has the answer *nobody*, and it is the wrong question. Everything
+that depends on this tool depends on it in prose, and all of it stayed: the
+battery above, `docs/AI_GUIDE.md`'s worked example, `src/elo.rs`'s citation of
+its per-target turn limits, and the ★★★★★ note in `tools/civ6_civvis_climb.py`
+that derives the **deployed** victory objective from a measurement taken with it.
+For eleven days the repository told contributors to run a command that could not
+run, and the standing argument for what the live agent plays for could not be
+reproduced or contested.
+
+Restored unchanged — it compiles against today's engine with no edits — plus
+five parsing/budget tests, so the audit's question and the real one now agree.
+
+**The measurement, at the live ladder's own profile.** `--games 8 --players 6
+--turns 250`, seeds 21000000-21000007, main `63f3d3c6`, 48 games in 120 s:
+
+| target | completed | winning turns | terminal reading on failure |
+|---|---|---|---|
+| science | 0/8 | — | `projects=0 distance=0`, 29-35 of 77 techs at t250 |
+| culture | 0/8 | — | `visiting=5..34` against `target=32..120`; `tourist_tiles=0` in all eight |
+| **religious** | **6/8** | 86, 89, 92, 92, 99, 229 | the two misses ran to the clock |
+| diplomatic | 0/8 | — | `dvp=3..7` |
+| domination | 0/8 | — | winner holds 4-10 cities; nobody is eliminated |
+| score | 8/8 | 250 | the clock |
+
+**Disjoint-seed confirm.** Discovery was seeds 21000000-21000007. Re-run on
+seeds 22000000-22000011, same profile: **11/12 religious**, winning turns 82, 85,
+89, 90, 92, 94, 99, 106, 159, 161, 165; the single miss ran to the clock. Across
+both streams the religious lane is **17/20** and has never taken longer than 229
+turns, while science, culture, diplomatic and domination remain **0/8** each on
+the stream that screened them.
+
+**Religion is the only named victory condition this engine completes inside 250
+turns, and five of the six wins land before turn 100.** Read against this
+evaluator's own per-target budgets — Culture 1_500, Science 1_300, Diplomacy 750,
+Domination 650, Religion 450, Score 300 — the result is close to a restatement of
+them: the ladder runs 250, and the only lane whose race is anywhere near that
+length is the one that lands.
+
+⚠ **This is the engine, not Civilization VI**, and the two disagree in a way that
+matters. `docs/CIV6_LADDER.md`'s census of 199 terminal events in real Settler
+games shows five distinct conditions completing inside the same 250-turn clock,
+with the two commonest being indices 6 (41 games) and 3 (24 games) rather than
+the religious index (5). Online speed compresses the host's races and this
+engine's pacing does not model that compression. What transfers is the narrower
+claim: **this is what the CIVVIS agent can drive its own empire to complete**,
+which is the question that decides what to point it at.
+
+⚠ Both of these are new information about a lane that was **not selectable**.
+`advanced.rs` prices the Missionary at -10_000 for any agent targeted at
+something other than Religion (`advanced.rs:18115`), and until #1871 the four
+launchers between the ladder and the agent offered `domination|science|score|
+civvis` only. Every one of the 307 recorded attempts ran with the sole lane this
+engine can finish switched off in its own production valuation.
+
+**Not a promotion.** No default moves on this. It is a reachability screen on 8
+seeds at one profile, not a strength claim, and `--victory religious` beating
+`--victory science` on the live ladder is a separate, unmeasured question — the
+honest instrument for it is a pre-registered ladder batch on disjoint seeds.
