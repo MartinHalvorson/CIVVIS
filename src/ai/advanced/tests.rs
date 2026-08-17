@@ -14471,7 +14471,7 @@
         );
         assert!(science.players[0]
             .policies
-            
+
 .contains(&crate::name!("integrated_space_cell")));
         assert!(science.players[0].policies.contains(&crate::name!("urban_planning")));
         assert!(!science.players[0].policies.contains(&crate::name!("discipline")));
@@ -14515,11 +14515,11 @@
 
         assert!(game.players[0]
             .policies
-            
+
 .contains(&crate::name!("integrated_space_cell")));
         assert!(game.players[0]
             .policies
-            
+
 .contains(&crate::name!("future_victory_science")));
         assert!(game.players[0].policies.contains(&crate::name!("five_year_plan")));
         assert!(game.players[0].policies.contains(&crate::name!("rationalism")));
