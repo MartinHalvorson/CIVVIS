@@ -479,6 +479,23 @@ class ProtectedInstallTest(unittest.TestCase):
         for reason in ("levy_target_unmapped", "levy_no_operation", "levy_refused_", "levy_unaffordable"):
             self.assertIn(reason, handler)
 
+    def test_trade_route_exports_use_firaxis_own_origin_yield_sum(self) -> None:
+        """Fogged destination districts must not make the mirror guess a route."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local tradeRoutes = {};", 1)[1].split("local queue = try(function()", 1)[0]
+        for api in (
+            "CalculateOriginYieldsFromPotentialRoute",
+            "CalculateOriginYieldsFromPath",
+            "CalculateOriginYieldsFromModifiers",
+        ):
+            self.assertIn(api, exporter)
+        # TradeSupport.lua indexes the returned one-based arrays by
+        # `yieldIndex`, but `GetInternationalYieldModifier` takes its zero-based
+        # YieldTypes index. Keep both sides of that contract explicit.
+        self.assertIn("fromRoute[index + 1]", exporter)
+        self.assertIn("GetInternationalYieldModifier(index)", exporter)
+        self.assertIn("yields = routeYields", exporter)
+
     def test_a_stuck_screens_retries_walk_the_whole_exit_ladder_again(self) -> None:
         # Two leading games died on the 900 s watchdog under a late first-contact
         # leader scene: after twenty tries every 30 s retry called only the tail

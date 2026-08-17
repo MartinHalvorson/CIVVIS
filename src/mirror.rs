@@ -5871,6 +5871,7 @@ mod tests {
                     y: 5,
                     pop: 3,
                     capital: true,
+                    loyalty: 100.0,
                     ..StateCity::default()
                 },
                 StateCity {
@@ -5879,6 +5880,7 @@ mod tests {
                     x: 6,
                     y: 6,
                     pop: 3,
+                    loyalty: 100.0,
                     ..StateCity::default()
                 },
             ],
@@ -5900,6 +5902,17 @@ mod tests {
                 destination_y: 5,
                 posts_own: Some(2),
                 posts_foreign: Some(1),
+                // The host's Trade Overview is authoritative here: a route
+                // can earn from a destination district that this seat has not
+                // revealed, which the model must not invent from the fog.
+                yields: Some(crate::rules::Yields {
+                    food: 2.0,
+                    production: 3.0,
+                    gold: 7.0,
+                    science: 5.0,
+                    culture: 11.0,
+                    faith: 13.0,
+                }),
                 ..StateTradeRoute::default()
             }],
             // Firaxis allocates city ids per player. This city-state's first city
@@ -5935,9 +5948,40 @@ mod tests {
         // straight-line walk, and survive a save.
         let key = (mirror.game.routes[0].origin, mirror.game.routes[0].dest);
         assert_eq!(mirror.game.observed_route_posts.get(&key), Some(&(2, 1)));
+        let host_route = crate::rules::Yields {
+            food: 2.0,
+            production: 3.0,
+            gold: 7.0,
+            science: 5.0,
+            culture: 11.0,
+            faith: 13.0,
+        };
+        assert_eq!(mirror.game.observed_route_yields.get(&key), Some(&host_route));
+        // The host's total replaces the model's complete route calculation,
+        // rather than being added to it — otherwise an unseen Campus earns
+        // twice. Removing the route leaves exactly its six host values behind.
+        let origin = mirror.game.routes[0].origin;
+        let routed = mirror.game.city_yields(origin);
+        let mut no_route = mirror.game.clone();
+        no_route.routes.clear();
+        let baseline = no_route.city_yields(origin);
+        for (label, observed, got, base) in [
+            ("food", host_route.food, routed.food, baseline.food),
+            ("production", host_route.production, routed.production, baseline.production),
+            ("gold", host_route.gold, routed.gold, baseline.gold),
+            ("science", host_route.science, routed.science, baseline.science),
+            ("culture", host_route.culture, routed.culture, baseline.culture),
+            ("faith", host_route.faith, routed.faith, baseline.faith),
+        ] {
+            assert!(
+                ((got - base) - observed).abs() < 1e-9,
+                "the host's {label} replaces the route model: {base} + {observed} != {got}"
+            );
+        }
         let saved: crate::game::Game =
             serde_json::from_str(&serde_json::to_string(&mirror.game).unwrap()).unwrap();
         assert_eq!(saved.observed_route_posts.get(&key), Some(&(2, 1)));
+        assert_eq!(saved.observed_route_yields.get(&key), Some(&host_route));
 
         // The next authoritative state is the only thing allowed to complete a
         // route.  A persistent mirror must stop counting it immediately once the
@@ -5949,6 +5993,7 @@ mod tests {
         assert!(mirror.active_trade_route_traders.is_empty());
         assert!(mirror.game.units.contains_key(&trader));
         assert!(mirror.game.observed_route_posts.is_empty());
+        assert!(mirror.game.observed_route_yields.is_empty());
     }
 
     #[test]
