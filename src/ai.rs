@@ -125,7 +125,7 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// How near one of our own cities an enemy has to stand before the empire owes
 /// it an answer. Six is the same ring `nearest_enemy` already calls "near home"
 /// when it decides whether to chase a barbarian, so the two agree on the word.
-const HOME_THREAT_RADIUS: i32 = 6;
+pub(crate) const HOME_THREAT_RADIUS: i32 = 6;
 /// How far from a city a barbarian CAMP still counts as home ground under
 /// `camp_reach`: Civilization VI's camps raise raiders toward cities well
 /// beyond the six-tile raider radius, and a camp is not a raider — it does
@@ -10056,10 +10056,6 @@ impl BasicAi {
     /// while a camp on the far side of the map is not a reason to mobilise.
     /// The chase itself stays bounded by [`BasicAi::nearest_enemy`]'s own
     /// near-home and exchange-score gates.
-    pub(crate) fn barbarian_presence_at_home(g: &Game, pid: usize) -> bool {
-        Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_THREAT_RADIUS)
-    }
-
     /// `barbarian_presence_at_home` with the camp radius chosen by the caller:
     /// raiders always count within `HOME_THREAT_RADIUS`, camps within
     /// `camp_radius`. See `camp_reach`.
