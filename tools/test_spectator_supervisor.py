@@ -1591,6 +1591,33 @@ class RecoveryTests(unittest.TestCase):
             path.write_text(json.dumps({**active, "winner": 1}), encoding="utf-8")
             self.assertIsNone(supervisor.checkpoint_marker(path))
 
+    def test_versioned_save_envelope_is_unwrapped_for_progress_checks(self):
+        active = {"seed": 10, "turn": 23, "current": 1, "winner": None}
+        envelope = {
+            "format": "civvis.save",
+            "protocol": "civvis-json",
+            "protocol_version": 1,
+            "save_format_version": 1,
+            "game": active,
+        }
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps(envelope).encode()
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "save.json"
+            with patch.object(supervisor, "urlopen", return_value=Response()):
+                self.assertTrue(supervisor.capture_checkpoint(8766, path))
+            self.assertEqual(json.loads(path.read_text()), envelope)
+            self.assertEqual(supervisor.checkpoint_marker(path), (10, 23, 1, None))
+
     def test_finished_result_archives_exact_save_and_runtime_metadata(self):
         class Response:
             def __init__(self, payload):

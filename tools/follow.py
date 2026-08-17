@@ -460,7 +460,17 @@ def rebuild(run_dir, players):
             time.sleep(0.5)
         else:
             return None, summary
-        return json.loads(http_get(port, "/save")), summary
+        value = json.loads(http_get(port, "/save"))
+        # `/save` is a versioned envelope on current servers. Keep this
+        # diagnostic's historical return value—the raw game—while accepting
+        # old servers that returned the game directly.
+        if (
+            isinstance(value, dict)
+            and value.get("format") == "civvis.save"
+            and isinstance(value.get("game"), dict)
+        ):
+            value = value["game"]
+        return value, summary
     finally:
         try:
             process.send_signal(signal.SIGTERM)

@@ -89,6 +89,22 @@ Do not add a side-channel for a controller. A new player action needs an
 `Action` variant, legality enumeration, a `Game::apply` handler, serialization,
 and tests.
 
+## JSON boundary versioning
+
+`src/protocol.rs` owns the contract shared by the native HTTP server and the
+WASM router. Public JSON objects carry `protocol: "civvis-json"` and
+`protocol_version: 1`; the existing fields stay at the top level so a client
+can adopt the marker without rewriting its decoder. Requests may omit the
+marker for compatibility with older clients, but a future version is refused
+before an action or save is decoded.
+
+Durable saves use the envelope
+`{format: "civvis.save", save_format_version: 1, game: {...}}`. The loader
+accepts that envelope and the raw `Game` JSON written by older builds, making
+the migration one-way and explicit. Save files are written atomically, and
+the same decoder is used by named saves, autosaves, uploads, and the browser
+build so the two runtimes cannot silently develop different formats.
+
 ## Turn lifecycle
 
 Players act sequentially. At a turn boundary the engine refreshes units and

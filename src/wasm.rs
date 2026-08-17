@@ -282,6 +282,14 @@ fn deliver_browser_tiles(
 /// routes read parameters off it.
 fn route(method: &str, target: &str, body: &str) -> Value {
     let parsed: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    if let Err(error) = crate::protocol::validate_request(&parsed) {
+        return crate::protocol::version_response(json!({"error": error}));
+    }
+    crate::protocol::version_response(route_unversioned(method, target, body))
+}
+
+fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
+    let parsed: Value = serde_json::from_str(body).unwrap_or(Value::Null);
     let path = request_path(target);
 
     match (method, path) {
@@ -430,7 +438,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // `/save` live in the shim's `localStorage` and only ever reach the
         // engine as an uploaded game on `/load`.
         ("GET", "/save") => with_session(|session| {
-            serde_json::to_value(&session.game).unwrap_or(Value::Null)
+            crate::protocol::save_value(&session.game).unwrap_or(Value::Null)
         }),
 
         ("POST", "/pace") => {
@@ -705,8 +713,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // named save out of `localStorage` and posts the game itself.
         ("POST", "/load") => with_session(|session| {
             let loaded: Result<Game, String> = if !parsed["game"].is_null() {
-                serde_json::from_value(parsed["game"].clone())
-                    .map_err(|error| format!("that is not a save: {error}"))
+                crate::protocol::game_from_save(parsed["game"].clone())
+            } else if parsed.get("save_format_version").is_some() {
+                crate::protocol::game_from_save(parsed.clone())
             } else {
                 Err("load needs a game".to_string())
             };
