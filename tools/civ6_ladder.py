@@ -378,6 +378,12 @@ def entry_from(summary: dict) -> dict:
         "reason": summary.get("reason"),
         "applied_pct": applied_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        # Which arm played this row: the live treatments withheld from the
+        # decider, or [] for the full shipped bundle. Rows recorded before the
+        # launchers could withhold anything carry None — unknown, which is not
+        # the same claim as "nothing was withheld".
+        "withheld": summary.get("withheld"),
+        "mod_arms": summary.get("mod_arms"),
         # The opening tempo (`civ6_play.OPENING_TEMPO_TURN`). Over the 35
         # completed runs of 2026-08-16/17 these were the strongest correlates
         # the live ladder has produced: cities at t60 r=+0.69 with final lead,

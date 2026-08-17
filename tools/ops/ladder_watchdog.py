@@ -217,7 +217,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stale-hours", type=float, default=3.0,
                         help="ledger age that counts as stopped (default 3)")
     parser.add_argument("--cooldown-hours", type=float, default=2.0,
-                        help="minimum hours between two restarts (default 2)")
+                        help="minimum hours between two stops of a wedged "
+                             "supervisor (default 2)")
+    parser.add_argument("--start-cooldown-minutes", type=float, default=15.0,
+                        help="minimum minutes between two starts of an absent "
+                             "loop (default 15)")
     parser.add_argument("--supervisor", type=Path, default=None,
                         help="the loop to start (default: beside this file)")
     parser.add_argument("--lock", type=Path, default=None,
@@ -284,11 +288,19 @@ def start_the_loop(args: argparse.Namespace, now: datetime,
                    reason: str) -> int:
     """No supervisor is running. Start one, through Terminal."""
     memory = read_state(args.state)
-    since = hours_since(memory.get("last_kick_utc"), now)
-    if since is not None and since < args.cooldown_hours:
-        log(args.log, f"{reason} — started {since:.1f}h ago and it is gone "
-                      f"again, inside the {args.cooldown_hours:g}h cooldown; "
-                      f"not starting another")
+    # ⚠⚠ A LOOP THAT IS GONE IS NOT A LOOP THAT IS WEDGED, AND THE TWO DO NOT
+    # DESERVE THE SAME PATIENCE. Stopping a wedged supervisor is disruptive and
+    # may not help, so it waits hours. Starting an absent one is cheap and is
+    # the entire point of this tool, so making it wait the same two hours
+    # reproduces in miniature the outage the keeper exists to end — the loop
+    # dies to a transient (a failed build, an orphaned game holding the lock)
+    # and nothing plays until the afternoon. The bound here is only against a
+    # crash-loop, and minutes are enough for that.
+    since = hours_since(memory.get("last_start_utc"), now)
+    if since is not None and since * 60 < args.start_cooldown_minutes:
+        log(args.log, f"{reason} — started {since * 60:.0f}m ago and it is gone "
+                      f"again, inside the {args.start_cooldown_minutes:g}m "
+                      f"start cooldown; not starting another")
         return 1
 
     log(args.log, f"{reason} — starting the loop through Terminal")
@@ -301,12 +313,15 @@ def start_the_loop(args: argparse.Namespace, now: datetime,
     memory["last_problem"] = reason
     record_action(args, memory, now, ok, detail,
                   won="asked Terminal to start the loop",
-                  lost=f"could not start the loop: {detail}")
+                  lost=f"could not start the loop: {detail}",
+                  clock="last_start_utc", counter="starts")
     return 1
 
 
 def record_action(args: argparse.Namespace, memory: dict, now: datetime,
-                  ok: bool, detail: str, *, won: str, lost: str) -> None:
+                  ok: bool, detail: str, *, won: str, lost: str,
+                  clock: str = "last_kick_utc",
+                  counter: str = "kicks") -> None:
     """Log the outcome and start the cooldown clock only on one that worked.
 
     ⚠ THE COOLDOWN CLOCK STARTS ON AN ACTION THAT LANDED, NOT ON ONE THAT
@@ -319,14 +334,14 @@ def record_action(args: argparse.Namespace, memory: dict, now: datetime,
     cooldown with it.
     """
     if ok:
-        memory["last_kick_utc"] = now.isoformat(timespec="seconds")
-        memory["kicks"] = int(memory.get("kicks", 0)) + 1
+        memory[clock] = now.isoformat(timespec="seconds")
+        memory[counter] = int(memory.get(counter, 0)) + 1
         write_state(args.state, memory)
-        log(args.log, f"  {won} (action #{memory['kicks']})")
+        log(args.log, f"  {won} (action #{memory[counter]})")
         notify("CIVVIS ladder loop", won)
     else:
-        memory["last_failed_kick_utc"] = now.isoformat(timespec="seconds")
-        memory["failed_kicks"] = int(memory.get("failed_kicks", 0)) + 1
+        memory[f"failed_{clock}"] = now.isoformat(timespec="seconds")
+        memory[f"failed_{counter}"] = int(memory.get(f"failed_{counter}", 0)) + 1
         write_state(args.state, memory)
         log(args.log, f"  {lost}")
         notify("CIVVIS ladder loop is stopped",

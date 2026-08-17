@@ -10240,3 +10240,91 @@ than carried, per the measured-null pruning line (#1838).
 gate keyed on conversion (damage dealt, walls down, captures) rather than
 military power, so a war whose one objective is already converted can release
 the grand strategy back to the economic branches.
+
+## 2026-08-17 — ★★★★★ the deployed victory lane is the weakest one measured
+
+The Elo registry carried two of `VictoryTarget`'s six variants
+(`advanced_target_domination`, `advanced_target_score`), so the lane the live Civ
+VI decider is handed could be priced only if it happened to be one of those two.
+Science — the ladder's default (`tools/civ6_civvis_climb.py:49`) — was among the
+four with no arm at all. #1899 adds the missing four. These are the first
+readings.
+
+**Profile.** `ai_eval <lane> advanced_target_science --deployment-comparison
+--players 6 --turns 250 --speed online`, 24 map pairs per run. That is the live
+ladder's own shape, and the arms differ from `advanced` only in the lane they are
+handed.
+
+| challenger | discovery (seed 24000000) | confirm | direction | gate |
+|---|---|---|---|---|
+| **diplomatic** | 95.8%, +545 | **+669 CONFIRMED** (97.9%, CI +273..+1064, seed 26000000) | 23-0-1, p=0.0000 | **PASS** |
+| **religious** | 85.4%, +307 | **+417 CONFIRMED** (91.7%, CI +183..+650, seed 25000000) | 20-0-4, p=0.0000 | **PASS** |
+| culture | 68.8%, +137 (CI −9..+283) | extended, not confirmed | 10-13-1, p=0.0117 | INCONCLUSIVE |
+| domination | 72.9%, +172 (CI +21..+324) | not run | 11-13-0, p=0.0010 | PASS |
+
+Culture was then extended on the same pre-declared prefix rather than re-rolled:
+**48 pairs, seed 24000000 — 62.5%, +89 (95% CI −11..+189), 14-32-2, sign
+p=0.0042, still INCONCLUSIVE.** The estimate is not gate-selected, so it is not
+biased upward, and it *fell* from +137 to +89 as the map count doubled while 32
+of 48 maps came back neutral. Read together, that is a small real direction
+rather than a large one the first sample overstated — and it is the honest
+contrast with the two lanes above, whose intervals never approach parity.
+
+Both confirms are on seed streams disjoint from discovery, and `ai_eval` labels
+both effect sizes quotable rather than discovery-biased.
+
+**Every lane measured beats the incumbent, and two clear the gate by a margin
+this ledger rarely sees.** For scale: the largest promoted effects recorded above
+are around +30 to +40 Elo, and the war-half withhold that changed the shipped
+controller measured +38. These are +417 and +669.
+
+**Domination beats it too**, on the same profile and seed prefix: 72.9%, **+172
+(95% CI +21..+324)**, 11-13-0, sign p=0.0010, gate PASS. That is the lane
+`victory_eval` completes 2 times in 16 — so **all four named lanes beat the
+incumbent**, including the one that almost never finishes.
+
+**And the two that beat it hardest are tied with each other.** Diplomatic
+against religious, 24 pairs, seed 27000000 — a fair fight between two lanes that
+both complete: **47.9%, −14 (95% CI −150..+121), 6-11-7, sign p=1.0000,
+INCONCLUSIVE**. Not gate-selected, so not biased.
+
+That pair of results settles the interpretation rather than leaving it to
+inference. If Diplomacy were a strong lane, it would beat Religion too; it does
+not, by 6 maps to 7. What the +669 measures is not Diplomacy's strength but
+Science's floor.
+
+**That size is itself the warning.** An effect an order of magnitude larger than
+anything else here is not evidence of a brilliant lane; it is evidence that
+Science is being measured while it cannot finish. `victory_eval` at this exact
+profile (2026-08-17 entry above) completes Science **0 of 16** while diplomatic
+takes 14/16 and religious 8/16. A targeted agent also suppresses the machinery of
+every lane it is not aiming at — Missionary and great-work buildings priced at
+-10_000, Congress ballots abstained — so `advanced_target_science` is an agent
+that has switched off four lanes' worth of production and cannot complete the
+fifth. It is close to a floor, not a fair incumbent.
+
+**What this does and does not license.**
+
+- It does **not** license moving the live ladder's default. Simulator-to-host
+  transfer of *strength* is CONFIRMED negative on both profiles — the
+  `advanced_synergy` confirmed row in `docs/AI_GAPS.md:588` reads −76
+  (95% CI −140..−13) compact-standard and −108 (95% CI −172..−43)
+  deployment-online — so a headless margin is not a host prediction.
+- It does **not** promote a lane into `advanced`. Nothing changes in the shipped
+  controller; these arms are evaluator-only and off by default.
+- It **does** retire the argument that Science is the reachable choice. That
+  reasoning (`civ6_civvis_climb.py:1273-1305`) was written when four lanes were
+  selectable and rests on a `victory_eval` reading taken at Standard speed with
+  no speed flag; at the profile the ladder actually plays, Science is the one
+  lane that never lands and the two lanes it excluded are the two that win.
+- The honest next instrument is a **pre-registered live ladder batch** on a
+  disjoint tag range with `--victory diplomatic`, scored against the Settler
+  rows already published. `docs/CIV6_LADDER.md` can now record which victory type
+  a win was (#1873) and which lane a row played (#1880), so such a batch is
+  finally attributable.
+
+⚠ Culture is inconclusive rather than null, at 24 maps and again at 48. Its
+direction is significant on both and its interval crosses parity on both. If it
+is worth resolving further, keep extending the same prefix; on this evidence the
+effect is small enough that certifying it would cost far more maps than the two
+lanes that already cleared.

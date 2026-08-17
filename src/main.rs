@@ -546,6 +546,23 @@ fn game_options(
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args, seed),
+        // ⚠⚠ `--victories` PARSED, VALIDATED, AND THEN REACHED ONE SUBCOMMAND.
+        //
+        // `victory_conditions` had exactly one caller — the `play` server's
+        // session config — so `simulate`, `soak`, `odds-audit`, `benchmark`,
+        // `rollouts` and `selfplay` all took `GameOptions::new`'s default of
+        // all six on, whatever the command line said. The flag is parsed early
+        // and `exit(2)`s on a bad name, so it looked like it worked: a run
+        // asking for a two-lane game was refused for a typo and then silently
+        // given six lanes.
+        //
+        // That is the expensive shape of a footgun rather than the cheap one.
+        // A soak restricted to score and science measures a different game from
+        // one where religion can end it at turn 90 — `victory_eval` at the
+        // ladder profile finishes religion in 8 of 16 games — so the difference
+        // is not cosmetic, and nothing in the output said which game had been
+        // played.
+        victory_conditions: victory_conditions(args),
         // The arena's economy, so a headless sweep can vary the thing it is
         // training against without going through a lobby. Ignored on a world.
         tactics,
@@ -2393,6 +2410,50 @@ mod tests {
         );
     }
 
+    /// ⚠⚠ `--victories` WAS PARSED, VALIDATED, AND THEN DROPPED BY EVERY
+    /// COMMAND BUT ONE.
+    ///
+    /// `victory_conditions()` had a single caller — the `play` server's setup —
+    /// so `simulate`, `soak`, `odds-audit`, `benchmark`, `rollouts` and
+    /// `selfplay` took `GameOptions::new`'s all-six default whatever was asked
+    /// for. The flag `exit(2)`s on a bad name, so a run was refused for a typo
+    /// and then silently handed the wrong game.
+    ///
+    /// This asserts the shared builder carries it, which is what makes every
+    /// one of those commands honour it.
+    #[test]
+    fn the_victories_flag_reaches_the_shared_game_builder() {
+        let asked = ["--victories".to_string(), "science,score".to_string()];
+        let options = game_options(&asked, 2, 11, TurnStructure::Sequential);
+        assert!(options.victory_conditions.science);
+        assert!(options.victory_conditions.score);
+        assert!(
+            !options.victory_conditions.religious,
+            "religion was not asked for"
+        );
+        assert!(!options.victory_conditions.culture);
+        assert!(!options.victory_conditions.diplomatic);
+        assert!(!options.victory_conditions.domination);
+
+        // And the game built from those options plays by them, rather than by
+        // the struct default `Game::new_with` used to hardcode.
+        let game =
+            civvis::game::Game::new_with(game_options(&asked, 2, 11, TurnStructure::Sequential));
+        assert_eq!(game.victory_conditions, options.victory_conditions);
+        assert!(!game.victory_conditions.religious);
+    }
+
+    /// Saying nothing still means the lobby's full set, so no existing command
+    /// line changes meaning.
+    #[test]
+    fn a_command_line_without_the_flag_keeps_every_condition() {
+        let options = game_options(&[], 2, 12, TurnStructure::Sequential);
+        assert_eq!(
+            options.victory_conditions,
+            civvis::game::VictoryConditions::default()
+        );
+    }
+
     #[test]
     fn a_random_start_era_is_seeded_scattered_and_playable() {
         let args = ["--start-era".to_string(), "random".to_string()];
@@ -2786,6 +2847,7 @@ mod tests {
                 ("war_reinforcement", ai.war_reinforcement),
                 ("war_patience", ai.war_patience),
                 ("deny_while_targeted", ai.deny_while_targeted),
+                ("stock_denial_lead_time", ai.stock_denial_lead_time),
                 ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),

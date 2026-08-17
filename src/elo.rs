@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 182] = [
+pub const EVAL_ONLY_AIS: [&str; 187] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -88,6 +88,7 @@ pub const EVAL_ONLY_AIS: [&str; 182] = [
     "live_without_war_reinforcement",
     "live_without_war_patience",
     "live_without_deny_while_targeted",
+    "live_without_stock_denial_lead_time",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -168,6 +169,18 @@ pub const EVAL_ONLY_AIS: [&str; 182] = [
     // for every real run; see the constructor arms below.
     "advanced_target_domination",
     "advanced_target_score",
+    // ⚠⚠ AND THE OTHER FOUR, which had no arm at all. `VictoryTarget` has six
+    // variants; two were registered here, so the lane the deployed decider is
+    // handed could be measured only if that lane happened to be Domination or
+    // Score. `civ6_civvis_climb.py --victory` can now select all six (#1871),
+    // and `victory_eval` at the ladder's own profile finishes four of the five
+    // named conditions inside its clock while Science — the deployed default —
+    // finishes none. Which lane is STRONGEST is a different question from which
+    // completes, and these are the arms that can answer it.
+    "advanced_target_science",
+    "advanced_target_culture",
+    "advanced_target_religious",
+    "advanced_target_diplomatic",
     "advanced_measured_dedication",
     "advanced_garrison_loyalty",
     "advanced_settler_first",
@@ -259,7 +272,7 @@ pub const EVAL_ONLY_AIS: [&str; 182] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 69] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -328,6 +341,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
+    "stock-denial-lead-time",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -362,7 +376,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 18] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -410,6 +424,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
     // Settler seat's standing order) has a target gate to override; the
     // native gate agents are adaptive, so the flag cannot fire there.
     "deny-while-targeted",
+    // Priced on the Settler seat's own steal record (five led games taken at
+    // t229-245); the native lanes end on their own clock and keep the
+    // measured 90 bar until a native run says otherwise.
+    "stock-denial-lead-time",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -596,6 +614,7 @@ define_arm_kinds! {
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
+    LiveWithoutStockDenialLeadTime => "live_without_stock_denial_lead_time",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -714,6 +733,10 @@ define_arm_kinds! {
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
+    AdvancedTargetScience => "advanced_target_science",
+    AdvancedTargetCulture => "advanced_target_culture",
+    AdvancedTargetReligious => "advanced_target_religious",
+    AdvancedTargetDiplomatic => "advanced_target_diplomatic",
     AdvancedV1 => "advanced_v1",
     AdvancedWarHalf => "advanced_war_half",
     AdvancedWideOpening => "advanced_wide_opening",
@@ -3149,11 +3172,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // per-target turn limits are 650 for Domination and 300 for Score, and
         // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
         // targeting domination ended by score at the limit instead.
-        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
-            crate::ai::VictoryTarget::Domination,
-        )),
-        "advanced_target_score" => {
-            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
+        "advanced_target_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
+        }
+        "advanced_target_score" => Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score)),
+        // The four that had no arm. Each differs from `advanced` only in the
+        // lane it is handed, exactly as the two above do.
+        "advanced_target_science" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Science))
+        }
+        "advanced_target_culture" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Culture))
+        }
+        "advanced_target_religious" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Religion))
+        }
+        "advanced_target_diplomatic" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Diplomacy))
         }
         // Prices `limitanei` (+2 Loyalty in garrisoned cities), which the hardcoded
         // portfolios in `strategic_policies` never reach. Revolts are 42% of 192
@@ -3831,6 +3866,7 @@ impl ArmKind {
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
+            Self::LiveWithoutStockDenialLeadTime => live_without("stock-denial-lead-time"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -3897,11 +3933,20 @@ impl ArmKind {
             ],
             Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
-            // The two arms differ only in the lane they are told to win, which is
+            // These arms differ only in the lane they are told to win, which is
             // the axis: the deployed Civ 6 decider is handed one of these by
             // `civ6_civvis_climb.py --victory` and nothing could compare them.
+            //
+            // ⚠ Two of the six used to be here and four did not, so the lane the
+            // deployment actually runs could be priced only if it happened to be
+            // Domination or Score. `--victory` selects all six since #1871, and
+            // Science — the ladder's default — was among the four with no arm.
             Self::AdvancedTargetDomination => &["victory-lane-domination"],
             Self::AdvancedTargetScore => &["victory-lane-score"],
+            Self::AdvancedTargetScience => &["victory-lane-science"],
+            Self::AdvancedTargetCulture => &["victory-lane-culture"],
+            Self::AdvancedTargetReligious => &["victory-lane-religious"],
+            Self::AdvancedTargetDiplomatic => &["victory-lane-diplomatic"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
@@ -4502,6 +4547,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
+        "advanced_target_science" => (Vec::new(), "advanced_target_science"),
+        "advanced_target_culture" => (Vec::new(), "advanced_target_culture"),
+        "advanced_target_religious" => (Vec::new(), "advanced_target_religious"),
+        "advanced_target_diplomatic" => (Vec::new(), "advanced_target_diplomatic"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
@@ -5656,7 +5705,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 87] = [
+            const SCRIPTED: [&str; 91] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5738,10 +5787,14 @@ mod tests {
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
                 "advanced_without_unit_tactics",
-                // Built from code, not from a weights artifact: these two differ
+                // Built from code, not from a weights artifact: these six differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
                 "advanced_target_score",
+                "advanced_target_science",
+                "advanced_target_culture",
+                "advanced_target_religious",
+                "advanced_target_diplomatic",
                 "advanced_v1",
                 "basic",
                 // Scripted composites of bridge flags: built from code, no
@@ -5840,7 +5893,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 17] = [
+        const EXCLUDED: [&str; 18] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5880,6 +5933,8 @@ mod tests {
             // to override; the native gate agents are adaptive, so the flag
             // cannot fire there.
             "deny_while_targeted",
+            // Same: priced on the live seat's steal record, not native play.
+            "stock_denial_lead_time",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
