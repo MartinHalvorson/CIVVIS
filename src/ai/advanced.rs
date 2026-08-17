@@ -15995,6 +15995,72 @@ impl AdvancedAi {
         }
     }
 
+    /// Reserve one otherwise idle coastal city for the sea-recon arm before
+    /// the strategic governor fills every empty queue with infrastructure.
+    /// A major naval war raises that arm to two eyes in `BasicAi`: the first
+    /// ship may be fighting, while the second keeps opening contacts and
+    /// city-states. This deliberately never replaces an active build, a
+    /// threatened city's queue, or the earlier defense, Envoy, religion,
+    /// Science, Culture, and Amenity reservations.
+    fn reserve_idle_naval_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // A second eye is valuable only while it does not deepen the live
+        // war-economy deficit. The ordinary governor's recovery branch takes
+        // precedence unless the existing emergency-garrison exception applies.
+        if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+            || !self.base.naval_recon_is_the_missing_arm(g, pid)
+        {
+            return;
+        }
+        let mut best: Option<(f64, u32, String)> = None;
+        for city in g.player_city_ids(pid) {
+            let current = &g.cities[&city];
+            let threatened = plan.threatened_city == Some(city)
+                || (current.last_attacked > 0
+                    && g.turn.saturating_sub(current.last_attacked) <= 4);
+            if current.queue.first().is_some() || threatened {
+                continue;
+            }
+            let Some(unit) = self.base.best_naval_recon(g, pid, city) else {
+                continue;
+            };
+            let item = Item::Unit {
+                unit: Name::new(&unit),
+            };
+            let turns = g.item_remaining_cost_for_city(pid, city, &item)
+                / g.city_yields(city).production.max(1.0);
+            let replace = best.as_ref().is_none_or(|(old_turns, old_city, old_unit)| {
+                turns + f64::EPSILON < *old_turns
+                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                        && (city, unit.as_str()) < (*old_city, old_unit.as_str()))
+            });
+            if replace {
+                best = Some((turns, city, unit));
+            }
+        }
+        let Some((turns, city, unit)) = best else {
+            return;
+        };
+        let item = Item::Unit {
+            unit: Name::new(&unit),
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} as a sea scout", city_name, Self::plain_item(&item);
+                "unexplored water still needs a naval eye; this is the fastest viable launch ({turns:.1} turns)");
+        }
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -26490,6 +26556,11 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
+            // A fighting Galley cannot also be the empire's sole eye. This
+            // claims only one idle, safe queue after all higher-priority
+            // strategic reservations, before generic production buries the
+            // reconnaissance gap under another building or wonder.
+            self.reserve_idle_naval_recon(g, pid, &plan);
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.
@@ -28539,6 +28610,104 @@ mod tests {
         assert!(withheld.naval_explorer(&game, 0).is_empty());
         assert!(!AdvancedAi::new().naval_recon());
         assert!(!AdvancedAi::legacy().naval_recon());
+    }
+
+    #[test]
+    fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
+        let mut game = Game::new_full(2, 30, 18, 71_003, 100, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("the first major starts with a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the fixture founds a capital");
+        for uid in game.player_unit_ids(0) {
+            game.remove_unit(uid);
+        }
+        let city = game.player_city_ids(0)[0];
+        let city_pos = game.cities[&city].pos;
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let mut waterway = Vec::new();
+        let mut current = city_pos;
+        for distance in 1..=super::super::NAVAL_RECON_MIN_WATERWAY_TILES {
+            current = game
+                .nbrs(current)
+                .into_iter()
+                .find(|pos| {
+                    game.map.tiles.contains_key(pos)
+                        && game.wdist(city_pos, *pos) == distance as i32
+                })
+                .expect("an interior city has a straight coastal launch route");
+            game.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
+            waterway.push(current);
+        }
+        game.players[0].explored.remove(waterway.last().unwrap());
+        game.players[0].techs.insert(crate::name!("sailing"));
+        game.at_war.insert((0, 1));
+        game.spawn_test_unit("galley", 1, *waterway.last().unwrap());
+        game.spawn_test_unit("galley", 0, waterway[0]);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.naval_recon_is_the_missing_arm(&game, 0));
+
+        // The spare eye must not leapfrog the shared recovery rule. One
+        // existing Galley covers the emergency-garrison exception on this
+        // one-city war, so a bankrupt empire repairs its balance first.
+        let mut bankrupt = game.clone();
+        bankrupt.players[0].gold = 0.0;
+        bankrupt.players[0].gold_per_turn = -1.0;
+        assert!(live.live_war_economy_requires_recovery(
+            &bankrupt,
+            0,
+            &live.counts(&bankrupt, 0)
+        ));
+        live.reserve_idle_naval_recon(&mut bankrupt, 0, &plan);
+        assert!(
+            bankrupt.cities[&city].queue.is_empty(),
+            "a naval scout cannot bypass the live war-economy recovery path"
+        );
+
+        let mut stock_game = game.clone();
+        let stock = AdvancedAi::new();
+        stock.reserve_idle_naval_recon(&mut stock_game, 0, &plan);
+        assert!(
+            stock_game.cities[&city].queue.is_empty(),
+            "the frozen controller does not reserve a naval scout"
+        );
+
+        live.reserve_idle_naval_recon(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "galley"
+        ));
+        live.reserve_idle_naval_recon(&mut game, 0, &plan);
+        assert_eq!(
+            game.cities[&city]
+                .queue
+                .iter()
+                .filter(|item| matches!(item, Item::Unit { unit } if unit == "galley"))
+                .count(),
+            1,
+            "the queued hull completes the bounded second-eye reservation"
+        );
     }
 
     #[test]
