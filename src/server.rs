@@ -16501,6 +16501,87 @@ mod tests {
         assert!(checked > 10, "the route scan found almost nothing to check");
     }
 
+    /// The viewer is one source shared by the native socket and the published
+    /// WASM page. A literal engine request added to that source must therefore
+    /// be present in all three layers: both Rust routers and the browser shim
+    /// that decides which fetches enter the WASM worker. Before this contract,
+    /// native-only `/civ6` requests fell through to civvis.ai and looked like a
+    /// generic network failure on the published page.
+    #[test]
+    fn every_viewer_engine_request_is_served_by_both_runtimes_and_the_shim() {
+        fn viewer_paths(js: &str) -> std::collections::BTreeSet<String> {
+            let marker = "fetchJSON(";
+            let mut paths = std::collections::BTreeSet::new();
+            let mut scan = 0usize;
+            while let Some(relative) = js[scan..].find(marker) {
+                let at = scan + relative;
+                let args_start = at + marker.len();
+                let args = &js[args_start..];
+                let leading = args.len() - args.trim_start().len();
+                let literal_start = args_start + leading;
+                let trimmed = &js[literal_start..];
+                let Some(&quote) = trimmed.as_bytes().first() else {
+                    break;
+                };
+                if !matches!(quote, b'"' | b'\'' | b'`') {
+                    scan = literal_start + 1;
+                    continue;
+                }
+                let body = &trimmed[1..];
+                let Some(end) = body.find(quote as char) else {
+                    break;
+                };
+                let literal = &body[..end];
+                let path = literal.split(['?', '#', '$']).next().unwrap_or(literal);
+                if path.starts_with('/') {
+                    paths.insert(path.to_string());
+                }
+                scan = literal_start + end + 2;
+            }
+            paths
+        }
+
+        fn router_has(source: &str, path: &str) -> bool {
+            ["GET", "POST"]
+                .into_iter()
+                .any(|method| source.contains(&format!("(\"{method}\", \"{path}\")")))
+        }
+
+        let paths = viewer_paths(EMBEDDED_APP_JS);
+        assert!(
+            paths.len() >= 20,
+            "the viewer route scan found too little to protect: {paths:?}"
+        );
+        let native = include_str!("server.rs");
+        let browser = include_str!("wasm.rs");
+        let shim = include_str!("../beta/shim.js")
+            .split_once("const ENGINE_ROUTES = new Set([")
+            .expect("the browser shim's engine route list")
+            .1
+            .split_once("]);\n")
+            .expect("the end of the browser shim's engine route list")
+            .0;
+        // These paths are deliberately page-local because the browser owns
+        // the capability the native server gets from disk. Keep the list
+        // explicit: adding another local route must be a conscious parity
+        // decision, not a way for an engine endpoint to disappear unnoticed.
+        let browser_local = ["/saves"];
+        for path in paths {
+            assert!(
+                router_has(native, &path),
+                "the shared viewer requests {path}, but the native router does not serve it"
+            );
+            assert!(
+                router_has(browser, &path) || browser_local.contains(&path.as_str()),
+                "the shared viewer requests {path}, but neither the WASM router nor its explicit local route list serves it"
+            );
+            assert!(
+                shim.contains(&format!("\"{path}\"")),
+                "the shared viewer requests {path}, but the browser shim sends it to the network"
+            );
+        }
+    }
+
     /// Every field `decorate` attaches to `/state` is either mirrored by the
     /// browser build's `decorate_browser` or on the deliberate list below
     /// with the reason it is not. The failure this exists for is silent by
