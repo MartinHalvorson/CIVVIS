@@ -533,6 +533,22 @@ it, so none of it ships to civvis.ai):
   disk". A fresh trust record tolerates the broken seal — the game launches
   and plays — so `bundle` reports signature and writability as two independent
   facts rather than one health bit.
+- **The loop cannot run as a bare LaunchAgent, and the way it fails is silent.**
+  macOS attributes the permission to write inside `Civ6.app` to the RESPONSIBLE
+  process. Terminal holds that grant on the fleet host; `launchd` does not, and
+  a LaunchAgent's children inherit launchd's empty set. A KeepAlive job running
+  `civvis-game-supervisor.sh` therefore builds head, launches the climb, and
+  watches every attempt die at `NO GAME — PermissionError: cannot install
+  .../Assets/DLC/CivvisControl` while launchd faithfully restarts a loop that
+  can never play. The Finder fallback below does not rescue it: driving Finder
+  is an Apple Event and sending one needs an Automation grant launchd also
+  lacks. Measured three ways on 2026-08-17 with the same three lines of Python
+  — Terminal child: writes; bare LaunchAgent: `Operation not permitted`;
+  LaunchAgent that ran `open -a Terminal <script>`: writes. So supervision
+  belongs to launchd, which survives a closed session and a reboot, but it must
+  START the loop through Terminal. `tools/ops/ladder_watchdog.py` is what the
+  interval job runs, and `test_ops_portability.py` fails if any managed plist
+  goes back to naming the supervisor directly.
 - **The install tree is TCC-protected against Terminal, not against Finder.**
   Writes into the bundle from Terminal's children fail with "Operation not
   permitted" even with the game closed, while Finder performs the same

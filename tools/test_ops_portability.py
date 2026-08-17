@@ -135,11 +135,8 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
     """
 
     def _plists(self):
-        repo = Path(__file__).resolve().parent.parent
         return {
             "memguard": civvis_collab.macos_memguard_plist(Path("/x/memguard.py")),
-            "ladder": civvis_collab.macos_ladder_plist(
-                Path("/x/civvis-game-supervisor.sh"), repo),
             "ladder-watchdog": civvis_collab.macos_ladder_watchdog_plist(
                 Path("/x/ladder_watchdog.py")),
         }
@@ -160,21 +157,48 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
                                        b"<integer>11</integer>") + b"\n"
                 civvis_collab.write_managed_service(path, changed)
 
-    def test_the_supervisor_job_keeps_itself_alive(self):
-        repo = Path(__file__).resolve().parent.parent
-        plist = civvis_collab.macos_ladder_plist(Path("/x/sup.sh"), repo).decode()
-        self.assertIn("<key>KeepAlive</key>", plist)
-        self.assertIn("<key>ThrottleInterval</key>", plist,
-                      "a supervisor that dies instantly must not spin")
+    def test_no_launch_agent_runs_the_supervisor_directly(self):
+        """A LaunchAgent cannot install the control mod, so it cannot play.
 
-    def test_the_watchdog_is_a_separate_job(self):
-        """It has to outlive the thing it watches, so it cannot live inside it."""
-        self.assertNotEqual(civvis_collab.LADDER_LABEL,
-                            civvis_collab.LADDER_WATCHDOG_LABEL)
+        Installing the mod writes inside `Civ6.app`; macOS attributes that
+        permission to the responsible process, and a LaunchAgent's children
+        inherit launchd's empty grant set. #1888 shipped a KeepAlive job that
+        ran `civvis-game-supervisor.sh` directly and every attempt under it died
+        at "cannot install .../DLC/CivvisControl" having played no turns, while
+        launchd faithfully restarted a loop that could never work.
+        """
+        self.assertFalse(hasattr(civvis_collab, "macos_ladder_plist"),
+                         "the KeepAlive supervisor job cannot work on macOS")
+        for name, data in self._plists().items():
+            plist = data.decode()
+            self.assertNotIn("civvis-game-supervisor.sh", plist,
+                             f"the {name} job runs the loop from launchd, which "
+                             f"cannot install the mod; start it through Terminal")
+
+    def test_the_keeper_starts_the_loop_through_terminal(self):
+        sys.path.insert(0, str(OPS))
+        import ladder_watchdog  # noqa: PLC0415
+
+        source = (OPS / "ladder_watchdog.py").read_text()
+        self.assertIn('"open", "-a", "Terminal"', source,
+                      "Terminal is the only context here that holds the grant")
+        self.assertTrue(hasattr(ladder_watchdog, "start_supervisor"))
+
+    def test_the_keeper_runs_on_an_interval_not_keepalive(self):
         watchdog = civvis_collab.macos_ladder_watchdog_plist(
             Path("/x/w.py")).decode()
         self.assertIn("<key>StartInterval</key>", watchdog)
-        self.assertNotIn("<key>KeepAlive</key>", watchdog)
+        self.assertNotIn("<key>KeepAlive</key>", watchdog,
+                         "`open` returns immediately; KeepAlive would spin")
+
+    def test_the_broken_keepalive_job_is_retired_on_install(self):
+        """Hosts that took #1888 must not keep restarting a loop that cannot play."""
+        source = civvis_collab.__file__
+        text = Path(source).read_text()
+        self.assertIn("def retire_ladder_keepalive_job", text)
+        self.assertIn("retire_ladder_keepalive_job()", text.split(
+            "def retire_ladder_keepalive_job")[1],
+            "install must actually call it")
 
 
 if __name__ == "__main__":
