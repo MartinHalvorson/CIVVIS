@@ -45305,6 +45305,14 @@ impl Game {
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
+        // See `foreign_tourists`: the host's own counter wins when observed.
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.domestic_tourists)
+        {
+            return observed as i64;
+        }
         let generated = (self.players[pid].culture_lifetime / 100.0).floor() as i64;
         let visiting_elsewhere = self
             .players
@@ -45469,6 +45477,18 @@ impl Game {
     }
 
     pub fn foreign_tourists(&self, pid: usize) -> i64 {
+        // A live mirror cannot reconstruct tourism from culture history, but
+        // the host's World Rankings screen publishes both tourist counters
+        // for every major and the mirror records them. Prefer the observation
+        // exactly as `score` prefers `observed_score`; a native game has no
+        // observed entries and keeps its own arithmetic.
+        if let Some(observed) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.foreign_tourists)
+        {
+            return observed as i64;
+        }
         if self.starting_major_count() == 0 || !self.players[pid].alive {
             return 0;
         }

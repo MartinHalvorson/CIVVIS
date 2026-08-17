@@ -2347,6 +2347,21 @@ pub struct AdvancedAi {
     /// wrong.
     pub deny_leaders: bool,
 
+    /// Whether a seat playing under an assigned victory target may still
+    /// mount a denial against a rival at MATCH POINT. `victory_denial` has
+    /// always stood down entirely whenever `victory_target` is set — right
+    /// for ordinary pressure (the lane keeps its focus), and fatal at the
+    /// wire: the live seat plays `--victory science`, so five of the twelve
+    /// runs it was LEADING on 2026-08-16/17 ended at t229-245 on a rival's
+    /// culture, technology or diplomatic victory with the whole counter
+    /// apparatus — the congress counter, in-lane counters, counter-units —
+    /// gated off. With this on, only `urgent_victory_threat`'s match-point
+    /// bar (progress ≥ 90, or the lane-specific equivalents) overrides the
+    /// target's focus, so ordinary pressure still never distracts the lane.
+    ///
+    /// **Off by default, live-bridge only.**
+    pub deny_while_targeted: bool,
+
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
     /// capital, and declare only once it is already adjacent.
@@ -3131,7 +3146,12 @@ impl Default for AdvancedAi {
 /// than the methods they call and must stay that way, or a published result
 /// stops being findable. Same for the arm names `army_target_weighs_enemy`,
 /// `siege_tracks_wall` and `suzerain_cards`.
-pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
+/// One live treatment: the published arm identity, the provenance tag, and
+/// the call that takes it back out.
+pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
+
+#[rustfmt::skip]
+pub const LIVE_TREATMENTS: [LiveTreatment; 68] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -3199,6 +3219,7 @@ pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
     ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
+    ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
 ];
 
 impl AdvancedAi {
@@ -3620,6 +3641,7 @@ impl AdvancedAi {
             reactor_marginal: false,
             civ_blind: false,
             deny_leaders: true,
+            deny_while_targeted: false,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -4157,6 +4179,15 @@ impl AdvancedAi {
         self.war_patience = true;
     }
 
+    /// See [`Self::deny_while_targeted`].
+    pub fn enable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = true;
+    }
+
+    pub fn disable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = false;
+    }
+
     /// Keep a fresh direct declaration out of the final campaign reserve.
     /// Native tournament games leave this disabled so their recorded ladders
     /// stay comparable.
@@ -4587,6 +4618,13 @@ impl AdvancedAi {
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
         self.enable_joint_tactics();
+        // ⚠ The live seat plays under an assigned lane (`--victory science`),
+        // and `victory_denial` stands down entirely for a targeted seat — so
+        // five of the twelve runs the seat was LEADING on 2026-08-16/17 ended
+        // at t229-245 on a rival's culture, technology or diplomatic victory
+        // with the whole counter apparatus gated off. Match point overrides
+        // the lane's focus; ordinary pressure still never does.
+        self.enable_deny_while_targeted();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -7585,11 +7623,21 @@ impl AdvancedAi {
     }
 
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        if !self.deny_leaders || self.active_victory_target(g).is_some() {
+        if !self.deny_leaders {
+            return None;
+        }
+        let targeted = self.active_victory_target(g).is_some();
+        if targeted && !self.deny_while_targeted {
             return None;
         }
         let culture_pressures = self.rival_culture_pressures(g);
-        self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
+        let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
+        // An assigned lane keeps its focus against ordinary pressure; a rival
+        // at match point ends the game for every lane alike.
+        if targeted && !self.urgent_victory_threat(g, denial.0) {
+            return None;
+        }
+        Some(denial)
     }
 
     /// A Conquest denial needs a destination the mirrored army can reach.
@@ -7913,10 +7961,15 @@ impl AdvancedAi {
         // repeating a whole-world tourism scan for every sort comparison.
         let active_victory_target = self.active_victory_target(g);
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let denial = if active_victory_target.is_some() {
+        let denial = if active_victory_target.is_some() && !self.deny_while_targeted {
             None
         } else {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
+                .filter(|(rival, _)| {
+                    // The same match-point bar as `victory_denial`: an
+                    // assigned lane yields only to a rival about to win.
+                    active_victory_target.is_none() || self.urgent_victory_threat(g, *rival)
+                })
         };
         let actionable_denial = denial.filter(|(rival, counter)| {
             self.conquest_denial_actionable(g, pid, *rival, *counter)
@@ -33802,6 +33855,62 @@ mod tests {
         assert_eq!(blind.victory_denial(&game, 0), None);
         assert!(!blind.urgent_victory_threat(&game, 1));
         assert!(ai.urgent_victory_threat(&game, 1));
+    }
+
+    /// A seat playing under an assigned victory target has always stood its
+    /// whole denial apparatus down. Five of the twelve runs the live seat was
+    /// LEADING on 2026-08-16/17 ended at t229-245 on a rival's victory the
+    /// counter never engaged — that seat plays `--victory science`. With
+    /// `deny_while_targeted`, match point overrides the lane's focus, and
+    /// ordinary pressure still does not.
+    #[test]
+    fn match_point_overrides_an_assigned_lane_when_enabled() {
+        let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
+        for pid in 0..4 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.players[1].religion = Some("Rival Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = game.player_city_ids(owner)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Rival Faith".to_string(), 1_000.0);
+        }
+
+        let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "an assigned lane keeps its focus while the flag is off"
+        );
+        targeted.enable_deny_while_targeted();
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            Some((1, GrandStrategy::Conquest)),
+            "match point overrides the lane's focus"
+        );
+
+        // Ordinary pressure must not: below the match-point bar the assigned
+        // lane's focus stands, flag or no flag.
+        let city = game.player_city_ids(3)[0];
+        game.cities.get_mut(&city).unwrap().pressure.clear();
+        assert!(!targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "sub-match-point pressure never distracts an assigned lane"
+        );
     }
 
     /// The site score is silent about barbarians and about being out of
