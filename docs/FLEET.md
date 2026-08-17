@@ -110,3 +110,37 @@ The three causes it names are the three that have actually happened here:
 
 `jobs` defaults to the host's core count minus two, so a machine someone is
 sitting in front of stays usable. Set it explicitly to be stricter.
+
+## The memory guard
+
+⚠⚠⚠ **macOS enforces no memory ceiling, and this fleet has proved it.** On
+2026-08-10 two `civvis` benchmark processes reached a **206 GB and a 205 GB
+physical footprint each on a 128 GB machine**, and the kernel answered with a
+system-wide jetsam that terminated **14,818 processes**. Neither `ulimit -v` nor
+`ulimit -d` is honoured on macOS, so nothing in the operating system was ever
+going to stop it.
+
+`tools/ops/memguard.py` supplies the missing ceiling, and
+`civvis_collab.py bootstrap` installs it as a launchd job beside the push guard
+and the freshness service. It samples every ten seconds and kills one process
+above 32 GB, or the largest above 16 GB once the system is already short of
+memory.
+
+Two details are the difference between a guard that works and one that does not:
+
+- **It reads physical footprint, not RSS.** At the moment of that jetsam the
+  offenders held 20 GB resident with 186 GB parked in the compressor. An
+  RSS-based limit would never have fired.
+- **It refuses more than it kills.** Only processes owned by the invoking user
+  are eligible, `WindowServer`, `Terminal` and `loginwindow` are never killable,
+  and it will not kill itself or its parent. Terminating any of those would
+  cause exactly the outage the guard exists to prevent.
+
+⚠ The guard written on the day of the incident lived in `~/.local/bin` on the
+one laptop that had been hurt, installed by hand and tracked by nothing — so
+every other machine in the fleet ran the same benchmarks with no ceiling at
+all for a week. **A protection that exists on one disk protects one disk.**
+
+macOS only: the guard reads `vm_stat` and `ps` footprints, and the incident it
+prevents is a Darwin jetsam. `bootstrap` says so on other platforms rather than
+reporting an install that did not happen.
