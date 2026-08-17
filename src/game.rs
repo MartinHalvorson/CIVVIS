@@ -2352,6 +2352,9 @@ pub mod adjacency;
 pub mod quests;
 
 #[cfg(test)]
+mod housing_source_tests;
+
+#[cfg(test)]
 mod city_state_unique_tests;
 
 #[cfg(test)]
@@ -4174,6 +4177,57 @@ impl<'de> Deserialize<'de> for Districts {
                 })
                 .collect(),
         ))
+    }
+}
+
+/// A city's housing, split into the categories Civilization VI itself reports.
+///
+/// The field names are the host's, minus the `housing_from_` prefix, so a
+/// comparison against a `state` export is a field-by-field read rather than a
+/// mapping somebody has to keep in their head. `great_people`, `great_works`
+/// and `starting_era` exist here with no CIVVIS term behind them on purpose:
+/// the host fills them, and a category we cannot produce at all should read as
+/// a zero we can see rather than as an absence nobody notices.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HousingSources {
+    pub water: f64,
+    pub buildings: f64,
+    pub districts: f64,
+    pub improvements: f64,
+    pub civics: f64,
+    pub great_people: f64,
+    pub great_works: f64,
+    pub starting_era: f64,
+    /// CIVVIS terms with no host counterpart: resource industries, wall levels.
+    pub other: f64,
+}
+
+impl HousingSources {
+    pub fn total(&self) -> f64 {
+        self.water
+            + self.buildings
+            + self.districts
+            + self.improvements
+            + self.civics
+            + self.great_people
+            + self.great_works
+            + self.starting_era
+            + self.other
+    }
+
+    /// `(name, value)` for every category, in the host's own reporting order.
+    pub fn named(&self) -> [(&'static str, f64); 9] {
+        [
+            ("water", self.water),
+            ("buildings", self.buildings),
+            ("districts", self.districts),
+            ("improvements", self.improvements),
+            ("civics", self.civics),
+            ("great_people", self.great_people),
+            ("great_works", self.great_works),
+            ("starting_era", self.starting_era),
+            ("other", self.other),
+        ]
     }
 }
 
@@ -17847,11 +17901,56 @@ impl Game {
     }
 
     pub fn city_housing(&self, city: &City) -> f64 {
+        // A mirrored board reads the host's ceiling: the mirror stores
+        // `host - model` here, so the number beside population is the one the
+        // host grows against, while a planned building still moves it by its
+        // modeled amount. Empty on a native game.
+        self.city_housing_sources(city).total()
+            + self
+                .observed_city_housing_adjustments
+                .get(&city.id)
+                .copied()
+                .unwrap_or(0.0)
+    }
+
+    /// Where this city's housing comes from, in the categories the host reports.
+    ///
+    /// ⚠⚠ THE HOST HAS ALWAYS EXPORTED ITS OWN BREAKDOWN AND WE COMPARED ONLY
+    /// THE TOTAL. Every `state` record carries `housing_from_water`,
+    /// `_buildings`, `_districts`, `_improvements`, `_civics`, `_great_people`,
+    /// `_great_works` and `_starting_era`, and they sum exactly to `housing`.
+    /// `civ6_yield_drift.py` compared one number against one number, so a
+    /// persistent ±2 in Rome was a mystery for as long as it stood rather than a
+    /// named category, and the live bridge's per-turn correction hid it
+    /// everywhere except the instrument nobody could act on.
+    ///
+    /// The arithmetic here is exactly `city_housing`'s former body with each
+    /// term written to a named field instead of one accumulator, so the total
+    /// cannot drift from the parts — `city_housing` now derives from this.
+    ///
+    /// Two mappings are worth stating because they are not one-to-one:
+    ///
+    /// * **The Aqueduct counts as WATER to the host, not as a district.** An
+    ///   Aqueduct grants its city fresh water, so Civilization VI folds its
+    ///   lift into `housing_from_water` and leaves `housing_from_districts` to
+    ///   the Neighborhoods and the rest. This was written the other way round
+    ///   first, and the per-source comparison found it within one run: every
+    ///   aqueduct city reported `districts` and `water` wrong by exactly equal
+    ///   and opposite amounts, and those amounts were exactly the aqueduct
+    ///   lifts this ruleset gives — +2 fresh, +3 coastal, +4 dry. A total-only
+    ///   comparison could not have seen it at all, because the total was right.
+    /// * **`other` has no host counterpart.** Resource industries and the
+    ///   government's wall-level housing are CIVVIS terms with nowhere to go in
+    ///   the host's list. They are reported separately rather than hidden
+    ///   inside a category the host also fills, because a category that mixes
+    ///   comparable and incomparable terms cannot be compared at all.
+    pub fn city_housing_sources(&self, city: &City) -> HousingSources {
+        let mut s = HousingSources::default();
         let (fresh, coastal) = self.city_water(city);
         let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
-        let mut h = Self::city_housing_floor(fresh, coastal, has_aqueduct);
+        s.water = Self::city_housing_floor(fresh, coastal, has_aqueduct);
         if self.city_has_palace(city) {
-            h += self.rules.buildings["palace"].housing;
+            s.buildings += self.rules.buildings["palace"].housing;
         }
         for pos in city
             .owned_tiles
@@ -17864,12 +17963,12 @@ impl Game {
                     .improvements
                     .get(improvement)
                     .expect("a placed improvement is in the ruleset");
-                h += spec.housing;
+                s.improvements += spec.housing;
                 if self.players[city.owner]
                     .civics
                     .contains(&crate::name!("colonialism"))
                 {
-                    h += spec
+                    s.improvements += spec
                         .effects
                         .get("housing_after_colonialism")
                         .copied()
@@ -17880,7 +17979,7 @@ impl Game {
                         .civics
                         .contains(&crate::name!("cultural_heritage"))
                 {
-                    h += spec
+                    s.improvements += spec
                         .effects
                         .get("housing_after_cultural_heritage")
                         .copied()
@@ -17891,7 +17990,7 @@ impl Game {
                         .civics
                         .contains(&crate::name!("civil_service"))
                 {
-                    h += spec
+                    s.improvements += spec
                         .effects
                         .get("housing_after_civil_service")
                         .copied()
@@ -17902,7 +18001,7 @@ impl Game {
                         .civics
                         .contains(&crate::name!("civil_engineering"))
                 {
-                    h += spec
+                    s.improvements += spec
                         .effects
                         .get("housing_after_civil_engineering")
                         .copied()
@@ -17915,16 +18014,16 @@ impl Game {
                 && self.building_district_is_active(city, building)
         }) {
             let building = &self.rules.buildings[b];
-            h += building.housing;
+            s.buildings += building.housing;
             if coastal {
-                h += building
+                s.buildings += building
                     .effects
                     .get("coastal_city_housing")
                     .copied()
                     .unwrap_or(0.0);
             }
             if self.city_governor_active(city.owner, city.id) {
-                h += building
+                s.buildings += building
                     .effects
                     .get("governor_city_housing")
                     .copied()
@@ -17933,41 +18032,42 @@ impl Game {
         }
         if self.city_religion(city).is_some() {
             if self.city_has_active_building_family(city, crate::name!("shrine")) {
-                h += self.city_religion_belief_effect(city, "shrine_housing");
+                s.buildings += self.city_religion_belief_effect(city, "shrine_housing");
             }
             if self.city_has_active_building_family(city, crate::name!("temple")) {
-                h += self.city_religion_belief_effect(city, "temple_housing");
+                s.buildings += self.city_religion_belief_effect(city, "temple_housing");
             }
         }
         for (district, position) in &city.districts {
             if self.district_is_active(city, district, *position) {
-                h += self.district_housing(district, *position);
+                s.districts += self.district_housing(district, *position);
                 if matches!(self.district_family(*district).as_str(), "neighborhood" | "aqueduct") {
-                    h += self.governor_effect(city.owner, city.id, "neighborhood_aqueduct_housing");
+                    s.districts +=
+                        self.governor_effect(city.owner, city.id, "neighborhood_aqueduct_housing");
                 }
             }
         }
         for wonder in city.wonders.keys() {
-            h += self.rules.wonders[wonder].housing;
+            s.buildings += self.rules.wonders[wonder].housing;
         }
-        h += self.empire_wonder_effect(city.owner, "empire_housing");
+        s.buildings += self.empire_wonder_effect(city.owner, "empire_housing");
         // Collectivism's COLLECTIVISM_ADD_HOUSING: +2 in every city.
-        h += self.policy_effect(city.owner, "city_housing");
+        s.civics += self.policy_effect(city.owner, "city_housing");
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
-            h += self.policy_effect(city.owner, "housing_at_2_districts");
+            s.civics += self.policy_effect(city.owner, "housing_at_2_districts");
         }
         if specialty_districts >= 3 {
-            h += self.policy_effect(city.owner, "housing_at_3_districts");
+            s.civics += self.policy_effect(city.owner, "housing_at_3_districts");
         }
         if self.city_governor_active(city.owner, city.id) {
-            h += self.policy_effect(city.owner, "governor_housing");
+            s.civics += self.policy_effect(city.owner, "governor_housing");
         }
-        h += self.city_resource_industry_effects(city).housing;
+        s.other += self.city_resource_industry_effects(city).housing;
         let government = self.gov_effects(city.owner);
-        h += government.housing;
+        s.civics += government.housing;
         if !city.districts.is_empty() {
-            h += government.district_city_housing;
+            s.civics += government.district_city_housing;
         }
         let active_wall_levels = city
             .buildings
@@ -17978,16 +18078,8 @@ impl Game {
                     && self.rules.buildings[building].outer_defense > 0
             })
             .count() as f64;
-        h += government.wall_level_housing * active_wall_levels;
-        // A mirrored board reads the host's ceiling: the mirror stores
-        // `host - model` here, so the number beside population is the one the
-        // host grows against, while a planned building still moves it by its
-        // modeled amount. Empty on a native game.
-        h + self
-            .observed_city_housing_adjustments
-            .get(&city.id)
-            .copied()
-            .unwrap_or(0.0)
+        s.other += government.wall_level_housing * active_wall_levels;
+        s
     }
 
     pub fn wonder_built(&self, name: &str) -> bool {
