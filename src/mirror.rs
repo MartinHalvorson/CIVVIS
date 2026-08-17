@@ -17564,7 +17564,6 @@ mod host_fact_tests {
         assert_eq!(refused.game.world_era, absent.game.world_era);
     }
 
-    #[test]
     /// The defect this file's `apply_encampment_health` exists for: a city that
     /// owns a HEALTHY Encampment must not be able to produce `repair_encampment`.
     ///

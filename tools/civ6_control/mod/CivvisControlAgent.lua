@@ -2516,22 +2516,32 @@ end
 -- needed to fix this was in hand the whole time and nothing consulted it.
 local function warPressure()
 	local player = localPlayer();
-	if player == nil then return false, 0, 0; end
+	if player == nil then return false, 0, 0, 0; end
 	local ours = try(function() return player:GetStats():GetMilitaryStrength(); end, 0) or 0;
 	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
-	if diplomacy == nil then return false, ours, 0; end
-	local atWar, worst = false, 0;
+	if diplomacy == nil then return false, ours, 0, 0; end
+	local pid = try(function() return player:GetID(); end, -1);
+	local atWar, worst, strongestMet = false, 0, 0;
 	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
-		if try(function() return diplomacy:IsAtWarWith(otherId); end, false) then
-			atWar = true;
+		local warWith = try(function() return diplomacy:IsAtWarWith(otherId); end, false);
+		-- A met major's strength exists in peace and war alike (the ribbon
+		-- shows it to a human); the deterrence gate below needs it BEFORE any
+		-- declaration, which is exactly when the at-war read above is blind.
+		local met = otherId ~= pid
+			and try(function() return diplomacy:HasMet(otherId); end, false);
+		if warWith or met then
 			local other = Players[otherId];
 			local theirs = other ~= nil
 				and (try(function() return other:GetStats():GetMilitaryStrength(); end, 0) or 0)
 				or 0;
-			if theirs > worst then worst = theirs; end
+			if warWith then
+				atWar = true;
+				if theirs > worst then worst = theirs; end
+			end
+			if met and theirs > strongestMet then strongestMet = theirs; end
 		end
 	end
-	return atWar, ours, worst;
+	return atWar, ours, worst, strongestMet;
 end
 
 local function productionFailureReasons(results)
@@ -2554,7 +2564,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
 	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
 	-- settlers came to outrank soldiers in a war that was being lost.
-	local atWar, ourStrength, enemyStrength = warPressure();
+	local atWar, ourStrength, enemyStrength, strongestMet = warPressure();
 	local losingWar = atWar and enemyStrength > ourStrength;
 	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
 	--
@@ -2764,6 +2774,25 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- not need this, and the whole defect was a gate that could not tell those apart.
 	if losingWar then
 		wantArmy = math.max(wantArmy, (counts.military or 0) + 2);
+	end
+	-- ★★★ AND `losingWar` CANNOT SEE PEACETIME HOPELESSNESS — the wars that end
+	-- runs are DECLARED ON US. `warPressure`'s at-war read returns 0 before any
+	-- declaration, so the lift above arms only once the collapse has started
+	-- (run 220954Z: Mali declared at 894 against our 481, six cities lost; the
+	-- Aug-15..17 tail spends its Recovery turns in exactly this shape). The
+	-- Rust seat gained a peacetime deterrence floor (#1297) but this ladder
+	-- still decides roughly a quarter of production, and its army row stayed
+	-- blind. Deterrence asks the strongest MET major's strength, which exists
+	-- in peace and war alike: below HALF of it — the battering ram gate's own
+	-- readiness bar — the army grows two units at a time. Unlike the wartime
+	-- lift this one stays UNDER ArmyCap: deterrence wants a standing army, not
+	-- a war footing (the Rust twin's PEACETIME_DETERRENCE_CEILING draws the
+	-- same line), so it cannot reproduce the runaway army the cap was written
+	-- to stop. Withholdable per run: `civ6_play --no-peace-deterrence`.
+	if cfg.PeaceDeterrence and not atWar and strongestMet > 0
+			and ourStrength * 2 < strongestMet then
+		wantArmy = math.max(wantArmy, math.min((counts.military or 0) + 2,
+			cfg.ArmyCap or ((cfg.WarArmy or 4) + 6)));
 	end
 	-- ★★★ A BATTERING RAM, AND IT MUST COME BEFORE THE ARMY.
 	--

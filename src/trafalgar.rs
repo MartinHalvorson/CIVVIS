@@ -771,7 +771,6 @@ mod tests {
     /// between them and the engine. The last assertion is the one that
     /// matters — a promotion the combat layer never reads would pass every
     /// other test in this file and change nothing on the board.
-    #[test]
     /// Nine flag officers, where history put them, rated on one scale.
     ///
     /// The counts are the load-bearing part: three British flags against six

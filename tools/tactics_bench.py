@@ -221,7 +221,89 @@ def parse_baseline(text: str) -> dict[tuple[str, str, str], float]:
     return recorded
 
 
+def revision() -> tuple[str, str]:
+    """The commit this benchmark is measuring, and its date. `("", "")` if unknown."""
+    try:
+        sha = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        when = subprocess.run(["git", "-C", str(REPO), "show", "-s", "--format=%cI", sha],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        return sha, when
+    except (subprocess.SubprocessError, OSError):
+        return "", ""
+
+
+def commits_since(sha: str) -> int | None:
+    """How many commits have landed since `sha`. `None` when it cannot be told."""
+    if not sha:
+        return None
+    try:
+        out = subprocess.run(["git", "-C", str(REPO), "rev-list", "--count", f"{sha}..HEAD"],
+                             capture_output=True, text=True, check=True)
+        return int(out.stdout.strip())
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
+def baseline_provenance(text: str) -> dict:
+    """The `<!-- measured: {..} -->` stamp, or `{}` on a baseline written before it."""
+    for line in text.splitlines():
+        marker = "<!-- measured: "
+        if line.startswith(marker) and line.endswith(" -->"):
+            try:
+                return json.loads(line[len(marker):-len(" -->")])
+            except ValueError:
+                return {}
+    return {}
+
+
+def staleness_note(text: str) -> str:
+    """One line saying how far the code has moved since the baseline was taken.
+
+    ⚠⚠⚠ A BASELINE WITH NO AGE ON IT READS AS CURRENT, AND THIS ONE WAS NOT.
+    The table committed on 2026-08-15 was re-measured on 2026-08-17 against
+    that day's `main`, 120 seat-mirrored games per matchup. Every row had
+    moved, and one had moved the wrong way:
+
+        regime                  recorded    re-measured
+        1 city per side            97.5%          75.8%   <-- -21.7
+        no cities                  30.0%          58.3%
+        no cities, random era      52.5%          80.8%
+
+    **A 21.7-point regression in the shipped Tactics product, unnoticed**,
+    because the only instrument that shows it is this battery and the battery
+    runs when somebody remembers. The two improvements were equally invisible:
+    a repair worth +28 points went uncredited for the same reason.
+
+    ⚠ And the sample size is part of the lesson. A 40-game run the same day put
+    `no cities` at 70.0%; 120 games put it at 58.3%. Forty games is a +-15 point
+    instrument, which is why the committed baseline is 120.
+
+    Running 720 rated games in CI is not the answer; saying how old the number
+    is, is. A reader now sees "measured 47 commit(s) ago" instead of a table
+    with no date on it at all.
+    """
+    stamp = baseline_provenance(text)
+    sha, when = stamp.get("commit", ""), stamp.get("date", "")
+    if not sha:
+        return ("this baseline predates revision stamping, so how far the code "
+                "has moved since is unknown — re-run with --write-baseline")
+    behind = commits_since(sha)
+    where = f"{sha[:9]}" + (f" ({when[:10]})" if when else "")
+    if behind is None:
+        return f"baseline measured at {where}; this checkout cannot count commits since"
+    if behind == 0:
+        return f"baseline measured at {where}, which is this revision"
+    return f"baseline measured at {where} — {behind} commit(s) ago"
+
+
 def render_baseline(results: list[Result], games: int) -> str:
+    sha, when = revision()
+    stamp = "<!-- measured: " + json.dumps({
+        "commit": sha, "date": when, "games": games,
+    }) + " -->"
+    measured = (f"Measured on `{sha[:9]}`" + (f" ({when[:10]})" if when else "")
+                if sha else "Measured on an unknown revision")
     machine = "\n".join(
         "<!-- bench: " + json.dumps({
             "regime": r.regime, "left": r.left, "right": r.right, "pct": r.pct,
@@ -234,6 +316,11 @@ def render_baseline(results: list[Result], games: int) -> str:
 What the shipped controllers do on the arena, so a change to tactical AI can be
 answered with a number. Regenerate with `tools/tactics_bench.py --write-baseline`
 and quote the diff in the pull request that moves it.
+
+**{measured}, {games} seat-mirrored games per matchup.** These figures describe
+that revision and no other. `tactics_bench.py` prints how many commits have
+landed since, because a table with no age on it reads as current — and this one
+was not. See `staleness_note` in the benchmark for what that cost.
 
 Every figure is the left controller's share of {games} seat-mirrored games on a
 {WIDTH}x{HEIGHT} arena, with a 95% Wilson interval. Seat-mirrored means each
@@ -258,6 +345,7 @@ finding.** Read the `basic` column.
 
 {table(results)}
 
+{stamp}
 {machine}
 """
 
@@ -301,7 +389,12 @@ def main() -> int:
         print("\nno baseline recorded yet; --write-baseline records one")
         return 0
 
-    recorded = parse_baseline(BASELINE.read_text())
+    committed = BASELINE.read_text()
+    recorded = parse_baseline(committed)
+    # ⚠ THE AGE FIRST, BEFORE ANY DELTA. A delta against a baseline of unknown
+    # age is not a comparison between two versions of the AI; it is a
+    # comparison between now and whenever somebody last remembered to run this.
+    print(f"\n{staleness_note(committed)}")
     print("\nagainst the baseline:")
     worst = 0.0
     for result in results:

@@ -114,3 +114,54 @@ class BaselineRoundTripTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BaselineSaysHowOldItIs(unittest.TestCase):
+    """A table with no age on it reads as current, and this one was not.
+
+    ⚠ On 2026-08-17 the committed baseline said `advanced` took 30.0% of the
+    pure-combat regime against `basic`; the same day's `main` measured 70.0%.
+    The capture regime had gone the other way — 97.5% recorded, **75.8%
+    measured over 120 games**, a 21.7-point regression in the shipped Tactics
+    product that nobody had seen, because the only instrument that would show
+    it runs when somebody remembers to run it.
+    """
+
+    def results(self) -> list:
+        return [
+            tactics_bench.Result("capture", "advanced", "basic", 91.0, 120, 75.8, 67.4, 82.6),
+        ]
+
+    def test_a_written_baseline_carries_the_revision_it_was_measured_on(self) -> None:
+        text = tactics_bench.render_baseline(self.results(), games=120)
+        stamp = tactics_bench.baseline_provenance(text)
+        self.assertIn("commit", stamp)
+        self.assertEqual(stamp["games"], 120)
+        # The human-readable half must be there too: a machine comment nobody
+        # reads is how the old baseline aged invisibly in the first place.
+        self.assertIn("Measured on", text)
+
+    def test_an_unstamped_baseline_says_its_age_is_unknown(self) -> None:
+        note = tactics_bench.staleness_note("# some old baseline\n\nno stamp here\n")
+        self.assertIn("predates revision stamping", note)
+        self.assertIn("--write-baseline", note)
+
+    def test_a_baseline_from_this_revision_says_so(self) -> None:
+        text = tactics_bench.render_baseline(self.results(), games=120)
+        note = tactics_bench.staleness_note(text)
+        # In a git checkout this is "this revision"; in an export the commit is
+        # unknown and the note says that instead. Both are honest; neither may
+        # silently claim currency.
+        self.assertTrue(
+            "this revision" in note or "predates revision stamping" in note,
+            note,
+        )
+
+    def test_a_stamped_baseline_from_an_unknown_commit_does_not_claim_currency(self) -> None:
+        stamp = '<!-- measured: {"commit": "0" * 40, "date": "", "games": 40} -->'
+        note = tactics_bench.staleness_note(stamp.replace('"0" * 40', '"' + "0" * 40 + '"'))
+        self.assertNotIn("this revision", note)
+
+    def test_a_corrupt_stamp_is_ignored_rather_than_trusted(self) -> None:
+        note = tactics_bench.staleness_note("<!-- measured: not json at all -->")
+        self.assertIn("predates revision stamping", note)
