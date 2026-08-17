@@ -256,6 +256,38 @@ jobs:
               )
           print("every ladder type literal exists in Civilization VI")
           PY
+      # ⚠⚠ THE 200-LOCAL CEILING IS A LOAD FAILURE, NOT A WARNING, and the agent
+      # is two slots from it. Lua 5.1 allows 200 local variables in a chunk's
+      # main function; at 201 `luac5.1 -p` above refuses the file outright and
+      # in the game the script simply never loads — no error anywhere the run
+      # can see, which is the same silent death `_G` and `goto` already cost
+      # this project. Three ordinary `local` declarations added while writing
+      # #1839 crossed it. The compile step catches it; this says so in advance,
+      # with the number, so the next person is not debugging "more than 200
+      # local variables" from a red build.
+      - name: Local-slot headroom in the control agent
+        run: |
+          python3 - <<'PY'
+          import re, sys, pathlib
+          path = pathlib.Path("tools/civ6_control/mod/CivvisControlAgent.lua")
+          slots = 0
+          for line in path.read_text().splitlines():
+              match = re.match(r"^local(?: function)? ([A-Za-z_][A-Za-z0-9_, ]*)", line)
+              if not match:
+                  continue
+              slots += 1 if line.startswith("local function") else len(
+                  [n for n in match.group(1).split(",") if n.strip()])
+          print(f"{path}: ~{slots} of Lua 5.1's 200 main-chunk local slots")
+          if slots > 200:
+              sys.exit("over the limit; the chunk will not load in the game. "
+                       "Make new top-level values bare globals instead — see "
+                       "the note on CivvisResidualBucket.")
+          if slots > 190:
+              print(f"::warning::only ~{200 - slots} local slot(s) left; prefer "
+                    "a bare global for anything new at the top level")
+          PY
+      - name: Blocker ownership and the residual census
+        run: lua5.1 tools/civ6_control/mod/residual_census_test.lua
       - name: Envoy spend order
         run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
       - name: Stranded settler gate
