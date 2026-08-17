@@ -8596,6 +8596,20 @@ impl Game {
         let Some(units) = crate::historical_scenarios::force_units(self.map_script, pid) else {
             return;
         };
+        // Along the line this side actually formed on, where the battle's own
+        // chart draws one: an army that stood in a line should open in a line,
+        // not in a clump around one tile. `front_tiles` orders the ground
+        // along the front first and away from it second, and the plan names
+        // the historically decisive wing first, so the order of battle fills
+        // from that wing outward. A force with both feet and keels — an
+        // amphibious landing — needs both elements ordered, so each is asked
+        // for separately and the unit's own domain picks between them.
+        let plan = crate::historical_scenarios::by_script(self.map_script)
+            .and_then(|scenario| crate::historical_terrain::by_id(scenario.id));
+        let line = |water: bool| {
+            plan.map(|plan| crate::historical_terrain::front_tiles(&self.map, plan, pid, water))
+        };
+        let (ashore, afloat) = (line(false), line(true));
         let mut ground: Vec<Pos> = self.map.tiles.keys().copied().collect();
         ground.sort_by_key(|position| (self.wdist(anchor, *position), *position));
         for kind in units {
@@ -8603,13 +8617,21 @@ impl Game {
                 continue;
             };
             let wants_water = spec.domain.as_deref() == Some("sea");
-            let position = ground.iter().copied().find(|position| {
+            let standing = if wants_water { &afloat } else { &ashore };
+            let open = |position: &Pos| {
                 self.map.get(*position).is_some_and(|tile| {
                     self.rules.is_passable(tile)
                         && self.rules.is_water(tile) == wants_water
                         && self.units_at(*position).is_empty()
                 })
-            });
+            };
+            // The front first; the anchor's own neighbourhood is the fallback
+            // for a piece the drawn line has no room for, and for the charts
+            // that carry their own deployment (Trafalgar).
+            let position = standing
+                .as_ref()
+                .and_then(|line| line.iter().copied().find(open))
+                .or_else(|| ground.iter().copied().find(open));
             if let Some(position) = position {
                 self.spawn_unit(kind, pid, position);
             }
