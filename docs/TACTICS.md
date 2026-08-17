@@ -478,9 +478,16 @@ seat-turns (15.5%), reaching 145 unit decisions.
   agent is the one the operator asked to fight better, and the whole-game
   evidence in §6 says the rating this cannot move is not the thing being
   optimized there.
-- **The tournament `advanced` entrant keeps the greedy rule** and the frozen
-  Basic/`advanced_v1` identities are untouched, so recorded ladders stay
-  comparable. The `advanced_joint_tactics` arm remains the measured treatment.
+- **The Battlefield arena now routes promoted `AdvancedAi` controllers through
+  the same search automatically.** `Game::is_arena()` is the seam: a bounded
+  20×20 fight is the surface this search was measured for, while a native Civ
+  world keeps its existing greedy commitment rule. The frozen `advanced_v1`
+  anchor and an explicit `disable_joint_tactics` withholding remain greedy, so
+  evaluator identities and live ablations stay honest.
+- **The tournament `advanced` entrant keeps the greedy rule on world games**
+  and the frozen Basic/`advanced_v1` identities are untouched, so recorded
+  ladders stay comparable. The `advanced_joint_tactics` arm remains the
+  explicit measured treatment for non-arena evaluation.
 - §7.1's warning stands for win-rate work: do not spend more here expecting
   wins. This section exists because the operator asked for combat strength as
   its own objective, and that is what the instrument certifies.
