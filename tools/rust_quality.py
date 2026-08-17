@@ -61,16 +61,25 @@ def revision(repo: Path, value: str | None, fallback: str) -> str:
 
 
 def merge_base(repo: Path, base: str, head: str) -> str:
-    """The fork point the head actually grew from.
+    """The revision this head's changes should be read against.
 
-    GitHub hands the workflow the base *branch tip*, and on this trunk that
-    tip moves every few minutes. Diffing tip..head blames the head for every
-    line other PRs merged after the branch last synchronized — a trailing
-    branch fails the gate on formatting it never touched (observed on #1852:
-    four chunks in regions only main had edited). The merge base is immune to
-    the base advancing; when git cannot compute one (shallow clone), the
-    supplied base is kept.
+    On a pull_request event the workflow's head is GitHub's test **merge
+    commit** — the branch merged into main *as of the run* — while
+    `QUALITY_BASE` is the base tip frozen at the last synchronize event. On
+    this trunk main moves every few minutes, so tip..merge-commit contains
+    every line other PRs landed in between, and the gate blames them on
+    whoever's run came next (observed on #1852: four format chunks in
+    regions only main had edited, surviving a fresh synchronize). For a
+    merge-commit head the honest base is its **first parent** — the exact
+    main the merge was built against. A single-parent head (push event)
+    falls back to the merge base with the supplied revision, and a clone
+    that can answer neither keeps the supplied base unchanged.
     """
+    first_parent = run(repo, ["git", "rev-parse", "--verify", f"{head}^2"])
+    if first_parent.returncode == 0:
+        merged_against = run(repo, ["git", "rev-parse", "--verify", f"{head}^1"])
+        if merged_against.returncode == 0:
+            return merged_against.stdout.strip()
     result = run(repo, ["git", "merge-base", base, head])
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()

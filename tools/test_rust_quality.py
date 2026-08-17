@@ -119,14 +119,36 @@ class QualityHelpersTests(unittest.TestCase):
             self.assertEqual(ranges, {key: [(12, 14), (53, 53)]})
 
     def test_merge_base_replaces_a_moving_branch_tip(self):
+        ok = lambda text: quality.subprocess.CompletedProcess([], 0, text, "")
+        fail = quality.subprocess.CompletedProcess([], 128, "", "fatal")
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
-            found = quality.subprocess.CompletedProcess([], 0, "abc123\n", "")
-            with patch.object(quality, "run", return_value=found):
-                self.assertEqual(quality.merge_base(repo, "tip", "head"), "abc123")
-            # A shallow clone cannot answer; the supplied base is kept.
-            missing = quality.subprocess.CompletedProcess([], 128, "", "fatal")
-            with patch.object(quality, "run", return_value=missing):
+
+            # A pull_request head is GitHub's test merge commit; its first
+            # parent is the main the merge was built against.
+            def merge_head(repo, args, **kwargs):
+                if args[-1] == "head^2":
+                    return ok("branchhead\n")
+                if args[-1] == "head^1":
+                    return ok("mainparent\n")
+                return fail
+
+            with patch.object(quality, "run", side_effect=merge_head):
+                self.assertEqual(quality.merge_base(repo, "tip", "head"), "mainparent")
+
+            # A push head has one parent: fall back to the true fork point.
+            def push_head(repo, args, **kwargs):
+                if args[-1] == "head^2":
+                    return fail
+                if args[:2] == ["git", "merge-base"]:
+                    return ok("fork\n")
+                return fail
+
+            with patch.object(quality, "run", side_effect=push_head):
+                self.assertEqual(quality.merge_base(repo, "tip", "head"), "fork")
+
+            # A clone that can answer neither keeps the supplied base.
+            with patch.object(quality, "run", return_value=fail):
                 self.assertEqual(quality.merge_base(repo, "tip", "head"), "tip")
 
     def test_rustfmt_abort_is_a_skip_not_a_failure(self):
