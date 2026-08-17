@@ -2070,6 +2070,7 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
 
 /// Construct a canonical, already-resolved arm. Public callers enter through
 /// [`builtin_arm`] or [`builtin_ai`], never by selecting a raw string here.
+#[allow(clippy::field_reassign_with_default)]
 fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
@@ -5510,7 +5511,7 @@ mod tests {
             let name = Path::new(ratings_path_for(mode))
                 .file_name()
                 .expect("ladder file name");
-            pool.save(&dir.join(name)).expect("write scratch ladder");
+            pool.save(dir.join(name)).expect("write scratch ladder");
         };
         write(
             GameMode::Civ,

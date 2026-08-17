@@ -1355,7 +1355,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The 2026-08-17 measured-null production cleanup changes the shared source
 /// file but leaves `AdvancedAi::legacy()` gated away from both retired arms;
 /// compatibility re-pin, not a new rating protocol.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdb2b_170b_8424_0aed;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3390_b097_63e2_afda;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2494,7 +2494,8 @@ fn main() {
                                 continue;
                             }
                             last_turn = g.turn;
-                            let due = g.turn >= start_turn && (g.turn - start_turn) % every == 0;
+                            let due =
+                                g.turn >= start_turn && (g.turn - start_turn).is_multiple_of(every);
                             if !due || g.winner.is_some() || crossings.iter().all(Option::is_some) {
                                 continue;
                             }
