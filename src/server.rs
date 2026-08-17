@@ -3542,12 +3542,7 @@ fn respond_json(stream: &mut TcpStream, v: &Value) -> bool {
             body.splice(1..1, marker.bytes());
         }
     }
-    respond(
-        stream,
-        "200 OK",
-        "application/json",
-        &body,
-    )
+    respond(stream, "200 OK", "application/json", &body)
 }
 
 fn request_path(target: &str) -> &str {
@@ -6240,8 +6235,7 @@ mod tests {
             &http_post(
                 port,
                 "/action",
-                &json!({"protocol_version": crate::protocol::PROTOCOL_VERSION + 1})
-                    .to_string(),
+                &json!({"protocol_version": crate::protocol::PROTOCOL_VERSION + 1}).to_string(),
             )
             .expect("future protocol request response"),
         )
@@ -6252,10 +6246,9 @@ mod tests {
                 .is_some_and(|error| error.contains("protocol_version")),
             "{refused}"
         );
-        let save: Value = serde_json::from_str(
-            &http_get(port, "/save").expect("versioned save response"),
-        )
-        .expect("save is JSON");
+        let save: Value =
+            serde_json::from_str(&http_get(port, "/save").expect("versioned save response"))
+                .expect("save is JSON");
         assert_eq!(save["format"], json!("civvis.save"));
         assert_eq!(
             save["save_format_version"],

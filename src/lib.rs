@@ -44,6 +44,9 @@ pub mod obs_tensor;
 // search's counterfactual sampling reads it directly.
 #[cfg(feature = "closed-experiments")]
 pub mod decision_features;
+pub mod mods;
+pub mod pedia;
+pub mod protocol;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;
@@ -59,9 +62,6 @@ pub mod sphere;
 pub mod strategic;
 pub mod trafalgar;
 pub mod valuenet;
-pub mod mods;
-pub mod pedia;
-pub mod protocol;
 pub mod validate;
 pub mod world;
 
