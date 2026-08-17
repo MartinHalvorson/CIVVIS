@@ -2616,6 +2616,13 @@ mod tests {
         assert_eq!(plan.specialists, vec!["theater_square"]);
         assert_eq!(recon.game.players[0].counters["great_work:writing"], 1);
         assert_eq!(recon.game.players[0].great_work_pieces.len(), 1);
+        // And the host's own housing is the model's: the work sits where the
+        // export says, not where the model's best-slot heuristic would put it.
+        assert_eq!(
+            recon.game.observed_great_work_housing.as_ref().and_then(|h| h.get(&cid)).and_then(|k| k.get("writing")),
+            Some(&1)
+        );
+        assert_eq!(recon.game.housed_great_works(0).get(&cid).and_then(|k| k.get("writing")), Some(&1));
         assert_eq!(recon.game.cities[&cid].production, 12.5);
         assert_eq!(recon.game.city_yields(cid), host_yields);
 
@@ -8449,6 +8456,12 @@ pub struct StateTradeRoute {
     pub posts_own: Option<i64>,
     #[serde(default)]
     pub posts_foreign: Option<i64>,
+    /// What the route pays its origin per turn, as the host sums it
+    /// (`CalculateOriginYieldsFromPotentialRoute` + `…FromPath` +
+    /// `…FromModifiers`, times the international multiplier — the shipped
+    /// TradeSupport recipe). `None` on an older export.
+    #[serde(default)]
+    pub yields: Option<crate::rules::Yields>,
 }
 
 /// Empire-wide facts Civilization VI exposes in standings without exposing
@@ -9345,6 +9358,7 @@ fn restore_active_trade_routes(
 ) -> Vec<String> {
     game.routes.clear();
     game.observed_route_posts.clear();
+    game.observed_route_yields.clear();
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
 
@@ -9394,6 +9408,16 @@ fn restore_active_trade_routes(
             if own >= 0 && foreign >= 0 {
                 game.observed_route_posts
                     .insert((origin, destination), (own, foreign));
+            }
+        }
+        // And what the host says the route pays its origin, which covers a
+        // destination whose districts the seat has never seen.
+        if let Some(yields) = route.yields {
+            let finite = [yields.food, yields.production, yields.gold, yields.science, yields.culture, yields.faith]
+                .iter()
+                .all(|value| value.is_finite() && *value >= 0.0);
+            if finite {
+                game.observed_route_yields.insert((origin, destination), yields);
             }
         }
         game.routes.push(crate::game::TradeRoute {
@@ -10446,7 +10470,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
-        "destination_x", "destination_y", "posts_own", "posts_foreign",
+        "destination_x", "destination_y", "posts_own", "posts_foreign", "yields",
     ];
     const GOVERNOR: &[&str] = &[
         "type", "city", "city_player", "x", "y", "established", "turns_on_site",
@@ -13233,29 +13257,41 @@ fn apply_observed_city_economy(
         }
         game.players[0].great_work_pieces.clear();
         let mut seen = std::collections::BTreeSet::new();
-        let works = state
-            .cities
-            .iter()
-            .flat_map(|city| city.great_works.as_deref().unwrap_or_default());
-        for work in works {
-            if !seen.insert(work.kind.clone()) {
-                continue;
-            }
-            match great_work_kind(&work.object) {
-                Some(kind) => game.grant_great_work(
-                    0,
-                    kind,
-                    great_work_era(work.era.as_deref()),
-                    &work.creator,
-                ),
-                None => {
-                    let issue = format!("{}:{}:great_work", work.kind, work.object);
-                    if !unmapped.contains(&issue) {
-                        unmapped.push(issue);
+        // ...and WHERE the host keeps each one. The model's own housing picks
+        // the best slot for a work (a Relic goes to St. Basil's over the
+        // Palace); the host's placement is what pays, and it read "+6 from
+        // GreatWorks" in Rome while the model paid Mediolanum (run
+        // civvis-20260816T233226Z t154+).
+        let mut housing: std::collections::BTreeMap<u32, std::collections::BTreeMap<String, usize>> =
+            Default::default();
+        for city in &state.cities {
+            let cid = game.city_at(crate::hex::offset_to_axial(city.x, city.y));
+            for work in city.great_works.as_deref().unwrap_or_default() {
+                if !seen.insert(work.kind.clone()) {
+                    continue;
+                }
+                match great_work_kind(&work.object) {
+                    Some(kind) => {
+                        game.grant_great_work(
+                            0,
+                            kind,
+                            great_work_era(work.era.as_deref()),
+                            &work.creator,
+                        );
+                        if let Some(cid) = cid {
+                            *housing.entry(cid).or_default().entry(kind.to_string()).or_insert(0) += 1;
+                        }
+                    }
+                    None => {
+                        let issue = format!("{}:{}:great_work", work.kind, work.object);
+                        if !unmapped.contains(&issue) {
+                            unmapped.push(issue);
+                        }
                     }
                 }
             }
         }
+        game.observed_great_work_housing = Some(housing);
     }
 
     // ★★★★★ THE HOST'S OWN PER-PLOT YIELDS, WHERE THE EXPORT CARRIES THEM.
