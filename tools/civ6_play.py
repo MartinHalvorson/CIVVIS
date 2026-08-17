@@ -228,6 +228,35 @@ def state_export_enabled(args: argparse.Namespace) -> bool:
     return bool(args.export_state or args.civvis_decides)
 
 
+def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
+                             orders_db: Path, binary: Path) -> list[str]:
+    """The decision worker's full command line — one builder, echoed whole by
+    the launch banner.
+
+    `--civvis-refresh-seconds` forwards as the brain's
+    `--github-refresh-seconds`: the brain re-execs itself onto every
+    origin/main advance at a turn boundary, so without this route a "pinned"
+    batch still measures a moving program (run `civvis-20260817T160515Z`
+    carried four decider revisions while its ledger row named one).
+    """
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "tools" / "civ6_brain.py"),
+        "--run-dir", str(run_dir),
+        "--orders-db", str(orders_db),
+        "--mode", "civvis",
+        "--bin", str(binary),
+        "--victory", args.civvis_victory,
+        "--strategy", args.civvis_strategy,
+        "--seconds", str(max(21600.0, args.timeout + 3600.0)),
+    ]
+    if args.civvis_war_from_plan:
+        command.append("--war-from-plan")
+    if args.civvis_refresh_seconds is not None:
+        command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    return command
+
+
 def build_config(args: argparse.Namespace) -> dict:
     config = {
         "RunTag": args.tag,
@@ -2280,19 +2309,7 @@ def _play(args: argparse.Namespace) -> int:
             print(f"CIVVIS decision binary does not exist: {binary}", file=sys.stderr)
             return 4
         brain_log = (run_dir / "brain.log").open("a", buffering=1)
-        command = [
-            sys.executable,
-            str(REPO_ROOT / "tools" / "civ6_brain.py"),
-            "--run-dir", str(run_dir),
-            "--orders-db", str(orders_db),
-            "--mode", "civvis",
-            "--bin", str(binary),
-            "--victory", args.civvis_victory,
-            "--strategy", args.civvis_strategy,
-            "--seconds", str(max(21600.0, args.timeout + 3600.0)),
-        ]
-        if args.civvis_war_from_plan:
-            command.append("--war-from-plan")
+        command = supervised_brain_command(args, run_dir, orders_db, binary)
         brain = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
@@ -2303,9 +2320,12 @@ def _play(args: argparse.Namespace) -> int:
         # ⚠ Print the WHOLE configuration, not a chosen subset. `--war-from-plan`
         # was carried by a second, undeclared brain for as long as it existed, and a
         # banner naming only strategy and victory could not have shown that.
+        refresh = ("brain-default" if args.civvis_refresh_seconds is None
+                   else args.civvis_refresh_seconds)
         print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
               f"victory={args.civvis_victory} "
-              f"war_from_plan={args.civvis_war_from_plan} bin={binary}")
+              f"war_from_plan={args.civvis_war_from_plan} "
+              f"refresh_seconds={refresh} bin={binary}")
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -2921,6 +2941,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
                     help="declare on CIVVIS's plan target, since a board rebuilt "
                          "each turn can never mature a casus belli")
+    # Same lesson one flag up: `civ6_brain.py` has taken `--github-refresh-seconds`
+    # all along, and with no route through this launcher a pinned batch was never
+    # pinned — the brain re-execs itself onto every origin/main advance mid-game.
+    ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
+                    help="forwarded to the decision worker as "
+                         "--github-refresh-seconds; 0 freezes the decider on its "
+                         "launch revision for the whole run. Default leaves the "
+                         "brain's own live-upgrade cadence alone")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
