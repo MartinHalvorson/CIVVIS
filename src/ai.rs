@@ -125,7 +125,7 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// How near one of our own cities an enemy has to stand before the empire owes
 /// it an answer. Six is the same ring `nearest_enemy` already calls "near home"
 /// when it decides whether to chase a barbarian, so the two agree on the word.
-const HOME_THREAT_RADIUS: i32 = 6;
+pub(crate) const HOME_THREAT_RADIUS: i32 = 6;
 /// How far from a city a barbarian CAMP still counts as home ground under
 /// `camp_reach`: Civilization VI's camps raise raiders toward cities well
 /// beyond the six-tile raider radius, and a camp is not a raider — it does
@@ -219,6 +219,12 @@ const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 /// dead-end nibble of fog from the edge of a broad unexplored region, without
 /// making every scout sweep the whole world every turn.
 const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+
+/// How far an exploring unit will detour for a tribal village it has already
+/// charted but cannot reach this turn. See `BasicAi::village_seeking`. Two
+/// scout-turns of ground: far enough to catch the villages a sweep walked
+/// past, near enough that the frontier is never abandoned for a long march.
+const VILLAGE_SEEK_RADIUS: i32 = 6;
 
 /// The population under which a FRONTIER city gets the garrison-walls
 /// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
@@ -2153,6 +2159,13 @@ pub struct BasicAi {
     /// rivals consume first when unclaimed. Production Advanced turns this on;
     /// Basic and the frozen `advanced_v1` anchor keep the historical rule.
     pub(crate) hut_collection: bool,
+    /// Walk an exploring unit toward a tribal village it has already charted
+    /// but cannot reach this turn (within `VILLAGE_SEEK_RADIUS`), before
+    /// opening more fog. `hut_collection` only ever grabs a village inside
+    /// the current turn's reach, so a sweep that passed two tiles wide of one
+    /// left it for a rival. Production Advanced turns this on; Basic and the
+    /// frozen `advanced_v1` anchor keep the historical rule.
+    pub(crate) village_seeking: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3430,6 +3443,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             hut_collection: false,
+            village_seeking: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -3568,6 +3582,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             hut_collection: false,
+            village_seeking: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -10056,10 +10071,6 @@ impl BasicAi {
     /// while a camp on the far side of the map is not a reason to mobilise.
     /// The chase itself stays bounded by [`BasicAi::nearest_enemy`]'s own
     /// near-home and exchange-score gates.
-    pub(crate) fn barbarian_presence_at_home(g: &Game, pid: usize) -> bool {
-        Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_THREAT_RADIUS)
-    }
-
     /// `barbarian_presence_at_home` with the camp radius chosen by the caller:
     /// raiders always count within `HOME_THREAT_RADIUS`, camps within
     /// `camp_radius`. See `camp_reach`.
@@ -10690,6 +10701,12 @@ impl BasicAi {
         // contains the whole board for simulation purposes; use live
         // player vision here so reconnaissance does not gain a route to huts
         // it has never actually seen.
+        let is_village = |g: &Game, pos: Pos| {
+            matches!(
+                g.map.get(pos).and_then(|tile| tile.improvement.as_deref()),
+                Some("goody_hut" | "meteor_goody")
+            )
+        };
         let nearby_hut = ((self.tactical_strategy || self.hut_collection)
             && !g.players[pid].is_barbarian)
             .then(|| {
@@ -10697,18 +10714,45 @@ impl BasicAi {
                 g.reachable(uid)
                     .into_iter()
                     .filter(|pos| g.sees(&visible, *pos))
-                    .filter(|pos| {
-                        g.map
-                            .get(*pos)
-                            .and_then(|tile| tile.improvement.as_deref())
-                            == Some("goody_hut")
-                    })
+                    .filter(|pos| is_village(g, *pos))
                     .min_by_key(|pos| (g.wdist(upos, *pos), *pos))
             })
             .flatten();
         if let Some(hut) = nearby_hut {
             if self.step_toward(g, pid, uid, hut) {
                 return true;
+            }
+        }
+        // A village the empire has already charted but cannot reach this turn
+        // is still a bounded, expiring prize: whichever civilization arrives
+        // first consumes it. Walk toward the nearest one within
+        // `VILLAGE_SEEK_RADIUS` before opening more fog. Knowledge is limited
+        // to tiles in the explored set — ground this seat has actually had in
+        // sight — and the walk re-derives every turn, so a village a rival
+        // pops meanwhile is dropped the moment the tile comes back into view.
+        // One chaser per village: a strictly closer fellow reconnaissance
+        // unit releases this one back to the frontier.
+        if self.village_seeking && !g.players[pid].is_barbarian {
+            let known_village = g
+                .wdisk(upos, VILLAGE_SEEK_RADIUS)
+                .into_iter()
+                .filter(|pos| *pos != upos)
+                .filter(|pos| g.players[pid].explored.contains(pos))
+                .filter(|pos| is_village(g, *pos))
+                .filter(|pos| g.unit_can_traverse(uid, *pos))
+                .filter(|pos| {
+                    !g.units.values().any(|other| {
+                        other.owner == pid
+                            && other.id != uid
+                            && Self::unit_doctrine(g, other.id) == UnitDoctrine::Recon
+                            && g.wdist(other.pos, *pos) < g.wdist(upos, *pos)
+                    })
+                })
+                .min_by_key(|pos| (g.wdist(upos, *pos), *pos));
+            if let Some(village) = known_village {
+                if self.step_toward(g, pid, uid, village) {
+                    return true;
+                }
             }
         }
         // `unit_can_traverse` says yes to open water for every land unit the
@@ -16539,6 +16583,76 @@ mod tests {
             g.log.last(),
             Some((0, Action::Move { unit, to })) if *unit == scout && *to == hut
         ));
+
+        // A crashed meteor is the same expiring prize with a richer table:
+        // the pickup collects it through the identical branch.
+        let mut meteor_board = frozen.clone();
+        meteor_board.map.tiles.get_mut(&hut).unwrap().improvement =
+            Some(crate::name!("meteor_goody"));
+        let mut meteor_ai = BasicAi::new();
+        meteor_ai.hut_collection = true;
+        assert!(meteor_ai.military_step(&mut meteor_board, 0, scout));
+        assert_eq!(meteor_board.units[&scout].pos, hut);
+        assert!(meteor_board.map.tiles[&hut].improvement.is_none());
+    }
+
+    #[test]
+    fn a_seeking_scout_walks_to_a_charted_village_beyond_this_turns_reach() {
+        let mut g = Game::new_full(1, 24, 16, 38_003, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let origin = *g.map.tiles.keys().min().expect("the map has tiles");
+        let village = g
+            .wdisk(origin, VILLAGE_SEEK_RADIUS)
+            .into_iter()
+            .filter(|pos| g.wdist(origin, *pos) == 5)
+            .min()
+            .expect("a tile five steps out exists");
+        g.map.tiles.get_mut(&village).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let scout = g.spawn_test_unit("scout", 0, origin);
+        // The whole board is charted: no fog competes with the village, and
+        // the village is far outside this turn's reach (three movement).
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+        assert!(!g.reachable(scout).contains(&village));
+
+        // Without the flag nothing moves — no fog, no this-turn village.
+        let mut frozen = g.clone();
+        assert!(!BasicAi::new().village_seeking);
+        assert!(!BasicAi::new().explore_step(&mut frozen, 0, scout));
+        assert_eq!(frozen.units[&scout].pos, origin);
+
+        // With it, the scout closes on the charted village.
+        let mut seeker = BasicAi::new();
+        seeker.village_seeking = true;
+        let mut sought = g.clone();
+        assert!(seeker.explore_step(&mut sought, 0, scout));
+        assert!(
+            g.wdist(sought.units[&scout].pos, village) < g.wdist(origin, village),
+            "the seeking step must close the distance to the village"
+        );
+
+        // One chaser per village: a strictly closer fellow scout releases
+        // this one back to the frontier.
+        let mut crowded = g.clone();
+        let closer = crowded
+            .nbrs(village)
+            .into_iter()
+            .min()
+            .expect("the village has a neighbour");
+        crowded.spawn_test_unit("scout", 0, closer);
+        let mut yielding = BasicAi::new();
+        yielding.village_seeking = true;
+        assert!(!yielding.explore_step(&mut crowded, 0, scout));
+        assert_eq!(crowded.units[&scout].pos, origin);
     }
 
     #[test]

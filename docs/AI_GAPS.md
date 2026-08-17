@@ -542,9 +542,13 @@ to march with.
 `advanced_synergy` is the 37 of those repairs that fix a CIVVIS defect rather
 than encode a rule of Firaxis' game, applied to the stock production
 controller. `live_trader_route_adapter`, `live_religious_purchase_guard` and
-`solvent_faith_army` are excluded as Firaxis semantics; `joint_tactics` is
-excluded on evidence (§7 above). The war (23) and economy (14) halves are
-separate arms so the composite's interaction is measured rather than assumed.
+`solvent_faith_army` are excluded as Firaxis semantics. `joint_tactics` remains
+excluded from the native live bundle on evidence (§7 above), but the existing
+bounded search is now the promoted controller's automatic route on the separate
+Battlefield arena. That route is measured on the skirmish benchmark rather than
+claimed as a whole-game win improvement; `advanced_v1` and explicit withholds
+remain greedy. The war (23) and economy (14) halves are separate arms so the
+composite's interaction is measured rather than assumed.
 
 | arm | compact-standard | deployment-online |
 |---|---:|---:|

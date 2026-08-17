@@ -196,6 +196,7 @@ pub const EVAL_ONLY_AIS: [&str; 176] = [
     "advanced_without_settler_deadline",
     "advanced_without_hut_collection",
     "advanced_without_explore_commit",
+    "advanced_without_village_seeking",
     "advanced_price_suzerainty",
     "advanced_without_unit_tactics",
     "advanced_league_top",
@@ -687,6 +688,7 @@ define_arm_kinds! {
     AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
     AdvancedWithoutHutCollection => "advanced_without_hut_collection",
     AdvancedWithoutExploreCommit => "advanced_without_explore_commit",
+    AdvancedWithoutVillageSeeking => "advanced_without_village_seeking",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -2891,6 +2893,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_explore_commit();
             Box::new(ai)
         }
+        "advanced_without_village_seeking" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_village_seeking();
+            Box::new(ai)
+        }
         "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
         // The declared aliases of `advanced` (the war-half withhold trio,
         // `advanced_plan_city_target`, `advanced_without_city_target_floor`,
@@ -3897,6 +3904,7 @@ impl ArmKind {
             Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
             Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
             Self::AdvancedWithoutExploreCommit => &["explore-commit-withheld"],
+            Self::AdvancedWithoutVillageSeeking => &["village-seeking-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
@@ -4373,6 +4381,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_hut_collection" => (Vec::new(), "advanced_without_hut_collection"),
         "advanced_without_explore_commit" => (Vec::new(), "advanced_without_explore_commit"),
+        "advanced_without_village_seeking" => (Vec::new(), "advanced_without_village_seeking"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
@@ -5568,7 +5577,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 81] = [
+            const SCRIPTED: [&str; 82] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5642,6 +5651,7 @@ mod tests {
                 "advanced_without_settler_deadline",
                 "advanced_without_hut_collection",
                 "advanced_without_explore_commit",
+                "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ

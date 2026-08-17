@@ -95,6 +95,34 @@ jobs:
       # is identical (`--cargo-profile ci`); doc-tests do not run under
       # nextest, and this crate has none that execute (every doc fence is
       # `text` or `ignore`, 3 ignored stubs).
+      # ⚠⚠ THE COMPILER HAD BEEN REPORTING REAL DEFECTS TO NOBODY. `cargo test`
+      # does not fail on warnings, so they accumulated on `main` unread — and
+      # two of them were not style. `settle_site_is_loyalty_doomed` and
+      # `barbarian_presence_at_home` were wrappers no production path called,
+      # kept compiling only because tests called them: seven and three test
+      # assertions exercising a function the shipped binary does not contain,
+      # while the code that ships took a different path. Three others were a
+      # second `#[test]` above a doc comment, which reads as two attributes and
+      # is a typo away from a test that does not run.
+      #
+      # `rust-quality.yml` gates clippy and rustfmt on CHANGED FILES because
+      # those backlogs are large. Plain rustc warnings are a different case:
+      # the crate is at zero, so the whole crate can be held there. Restricted
+      # to `src/` on purpose — a future dependency's warning is not this
+      # repository's build to break.
+      - name: The crate compiles without warnings
+        run: |
+          set -o pipefail
+          cargo check --profile ci --locked --all-targets --message-format short \
+            2>&1 | tee /tmp/check.txt || true
+          if grep -E '^src/[^:]*:[0-9]+:[0-9]+: warning:' /tmp/check.txt; then
+            echo
+            echo "The compiler reported the warnings above and nothing was failing on"
+            echo "them. Fix them, or if one is genuinely wanted, say so with a scoped"
+            echo "#[allow(..)] carrying the reason."
+            exit 1
+          fi
+          echo "no rustc warnings in src/"
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --cargo-profile ci --locked
 
