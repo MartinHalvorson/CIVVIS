@@ -21557,6 +21557,27 @@ impl Game {
 
     // -------------------------------------------------------- unit helpers
 
+    /// Charges a Builder trained by this player would carry today: the
+    /// ruleset base plus building, wonder, Serfdom and Dynastic Cycle
+    /// bonuses. `spawn_unit` applies exactly this sum, so a production
+    /// valuation can price the Builder it is deciding whether to train by
+    /// the number of jobs that Builder will actually be able to do. The
+    /// governor placement bonus (Liang) is applied at spawn position and is
+    /// deliberately absent here — production does not know where the unit
+    /// will stand.
+    pub fn builder_charges(&self, owner: usize) -> i32 {
+        let mut charges = self.rules.units["builder"].charges;
+        charges += self.empire_building_sum(owner, |b| b.builder_charges as f64) as i32;
+        charges += self.empire_wonder_effect(owner, "builder_charges") as i32;
+        if self.has_policy(owner, "serfdom") {
+            charges += 2;
+        }
+        if self.has_ability(owner, "dynastic_cycle") {
+            charges += 1; // China: First Emperor
+        }
+        charges
+    }
+
     /// `pub(crate)` for `oracle.rs`, which places units directly the same way
     /// `relocate` was widened for it. Nothing outside the crate can reach it.
     pub(crate) fn spawn_unit(&mut self, kind: &str, owner: usize, pos: Pos) -> u32 {
@@ -21575,17 +21596,11 @@ impl Game {
                 *best_ranged = (*best_ranged).max(spec.ranged_strength.round() as i64);
             }
         }
-        let mut charges = spec.charges;
-        if kind == "builder" {
-            charges += self.empire_building_sum(owner, |b| b.builder_charges as f64) as i32;
-            charges += self.empire_wonder_effect(owner, "builder_charges") as i32;
-            if self.has_policy(owner, "serfdom") {
-                charges += 2;
-            }
-            if self.has_ability(owner, "dynastic_cycle") {
-                charges += 1; // China: First Emperor
-            }
-        }
+        let mut charges = if kind == "builder" {
+            self.builder_charges(owner)
+        } else {
+            spec.charges
+        };
         if spec.religious_spread > 0.0 {
             charges += self.empire_wonder_effect(owner, "religious_spread_charges") as i32;
             if let Some(city_id) = self.city_at(pos) {

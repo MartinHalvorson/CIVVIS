@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 160] = [
+pub const EVAL_ONLY_AIS: [&str; 162] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -172,6 +172,13 @@ pub const EVAL_ONLY_AIS: [&str; 160] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    // The two production value/cost treatments: the Builder priced by a
+    // survey of the work it would do, and military units credited for
+    // strength-per-production and the civ's own unique window. Reserved
+    // matrix seeds 25000000 (builder survey) and 26000000 (unit
+    // efficiency); one pre-registered run each, not swept.
+    "advanced_builder_survey",
+    "advanced_unit_efficiency",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -642,6 +649,8 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedBuilderSurvey => "advanced_builder_survey",
+    AdvancedUnitEfficiency => "advanced_unit_efficiency",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -2877,6 +2886,24 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_unit_objective_memory();
             Box::new(ai)
         }
+        // The Builder priced by the work it would do rather than a headcount
+        // quota: charges from `Game::builder_charges`, jobs from the same
+        // valuation Builder movement uses, luxury novelty and strategic
+        // saturation modelled, quota sized from the backlog. Reserved matrix
+        // seed 25000000.
+        "advanced_builder_survey" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_builder_reward_survey();
+            Box::new(ai)
+        }
+        // Military units credited for strength-per-production within their
+        // role and for being the civilization's own unique unit while the
+        // window is open. Reserved matrix seed 26000000.
+        "advanced_unit_efficiency" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_unit_cost_efficiency();
+            Box::new(ai)
+        }
         "advanced_fortify_idle_units" => {
             let mut ai = AdvancedAi::new();
             ai.enable_fortify_idle_units();
@@ -4122,6 +4149,8 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
+            Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4645,6 +4674,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
+        "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -5835,7 +5866,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 133] = [
+            const SCRIPTED: [&str; 135] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5902,6 +5933,8 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_builder_survey",
+                "advanced_unit_efficiency",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
