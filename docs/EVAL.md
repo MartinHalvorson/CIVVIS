@@ -10109,3 +10109,20 @@ can no longer reach the live seat without an arm that prices it.
 changed is that they can be measured. Each still needs a pre-registered
 `--deployment-comparison` run before anything is claimed about it, and the
 prior on this ledger is that most repairs measure null.
+
+## 2026-08-17 — coupled expansion is registered, not promoted
+
+The expansion oracle's headroom is real, but its free Settler removes the
+production and population trade that a policy must pay. The new
+`advanced_coupled_expansion` evaluator arm routes the adaptive Expansion lane
+through `AdvancedAi::advanced_production` and prices a legal Settler against
+the full bounded sequence: remaining production, the population/recovery
+interval, estimated escort and route cost, visible settlement safety, founding
+lag, and a 90-standard-turn payback horizon. The settlement growth forecast
+supplies the first four jobs; the terminal `expansion_investment` experiment
+remains the higher-cost counterfactual validator.
+
+This is an implementation and fires-check, not an outcome. The arm is off in
+`AdvancedAi::new`, is typed in the Elo registry, and has no promotion claim.
+Run it on a disjoint deployment/compact matrix before changing the shipped
+policy.
