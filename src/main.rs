@@ -1313,7 +1313,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// predicate therefore returns on the same first-line flag check in every
 /// frozen game; the anchor's production decisions remain byte-identical.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf44c_9200_47bb_3ca5;
+/// A second already-built sea hull may explore only behind `naval_recon`, which
+/// `AdvancedAi::legacy()` leaves off. The frozen anchor still gets an empty
+/// explorer set before inspecting units, so its movement decisions are
+/// byte-identical. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x14b7_d405_0c11_1065;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
