@@ -545,7 +545,8 @@ class Civ6PlayTest(unittest.TestCase):
         observations = [[] for _ in range(15)] + [[row], [selected]]
 
         with tempfile.TemporaryDirectory() as temporary, \
-             patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play, "screenshot",
+                          side_effect=lambda p: Path(p).write_bytes(b"x") or True), \
              patch.object(civ6_play, "_leader_picker_open", return_value=True), \
              patch.object(
                  civ6_play, "_setup_current_leader",
@@ -1125,6 +1126,52 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
         # And the strength it weighs is met-gated, war or peace.
         self.assertIn("try(function() return diplomacy:HasMet(otherId); end, false)", lua)
         self.assertIn("return atWar, ours, worst, strongestMet;", lua)
+
+
+class ScreenshotFailureTests(unittest.TestCase):
+    """A silently failed `screencapture` must become a retried, unreadable
+    poll — three consecutive ladder attempts died on 2026-08-17 when a missing
+    shot cascaded into an uncaught `OCRUnavailable`."""
+
+    def test_a_capture_that_writes_nothing_is_retried_then_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.subprocess, "run") as run, \
+             patch.object(civ6_play.time, "sleep") as sleep:
+            landed = civ6_play.screenshot(Path(temporary) / "missing.png")
+        self.assertFalse(landed)
+        self.assertEqual(run.call_count, 2, "the capture is retried once")
+        sleep.assert_called_once()
+
+    def test_a_capture_that_lands_is_true_first_try(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "shot.png"
+
+            def fake_capture(cmd, **_):
+                path.write_bytes(b"x")
+
+            with patch.object(civ6_play.subprocess, "run",
+                              side_effect=fake_capture) as run:
+                self.assertTrue(civ6_play.screenshot(path))
+            self.assertEqual(run.call_count, 1)
+
+    def test_a_missing_shot_reads_as_nothing_not_a_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.macos_ocr, "recognize") as recognize:
+            observations = civ6_play._leader_ocr(
+                Path(temporary) / "never-written.png", (756, 33, 756, 480))
+        self.assertEqual(observations, [])
+        recognize.assert_not_called()
+
+    def test_intro_probe_survives_an_unavailable_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(
+                 civ6_play.macos_ocr, "recognize",
+                 side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")):
+            visible = civ6_play._leader_intro_visible(
+                Path(temporary) / "intro.png", (756, 33, 756, 480),
+                "LEADER_TRAJAN")
+        self.assertFalse(visible)
 
 
 class SupervisedBrainCommandTests(unittest.TestCase):
