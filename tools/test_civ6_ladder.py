@@ -387,6 +387,138 @@ class TheTableSaysWhatHappened(LedgerCase):
         self.assertNotIn("None", table)
 
 
+VICTORY_TABLE = [
+    {"index": 0, "type": "VICTORY_SCORE"},
+    {"index": 3, "type": "VICTORY_CULTURE"},
+    {"index": 5, "type": "VICTORY_TECHNOLOGY"},
+]
+
+
+class TheVictoryHasAName(LedgerCase):
+    """The index the event reported, glossed by the host's own victory table.
+
+    The milestones are stated per victory type, so a row reading `5` cannot
+    substantiate a Science claim or refute a Culture one.
+    """
+
+    def test_the_name_comes_from_the_host_table_in_the_same_record(self):
+        entry = civ6_ladder.entry_from(summary(
+            "named", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5},
+            seat={"victory_types": VICTORY_TABLE}))
+        self.assertEqual(entry["victory"], 5)
+        self.assertEqual(entry["victory_type"], "VICTORY_TECHNOLOGY")
+
+    def test_a_run_without_the_export_keeps_the_index_and_names_nothing(self):
+        """⚠ The whole point of the raw index is that a missing table produces a
+        blank, never an invented literal."""
+        entry = civ6_ladder.entry_from(summary(
+            "unnamed", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5}))
+        self.assertEqual(entry["victory"], 5)
+        self.assertIsNone(entry["victory_type"])
+
+    def test_an_index_absent_from_the_table_is_not_guessed(self):
+        entry = civ6_ladder.entry_from(summary(
+            "gap", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 4},
+            seat={"victory_types": VICTORY_TABLE}))
+        self.assertIsNone(entry["victory_type"])
+
+    def test_a_run_that_never_ended_has_no_victory_at_all(self):
+        entry = civ6_ladder.entry_from(summary("stopped"))
+        self.assertIsNone(entry["victory"])
+        self.assertIsNone(entry["victory_type"])
+
+    def test_the_rung_row_carries_the_name_beside_the_index(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary(
+            "science-win", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5},
+            seat={"victory_types": VICTORY_TABLE})))
+        row = next(line for line in
+                   civ6_ladder.markdown_for(self.state()).splitlines()
+                   if line.startswith("| 1 | Settler |"))
+        self.assertIn("| 5 | VICTORY_TECHNOLOGY |", row)
+
+
+class RedrawingIsNotPublishing(LedgerCase):
+    """⚠ `publish` imports this machine's runs; `render` cannot.
+
+    A contributor changing how a row is drawn reaches for the command that
+    rewrites the file, and `publish` was the only one — so redrawing the table
+    also landed whatever attempts the local ledger happened to hold. On this
+    laptop that was eighteen rows of fortnight-old experiments, dated before the
+    newest row already in the snapshot.
+    """
+
+    def _snapshot(self, attempts):
+        path = Path(self._tmp.name) / "snapshot.json"
+        path.write_text(json.dumps({"attempts": attempts, "wins": {}}))
+        return path
+
+    def test_render_reads_the_snapshot_and_writes_only_the_markdown(self):
+        snapshot = self._snapshot([{"tag": "a", "won": False, "configured": True,
+                                    "difficulty": "DIFFICULTY_SETTLER",
+                                    "turns": 250, "score": 100, "utc": "x"}])
+        before = snapshot.read_text()
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.render(snapshot, markdown)
+        self.assertEqual(snapshot.read_text(), before)
+        self.assertIn("`a`", markdown.read_text())
+
+    def test_render_ignores_the_live_ledger_entirely(self):
+        """The signature has no ledger in it — the guarantee is structural."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("local-only")))
+        snapshot = self._snapshot([])
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.render(snapshot, markdown)
+        self.assertNotIn("local-only", markdown.read_text())
+        self.assertEqual(json.loads(snapshot.read_text())["attempts"], [])
+
+    def test_publish_still_lands_the_live_ledger(self):
+        """The import path is unchanged; only the accident is removed."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("landed")))
+        snapshot = Path(self._tmp.name) / "snapshot.json"
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.publish(self.ledger, snapshot, markdown)
+        tags = [a["tag"] for a in json.loads(snapshot.read_text())["attempts"]]
+        self.assertIn("landed", tags)
+
+
+class TheCensusSaysWhichLanesComplete(unittest.TestCase):
+    """Which victory conditions have ended a game here — the record's only
+    empirical evidence about lane reachability inside the turn budget."""
+
+    @staticmethod
+    def _attempts(*pairs):
+        return [{"victory": index, "victory_type": name}
+                for index, name in pairs]
+
+    def test_it_counts_every_terminal_event_ours_and_theirs(self):
+        census = civ6_ladder.victory_census(self._attempts(
+            (0, None), (0, None), (6, None), (0, None)))
+        self.assertEqual(census, [(0, None, 3), (6, None, 1)])
+
+    def test_runs_that_never_ended_are_not_counted_as_a_lane(self):
+        census = civ6_ladder.victory_census(
+            [{"victory": None}, {"reason": "stopped"}, {"victory": 3}])
+        self.assertEqual(census, [(3, None, 1)])
+
+    def test_a_name_seen_once_labels_every_row_with_that_index(self):
+        """One run with the export names the index for the whole history."""
+        census = civ6_ladder.victory_census(self._attempts(
+            (3, None), (3, "VICTORY_CULTURE"), (3, None)))
+        self.assertEqual(census, [(3, "VICTORY_CULTURE", 3)])
+
+    def test_ties_break_on_the_index_so_the_table_is_deterministic(self):
+        census = civ6_ladder.victory_census(self._attempts((6, None), (2, None)))
+        self.assertEqual([row[0] for row in census], [2, 6])
+
+    def test_score_victory_is_index_zero_and_survives_the_falsy_trap(self):
+        census = civ6_ladder.victory_census(self._attempts((0, "VICTORY_SCORE")))
+        self.assertEqual(census, [(0, "VICTORY_SCORE", 1)])
+
+
 class ThePublishedPairAgrees(unittest.TestCase):
     """The committed markdown must be derivable from the committed snapshot.
 
