@@ -4,7 +4,7 @@ Where the project actually is, and what it is doing next. History below is
 kept for orientation; the current-state section is the part to trust, and
 `docs/AI_GAPS.md` is the always-current assessment of the AI specifically.
 
-## Where the project is (2026-08-16)
+## Where the project is (2026-08-17)
 
 Everything the old roadmap called planned has shipped and then some:
 
@@ -26,14 +26,19 @@ Everything the old roadmap called planned has shipped and then some:
 - **The live bridge plays real Civilization VI**: a Lua control mod + macOS
   harness drives full Settler-difficulty games end to end, self-records every
   attempt on the difficulty ladder (`docs/CIV6_LADDER.md`), and carries its
-  bridge health (orders-applied rate, ~97%) on the ledger. No rung has been
-  claimed yet — games complete but do not win inside the 250-turn cap. This
-  is the project's front line.
+  bridge health (orders-applied rate, ~97%) on the ledger. **Rung 1, Settler,
+  was claimed on 2026-08-16** by run `civvis-20260816T054344Z` — a victory
+  event naming our own team at turn 251 of a configured 250-turn game, score
+  1021. A second Settler win followed the same day (`civvis-20260816T223457Z`,
+  1121 against a best rival's 1031). Winning is not yet reliable: of the 119
+  attempts since 2026-08-10, 70 reached the turn cap and two won. This is the
+  project's front line.
 
-## Active objectives (ranked 2026-08-16)
+## Active objectives (ranked 2026-08-17)
 
-1. **Win Settler, recorded.** The ladder loop is live and self-recording;
-   the first claimed rung is the milestone everything else serves.
+1. **Make Settler repeatable, then take Chieftain.** The rung is claimed; two
+   wins in 119 attempts is a result, not a capability. The next milestone is
+   a win rate that survives a batch, and the rung above it.
 2. **Close the actuation gap.** Applied-rate floored on the ledger; envoy
    spending and the built-in production ladder's ~27% share are the open
    holes.

@@ -1327,3 +1327,62 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["reason"], "attempt frozen")
         self.assertNotIn("resumes", rows[0])
+
+
+class LadderBackfillTests(unittest.TestCase):
+    """The loop replays whatever the automatic recording missed.
+
+    Recording a summary is best-effort by design — `civ6_play.py` swallows the
+    failure so a bookkeeping error can never cost a finished game. That trade
+    only holds if something comes back for the misses, and until #1835 nothing
+    did: 41 summaries sat unrecorded for three days, one of them the project's
+    first Settler victory.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.runs = Path(self.tmp.name) / "control"
+        self.runs.mkdir()
+        patch = mock.patch.object(climb, "RUN_ROOT", self.runs)
+        patch.start()
+        self.addCleanup(patch.stop)
+        # An absent live ledger seeds from the committed snapshot by design;
+        # point that at a temp path so the fixture is the whole history here.
+        import civ6_ladder
+        snapshot = mock.patch.object(
+            civ6_ladder, "DATA", Path(self.tmp.name) / "civ6_ladder.json")
+        snapshot.start()
+        self.addCleanup(snapshot.stop)
+
+    def write_summary(self, tag: str, **extra) -> None:
+        body = {"tag": tag, "finished_utc": "2026-08-16T06:49:58Z",
+                "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                "last_turn": 250, "last_score": 1021, "reason": "stopped",
+                "outcome": None}
+        body.update(extra)
+        run_dir = self.runs / tag
+        run_dir.mkdir()
+        (run_dir / "summary.json").write_text(json.dumps(body))
+
+    def test_an_unrecorded_summary_is_recorded_before_the_next_attempt(self):
+        self.write_summary("civvis-dropped")
+        climb.heal_the_ladder()
+        state = json.loads((self.runs / "ladder.json").read_text())
+        self.assertEqual([a["tag"] for a in state["attempts"]],
+                         ["civvis-dropped"])
+
+    def test_a_dropped_win_still_claims_its_rung(self):
+        self.write_summary("civvis-dropped-win", outcome={
+            "kind": "victory", "won": True, "victory": 0})
+        climb.heal_the_ladder()
+        state = json.loads((self.runs / "ladder.json").read_text())
+        self.assertEqual(state["wins"]["DIFFICULTY_SETTLER"]["tag"],
+                         "civvis-dropped-win")
+
+    def test_a_broken_ledger_never_costs_an_attempt(self):
+        # The record is worth less than the game: a backfill that cannot run
+        # must report and return, not raise into the loop.
+        (self.runs / "ladder.json").write_text("{ this is not json")
+        self.write_summary("civvis-1")
+        climb.heal_the_ladder()  # must not raise

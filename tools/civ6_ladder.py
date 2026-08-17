@@ -46,7 +46,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,9 +91,97 @@ def load(ledger: Path, snapshot: Path | None = None) -> dict:
     return {"attempts": [], "wins": {}}
 
 
+class LedgerBusy(RuntimeError):
+    """Another writer held the ledger for longer than this one would wait."""
+
+
+@contextmanager
+def ledger_lock(ledger: Path, *, timeout: float = 30.0,
+                stale_after: float = 120.0):
+    """Serialise one ledger's read-modify-write across processes.
+
+    ⚠⚠ THE LEDGER IS A WHOLE-FILE REWRITE, AND THIS HOST FINISHES GAMES IN
+    PARALLEL. ``record_summary`` and ``sync`` both load the ledger, fold one
+    attempt in, and write the entire document back. Two runs finishing within
+    the same few milliseconds therefore read the same state and the second
+    write erases the first attempt — no error, no partial file, just an
+    attempt that was recorded and then was not.
+
+    That is the best explanation on the evidence for the **41 summaries found
+    on disk but missing from the live ledger on 2026-08-17**, spanning
+    2026-08-14 to 2026-08-16 while neighbouring runs in the same window
+    recorded fine. One of the forty-one was ``civvis-20260816T054344Z`` — the
+    project's *first* Settler victory, which is exactly the kind of row that
+    must not be able to vanish.
+
+    A lock directory would be tidier, but an ``O_CREAT | O_EXCL`` file is the
+    one primitive that behaves the same on macOS, Linux and the fleet's
+    Windows desktop without importing a platform module. A lock older than
+    ``stale_after`` is broken rather than waited on: a killed run must not
+    wedge the record for the next one, and a write takes milliseconds, so an
+    old lock is always a corpse.
+    """
+    lock = ledger.parent / (ledger.name + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    held = False
+    while True:
+        try:
+            handle = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - lock.stat().st_mtime
+            except FileNotFoundError:
+                continue  # released between the open and the stat; retry now
+            if age > stale_after:
+                # Whoever wrote this is gone. Breaking it can itself race, but
+                # only with another breaker, and they agree on the outcome.
+                try:
+                    lock.unlink()
+                except FileNotFoundError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise LedgerBusy(
+                    f"{ledger} was locked by another writer for {timeout:g}s; "
+                    f"the summary is still on disk and `civ6_ladder.py sync` "
+                    f"will record it")
+            time.sleep(0.02)
+            continue
+        else:
+            os.write(handle, f"{os.getpid()}\n".encode())
+            os.close(handle)
+            held = True
+            break
+    try:
+        yield
+    finally:
+        if held:
+            try:
+                lock.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def save(state: dict, ledger: Path) -> None:
+    """Replace the ledger atomically.
+
+    ``write_text`` truncates first, so a process killed mid-write leaves a
+    half-written ledger that the next ``load`` cannot parse — and the ledger
+    is the only copy of the attempt history that is not re-derivable. Writing
+    beside it and renaming means a reader sees either the old document or the
+    new one, never a torn one.
+    """
     ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    scratch = ledger.parent / f".{ledger.name}.{os.getpid()}.tmp"
+    try:
+        scratch.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        os.replace(str(scratch), str(ledger))
+    finally:
+        try:
+            scratch.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def is_win(summary: dict) -> bool:
@@ -196,10 +287,26 @@ def apply(state: dict, summary: dict) -> bool:
 
     difficulty = entry["difficulty"]
     if entry["won"] and entry["configured"] and difficulty in NAMES:
-        # First win stands. A later one does not move the timestamp -- the
-        # milestone is when the rung was first climbed, not the most recent
-        # time it was repeated.
-        if state["wins"].get(difficulty) is None:
+        # The EARLIEST win stands, and "earliest" means by the clock, not by
+        # the order attempts happened to reach this function. A later win does
+        # not move the timestamp -- the milestone is when the rung was first
+        # climbed, not the most recent time it was repeated.
+        #
+        # ⚠ THIS USED TO READ `if state["wins"].get(difficulty) is None`, WHICH
+        # IS INSERTION ORDER WEARING CHRONOLOGY'S NAME. It is the same answer
+        # only while every attempt is recorded as it finishes. It is the wrong
+        # answer the moment one is recorded late -- and `sync` exists precisely
+        # to record attempts late. On 2026-08-17 that was not hypothetical:
+        # the ledger held the 23:23:58Z Settler win while the 06:49:58Z win
+        # from the same day sat unrecorded on disk, so the backfill that
+        # rescued it would have filed the *first* climb of the ladder as an
+        # ordinary repeat and left the milestone 16.5 hours late, permanently.
+        #
+        # `utc` is an ISO-8601 Z stamp, so a string compare is a time compare.
+        # A missing stamp sorts last rather than winning by accident.
+        recorded = state["wins"].get(difficulty)
+        if recorded is None or (entry.get("utc") or "￿") < (
+                recorded.get("utc") or "￿"):
             state["wins"][difficulty] = entry
     elif entry["won"] and not entry["configured"]:
         print("won, but the game was not the one this run configured; "
@@ -215,10 +322,13 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
         # <runs>/<tag>/summary.json -> the ledger beside <runs>.
         ledger = live_ledger_for(summary_path.parent.parent)
     summary = json.loads(summary_path.read_text())
-    state = load(ledger)
-    changed = apply(state, summary)
-    if changed:
-        save(state, ledger)
+    # Load INSIDE the lock. Reading first and locking second would reintroduce
+    # exactly the lost update the lock exists to prevent.
+    with ledger_lock(ledger):
+        state = load(ledger)
+        changed = apply(state, summary)
+        if changed:
+            save(state, ledger)
     return changed
 
 
@@ -237,30 +347,42 @@ def summaries_under(runs_dir: Path) -> list[Path]:
     return sorted(found, key=stamp)
 
 
-def sync(runs_dir: Path, ledger: Path) -> int:
-    state = load(ledger)
-    seen = {a.get("tag") for a in state["attempts"]}
+def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
+    """Record every summary on disk the live ledger is missing.
+
+    This is the self-healing half of the record. Recording is best-effort by
+    design -- ``civ6_play.py`` swallows a recording failure so a finished game
+    is never lost to a bookkeeping error -- which only works if something
+    routinely comes back for what was missed. The climb loop calls this before
+    every attempt for exactly that reason.
+    """
+    paths = summaries_under(runs_dir)
     recorded = skipped = broken = 0
-    for path in summaries_under(runs_dir):
-        try:
-            summary = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"unreadable summary {path}: {exc}", file=sys.stderr)
-            broken += 1
-            continue
-        if summary.get("tag") in seen:
-            skipped += 1
-            continue
-        if apply(state, summary):
-            seen.add(summary.get("tag"))
-            recorded += 1
-        else:
-            skipped += 1
-    if recorded:
-        save(state, ledger)
-    print(f"recorded {recorded} attempt(s), {skipped} already in the ledger"
-          + (f", {broken} unreadable" if broken else "")
-          + f"; ledger holds {len(state['attempts'])}")
+    with ledger_lock(ledger):
+        state = load(ledger)
+        seen = {a.get("tag") for a in state["attempts"]}
+        for path in paths:
+            try:
+                summary = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                print(f"unreadable summary {path}: {exc}", file=sys.stderr)
+                broken += 1
+                continue
+            if summary.get("tag") in seen:
+                skipped += 1
+                continue
+            if apply(state, summary):
+                seen.add(summary.get("tag"))
+                recorded += 1
+            else:
+                skipped += 1
+        if recorded:
+            save(state, ledger)
+        held = len(state["attempts"])
+    if not quiet or recorded or broken:
+        print(f"recorded {recorded} attempt(s), {skipped} already in the ledger"
+              + (f", {broken} unreadable" if broken else "")
+              + f"; ledger holds {held}")
     return 0
 
 
@@ -350,6 +472,22 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
     return 1 if problems else 0
 
 
+def cell(value) -> str:
+    """One table cell: an em dash for absent, the value for everything else.
+
+    ⚠⚠ `value or "—"` IS THE BUG THIS REPLACES, AND IT HID THE ONE NUMBER THE
+    LADDER EXISTS TO REPORT. Civilization VI's Score Victory is victory type
+    `0`, and `0` is falsy — so the rung table rendered the victory type of a
+    score win as `?`, and score at the turn limit is the ONLY victory this
+    ladder's 250-turn cap can reach. The first claimed rung in the project's
+    history would have published with its victory type unknown.
+
+    Absent and zero are different answers and every cell here must be able to
+    tell them apart, so no caller gets to write the short version again.
+    """
+    return "—" if value is None or value == "" else str(value)
+
+
 def markdown_for(state: dict) -> str:
     wins = state["wins"]
     attempts = state["attempts"]
@@ -359,7 +497,13 @@ def markdown_for(state: dict) -> str:
         "What the controller in `tools/civ6_control` has actually beaten, and when.",
         "A rung is claimed only by a victory event naming the controller's own team,",
         "in a game whose settings marker proves it was the game the run configured.",
-        "`tools/civ6_ladder.py` writes this file; do not edit it by hand.",
+        "`tools/civ6_ladder.py` writes this file; do not edit it by hand — a",
+        "test regenerates it from `docs/civ6_ladder.json` and fails if they differ.",
+        "",
+        "`victory` is Civilization VI's own victory identifier as the",
+        "`TeamVictory` event reported it, kept raw on purpose: nothing in this",
+        "repository maps those indices to names, and a guessed name is how an",
+        "unfireable type literal hides (see `.github/workflows/tests.yml`).",
         "",
         "| rung | difficulty | beaten (UTC) | victory | turns | run |",
         "|---|---|---|---|---|---|",
@@ -367,8 +511,8 @@ def markdown_for(state: dict) -> str:
     for index, (key, label) in enumerate(LADDER, start=1):
         win = wins.get(key)
         if win:
-            lines.append(f"| {index} | {label} | {win['utc']} | "
-                         f"{win.get('victory') or '?'} | {win.get('turns')} | "
+            lines.append(f"| {index} | {label} | {cell(win.get('utc'))} | "
+                         f"{cell(win.get('victory'))} | {cell(win.get('turns'))} | "
                          f"`{win.get('tag')}` |")
         else:
             lines.append(f"| {index} | {label} | — | | | |")
@@ -382,11 +526,13 @@ def markdown_for(state: dict) -> str:
             "|---|---|---|---|---|---|---|",
         ]
         for a in attempts[-40:]:
-            outcome = "win" if a["won"] else (a.get("reason") or "—")
+            outcome = "win" if a["won"] else cell(a.get("reason"))
+            difficulty = NAMES.get(a.get("difficulty"), a.get("difficulty"))
             lines.append(
-                f"| `{a.get('tag')}` | {NAMES.get(a.get('difficulty'), a.get('difficulty'))} "
+                f"| `{a.get('tag')}` | {cell(difficulty)} "
                 f"| {'yes' if a['configured'] else 'NO'} | {outcome} "
-                f"| {a.get('turns')} | {a.get('score')} | {a.get('utc')} |")
+                f"| {cell(a.get('turns'))} | {cell(a.get('score'))} "
+                f"| {cell(a.get('utc'))} |")
         lines.append("")
     return "\n".join(lines)
 

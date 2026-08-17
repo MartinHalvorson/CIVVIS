@@ -59,6 +59,32 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 BLOCKED_BACKOFF_S = (15.0, 30.0, 60.0, 120.0, 240.0)
 
 
+def heal_the_ladder() -> None:
+    """Record any summary the live ledger is missing, before the next attempt.
+
+    ★★★★★ RECORDING IS BEST-EFFORT AND NOTHING WAS COMING BACK FOR THE MISSES.
+    `civ6_play.py` deliberately swallows a ladder-recording failure — a
+    finished game must never be lost to a bookkeeping error, and the summary
+    on disk is the evidence. That trade is only sound if something routinely
+    replays what was skipped, and until now nothing did: on 2026-08-17 the
+    runs directory held **41 summaries the live ledger had never seen**,
+    spanning three days, and one of them was the project's first Settler
+    victory (`civvis-20260816T054344Z`, turn 251, score 1022).
+    `civ6_ladder.py check` had been reporting it the whole time, to nobody.
+
+    So the backfill runs here, at the top of every attempt: the one place in
+    the fleet that is guaranteed to execute between games, on the machine that
+    owns the ledger. It is idempotent and takes milliseconds, and a failure
+    must not cost an attempt — the record is worth less than the game.
+    """
+    try:
+        import civ6_ladder  # noqa: PLC0415 — optional, and only needed here
+        civ6_ladder.sync(RUN_ROOT, civ6_ladder.live_ledger_for(RUN_ROOT),
+                         quiet=True)
+    except Exception as exc:  # noqa: BLE001 — see above: never cost an attempt
+        print(f"ladder backfill skipped: {exc}", flush=True)
+
+
 def stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
@@ -1415,6 +1441,10 @@ def main() -> int:
                 wake_steam()
             time.sleep(wait)
             continue
+
+        # Between games is the only safe moment to touch the ledger, and it is
+        # the moment this loop is standing in. See `heal_the_ladder`.
+        heal_the_ladder()
 
         attempt = played + 1
         started += 1
