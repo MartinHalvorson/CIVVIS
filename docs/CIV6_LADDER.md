@@ -7,22 +7,44 @@ in a game whose settings marker proves it was the game the run configured.
 test regenerates it from `docs/civ6_ladder.json` and fails if they differ.
 
 `victory` is Civilization VI's own victory identifier as the
-`TeamVictory` event reported it, kept raw on purpose: nothing in this
-repository maps those indices to names, and a guessed name is how an
-unfireable type literal hides (see `.github/workflows/tests.yml`).
+`TeamVictory` event reported it, kept raw on purpose: a guessed name is
+how an unfireable type literal hides (see `.github/workflows/tests.yml`).
+`type` beside it is not a guess either — it is the row the index names in
+the host's own `GameInfo.Victories()`, exported by the agent mod as
+`seat.victory_types` and joined by `tools/civ6_ladder.py`. A run recorded
+before that export carries the index alone and reads `—` here.
 
-| rung | difficulty | beaten (UTC) | victory | turns | run |
-|---|---|---|---|---|---|
-| 1 | Settler | 2026-08-16T06:49:58Z | 0 | 250 | `civvis-20260816T054344Z` |
-| 2 | Chieftain | — | | | |
-| 3 | Warlord | — | | | |
-| 4 | Prince | — | | | |
-| 5 | King | — | | | |
-| 6 | Emperor | — | | | |
-| 7 | Immortal | — | | | |
-| 8 | Deity | — | | | |
+| rung | difficulty | beaten (UTC) | victory | type | turns | run |
+|---|---|---|---|---|---|---|
+| 1 | Settler | 2026-08-16T06:49:58Z | 0 | — | 250 | `civvis-20260816T054344Z` |
+| 2 | Chieftain | — | | | | |
+| 3 | Warlord | — | | | | |
+| 4 | Prince | — | | | | |
+| 5 | King | — | | | | |
+| 6 | Emperor | — | | | | |
+| 7 | Immortal | — | | | | |
+| 8 | Deity | — | | | | |
 
 Attempts recorded: 307.
+
+## How these games ended
+
+Every terminal `TeamVictory` in the record, ours and the rivals'.
+A rival completing a victory condition is the strongest evidence
+available that the condition is reachable inside this profile's turn
+budget — it is a rival, at Settler, on the same map and clock. Lanes
+absent from this table have never been completed by anyone here.
+
+| victory | type | games | of ended |
+|---|---|---|---|
+| 0 | — | 125 | 63% |
+| 6 | — | 41 | 21% |
+| 3 | — | 24 | 12% |
+| 4 | — | 5 | 3% |
+| 5 | — | 3 | 2% |
+| 2 | — | 1 | 1% |
+
+199 of 307 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 

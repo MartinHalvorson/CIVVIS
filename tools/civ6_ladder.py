@@ -38,8 +38,13 @@ Usage::
     python tools/civ6_ladder.py record ~/civvis-civ6-runs/control/<tag>/summary.json
     python tools/civ6_ladder.py sync            # record every unrecorded summary
     python tools/civ6_ladder.py publish         # refresh the docs snapshot
+    python tools/civ6_ladder.py render          # redraw the docs markdown only
     python tools/civ6_ladder.py check --stale-hours 12
     python tools/civ6_ladder.py show
+
+``publish`` and ``render`` are not interchangeable. ``publish`` lands run data
+from this machine's live ledger; ``render`` only redraws the committed snapshot
+and is what a change to the table's shape wants.
 """
 
 from __future__ import annotations
@@ -317,6 +322,37 @@ def applied_pct(summary: dict) -> float | None:
     return round(100.0 * (applied or 0) / seen, 1)
 
 
+def victory_type(summary: dict) -> str | None:
+    """The name of the victory this run ended on, from the HOST'S OWN table.
+
+    ⚠⚠ THE LADDER RECORDED AN UNTRANSLATED INTEGER AND SAID SO ON PURPOSE.
+    `docs/CIV6_LADDER.md` refuses guessed names for `TeamVictory`'s type index —
+    rightly, because a guessed literal is how an unfireable type name hides. But
+    the refusal was written when the only alternative to a guess was silence,
+    and it has not been true since the agent mod began exporting
+    `GameInfo.Victories()` as `seat.victory_types`: the run carries the index
+    and the table the index comes from, in the same record.
+
+    This is that join, and it is not a guess in either direction. A run whose
+    seat event predates the export, or whose game never emitted a terminal
+    event, still answers `None` and still renders as the raw index alone.
+
+    It matters now because the milestones are stated per victory type — a
+    Science win and a Culture win are different claims, and a ladder that
+    reports `5` can substantiate neither.
+    """
+    outcome = summary.get("outcome") or {}
+    index = outcome.get("victory")
+    if index is None:
+        return None
+    rows = ((summary.get("seat") or {}).get("victory_types")) or []
+    for row in rows:
+        if isinstance(row, dict) and row.get("index") == index:
+            name = row.get("type")
+            return str(name) if name else None
+    return None
+
+
 def entry_from(summary: dict) -> dict:
     return {
         "tag": summary.get("tag"),
@@ -326,6 +362,10 @@ def entry_from(summary: dict) -> dict:
         "configured": bool(summary.get("configured")),
         "won": is_win(summary),
         "victory": (summary.get("outcome") or {}).get("victory"),
+        # Kept BESIDE the index, never instead of it. The index is what the
+        # event reported and stays the primary key; the name is the host's
+        # gloss on it, and rows recorded before the export have none.
+        "victory_type": victory_type(summary),
         "turns": summary.get("last_turn"),
         "score": summary.get("last_score"),
         "map_size": summary.get("map_size"),
@@ -465,6 +505,32 @@ def publish(ledger: Path, snapshot: Path | None = None,
     return 0
 
 
+def render(snapshot: Path | None = None, markdown: Path | None = None) -> int:
+    """Rewrite the markdown from the COMMITTED snapshot, importing nothing.
+
+    ⚠⚠ `publish` IS NOT THE TOOL FOR A RENDERING CHANGE, and the difference is
+    not obvious from either name. `publish` reads this machine's live ledger,
+    which `load` seeds from the snapshot and then tops up with every local run —
+    so a contributor who changes how a row is drawn and reaches for `publish` to
+    regenerate the file also lands however many attempts their own machine
+    happens to be holding. Running it here on a change that touched only
+    `markdown_for` would have added eighteen rows from this laptop's own
+    fortnight-old experiments to the shared record, dated before the newest row
+    already published, with nothing in the diff to say why the count moved.
+
+    Landing run data is `publish`'s job and a deliberate act. Redrawing the
+    table is this one, and it cannot import anything: there is no ledger in the
+    signature to import from.
+    """
+    snapshot = DATA if snapshot is None else snapshot
+    markdown = LEDGER if markdown is None else markdown
+    state = json.loads(snapshot.read_text())
+    markdown.write_text(markdown_for(state))
+    print(f"rendered {len(state.get('attempts', []))} attempt(s) from {snapshot} "
+          f"to {markdown}")
+    return 0
+
+
 def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           snapshot: Path | None = None, now: datetime | None = None,
           min_applied: float | None = None,
@@ -563,6 +629,39 @@ def cell(value) -> str:
     return "—" if value is None or value == "" else str(value)
 
 
+def victory_census(attempts: list) -> list[tuple[int, str | None, int]]:
+    """Which victory conditions have actually ended a game here, most first.
+
+    ★★★★★ THE LADDER HELD THIS ANSWER FOR 307 ATTEMPTS AND NEVER REPORTED IT.
+    Each row already carried the terminal event's victory index; nothing ever
+    grouped by it, so the one empirical fact the record can offer about lane
+    reachability — which conditions complete inside 250 turns at this
+    difficulty, as demonstrated by the rivals who complete them — was sitting in
+    a column no reader could see. Every objective this controller has been
+    pointed at was chosen from argument, not from this table.
+
+    A name is attached only where some run in the record exported the host's own
+    `GameInfo.Victories()` for that index. Indices never seen with a name stay
+    unnamed rather than being guessed into one.
+    """
+    counts: dict[int, int] = {}
+    names: dict[int, str] = {}
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        index = attempt.get("victory")
+        if index is None:
+            continue
+        counts[index] = counts.get(index, 0) + 1
+        name = attempt.get("victory_type")
+        if name and index not in names:
+            names[index] = str(name)
+    # Commonest first; the index breaks ties so the table is deterministic.
+    return sorted(((index, names.get(index), count)
+                   for index, count in counts.items()),
+                  key=lambda row: (-row[2], row[0]))
+
+
 def markdown_for(state: dict) -> str:
     wins = state["wins"]
     attempts = state["attempts"]
@@ -576,22 +675,48 @@ def markdown_for(state: dict) -> str:
         "test regenerates it from `docs/civ6_ladder.json` and fails if they differ.",
         "",
         "`victory` is Civilization VI's own victory identifier as the",
-        "`TeamVictory` event reported it, kept raw on purpose: nothing in this",
-        "repository maps those indices to names, and a guessed name is how an",
-        "unfireable type literal hides (see `.github/workflows/tests.yml`).",
+        "`TeamVictory` event reported it, kept raw on purpose: a guessed name is",
+        "how an unfireable type literal hides (see `.github/workflows/tests.yml`).",
+        "`type` beside it is not a guess either — it is the row the index names in",
+        "the host's own `GameInfo.Victories()`, exported by the agent mod as",
+        "`seat.victory_types` and joined by `tools/civ6_ladder.py`. A run recorded",
+        "before that export carries the index alone and reads `—` here.",
         "",
-        "| rung | difficulty | beaten (UTC) | victory | turns | run |",
-        "|---|---|---|---|---|---|",
+        "| rung | difficulty | beaten (UTC) | victory | type | turns | run |",
+        "|---|---|---|---|---|---|---|",
     ]
     for index, (key, label) in enumerate(LADDER, start=1):
         win = wins.get(key)
         if win:
             lines.append(f"| {index} | {label} | {cell(win.get('utc'))} | "
-                         f"{cell(win.get('victory'))} | {cell(win.get('turns'))} | "
-                         f"`{win.get('tag')}` |")
+                         f"{cell(win.get('victory'))} | {cell(win.get('victory_type'))} | "
+                         f"{cell(win.get('turns'))} | `{win.get('tag')}` |")
         else:
-            lines.append(f"| {index} | {label} | — | | | |")
+            lines.append(f"| {index} | {label} | — | | | | |")
     lines += ["", f"Attempts recorded: {len(attempts)}.", ""]
+
+    endings = victory_census(attempts)
+    if endings:
+        lines += [
+            "## How these games ended",
+            "",
+            "Every terminal `TeamVictory` in the record, ours and the rivals'.",
+            "A rival completing a victory condition is the strongest evidence",
+            "available that the condition is reachable inside this profile's turn",
+            "budget — it is a rival, at Settler, on the same map and clock. Lanes",
+            "absent from this table have never been completed by anyone here.",
+            "",
+            "| victory | type | games | of ended |",
+            "|---|---|---|---|",
+        ]
+        total = sum(count for _, _, count in endings)
+        for index, name, count in endings:
+            share = f"{100.0 * count / total:.0f}%" if total else "—"
+            lines.append(f"| {cell(index)} | {cell(name)} | {count} | {share} |")
+        lines += ["",
+                  f"{total} of {len(attempts)} attempts reached a terminal event; "
+                  "the rest stalled, exited, or were stopped before one.",
+                  ""]
 
     if attempts:
         lines += [
@@ -639,6 +764,10 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("summary", type=Path)
     sub.add_parser("sync")
     sub.add_parser("publish")
+    sub.add_parser(
+        "render",
+        help="redraw the markdown from the committed snapshot; imports "
+             "no runs, unlike `publish`")
     chk = sub.add_parser("check")
     chk.add_argument("--stale-hours", type=float, default=None)
     chk.add_argument("--min-applied", type=float, default=None,
@@ -666,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
         return sync(args.runs, ledger)
     if args.command == "publish":
         return publish(ledger)
+    if args.command == "render":
+        return render()
     if args.command == "check":
         return check(args.runs, ledger, args.stale_hours,
                      min_applied=args.min_applied,
