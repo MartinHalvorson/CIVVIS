@@ -2437,12 +2437,8 @@ mod tests {
 
         // And the game built from those options plays by them, rather than by
         // the struct default `Game::new_with` used to hardcode.
-        let game = civvis::game::Game::new_with(game_options(
-            &asked,
-            2,
-            11,
-            TurnStructure::Sequential,
-        ));
+        let game =
+            civvis::game::Game::new_with(game_options(&asked, 2, 11, TurnStructure::Sequential));
         assert_eq!(game.victory_conditions, options.victory_conditions);
         assert!(!game.victory_conditions.religious);
     }
