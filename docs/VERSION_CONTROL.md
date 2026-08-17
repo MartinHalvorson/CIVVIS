@@ -537,8 +537,19 @@ content**, not "is it merged" — so the reaper reuses `on_github` and inherits
 the `refs/pull/*/head` fetch. It refuses four ways, and the self-test asserts
 every refusal rather than only the removal:
 
-- anything the audit flagged (dirty, commit-not-on-GitHub, missing) — the
-  rescue path owns those and the reaper must not race it;
+- anything the audit flagged (dirty, missing) — the rescue path owns those and
+  the reaper must not race it;
+- a commit GitHub cannot reach, **unless the branch's pull request has merged**.
+  ⚠ Without that exception `ship` makes every worktree it touches unreapable:
+  it merges `origin/main` into the branch before marking it ready, and once the
+  PR squash-merges and the remote branch is deleted, that local merge commit is
+  reachable from no ref on GitHub. Its content is on `main` twice over — the
+  branch side sits at `refs/pull/N/head` and the other parent *is* `main`. After
+  the first reap took 137 worktrees, the two left behind were exactly this
+  shape, and every future task that has to merge `main` before shipping would
+  have joined them. A MERGED pull request is the strongest available answer to
+  this document's own question, "does GitHub have the content"; anything less —
+  no `gh`, no PR, an open one, a closed-unmerged one — still refuses;
 - the repository root and the `main` management worktree;
 - a tree edited within `--idle-minutes`, because a landed HEAD says nothing
   about whether somebody is working in the directory right now;
