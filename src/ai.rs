@@ -2138,9 +2138,9 @@ pub struct BasicAi {
     /// majors met level. Commitment alone measured level with stock
     /// (178/277/387) and commitment + depth + outward without the threat rule
     /// 180/289/419: the box is the flee-and-return loop as much as the churn.
-    /// Set only through `AdvancedAi::enable_explore_commit` (the Civilization
-    /// VI bridge); the native constructors and the frozen anchor keep the
-    /// stock rule.
+    /// On for production Advanced (`promoted_policy_envoy`) and the
+    /// Civilization VI bridge (`AdvancedAi::enable_explore_commit`); Basic
+    /// and the frozen `advanced_v1` anchor keep the stock nearest-fog rule.
     pub(crate) explore_commit: bool,
     /// Per unit: the committed exploration goal and the turn it was chosen.
     /// See `explore_commit`.
@@ -10619,7 +10619,12 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.tactical_strategy || radius >= first + lookahead {
+            // `explore_commit` chooses `EXPLORE_COMMIT_LOOKAHEAD` above but,
+            // until 2026-08-17, this gate read only `tactical_strategy` — so
+            // when the war-half withhold removed that flag (2026-08-14) the
+            // committed walk silently lost its documented depth and ranked
+            // the first fogged ring alone. Both flags open the deeper scan.
+            if !(self.tactical_strategy || self.explore_commit) || radius >= first + lookahead {
                 break;
             }
             radius += 1;
