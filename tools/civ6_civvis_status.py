@@ -27,6 +27,67 @@ from pathlib import Path
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
 
+#: What each residual bucket means, in the order a reader should take them.
+#: The agent writes them as `!<bucket>` totals and `<prompt>!<bucket>` rows.
+RESIDUAL_BUCKETS = (
+    ("unasked", "LEAKED    ", "a prompt CIVVIS owns, decided by a heuristic first"),
+    ("after_civvis", "escape    ", "CIVVIS answered, prompt stood, bounded ladder retry"),
+    ("declined", "declined  ", "the ladder had no answer; nothing decided"),
+)
+
+
+def print_residual(residual: Counter) -> None:
+    """Report the residual census as three numbers, never as one.
+
+    ⚠⚠⚠ ONE FLAT TOTAL READS AS THE LEAK, AND IT IS MOSTLY NOT THE LEAK.
+    On 2026-08-17 a review of fourteen runs read this line's 1,577 as "1,577
+    decisions taken by the Lua fallback instead of CIVVIS" and had to withdraw
+    it: 937 were the bounded escape *after* CIVVIS had already answered and the
+    prompt came back anyway — a mechanism whose absence cost several 900-second
+    wedges — about 350 were declines where nothing decided anything at all, and
+    the genuine leak was **three**. The reader had the source open.
+
+    A number that makes a careful reader reach the wrong conclusion is a broken
+    instrument. `unasked` is the one that means what the whole counter was built
+    to mean, so it is printed first, in capitals, with its own per-prompt
+    breakdown; the other two are context.
+
+    Older runs carry no `!bucket` keys at all. They are reported as
+    unclassified rather than folded into any bucket — a pre-#1839 total cannot
+    be split after the fact, and guessing which way it went is exactly the
+    error this function exists to prevent.
+    """
+    if not residual:
+        print("  residual (built-ins on a CIVVIS turn): none")
+        return
+    buckets = {name: residual.get(f"!{name}", 0) for name, _, _ in RESIDUAL_BUCKETS}
+    classified = sum(buckets.values())
+    # Plain `<prompt>` keys are the flat per-name totals the agent has always
+    # written; `@source` and `!bucket` are the two breakdowns beside them.
+    flat = sum(v for k, v in residual.items() if "@" not in k and "!" not in k)
+    print("  residual (built-ins on a CIVVIS turn):")
+    if not classified:
+        print(f"      unclassified: {flat}  (run predates the bucket census; "
+              "the total cannot be split after the fact)")
+        print(f"      by prompt: {dict(Counter({k: v for k, v in residual.items() if '@' not in k and '!' not in k}).most_common(8))}")
+        return
+    for name, label, meaning in RESIDUAL_BUCKETS:
+        print(f"      {label} {buckets[name]:5d}  {meaning}")
+    if flat > classified:
+        print(f"      unclassified {flat - classified:5d}  (turns before the "
+              "bucket census)")
+    leaks = Counter({
+        key.split("!", 1)[0]: value
+        for key, value in residual.items()
+        if key.endswith("!unasked") and not key.startswith("!")
+    })
+    if leaks:
+        print(f"      leaked prompts: {dict(leaks.most_common(8))}")
+        print("      ^ each is a decision CIVVIS issues orders for, answered by "
+              "the hand-written ladder first. Add the prompt to "
+              "CIVVIS_OWNED_BLOCKERS.")
+
+
 def newest_run() -> Path | None:
     runs = [p for p in RUN_ROOT.iterdir() if (p / "events.jsonl").exists()]
     if not runs:
@@ -141,8 +202,7 @@ def main() -> int:
         elif isinstance(entries, list):
             for entry in entries:
                 residual[str(entry)] += 1
-    print(f"  residual (built-ins on a CIVVIS turn): "
-          f"{dict(residual.most_common(8)) if residual else 'none'}")
+    print_residual(residual)
     # ⚠ AND THE ONE THAT IS NOT A PASS. `ENDTURN_BLOCKING_PRODUCTION` routes into
     # `driveProduction`, which picks the item ITSELF from the hand-written ladder — so
     # unlike `units`, this blocker's answer is a DECISION, and it competes with

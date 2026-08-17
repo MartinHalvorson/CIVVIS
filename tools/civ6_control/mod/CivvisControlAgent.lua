@@ -4572,17 +4572,85 @@ local CIVVIS_OWNED_BLOCKERS = {
 	-- SECOND sighting for a `civvis_complete` answer) clear a prompt CIVVIS
 	-- turns out to have no opinion on.
 	--
-	-- ⚠ Deliberately NOT `ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE`, though
-	-- CIVVIS issues `government` orders too: it did not appear in this run, so
-	-- adding it would be reasoning rather than measurement. The comment above
-	-- keeps this list explicit for exactly that reason.
 	ENDTURN_BLOCKING_PANTHEON = true,
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
+	-- ★★★ IT APPEARED. The note that stood here said this name was deliberately
+	-- left out "though CIVVIS issues `government` orders too: it did not appear
+	-- in this run, so adding it would be reasoning rather than measurement" —
+	-- and left the measurement as the condition for adding it. Over the 14 runs
+	-- to `civvis-20260817T030352Z` it fired **3 times**, every one answered by
+	-- `chooseGovernment` on first sight while the orders channel carried CIVVIS's
+	-- own `government` order. Small, and the same shape as the pantheon and the
+	-- policy slot before it: a decision CIVVIS has an opinion on, raced and lost
+	-- by a hand-written ladder because its name was not on this list.
+	--
+	-- The list is now checked rather than remembered: `residual_census_test.lua`
+	-- requires every blocker mapped to a CIVVIS order kind to be here, so the
+	-- next one cannot wait for someone to notice it in a log.
+	ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE = true,
 };
+
+-- Which CIVVIS order kind answers which end-turn prompt.
+--
+-- ⚠ THIS EXISTS BECAUSE THE OWNED LIST ABOVE WAS MAINTAINED BY NOTICING. Every
+-- entry it has gained arrived the same way: a prompt was answered by the
+-- hand-written ladder for months, somebody eventually read a log, and the name
+-- was added — pantheon and the civic slot in #1465, the government change in
+-- this change. The join between "CIVVIS emits orders of kind K" and "prompt P
+-- is CIVVIS's to answer" was never written down, so nothing could check it.
+--
+-- Written down, `residual_census_test.lua` can: every prompt named here must be
+-- in `CIVVIS_OWNED_BLOCKERS`, so adding an order kind that answers a prompt
+-- fails the gate until the prompt is claimed.
+--
+-- ⚠ A prompt is listed here only when CIVVIS actually emits an order that
+-- ANSWERS it. `gp_recruit` and the envoy and governor kinds are deliberately
+-- absent: their prompts are in `SOFT_BLOCKERS`, where CIVVIS's actuator already
+-- owns the decision and the heuristic answer is a known GAME-CORE CRASH (see
+-- the SIGSEGV notes on `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` and
+-- `ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT`). Soft and owned are two different
+-- ways to keep the heuristics off a decision, and only owned ones belong here.
+-- ⚠ A bare global, not a local: see the 200-slot note on
+-- `CivvisResidualBucket`. It is read only by `residual_census_test.lua`.
+CivvisAnswersPrompt = {
+	ENDTURN_BLOCKING_RESEARCH = "research",
+	ENDTURN_BLOCKING_CIVIC = "civic",
+	ENDTURN_BLOCKING_PRODUCTION = "produce",
+	ENDTURN_BLOCKING_PANTHEON = "pantheon",
+	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = "policy_deck",
+	ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE = "government",
+};
+
+-- Exposed for the offline test only; nothing in the agent reads these back.
+-- ⚠ BARE GLOBALS, NEVER `_G.` — see the note on `CivvisEnvoySpendOrder`.
+CivvisOwnedBlockers = CIVVIS_OWNED_BLOCKERS;
+CivvisSoftBlockers = SOFT_BLOCKERS;
 
 -- Answer the decision the game says it is waiting on. Returning the name of
 -- what was answered (rather than a boolean) is what makes a stuck run
 -- diagnosable: the log says which blocker recurred, not merely that one did.
+-- Which of the three things a residual pass was, given what the ladder returned
+-- and whether CIVVIS had already answered this prompt. See the long note in
+-- `answerBlocker` for why one flat number was not enough.
+--
+--   declined     the ladder had no answer; NOTHING decided anything
+--   after_civvis CIVVIS answered, the prompt stood, and the bounded escape at
+--                the forfeit ladder asked for one real answer. By design.
+--   unasked      CIVVIS was never consulted and the ladder decided. The leak.
+--
+-- ⚠⚠⚠ A BARE GLOBAL RATHER THAN A LOCAL, AND NOT BY PREFERENCE. This file
+-- sits at 198 of Lua 5.1's **200 top-level local slots**, and passing that
+-- limit is not a warning: the chunk fails to load, which in a live game is the
+-- silent death this repository has already paid for twice (`_G` in #1047,
+-- `goto` in the 5.1/5.4 gap). Three new locals in the first draft of this
+-- change took it to 201 and `luac5.1 -p` refused the file. Globals cost no
+-- slot. Never `_G.` — see the note on `CivvisEnvoySpendOrder`.
+CivvisResidualBucket = function(answer, residual_ok)
+	if answer == nil then return "declined"; end
+	if residual_ok then return "after_civvis"; end
+	return "unasked";
+end
+
 local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	local name = blockerName(blocker);
 	-- A CIVVIS pass is a complete decision for the mirrored state it received.
@@ -4648,11 +4716,54 @@ local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	-- something on a run where CIVVIS was supposed to decide", and that does not
 	-- depend on when in the turn it happened. `source` is recorded alongside instead,
 	-- so the timing is still visible without gating the count on it.
+	--
+	-- ⚠⚠⚠ AND FOR A WHILE IT STOPPED ANSWERING THAT QUESTION. Counting HERE, before
+	-- the ladder runs, cannot see three outcomes that mean opposite things:
+	--
+	--   * `unasked`      -- CIVVIS was never consulted for this blocker (the name is
+	--                       in neither `CIVVIS_OWNED_BLOCKERS` nor `SOFT_BLOCKERS`)
+	--                       and the ladder answered it. THIS is the leak the counter
+	--                       exists to find: a second AI deciding under CIVVIS's name.
+	--   * `after_civvis` -- CIVVIS answered, the prompt came back anyway, and the
+	--                       bounded escape at the forfeit ladder asked for one real
+	--                       answer rather than wedge the turn. By design, and the
+	--                       design is load-bearing: without it runs sat 900 s on a
+	--                       standing prompt (t178 of `civvis-20260816T115139Z`, the
+	--                       seat's best game at the time).
+	--   * `declined`     -- the ladder returned nil. NOTHING decided anything; the
+	--                       prompt goes to the dismissal path.
+	--
+	-- One flat number over all three reads as the first one. On 2026-08-17 a review
+	-- of 14 runs read 1,577 residuals as "1,577 decisions taken by the Lua fallback
+	-- instead of CIVVIS" and had to be withdrawn: 937 were the escape hatch, ~350
+	-- were declines that decided nothing, and the actual leak was THREE
+	-- (`ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE`, now owned below). A number
+	-- that makes a careful reader with the source open reach the wrong conclusion
+	-- is a broken instrument, not a big finding.
+	--
+	-- So the classification moved to where the outcome is known: below the ladder,
+	-- on its result. `counted` keeps the flat per-name total the ledger already
+	-- reads, and the three buckets carry the meaning.
+	local answer = CivvisAnswerBlockerLadder(player, pid, name, turn);
 	if cfg.CivvisDecides then
+		local bucket = CivvisResidualBucket(answer, residual_ok);
 		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
 		residualAnswers[name .. "@" .. tostring(awaiting.source)] =
 			(residualAnswers[name .. "@" .. tostring(awaiting.source)] or 0) + 1;
+		residualAnswers[name .. "!" .. bucket] =
+			(residualAnswers[name .. "!" .. bucket] or 0) + 1;
+		residualAnswers["!" .. bucket] = (residualAnswers["!" .. bucket] or 0) + 1;
 	end
+	return answer;
+end
+
+-- The hand-written answer for one blocker, or nil when this controller has none.
+--
+-- Split out of `answerBlocker` so the residual census above can classify the
+-- OUTCOME rather than the attempt; it is the same ladder, unchanged.
+-- ⚠ A bare global for the 200-slot reason on `CivvisResidualBucket`, not
+-- because anything outside this file should call it. Never `_G.`.
+CivvisAnswerBlockerLadder = function(player, pid, name, turn)
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
 	-- while something else settles -- and answering two hundred times is how a

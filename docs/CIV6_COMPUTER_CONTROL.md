@@ -479,6 +479,37 @@ The guarantee is *provable*, not assumed:
   refresh error; `civvis_sync.sh` runs it every cycle, gated on a live
   brain process so build gaps between games cannot cry wolf.
 
+## Reading the residual census
+
+`residual` counts what happened when the hand-written ladder was consulted on
+a turn CIVVIS was supposed to be deciding. **It is three different things and
+they must never be added together**, because the sum reads as the worst of
+them:
+
+| bucket | meaning | what to do |
+|---|---|---|
+| `unasked` | CIVVIS issues orders that answer this prompt, and the ladder answered it first. **A second AI decided under CIVVIS's name.** | add the prompt to `CIVVIS_OWNED_BLOCKERS` |
+| `after_civvis` | CIVVIS answered, the prompt came back anyway, and the bounded escape at the forfeit ladder asked for one real answer instead of wedging the turn | nothing — this is the design, and without it runs sat 900 s on a standing prompt |
+| `declined` | the ladder had no answer either; **nothing decided anything** | nothing, unless the prompt should be CIVVIS's |
+
+⚠ On 2026-08-17 a review of fourteen runs read the flat total of 1,577 as
+"1,577 decisions taken by the Lua fallback instead of CIVVIS" and had to
+withdraw it. The split was **937 `after_civvis`, ~350 `declined`, and 3
+`unasked`** — the leak was `ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE`,
+which is now owned. The reader had the source open. A number that misleads a
+careful reader is a broken instrument, so the agent now writes the buckets and
+`civ6_civvis_status.py` prints the leak first, alone, with its prompt names.
+
+Runs from before that change carry no buckets and are reported as
+`unclassified`: a flat total cannot be split after the fact, and guessing
+which way it went is the same error again.
+
+The join that keeps `unasked` at zero is `CivvisAnswersPrompt` in
+`CivvisControlAgent.lua` — prompt to the CIVVIS order kind that answers it —
+enforced by `residual_census_test.lua`, which fails when a mapped prompt is not
+owned or names an order kind `civvis_orders.rs` never emits. Before it, the
+owned list was maintained by somebody eventually reading a log.
+
 ## The host itself is part of the bridge (macOS 26, measured 2026-08-07)
 
 A Steam reinstall on macOS 26.5.1 established four host facts that sit UNDER
