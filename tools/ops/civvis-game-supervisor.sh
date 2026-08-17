@@ -230,6 +230,18 @@ while true; do
     REPO=$PIN
   fi
   cd "$REPO" || { say "no tree at $REPO"; sleep 60; continue }
+  # `cd /` SUCCEEDS, so a bad HEAD_REPO derivation passes the guard above and
+  # surfaces downstream as `could not find Cargo.toml in '/'` plus
+  # "build FAILED at <empty sha>" every 120s with no game. Measured
+  # 2026-08-17 22:33Z: these exact bytes, synced to the legacy home copy
+  # (~/civvis-game-supervisor.sh) and run from there, derive three dirnames
+  # up as `/`. Refuse the cycle with the derivation spelled out instead of
+  # looping a cryptic build failure.
+  if [[ ! -f "$REPO/Cargo.toml" ]]; then
+    say "REFUSING cycle: no Cargo.toml at '$REPO' (pin='$PIN', HEAD_REPO='$HEAD_REPO', script ${0:A}); set CIVVIS_HEAD_REPO or run the tracked copy under tools/ops/; retrying in 300s"
+    sleep 300
+    continue
+  fi
   rm -f status.json                     # tools/follow.py dirties the tree
   if [[ "$PIN" == "head" ]]; then
     git pull -q --ff-only origin main 2>/dev/null
