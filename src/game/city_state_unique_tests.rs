@@ -1134,6 +1134,25 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
 }
 
 #[test]
+fn a_city_state_at_war_with_the_seat_suspends_its_envoy_bonuses() {
+    // Ostia's "+2 from Consulate" Culture (Caguana, three Envoys) went to
+    // nothing the turn Caguana was brought into a war against us and came back
+    // with the peace (run civvis-20260816T223457Z t90 / t98); the capital's
+    // point from the same city-state moved with it.
+    let (mut game, cities) = game_with_capitals(1, 89_012);
+    let capital = cities[0];
+    let kumasi = add_city_state(&mut game, "Kumasi");
+    make_suzerain(&mut game, 0, kumasi);
+    let plain = game.envoy_yields(0, &game.cities[&capital]);
+    assert!(plain.culture > 0.0, "a cultural city-state at three Envoys pays the capital");
+    game.at_war.insert(pair(0, kumasi));
+    let at_war = game.envoy_yields(0, &game.cities[&capital]);
+    assert_eq!(at_war, Yields::default(), "nothing while at war");
+    game.at_war.remove(&pair(0, kumasi));
+    assert_eq!(game.envoy_yields(0, &game.cities[&capital]), plain, "and all of it back at peace");
+}
+
+#[test]
 fn leading_sent_envoys_expand_borders_and_strengthen_the_city_state() {
     let (mut game, major_cities) = game_with_capitals(2, 89_011);
     let minor = add_city_state(&mut game, "Geneva");
