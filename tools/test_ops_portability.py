@@ -209,6 +209,13 @@ if __name__ == "__main__":
     unittest.main()
 
 
+# The launcher is zsh, and zsh is what macOS ships. CI runs Linux images that
+# have no /bin/zsh, so these skip there rather than assert about a shell the
+# target host is guaranteed to have and the runner is guaranteed not to.
+HAS_ZSH = Path("/bin/zsh").exists()
+
+
+@unittest.skipUnless(HAS_ZSH, "the launcher is zsh; this runner has no /bin/zsh")
 class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
     """A Terminal window is not a log.
 
