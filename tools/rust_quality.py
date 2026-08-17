@@ -60,6 +60,23 @@ def revision(repo: Path, value: str | None, fallback: str) -> str:
     return fallback_checked.stdout.strip()
 
 
+def merge_base(repo: Path, base: str, head: str) -> str:
+    """The fork point the head actually grew from.
+
+    GitHub hands the workflow the base *branch tip*, and on this trunk that
+    tip moves every few minutes. Diffing tip..head blames the head for every
+    line other PRs merged after the branch last synchronized — a trailing
+    branch fails the gate on formatting it never touched (observed on #1852:
+    four chunks in regions only main had edited). The merge base is immune to
+    the base advancing; when git cannot compute one (shallow clone), the
+    supplied base is kept.
+    """
+    result = run(repo, ["git", "merge-base", base, head])
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return base
+
+
 def changed_rust_files(repo: Path, base: str, head: str) -> list[Path]:
     result = run(
         repo,
@@ -302,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     repo = args.repo.resolve()
     head = revision(repo, args.head or os.environ.get("QUALITY_HEAD"), "HEAD")
     base = revision(repo, args.base or os.environ.get("QUALITY_BASE"), f"{head}^")
+    base = merge_base(repo, base, head)
     paths = changed_rust_files(repo, base, head)
     if not paths:
         print("rust-quality: no changed Rust files; format and clippy checks skipped")

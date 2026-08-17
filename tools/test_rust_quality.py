@@ -118,6 +118,17 @@ class QualityHelpersTests(unittest.TestCase):
             # The pure deletion at old line 40 leaves no head-side range.
             self.assertEqual(ranges, {key: [(12, 14), (53, 53)]})
 
+    def test_merge_base_replaces_a_moving_branch_tip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            found = quality.subprocess.CompletedProcess([], 0, "abc123\n", "")
+            with patch.object(quality, "run", return_value=found):
+                self.assertEqual(quality.merge_base(repo, "tip", "head"), "abc123")
+            # A shallow clone cannot answer; the supplied base is kept.
+            missing = quality.subprocess.CompletedProcess([], 128, "", "fatal")
+            with patch.object(quality, "run", return_value=missing):
+                self.assertEqual(quality.merge_base(repo, "tip", "head"), "tip")
+
     def test_rustfmt_abort_is_a_skip_not_a_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
