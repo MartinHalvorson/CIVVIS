@@ -2280,64 +2280,29 @@ def host_plays_civ6(runs: Optional[Path] = None) -> bool:
     return runs.is_dir()
 
 
-def macos_ladder_plist(supervisor: Path, repo: Path) -> bytes:
-    """launchd job for the game supervisor: keep it alive, forever.
-
-    `KeepAlive` is the whole point. The supervisor is an infinite pull/build/
-    play loop, so any exit at all is a failure — a crash, a closed terminal, a
-    logout, a reboot. Before this it was hand-started from a session, which is
-    why 2026-08-17 lost 14.3 hours of attempts when that session ended.
-
-    `ThrottleInterval` bounds the other direction: a supervisor that dies
-    immediately (no Civ 6, no permission) retries once a minute instead of
-    spinning against launchd's 10-second floor.
-    """
-    logs = Path.home() / "Library" / "Logs" / "civvis-ladder.log"
-    arguments = "".join(
-        f"\n\t\t<string>{value}</string>"
-        for value in ("/bin/zsh", str(supervisor))
-    )
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-        '<plist version="1.0">\n<dict>\n'
-        f"\t<key>Label</key>\n\t<string>{LADDER_LABEL}</string>\n"
-        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
-        f"\t<key>WorkingDirectory</key>\n\t<string>{repo_root(repo)}</string>\n"
-        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
-        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
-        f"\t\t<key>CIVVIS_HEAD_REPO</key>\n\t\t<string>{repo_root(repo)}</string>\n"
-        "\t\t<key>PATH</key>\n\t\t<string>"
-        f"{Path.home() / '.cargo' / 'bin'}:/usr/local/bin:/opt/homebrew/bin"
-        ":/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
-        "\t</dict>\n"
-        "\t<key>KeepAlive</key>\n\t<true/>\n"
-        "\t<key>RunAtLoad</key>\n\t<true/>\n"
-        "\t<key>ThrottleInterval</key>\n\t<integer>60</integer>\n"
-        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
-        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
-        f"{MANAGED_KEY}"
-        "</dict>\n</plist>\n"
-    ).encode("utf-8")
-
-
 def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
-    """launchd job for the staleness watchdog: its own process, its own clock.
+    """The ladder keeper: one interval job, its own process, its own clock.
 
-    Separate from the supervisor job deliberately. `KeepAlive` above catches a
-    supervisor that EXITED; it cannot catch one that is alive and looping while
-    producing no attempts, which is what a wedged Civ 6 core or a broken build
-    looks like to the process table. This job asks the only question that
-    settles it — when did we last finish a game — and it must be able to outlive
-    the thing it supervises, so it cannot live inside it.
+    ⚠⚠⚠ THERE IS DELIBERATELY NO `KeepAlive` JOB RUNNING THE SUPERVISOR. #1888
+    shipped one and it cannot work on macOS: installing the control mod writes
+    inside `Civ6.app`, that permission is attributed to the responsible process,
+    and a LaunchAgent's children inherit launchd's empty grant set — so every
+    attempt died at "cannot install .../DLC/CivvisControl" having played no
+    turns, while launchd faithfully restarted a loop that could never play.
+    `install.py`'s Finder fallback does not rescue it either, because driving
+    Finder is an Apple Event and launchd has no Automation grant.
+
+    So the keeper starts the loop through Terminal instead, which does hold the
+    grant, and this job exists to run the keeper on an interval. It covers both
+    failure modes — a loop that is gone, and a loop that is alive but finishing
+    no games — because they are the same question asked in two directions. What
+    matters is that it runs in its own process, so it outlives what it watches.
     """
     logs = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
     arguments = "".join(
         f"\n\t\t<string>{value}</string>"
         for value in (sys.executable, str(watchdog),
-                      "--stale-hours", LADDER_STALE_HOURS,
-                      "--label", LADDER_LABEL)
+                      "--stale-hours", LADDER_STALE_HOURS)
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -2372,12 +2337,32 @@ def load_managed_job(label: str, path: Path) -> None:
     run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
 
 
-def install_ladder_supervisor(repo: Path) -> List[Path]:
-    """Install the game supervisor and its watchdog. Empty where they do not apply.
+def retire_ladder_keepalive_job() -> bool:
+    """Remove the KeepAlive supervisor job #1888 installed. True if one was there.
 
-    Two jobs, two failure modes. See the plist builders above for which is
-    which; the short version is that KeepAlive covers a supervisor that died
-    and the watchdog covers one that is alive but not playing.
+    Leaving it would be worse than never having shipped it. It restarts a loop
+    that cannot install the control mod from launchd's grant set, so it plays no
+    turns, burns a full head build every minute of ThrottleInterval, and holds
+    the supervisor lock the keeper needs to start a loop that WOULD work.
+    """
+    path = Path.home() / "Library" / "LaunchAgents" / f"{LADDER_LABEL}.plist"
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{LADDER_LABEL}"),
+                     check=False).returncode
+    if loaded:
+        run(("launchctl", "bootout", f"{domain}/{LADDER_LABEL}"), check=False)
+    if path.exists():
+        path.unlink()
+        return True
+    return loaded
+
+
+def install_ladder_supervisor(repo: Path) -> List[Path]:
+    """Install the ladder keeper. Empty where it does not apply.
+
+    One interval job, covering both ways the loop stops producing attempts.
+    There is no second job running the supervisor directly — see
+    `macos_ladder_watchdog_plist` for why a LaunchAgent cannot play Civ 6.
     """
     if sys.platform != "darwin" or not host_plays_civ6():
         return []
@@ -2386,22 +2371,17 @@ def install_ladder_supervisor(repo: Path) -> List[Path]:
     for source in (supervisor, watchdog):
         if not source.is_file():
             raise CommandError(f"versioned ladder service is missing: {source}")
+    retire_ladder_keepalive_job()
 
-    installed: List[Path] = []
     agents = Path.home() / "Library" / "LaunchAgents"
-    for label, data in (
-        (LADDER_LABEL, macos_ladder_plist(supervisor, repo)),
-        (LADDER_WATCHDOG_LABEL, macos_ladder_watchdog_plist(watchdog)),
-    ):
-        path = agents / f"{label}.plist"
-        changed = write_managed_service(path, data)
-        domain = f"gui/{os.getuid()}"
-        loaded = not run(("launchctl", "print", f"{domain}/{label}"),
-                         check=False).returncode
-        if changed or not loaded:
-            load_managed_job(label, path)
-        installed.append(path)
-    return installed
+    path = agents / f"{LADDER_WATCHDOG_LABEL}.plist"
+    changed = write_managed_service(path, macos_ladder_watchdog_plist(watchdog))
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{LADDER_WATCHDOG_LABEL}"),
+                     check=False).returncode
+    if changed or not loaded:
+        load_managed_job(LADDER_WATCHDOG_LABEL, path)
+    return [path]
 
 
 def install_memory_guard(repo: Path) -> Optional[Path]:
