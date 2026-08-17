@@ -2147,6 +2147,17 @@ pub struct AdvancedAi {
     /// freezing. Off for ordinary and frozen controllers; on for the live
     /// bridge and the native repair bundle (a CIVVIS scout dies the same way).
     pub recon_flight: bool,
+    /// Declare a surprise war on a rival whose Settler or Builder is standing
+    /// beside one of this seat's military units, so the ordinary capture pass
+    /// takes it the same turn. Guards: early game only (the first hundred
+    /// standard turns), the victim must be visible right now, the rival's
+    /// military power must not exceed ours, and at most one declaration per
+    /// turn. Evaluator entrant `advanced_civilian_snatch`; OFF everywhere by
+    /// default — the war gates read power, not conversion, and a war entered
+    /// this way still locks the grand strategy into Conquest for its
+    /// duration, which is the measured failure mode of every war this agent
+    /// starts. The entrant exists to price that trade, not to presume it.
+    pub civilian_snatch: bool,
     /// Do not build a space race, or a bomb, that cannot finish before the
     /// turn limit.
     ///
@@ -3616,6 +3627,7 @@ impl AdvancedAi {
             expansion_before_prophet: false,
             no_elective_war: false,
             recon_flight: false,
+            civilian_snatch: false,
             score_horizon: false,
             one_launch_pad: false,
             wide_map_capacity: false,
@@ -4821,6 +4833,13 @@ impl AdvancedAi {
     /// `advanced_fortify_idle_units`; off in production.
     pub fn enable_fortify_idle_units(&mut self) {
         self.base.fortify_idle_units = true;
+    }
+
+    /// Snatch a rival's exposed Settler or Builder behind a surprise war.
+    /// Evaluator entrant `advanced_civilian_snatch`; off in production. See
+    /// the field for the guards and the reason it ships off.
+    pub fn enable_civilian_snatch(&mut self) {
+        self.civilian_snatch = true;
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on
@@ -26394,9 +26413,73 @@ impl AdvancedAi {
         Some(self.base.tactical_apply_move(g, pid, uid, step))
     }
 
+    /// See `civilian_snatch`. At most one declaration per turn, and only when
+    /// the ordinary capture pass can convert it this same turn: the victim
+    /// must already stand beside one of this seat's military units with
+    /// movement left. A Settler outranks a Builder when both are exposed.
+    fn snatch_exposed_civilian(&self, g: &mut Game, pid: usize) {
+        if !self.civilian_snatch
+            || g.players[pid].is_minor
+            || g.players[pid].is_barbarian
+            || g.turn > g.standard_duration(100)
+        {
+            return;
+        }
+        let my_power = g.military_power(pid);
+        let visible = g.player_vision_now(pid);
+        let mut best: Option<(i32, usize)> = None;
+        for unit in g.units.values() {
+            if unit.owner != pid
+                || unit.moves_left <= 0.0
+                || g.rules.units[unit.kind].class != "military"
+            {
+                continue;
+            }
+            for pos in g.nbrs(unit.pos) {
+                if !g.sees(&visible, pos) {
+                    continue;
+                }
+                for other_id in g.units_at(pos) {
+                    let other = &g.units[&other_id];
+                    let owner = other.owner;
+                    if owner == pid
+                        || !g.players[owner].alive
+                        || g.players[owner].is_minor
+                        || g.players[owner].is_barbarian
+                        || g.is_at_war(pid, owner)
+                    {
+                        continue;
+                    }
+                    let value = match other.kind.as_str() {
+                        "settler" => 2,
+                        "builder" => 1,
+                        _ => continue,
+                    };
+                    // Do not poke a stronger neighbour: the prize is one
+                    // civilian, the price is a war with whoever wins it.
+                    if g.military_power(owner) > my_power {
+                        continue;
+                    }
+                    if best.is_none_or(|(seen, _)| value > seen) {
+                        best = Some((value, owner));
+                    }
+                }
+            }
+        }
+        if let Some((_, rival)) = best {
+            if g.apply(pid, &Action::DeclareWar { player: rival }).is_ok() {
+                think!(self.journal(), Military, Strategy,
+                       "Declaring a surprise war to take an exposed civilian";
+                       "player {rival} left a Settler or Builder beside our army; \
+                        the capture pass takes it this turn");
+            }
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
         self.enable_arena_joint_tactics(g);
+        self.snatch_exposed_civilian(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
         // loop below handles it. Firaxis exports an idle Trader with zero
         // walking movement but still permits TradeRoute from the city it
@@ -27591,6 +27674,83 @@ mod tests {
         assert!(
             !direct_war.peace_offers.contains(&1),
             "peace with a Suzerain cannot unlock Envoys during a direct city-state war"
+        );
+    }
+
+    #[test]
+    fn the_snatch_entrant_declares_and_takes_an_exposed_settler() {
+        let mut game = Game::new_full(2, 28, 18, 40_100, 60, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let (ours, theirs) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(**pos).is_empty()
+                    && game.city_at(**pos).is_none()
+            })
+            .find_map(|(pos, _)| {
+                game.nbrs(*pos)
+                    .into_iter()
+                    .find(|near| {
+                        game.map.get(*near).is_some_and(|tile| {
+                            game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                        }) && game.units_at(*near).is_empty()
+                            && game.city_at(*near).is_none()
+                    })
+                    .map(|near| (*pos, near))
+            })
+            .expect("two adjacent open land tiles exist");
+        let warrior = game.spawn_test_unit("warrior", 0, ours);
+        let settler = game.spawn_test_unit("settler", 1, theirs);
+        game.record_contact(0, 1);
+        game.record_contact(1, 0);
+
+        // Off: the entrant flag is not production behaviour, and nothing
+        // declares.
+        let quiet = AdvancedAi::new();
+        assert!(!quiet.civilian_snatch);
+        quiet.snatch_exposed_civilian(&mut game, 0);
+        assert!(!game.is_at_war(0, 1));
+
+        // A stronger rival is not poked even with the flag on.
+        let mut armed = AdvancedAi::new();
+        armed.enable_civilian_snatch();
+        let mut outgunned = game.clone();
+        for _ in 0..4 {
+            let spot = outgunned
+                .map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    outgunned.rules.is_passable(tile)
+                        && !outgunned.rules.is_water(tile)
+                        && outgunned.units_at(**pos).is_empty()
+                        && outgunned.wdist(**pos, ours) > 4
+                })
+                .map(|(pos, _)| *pos)
+                .next()
+                .expect("room for the rival army");
+            outgunned.spawn_test_unit("warrior", 1, spot);
+        }
+        armed.snatch_exposed_civilian(&mut outgunned, 0);
+        assert!(!outgunned.is_at_war(0, 1));
+
+        // Evenly matched and exposed: the declaration lands and the ordinary
+        // capture pass converts it the same turn.
+        armed.snatch_exposed_civilian(&mut game, 0);
+        assert!(game.is_at_war(0, 1));
+        assert!(armed.base.capture_adjacent_civilian(&mut game, 0, warrior, false));
+        assert_eq!(game.units[&warrior].pos, theirs);
+        assert!(
+            game.units
+                .get(&settler)
+                .is_none_or(|unit| unit.owner == 0),
+            "the exposed settler must be captured or removed, not left to player 1"
         );
     }
 

@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 176] = [
+pub const EVAL_ONLY_AIS: [&str; 177] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -187,6 +187,7 @@ pub const EVAL_ONLY_AIS: [&str; 176] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_civilian_snatch",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -673,6 +674,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedCivilianSnatch => "advanced_civilian_snatch",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -2919,6 +2921,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        "advanced_civilian_snatch" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_civilian_snatch();
+            Box::new(ai)
+        }
         "advanced_settler_founds_when_stalled" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settler_founds_when_stalled();
@@ -3888,6 +3895,7 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedCivilianSnatch => &["civilian-snatch"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4364,6 +4372,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_civilian_snatch" => (Vec::new(), "advanced_civilian_snatch"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -5569,7 +5578,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 82] = [
+            const SCRIPTED: [&str; 83] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5635,6 +5644,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_civilian_snatch",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
