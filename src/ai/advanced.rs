@@ -3103,6 +3103,104 @@ impl Default for AdvancedAi {
     }
 }
 
+/// Every treatment the live Civilization VI seat turns on: the identity its
+/// withholding arm is published under, the provenance tag, and the call that
+/// takes it back out. In `elo::LIVE_BRIDGE_TREATMENTS` order.
+///
+/// ⚠⚠⚠ THE POINT IS THAT A SHIPPED TREATMENT CANNOT GO UNPRICED.
+/// `enable_live_bridge` turns on 67. Before this table, `elo.rs` carried one
+/// hand-written `live_without_*` arm per treatment, and each needed **seven
+/// separate edits**: the name in `EVAL_ONLY_AIS`, an `ArmKind` variant, its
+/// `name()` mapping, the `build_arm` case, a provenance row, a second
+/// `(Vec::new(), name)` mapping, and a `disable_` method. Seven places is six
+/// chances to stop, and fifteen treatments had stopped short: the bundle held
+/// 67 and only 52 could be withheld, so a third of what ships on the live
+/// seat could not be priced by the paired evaluator and nothing said so.
+///
+/// The fifteen are named here — `buildings_before_projects`, `camp_party`,
+/// `camp_reach`, `culture_building_debt`, `culture_coverage`,
+/// `one_launch_pad`, `settler_stack_discipline`, `settler_target_hysteresis`,
+/// `tally_great_people`, `barbarian_scouts_are_scouts`, and the five that had
+/// no `disable_` twin at all — and `build_arm` now derives every arm from this
+/// table instead of matching a literal, so a treatment added to the bundle
+/// without a way to withhold it fails to build.
+///
+/// ⚠ THREE NAMES ARE NOT THE FLAG'S NAME, AND THAT IS DELIBERATE. The tag is
+/// the identity `docs/EVAL.md` records results under; `live-trader-route`,
+/// `live-religious-purchase` and `ranged-line-of-sight` were published shorter
+/// than the methods they call and must stay that way, or a published result
+/// stops being findable. Same for the arm names `army_target_weighs_enemy`,
+/// `siege_tracks_wall` and `suzerain_cards`.
+pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
+    ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
+    ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
+    ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
+    ("siege_muster", "siege-muster", AdvancedAi::disable_siege_muster),
+    ("home_defense", "home-defense", AdvancedAi::disable_home_defense),
+    ("loyalty_policy_defence", "loyalty-policy-defence", AdvancedAi::disable_loyalty_policy_defence),
+    ("recorded_tactical_step", "recorded-tactical-step", AdvancedAi::disable_recorded_tactical_step),
+    ("strike_opening", "strike-opening", AdvancedAi::disable_strike_opening),
+    ("bounded_recovery", "bounded-recovery", AdvancedAi::disable_bounded_recovery),
+    ("army_target_weighs_enemy", "army-target-weighs-enemy", AdvancedAi::disable_army_target_weighs_the_enemy),
+    ("peacetime_deterrence", "peacetime-deterrence", AdvancedAi::disable_peacetime_deterrence),
+    ("siege_tracks_wall", "siege-tracks-wall", AdvancedAi::disable_siege_tracks_the_wall),
+    ("blind_objective_strength", "blind-objective-strength", AdvancedAi::disable_blind_objective_strength),
+    ("solvent_faith_army", "solvent-faith-army", AdvancedAi::disable_solvent_faith_army),
+    ("loyalty_rate_alarm", "loyalty-rate-alarm", AdvancedAi::disable_loyalty_rate_alarm),
+    ("ranged_needs_line_of_sight", "ranged-line-of-sight", AdvancedAi::disable_ranged_needs_line_of_sight),
+    ("district_coverage", "district-coverage", AdvancedAi::disable_district_coverage),
+    ("slot_kind_tiebreak", "slot-kind-tiebreak", AdvancedAi::disable_slot_kind_tiebreak),
+    ("siege_role", "siege-role", AdvancedAi::disable_siege_role),
+    ("come_ashore", "come-ashore", AdvancedAi::disable_come_ashore),
+    ("relief_targets_the_siege", "relief-targets-the-siege", AdvancedAi::disable_relief_targets_the_siege),
+    ("blind_objective_units", "blind-objective-units", AdvancedAi::disable_blind_objective_units),
+    ("suzerain_cards", "suzerain-cards", AdvancedAi::disable_suzerain_cards_need_a_suzerainty),
+    ("muster_at_command_radius", "muster-at-command-radius", AdvancedAi::disable_muster_at_command_radius),
+    ("housing_districts", "housing-districts", AdvancedAi::disable_housing_districts),
+    ("campus_every_city", "campus-every-city", AdvancedAi::disable_campus_every_city),
+    ("housing_cards", "housing-cards", AdvancedAi::disable_housing_cards),
+    ("housing_research", "housing-research", AdvancedAi::disable_housing_research),
+    ("war_economy", "war-economy", AdvancedAi::disable_war_economy),
+    ("war_reinforcement", "war-reinforcement", AdvancedAi::disable_war_reinforcement),
+    ("war_patience", "war-patience", AdvancedAi::disable_war_patience),
+    ("endgame_war_runway", "endgame-war-runway", AdvancedAi::disable_endgame_war_runway),
+    ("wide_map_capacity", "wide-map-capacity", AdvancedAi::disable_wide_map_capacity),
+    ("garrison_under_fire", "garrison-under-fire", AdvancedAi::disable_garrison_under_fire),
+    ("escort_unstick", "escort-unstick", AdvancedAi::disable_escort_unstick),
+    ("stacked_escort", "stacked-escort", AdvancedAi::disable_stacked_escort),
+    ("religion_sues_peace", "religion-sues-peace", AdvancedAi::disable_religion_sues_peace),
+    ("recon_replacement", "recon-replacement", AdvancedAi::disable_recon_replacement),
+    ("stranded_settler_discount", "stranded-settler-discount", AdvancedAi::disable_stranded_settler_discount),
+    ("siege_commitment", "siege-commitment", AdvancedAi::disable_siege_commitment),
+    ("wonder_ring_settle_value", "wonder-ring-settle-value", AdvancedAi::disable_wonder_ring_settle_value),
+    ("garrison_walls", "garrison-walls", AdvancedAi::disable_garrison_walls),
+    ("housing_buildings", "housing-buildings", AdvancedAi::disable_housing_buildings),
+    ("amenity_project_preemption", "amenity-project-preemption", AdvancedAi::disable_amenity_project_preemption),
+    ("amenity_district_path", "amenity-district-path", AdvancedAi::disable_amenity_district_path),
+    ("governor_every_lane", "governor-every-lane", AdvancedAi::disable_governor_every_lane),
+    ("live_wonder_race", "live-wonder-race", AdvancedAi::disable_live_wonder_race),
+    ("expansion_before_prophet", "expansion-before-prophet", AdvancedAi::disable_expansion_before_prophet),
+    ("no_elective_war", "no-elective-war", AdvancedAi::disable_no_elective_war),
+    ("fog_land_capacity", "fog-land-capacity", AdvancedAi::disable_fog_land_capacity),
+    ("recon_flight", "recon-flight", AdvancedAi::disable_recon_flight),
+    ("score_horizon", "score-horizon", AdvancedAi::disable_score_horizon),
+    ("one_launch_pad", "one-launch-pad", AdvancedAi::disable_one_launch_pad),
+    ("naval_recon", "naval-recon", AdvancedAi::disable_naval_recon),
+    ("counter_in_lane", "counter-in-lane", AdvancedAi::disable_counter_in_lane),
+    ("era_paced_expansion", "era-paced-expansion", AdvancedAi::disable_era_paced_expansion),
+    ("tally_culture", "tally-culture", AdvancedAi::disable_tally_culture),
+    ("culture_building_debt", "culture-building-debt", AdvancedAi::disable_culture_building_debt),
+    ("culture_coverage", "culture-coverage", AdvancedAi::disable_culture_coverage),
+    ("frontier_loyalty", "frontier-loyalty", AdvancedAi::disable_frontier_loyalty),
+    ("settler_target_hysteresis", "settler-target-hysteresis", AdvancedAi::disable_settler_target_hysteresis),
+    ("tally_great_people", "tally-great-people", AdvancedAi::disable_tally_great_people),
+    ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
+    ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
+    ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
+    ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
+    ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
+];
+
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
     /// envoy-priority policy. The measured-null envoy valuation and bounded
@@ -3588,10 +3686,22 @@ impl AdvancedAi {
         self.live_trader_route_adapter = true;
     }
 
+    /// Withholding twin for `enable_live_trader_route_adapter`, so the live bundle can be
+    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    pub fn disable_live_trader_route_adapter(&mut self) {
+        self.live_trader_route_adapter = false;
+    }
+
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {
         self.base.live_religious_purchase_guard = true;
+    }
+
+    /// Withholding twin for `enable_live_religious_purchase_guard`, so the live bundle can be
+    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    pub fn disable_live_religious_purchase_guard(&mut self) {
+        self.base.live_religious_purchase_guard = false;
     }
 
     /// Let a besieged city raise its standing-army floor against hostiles it
@@ -3625,6 +3735,12 @@ impl AdvancedAi {
     /// disabled so their recorded ladders replay move-for-move.
     pub fn enable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = true;
+    }
+
+    /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
+    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    pub fn disable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = false;
     }
 
     /// Price the city ceiling off uncontested land. Native tournament games
@@ -3883,11 +3999,23 @@ impl AdvancedAi {
         self.strike_opening = true;
     }
 
+    /// Withholding twin for `enable_strike_opening`, so the live bundle can be
+    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    pub fn disable_strike_opening(&mut self) {
+        self.strike_opening = false;
+    }
+
     /// Let a ranged unit prefer tiles it can actually shoot from. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
     pub fn enable_ranged_needs_line_of_sight(&mut self) {
         self.ranged_needs_line_of_sight = true;
+    }
+
+    /// Withholding twin for `enable_ranged_needs_line_of_sight`, so the live bundle can be
+    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
+    pub fn disable_ranged_needs_line_of_sight(&mut self) {
+        self.ranged_needs_line_of_sight = false;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -27210,6 +27338,96 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests {
+
+    /// The registry, the bundle and the evaluator's arm list are one list.
+    ///
+    /// ⚠⚠⚠ THIS IS THE BINDING THAT WAS MISSING FOR FIFTEEN TREATMENTS.
+    /// `enable_live_bridge` is 380 lines, and 311 of them are the measured
+    /// evidence for why each treatment is in the bundle — that evidence
+    /// belongs beside the call it justifies, so the calls stay written out
+    /// rather than becoming a loop over the table. Two lists then have to
+    /// agree, and the last time this repository kept two lists in step by
+    /// hand it lost fifteen of them.
+    ///
+    /// So it is checked instead. The bundle's own source is the input: a
+    /// treatment added to `enable_live_bridge` without a registry row fails
+    /// here, naming itself.
+    #[test]
+    fn live_bundle_and_registry_agree() {
+        let source = include_str!("advanced.rs");
+        let start = source
+            .find("pub fn enable_live_bridge(&mut self) {")
+            .expect("enable_live_bridge must exist to be checked");
+        let body = &source[start..];
+        let end = body
+            .find("\n    }\n")
+            .expect("enable_live_bridge must be a complete function");
+        let body = &body[..end];
+
+        let mut called: Vec<&str> = Vec::new();
+        for piece in body.split("self.enable_").skip(1) {
+            if let Some(name) = piece.split("()").next() {
+                if name.chars().all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit()) {
+                    called.push(name);
+                }
+            }
+        }
+        // ⚠ A census that reports zero is a broken census, not a null. If the
+        // scrape stops matching, this test must fail rather than pass empty.
+        assert!(
+            called.len() > 50,
+            "scraped only {} enable_ calls out of enable_live_bridge; the \
+             scrape broke, it did not find an empty bundle",
+            called.len()
+        );
+
+        let mut missing: Vec<&str> = Vec::new();
+        for flag in &called {
+            let disabler = format!("disable_{flag}");
+            if !source.contains(&format!("pub fn {disabler}(&mut self)")) {
+                missing.push(flag);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "these live-bundle treatments have no withholding twin, so they \
+             ship unpriceable: {missing:?}"
+        );
+
+        assert_eq!(
+            called.len(),
+            LIVE_TREATMENTS.len(),
+            "enable_live_bridge turns on {} treatments but LIVE_TREATMENTS \
+             lists {}; every shipped treatment needs a row so it can be \
+             withheld and priced",
+            called.len(),
+            LIVE_TREATMENTS.len()
+        );
+
+        // Registry rows are (published name, provenance tag, withholding
+        // call). The published name is not always the flag name — three tags
+        // were published shorter than the methods they call — so the join is
+        // on the disabler, which is unambiguous.
+        for flag in &called {
+            let disabler = format!("disable_{flag}");
+            assert!(
+                LIVE_TREATMENTS.iter().any(|(name, tag, _)| {
+                    source.contains(&format!(
+                        "(\"{name}\", \"{tag}\", AdvancedAi::{disabler})"
+                    ))
+                }),
+                "enable_live_bridge turns on {flag} but no LIVE_TREATMENTS row \
+                 calls {disabler}; add one, or the treatment ships with no way \
+                 to withhold it"
+            );
+        }
+
+        let mut names: Vec<&str> = LIVE_TREATMENTS.iter().map(|(n, _, _)| *n).collect();
+        names.sort_unstable();
+        let before = names.len();
+        names.dedup();
+        assert_eq!(before, names.len(), "two registry rows share a name");
+    }
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
