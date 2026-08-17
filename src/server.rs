@@ -433,6 +433,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
     page.push_str(EMBEDDED_INDEX_HTML);
     page.push_str(EMBEDDED_APP_JS);
+    page.push_str(EMBEDDED_APP_SETUP_JS);
     page
 });
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
