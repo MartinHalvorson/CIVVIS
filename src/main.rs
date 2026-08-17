@@ -1335,6 +1335,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// A campaign-target Suzerain cannot make the peace needed for an Envoy
 /// reclaim, so it no longer inflates that live-only liquidity reserve.
 /// Compatibility re-pin; the Elo protocol does not move.
+/// A major-war campaign now keeps its already chosen enemy city until capture,
+/// a target change, or an emergency. That condition is inside
+/// `siege_commitment`, which `AdvancedAi::legacy()` leaves false; the frozen
+/// anchor therefore continues to refresh the city ranking as before.
+/// Compatibility re-pin; the Elo protocol does not move.
 /// The developed-city-state contact sweep's third Scout stays behind
 /// `recon_replacement`, false in `AdvancedAi::legacy()`. Compatibility re-pin;
 /// the Elo protocol does not move.
@@ -1342,7 +1347,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`live_great_person_exhausted`, read through `great_person_class_earnable`);
 /// native boards carry no such list and are unchanged. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2f40_46d4_47d7_effc;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8ae2_8f5d_fe20_5307;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
