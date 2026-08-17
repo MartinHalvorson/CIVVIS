@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -165,3 +166,52 @@ class BaselineSaysHowOldItIs(unittest.TestCase):
     def test_a_corrupt_stamp_is_ignored_rather_than_trusted(self) -> None:
         note = tactics_bench.staleness_note("<!-- measured: not json at all -->")
         self.assertIn("predates revision stamping", note)
+
+
+class ABaselineIsNotASpotCheck(unittest.TestCase):
+    """A baseline may not be written from a sample too small to support it.
+
+    ⚠ FORTY GAMES MANUFACTURED A FALSE ALARM ON THE SAME BINARY. `1 city per
+    side` measured 97.5% at 40 games and 81.2% at 480 — intervals 87.1–99.6 and
+    77.5–84.5, which do not overlap. A baseline written from the first made two
+    days of ordinary merges look like a 21.7-point regression in a shipped
+    product, and the follow-up measurement found no established difference at
+    all (3.9 points, p = 0.136).
+    """
+
+    def test_the_default_is_a_sample_that_can_support_a_comparison(self) -> None:
+        self.assertGreaterEqual(tactics_bench.DEFAULT_GAMES, 120)
+        self.assertGreaterEqual(tactics_bench.MIN_BASELINE_GAMES, 120)
+
+    def test_writing_a_baseline_from_a_spot_check_is_refused(self) -> None:
+        # Drives the real `main()`, so it also proves the refusal comes BEFORE
+        # any games are played: `binary()` would raise long before a spot-check
+        # battery finished, and a guard that runs after the work is not a guard.
+        with unittest.mock.patch.object(
+            sys, "argv", ["tactics_bench.py", "--games", "40", "--write-baseline"]
+        ):
+            with self.assertRaises(SystemExit) as caught:
+                tactics_bench.main()
+        self.assertIn("refusing to write a baseline from 40 games",
+                      str(caught.exception))
+        self.assertIn("120", str(caught.exception))
+
+    def test_a_large_enough_run_is_not_refused(self) -> None:
+        # The refusal must be about the sample, not about `--write-baseline`.
+        # With enough games it falls through to `binary()`, which fails for its
+        # own reason on a path that does not exist.
+        with unittest.mock.patch.object(
+            sys, "argv", ["tactics_bench.py", "--games", "120",
+                          "--write-baseline", "--binary", "/nonexistent/civvis"]
+        ):
+            with self.assertRaises((SystemExit, OSError)) as caught:
+                tactics_bench.main()
+        self.assertNotIn("refusing to write a baseline", str(caught.exception))
+
+    def test_the_document_tells_a_reader_to_compare_like_with_like(self) -> None:
+        text = tactics_bench.render_baseline(
+            [tactics_bench.Result("capture", "advanced", "basic",
+                                  371.0, 480, 77.3, 73.3, 80.8)],
+            games=480)
+        self.assertIn("Compare like with like", text)
+        self.assertIn("480", text)
