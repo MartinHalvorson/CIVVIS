@@ -1005,3 +1005,49 @@ the stock battle can actually be won:
 Old saves are unaffected: a save that predates the turn-limit field still
 loads its 100-turn clock (`legacy_turn_limit`), the same way a save that
 predates fog loads unfogged.
+
+## 9. The capture regression that was not (2026-08-17)
+
+A stale `TACTICS_BASELINE.md` produced a false alarm and hid a real result. Both
+halves are worth recording, because the mistake is cheap to repeat.
+
+**The false alarm.** The committed table said `advanced` took 97.5% of the
+`1 city per side` regime against `basic`. Re-measured on 2026-08-17 it read
+75.8%, and that was reported as a 21.7-point regression in a shipped product,
+qualified as "holds at 120 games, so it is not sample noise".
+
+It was sample noise, and the qualification was the error: **the two numbers came
+from different sample sizes.** Only the new figure was 120 games. Rebuilding the
+2026-08-15 commit and measuring it properly:
+
+| capture, `advanced` v `basic` | n | pct | 95% CI |
+|---|---:|---:|---|
+| recorded at `7cd011bb` | 40 | 97.5% | 87.1–99.6 |
+| re-measured at `7cd011bb` | 120 | 81.7% | 73.8–87.6 |
+| re-measured at `7cd011bb` | 480 | **81.2%** | 77.5–84.5 |
+| measured at `04d9c805` | 480 | **77.3%** | 73.3–80.8 |
+
+The same binary measures 81.2% at 480 games and 97.5% at 40, and the recorded
+figure's interval does not overlap its own binary's 480-game interval. Sixteen
+of the twenty-two points were never there. The remainder is **p = 0.136, no
+established difference**, and the same pair against the frozen anchor moved the
+*other* way (58.8% → 64.4%, p = 0.074). Two columns in opposite directions with
+neither significant is noise, not a regression.
+
+**What the stale table was actually hiding.** #1858 routed the bounded
+joint-tactics search through the arena movement seam. Measured across its own
+parent, 240 seat-mirrored games per matchup:
+
+| no cities | before | after | | |
+|---|---:|---:|---:|---|
+| `advanced` v `basic` | 60.4% | **87.9%** | +27.5 | p = 6×10⁻¹² |
+| `advanced` v `advanced_v1` | 92.9% | **99.6%** | +6.7 | p = 1×10⁻⁴ |
+
+That is ROADMAP objective 4 delivering, and it went uncredited for two days for
+the same reason the phantom regression went unchallenged: nothing said how old
+the table was.
+
+**What changed as a result.** `--games` defaults to 120, `--write-baseline`
+refuses fewer, and the refusal fires before any games are played. A baseline is
+what every later run is compared against; at 40 games it is a ±15-point
+instrument, and this is what that costs.
