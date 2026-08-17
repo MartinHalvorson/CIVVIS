@@ -778,11 +778,33 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     click_at(int(x + w * fx), int(y + h * fy))
 
 
-def screenshot(path: Path) -> None:
+def screenshot(path: Path) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
-    log cannot describe it; the shot is what says which row was hit."""
-    subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
-                   capture_output=True)
+    log cannot describe it; the shot is what says which row was hit.
+
+    ⚠ `screencapture` can fail SILENTLY under machine load and write nothing —
+    three consecutive ladder attempts died on 2026-08-17 (17:46–18:29Z, a
+    window of heavy concurrent `cargo test` runs) because a missing shot
+    cascaded through a PIL `FileNotFoundError` into the native-OCR fallback,
+    which raised `OCRUnavailable` ("zero-dimensioned image") that no setup
+    caller catches. The capture is verified and retried once here, at the
+    source, so every caller inherits the cover; a shot that still fails is
+    reported loudly and the caller's own "not readable this attempt" retry
+    handles it as an ordinary unreadable poll.
+    """
+    for attempt in (1, 2):
+        subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
+                       capture_output=True)
+        try:
+            if path.stat().st_size > 0:
+                return True
+        except OSError:
+            pass
+        if attempt == 1:
+            time.sleep(1.0)
+    print(f"[shot] screencapture wrote nothing for {path.name} after a retry; "
+          "treating this poll as unreadable", flush=True)
+    return False
 
 
 def option_strip(bounds: tuple[int, int, int, int], name: str) -> tuple[int, int, int, int]:
@@ -1294,6 +1316,11 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop.save(crop_path)
         observations = macos_ocr.recognize(crop_path)
     except (OSError, ValueError):
+        # A shot that never landed has nothing to read at any resolution —
+        # the fallback would hand the native OCR a missing file and die on
+        # `OCRUnavailable`. An empty read lets the caller's own retry poll.
+        if not path.exists():
+            return []
         return macos_ocr.recognize(path)
 
     left, crop_top, right, crop_bottom = rect
@@ -1351,7 +1378,9 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
         observations = macos_ocr.recognize(path)
         observations.extend(_leader_ocr(path, bounds, top=0.08, bottom=0.45))
         button_observations = _leader_intro_button_ocr(path, bounds)
-    except (OSError, ValueError):
+    except (OSError, ValueError, macos_ocr.OCRUnavailable):
+        # `OCRUnavailable` included: a missing or zero-dimensioned shot is an
+        # unreadable poll, not a reason to end the attempt.
         return False
     begin_game = False
     for observation in button_observations:
