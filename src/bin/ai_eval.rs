@@ -362,6 +362,14 @@ struct PlanTrace {
     meet_turns: BTreeMap<usize, u32>,
     /// Turn the seat's first natural-wonder discovery was observed.
     first_wonder_turn: Option<u32>,
+    /// Villages this seat had claimed the first time it was observed at or
+    /// past the middle exploration mark; `None` when the game ended first.
+    villages_by_mark: Option<i64>,
+    /// Most reconnaissance-class units this seat ever fielded at once.
+    recon_peak: usize,
+    /// Villages standing on the whole board at first observation — the
+    /// denominator that turns final claims into a contested share.
+    board_villages: Option<usize>,
 }
 
 /// Turns at which each seat's explored-plot count is sampled. These match the
@@ -453,18 +461,53 @@ impl PlanTrace {
     }
 
     /// Sample the exploration facts that cannot be read from the final
-    /// position: when ground was revealed, and when each contact was made.
+    /// position: when ground was revealed, when each contact was made, when
+    /// villages were claimed, and how large the recon fleet ever grew.
     fn observe_exploration(&mut self, g: &Game, pid: usize) {
+        // The whole board's village endowment, once, before anyone consumes
+        // it: the denominator that turns final claims into a contested share.
+        if self.board_villages.is_none() {
+            self.board_villages = Some(
+                g.map
+                    .tiles
+                    .values()
+                    .filter(|tile| {
+                        matches!(
+                            tile.improvement.as_deref(),
+                            Some("goody_hut" | "meteor_goody")
+                        )
+                    })
+                    .count(),
+            );
+        }
         for (slot, mark) in EXPLORATION_MARKS.iter().enumerate() {
             if g.turn >= *mark && self.revealed_at_marks[slot].is_none() {
                 self.revealed_at_marks[slot] = Some(g.players[pid].explored.len());
             }
         }
+        // Villages are an expiring prize, so WHEN they were claimed matters
+        // as much as how many: sample the engine counter at the middle mark.
+        if g.turn >= EXPLORATION_MARKS[1] && self.villages_by_mark.is_none() {
+            self.villages_by_mark = Some(
+                g.players[pid]
+                    .counters
+                    .get("goody_huts_claimed")
+                    .copied()
+                    .unwrap_or(0),
+            );
+        }
+        let recon_now = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid && g.rules.units[unit.kind].promotion_class == "recon"
+            })
+            .count();
+        self.recon_peak = self.recon_peak.max(recon_now);
         for other in &g.players[pid].met {
             self.meet_turns.entry(*other).or_insert(g.turn);
         }
-        if self.first_wonder_turn.is_none()
-            && !g.players[pid].discovered_natural_wonders.is_empty()
+        if self.first_wonder_turn.is_none() && !g.players[pid].discovered_natural_wonders.is_empty()
         {
             self.first_wonder_turn = Some(g.turn);
         }
@@ -660,6 +703,11 @@ struct Metrics {
     minors_met_by_t50: f64,
     first_minor_meet_turn_sum: f64,
     first_minor_meet_seats: usize,
+    villages_by_mark: f64,
+    villages_by_mark_seats: usize,
+    recon_peak: f64,
+    board_villages: f64,
+    board_village_seats: usize,
     majors_met: f64,
     majors_met_by_t50: f64,
     first_major_meet_turn_sum: f64,
@@ -817,14 +865,20 @@ impl Metrics {
                 self.revealed_mark_seats[slot] += 1;
             }
         }
-        let counter = |name: &str| {
-            g.players[pid].counters.get(name).copied().unwrap_or(0) as f64
-        };
+        let counter = |name: &str| g.players[pid].counters.get(name).copied().unwrap_or(0) as f64;
         self.goody_huts_claimed += counter("goody_huts_claimed");
         self.meteor_goodies_claimed += counter("meteor_goodies_claimed");
         self.era_score += g.players[pid].era_score as f64;
-        self.natural_wonders_discovered +=
-            g.players[pid].discovered_natural_wonders.len() as f64;
+        self.natural_wonders_discovered += g.players[pid].discovered_natural_wonders.len() as f64;
+        if let Some(early) = trace.villages_by_mark {
+            self.villages_by_mark += early as f64;
+            self.villages_by_mark_seats += 1;
+        }
+        self.recon_peak += trace.recon_peak as f64;
+        if let Some(board) = trace.board_villages {
+            self.board_villages += board as f64;
+            self.board_village_seats += 1;
+        }
         if let Some(turn) = trace.first_wonder_turn {
             self.first_wonder_turn_sum += turn as f64;
             self.first_wonder_seats += 1;
@@ -2009,7 +2063,9 @@ here and any null is uninformative"
         );
     }
     println!("\nExploration:");
-    println!("AI          rev@t30 rev@t50 rev@t70 villages meteor wonders 1st-wonder era-score");
+    println!(
+        "AI          rev@t30 rev@t50 rev@t70 villages v@t50 share meteor wonders 1st-wonder era-score"
+    );
     for name in [a, b] {
         let m = &totals[name];
         let n = m.games as f64;
@@ -2023,30 +2079,46 @@ here and any null is uninformative"
                 )
             }
         };
+        let early_villages = if m.villages_by_mark_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.villages_by_mark / m.villages_by_mark_seats as f64)
+        };
+        // Mean board endowment over seats; the seat's lifetime claims over it
+        // say how much of the contested prize this arm actually won.
+        let share = if m.board_village_seats == 0 || m.board_villages == 0.0 {
+            "-".to_string()
+        } else {
+            let board = m.board_villages / m.board_village_seats as f64;
+            format!("{:.0}%", 100.0 * (m.goody_huts_claimed / n) / board)
+        };
         println!(
-            "{name:<11} {:>7} {:>7} {:>7} {:>8.2} {:>6.2} {:>7.2} {:>10} {:>9.1}",
+            "{name:<11} {:>7} {:>7} {:>7} {:>8.2} {:>5} {:>5} {:>6.2} {:>7.2} {:>10} {:>9.1}",
             mark(0),
             mark(1),
             mark(2),
             m.goody_huts_claimed / n,
+            early_villages,
+            share,
             m.meteor_goodies_claimed / n,
             m.natural_wonders_discovered / n,
             mean_turn(m.first_wonder_turn_sum, m.first_wonder_seats),
             m.era_score / n,
         );
     }
-    println!("AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major");
+    println!("AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major recon-peak");
     for name in [a, b] {
         let m = &totals[name];
         let n = m.games as f64;
         println!(
-            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9}",
+            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9} {:>10.2}",
             m.minors_met / n,
             m.minors_met_by_t50 / n,
             mean_turn(m.first_minor_meet_turn_sum, m.first_minor_meet_seats),
             m.majors_met / n,
             m.majors_met_by_t50 / n,
             mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
+            m.recon_peak / n,
         );
     }
     println!("\nVictory types:");
