@@ -387,6 +387,286 @@ class TheTableSaysWhatHappened(LedgerCase):
         self.assertNotIn("None", table)
 
 
+VICTORY_TABLE = [
+    {"index": 0, "type": "VICTORY_SCORE"},
+    {"index": 3, "type": "VICTORY_CULTURE"},
+    {"index": 5, "type": "VICTORY_TECHNOLOGY"},
+]
+
+
+class TheVictoryHasAName(LedgerCase):
+    """The index the event reported, glossed by the host's own victory table.
+
+    The milestones are stated per victory type, so a row reading `5` cannot
+    substantiate a Science claim or refute a Culture one.
+    """
+
+    def test_the_name_comes_from_the_host_table_in_the_same_record(self):
+        entry = civ6_ladder.entry_from(summary(
+            "named", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5},
+            seat={"victory_types": VICTORY_TABLE}))
+        self.assertEqual(entry["victory"], 5)
+        self.assertEqual(entry["victory_type"], "VICTORY_TECHNOLOGY")
+
+    def test_a_run_without_the_export_keeps_the_index_and_names_nothing(self):
+        """⚠ The whole point of the raw index is that a missing table produces a
+        blank, never an invented literal."""
+        entry = civ6_ladder.entry_from(summary(
+            "unnamed", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5}))
+        self.assertEqual(entry["victory"], 5)
+        self.assertIsNone(entry["victory_type"])
+
+    def test_an_index_absent_from_the_table_is_not_guessed(self):
+        entry = civ6_ladder.entry_from(summary(
+            "gap", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 4},
+            seat={"victory_types": VICTORY_TABLE}))
+        self.assertIsNone(entry["victory_type"])
+
+    def test_a_run_that_never_ended_has_no_victory_at_all(self):
+        entry = civ6_ladder.entry_from(summary("stopped"))
+        self.assertIsNone(entry["victory"])
+        self.assertIsNone(entry["victory_type"])
+
+    def test_the_rung_row_carries_the_name_beside_the_index(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary(
+            "science-win", won=True,
+            outcome={"kind": "victory", "won": True, "victory": 5},
+            seat={"victory_types": VICTORY_TABLE})))
+        row = next(line for line in
+                   civ6_ladder.markdown_for(self.state()).splitlines()
+                   if line.startswith("| 1 | Settler |"))
+        self.assertIn("| 5 | VICTORY_TECHNOLOGY |", row)
+
+
+class RedrawingIsNotPublishing(LedgerCase):
+    """⚠ `publish` imports this machine's runs; `render` cannot.
+
+    A contributor changing how a row is drawn reaches for the command that
+    rewrites the file, and `publish` was the only one — so redrawing the table
+    also landed whatever attempts the local ledger happened to hold. On this
+    laptop that was eighteen rows of fortnight-old experiments, dated before the
+    newest row already in the snapshot.
+    """
+
+    def _snapshot(self, attempts):
+        path = Path(self._tmp.name) / "snapshot.json"
+        path.write_text(json.dumps({"attempts": attempts, "wins": {}}))
+        return path
+
+    def test_render_reads_the_snapshot_and_writes_only_the_markdown(self):
+        snapshot = self._snapshot([{"tag": "a", "won": False, "configured": True,
+                                    "difficulty": "DIFFICULTY_SETTLER",
+                                    "turns": 250, "score": 100, "utc": "x"}])
+        before = snapshot.read_text()
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.render(snapshot, markdown)
+        self.assertEqual(snapshot.read_text(), before)
+        self.assertIn("`a`", markdown.read_text())
+
+    def test_render_ignores_the_live_ledger_entirely(self):
+        """The signature has no ledger in it — the guarantee is structural."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("local-only")))
+        snapshot = self._snapshot([])
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.render(snapshot, markdown)
+        self.assertNotIn("local-only", markdown.read_text())
+        self.assertEqual(json.loads(snapshot.read_text())["attempts"], [])
+
+    def test_publish_still_lands_the_live_ledger(self):
+        """The import path is unchanged; only the accident is removed."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("landed")))
+        snapshot = Path(self._tmp.name) / "snapshot.json"
+        markdown = Path(self._tmp.name) / "out.md"
+        civ6_ladder.publish(self.ledger, snapshot, markdown)
+        tags = [a["tag"] for a in json.loads(snapshot.read_text())["attempts"]]
+        self.assertIn("landed", tags)
+
+
+class TheBoardRecordsEveryVictoryNotJustTheRung(LedgerCase):
+    """★★★★★ `wins` has ONE SLOT PER DIFFICULTY and the Settler slot is full.
+
+    The objective list is five victory types at one difficulty. The rung claim
+    keeps the earliest win at a difficulty — right for a rung, and unable to
+    represent "Settler, but by Science this time": a later win at a claimed rung
+    loses the comparison and survives only as an ordinary attempt row.
+    """
+
+    def _state(self, *attempts, victory_types=None):
+        state = {"attempts": list(attempts), "wins": {}}
+        if victory_types is not None:
+            state["victory_types"] = victory_types
+        return state
+
+    @staticmethod
+    def _win(index, utc, difficulty="DIFFICULTY_SETTLER", name=None,
+             configured=True):
+        return {"victory": index, "victory_type": name, "utc": utc, "won": True,
+                "configured": configured, "difficulty": difficulty}
+
+    def test_a_second_victory_type_at_a_claimed_rung_is_recorded(self):
+        """The exact case the rung table drops."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(0, "2026-08-16T06:49:58Z", name="VICTORY_SCORE"),
+            self._win(5, "2026-08-20T00:00:00Z", name="VICTORY_TECHNOLOGY"),
+        ))
+        rows = {index: beaten for index, _, beaten in board}
+        self.assertEqual(rows[0]["DIFFICULTY_SETTLER"], "2026-08-16T06:49:58Z")
+        self.assertEqual(rows[5]["DIFFICULTY_SETTLER"], "2026-08-20T00:00:00Z")
+
+    def test_the_rung_table_really_does_drop_it(self):
+        """Not an assumption about the other code — a check on it, so this
+        test fails loudly if `wins` ever gains its own per-type key."""
+        state = {"attempts": [], "wins": {}}
+        for tag, utc, victory in (("score-first", "2026-08-16T06:49:58Z", 0),
+                                  ("science-later", "2026-08-20T00:00:00Z", 5)):
+            civ6_ladder.apply(state, summary(
+                tag, won=True, finished=utc,
+                outcome={"kind": "victory", "won": True, "victory": victory}))
+        self.assertEqual(len(state["wins"]), 1)
+        self.assertEqual(state["wins"]["DIFFICULTY_SETTLER"]["victory"], 0)
+        # ...while the board carries both.
+        self.assertEqual(
+            sorted(index for index, _, _ in civ6_ladder.victory_board(state)),
+            [0, 5])
+
+    def test_earliest_wins_per_type_the_same_way_the_rung_does(self):
+        board = civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z"),
+            self._win(5, "2026-08-18T00:00:00Z"),
+        ))
+        self.assertEqual(board[0][2]["DIFFICULTY_SETTLER"], "2026-08-18T00:00:00Z")
+
+    def test_each_difficulty_is_its_own_column(self):
+        board = civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z"),
+            self._win(5, "2026-08-25T00:00:00Z", difficulty="DIFFICULTY_CHIEFTAIN"),
+        ))
+        self.assertEqual(board[0][2], {
+            "DIFFICULTY_SETTLER": "2026-08-20T00:00:00Z",
+            "DIFFICULTY_CHIEFTAIN": "2026-08-25T00:00:00Z"})
+
+    def test_a_win_in_a_game_that_drifted_off_its_settings_claims_nothing(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z", configured=False))), [])
+
+    def test_a_difficulty_that_is_not_a_rung_claims_nothing(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z", difficulty="DIFFICULTY_SANDBOX"))),
+            [])
+
+    def test_every_victory_the_host_offers_gets_a_row_even_unbeaten(self):
+        """A checklist, not a list of things that happened."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(0, "2026-08-16T06:49:58Z"),
+            victory_types=[{"index": 0, "type": "VICTORY_SCORE"},
+                           {"index": 5, "type": "VICTORY_TECHNOLOGY"},
+                           {"index": 3, "type": "VICTORY_CULTURE"}]))
+        self.assertEqual([(index, name) for index, name, _ in board],
+                         [(0, "VICTORY_SCORE"), (5, "VICTORY_TECHNOLOGY"),
+                          (3, "VICTORY_CULTURE")])
+        self.assertEqual(board[1][2], {})
+
+    def test_a_win_the_host_table_does_not_carry_is_still_on_the_board(self):
+        """The win is the evidence; the table is only the gloss."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(6, "2026-08-20T00:00:00Z"),
+            victory_types=[{"index": 0, "type": "VICTORY_SCORE"}]))
+        self.assertEqual([index for index, _, _ in board], [0, 6])
+
+    def test_nothing_won_and_no_host_table_renders_no_board_at_all(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state()), [])
+
+    def test_the_host_table_is_kept_from_the_first_run_that_exports_it(self):
+        state = {"attempts": [], "wins": {}}
+        table = [{"index": 0, "type": "VICTORY_SCORE"}]
+        civ6_ladder.apply(state, summary("first", seat={"victory_types": table}))
+        self.assertEqual(state["victory_types"], table)
+        # It is a property of the game, not the run: a later run does not
+        # overwrite it, so one bad export cannot rewrite the board's rows.
+        civ6_ladder.apply(state, summary(
+            "second", seat={"victory_types": [{"index": 9, "type": "VICTORY_ODD"}]}))
+        self.assertEqual(state["victory_types"], table)
+
+
+class EveryRowSaysWhichLaneItPlayed(LedgerCase):
+    """★★★★★ 307 rows and no column for the objective.
+
+    The summary recorded every setting of the GAME — difficulty, size, speed,
+    modes, turn cap — and not the one setting that says what the AGENT was
+    trying to do. That was survivable while the launchers offered one workable
+    lane. #1871 made all six of `VictoryTarget`'s variants selectable, so rows
+    from here on can differ in objective, and a ledger that cannot separate them
+    cannot answer the only question anyone asks of it.
+    """
+
+    def test_the_asked_for_lane_reaches_the_ledger_row(self):
+        entry = civ6_ladder.entry_from(summary("aimed", victory_target="religious"))
+        self.assertEqual(entry["victory_target"], "religious")
+
+    def test_a_row_from_before_the_column_existed_reads_absent_not_wrong(self):
+        self.assertIsNone(civ6_ladder.entry_from(summary("older"))["victory_target"])
+
+    def test_what_was_asked_for_and_what_was_won_are_different_columns(self):
+        """`civvis` is the absence of a pinned target, not a seventh victory
+        condition, so it must never be confused with the outcome."""
+        entry = civ6_ladder.entry_from(summary(
+            "chose", won=True, victory_target="civvis",
+            outcome={"kind": "victory", "won": True, "victory": 4},
+            seat={"victory_types": [{"index": 4, "type": "VICTORY_RELIGIOUS"}]}))
+        self.assertEqual(entry["victory_target"], "civvis")
+        self.assertEqual(entry["victory"], 4)
+        self.assertEqual(entry["victory_type"], "VICTORY_RELIGIOUS")
+
+    def test_the_attempt_table_shows_the_lane(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("shown", victory_target="diplomatic")))
+        table = civ6_ladder.markdown_for(self.state())
+        self.assertIn("| playing for |", table)
+        row = next(line for line in table.splitlines() if "`shown`" in line)
+        self.assertIn("| diplomatic |", row)
+
+    def test_a_row_without_a_lane_renders_a_dash_not_none(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary("older")))
+        self.assertNotIn("None", civ6_ladder.markdown_for(self.state()))
+
+
+class TheCensusSaysWhichLanesComplete(unittest.TestCase):
+    """Which victory conditions have ended a game here — the record's only
+    empirical evidence about lane reachability inside the turn budget."""
+
+    @staticmethod
+    def _attempts(*pairs):
+        return [{"victory": index, "victory_type": name}
+                for index, name in pairs]
+
+    def test_it_counts_every_terminal_event_ours_and_theirs(self):
+        census = civ6_ladder.victory_census(self._attempts(
+            (0, None), (0, None), (6, None), (0, None)))
+        self.assertEqual(census, [(0, None, 3), (6, None, 1)])
+
+    def test_runs_that_never_ended_are_not_counted_as_a_lane(self):
+        census = civ6_ladder.victory_census(
+            [{"victory": None}, {"reason": "stopped"}, {"victory": 3}])
+        self.assertEqual(census, [(3, None, 1)])
+
+    def test_a_name_seen_once_labels_every_row_with_that_index(self):
+        """One run with the export names the index for the whole history."""
+        census = civ6_ladder.victory_census(self._attempts(
+            (3, None), (3, "VICTORY_CULTURE"), (3, None)))
+        self.assertEqual(census, [(3, "VICTORY_CULTURE", 3)])
+
+    def test_ties_break_on_the_index_so_the_table_is_deterministic(self):
+        census = civ6_ladder.victory_census(self._attempts((6, None), (2, None)))
+        self.assertEqual([row[0] for row in census], [2, 6])
+
+    def test_score_victory_is_index_zero_and_survives_the_falsy_trap(self):
+        census = civ6_ladder.victory_census(self._attempts((0, "VICTORY_SCORE")))
+        self.assertEqual(census, [(0, "VICTORY_SCORE", 1)])
+
+
 class ThePublishedPairAgrees(unittest.TestCase):
     """The committed markdown must be derivable from the committed snapshot.
 

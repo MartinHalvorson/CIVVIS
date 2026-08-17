@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 177] = [
+pub const EVAL_ONLY_AIS: [&str; 182] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -87,6 +87,7 @@ pub const EVAL_ONLY_AIS: [&str; 177] = [
     "live_without_war_economy",
     "live_without_war_reinforcement",
     "live_without_war_patience",
+    "live_without_deny_while_targeted",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -161,6 +162,7 @@ pub const EVAL_ONLY_AIS: [&str; 177] = [
     "advanced_late_expansion",
     "advanced_expansion_dispatch",
     "advanced_expansion_complete",
+    "advanced_coupled_expansion",
     // The victory lane the deployed Civ 6 decider is actually given. Named so
     // `ai_eval` can measure the choice `civ6_civvis_climb.py --victory` makes
     // for every real run; see the constructor arms below.
@@ -188,6 +190,20 @@ pub const EVAL_ONLY_AIS: [&str; 177] = [
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
     "advanced_civilian_snatch",
+    // The two production value/cost treatments: the Builder priced by a
+    // survey of the work it would do, and military units credited for
+    // strength-per-production and the civ's own unique window. Reserved
+    // matrix seeds 25000000 (builder survey) and 26000000 (unit
+    // efficiency); one pre-registered run each, not swept.
+    // The strategic governor under every lane, applied natively. The flag
+    // ships on the live bridge (#1742/#1793) and has a live withhold arm,
+    // but under Science/Culture/Religion/Diplomacy the NATIVE production
+    // controller still routes through `BasicAi::pick_item`, so every
+    // valuation in advanced.rs is absent exactly where strong games spend
+    // their midgame. Reserved matrix seed 27000000; one pre-registered run.
+    "advanced_every_lane",
+    "advanced_builder_survey",
+    "advanced_unit_efficiency",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -243,7 +259,7 @@ pub const EVAL_ONLY_AIS: [&str; 177] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 67] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -311,6 +327,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 67] = [
     "settler-stack-discipline",
     "camp-party",
     "buildings-before-projects",
+    "deny-while-targeted",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -345,7 +362,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 16] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -389,6 +406,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 16] = [
     // capture); CIVVIS's own barbarian scouts do, so the native model keeps
     // pricing them.
     "barbarian-scouts-are-scouts",
+    // Only a seat playing under an assigned lane (`--victory science`, the
+    // Settler seat's standing order) has a target gate to override; the
+    // native gate agents are adaptive, so the flag cannot fire there.
+    "deny-while-targeted",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -574,6 +595,7 @@ define_arm_kinds! {
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
+    LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -641,6 +663,7 @@ define_arm_kinds! {
     AdvancedExpansionComplete => "advanced_expansion_complete",
     AdvancedExpansionDispatch => "advanced_expansion_dispatch",
     AdvancedExpansionPayback => "advanced_expansion_payback",
+    AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
@@ -675,6 +698,9 @@ define_arm_kinds! {
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedCivilianSnatch => "advanced_civilian_snatch",
+    AdvancedEveryLane => "advanced_every_lane",
+    AdvancedBuilderSurvey => "advanced_builder_survey",
+    AdvancedUnitEfficiency => "advanced_unit_efficiency",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -2474,6 +2500,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.expansion_dispatch = true;
             Box::new(ai)
         }
+        // Treatment for the full paid expansion sequence. It routes the
+        // adaptive Expansion lane through strategic production and charges
+        // production, population, escort, travel, safety, and payback costs
+        // before a Settler can outbid another build.
+        "advanced_coupled_expansion" => Box::new(AdvancedAi::coupled_expansion()),
         // Treatment for the city-target axis: identical to `advanced` except
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
@@ -2914,6 +2945,29 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_home_defense();
             ai.enable_tactical_strategy();
             ai.enable_unit_objective_memory();
+            Box::new(ai)
+        }
+        // The Builder priced by the work it would do rather than a headcount
+        // quota: charges from `Game::builder_charges`, jobs from the same
+        // valuation Builder movement uses, luxury novelty and strategic
+        // saturation modelled, quota sized from the backlog. Reserved matrix
+        // seed 25000000.
+        "advanced_every_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_governor_every_lane();
+            Box::new(ai)
+        }
+        "advanced_builder_survey" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_builder_reward_survey();
+            Box::new(ai)
+        }
+        // Military units credited for strength-per-production within their
+        // role and for being the civilization's own unique unit while the
+        // window is open. Reserved matrix seed 26000000.
+        "advanced_unit_efficiency" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_unit_cost_efficiency();
             Box::new(ai)
         }
         "advanced_fortify_idle_units" => {
@@ -3766,6 +3820,7 @@ impl ArmKind {
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
+            Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -3867,6 +3922,7 @@ impl ArmKind {
             }
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
+            Self::AdvancedCoupledExpansion => &["coupled-expansion"],
             Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
@@ -3896,6 +3952,9 @@ impl ArmKind {
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedCivilianSnatch => &["civilian-snatch"],
+            Self::AdvancedEveryLane => &["governor-under-every-lane"],
+            Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
+            Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4334,6 +4393,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
         "advanced_expansion_complete" => (Vec::new(), "advanced_expansion_complete"),
+        "advanced_coupled_expansion" => (Vec::new(), "advanced_coupled_expansion"),
         "advanced_city_strategy" => (Vec::new(), "advanced_city_strategy"),
         "advanced_city_strategy_emphasis" => (Vec::new(), "advanced_city_strategy_emphasis"),
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
@@ -4373,6 +4433,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_civilian_snatch" => (Vec::new(), "advanced_civilian_snatch"),
+        "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
+        "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
+        "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -5578,7 +5641,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 83] = [
+            const SCRIPTED: [&str; 87] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5613,6 +5676,7 @@ mod tests {
                 "advanced_late_expansion",
                 "advanced_expansion_dispatch",
                 "advanced_expansion_complete",
+                "advanced_coupled_expansion",
                 "advanced_city_strategy",
                 "advanced_city_strategy_emphasis",
                 "advanced_city_strategy_roles",
@@ -5645,6 +5709,9 @@ mod tests {
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
                 "advanced_civilian_snatch",
+                "advanced_every_lane",
+                "advanced_builder_survey",
+                "advanced_unit_efficiency",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
@@ -5758,7 +5825,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 16] = [
+        const EXCLUDED: [&str; 17] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5793,6 +5860,11 @@ mod tests {
             "tally_great_people",
             // Firaxis' barbarian scouts do not capture; CIVVIS's do.
             "barbarian_scouts_are_scouts",
+            // Only a seat playing under an assigned lane (`--victory
+            // science`, the Settler seat's standing order) has a target gate
+            // to override; the native gate agents are adaptive, so the flag
+            // cannot fire there.
+            "deny_while_targeted",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {

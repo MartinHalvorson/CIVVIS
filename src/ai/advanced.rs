@@ -8,11 +8,12 @@ use super::{
     UnitMemory, WarPlanReport, Weights,
 };
 use crate::belief::{BeliefState, CitySighting};
+use crate::game::{
+    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal,
+    FogCityMemory, Game, Item,
+};
 use crate::name::Name;
 use crate::parallel::WorkPool;
-use crate::game::{
-    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
-};
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
@@ -321,6 +322,28 @@ const SETTLE_LAG: u32 = 3;
 /// not ambitious: it is the point where the city has returned the production
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
+
+/// The bounded horizon over which a paid expansion has to earn back its
+/// investment. This is deliberately longer than the minimum `SETTLE_PAYBACK`
+/// safety check: a city that merely survives fifteen turns is not necessarily
+/// worth the production and population it consumed.
+const COUPLED_EXPANSION_HORIZON: u32 = 90;
+/// Production points are the first, exact cost of a Settler. Keep the
+/// conversion in the same order of magnitude as the production scores below,
+/// while leaving the evaluator arm's policy decision auditable.
+const COUPLED_EXPANSION_PRODUCTION_VALUE: f64 = 4.0;
+/// A population point is both a lost citizen and a delayed growth threshold.
+/// The threshold is added to the measured yield loss in
+/// `coupled_expansion_value` rather than hidden in the site score.
+const COUPLED_EXPANSION_POPULATION_VALUE: f64 = 90.0;
+/// A military body is needed to escort a civilian through a contested map. A
+/// missing escort is a bounded reservation cost, not a hard veto: the army may
+/// be available by the time the Settler completes.
+const COUPLED_EXPANSION_ESCORT_VALUE: f64 = 90.0;
+/// Approximate Settler route length in turns from observed live paths. The
+/// route planner still owns the actual movement after production; this value
+/// only prices the opportunity cost before a unit exists.
+const COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE: f64 = 1.2;
 
 /// A new city has to become more than a map pin. Forecast the first four
 /// citizens because they decide whether it reaches a useful population in time
@@ -1186,6 +1209,11 @@ pub struct AdvancedAi {
     /// that compatibility boundary is guarded by the source contract in the
     /// CLI tests.
     battlefront_observation: bool,
+    /// Run the complete major turn against a fog-redacted planning world and
+    /// replay only the resulting actions on the authoritative game.  This is
+    /// the first end-to-end fair-play controller; the incumbent remains on the
+    /// historical direct-game path until the mode clears a strength screen.
+    pub fog_honest: bool,
     /// Adapt a live Firaxis Trader's zero walking movement to its distinct
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
@@ -1595,6 +1623,39 @@ pub struct AdvancedAi {
     /// **On in production**; the arm withholds. Evaluator arm
     /// `advanced_without_settler_deadline`.
     pub production_settler_deadline: bool,
+
+    /// Price a Builder by the work it would do, not by a headcount quota.
+    ///
+    /// Off, the Builder production arm is `ceil(cities/2)` and a flat 260 —
+    /// it never looks at a tile, so a fully-improved empire and a virgin one
+    /// buy Builders identically, and `docs/EVAL.md`'s floor withhold measured
+    /// the overbuild costing terminal score (225/175, p=0.0142). On, the arm
+    /// surveys the empire's improvable tiles with the same valuation the
+    /// Builder's own movement uses, scores the charges this player's next
+    /// Builder would actually carry (`Game::builder_charges`), and prices the
+    /// unit as the sum of the best remaining jobs — after skipping the jobs
+    /// the Builders already alive will take. The same survey replaces the
+    /// `delegated_cities` quota so the repricing reaches the lanes that build
+    /// through `BasicAi::cities`.
+    ///
+    /// Off by default; evaluator arm `advanced_builder_survey`.
+    pub builder_reward_survey: bool,
+
+    /// Credit strength-per-production and a civ's own unique unit when
+    /// pricing military production.
+    ///
+    /// Off, the military arm scores raw `power` within a best-in-role band
+    /// and cost enters only through the shared `/(7+turns)` damping — so
+    /// Sumeria's War Cart (30 strength / 55 production, the best
+    /// strength-per-cost in its era) wins only what its 10 extra strength
+    /// buys, and a unique whose stats match its base row (Tagma, Nau) is
+    /// invisible. On, a unit earns up to +45 for leading its role's
+    /// strength-per-production and +85 while it is this civilization's own
+    /// unique — a window the tech tree closes, which is what makes a unique
+    /// "almost always great value" while it lasts. Respects `civ_blind`.
+    ///
+    /// Off by default; evaluator arm `advanced_unit_efficiency`.
+    pub unit_cost_efficiency: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -1895,6 +1956,15 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
     pub expansion_pays_back: bool,
+    /// Price a Settler as a coupled investment instead of a free city target.
+    ///
+    /// The treatment subtracts the real production points, the population
+    /// recovery cost, escort availability, route time, visible safety cost,
+    /// and the founding lag from the same site's bounded payback value. It is
+    /// **off by default** and reached by `advanced_coupled_expansion`; the
+    /// production controller therefore keeps the historical score until this
+    /// full-cost arm has a replicated outcome screen.
+    pub coupled_expansion: bool,
     /// Remove only the absolute `standard_duration(300)` cap from adaptive
     /// expansion's existing deadline. Default-off evaluator treatment; the
     /// endgame reserve remains unchanged.
@@ -2357,6 +2427,21 @@ pub struct AdvancedAi {
     /// was bounded; a real cost says the response works and only its timing is
     /// wrong.
     pub deny_leaders: bool,
+
+    /// Whether a seat playing under an assigned victory target may still
+    /// mount a denial against a rival at MATCH POINT. `victory_denial` has
+    /// always stood down entirely whenever `victory_target` is set — right
+    /// for ordinary pressure (the lane keeps its focus), and fatal at the
+    /// wire: the live seat plays `--victory science`, so five of the twelve
+    /// runs it was LEADING on 2026-08-16/17 ended at t229-245 on a rival's
+    /// culture, technology or diplomatic victory with the whole counter
+    /// apparatus — the congress counter, in-lane counters, counter-units —
+    /// gated off. With this on, only `urgent_victory_threat`'s match-point
+    /// bar (progress ≥ 90, or the lane-specific equivalents) overrides the
+    /// target's focus, so ordinary pressure still never distracts the lane.
+    ///
+    /// **Off by default, live-bridge only.**
+    pub deny_while_targeted: bool,
 
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
@@ -3150,7 +3235,12 @@ impl Default for AdvancedAi {
 /// than the methods they call and must stay that way, or a published result
 /// stops being findable. Same for the arm names `army_target_weighs_enemy`,
 /// `siege_tracks_wall` and `suzerain_cards`.
-pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
+/// One live treatment: the published arm identity, the provenance tag, and
+/// the call that takes it back out.
+pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
+
+#[rustfmt::skip]
+pub const LIVE_TREATMENTS: [LiveTreatment; 68] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -3218,6 +3308,7 @@ pub const LIVE_TREATMENTS: [(&str, &str, fn(&mut AdvancedAi)); 67] = [
     ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
+    ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
 ];
 
 impl AdvancedAi {
@@ -3238,6 +3329,18 @@ impl AdvancedAi {
     /// sign p=0.0016 against**. See `docs/EVAL.md` 2026-08-10.
     pub fn new() -> AdvancedAi {
         Self::promoted_policy_envoy(Weights::default(), None)
+    }
+
+    /// A major controller whose entire turn is planned from current sight and
+    /// last-known memory.  The returned agent is intentionally opt-in: unlike
+    /// a local evaluator flag, this mode changes the information contract for
+    /// production, diplomacy, campaign selection, and tactical movement at
+    /// once, so it needs its own paired gameplay screen before becoming the
+    /// production incumbent.
+    pub fn fog_honest() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.enable_fog_honest();
+        ai
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.
@@ -3262,6 +3365,15 @@ impl AdvancedAi {
     pub fn rapid_timing_attack() -> AdvancedAi {
         let mut ai = Self::selective_timing_attack();
         ai.rapid_timed_war = true;
+        ai
+    }
+
+    /// Evaluator treatment for the full-cost expansion investment. The
+    /// production controller remains on the historical settler score until a
+    /// replicated screen establishes that this bounded model helps.
+    pub fn coupled_expansion() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.enable_coupled_expansion();
         ai
     }
 
@@ -3564,6 +3676,7 @@ impl AdvancedAi {
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
+            fog_honest: false,
             live_trader_route_adapter: false,
             solvent_faith_army: false,
             battlefront_frame: None,
@@ -3594,6 +3707,8 @@ impl AdvancedAi {
             settler_founds_when_stalled: false,
             production_builder_floor: true,
             production_settler_deadline: true,
+            builder_reward_survey: false,
+            unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             stacked_escort: false,
@@ -3614,6 +3729,7 @@ impl AdvancedAi {
             parallel_settlers: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
+            coupled_expansion: false,
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
@@ -3644,6 +3760,7 @@ impl AdvancedAi {
             reactor_marginal: false,
             civ_blind: false,
             deny_leaders: true,
+            deny_while_targeted: false,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -3795,6 +3912,20 @@ impl AdvancedAi {
     pub fn enable_parallel_settlers(&mut self) {
         self.parallel_settlers = true;
         self.base.parallel_settlers = true;
+    }
+
+    /// Enable the evaluator-only paid expansion treatment. It also routes the
+    /// adaptive Expansion plan through `advanced_production`; otherwise the
+    /// ordinary Cities governor would never consult the coupled scorer.
+    pub fn enable_coupled_expansion(&mut self) {
+        self.coupled_expansion = true;
+        self.expansion_dispatch = true;
+    }
+
+    /// Withhold the coupled expansion treatment, preserving the stock
+    /// production score and the ordinary adaptive dispatcher setting.
+    pub fn disable_coupled_expansion(&mut self) {
+        self.coupled_expansion = false;
     }
 
     /// Build a Settler at the host's population floor (see
@@ -4187,6 +4318,15 @@ impl AdvancedAi {
     /// their recorded ladders stay comparable.
     pub fn enable_war_patience(&mut self) {
         self.war_patience = true;
+    }
+
+    /// See [`Self::deny_while_targeted`].
+    pub fn enable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = true;
+    }
+
+    pub fn disable_deny_while_targeted(&mut self) {
+        self.deny_while_targeted = false;
     }
 
     /// Keep a fresh direct declaration out of the final campaign reserve.
@@ -4619,6 +4759,13 @@ impl AdvancedAi {
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
         self.enable_joint_tactics();
+        // ⚠ The live seat plays under an assigned lane (`--victory science`),
+        // and `victory_denial` stands down entirely for a targeted seat — so
+        // five of the twelve runs the seat was LEADING on 2026-08-16/17 ended
+        // at t229-245 on a rival's culture, technology or diplomatic victory
+        // with the whole counter apparatus gated off. Match point overrides
+        // the lane's focus; ordinary pressure still never does.
+        self.enable_deny_while_targeted();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -4829,6 +4976,19 @@ impl AdvancedAi {
         self.production_settler_deadline = false;
     }
 
+    /// Price Builder production by a survey of the work it would do.
+    /// Evaluator arm `advanced_builder_survey`; off in production.
+    pub fn enable_builder_reward_survey(&mut self) {
+        self.builder_reward_survey = true;
+    }
+
+    /// Credit strength-per-production and the civ's own unique unit in the
+    /// military production arm. Evaluator arm `advanced_unit_efficiency`;
+    /// off in production.
+    pub fn enable_unit_cost_efficiency(&mut self) {
+        self.unit_cost_efficiency = true;
+    }
+
     /// Fortify units the planner gave nothing to do. Evaluator arm
     /// `advanced_fortify_idle_units`; off in production.
     pub fn enable_fortify_idle_units(&mut self) {
@@ -4870,6 +5030,22 @@ impl AdvancedAi {
 
     pub fn disable_battlefront_observation(&mut self) {
         self.battlefront_observation = false;
+    }
+
+    /// Put this controller behind the turn-level fog boundary.  Belief
+    /// pressure and conservative objective floors are enabled together so a
+    /// hidden contact is represented as stale uncertainty rather than as an
+    /// empty tile or a live omniscient unit.
+    pub fn enable_fog_honest(&mut self) {
+        self.fog_honest = true;
+        self.battlefront_observation = true;
+        self.belief_pressure = true;
+        self.blind_objective_strength = true;
+        self.blind_objective_units = true;
+    }
+
+    pub fn disable_fog_honest(&mut self) {
+        self.fog_honest = false;
     }
 
     /// Rank district families by how much of the empire still lacks them.
@@ -7626,11 +7802,21 @@ impl AdvancedAi {
     }
 
     fn victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        if !self.deny_leaders || self.active_victory_target(g).is_some() {
+        if !self.deny_leaders {
+            return None;
+        }
+        let targeted = self.active_victory_target(g).is_some();
+        if targeted && !self.deny_while_targeted {
             return None;
         }
         let culture_pressures = self.rival_culture_pressures(g);
-        self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
+        let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
+        // An assigned lane keeps its focus against ordinary pressure; a rival
+        // at match point ends the game for every lane alike.
+        if targeted && !self.urgent_victory_threat(g, denial.0) {
+            return None;
+        }
+        Some(denial)
     }
 
     /// A Conquest denial needs a destination the mirrored army can reach.
@@ -7954,10 +8140,15 @@ impl AdvancedAi {
         // repeating a whole-world tourism scan for every sort comparison.
         let active_victory_target = self.active_victory_target(g);
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let denial = if active_victory_target.is_some() {
+        let denial = if active_victory_target.is_some() && !self.deny_while_targeted {
             None
         } else {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
+                .filter(|(rival, _)| {
+                    // The same match-point bar as `victory_denial`: an
+                    // assigned lane yields only to a rival about to win.
+                    active_victory_target.is_none() || self.urgent_victory_threat(g, *rival)
+                })
         };
         let actionable_denial = denial.filter(|(rival, counter)| {
             self.conquest_denial_actionable(g, pid, *rival, *counter)
@@ -8398,6 +8589,104 @@ impl AdvancedAi {
         remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
     }
 
+    /// Price the population point that a completed Settler consumes. The
+    /// engine applies that cost at completion, so the estimate uses the actual
+    /// post-population city yields and the city's food surplus to model the
+    /// recovery interval rather than charging a second production surrogate.
+    fn coupled_expansion_population_cost(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        if !g.settler_consumes_population(pid, cid) {
+            return 0.0;
+        }
+        let population = g.cities[&cid].pop;
+        if population < 2 {
+            return COUPLED_EXPANSION_POPULATION_VALUE * 4.0;
+        }
+        let before = self.yield_value(g.city_yields(cid), plan.strategy);
+        let mut after = g.speculative_clone();
+        after.cities.get_mut(&cid).unwrap().pop -= 1;
+        let after_value = self.yield_value(after.city_yields(cid), plan.strategy);
+        let lost_per_turn = (before - after_value).max(0.0);
+        let yields = g.city_yields(cid);
+        let surplus = (yields.food - 2.0 * population as f64).max(0.5);
+        let recovery_turns = (g.growth_cost((population - 1).max(1)) / surplus)
+            .min(g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64);
+        COUPLED_EXPANSION_POPULATION_VALUE + lost_per_turn * recovery_turns
+    }
+
+    /// Score one legal Settler as a paid, coupled build-settle-payback
+    /// investment. This is intentionally bounded and deterministic: it does
+    /// not clone a terminal game or grant a free city, but it does make every
+    /// material cost visible to the production decision.
+    #[allow(clippy::too_many_arguments)]
+    fn coupled_expansion_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        site: (Pos, f64),
+        build_turns: f64,
+    ) -> f64 {
+        let (site, site_value) = site;
+        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
+        let distance = g.wdist(g.cities[&cid].pos, site) as f64;
+        let travel_turns = (distance * COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE).ceil();
+        let settle_lag = g.standard_duration(SETTLE_LAG) as f64;
+        let delay = build_turns + travel_turns + settle_lag;
+        let payback_turns = remaining - delay;
+        if payback_turns <= g.standard_duration(SETTLE_PAYBACK) as f64 {
+            return -10_000.0;
+        }
+
+        let forecast =
+            self.settlement_growth_forecast_from_positions(g, pid, site, &g.wdisk(site, 2));
+        let horizon = g.standard_duration(COUPLED_EXPANSION_HORIZON).max(1) as f64;
+        let payoff_fraction = (payback_turns / horizon).clamp(0.0, 1.0);
+        // Keep the historical 920/site base as the benefit scale, but make
+        // the forecasted first four jobs contribute to that benefit instead
+        // of treating a legal plot as a free city oracle.
+        let site_quality = (920.0 + site_value * 4.0 + forecast.score.max(0.0) * 5.0).max(0.0);
+        let benefit = site_quality * payoff_fraction;
+
+        let settler_cost = g.item_remaining_cost_for_city(
+            pid,
+            cid,
+            &Item::Unit {
+                unit: "settler".into(),
+            },
+        );
+        let production_cost = settler_cost * COUPLED_EXPANSION_PRODUCTION_VALUE;
+        let population_cost = self.coupled_expansion_population_cost(g, pid, cid, plan);
+        let city_output = self.yield_value(g.city_yields(cid), plan.strategy).max(1.0);
+        let route_cost = travel_turns * city_output * 0.35;
+        let safety_cost = if self.settlement_safety {
+            let visible = self.battlefront_visibility(g, pid);
+            self.settlement_safety_penalty(g, pid, site, &visible) * 1.5
+        } else {
+            0.0
+        };
+        let city_count = g.player_city_ids(pid).len();
+        let escort_cost = if self.settlement_safety && counts.military <= city_count {
+            COUPLED_EXPANSION_ESCORT_VALUE
+        } else {
+            0.0
+        };
+        let net =
+            benefit - production_cost - population_cost - route_cost - safety_cost - escort_cost;
+        if net.is_finite() && net > 0.0 {
+            net
+        } else {
+            -10_000.0
+        }
+    }
+
     /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
     /// the unchanged endgame reserve.
     fn stock_expansion_deadline(g: &Game) -> u32 {
@@ -8478,7 +8767,25 @@ impl AdvancedAi {
         // and no number, one of which cost 41 Elo. Its justification is
         // reasoning, not measurement: "three active Builders per four cities
         // provide roughly two useful improvements per city".
-        if self.production_builder_floor {
+        //
+        // The survey replaces the floor rather than stacking on it: a quota
+        // sized from the actual job backlog and a quota sized from prose
+        // cannot both govern one number.
+        if self.builder_reward_survey {
+            let ids = g.player_city_ids(pid);
+            if let Some(&first) = ids.first() {
+                let origin = g.cities[&first].pos;
+                let charges = g.builder_charges(pid).max(1) as usize;
+                let jobs = self
+                    .builder_job_rewards(g, pid, origin, plan.strategy)
+                    .into_iter()
+                    .filter(|reward| *reward > 12.0)
+                    .count();
+                let wanted = jobs.div_ceil(charges);
+                self.base.w.builder_per_city =
+                    (wanted as f64 / ids.len().max(1) as f64).clamp(0.0, 1.0);
+            }
+        } else if self.production_builder_floor {
             self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         }
         self.base.cities(g, pid);
@@ -17867,19 +18174,49 @@ impl AdvancedAi {
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
-                    && site.is_some()
                 {
-                    (920.0 + site.map(|(_, v)| v * 4.0).unwrap_or(0.0)) * self.settler_price
+                    if let Some(site) = site {
+                        if self.coupled_expansion {
+                            self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
+                        } else {
+                            (920.0 + site.1 * 4.0) * self.settler_price
+                        }
+                    } else {
+                        -10_000.0
+                    }
                 } else {
                     -10_000.0
                 }
             }
             Item::Unit { unit } if unit == "builder" => {
-                let desired = city_count.div_ceil(2).max(1);
-                if counts.builders < desired {
-                    260.0 + 35.0 * (desired - counts.builders) as f64
+                if self.builder_reward_survey {
+                    // Price the Builder by the jobs it would actually get:
+                    // the engine says how many charges it will carry, the
+                    // survey says what the best open jobs are worth, and the
+                    // Builders already alive claim the head of the list. An
+                    // empire with three high-value connections waiting bids
+                    // high; a fully-improved empire bids almost nothing,
+                    // where the old quota kept bidding 260 either way.
+                    let charges = g.builder_charges(pid).max(1) as usize;
+                    let rewards = self.builder_job_rewards(g, pid, city.pos, plan.strategy);
+                    let claimed = counts.builders.saturating_mul(charges);
+                    let next: f64 = rewards.iter().skip(claimed).take(charges).sum();
+                    if next < 12.0 {
+                        15.0
+                    } else {
+                        // 4x puts a typical three-job survey (~60-90) in the
+                        // band the flat 260 occupied, lets a luxury+strategic
+                        // backlog outbid ordinary buildings, and caps below
+                        // the settler's 920 so expansion keeps its priority.
+                        (next * 4.0).min(880.0)
+                    }
                 } else {
-                    25.0
+                    let desired = city_count.div_ceil(2).max(1);
+                    if counts.builders < desired {
+                        260.0 + 35.0 * (desired - counts.builders) as f64
+                    } else {
+                        25.0
+                    }
                 }
             }
             Item::Unit { unit } if unit == "trader" => {
@@ -18062,7 +18399,7 @@ impl AdvancedAi {
                         return -2_000.0;
                     }
                     let power = spec.strength.max(spec.ranged_attack_strength());
-                    let best_role_power = g
+                    let (best_role_power, best_role_ratio) = g
                         .rules
                         .units
                         .iter()
@@ -18079,12 +18416,40 @@ impl AdvancedAi {
                                 )
                         })
                         .map(|(_, candidate)| {
-                            candidate.strength.max(candidate.ranged_attack_strength())
+                            let candidate_power =
+                                candidate.strength.max(candidate.ranged_attack_strength());
+                            (candidate_power, candidate_power / candidate.cost.max(1.0))
                         })
-                        .fold(0.0_f64, f64::max);
+                        .fold(
+                            (0.0_f64, 0.0_f64),
+                            |(power_best, ratio_best), (candidate_power, candidate_ratio)| {
+                                (
+                                    power_best.max(candidate_power),
+                                    ratio_best.max(candidate_ratio),
+                                )
+                            },
+                        );
                     if unit != "scout" && power + 5.0 < best_role_power {
                         return -2_000.0;
                     }
+                    // Strength per production, ranked against the best ratio
+                    // among the units this city could train into the same
+                    // role, and a credit for the civilization's own unique
+                    // unit while its window is open. Off-flag both terms are
+                    // exactly zero and the arm is unchanged.
+                    let efficiency = if self.unit_cost_efficiency && best_role_ratio > 0.0 {
+                        45.0 * ((power / spec.cost.max(1.0)) / best_role_ratio).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let unique_window = if self.unit_cost_efficiency
+                        && !self.civ_blind
+                        && spec.unique_to.as_deref() == Some(g.players[pid].civ.as_str())
+                    {
+                        85.0
+                    } else {
+                        0.0
+                    };
                     let force_gap = if naval {
                         desired_naval.saturating_sub(counts.naval) as f64
                     } else if aircraft {
@@ -18160,6 +18525,8 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + efficiency
+                        + unique_window
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
@@ -21600,6 +21967,200 @@ impl AdvancedAi {
             };
         }
         value
+    }
+
+    /// The value of one improvement for the *production* decision — what a
+    /// Builder charge spent here is worth — as opposed to
+    /// `improvement_value`, which ranks jobs for a Builder that already
+    /// exists. Three things the movement scorer deliberately flattens are
+    /// modelled here, because they decide whether the charge is worth its
+    /// share of 50 production at all:
+    ///
+    /// - **Worked likelihood.** Tile yields pay only while a citizen stands
+    ///   on the tile. A job on a tile the city's own citizen plan works
+    ///   counts in full; an unworked tile keeps a growth-discounted fraction.
+    ///   Housing, tourism and resource connection are not worked-gated by the
+    ///   engine and are never discounted.
+    /// - **Luxury novelty.** Connecting a luxury pays +1 Amenity in up to
+    ///   four needy cities — but only the empire's *first* copy. The movement
+    ///   scorer's flat 14 prices a duplicate Wine like a first Silk; here a
+    ///   duplicate is worth a trade chip and a new luxury scales with how
+    ///   many cities are actually short of Amenities.
+    /// - **Strategic saturation.** The first source of a strategic unlocks
+    ///   whole unit lines and outranks any ordinary improvement; later
+    ///   sources feed a stockpile capped near 50 and are worth less as the
+    ///   cap approaches. The movement scorer's flat 30 cannot tell these
+    ///   apart.
+    #[allow(clippy::too_many_arguments)]
+    fn surveyed_improvement_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        worked_here: bool,
+        needy_cities: usize,
+    ) -> f64 {
+        let tile = &g.map.tiles[&pos];
+        let spec = &g.rules.improvements[improvement];
+        let appeal = g.tile_appeal(pos).max(0) as f64;
+        let mut yields = spec.yields;
+        yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
+        let worked_weight = if worked_here { 1.0 } else { 0.4 };
+        let mut value = self.yield_value(yields, strategy) * worked_weight;
+        if strategy == GrandStrategy::Culture {
+            let tourism = spec.effects.get("tourism").copied().unwrap_or(0.0)
+                + spec.effects.get("appeal_tourism").copied().unwrap_or(0.0) * appeal;
+            value += tourism * 35.0;
+        }
+        // Housing counts only within three tiles of the centre — the
+        // engine's own rule in `city_housing` — and matters in proportion to
+        // how close the city is to its ceiling, the measured population cap.
+        if spec.housing > 0.0 && g.wdist(city.pos, pos) <= 3 {
+            let pressed = g.city_housing_headroom(city) <= 2.0;
+            value += spec.housing * if pressed { 34.0 } else { 10.0 };
+        }
+        if let Some(resource) = &tile.resource {
+            let works = spec.resources.iter().any(|entry| entry == resource);
+            if works {
+                value += match g.rules.resources[resource].class.as_str() {
+                    "luxury" => {
+                        if g.resource_access_count(pid, resource) > 0 {
+                            // A duplicate supplies no Amenity under the
+                            // default congress policy; it is a trade chip.
+                            2.0
+                        } else {
+                            10.0 + 9.0 * needy_cities.min(4) as f64
+                        }
+                    }
+                    "strategic" => {
+                        if g.strategic_resource_rate(pid, resource.as_str()) <= 0.0 {
+                            45.0
+                        } else {
+                            let headroom = g.strategic_stockpile_capacity(pid)
+                                - g.strategic_stockpile(pid, *resource);
+                            if headroom <= 5.0 {
+                                6.0
+                            } else {
+                                18.0
+                            }
+                        }
+                    }
+                    _ => 4.0,
+                };
+            }
+        }
+        value
+    }
+
+    /// The best improvement upgrade one Builder charge could make on this
+    /// tile, as a delta over what already stands there. Zero when nothing
+    /// beats the current improvement by a worthwhile margin — the same 0.5
+    /// anti-oscillation band `worthwhile_improvements` uses.
+    #[allow(clippy::too_many_arguments)]
+    fn charge_reward(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        pos: Pos,
+        strategy: GrandStrategy,
+        worked_here: bool,
+        needy_cities: usize,
+    ) -> f64 {
+        let current = g.map.tiles[&pos]
+            .improvement
+            .as_deref()
+            .map(|improvement| {
+                self.surveyed_improvement_value(
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
+                )
+            })
+            .unwrap_or(0.0);
+        let best = g
+            .valid_improvements(pid, pos)
+            .into_iter()
+            .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
+            .map(|improvement| {
+                self.surveyed_improvement_value(
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    &improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
+                )
+            })
+            .fold(0.0_f64, f64::max);
+        if best > current + 0.5 {
+            best - current
+        } else {
+            0.0
+        }
+    }
+
+    /// Every Builder job the empire is holding open, each priced by
+    /// `charge_reward` and discounted by its distance from `origin`, sorted
+    /// best-first. The production arm reads this list to price the *next*
+    /// Builder as the jobs it would actually get — the Builders already
+    /// alive claim the head of the list — and `delegated_cities` reads it to
+    /// size the delegated quota. Both callers thereby stop paying for
+    /// Builders an improved empire has no work for, which is the direction
+    /// the floor withhold's terminal-score reading pointed.
+    fn builder_job_rewards(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: Pos,
+        strategy: GrandStrategy,
+    ) -> Vec<f64> {
+        let needy_cities = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid && g.city_amenity_surplus(city) <= 0)
+            .count();
+        let mut rewards = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            let worked: HashSet<Pos> = g
+                .city_citizen_plan(cid)
+                .worked_tiles
+                .iter()
+                .copied()
+                .collect();
+            for pos in &city.owned_tiles {
+                let reward = self.charge_reward(
+                    g,
+                    pid,
+                    city,
+                    *pos,
+                    strategy,
+                    worked.contains(pos),
+                    needy_cities,
+                );
+                if reward > 0.0 {
+                    // A remote job is worth less to this city's queue, but a
+                    // Builder walks: never discount a real job below a
+                    // quarter of its value.
+                    let discounted =
+                        (reward - g.wdist(origin, *pos) as f64 * 0.35).max(reward * 0.25);
+                    rewards.push(discounted);
+                }
+            }
+        }
+        rewards.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        rewards
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -27051,6 +27612,95 @@ impl AdvancedAi {
     }
 }
 
+impl AdvancedAi {
+    /// Plan one complete major turn on a fog-redacted world, then replay the
+    /// action tape against the authoritative game.  A failed replay is simply
+    /// skipped: the real world may contain a hidden blocker or a combat result
+    /// the private view was not entitled to know, and treating that refusal as
+    /// a new observation is safer than manufacturing a replacement order from
+    /// omniscient state.
+    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
+        // Headless runs normally disable the engine's large remembered-map
+        // snapshots.  This mode explicitly opts back in: terrain and borders
+        // seen on an earlier turn are part of the player's knowledge and are
+        // the map half of the same information boundary as BeliefState.
+        g.set_fog_memory(true);
+        // A controller can be attached to a loaded game after the engine has
+        // already accumulated City Center snapshots.  Seed only the public
+        // fields from that memory (the saved snapshot has no combat-strength
+        // field), using the same conservative floor as a never-seen objective;
+        // the live observation below immediately replaces any city in view.
+        let remembered_from_game: Vec<_> = g
+            .players
+            .get(pid)
+            .map(|player| player.remembered_cities.values().cloned().collect())
+            .unwrap_or_default();
+        for city in remembered_from_game {
+            self.belief.cities.entry(city.id).or_insert(CitySighting {
+                pos: city.pos,
+                turn: city.seen_turn,
+                owner: city.owner,
+                hp: city.hp,
+                wall_hp: city.wall_hp,
+                strength: UNKNOWN_OBJECTIVE_STRENGTH,
+            });
+        }
+        // Refresh the controller's own belief from the real turn-start frame
+        // before constructing the private world.  `run_game` deliberately
+        // disables the engine's heavy remembered-map snapshots, so this
+        // controller-owned memory is the durable source for stale contacts.
+        self.belief.observe(g, pid);
+        let remembered_cities: BTreeMap<u32, FogCityMemory> = self
+            .belief
+            .cities
+            .iter()
+            .map(|(cid, sighting)| {
+                (
+                    *cid,
+                    FogCityMemory {
+                        owner: sighting.owner,
+                        pos: sighting.pos,
+                        hp: sighting.hp,
+                        wall_hp: sighting.wall_hp,
+                        strength: sighting.strength,
+                    },
+                )
+            })
+            .collect();
+        let start = g.log.len();
+        let mut private = g.fogged_clone(pid, &remembered_cities);
+        let pool = self.work_pool.clone();
+        private.with_deferred_visibility_pool(pool.as_deref(), |private| {
+            self.take_turn_inner(private, pid)
+        });
+        let actions: Vec<(usize, Action)> = private
+            .log
+            .since(start)
+            .map(|(seat, action)| (*seat, action.clone()))
+            .collect();
+
+        let pool = self.work_pool.clone();
+        g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
+            for (seat, action) in actions {
+                if authoritative.current != seat {
+                    break;
+                }
+                let end_turn = matches!(&action, Action::EndTurn);
+                let _ = authoritative.apply(seat, &action);
+                if end_turn {
+                    break;
+                }
+            }
+            // A hidden blocker can make a private EndTurn arrive before the
+            // authoritative action tape is ready. Keep the ordinary driver
+            // contract: return with the acting seat closed whenever possible.
+            if authoritative.winner.is_none() && authoritative.current == pid {
+                let _ = authoritative.apply(pid, &Action::EndTurn);
+            }
+        });
+    }
+}
+
 impl Ai for AdvancedAi {
     fn joint_tactics_census(&self) -> Option<(usize, usize)> {
         self.joint_tactics.then(|| self.joint_tactics_census())
@@ -27145,6 +27795,10 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
+        if self.fog_honest {
+            self.take_turn_fog_honest(g, pid);
+            return;
+        }
         let pool = self.work_pool.clone();
         g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
     }
@@ -27544,6 +28198,216 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn fog_honest_planning_view_redacts_hidden_units_and_terrain() {
+        let mut game = Game::new_full(2, 30, 18, 84_201, 200, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let visible = game.player_vision_now(0);
+        let far = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.wdist(home, tile.pos) > 12
+                    && !game.sees(&visible, tile.pos)
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored land tile");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+        assert!(!game.sees(&visible, far));
+
+        let private = game.fogged_clone(0, &BTreeMap::new());
+        assert!(
+            !private.units.contains_key(&enemy),
+            "an enemy that is not in the turn-start frame must not reach the planner"
+        );
+        let redacted = private
+            .map
+            .get(far)
+            .expect("redacted tile remains on the map");
+        assert!(private.rules.is_unknown(redacted));
+        assert!(redacted.assumed_traversable);
+        assert_eq!(redacted.resource, None);
+        assert_eq!(redacted.owner_city, None);
+    }
+
+    #[test]
+    fn fog_honest_planning_keeps_only_stale_hidden_city_combat_memory() {
+        let mut game = Game::new_full(2, 40, 20, 84_204, 200, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let visible = game.player_vision_now(0);
+        let far = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.wdist(home, tile.pos) > 12
+                    && !game.sees(&visible, tile.pos)
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(tile.pos).is_none()
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored settlement site");
+        let settler = game.spawn_test_unit("settler", 1, far);
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .expect("the hidden settlement must be founded");
+        game.current = 0;
+        let enemy_city = game
+            .city_at(far)
+            .expect("the fixture settlement must create a city");
+        let visible = game.player_vision_now(0);
+        assert!(!game.sees(&visible, far));
+
+        let remembered = BTreeMap::from([(
+            enemy_city,
+            FogCityMemory {
+                owner: 1,
+                pos: far,
+                hp: 137,
+                wall_hp: 61,
+                strength: 93.0,
+            },
+        )]);
+        let private = game.fogged_clone(0, &remembered);
+        let city = private
+            .cities
+            .get(&enemy_city)
+            .expect("a remembered hidden city remains a target-shaped contact");
+        assert_eq!(city.owner, 1);
+        assert_eq!(city.pos, far);
+        assert_eq!(city.hp, 137);
+        assert_eq!(city.wall_hp, 61);
+        assert_eq!(city.pop, 1);
+        assert!(city.buildings.is_empty());
+        assert!(city.districts.is_empty());
+        assert_eq!(private.observed_city_strength.get(&enemy_city), Some(&93.0));
+    }
+
+    #[test]
+    fn fog_honest_major_is_invariant_to_hidden_enemy_changes() {
+        let mut source = Game::new_full(2, 30, 18, 84_202, 200, 0, false);
+        for pid in 0..2 {
+            let settler = source
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| source.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            source.current = pid;
+            source
+                .apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        source.current = 0;
+        let home = source.cities[&source.player_city_ids(0)[0]].pos;
+        let visible = source.player_vision_now(0);
+        let far = source
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                source.wdist(home, tile.pos) > 12
+                    && !source.sees(&visible, tile.pos)
+                    && source.rules.is_passable(tile)
+                    && !source.rules.is_water(tile)
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored land tile");
+        let enemy = source.spawn_test_unit("warrior", 1, far);
+        let mut changed = source.clone();
+        let other_far = changed
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                changed.wdist(home, tile.pos) > 12
+                    && !changed.sees(&visible, tile.pos)
+                    && changed.rules.is_passable(tile)
+                    && !changed.rules.is_water(tile)
+                    && tile.pos != far
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs a second unexplored land tile");
+        let hidden = changed
+            .units
+            .get_mut(&enemy)
+            .expect("hidden unit survives the clone");
+        hidden.pos = other_far;
+        hidden.hp = 1;
+
+        let mut first = AdvancedAi::fog_honest();
+        let mut second = AdvancedAi::fog_honest();
+        first.take_turn(&mut source, 0);
+        second.take_turn(&mut changed, 0);
+        let first_actions: Vec<_> = source
+            .log
+            .iter()
+            .filter(|(seat, _)| *seat == 0)
+            .map(|(_, action)| action)
+            .collect();
+        let second_actions: Vec<_> = changed
+            .log
+            .iter()
+            .filter(|(seat, _)| *seat == 0)
+            .map(|(_, action)| action)
+            .collect();
+        assert_eq!(
+            first_actions, second_actions,
+            "the fog-honest turn must not change when an unseen enemy moves or heals"
+        );
+    }
+
+    #[test]
+    fn fog_honest_constructor_enables_memory_and_conservative_objectives() {
+        let ai = AdvancedAi::fog_honest();
+        assert!(ai.fog_honest);
+        assert!(ai.battlefront_observation);
+        assert!(ai.belief_pressure);
+        assert!(ai.blind_objective_strength);
+        assert!(ai.blind_objective_units);
+        assert!(!AdvancedAi::new().fog_honest);
+    }
+
+    #[test]
+    fn two_fog_honest_majors_complete_a_short_turn_sequence() {
+        let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
+        let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::fog_honest()];
+        run_game(&mut game, &mut ais);
+        assert!(
+            game.turn > 0,
+            "the private planning turn must replay EndTurn"
+        );
+        assert!(game
+            .log
+            .iter()
+            .any(|(_, action)| matches!(action, Action::EndTurn)));
+    }
 
     #[test]
     fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
@@ -33013,6 +33877,92 @@ mod tests {
     }
 
     #[test]
+    fn coupled_expansion_is_opt_in_and_reaches_the_expansion_dispatcher() {
+        let stock = AdvancedAi::new();
+        assert!(!stock.coupled_expansion);
+        assert!(!stock.expansion_dispatch);
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_coupled_expansion();
+        assert!(treated.coupled_expansion);
+        assert!(treated.expansion_dispatch);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 0,
+            rush: false,
+        };
+        assert!(!stock.adaptive_expansion_dispatches(&plan, None));
+        assert!(treated.adaptive_expansion_dispatches(&plan, None));
+    }
+
+    #[test]
+    fn coupled_expansion_charges_the_paid_sequence_and_closes_without_payback() {
+        let mut game = Game::new_full(1, 30, 18, 7_116, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the opening has a Settler");
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: 0,
+            rush: false,
+        };
+        let treated = AdvancedAi::coupled_expansion();
+        let site = treated
+            .best_settle_site(&game, 0, game.cities[&city].pos, 11)
+            .expect("the shaped map has an in-reach site");
+        let counts = treated.counts(&game, 0);
+        let settler_item = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let build_turns = game.item_remaining_cost_for_city(0, city, &settler_item)
+            / game.city_yields(city).production.max(1.0);
+        let early =
+            treated.coupled_expansion_value(&game, 0, city, &plan, &counts, site, build_turns);
+        assert!(
+            early > -10_000.0,
+            "a healthy early site should remain an auditable paid candidate: {early}"
+        );
+        let forecast = treated.settlement_growth_forecast_from_positions(
+            &game,
+            0,
+            site.0,
+            &game.wdisk(site.0, 2),
+        );
+        let uncoupled_benefit = 920.0 + site.1 * 4.0 + forecast.score.max(0.0) * 5.0;
+        assert!(
+            early < uncoupled_benefit,
+            "the treatment must visibly charge costs (benefit={uncoupled_benefit}, net={early})"
+        );
+
+        game.turn = 195;
+        let late_counts = treated.counts(&game, 0);
+        let late_plan = treated.assess(&game, 0);
+        assert_eq!(
+            treated.production_value(&game, 0, city, &settler_item, &late_plan, &late_counts),
+            -10_000.0,
+            "a Settler that cannot found and repay before the game cap is rejected"
+        );
+    }
+
+    #[test]
     fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
         let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
         for pid in 0..2 {
@@ -33997,6 +34947,62 @@ mod tests {
         assert_eq!(blind.victory_denial(&game, 0), None);
         assert!(!blind.urgent_victory_threat(&game, 1));
         assert!(ai.urgent_victory_threat(&game, 1));
+    }
+
+    /// A seat playing under an assigned victory target has always stood its
+    /// whole denial apparatus down. Five of the twelve runs the live seat was
+    /// LEADING on 2026-08-16/17 ended at t229-245 on a rival's victory the
+    /// counter never engaged — that seat plays `--victory science`. With
+    /// `deny_while_targeted`, match point overrides the lane's focus, and
+    /// ordinary pressure still does not.
+    #[test]
+    fn match_point_overrides_an_assigned_lane_when_enabled() {
+        let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
+        for pid in 0..4 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.players[1].religion = Some("Rival Faith".to_string());
+        for owner in [1, 2, 3] {
+            let city = game.player_city_ids(owner)[0];
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert("Rival Faith".to_string(), 1_000.0);
+        }
+
+        let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "an assigned lane keeps its focus while the flag is off"
+        );
+        targeted.enable_deny_while_targeted();
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            Some((1, GrandStrategy::Conquest)),
+            "match point overrides the lane's focus"
+        );
+
+        // Ordinary pressure must not: below the match-point bar the assigned
+        // lane's focus stands, flag or no flag.
+        let city = game.player_city_ids(3)[0];
+        game.cities.get_mut(&city).unwrap().pressure.clear();
+        assert!(!targeted.urgent_victory_threat(&game, 1));
+        assert_eq!(
+            targeted.victory_denial(&game, 0),
+            None,
+            "sub-match-point pressure never distracts an assigned lane"
+        );
     }
 
     /// The site score is silent about barbarians and about being out of
@@ -36329,6 +37335,200 @@ mod tests {
         assert!(
             resumed > fresh,
             "incremental evaluation should prefer finishing invested infrastructure"
+        );
+    }
+
+    #[test]
+    fn a_spawned_builder_carries_the_charges_production_priced() {
+        // `Game::builder_charges` is the number the survey prices; spawning
+        // must hand out exactly the same count or the valuation is priced
+        // against a unit that does not exist.
+        let mut game = Game::new_full(1, 20, 14, 71_006, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let pos = game.units[&settler].pos;
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let uid = game.spawn_unit("builder", 0, pos);
+        assert_eq!(game.units[&uid].charges, game.builder_charges(0));
+        assert!(game.builder_charges(0) >= 1);
+    }
+
+    #[test]
+    fn the_builder_survey_prices_work_where_the_quota_priced_headcount() {
+        let mut game = Game::new_full(1, 20, 14, 71_008, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let frozen = AdvancedAi::new();
+        let counts = frozen.counts(&game, 0);
+        let quota = frozen.production_value(&game, 0, city, &builder, &plan, &counts);
+
+        let mut surveyed = AdvancedAi::new();
+        surveyed.enable_builder_reward_survey();
+        let priced = surveyed.production_value(&game, 0, city, &builder, &plan, &counts);
+
+        // A fresh capital ringed by unimproved tiles has real jobs open, so
+        // the survey bids a real number — and a different one from the flat
+        // quota, which is the fires-check that the flag reaches the arm.
+        let rewards = surveyed.builder_job_rewards(&game, 0, game.cities[&city].pos, plan.strategy);
+        assert!(
+            !rewards.is_empty(),
+            "a fresh capital must have open builder jobs"
+        );
+        assert!(
+            rewards.windows(2).all(|pair| pair[0] >= pair[1]),
+            "job rewards must come back best-first"
+        );
+        assert!(priced > 0.0);
+        assert!(
+            (priced - quota).abs() > 1e-9,
+            "the survey arm must not silently reproduce the quota"
+        );
+
+        // The Builders already alive claim the head of the job list: each
+        // additional live Builder must never raise the next one's price.
+        let mut fewer_jobs = counts;
+        fewer_jobs.builders = 3;
+        let saturated = surveyed.production_value(&game, 0, city, &builder, &plan, &fewer_jobs);
+        assert!(
+            saturated <= priced,
+            "a fourth builder cannot be worth more than the first"
+        );
+    }
+
+    #[test]
+    fn a_first_luxury_outbids_a_duplicate_and_a_worked_tile_outbids_an_idle_one() {
+        let mut game = Game::new_full(1, 20, 14, 71_010, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        // Any luxury the ruleset ties to a builder improvement; BTreeMap
+        // order keeps the pick deterministic.
+        let (resource, improvement) = game
+            .rules
+            .improvements
+            .iter()
+            .filter(|(_, spec)| spec.builder_buildable)
+            .flat_map(|(name, spec)| {
+                spec.resources
+                    .iter()
+                    .map(move |resource| (*resource, *name))
+            })
+            .find(|(resource, _)| {
+                game.rules
+                    .resources
+                    .get(resource.as_str())
+                    .is_some_and(|spec| spec.class == "luxury")
+            })
+            .expect("the ruleset ties at least one luxury to a builder improvement");
+        let pos = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource);
+
+        let ai = AdvancedAi::new();
+        let strategy = GrandStrategy::Expansion;
+        let holder = game.cities[&city].clone();
+        let first =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
+
+        // Connect a second copy elsewhere: the survey must now price this
+        // tile as a duplicate.
+        let other = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|p| *p != pos && *p != game.cities[&city].pos)
+            .unwrap();
+        {
+            let tile = game.map.tiles.get_mut(&other).unwrap();
+            tile.resource = Some(resource);
+            tile.improvement = Some(improvement);
+        }
+        let duplicate =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
+        assert!(
+            first > duplicate,
+            "a first {resource} must outbid a duplicate ({first:.1} vs {duplicate:.1})"
+        );
+
+        // And the worked-likelihood weight: the same job on a tile no
+        // citizen works keeps its connection value but sheds yield value.
+        let idle =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, false, 2);
+        assert!(
+            first >= idle,
+            "an unworked tile cannot be worth more than a worked one"
+        );
+    }
+
+    #[test]
+    fn the_civs_own_unique_unit_earns_its_window() {
+        let mut game = Game::new_full(1, 20, 14, 71_012, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.players[0].civ = "Sumeria".to_string();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let war_cart = Item::Unit {
+            unit: crate::name!("war_cart"),
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let frozen = AdvancedAi::new();
+        let counts = frozen.counts(&game, 0);
+        let base = frozen.production_value(&game, 0, city, &war_cart, &plan, &counts);
+
+        let mut credited = AdvancedAi::new();
+        credited.enable_unit_cost_efficiency();
+        let windowed = credited.production_value(&game, 0, city, &war_cart, &plan, &counts);
+        assert!(
+            windowed > base,
+            "Sumeria's own War Cart must earn the unique window ({windowed:.1} vs {base:.1})"
+        );
+
+        // A rival civilization gets no credit for someone else's unique.
+        game.players[0].civ = "Rome".to_string();
+        let foreign = credited.production_value(&game, 0, city, &war_cart, &plan, &counts);
+        assert!(
+            foreign < windowed,
+            "the window is the owner's alone ({foreign:.1} vs {windowed:.1})"
         );
     }
 

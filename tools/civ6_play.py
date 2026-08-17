@@ -42,6 +42,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CIVVIS_VICTORY = "science"
 DEFAULT_CIVVIS_STRATEGY = ""
 
+# Every objective `civvis_orders --victory` accepts, in the spelling its enum
+# prints back. `civvis` lets the agent choose; the other six are
+# `VictoryTarget`'s own variants.
+#
+# ⚠ THREE OF THESE WERE UNREACHABLE FROM THE LIVE SEAT UNTIL 2026-08-17, and the
+# omission was not cosmetic: `advanced.rs` gates the machinery of a lane on being
+# TARGETED at it. A targeted agent that is not aiming at Culture prices every
+# great-work building at -10_000; one not aiming at Religion prices the
+# Missionary at -10_000; one not aiming at Diplomacy abstains from every World
+# Congress ballot that is not an emergency. So the launcher's four-value list did
+# not merely hide three options — it made three victory conditions impossible to
+# play for, whatever else was configured.
+VICTORY_LANES = ["civvis", "science", "culture", "religious", "diplomatic",
+                 "domination", "score"]
+
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
 # Civilization VI's optional game modes, from the `ConfigurationId`s its
@@ -778,11 +793,33 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     click_at(int(x + w * fx), int(y + h * fy))
 
 
-def screenshot(path: Path) -> None:
+def screenshot(path: Path) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
-    log cannot describe it; the shot is what says which row was hit."""
-    subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
-                   capture_output=True)
+    log cannot describe it; the shot is what says which row was hit.
+
+    ⚠ `screencapture` can fail SILENTLY under machine load and write nothing —
+    three consecutive ladder attempts died on 2026-08-17 (17:46–18:29Z, a
+    window of heavy concurrent `cargo test` runs) because a missing shot
+    cascaded through a PIL `FileNotFoundError` into the native-OCR fallback,
+    which raised `OCRUnavailable` ("zero-dimensioned image") that no setup
+    caller catches. The capture is verified and retried once here, at the
+    source, so every caller inherits the cover; a shot that still fails is
+    reported loudly and the caller's own "not readable this attempt" retry
+    handles it as an ordinary unreadable poll.
+    """
+    for attempt in (1, 2):
+        subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
+                       capture_output=True)
+        try:
+            if path.stat().st_size > 0:
+                return True
+        except OSError:
+            pass
+        if attempt == 1:
+            time.sleep(1.0)
+    print(f"[shot] screencapture wrote nothing for {path.name} after a retry; "
+          "treating this poll as unreadable", flush=True)
+    return False
 
 
 def option_strip(bounds: tuple[int, int, int, int], name: str) -> tuple[int, int, int, int]:
@@ -1272,6 +1309,12 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
     reads it consistently. Map the normalized crop observations back into full
     desktop coordinates so the existing click validation remains unchanged.
     """
+    # The tooling CI runner intentionally has no Pillow installation. A
+    # screenshot that never landed is already an unreadable poll, so return
+    # before the optional import; otherwise the missing file is reported as a
+    # dependency failure instead of taking the whole retry loop down.
+    if not path.exists():
+        return []
     try:
         from PIL import Image
 
@@ -1293,7 +1336,7 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop_path = path.with_name(path.stem + "-leader-crop.png")
         crop.save(crop_path)
         observations = macos_ocr.recognize(crop_path)
-    except (OSError, ValueError):
+    except (ImportError, OSError, ValueError):
         return macos_ocr.recognize(path)
 
     left, crop_top, right, crop_bottom = rect
@@ -1351,7 +1394,9 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
         observations = macos_ocr.recognize(path)
         observations.extend(_leader_ocr(path, bounds, top=0.08, bottom=0.45))
         button_observations = _leader_intro_button_ocr(path, bounds)
-    except (OSError, ValueError):
+    except (OSError, ValueError, macos_ocr.OCRUnavailable):
+        # `OCRUnavailable` included: a missing or zero-dimensioned shot is an
+        # unreadable poll, not a reason to end the attempt.
         return False
     begin_game = False
     for observation in button_observations:
@@ -2714,6 +2759,28 @@ def _play(args: argparse.Namespace) -> int:
         "seat": state["seat"],
         "outcome": outcome or None,
         "game_stopped": game_stopped,
+        # ★★★★★ WHICH VICTORY THIS RUN WAS PLAYING FOR.
+        #
+        # The summary is the artefact the ladder is built from, and until now it
+        # recorded every setting of the game — difficulty, size, speed, modes,
+        # max turns — and not the one setting that says what the AGENT was
+        # trying to do. `civ6_civvis_climb.py` stamps `victory_target` on its own
+        # JSONL row, but that is a different file from this one and the published
+        # ladder is built from this one, so `docs/civ6_ladder.json` has 307 rows
+        # and no lane on any of them.
+        #
+        # That was survivable while the launchers offered one workable lane. It
+        # is not survivable now: #1871 made all six of `VictoryTarget`'s variants
+        # selectable, so rows from here on can differ in objective, and a record
+        # that cannot separate them cannot answer the only question anyone asks
+        # of it — which lane wins. Every comment in this tree about rows being
+        # "NOT comparable" across a configuration change is describing exactly
+        # this failure, and this is the column that ends it.
+        #
+        # ⚠ This is what was ASKED FOR, not what the agent did. `civvis` means
+        # no target was pinned and the agent chose; it is not a seventh victory
+        # condition. The victory a game actually ended on is `outcome.victory`.
+        "victory_target": args.civvis_victory if args.civvis_decides else None,
     }
     # Bridge health rides in the summary: how much of what CIVVIS said the
     # engine actually did. Summed from this run's own turn events so the
@@ -2940,9 +3007,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--civvis-bin", default=None,
                     help="civvis_orders binary; defaults to target/release/civvis_orders")
     ap.add_argument("--civvis-victory", default=DEFAULT_CIVVIS_VICTORY,
-                    choices=["domination", "science", "score", "civvis"],
+                    choices=VICTORY_LANES,
                     help="victory objective passed to the supervised CIVVIS worker; "
-                         "defaults to non-religious Science")
+                         "defaults to Science")
     ap.add_argument("--civvis-strategy", default=DEFAULT_CIVVIS_STRATEGY,
                     help="rated CIVVIS strategy name; empty keeps stock AdvancedAi. "
                          "auto is an uncalibrated opt-in")

@@ -133,14 +133,17 @@ learned controller that wins.
 
 ### 1. Production agents cheat on fog
 
-`BasicAi` and production `AdvancedAi` read the full `Game`, including
+`BasicAi` and stock production `AdvancedAi` still read the full `Game`, including
 information a seated player cannot observe. The HTTP observation and spatial
-tensor honor fog, but the production policy does not consume either. This
-prevents a fair-play claim and removes scouting, memory, and uncertainty from
-the decision problem. `advanced_belief_pressure` now proves one bounded
-evaluator-only use of player-visible memory in the repaired city-pressure path,
-but it neither replaces the controller's other full-state reads nor cleared its
-whole-game promotion gate.
+tensor honor fog, but the incumbent policy does not consume either. The new
+opt-in `AdvancedAi::fog_honest()` closes that architecture gap for a complete
+major turn: it plans production, diplomacy, campaign, and tactics on one
+turn-start fog-redacted world, carries controller-owned belief memory, and
+replays only the resulting actions on the authoritative game. It is a
+correctness implementation, not yet a strength-promoted replacement; the
+incumbent remains unchanged until a paired deployment screen resolves the
+cost. `advanced_belief_pressure` remains the narrower evaluator arm for
+isolating the memory term inside stock `AdvancedAi`.
 
 ### 2. No learned policy ships
 
@@ -395,8 +398,9 @@ no tested replacement cleared the deployment gate.
    maximize another state-outcome correlate.
 3. **Cost-aware expansion search.** Expansion is the second replicated oracle
    ceiling, but seven decision treatments failed because the oracle removed
-   settler production and population costs. Search or value the full
-   build-settle-payback sequence instead of raising a city target again.
+   settler production and population costs. The evaluator-ready
+   `advanced_coupled_expansion` arm now values the full paid
+   build-settle-payback sequence; its disjoint outcome screen is still pending.
 4. **Policy-deck transfer confirmation.** The existing live deck, not the new
    influence terms, produced the clearest direction in the envoy decomposition.
    Its first 20-map matrix scored 53.8% (+26) at deployment with 52.1% terminal
@@ -455,21 +459,24 @@ that boundary rather than re-running the old stringly comparisons.
    counterfactual action corpus, reserve deployment as an untouched calibration
    set, and fall back to scripted play out of distribution. A state-value argmax
    is not an action-value policy.
-5. **Search the full expansion investment.** Model settler production,
+5. **Screen the full expansion investment.** The bounded
+   `advanced_coupled_expansion` treatment now models settler production,
    population, escort, travel, settlement, and payback together. The oracle
    ceiling is large, but seven city-target treatments failed because the oracle
-   removed those costs.
+   removed those costs; only a disjoint gameplay screen can decide whether the
+   paid policy earns promotion.
 6. **Price strategic search on deployment.** Compare the searching controller
    with a genome-matched sequential control and keep it out of the live league
    unless its measured gain justifies its roughly 6.4× turn cost.
 
 ## Ranked next work after the turn-frame repair
 
-The current-main battlefront follow-up freezes the already-promoted observation
-boundary for one major turn. It removes a same-turn inconsistency, but it does
-not make the production controller fog honest, prove a strength gain, or change
-the incumbent/champion distinction. The next work remains ordered by the
-largest remaining decision risk rather than by how local the next code edit is:
+The current-main battlefront follow-up froze the already-promoted observation
+boundary for one major turn. The opt-in `AdvancedAi::fog_honest()` arm now
+extends that boundary across the complete major turn; it does not yet prove a
+strength gain or change the incumbent/champion distinction. The next work
+remains ordered by the largest remaining decision risk rather than by how local
+the next code edit is:
 
 1. **Separate discovery from confirmation effect sizes.** Keep promotion as a
    decision and quote effect sizes only from a disjoint, pre-registered
@@ -477,9 +484,9 @@ largest remaining decision risk rather than by how local the next code edit is:
 2. **Test one rational composite.** Evaluate the live policy deck plus direct
    envoy production on new stable deployment and compact prefixes, preserving
    the matrix gate and recording build opportunity costs.
-3. **Build a fog-honest major controller.** Extend the existing observation and
-   belief surfaces end-to-end. The turn-start battlefront frame is only a
-   coherence prerequisite inside this larger item.
+3. **Screen the fog-honest major controller.** Run the opt-in arm on disjoint
+   compact and deployment prefixes, measure replay refusals and throughput,
+   and promote it only if the matrix gate pays for the information boundary.
 4. **Learn action-conditioned advantage with abstention.** Expand the action
    corpus, hold deployment out for calibration, and fall back to scripted play
    outside the supported distribution.
@@ -510,10 +517,32 @@ for `advanced`, weighted/targeted Advanced variants, and the StrategicAi
 controllers through their shared constructor; the historical `legacy` control
 keeps the old score.
 
-This closes the local site-selection and transit-safety gap. The larger
-**full expansion investment** gap remains: production, population cost, escort
-availability, travel, founding, and city payback still need a coupled
-long-horizon search before expansion can claim a complete economic solution.
+This closes the local site-selection and transit-safety gap. The remaining
+economic question is now isolated behind the evaluator-only
+`advanced_coupled_expansion` arm: it charges production, population cost,
+escort availability, travel, founding lag, visible safety, and city payback
+before a Settler can win a queue. The arm is deliberately not in production and
+has no outcome claim until a disjoint screen resolves it.
+
+## 2026-08-17 coupled expansion is a paid evaluator treatment
+
+The previous expansion score treated a legal Settler as a large fixed prize and
+left the real trade implicit. `AdvancedAi::coupled_expansion` now routes the
+adaptive Expansion lane through strategic production and prices one legal
+Settler as a bounded investment. Its score uses the existing settlement
+forecast for the first four jobs, then subtracts the exact remaining Settler
+production, the population point and recovery interval, estimated travel time,
+escort availability, visible settlement safety, and the founding lag. A
+90-standard-turn payoff horizon closes late candidates that cannot earn back
+the investment.
+
+The implementation does not clone terminal games or grant a free city; the
+closed `expansion_investment` experiment remains the higher-cost terminal
+counterfactual validation harness. `advanced_coupled_expansion` is registered
+as a typed evaluator arm and is **off in production**. The focused tests pin the
+dispatcher seam, a legal early paid candidate, and rejection when the remaining
+turns cannot cover founding and payback. A replicated gameplay result is still
+required before promotion.
 
 ## 2026-08-10 the live-bridge repair bundle does not transfer to native play
 
@@ -767,3 +796,138 @@ count of production behaviours priced by removal rises to two shipped removals
 (`city_target_floor` −41, the war half ~+32..+38 across 1,400 pairs on three
 disjoint seed streams; see `docs/EVAL.md` 2026-08-14, "the war half leaves the
 shipped controller").
+
+## 2026-08-17 end-to-end fog-honest major
+
+The first complete fair-play controller now exists as the opt-in
+`AdvancedAi::fog_honest()` arm. At the beginning of a major turn it refreshes
+the controller-owned `BeliefState`, opts into persistent player map memory,
+and creates one disposable planning world from current visibility plus those
+last-known tiles. Hidden foreign units are absent; unseen terrain is an
+explicit unknown prior; and a foreign City Center is represented only by its
+last-seen owner, health, walls, and displayed combat strength. Production,
+diplomacy, campaign selection, and tactics all consume that same world. The
+action tape is then replayed against the authoritative game, where hidden
+blockers and combat remain the legality authority.
+
+This closes the architecture gap without silently changing the incumbent:
+the mode is default-off and has no strength claim yet. Focused tests prove
+redaction, invariance to unseen enemy movement/health changes, and a short
+two-major replay. A paired deployment-shaped gameplay screen remains the next
+step before promotion.
+
+## 2026-08-17 the great-work veto outranks the treatment that pays for great-work buildings
+
+★★★★★ **Unpriced, and it makes an existing measured null unattributable.**
+
+`production_value`'s `Item::Building` arm opens with a hard veto
+(`src/ai/advanced.rs:18482-18489`): any building carrying a great-work slot
+returns `-10_000.0` when a `victory_target` is set to anything other than
+Culture. Roughly 115 lines later the same arm pays `CULTURE_BUILDING_DEBT` to
+Theater Square buildings whose district is already standing (`:18597`).
+
+Every Theater Square building except `marae` has great-work slots
+(`data/buildings.json`: amphitheater `writing:2`, art_museum `art:3`,
+archaeological_museum `artifact:3`, broadcast_center `music:1`, film_studio
+`music:1`). So on any seat with a non-Culture target the veto returns first and
+`culture_building_debt` cannot fire for the buildings it exists to buy. The
+treatment is live only on an untargeted seat (`AdvancedAi::new()`), which is
+what `advanced` is in the evaluator — so the arm measures the mechanism, while a
+targeted deployment gets none of it. **Any reading taken from a targeted seat is
+a reading of the veto, not of the treatment**, and the two are not currently
+distinguished anywhere.
+
+Two further consequences, both unmeasured:
+
+1. The veto is keyed on the great-work slot rather than on the district, so it
+   also refuses `national_history_museum` — a **Government Plaza** building
+   (`data/buildings.json`, `great_work_slots: {any: 4}`). A science-targeted
+   seat declines a Government Plaza building because a culture lane it is not
+   playing would have wanted it. Whether that is intended is not recorded.
+2. The veto is total rather than a discount, so a targeted seat builds no
+   Amphitheater at any price, and the Amphitheater is also the civic-yield
+   building on that district.
+
+This bears directly on the objective list, because #1871 made Culture
+selectable: a Culture-targeted seat is the *only* configuration in which either
+mechanism has ever been able to act, and none of the 307 recorded ladder
+attempts ran one.
+
+**Do not tune this.** It needs an arm and a pre-registered run, not a judgement:
+price the veto's district-vs-slot key (`advanced_great_work_veto_by_district`)
+against stock on the deployment profile, and re-read `culture_building_debt` on
+a Culture-targeted seat where it can actually fire. The measurement route and
+its integrity rules are in `docs/EVAL.md`; the standing prior on this ledger is
+that most such repairs measure null.
+
+## 2026-08-17 the `live` evaluator arm is five flags short of the agent that plays
+
+★★★★★ **The one comparison that is supposed to be exact, is not.**
+
+`AdvancedAi::enable_live_bridge` carries an explicit instruction
+(`src/ai/advanced.rs:4349`):
+
+> ⚠ ADD NEW BRIDGE FLAGS HERE, not in the binary, or the arm silently stops
+> matching the deployment
+
+Five flags are set in the binary. `src/bin/civvis_orders.rs` calls
+`enable_live_bridge()` and then turns on five more:
+
+| flag | in `LIVE_TREATMENTS` | has a `disable_*` twin |
+|---|---|---|
+| `parallel_settlers` | no | **no** |
+| `host_settler_pop` | no | **no** |
+| `explore_dead_targets` | no | **no** |
+| `explore_commit` | no | yes |
+| `bank_envoys` | no | yes |
+
+`enable_live_bridge` turns on 68 flags and `LIVE_TREATMENTS` has 68 rows, so the
+registry test `live_bundle_and_registry_agree` (`advanced.rs:27912`) passes — it
+walks the *bundle*, and a flag set outside the bundle is invisible to it. The
+test enforces the rule only against people who already followed it.
+
+Three consequences, all unmeasured:
+
+1. **`elo.rs`'s `live` controller is a different agent from the one that plays
+   Civilization VI.** It is sold as the deployment's twin and is five flags
+   short of it. Every `live` vs `live_without_*` reading is therefore taken
+   against a base that is not the deployment.
+2. **None of the five can be withheld.** `--without` resolves against
+   `LIVE_TREATMENTS` (#1884), so these five ship unpriceable — the same defect
+   the eleven missing control arms had, one level up.
+3. **The per-run provenance line under-reports the deployed configuration by
+   five**, so a ladder row's own record of what it ran is incomplete.
+
+**The remedy, and why it is not a one-line move.** Registering them means
+writing three new `disable_*` methods, adding five `LIVE_TREATMENTS` rows,
+bumping the array to 73, and moving the five `enable_*` calls out of the binary
+into the bundle. The deployed agent does not change — the same flags end up on —
+but the **`live` arm does**, by gaining the five it should always have had.
+That makes prior `live`-arm readings non-comparable with later ones, which is a
+decision to register rather than a change to slip in: rows either side of it are
+not comparable, and the entry that makes the move should say so in `docs/EVAL.md`
+the way every other identity change here does.
+
+Recorded now because #1884 has just made the eleven *registered* treatments
+withholdable, and these five are what is left.
+
+## 2026-08-17 discovery and confirmation prefixes are now mechanically disjoint
+
+The evaluator already labels a gate-selected point estimate as a `DISCOVERY
+ESTIMATE` and a later `--confirm` run as `CONFIRMED`. The remaining integrity
+hole was the word *disjoint*: before this repair the guard rejected only an
+identical base seed. A discovery run on `1000..=1049` could therefore be
+"confirmed" on `1025..=1074`, reusing half the selected maps while claiming an
+independent estimate.
+
+`ai_eval` now checks the full inclusive `[seed, seed + pairs - 1]` intervals,
+rejects any overlap, and fails closed if either endpoint would overflow `u64`.
+Matrix mode applies the same check before adding its fixed compact/deployment
+stride, so both profile streams inherit the separation. The focused evaluator
+tests cover adjacent prefixes, partial overlap, same-base confirmation, and
+overflow; a CLI smoke run exits before starting a game on an overlapping pair.
+
+The confirmation estimate remains the quotable number. A pooled point estimate
+would still contain the discovery prefix selected on the gate, so it is not
+printed as a headline unless per-map results are retained for a separate,
+explicit diagnostic.

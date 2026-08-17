@@ -45,6 +45,22 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 BASELINE = REPO / "docs" / "TACTICS_BASELINE.md"
 
+#: Seat-mirrored games per matchup, and the floor a baseline may be written at.
+#:
+#: ⚠⚠⚠ FORTY WAS THE DEFAULT AND FORTY MANUFACTURED A FALSE ALARM. On the same
+#: binary, `1 city per side` measured 97.5% at 40 games and 81.2% at 480 — the
+#: 40-game interval (87.1-99.6) does not overlap the 480-game one (77.5-84.5).
+#: A baseline written from that reading made two days of ordinary merges look
+#: like a 21.7-point regression in a shipped product. At 120 the interval is
+#: about +-7 points, which is narrow enough for the comparison this battery
+#: exists to make.
+DEFAULT_GAMES = 120
+
+#: A baseline is what every later run is compared against, so it may not be
+#: written from a spot check. `--games` below this is fine for iterating; it is
+#: not fine for `--write-baseline`.
+MIN_BASELINE_GAMES = 120
+
 # The arena the battery is fought on. Fixed rather than configurable: a
 # benchmark whose board moves is not a benchmark, and the numbers in
 # `docs/TACTICS_BASELINE.md` are only comparable because this does not change.
@@ -261,27 +277,46 @@ def staleness_note(text: str) -> str:
     """One line saying how far the code has moved since the baseline was taken.
 
     ⚠⚠⚠ A BASELINE WITH NO AGE ON IT READS AS CURRENT, AND THIS ONE WAS NOT.
-    The table committed on 2026-08-15 was re-measured on 2026-08-17 against
-    that day's `main`, 120 seat-mirrored games per matchup. Every row had
-    moved, and one had moved the wrong way:
+    The table committed on 2026-08-15 sat unrefreshed while the controller
+    moved under it, and nothing in the file said so.
 
-        regime                  recorded    re-measured
-        1 city per side            97.5%          75.8%   <-- -21.7
-        no cities                  30.0%          58.3%
-        no cities, random era      52.5%          80.8%
+    ⚠⚠⚠ AND THEN SAMPLE SIZE ATE THE FIRST CONCLUSION. The re-measurement on
+    2026-08-17 called `1 city per side` a **21.7-point regression** — 97.5%
+    recorded against 75.8% re-measured — and said it "holds at 120 games, so it
+    is not sample noise". That was wrong in exactly the way this file warns
+    about: the two numbers came from DIFFERENT SAMPLE SIZES. Only the new one
+    was 120 games; the recorded 97.5% was 40.
 
-    **A 21.7-point regression in the shipped Tactics product, unnoticed**,
-    because the only instrument that shows it is this battery and the battery
-    runs when somebody remembers. The two improvements were equally invisible:
-    a repair worth +28 points went uncredited for the same reason.
+    Rebuilding the 2026-08-15 commit and measuring it properly settles it:
 
-    ⚠ And the sample size is part of the lesson. A 40-game run the same day put
-    `no cities` at 70.0%; 120 games put it at 58.3%. Forty games is a +-15 point
-    instrument, which is why the committed baseline is 120.
+        capture, advanced vs basic          n     pct    95% CI
+        recorded at 7cd011bb               40   97.5%   87.1-99.6
+        re-measured at 7cd011bb           120   81.7%   73.8-87.6
+        re-measured at 7cd011bb           480   81.2%   77.5-84.5
+        measured at 04d9c805              480   77.3%   73.3-80.8
 
-    Running 720 rated games in CI is not the answer; saying how old the number
-    is, is. A reader now sees "measured 47 commit(s) ago" instead of a table
-    with no date on it at all.
+    **The same binary measures 81.2% at 480 games and 97.5% at 40**, and the
+    recorded figure's interval does not overlap its own binary's 480-game
+    interval. About sixteen of the twenty-two points were never there. What is
+    left, 81.2% -> 77.3%, is **p = 0.136 — no established difference** — and
+    the same pair against the FROZEN anchor moved the other way, 58.8% ->
+    64.4%, p = 0.074. Two columns pointing in opposite directions with neither
+    significant is the signature of noise. **There was no capture regression.**
+
+    ★★★ WHAT THE STALE BASELINE WAS ACTUALLY HIDING WAS A LARGE IMPROVEMENT.
+    #1858 routed the bounded joint-tactics search through the arena movement
+    seam. Measured across its own parent, 240 seat-mirrored games per matchup:
+
+        no cities, advanced vs basic          60.4% -> 87.9%   +27.5  p=6e-12
+        no cities, advanced vs advanced_v1    92.9% -> 99.6%   + 6.7  p=1e-4
+
+    That is ROADMAP objective 4 delivering, and it went uncredited for two days
+    for the same reason the phantom regression went unchallenged: nothing said
+    how old the table was.
+
+    Running 1,440 rated games in CI is still not the answer. Saying how old the
+    number is, is — and refusing to write a baseline from a sample too small to
+    support one. See `MIN_BASELINE_GAMES`.
     """
     stamp = baseline_provenance(text)
     sha, when = stamp.get("commit", ""), stamp.get("date", "")
@@ -319,8 +354,15 @@ and quote the diff in the pull request that moves it.
 
 **{measured}, {games} seat-mirrored games per matchup.** These figures describe
 that revision and no other. `tactics_bench.py` prints how many commits have
-landed since, because a table with no age on it reads as current — and this one
-was not. See `staleness_note` in the benchmark for what that cost.
+landed since, because a table with no age on it reads as current.
+
+⚠ **Compare like with like.** A row here is only comparable to a row measured
+at the same sample size. On 2026-08-17 a 40-game reading of `1 city per side`
+(97.5%) was compared against a 120-game one (75.8%) and reported as a
+21.7-point regression; rebuilding the older commit and measuring it at 480
+games gave **81.2%**, so about sixteen of those points were never there and the
+remainder is not statistically distinguishable (p = 0.136). `--write-baseline`
+now refuses fewer than 120 games for exactly that reason.
 
 Every figure is the left controller's share of {games} seat-mirrored games on a
 {WIDTH}x{HEIGHT} arena, with a 95% Wilson interval. Seat-mirrored means each
@@ -352,14 +394,28 @@ finding.** Read the `basic` column.
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--games", type=int, default=40,
-                        help="seat-mirrored games per matchup (default 40)")
+    parser.add_argument("--games", type=int, default=DEFAULT_GAMES,
+                        help=f"seat-mirrored games per matchup (default {DEFAULT_GAMES})")
     parser.add_argument("--binary", help="civvis binary to benchmark (default: newest built)")
     parser.add_argument("--only", choices=[r.key for r in REGIMES],
                         help="run one regime while iterating")
     parser.add_argument("--write-baseline", action="store_true",
                         help="record these results as the committed baseline")
     args = parser.parse_args()
+
+    # ⚠ REFUSE BEFORE PLAYING ANYTHING. The first version of this guard sat
+    # beside the write, so a `--write-baseline --games 40` spent a full battery
+    # and then declined to keep it. Argument errors belong before the work.
+    if args.write_baseline and args.games < MIN_BASELINE_GAMES:
+        sys.exit(
+            f"refusing to write a baseline from {args.games} games. A baseline "
+            f"is what every later run is compared against, and {args.games} "
+            f"games is roughly a +-{int(98 / (args.games ** 0.5))} point "
+            f"instrument: at 40, `1 city per side` read 97.5% on a binary that "
+            f"measures 81.2% at 480 games, and the gap was reported as a "
+            f"regression that did not exist. Use --games {MIN_BASELINE_GAMES} "
+            f"or more."
+        )
 
     exe = binary(args.binary)
     regimes = [r for r in REGIMES if not args.only or r.key == args.only]

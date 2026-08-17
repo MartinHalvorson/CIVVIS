@@ -1607,9 +1607,20 @@ def bootstrap_command(args: argparse.Namespace) -> int:
     if failure:
         raise CommandError(str(failure))
     service_paths = install_freshness_service(root)
+    guard = install_memory_guard(root)
+    ladder = install_ladder_supervisor(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
     for path in service_paths:
         print(f"installed CIVVIS freshness service: {path}")
+    if guard is not None:
+        print(f"installed CIVVIS memory guard: {guard}")
+    else:
+        print("memory guard: macOS only, not installed on this platform")
+    for path in ladder:
+        print(f"installed CIVVIS ladder service: {path}")
+    if not ladder:
+        print("ladder supervisor: this host is not a Civilization VI seat, "
+              "not installed")
     print_refresh_report(report)
     return 0
 
@@ -2161,6 +2172,265 @@ def windows_freshness_task_command(launcher: Path) -> str:
             "cannot install a windowless Windows freshness task: wscript.exe is missing"
         )
     return subprocess.list2cmdline((wscript, "//B", str(launcher)))
+
+
+#: The memory guard's launchd label and thresholds.
+#:
+#: ⚠⚠⚠ macOS ENFORCES NO MEMORY CEILING, AND THIS FLEET HAS PROVED IT. On
+#: 2026-08-10 two `civvis` benchmark processes reached a **206 GB and a 205 GB
+#: physical footprint each on a 128 GB machine**, and the kernel answered with a
+#: system-wide jetsam that terminated **14,818 processes**. Neither `ulimit -v`
+#: nor `ulimit -d` is honoured on macOS, so nothing in the operating system was
+#: ever going to stop it.
+#:
+#: The guard written that day lived in `~/.local/bin` on the one laptop that had
+#: been hurt, installed by hand, tracked by nothing. Every other machine in the
+#: fleet ran the same benchmarks with no ceiling at all. It ships here now for
+#: the same reason the push guard and the freshness service do: a protection
+#: that exists on one disk protects one disk.
+#:
+#: 32 GB hard on a 128 GB host is roughly a quarter of RAM — far above any
+#: legitimate run measured here, far below the point where the kernel starts
+#: killing things that were not asked. `--soft-gb` only matters once the system
+#: is already short, and the guard reads PHYSICAL FOOTPRINT rather than RSS
+#: because at the moment of that jetsam the offenders held 20 GB resident with
+#: 186 GB parked in the compressor: an RSS limit would never have fired.
+MEMGUARD_LABEL = "com.civvis.memguard"
+MEMGUARD_HARD_GB = "32"
+MEMGUARD_SOFT_GB = "16"
+MEMGUARD_PRESSURE_PCT = "12"
+
+
+def memguard_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "memguard.py"
+
+
+def macos_memguard_plist(guard: Path) -> bytes:
+    """launchd job for the memory guard. Every ten seconds, low-priority I/O."""
+    logs = Path.home() / "Library" / "Logs" / "memguard-agent.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in (
+            sys.executable,
+            str(guard),
+            "--hard-gb",
+            MEMGUARD_HARD_GB,
+            "--soft-gb",
+            MEMGUARD_SOFT_GB,
+            "--pressure-pct",
+            MEMGUARD_PRESSURE_PCT,
+        )
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{MEMGUARD_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>StartInterval</key>\n\t<integer>10</integer>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>LowPriorityIO</key>\n\t<true/>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+# ⚠⚠ EVERY MANAGED PLIST MUST CARRY THIS KEY. `write_managed_service` refuses to
+# overwrite a definition that does not contain FRESHNESS_MARKER, and it makes
+# that check BEFORE the "identical, nothing to do" check — so a managed plist
+# written without the marker can be created once and then never updated. The
+# memory guard shipped that way on 2026-08-17 (#1867): the first `bootstrap`
+# installed it and every later `bootstrap` raised "refusing to replace unmanaged
+# scheduler definition" the moment the content had to change, e.g. because the
+# tree moved or a threshold was tuned. Emit this in the plist body, not a
+# comment, so the marker survives plist round-tripping.
+MANAGED_KEY = (f"\t<key>CivvisManagedBy</key>\n\t<string>{FRESHNESS_MARKER}"
+               "</string>\n")
+
+LADDER_LABEL = "com.civvis.ladder"
+LADDER_WATCHDOG_LABEL = "com.civvis.ladder-watchdog"
+LADDER_STALE_HOURS = "3"
+LADDER_WATCHDOG_INTERVAL_SECONDS = 600
+
+
+def ladder_supervisor_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "civvis-game-supervisor.sh"
+
+
+def ladder_watchdog_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "ladder_watchdog.py"
+
+
+def host_plays_civ6(runs: Optional[Path] = None) -> bool:
+    """Whether this host is a Civilization VI seat, on evidence rather than hope.
+
+    The supervisor drives a real Civ 6 install through the macOS GUI: it needs
+    the game, Steam, and Accessibility permission. Installing a game-playing
+    launchd job on a fleet machine that has none of that would be a job that can
+    only fail, so the gate is a runs directory this host has actually written.
+    """
+    runs = runs if runs is not None else Path.home() / "civvis-civ6-runs"
+    return runs.is_dir()
+
+
+def macos_ladder_plist(supervisor: Path, repo: Path) -> bytes:
+    """launchd job for the game supervisor: keep it alive, forever.
+
+    `KeepAlive` is the whole point. The supervisor is an infinite pull/build/
+    play loop, so any exit at all is a failure — a crash, a closed terminal, a
+    logout, a reboot. Before this it was hand-started from a session, which is
+    why 2026-08-17 lost 14.3 hours of attempts when that session ended.
+
+    `ThrottleInterval` bounds the other direction: a supervisor that dies
+    immediately (no Civ 6, no permission) retries once a minute instead of
+    spinning against launchd's 10-second floor.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-ladder.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in ("/bin/zsh", str(supervisor))
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{LADDER_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        f"\t<key>WorkingDirectory</key>\n\t<string>{repo_root(repo)}</string>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        f"\t\t<key>CIVVIS_HEAD_REPO</key>\n\t\t<string>{repo_root(repo)}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>"
+        f"{Path.home() / '.cargo' / 'bin'}:/usr/local/bin:/opt/homebrew/bin"
+        ":/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>KeepAlive</key>\n\t<true/>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>ThrottleInterval</key>\n\t<integer>60</integer>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
+    """launchd job for the staleness watchdog: its own process, its own clock.
+
+    Separate from the supervisor job deliberately. `KeepAlive` above catches a
+    supervisor that EXITED; it cannot catch one that is alive and looping while
+    producing no attempts, which is what a wedged Civ 6 core or a broken build
+    looks like to the process table. This job asks the only question that
+    settles it — when did we last finish a game — and it must be able to outlive
+    the thing it supervises, so it cannot live inside it.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in (sys.executable, str(watchdog),
+                      "--stale-hours", LADDER_STALE_HOURS,
+                      "--label", LADDER_LABEL)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{LADDER_WATCHDOG_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>StartInterval</key>\n\t<integer>"
+        f"{LADDER_WATCHDOG_INTERVAL_SECONDS}</integer>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>LowPriorityIO</key>\n\t<true/>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def load_managed_job(label: str, path: Path) -> None:
+    """Write-then-(re)load a managed LaunchAgent, idempotently."""
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{label}"),
+                     check=False).returncode
+    if loaded:
+        run(("launchctl", "bootout", f"{domain}/{label}"), check=False)
+    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+    run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
+
+
+def install_ladder_supervisor(repo: Path) -> List[Path]:
+    """Install the game supervisor and its watchdog. Empty where they do not apply.
+
+    Two jobs, two failure modes. See the plist builders above for which is
+    which; the short version is that KeepAlive covers a supervisor that died
+    and the watchdog covers one that is alive but not playing.
+    """
+    if sys.platform != "darwin" or not host_plays_civ6():
+        return []
+    supervisor = ladder_supervisor_source(repo)
+    watchdog = ladder_watchdog_source(repo)
+    for source in (supervisor, watchdog):
+        if not source.is_file():
+            raise CommandError(f"versioned ladder service is missing: {source}")
+
+    installed: List[Path] = []
+    agents = Path.home() / "Library" / "LaunchAgents"
+    for label, data in (
+        (LADDER_LABEL, macos_ladder_plist(supervisor, repo)),
+        (LADDER_WATCHDOG_LABEL, macos_ladder_watchdog_plist(watchdog)),
+    ):
+        path = agents / f"{label}.plist"
+        changed = write_managed_service(path, data)
+        domain = f"gui/{os.getuid()}"
+        loaded = not run(("launchctl", "print", f"{domain}/{label}"),
+                         check=False).returncode
+        if changed or not loaded:
+            load_managed_job(label, path)
+        installed.append(path)
+    return installed
+
+
+def install_memory_guard(repo: Path) -> Optional[Path]:
+    """Install the memory guard as a launchd job. `None` where it does not apply.
+
+    macOS only, deliberately: the guard reads `vm_stat` and `ps` footprints,
+    which are Darwin-specific, and the incident it exists to prevent is a
+    Darwin jetsam. On other platforms this returns `None` rather than
+    pretending — a guard reported as installed when it is not is worse than an
+    honest absence.
+    """
+    guard = memguard_source(repo)
+    if not guard.is_file():
+        raise CommandError(f"versioned memory guard is missing: {guard}")
+    if sys.platform != "darwin":
+        return None
+    path = Path.home() / "Library" / "LaunchAgents" / f"{MEMGUARD_LABEL}.plist"
+    domain = f"gui/{os.getuid()}"
+    changed = write_managed_service(path, macos_memguard_plist(guard))
+    loaded = not run(
+        ("launchctl", "print", f"{domain}/{MEMGUARD_LABEL}"), check=False
+    ).returncode
+    if loaded and not changed:
+        return path
+    if loaded:
+        run(("launchctl", "bootout", f"{domain}/{MEMGUARD_LABEL}"), check=False)
+    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+    run(("launchctl", "kickstart", f"{domain}/{MEMGUARD_LABEL}"), check=False)
+    return path
 
 
 def install_freshness_service(repo: Path) -> List[Path]:

@@ -50,6 +50,37 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// Every value `--victory` accepts, for the usage line and for the launchers
+/// that mirror this list in Python.
+const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
+
+/// Build the agent for a `--victory` lane, or `None` if the name is not one.
+///
+/// ⚠ THE SIX NAMES ARE NOT A SEPARATE LIST. They come from
+/// [`civvis::ai::VictoryTarget`]'s own `FromStr`, so a target added to the enum
+/// reaches the live seat without a second edit here, and the aliases the enum
+/// already accepts (`religion`/`religious`, `diplomacy`/`diplomatic`,
+/// `conquest`/`domination`) work on the command line for free. The previous
+/// hand-written match listed four of the six, which is why Culture, Religion
+/// and Diplomacy — all three implemented in `advanced.rs` — could not be played
+/// in the live seat at all.
+///
+/// ★ NAMING THE OBJECTIVE IS NOT MAKING THE DECISIONS. `targeting` pins which
+/// victory CIVVIS plays for and leaves every choice about how to reach it —
+/// war target, army size, what each city builds, where each unit goes — to
+/// CIVVIS. Left to itself on a reconstruction carrying no wonders or tech
+/// history it picked `religion` with `victory=None`, unreachable in 250 turns.
+/// `--victory civvis` restores letting it choose, so the two are comparable.
+fn victory_lane(victory: &str) -> Option<civvis::ai::AdvancedAi> {
+    if victory == "civvis" {
+        return Some(civvis::ai::AdvancedAi::new());
+    }
+    victory
+        .parse::<civvis::ai::VictoryTarget>()
+        .ok()
+        .map(civvis::ai::AdvancedAi::targeting)
+}
+
 fn mirror_setup(
     state: &civvis::mirror::StateSnapshot,
     fallback_players: usize,
@@ -1816,93 +1847,51 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
 /// unknown name is a hard error rather than a warning: a typo that silently
 /// produced a control identical to the treatment would report a null and look
 /// exactly like a real one.
-fn withhold_live_treatment(
-    ai: &mut civvis::ai::AdvancedAi,
-    treatment: &str,
-) -> Result<(), String> {
-    match treatment {
-        "home-defense" => ai.disable_home_defense(),
-        "solvent-faith-army" => ai.disable_solvent_faith_army(),
-        "siege-muster" => ai.disable_siege_muster(),
-        "district-coverage" => ai.disable_district_coverage(),
-        "loyalty-rate-alarm" => ai.disable_loyalty_rate_alarm(),
-        "bounded-recovery" => ai.disable_bounded_recovery(),
-        "army-target-weighs-enemy" => ai.disable_army_target_weighs_the_enemy(),
-        "siege-tracks-wall" => ai.disable_siege_tracks_the_wall(),
-        "blind-objective-strength" => ai.disable_blind_objective_strength(),
-        "blind-objective-units" => ai.disable_blind_objective_units(),
-        "siege-role" => ai.disable_siege_role(),
-        "come-ashore" => ai.disable_come_ashore(),
-        "relief-targets-the-siege" => ai.disable_relief_targets_the_siege(),
-        "suzerain-cards" => ai.disable_suzerain_cards_need_a_suzerainty(),
-        // Landed on main while this branch sat unstaged. The invariant below —
-        // a `disable_*` alongside every `enable_*` is picked up here for free —
-        // only holds if the merge actually picks them up.
-        "housing-districts" => ai.disable_housing_districts(),
-        "wide-map-capacity" => ai.disable_wide_map_capacity(),
-        "garrison-under-fire" => ai.disable_garrison_under_fire(),
-        "escort-unstick" => ai.disable_escort_unstick(),
-        "stacked-escort" => ai.disable_stacked_escort(),
-        "religion-sues-peace" => ai.disable_religion_sues_peace(),
-        "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
-        "housing-buildings" => ai.disable_housing_buildings(),
-        "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
-        "amenity-district-path" => ai.disable_amenity_district_path(),
-        "governor-every-lane" => ai.disable_governor_every_lane(),
-        "live-wonder-race" => ai.disable_live_wonder_race(),
-        "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
-        "no-elective-war" => ai.disable_no_elective_war(),
-        "fog-land-capacity" => ai.disable_fog_land_capacity(),
-        "recon-flight" => ai.disable_recon_flight(),
-        "score-horizon" => ai.disable_score_horizon(),
-        "one-launch-pad" => ai.disable_one_launch_pad(),
-        "naval-recon" => ai.disable_naval_recon(),
-        "counter-in-lane" => ai.disable_counter_in_lane(),
-        "era-paced-expansion" => ai.disable_era_paced_expansion(),
-        "tally-culture" => ai.disable_tally_culture(),
-        "culture-building-debt" => ai.disable_culture_building_debt(),
-        "culture-coverage" => ai.disable_culture_coverage(),
-        "frontier-loyalty" => ai.disable_frontier_loyalty(),
-        "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
-        "tally-great-people" => ai.disable_tally_great_people(),
-        "barbarian-scouts-are-scouts" => ai.disable_barbarian_scouts_are_scouts(),
-        "camp-reach" => ai.disable_camp_reach(),
-        "settler-stack-discipline" => ai.disable_settler_stack_discipline(),
-        "camp-party" => ai.disable_camp_party(),
-        "buildings-before-projects" => ai.disable_buildings_before_projects(),
-        "housing-cards" => ai.disable_housing_cards(),
-        "housing-research" => ai.disable_housing_research(),
-        "campus-every-city" => ai.disable_campus_every_city(),
-        "muster-at-command-radius" => ai.disable_muster_at_command_radius(),
-        "war-economy" => ai.disable_war_economy(),
-        "war-reinforcement" => ai.disable_war_reinforcement(),
-        "war-patience" => ai.disable_war_patience(),
-        "recon-replacement" => ai.disable_recon_replacement(),
-        "siege-commitment" => ai.disable_siege_commitment(),
-        "wonder-ring-settle-value" => ai.disable_wonder_ring_settle_value(),
-        "garrison-walls" => ai.disable_garrison_walls(),
-        other => {
-            return Err(format!(
-                "unknown --without treatment {other:?}; this binary can withhold: \
-                 home-defense, solvent-faith-army, siege-muster, district-coverage, \
-                 loyalty-rate-alarm, bounded-recovery, army-target-weighs-enemy, \
-                 siege-tracks-wall, blind-objective-strength, blind-objective-units, \
-                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
-                 housing-districts, housing-cards, housing-research, campus-every-city, \
-                 muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
-                 recon-replacement, wide-map-capacity, garrison-under-fire, \
-                 escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
-                 siege-commitment, wonder-ring-settle-value, garrison-walls, \
-                 amenity-project-preemption, amenity-district-path, governor-every-lane, \
-                 live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 era-paced-expansion, tally-culture, frontier-loyalty, \
-                 settler-target-hysteresis, tally-great-people, barbarian-scouts-are-scouts, \
-                 camp-reach, settler-stack-discipline, camp-party, buildings-before-projects"
-            ))
+fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> Result<(), String> {
+    // ⚠⚠ THIS WAS A SECOND LIST, AND IT WAS SHORTER THAN THE FIRST.
+    //
+    // `civvis::ai::LIVE_TREATMENTS` is the canonical table and it already
+    // carries the disabler for each row — `(field, kebab-name, fn(&mut
+    // AdvancedAi))` — which is why `elo.rs` builds every `live_without_*` arm by
+    // looking a name up in it rather than by writing the names out again. This
+    // binary wrote them out again: 57 hand-written arms against 68 rows, so
+    // ELEVEN SHIPPED LIVE TREATMENTS HAD NO CONTROL on the only harness where
+    // they fire — `deny-while-targeted`, `endgame-war-runway`, `joint-tactics`,
+    // `live-religious-purchase`, `live-trader-route`, `loyalty-policy-defence`,
+    // `peacetime-deterrence`, `ranged-line-of-sight`, `recorded-tactical-step`,
+    // `slot-kind-tiebreak`, `strike-opening`.
+    //
+    // The usage string was a THIRD copy and shorter still, so several names the
+    // match did accept were undiscoverable from the error that listed them.
+    //
+    // A lookup cannot drift from the table by construction, and a treatment
+    // added to `LIVE_TREATMENTS` now reaches this binary and its usage line at
+    // the same moment it reaches the Elo registry.
+    match civvis::ai::LIVE_TREATMENTS
+        .iter()
+        .find(|(_, name, _)| *name == treatment)
+    {
+        Some((_, _, disable)) => {
+            disable(ai);
+            Ok(())
         }
+        // An unknown name stays a hard error rather than a warning: a typo that
+        // silently produced a control identical to the treatment would report a
+        // null that looks exactly like a real one.
+        None => Err(format!(
+            "unknown --without treatment {treatment:?}; this binary can withhold: {}",
+            withholdable_treatments()
+        )),
     }
-    Ok(())
+}
+
+/// Every treatment `--without` accepts, in table order, for the usage line.
+fn withholdable_treatments() -> String {
+    civvis::ai::LIVE_TREATMENTS
+        .iter()
+        .map(|(_, name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn decide(
@@ -3123,19 +3112,10 @@ fn main() {
         .unwrap_or(6);
     let victory = arg_text(&args, "--victory").unwrap_or_else(|| "domination".to_string());
     let rated = resolve_strategy(&args);
-    let mut ai = match victory.as_str() {
-        // ★ NAMING THE OBJECTIVE IS NOT MAKING THE DECISIONS. `targeting` pins which
-        // victory CIVVIS plays for and leaves every choice about how to reach it —
-        // war target, army size, what each city builds, where each unit goes — to
-        // CIVVIS. Left to itself on a reconstruction carrying no wonders or tech
-        // history it picked `religion` with `victory=None`, unreachable in 250 turns.
-        // `--victory civvis` restores letting it choose, so the two are comparable.
-        "civvis" => civvis::ai::AdvancedAi::new(),
-        "domination" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination),
-        "science" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Science),
-        "score" => civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Score),
-        other => {
-            eprintln!("unknown --victory {other}; use domination|science|score|civvis");
+    let mut ai = match victory_lane(&victory) {
+        Some(lane) => lane,
+        None => {
+            eprintln!("unknown --victory {victory}; use {VICTORY_LANES}");
             std::process::exit(2);
         }
     };
@@ -3965,60 +3945,20 @@ fn main() {
                     live = Some(board);
                     reply
                 } else {
-                match live.as_mut() {
-                    None => {
-                        let mut fresh = civvis::mirror::LiveMirror::new(
-                            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
-                        );
-                        host_city_attack_cooldowns.apply(&mut fresh);
-                        host_move_refusals.apply(&mut fresh);
-                        let reply = decide(
-                            &mut fresh,
-                            &mut ai,
-                            &snapshot,
-                            &state,
-                            war_from_plan,
-                            &withheld,
-                            &mut ours,
-                            &mut host_peace_retries,
-                            &mut host_move_refusals,
-                        );
-                        live = Some(fresh);
-                        reply
-                    }
-                    Some(existing) => {
-                        existing.sync(&snapshot, &state, frontier);
-                        host_city_attack_cooldowns.apply(existing);
-                        host_move_refusals.apply(existing);
-                        // `--fresh-ai` isolates the two halves of persistence: keep the
-                        // mirror, throw away the agent. If orders come back, the empty
-                        // turns are the AGENT's carried state; if they stay empty, they
-                        // are the MIRROR's. Guessing between the two cost several
-                        // rebuilds, so it is worth a flag.
-                        if fresh_ai {
-                            let mut throwaway = match victory.as_str() {
-                                "civvis" => civvis::ai::AdvancedAi::new(),
-                                "science" => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Science),
-                                "score" => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Score),
-                                _ => civvis::ai::AdvancedAi::targeting(
-                                    civvis::ai::VictoryTarget::Domination),
-                            };
-                            decide(
-                                existing,
-                                &mut throwaway,
+                    match live.as_mut() {
+                        None => {
+                            let mut fresh = civvis::mirror::LiveMirror::new(
                                 &snapshot,
                                 &state,
-                                war_from_plan,
-                                &withheld,
-                                &mut ours,
-                                &mut host_peace_retries,
-                                &mut host_move_refusals,
-                            )
-                        } else {
-                            decide(
-                                existing,
+                                mirror_players,
+                                1,
+                                mirror_turns,
+                                frontier,
+                            );
+                            host_city_attack_cooldowns.apply(&mut fresh);
+                            host_move_refusals.apply(&mut fresh);
+                            let reply = decide(
+                                &mut fresh,
                                 &mut ai,
                                 &snapshot,
                                 &state,
@@ -4027,10 +3967,54 @@ fn main() {
                                 &mut ours,
                                 &mut host_peace_retries,
                                 &mut host_move_refusals,
-                            )
+                            );
+                            live = Some(fresh);
+                            reply
+                        }
+                        Some(existing) => {
+                            existing.sync(&snapshot, &state, frontier);
+                            host_city_attack_cooldowns.apply(existing);
+                            host_move_refusals.apply(existing);
+                            // `--fresh-ai` isolates the two halves of persistence: keep the
+                            // mirror, throw away the agent. If orders come back, the empty
+                            // turns are the AGENT's carried state; if they stay empty, they
+                            // are the MIRROR's. Guessing between the two cost several
+                            // rebuilds, so it is worth a flag.
+                            if fresh_ai {
+                                // ⚠ This was a SECOND hand-written match, and it did not
+                                // agree with the one that built `ai`: it listed three
+                                // lanes and sent everything else to Domination, so a
+                                // `--fresh-ai` run silently swapped the objective it was
+                                // asked for. `victory` was already validated at startup,
+                                // so the lane always resolves here.
+                                let mut throwaway = victory_lane(&victory)
+                                    .expect("--victory was validated at startup");
+                                decide(
+                                    existing,
+                                    &mut throwaway,
+                                    &snapshot,
+                                    &state,
+                                    war_from_plan,
+                                    &withheld,
+                                    &mut ours,
+                                    &mut host_peace_retries,
+                                    &mut host_move_refusals,
+                                )
+                            } else {
+                                decide(
+                                    existing,
+                                    &mut ai,
+                                    &snapshot,
+                                    &state,
+                                    war_from_plan,
+                                    &withheld,
+                                    &mut ours,
+                                    &mut host_peace_retries,
+                                    &mut host_move_refusals,
+                                )
+                            }
                         }
                     }
-                }
                 }
             }
         };
@@ -4103,6 +4087,63 @@ fn action_variant(action: &Action) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The lane list is the enum's, in the enum's order, with `civvis` in front.
+    ///
+    /// ⚠ The usage line and the Python launchers' `choices` are both generated
+    /// from this const, so it is the one place the six names are written. If a
+    /// seventh `VictoryTarget` is added this fails until the const names it, and
+    /// `test_civ6_play.py` then fails until the launchers do.
+    #[test]
+    fn the_usage_line_offers_exactly_the_targets_the_engine_implements() {
+        let expected: Vec<&str> = std::iter::once("civvis")
+            .chain(
+                civvis::ai::VictoryTarget::ALL
+                    .iter()
+                    .map(|target| target.as_str()),
+            )
+            .collect();
+        assert_eq!(
+            super::VICTORY_LANES.split('|').collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat
+    /// matched four names by hand while `VictoryTarget` had six, so Culture,
+    /// Religion and Diplomacy exited with code 2 — and because `advanced.rs`
+    /// gates each lane's own machinery on being targeted at it, no other setting
+    /// could reach them either.
+    #[test]
+    fn every_named_lane_builds_the_agent_it_names() {
+        for target in civvis::ai::VictoryTarget::ALL {
+            let ai = super::victory_lane(target.as_str())
+                .unwrap_or_else(|| panic!("{} is in the usage line", target.as_str()));
+            assert_eq!(ai.victory_target(), Some(target));
+        }
+        // The aliases `VictoryTarget::from_str` already accepted now work on the
+        // command line as well, so a run asking for `religion` is not refused.
+        for (spelling, target) in [
+            ("religion", civvis::ai::VictoryTarget::Religion),
+            ("diplomacy", civvis::ai::VictoryTarget::Diplomacy),
+            ("conquest", civvis::ai::VictoryTarget::Domination),
+        ] {
+            assert_eq!(
+                super::victory_lane(spelling).and_then(|ai| ai.victory_target()),
+                Some(target),
+                "{spelling}"
+            );
+        }
+        // `civvis` is the absence of a target, not one of them.
+        assert_eq!(
+            super::victory_lane("civvis").and_then(|ai| ai.victory_target()),
+            None
+        );
+        // And a name that is not a lane stays an error rather than quietly
+        // becoming Domination, which is what the `--fresh-ai` copy of this match
+        // used to do.
+        assert!(super::victory_lane("religous").is_none());
+    }
+
     /// ★★★★★ A CONTROL ARM THE LIVE HARNESS CAN ACTUALLY RUN.
     ///
     /// Every live-bridge repair has a `live_without_*` arm in `src/elo.rs`, but
@@ -4290,6 +4331,43 @@ mod tests {
             bad.unwrap_err().contains("come-ashore"),
             "the error must name what this binary can actually withhold"
         );
+    }
+
+    /// ⚠⚠ ELEVEN SHIPPED TREATMENTS HAD NO CONTROL ARM ON THE ONLY HARNESS
+    /// WHERE THEY FIRE, and nothing said so: this binary matched 57
+    /// hand-written names against a 68-row table, and its usage string was a
+    /// third, shorter copy again. `deny_while_targeted`, `endgame_war_runway`,
+    /// `joint_tactics`, `live_religious_purchase`, `live_trader_route`,
+    /// `loyalty_policy_defence`, `peacetime_deterrence`, `ranged_line_of_sight`,
+    /// `recorded_tactical_step`, `slot_kind_tiebreak` and `strike_opening` were
+    /// unwithholdable — including the religious-purchase repair, on the lane
+    /// this engine finishes fastest.
+    ///
+    /// The list cannot be short again: it is the table.
+    #[test]
+    fn every_registered_live_treatment_can_be_withheld() {
+        for (field, name, _) in civvis::ai::LIVE_TREATMENTS {
+            let mut ai = civvis::ai::AdvancedAi::new();
+            ai.enable_live_bridge();
+            withhold_live_treatment(&mut ai, name).unwrap_or_else(|error| {
+                panic!("{field} is in LIVE_TREATMENTS but not withholdable: {error}")
+            });
+        }
+    }
+
+    /// And the usage line is the same list, so a name the binary accepts is
+    /// never one the error message hides.
+    #[test]
+    fn the_usage_line_names_every_treatment_the_binary_accepts() {
+        let listed: Vec<String> = super::withholdable_treatments()
+            .split(", ")
+            .map(str::to_string)
+            .collect();
+        let registered: Vec<String> = civvis::ai::LIVE_TREATMENTS
+            .iter()
+            .map(|(_, name, _)| (*name).to_string())
+            .collect();
+        assert_eq!(listed, registered);
     }
 
     use super::*;

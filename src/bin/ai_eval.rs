@@ -1139,7 +1139,30 @@ fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
     args
 }
 
-fn matrix_confirmation_base_seed(args: &[String], seed: u64) -> Result<Option<u64>, String> {
+/// Check the inclusive seed prefixes used by a discovery run and its
+/// confirmation. Different bases are not enough: `1000..=1049` and
+/// `1025..=1074` are still the same maps for half of the run. Keep this
+/// arithmetic in the evaluator so a confirmation cannot accidentally reuse a
+/// selected discovery map and call the result independent evidence.
+fn disjoint_seed_prefixes(seed: u64, prior: u64, pairs: usize) -> Result<(), String> {
+    let width = u64::try_from(pairs.saturating_sub(1))
+        .map_err(|_| "--pairs is too large to form a seed prefix".to_string())?;
+    let end = |start: u64| {
+        start.checked_add(width).ok_or_else(|| {
+            format!("seed prefix starting at {start} overflows u64; choose a lower --seed")
+        })
+    };
+    let discovery_end = end(seed)?;
+    let confirmation_end = end(prior)?;
+    if seed <= confirmation_end && prior <= discovery_end {
+        return Err(format!(
+            "discovery seed prefix {seed}..={discovery_end} overlaps confirmation prefix {prior}..={confirmation_end}; choose disjoint seed prefixes"
+        ));
+    }
+    Ok(())
+}
+
+fn confirmation_base_seed(args: &[String], seed: u64, pairs: usize) -> Result<Option<u64>, String> {
     let Some(index) = args.iter().position(|arg| arg == "--confirm") else {
         return Ok(None);
     };
@@ -1147,12 +1170,16 @@ fn matrix_confirmation_base_seed(args: &[String], seed: u64) -> Result<Option<u6
         .get(index + 1)
         .and_then(|value| value.parse::<u64>().ok())
         .ok_or_else(|| "--confirm needs the base seed of the matrix being confirmed".to_string())?;
-    if prior == seed {
-        return Err(format!(
-            "--confirm {seed} names the matrix seed being run; a confirmation must use a disjoint matrix base seed"
-        ));
-    }
+    disjoint_seed_prefixes(seed, prior, pairs)?;
     Ok(Some(prior))
+}
+
+fn matrix_confirmation_base_seed(
+    args: &[String],
+    seed: u64,
+    pairs: usize,
+) -> Result<Option<u64>, String> {
+    confirmation_base_seed(args, seed, pairs)
 }
 
 fn matrix_verdict(output: &[u8]) -> Option<MatrixVerdict> {
@@ -1240,7 +1267,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
     };
     let job_budgets = matrix_job_budgets(total_jobs);
     let seed = number(args, "--seed", 4000).max(0) as u64;
-    let confirm_base_seed = match matrix_confirmation_base_seed(args, seed) {
+    let confirm_base_seed = match matrix_confirmation_base_seed(args, seed, pairs) {
         Ok(seed) => seed,
         Err(message) => {
             eprintln!("{message}");
@@ -1259,8 +1286,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
             .enumerate()
             .map(|(index, profile)| {
                 let profile_seed = matrix_profile_seed(seed, index);
-                let profile_confirm_seed = confirm_base_seed
-                    .map(|prior| matrix_profile_seed(prior, index));
+                let profile_confirm_seed =
+                    confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
                 let child_args = matrix_child_args(MatrixChildRequest {
                     challenger,
                     incumbent,
@@ -1289,8 +1316,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     let difficulty = difficulty.clone();
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
-                        let profile_confirm_seed = confirm_base_seed
-                            .map(|prior| matrix_profile_seed(prior, index));
+                        let profile_confirm_seed =
+                            confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
                         let child_args = matrix_child_args(MatrixChildRequest {
                             challenger,
                             incumbent,
@@ -1510,25 +1537,16 @@ here and any null is uninformative"
     // fails, always downward. See `docs/EVAL_INTEGRITY.md` §4.
     //
     // `--confirm <prior-seed>` is the claim that this run is the *replication*
-    // of one already made elsewhere. It must name a different seed, because a
-    // rerun on the same seed re-measures the same maps and confirms nothing.
-    let confirm_seed = args
-        .iter()
-        .position(|arg| arg == "--confirm")
-        .map(|index| match args.get(index + 1).and_then(|v| v.parse::<u64>().ok()) {
-            Some(prior) if prior != seed => prior,
-            Some(_) => {
-                eprintln!(
-                    "--confirm {seed} names the seed this run already uses; a confirmation \
-                     must be measured on maps the discovery was not found on"
-                );
-                std::process::exit(2);
-            }
-            None => {
-                eprintln!("--confirm needs the seed of the run being confirmed");
-                std::process::exit(2);
-            }
-        });
+    // of one already made elsewhere. Its entire inclusive seed prefix must be
+    // disjoint from the discovery prefix; a different base alone can still
+    // rerun some of the same maps.
+    let confirm_seed = match confirmation_base_seed(&args, seed, pairs) {
+        Ok(prior) => prior,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
     // The exhibition varies all three world axes and pins its enabled victory
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
@@ -2284,7 +2302,10 @@ mod tests {
 
     #[test]
     fn a_size_the_gate_did_not_select_says_so_rather_than_claiming_confirmation() {
-        for verdict in [PromotionVerdict::Inconclusive, PromotionVerdict::Insufficient] {
+        for verdict in [
+            PromotionVerdict::Inconclusive,
+            PromotionVerdict::Insufficient,
+        ] {
             let line = effect_size_line(12.0, verdict, 4000, None);
             assert!(line.contains("not gate-selected"), "{line}");
             assert!(!line.contains("DISCOVERY ESTIMATE"), "{line}");
@@ -2424,7 +2445,7 @@ mod tests {
             "80000000".to_string(),
         ];
         assert_eq!(
-            matrix_confirmation_base_seed(&confirmed, 82_000_000),
+            matrix_confirmation_base_seed(&confirmed, 82_000_000, 120),
             Ok(Some(80_000_000))
         );
         assert_eq!(
@@ -2439,11 +2460,24 @@ mod tests {
         );
 
         let same_seed = vec!["--confirm".to_string(), "82000000".to_string()];
-        assert!(
-            matrix_confirmation_base_seed(&same_seed, 82_000_000)
-                .expect_err("same matrix seed must be rejected")
-                .contains("disjoint matrix base seed")
-        );
+        assert!(matrix_confirmation_base_seed(&same_seed, 82_000_000, 120)
+            .expect_err("same matrix seed must be rejected")
+            .contains("overlaps confirmation"));
+    }
+
+    #[test]
+    fn confirmation_prefixes_are_disjoint_not_just_different_bases() {
+        assert!(disjoint_seed_prefixes(1_000, 1_050, 50).is_ok());
+        assert!(disjoint_seed_prefixes(1_050, 1_000, 50).is_ok());
+
+        let overlap = disjoint_seed_prefixes(1_000, 1_025, 50)
+            .expect_err("a partial prefix overlap must not count as confirmation");
+        assert!(overlap.contains("1000..=1049"), "{overlap}");
+        assert!(overlap.contains("1025..=1074"), "{overlap}");
+
+        let overflow = disjoint_seed_prefixes(u64::MAX, 0, 2)
+            .expect_err("a prefix that wraps the seed space must be rejected");
+        assert!(overflow.contains("overflows u64"), "{overflow}");
     }
 
     #[test]
