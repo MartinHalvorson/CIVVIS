@@ -224,7 +224,7 @@ pub const EVAL_ONLY_AIS: [&str; 158] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 65] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 66] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
