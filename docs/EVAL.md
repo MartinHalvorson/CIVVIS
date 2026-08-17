@@ -10127,10 +10127,10 @@ This is an implementation and fires-check, not an outcome. The arm is off in
 Run it on a disjoint deployment/compact matrix before changing the shipped
 policy.
 
-## 2026-08-17 — ★★★★★ the ladder's turn budget admits exactly one named victory, and it was the one the launchers could not select
+## 2026-08-17 — ★★★★★ the engine reproduces the host's victory ordering, and the deployed lane is the one that never lands
 
 `victory_eval` is the first line of the battery at the top of this file and it
-had not existed since 2026-08-06: #1278 removed 31 binaries with "zero tests and
+had not existed since 2026-08-06. #1278 removed 31 binaries with "zero tests and
 zero invocations" and this was one of them. The audit's question — who calls it
 in the tree — has the answer *nobody*, and it is the wrong question. Everything
 that depends on this tool depends on it in prose, and all of it stayed: the
@@ -10142,51 +10142,68 @@ run, and the standing argument for what the live agent plays for could not be
 reproduced or contested.
 
 Restored unchanged — it compiles against today's engine with no edits — plus
-five parsing/budget tests, so the audit's question and the real one now agree.
+tests, and one new flag it turned out to need badly.
 
-**The measurement, at the live ladder's own profile.** `--games 8 --players 6
---turns 250`, seeds 21000000-21000007, main `63f3d3c6`, 48 games in 120 s:
+### `--speed`, and why the first reading of this was backwards
 
-| target | completed | winning turns | terminal reading on failure |
-|---|---|---|---|
-| science | 0/8 | — | `projects=0 distance=0`, 29-35 of 77 techs at t250 |
-| culture | 0/8 | — | `visiting=5..34` against `target=32..120`; `tourist_tiles=0` in all eight |
-| **religious** | **6/8** | 86, 89, 92, 92, 99, 229 | the two misses ran to the clock |
-| diplomatic | 0/8 | — | `dvp=3..7` |
-| domination | 0/8 | — | winner holds 4-10 cities; nobody is eliminated |
-| score | 8/8 | 250 | the clock |
+`Game::new_full` takes no speed, so every run this binary has ever done was
+`GameSpeed::Standard`, the enum's `#[default]`. Ask it for "the ladder's
+profile" with `--turns 250` and you get a **Standard game stopped halfway**.
+Online prices everything at 50% of Standard (`src/setup.rs:1786-1793`) and its
+own `turn_limit` is 250, so Online/250 and Standard/500 are the same race and
+Standard/250 is half of one.
 
-**Disjoint-seed confirm.** Discovery was seeds 21000000-21000007. Re-run on
-seeds 22000000-22000011, same profile: **11/12 religious**, winning turns 82, 85,
-89, 90, 92, 94, 99, 106, 159, 161, 165; the single miss ran to the clock. Across
-both streams the religious lane is **17/20** and has never taken longer than 229
-turns, while science, culture, diplomatic and domination remain **0/8** each on
-the stream that screened them.
+Run wrong, at Standard/250, the answer was "religious 6/8, everything else 0/8"
+— a reading of the clock, not of the agent. **No number from this tool means
+anything without the speed beside it.**
 
-**Religion is the only named victory condition this engine completes inside 250
-turns, and five of the six wins land before turn 100.** Read against this
-evaluator's own per-target budgets — Culture 1_500, Science 1_300, Diplomacy 750,
-Domination 650, Religion 450, Score 300 — the result is close to a restatement of
-them: the ladder runs 250, and the only lane whose race is anywhere near that
-length is the one that lands.
+### The measurement, at the profile the ladder actually plays
 
-⚠ **This is the engine, not Civilization VI**, and the two disagree in a way that
-matters. `docs/CIV6_LADDER.md`'s census of 199 terminal events in real Settler
-games shows five distinct conditions completing inside the same 250-turn clock,
-with the two commonest being indices 6 (41 games) and 3 (24 games) rather than
-the religious index (5). Online speed compresses the host's races and this
-engine's pacing does not model that compression. What transfers is the narrower
-claim: **this is what the CIVVIS agent can drive its own empire to complete**,
-which is the question that decides what to point it at.
+`--games 8 --players 6 --turns 250 --speed online`, two disjoint seed streams
+(21000000-21000007, 23000000-23000007), 96 games:
 
-⚠ Both of these are new information about a lane that was **not selectable**.
-`advanced.rs` prices the Missionary at -10_000 for any agent targeted at
-something other than Religion (`advanced.rs:18115`), and until #1871 the four
-launchers between the ladder and the agent offered `domination|science|score|
-civvis` only. Every one of the 307 recorded attempts ran with the sole lane this
-engine can finish switched off in its own production valuation.
+| target | stream A | stream B | total | winning turns |
+|---|---|---|---|---|
+| science | 0/8 | 0/8 | **0/16** | — |
+| culture | 6/8 | 6/8 | **12/16** | 133-247 |
+| religious | 5/8 | 3/8 | **8/16** | 60-132 |
+| diplomatic | 7/8 | 7/8 | **14/16** | 205-247 |
+| domination | 0/8 | 2/8 | **2/16** | 72, 230 |
+| score | 8/8 | 7/8 | 15/16 | 250 (the clock) |
 
-**Not a promotion.** No default moves on this. It is a reachability screen on 8
-seeds at one profile, not a strength claim, and `--victory religious` beating
-`--victory science` on the live ladder is a separate, unmeasured question — the
-honest instrument for it is a pre-registered ladder batch on disjoint seeds.
+**Four of the five named conditions complete inside the ladder's clock.**
+
+### The cross-check nobody had
+
+The ordering — diplomatic > culture > religious > domination > science — is the
+ordering the **host** produces. `docs/CIV6_LADDER.md`'s census of 199 terminal
+events across 307 real Settler/Small/Online games ranks the victory indices
+6 (41 games) > 3 (24) > 4 (5) > 5 (3) > 2 (1).
+
+Nothing was fitted to make those agree. Given `docs/AI_GAPS.md`'s CONFIRMED
+negative on sim→host transfer of *strength*, an agreement on *pacing* is worth
+recording: it is the first evidence in this repository that the engine's victory
+races run at the same relative length as Civilization VI's at the profile the
+ladder plays.
+
+⚠ The agreement is on ordering, not on rate, and one lane dissents in an
+instructive direction: the host's religious index is 5 of 199 while the engine
+wins religion 8/16. The engine's religious race is the one measured elsewhere as
+over-tuned (2026-07-22, "religious victory dominates advanced self-play").
+
+### What this says about the deployed objective
+
+**Science is the lane that never lands — and it is the ladder's default**
+(`tools/civ6_civvis_climb.py:49`). Culture and Diplomacy, the two that land most
+often, **could not be selected at all** until #1871 landed today: `advanced.rs`
+prices great-work buildings at -10_000 for any agent not targeted at Culture and
+abstains from non-emergency Congress ballots for any agent not targeted at
+Diplomacy. All 307 recorded ladder attempts ran with the two most reachable
+lanes switched off in their own production valuation, aimed at the one lane this
+screen cannot make land at all.
+
+**Not a promotion.** This is a reachability screen on 96 games at one profile in
+the internal engine, not a strength claim and not a host result. Moving the
+ladder's default is a separate decision needing a pre-registered live batch on
+disjoint seeds; what this establishes is that three lanes are now worth spending
+ladder attempts on and one demonstrably is not.

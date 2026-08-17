@@ -23,31 +23,41 @@
 //! the tests below give this one a caller so the audit's question and the real
 //! one give the same answer.
 //!
-//! ## What it measured on restoration (2026-08-17, main `63f3d3c6`)
+//! ## What it measured on restoration (2026-08-17, main `a19120d9`)
 //!
-//! At the live ladder's own profile — `--games 8 --players 6 --turns 250`,
-//! seeds 21000000-21000007 — exactly one named victory condition completes
-//! inside the budget:
+//! At the live ladder's profile — `--games 8 --players 6 --turns 250 --speed
+//! online` — over two disjoint seed streams (21000000-21000007 and
+//! 23000000-23000007):
 //!
-//! | target | completed | winning turns |
-//! |---|---|---|
-//! | science | 0/8 | — |
-//! | culture | 0/8 | — |
-//! | religious | **6/8** | 86, 89, 92, 92, 99, 229 |
-//! | diplomatic | 0/8 | — |
-//! | domination | 0/8 | — |
-//! | score | 8/8 | 250 (the clock) |
+//! | target | stream A | stream B | total | winning turns |
+//! |---|---|---|---|---|
+//! | science | 0/8 | 0/8 | **0/16** | — |
+//! | culture | 6/8 | 6/8 | **12/16** | 133-247 |
+//! | religious | 5/8 | 3/8 | **8/16** | 60-132 |
+//! | diplomatic | 7/8 | 7/8 | **14/16** | 205-247 |
+//! | domination | 0/8 | 2/8 | **2/16** | 72, 230 |
+//! | score | 8/8 | 7/8 | 15/16 | 250 (the clock) |
 //!
-//! Confirmed on a disjoint stream (seeds 22000000-22000011, same profile):
-//! **11/12 religious**, winning turns 82-165. Across both streams the religious
-//! lane is 17/20 and has never taken longer than 229 turns.
+//! Four of the five named conditions complete inside the ladder's clock, and
+//! the ordering — diplomatic > culture > religious > domination > science —
+//! is the same ordering the host produces. `docs/CIV6_LADDER.md`'s census of
+//! 199 terminal events in real Settler games ranks the indices
+//! 6 (41 games) > 3 (24) > 4 (5) > 5 (3) > 2 (1). Nothing was fitted to make
+//! those agree; it is the first cross-check this repository has that the
+//! engine's victory pacing tracks Civilization VI's at the profile the ladder
+//! actually plays.
 //!
-//! Read with the per-target defaults below, that is not a surprise so much as a
-//! restatement of them: this evaluator's own budget for Culture is 1_500 turns
-//! and for Science 1_300, and the ladder runs 250. The lane whose budget is
-//! nearest the ladder's — Religion at 450, and in practice a third of that — is
-//! the only one that lands, and it is the lane the live launchers could not
-//! select at all until #1871.
+//! **Science is the lane that never lands — and it is the deployed default**
+//! (`tools/civ6_civvis_climb.py:49`). Culture and Diplomacy, the two that land
+//! most, could not be selected at all until #1871.
+//!
+//! ⚠⚠ THE FIRST RUN OF THIS GOT IT BACKWARDS, and the reason is the flag
+//! directly below. Without `--speed`, `--turns 250` is a **Standard** game
+//! stopped halfway, not the Online game the ladder plays: Standard/250 reported
+//! religious 6/8 and culture, diplomatic, science and domination all 0/8, which
+//! is a reading of the clock rather than of the agent. Online prices everything
+//! at 50% of Standard, so Online/250 and Standard/500 are the same race. Quote
+//! no number out of this tool without the speed beside it.
 use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
 use civvis::game::Game;
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,6 +84,28 @@ fn selected_targets(args: &[String]) -> Result<Vec<VictoryTarget>, String> {
     raw.split(',').map(str::parse).collect()
 }
 
+/// The game speed to play at, defaulting to the engine's own default.
+///
+/// ⚠⚠ ADDED BECAUSE ITS ABSENCE MADE THIS TOOL MEASURE THE WRONG GAME, and the
+/// mistake is easy to repeat: `Game::new_full` does not take a speed, so every
+/// run this binary has ever done was `GameSpeed::Standard` — the enum's
+/// `#[default]`. Ask it for "the live ladder's profile" by passing `--turns 250`
+/// and you get a **Standard game stopped halfway**, not the Online game the
+/// ladder plays. `GameSpeed::Online` prices everything at 50% of Standard and
+/// its own `turn_limit` is 250, so an Online 250 and a Standard 500 are the same
+/// race; a Standard 250 is half of one, and a science lane read from it is
+/// reporting the clock, not the agent.
+fn selected_speed(args: &[String]) -> Result<civvis::setup::GameSpeed, String> {
+    let Some(index) = args.iter().position(|arg| arg == "--speed") else {
+        return Ok(civvis::setup::GameSpeed::default());
+    };
+    let raw = args
+        .get(index + 1)
+        .ok_or_else(|| "--speed requires a value".to_string())?;
+    civvis::setup::GameSpeed::from_id(raw)
+        .ok_or_else(|| format!("unknown --speed {raw:?}; use online|quick|standard|epic|marathon"))
+}
+
 fn default_turn_limit(target: VictoryTarget) -> u32 {
     match target {
         VictoryTarget::Religion => 450,
@@ -88,6 +120,10 @@ fn default_turn_limit(target: VictoryTarget) -> u32 {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let targets = selected_targets(&args).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    let speed = selected_speed(&args).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
     });
@@ -115,7 +151,11 @@ fn main() {
             };
             let turns = override_turns.unwrap_or_else(|| default_turn_limit(target));
             let game_started = Instant::now();
-            let mut game = Game::new_full(players, width, height, seed, turns, city_states, false);
+            let mut game = Game::new_with(civvis::game::GameOptions {
+                barbarians: false,
+                speed: speed.id().to_string(),
+                ..civvis::game::GameOptions::new(players, width, height, seed, turns, city_states)
+            });
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
             run_game(&mut game, &mut ais);
 
@@ -237,7 +277,13 @@ fn main() {
         }
     }
 
-    println!("\nseat winners by target:");
+    println!(
+        "\nspeed={} ({}% of Standard costs, own turn limit {})",
+        speed.id(),
+        speed.cost_percent(),
+        speed.turn_limit()
+    );
+    println!("seat winners by target:");
     for target in &targets {
         println!(
             "  {:<10} {:?}",
@@ -334,6 +380,46 @@ mod tests {
             "every lane's own budget exceeds the ladder's 250 turns; the ladder \
              is not measuring these races at their own length"
         );
+    }
+
+    /// ⚠⚠ THE FLAG THAT DECIDES WHETHER THE ANSWER IS BACKWARDS.
+    ///
+    /// Standard/250 and Online/250 are not the same experiment and this tool
+    /// reported the second while running the first, because `Game::new_full`
+    /// takes no speed and the enum's default is Standard. Online costs 50% of
+    /// Standard, so an Online 250-turn game is a Standard 500-turn race; read at
+    /// Standard, the ladder's clock cuts every long lane off halfway and the
+    /// tool reports that as the agent failing.
+    #[test]
+    fn the_speed_is_selectable_and_defaults_to_the_engines_own() {
+        assert_eq!(
+            selected_speed(&args(&[])).unwrap(),
+            civvis::setup::GameSpeed::default()
+        );
+        assert_eq!(
+            selected_speed(&args(&["--speed", "online"])).unwrap(),
+            civvis::setup::GameSpeed::Online
+        );
+        assert!(selected_speed(&args(&["--speed", "instant"])).is_err());
+        assert!(selected_speed(&args(&["--speed"])).is_err());
+    }
+
+    /// The two profiles that are the same race, stated as an assertion so the
+    /// relationship survives a change to either table.
+    #[test]
+    fn an_online_game_is_a_standard_game_at_half_the_cost_and_half_the_clock() {
+        use civvis::setup::GameSpeed;
+        assert_eq!(
+            GameSpeed::Online.cost_percent() * 2,
+            GameSpeed::Standard.cost_percent()
+        );
+        assert_eq!(
+            GameSpeed::Online.turn_limit() * 2,
+            GameSpeed::Standard.turn_limit()
+        );
+        // And the ladder's clock IS Online's own limit, which is why 250 is not
+        // an arbitrary harness choice: `tools/civ6_civvis_climb.py --max-turns`.
+        assert_eq!(GameSpeed::Online.turn_limit(), 250);
     }
 
     #[test]
