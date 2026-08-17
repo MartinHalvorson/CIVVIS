@@ -2876,10 +2876,18 @@ pub struct AdvancedAi {
     /// population, so the search cannot score below today's behaviour under its
     /// own evaluator.
     ///
-    /// **Off by default until the paired whole-game gate clears.** Reachable as
-    /// the `advanced_joint_tactics` entrant. `docs/TACTICS.md` carries the
-    /// design and the measurements.
+    /// **Off by default on world games.** Battlefield games are the controller's
+    /// bounded combat surface, so promoted controllers activate this planner
+    /// there at the movement seam; the frozen `advanced_v1` anchor and explicit
+    /// evaluator withholds remain greedy. `docs/TACTICS.md` carries the design
+    /// and the measurements.
     pub joint_tactics: bool,
+
+    /// An explicit evaluator/live-bridge withholding must survive the arena
+    /// auto-route. Keeping this separate from `joint_tactics` lets the arena
+    /// promote the normal controller while `live_without_joint_tactics` still
+    /// means what its paired measurement says.
+    joint_tactics_forced_off: bool,
 
     /// Units this turn's joint plan already reached a decision for, including
     /// the ones it decided should not attack. Their greedy attack selection is
@@ -3648,6 +3656,7 @@ impl AdvancedAi {
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
+            joint_tactics_forced_off: false,
             tactics_resolved: BTreeSet::new(),
             tactics_withdrawn: BTreeSet::new(),
             tactics_plans: 0,
@@ -4744,6 +4753,7 @@ impl AdvancedAi {
     /// not a rating — takes the search.
     pub fn enable_joint_tactics(&mut self) {
         self.joint_tactics = true;
+        self.joint_tactics_forced_off = false;
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -4755,6 +4765,7 @@ impl AdvancedAi {
 
     pub fn disable_joint_tactics(&mut self) {
         self.joint_tactics = false;
+        self.joint_tactics_forced_off = true;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
@@ -26258,6 +26269,17 @@ impl AdvancedAi {
         }
     }
 
+    /// The Battlefield map is a bounded combat controller, not a Civ-world
+    /// deployment profile. Route the already-measured portfolio search there
+    /// for promoted controllers, while preserving the frozen anchor and any
+    /// explicit evaluator withholding. The flag is set on the controller so
+    /// telemetry and `Ai::joint_tactics_census` describe what actually ran.
+    fn enable_arena_joint_tactics(&mut self, g: &Game) {
+        if self.victory_planning && g.is_arena() && !self.joint_tactics_forced_off {
+            self.joint_tactics = true;
+        }
+    }
+
     /// The bounded set of ships that explore: the first two movable, unlinked
     /// sea military units with an open route while water remains unseen. A
     /// lake-bound hull cannot hold the job over a real scout. The production
@@ -26363,6 +26385,7 @@ impl AdvancedAi {
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
+        self.enable_arena_joint_tactics(g);
         // In a native game a Trader has walking movement and the ordinary unit
         // loop below handles it. Firaxis exports an idle Trader with zero
         // walking movement but still permits TradeRoute from the city it
@@ -44931,6 +44954,47 @@ mod tests {
             "unexpected replanned action log: {:?}",
             g.log
         );
+    }
+
+    #[test]
+    fn battlefield_routes_joint_tactics_to_promoted_controllers_only() {
+        let arena = |seed| {
+            let mut options = GameOptions::new(2, 20, 20, seed, 250, 0);
+            options.map_script = crate::setup::MapScript::Battlefield;
+            Game::new_with(options)
+        };
+
+        // The production controller starts with the world-game default off,
+        // then opts into the bounded search at the real movement seam.
+        let mut promoted_game = arena(79_101);
+        let mut promoted = AdvancedAi::new();
+        assert!(!promoted.joint_tactics);
+        promoted.take_turn(&mut promoted_game, 0);
+        assert!(promoted.joint_tactics);
+        assert!(
+            <AdvancedAi as Ai>::joint_tactics_census(&promoted).is_some(),
+            "arena activation must remain visible to the telemetry seam"
+        );
+
+        // The arena route must not alter the native-world controller.
+        let world = Game::new_full(2, 20, 20, 79_102, 250, 0, false);
+        let mut world_ai = AdvancedAi::new();
+        world_ai.enable_arena_joint_tactics(&world);
+        assert!(!world_ai.joint_tactics);
+
+        // `advanced_v1` remains the frozen greedy anchor.
+        let anchor_game = arena(79_103);
+        let mut anchor = AdvancedAi::legacy();
+        anchor.enable_arena_joint_tactics(&anchor_game);
+        assert!(!anchor.joint_tactics);
+
+        // Explicit withholds still win over the arena default, so the live
+        // paired arm really measures the absence of the search.
+        let withheld_game = arena(79_104);
+        let mut withheld = AdvancedAi::new();
+        withheld.disable_joint_tactics();
+        withheld.enable_arena_joint_tactics(&withheld_game);
+        assert!(!withheld.joint_tactics);
     }
 
     #[test]

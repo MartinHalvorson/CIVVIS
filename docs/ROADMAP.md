@@ -46,9 +46,10 @@ Everything the old roadmap called planned has shipped and then some:
    arms exist for every withholdable treatment; run the unpriced ones
    through the paired evaluator before the next `city_target_floor` hides
    in a composite (`docs/EVAL.md` is the ledger).
-4. **A tactics-grade controller for the arena.** Bounded search on the
-   20×20 battlefield, measured on the skirmish benchmark — the one live
-   surface where search's cost objection collapses.
+4. **A tactics-grade controller for the arena.** ✅ The existing bounded
+   portfolio search now auto-activates for promoted `AdvancedAi` on the 20×20
+   Battlefield, is measured on the skirmish benchmark, and leaves native-world
+   and frozen-anchor identities unchanged.
 5. **Split the three conflict hotspots** (`src/game.rs`, `src/ai/advanced.rs`,
    `web/assets/app.js`) along existing seams; they tax every concurrent PR.
 6. **Delete measured-null code.** ✅ The 2026-08-17 cleanup removes the
