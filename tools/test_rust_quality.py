@@ -149,6 +149,22 @@ class QualityHelpersTests(unittest.TestCase):
             self.assertIn(":5:", failures[0])
             self.assertNotIn(":200:", failures[0])
 
+    def test_rustfmt_debt_beside_the_change_is_not_dragged_in(self):
+        # The chunk's context lines brush the changed range, but the lines
+        # rustfmt wants to rewrite sit above it — standing debt, not new debt.
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            resolved = (repo / "src/lib.rs").resolve()
+            output = (
+                f"Diff in {resolved}:5:\n"
+                " untouched context\n untouched context\n-stale\n+debt\n"
+            )
+            completed = quality.subprocess.CompletedProcess([], 1, output, "")
+            ranges = {resolved: [(9, 12)]}
+            with patch.object(quality, "run", return_value=completed):
+                failures, skipped = quality.rustfmt(repo, [Path("src/lib.rs")], ranges)
+            self.assertEqual((failures, skipped), ([], []))
+
     def test_rustfmt_standing_debt_alone_passes(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

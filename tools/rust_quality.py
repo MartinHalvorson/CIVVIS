@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Iterable
@@ -114,28 +115,52 @@ def _overlaps(ranges: list[tuple[int, int]], start: int, end: int) -> bool:
     return any(start <= high and end >= low for low, high in ranges)
 
 
-def _rustfmt_chunks(output: str) -> list[tuple[int, int, str]]:
-    """Split `rustfmt --check` output into (start, end, text) diff chunks.
+_ANSI = re.compile("\x1b\\[[0-9;]*m|\x1b\\(B")
 
-    A chunk header is `Diff in <path>:<line>:` and its line numbers refer to
-    the file on disk, the same side of the diff `changed_line_ranges` reports.
+
+def _rustfmt_chunks(output: str) -> list[tuple[set[int], str]]:
+    """Split `rustfmt --check` output into (changed-line-set, text) chunks.
+
+    A chunk header is `Diff in <path>:<line>:`; the body mixes context lines
+    with colored -/+ lines. Context and `-` lines consume positions in the
+    file on disk — the same side of the diff `changed_line_ranges` reports —
+    while `+` lines are only rustfmt's proposal. The set holds the on-disk
+    lines rustfmt actually wants to change, so a chunk whose context merely
+    brushes an edit does not drag that edit into standing debt beside it.
     """
-    chunks: list[tuple[int, int, str]] = []
-    start: int | None = None
+    chunks: list[tuple[set[int], str]] = []
+    cursor: int | None = None
+    changed: set[int] = set()
     body: list[str] = []
-    for line in output.splitlines():
+
+    def flush() -> None:
+        if body:
+            chunks.append((set(changed), "\n".join(body)))
+
+    for raw in output.splitlines():
+        line = _ANSI.sub("", raw)
         if line.startswith("Diff in ") and line.rstrip().endswith(":"):
-            if start is not None:
-                chunks.append((start, start + len(body), "\n".join(body)))
-            body = [line]
+            flush()
+            body[:] = [raw]
+            changed.clear()
             try:
-                start = int(line.rstrip().rstrip(":").rsplit(":", 1)[1])
+                cursor = int(line.rstrip().rstrip(":").rsplit(":", 1)[1])
             except (IndexError, ValueError):
-                start = None
-        elif start is not None:
-            body.append(line)
-    if start is not None:
-        chunks.append((start, start + len(body), "\n".join(body)))
+                cursor = None
+            continue
+        if cursor is None:
+            continue
+        body.append(raw)
+        if line.startswith("-"):
+            changed.add(cursor)
+            cursor += 1
+        elif line.startswith("+"):
+            # An insertion sits between on-disk lines; blame the position it
+            # lands at without consuming one.
+            changed.add(cursor)
+        else:
+            cursor += 1
+    flush()
     return chunks
 
 
@@ -163,14 +188,15 @@ def rustfmt(
             )
             continue
         file_ranges = ranges.get((repo / path).resolve(), [])
+        chunks = _rustfmt_chunks(result.stdout)
         touched = [
             text
-            for start, end, text in _rustfmt_chunks(result.stdout)
-            if _overlaps(file_ranges, start, end)
+            for changed, text in chunks
+            if any(_overlaps(file_ranges, line, line) for line in changed)
         ]
         if touched:
             failures.append(f"{path}:\n" + "\n".join(touched))
-        elif not _rustfmt_chunks(result.stdout):
+        elif not chunks:
             # Not a diff at all — an operational rustfmt error is a failure.
             failures.append(f"{path}:\n{detail}")
     return failures, skipped
