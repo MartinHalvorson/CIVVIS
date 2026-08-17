@@ -29,6 +29,14 @@ export PATH="$HOME/.cargo/bin:$PATH"
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 LOGS=$HOME/civvis-climb-logs
 STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
+# Attempts per cycle. 1 keeps the ambient loop's contract: every game plays
+# whatever origin/main is at launch and the brain live-upgrades mid-game. N>1
+# turns each cycle into a PINNED BATCH — the pull and build above the climb run
+# once, the climb pins the revision and freezes the decider, and one sha
+# accumulates N comparable ladder rows. Live score stdev is ~178 on a median
+# ~233, so n=1 per sha measures nothing; batches are how a rung's win rate is
+# ever established. The price is that a merge waits out the batch.
+ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-1}
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -260,7 +268,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting a game on $HEAD_SHA (log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA (log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -271,15 +279,22 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
-  python3 -u tools/civ6_civvis_climb.py --attempts 1 --strategy "$STRATEGY" \
+  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" --strategy "$STRATEGY" \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,
-  # emit autoclose events and still never seat the agent.
-  PLAY=$(ls -t "$LOGS"/civvis-*-play.log 2>/dev/null | head -1)
-  if [[ -n "$PLAY" && "$PLAY" -nt "$CYCLE_MARK" ]] && grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null; then
+  # emit autoclose events and still never seat the agent. Count every play log
+  # this cycle wrote, not the newest one: in a batch the last attempt can fail
+  # while earlier ones played, and the newest-only read would score the whole
+  # batch as a failure.
+  played_games=0
+  for PLAY in "$LOGS"/civvis-*-play.log(N); do
+    [[ "$PLAY" -nt "$CYCLE_MARK" ]] || continue
+    grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null && played_games=$((played_games + 1))
+  done
+  if (( played_games > 0 )); then
     consecutive_failures=0
-    say "game on $HEAD_SHA played turns: $(grep -cE '^\[turn [0-9]+\]' "$PLAY") turn lines"
+    say "cycle on $HEAD_SHA played $played_games game(s) with turns"
   else
     consecutive_failures=$((consecutive_failures + 1))
     say "game on $HEAD_SHA PLAYED NO TURNS (failure $consecutive_failures)"

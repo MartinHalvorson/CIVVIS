@@ -50,8 +50,13 @@ CLI / HTTP server / browser / WASM / evaluation tools
   trains offline models, analyzes evidence, and supervises deployments; it is
   not the game engine.
 - **Interfaces** — `src/main.rs` exposes the CLI, while `src/server.rs` serves
-  the JSON protocol and the browser client in `web/index.html`. The same Rust
-  engine is compiled for native and WASM use.
+  the JSON protocol and the browser client in `web/index.html`. The browser
+  renderer stays in `web/assets/app.js`; the setup and Civilization VI bridge
+  live in the separately served `web/assets/app_setup.js`. Both are classic
+  scripts intentionally: inline controls and renderer callbacks keep their
+  existing global contract while setup work no longer conflicts with map
+  rendering edits. Native, beta, and WASM delivery all serve the same pair.
+  The same Rust engine is compiled for native and WASM use.
 - **Civilization VI bridges** — `tools/civ6_strategy.py` exports only the
   economic subset of a league genome to a grounding mod; Firaxis' AI controls
   the remaining real-game behavior. `tools/civ6_control/` is a separate Lua

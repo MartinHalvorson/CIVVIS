@@ -1035,6 +1035,25 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 RESUME_MIN_TURN = 20
 
 
+def batch_refresh_seconds(refresh_seconds: float | None, pinned: str | None,
+                          attempts: int) -> float | None:
+    """The decider-refresh cadence a batch should play under.
+
+    An operator's explicit choice always stands. Otherwise a pinned batch of
+    more than one attempt freezes the decider (0): the batch exists to put N
+    games on ONE program, and the brain's turn-boundary self-upgrade would
+    re-point every game at whatever origin/main had become — the ledger
+    stamped `code=3658227b` on a run whose decider walked through four
+    revisions. A single attempt keeps the brain's live-upgrade default: the
+    ambient loop's whole design is that a merge reaches the very next game.
+    """
+    if refresh_seconds is not None:
+        return refresh_seconds
+    if pinned is not None and attempts > 1:
+        return 0.0
+    return None
+
+
 def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
                  load_save: Path | None = None) -> list[str]:
     """The `civ6_play` command line for one attempt — or its continuation.
@@ -1072,6 +1091,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--civvis-bin", str(orders_bin),
          "--civvis-victory", args.victory,
          "--civvis-strategy", args.strategy]
+        + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
+           if args.refresh_seconds is not None else [])
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
@@ -1123,6 +1144,11 @@ def _latest_autosave(newer_than: float | None = None) -> Path | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--refresh-seconds", type=float, default=None,
+                    help="forwarded to civ6_play as --civvis-refresh-seconds; "
+                         "defaults to 0 for a pinned batch of more than one "
+                         "attempt and to the brain's live-upgrade cadence "
+                         "otherwise (see batch_refresh_seconds)")
     ap.add_argument("--campus-specialist", action="store_true", default=False,
                     help="move one citizen into a Campus specialist slot where a Library "
                          "already stands; read the outcome from civvis_campus_specialist")
@@ -1416,6 +1442,12 @@ def main() -> int:
               + ("  ⚠ working tree is dirty; the fingerprint tracks it"
                  if "+" in pinned else "")
               + staleness, flush=True)
+
+    args.refresh_seconds = batch_refresh_seconds(
+        args.refresh_seconds, pinned, args.attempts)
+    if args.refresh_seconds == 0.0:
+        print("decider frozen for the batch (--civvis-refresh-seconds 0): "
+              "a pinned batch must measure one program", flush=True)
 
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only

@@ -1386,3 +1386,52 @@ class LadderBackfillTests(unittest.TestCase):
         (self.runs / "ladder.json").write_text("{ this is not json")
         self.write_summary("civvis-1")
         climb.heal_the_ladder()  # must not raise
+
+
+class BatchRefreshSecondsTests(unittest.TestCase):
+    """A pinned batch measures one program; a single attempt keeps live upgrades.
+
+    The brain re-execs itself onto every origin/main advance at a turn
+    boundary, so without this route a "pinned" batch still measures a moving
+    program — the ledger stamped one `code_rev` on a run whose decider walked
+    through four revisions.
+    """
+
+    def test_a_pinned_batch_freezes_the_decider(self):
+        self.assertEqual(climb.batch_refresh_seconds(None, "abc1234", 8), 0.0)
+
+    def test_a_single_attempt_keeps_the_brains_live_upgrade(self):
+        self.assertIsNone(climb.batch_refresh_seconds(None, "abc1234", 1))
+
+    def test_an_unpinned_batch_is_left_alone(self):
+        self.assertIsNone(climb.batch_refresh_seconds(None, None, 8))
+
+    def test_the_operators_choice_always_stands(self):
+        self.assertEqual(climb.batch_refresh_seconds(30.0, "abc1234", 8), 30.0)
+        self.assertEqual(climb.batch_refresh_seconds(0.0, None, 1), 0.0)
+
+    @staticmethod
+    def _play_args(**changes):
+        from types import SimpleNamespace
+        values = dict(
+            difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+            speed="GAMESPEED_ONLINE", leader=None, max_turns=250,
+            timeout=7200.0, timeout_ceiling=None, probe_citizens=False,
+            campus_specialist=False, envoys=False, envoy_place=False,
+            envoy_levy=False, envoy_consider=False, victory="science",
+            strategy="auto", war_from_plan=False, tile_export_every=25,
+            refresh_seconds=None,
+        )
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def test_the_freeze_reaches_the_play_command(self):
+        cmd = climb.play_command(self._play_args(refresh_seconds=0.0), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--civvis-refresh-seconds")
+        self.assertEqual(cmd[at + 1], "0.0")
+
+    def test_no_choice_sends_no_refresh_flag(self):
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertNotIn("--civvis-refresh-seconds", cmd)
