@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import io
+import builtins
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -1161,6 +1163,43 @@ class ScreenshotFailureTests(unittest.TestCase):
         self.assertEqual(observations, [])
         recognize.assert_not_called()
 
+    def test_a_host_without_pillow_loses_the_crop_not_the_read(self) -> None:
+        """No Pillow must cost the 4x enhancement, never the whole read.
+
+        ⚠ `from PIL import Image` raised `ModuleNotFoundError` past a handler
+        that already returned `[]` for exactly this shape of failure, out of a
+        function whose sibling test is named "a missing shot reads as nothing,
+        not a crash". On ubuntu — no Pillow — it crashed, and the shared
+        `collaboration-policy` gate went red for every open pull request.
+        """
+        real_import = builtins.__import__
+
+        def no_pillow(name, *args, **kwargs):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ModuleNotFoundError("No module named 'PIL'")
+            return real_import(name, *args, **kwargs)
+
+        # An existing file falls back to the native OCR: the crop is gone, the
+        # read is not.
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "shot.png"
+            shot.write_bytes(b"not really a png")
+            with patch.object(builtins, "__import__", side_effect=no_pillow), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "TRAJAN"}]) as recognize:
+                observations = civ6_play._leader_ocr(shot, (756, 33, 756, 480))
+            self.assertEqual(observations, [{"text": "TRAJAN"}])
+            recognize.assert_called_once_with(shot)
+
+        # A missing file still reads as nothing, and never reaches the OCR.
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(builtins, "__import__", side_effect=no_pillow), \
+                 patch.object(civ6_play.macos_ocr, "recognize") as recognize:
+                observations = civ6_play._leader_ocr(
+                    Path(temporary) / "never-written.png", (756, 33, 756, 480))
+            self.assertEqual(observations, [])
+            recognize.assert_not_called()
+
     def test_intro_probe_survives_an_unavailable_ocr(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
@@ -1205,6 +1244,62 @@ class SupervisedBrainCommandTests(unittest.TestCase):
         # an `if args.civvis_refresh_seconds:` implementation would drop it.
         cmd = self._command(civvis_refresh_seconds=0.0)
         self.assertEqual(cmd[cmd.index("--github-refresh-seconds") + 1], "0.0")
+
+    def test_every_lane_reaches_the_worker_verbatim(self):
+        """The launcher forwards the objective; it does not translate it."""
+        for lane in civ6_play.VICTORY_LANES:
+            with self.subTest(lane=lane):
+                cmd = self._command(civvis_victory=lane)
+                self.assertEqual(cmd[cmd.index("--victory") + 1], lane)
+
+
+class VictoryLaneListTests(unittest.TestCase):
+    """The launchers' objective list against the engine's own.
+
+    ⚠ THIS IS THE TEST THAT WOULD HAVE CAUGHT THE ORIGINAL BUG. The Python
+    launchers offered four objectives while `VictoryTarget` had six, and
+    `advanced.rs` gates each lane's machinery on being targeted at it — so
+    Culture, Religion and Diplomacy were not merely missing from a menu, they
+    were unplayable in the live seat. Nothing failed, because no test compared
+    the two lists.
+    """
+
+    REPO = Path(__file__).resolve().parent.parent
+
+    def _rust_source(self, relative):
+        return (self.REPO / relative).read_text(encoding="utf-8")
+
+    def test_the_launcher_list_matches_the_orders_binary(self):
+        source = self._rust_source("src/bin/civvis_orders.rs")
+        match = re.search(r'const VICTORY_LANES: &str = "([^"]+)";', source)
+        self.assertIsNotNone(match, "civvis_orders.rs no longer names its lanes")
+        self.assertEqual(match.group(1).split("|"), civ6_play.VICTORY_LANES)
+
+    def test_the_launcher_list_matches_the_engine_enum(self):
+        """Every `VictoryTarget` variant, spelled the way the enum prints it."""
+        source = self._rust_source("src/ai/advanced.rs")
+        # Anchored on the impl block, not on `as_str`: several enums in this file
+        # have an `as_str`, and the first one is `WarPhase`'s.
+        block = re.search(r"\nimpl VictoryTarget \{(.*?)\n\}\n", source, re.DOTALL)
+        self.assertIsNotNone(block, "impl VictoryTarget no longer parses")
+        spellings = re.findall(r'VictoryTarget::\w+ => "(\w+)"', block.group(1))
+        self.assertEqual(len(spellings), 6, spellings)
+        # `civvis` is not a target — it is the absence of one — so it leads the
+        # list and is not expected among the enum's spellings.
+        self.assertEqual(civ6_play.VICTORY_LANES[0], "civvis")
+        self.assertEqual(sorted(civ6_play.VICTORY_LANES[1:]), sorted(spellings))
+
+    def test_no_launcher_in_the_chain_keeps_its_own_copy(self):
+        """`climb --victory` → `play --civvis-victory` → `brain --victory` →
+        `civvis_orders --victory`. A lane has to survive all four; the two
+        launchers in the middle each used to restate the names, and the middle
+        one is where Culture, Religion and Diplomacy were actually refused."""
+        here = Path(__file__).resolve().parent
+        for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
+            with self.subTest(launcher=launcher):
+                source = (here / launcher).read_text(encoding="utf-8")
+                self.assertIn("from civ6_play import VICTORY_LANES", source)
+                self.assertIn("choices=VICTORY_LANES", source)
 
 
 if __name__ == "__main__":
