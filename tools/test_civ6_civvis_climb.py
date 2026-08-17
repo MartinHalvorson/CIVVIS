@@ -516,6 +516,37 @@ class CodeStateTests(unittest.TestCase):
         self.assertEqual(name_for("same"), name_for("same"))
 
 
+
+class BatchPowerTests(unittest.TestCase):
+    """A batch that reports a result without its power is how an underpowered
+    number gets quoted. The line is printed where the operator reads the
+    batch, not left in a table nobody opens."""
+
+    def test_it_reproduces_the_measured_sample_sizes(self):
+        # Cross-check against the arithmetic computed independently from the
+        # ladder in the 2026-08-17 study: ~152 games per arm separates the
+        # measured 25% Settler win rate from 40%, ~58 from 50%.
+        self.assertLessEqual(climb.resolvable_win_rate(152), 0.40 + 0.005)
+        self.assertGreater(climb.resolvable_win_rate(152), 0.25)
+        self.assertLessEqual(climb.resolvable_win_rate(60), 0.50 + 0.005)
+
+    def test_a_bigger_batch_resolves_a_finer_effect(self):
+        coarse = climb.resolvable_win_rate(8)
+        fine = climb.resolvable_win_rate(400)
+        self.assertIsNotNone(coarse)
+        self.assertIsNotNone(fine)
+        self.assertGreater(coarse, fine)
+
+    def test_a_single_attempt_is_named_a_smoke_test(self):
+        line = climb.batch_power_line(1)
+        self.assertIn("smoke test", line)
+        self.assertNotIn("80% power", line)
+
+    def test_the_line_says_PER_ARM_so_a_batch_is_not_read_as_a_comparison(self):
+        # The number is per arm; a single pinned batch is HALF of a paired
+        # comparison, and the line must not let it read as the whole thing.
+        self.assertIn("PER ARM", climb.batch_power_line(8))
+
 if __name__ == "__main__":
     unittest.main()
 
