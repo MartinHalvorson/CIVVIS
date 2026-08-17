@@ -10259,7 +10259,15 @@ handed.
 |---|---|---|---|---|
 | **diplomatic** | 95.8%, +545 | **+669 CONFIRMED** (97.9%, CI +273..+1064, seed 26000000) | 23-0-1, p=0.0000 | **PASS** |
 | **religious** | 85.4%, +307 | **+417 CONFIRMED** (91.7%, CI +183..+650, seed 25000000) | 20-0-4, p=0.0000 | **PASS** |
-| culture | 68.8%, +137 (CI −9..+283) | not run | 10-13-1, p=0.0117 | INCONCLUSIVE |
+| culture | 68.8%, +137 (CI −9..+283) | extended, not confirmed | 10-13-1, p=0.0117 | INCONCLUSIVE |
+
+Culture was then extended on the same pre-declared prefix rather than re-rolled:
+**48 pairs, seed 24000000 — 62.5%, +89 (95% CI −11..+189), 14-32-2, sign
+p=0.0042, still INCONCLUSIVE.** The estimate is not gate-selected, so it is not
+biased upward, and it *fell* from +137 to +89 as the map count doubled while 32
+of 48 maps came back neutral. Read together, that is a small real direction
+rather than a large one the first sample overstated — and it is the honest
+contrast with the two lanes above, whose intervals never approach parity.
 
 Both confirms are on seed streams disjoint from discovery, and `ai_eval` labels
 both effect sizes quotable rather than discovery-biased.
@@ -10299,6 +10307,8 @@ fifth. It is close to a floor, not a fair incumbent.
   a win was (#1873) and which lane a row played (#1880), so such a batch is
   finally attributable.
 
-⚠ Culture is inconclusive rather than null: its interval crosses parity at 24
-maps. If it is worth resolving, extend the same pre-declared seed prefix rather
-than re-running a fresh one.
+⚠ Culture is inconclusive rather than null, at 24 maps and again at 48. Its
+direction is significant on both and its interval crosses parity on both. If it
+is worth resolving further, keep extending the same prefix; on this evidence the
+effect is small enough that certifying it would cost far more maps than the two
+lanes that already cleared.
