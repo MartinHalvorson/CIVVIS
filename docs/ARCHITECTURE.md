@@ -41,7 +41,15 @@ CLI / HTTP server / browser / WASM / evaluation tools
   spatial tensor for offline learning. The spectator has an explicitly
   omniscient view; it is not a player observation.
 - **Agents** — `src/ai.rs` contains the `Ai` trait, `RandomAi`, and `BasicAi`;
-  `src/ai/advanced.rs` contains the production major-civilization controller.
+  `src/ai/advanced.rs` contains the production major-civilization controller,
+  with `src/ai/advanced/` beside it holding **its tests**, the same split
+  `src/game/` describes below and for the same reason. `advanced.rs` reached
+  53k lines with 24,869 of them — 47% — in two `#[cfg(test)] mod` blocks, while
+  being the most-edited file in the crate: nine of the last thirty-four PRs
+  touched it. A change to a heuristic and a change to a test twenty thousand
+  lines away were edits to the same file. A new test belongs in
+  `src/ai/advanced/tests.rs`; `super` resolves to `advanced`, so nothing about
+  writing one changes.
   `src/strategic.rs`, `src/neural.rs`, `src/policy.rs`, and `src/production.rs`
   are search/learning experiments with explicit fallbacks and evaluation
   status. `src/oracle.rs` is a diagnostic wrapper, not a playable strategy.
