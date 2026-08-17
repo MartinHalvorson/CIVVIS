@@ -119,3 +119,29 @@ then does a flag move into `promoted_policy_envoy`, each with its own
 closes the arm with its number, exactly as `advanced_build_first` — the
 still-unrun pre-registered point on the #1520 genes — is waiting on seed
 95000000.
+
+## Results — both runs made, both RETAIN (2026-08-17)
+
+Both pre-registered runs were made the day the arms merged, on the reserved
+seeds, at 400 pairs, and neither promotes. The fires-checks above had already
+confirmed both treatments change games, so these are real nulls rather than
+inert treatments.
+
+| arm | compact-standard (NoRegression) | deployment-online (Strength) | verdict |
+|---|---|---|---|
+| `advanced_builder_survey` (seed 25000000) | ACCEPT | INCONCLUSIVE → REJECT; seat wins 385 vs 415 of 2400 | **RETAIN `advanced`** |
+| `advanced_unit_efficiency` (seed 26000000) | ACCEPT — 50.2%, +1 Elo (CI −33..+35), 63/56 directions, p=0.58 | INCONCLUSIVE → REJECT — 47.5%, −17 Elo (CI −51..+17) | **RETAIN `advanced`** |
+
+(The builder-survey run's per-profile effect lines were lost to a truncated
+pipe; its verdict lines and seat-outcome census survived. Effect sizes from a
+RETAIN are non-quotable regardless — `docs/EVAL_INTEGRITY.md` R3.)
+
+**Reading.** The flags stay off in `promoted_policy_envoy`; the arms stay
+registered as the re-opening question. This is the valuation-null prior
+paying out one more time (`docs/GENOME.md`): both changes price an existing
+decision *better* rather than making the agent do something it never did,
+and better pricing of a decision that already actuates has never converted
+to wins on this engine. Do not re-run these arms at more pairs — the
+deployment directions are flat, not under-resolved. Re-open only with a new
+mechanism (e.g. the survey driving builder *movement* differently, not just
+production counts), and gate it the same way.
