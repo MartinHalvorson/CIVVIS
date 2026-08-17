@@ -1,6 +1,8 @@
 from pathlib import Path
 import concurrent.futures
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1263,6 +1265,103 @@ class BaseStalenessTests(unittest.TestCase):
     def test_one_commit_under_the_limit_still_only_advises(self):
         kind, _ = collab.base_staleness("behind", collab.STALE_BASE_LIMIT - 1)
         self.assertEqual(kind, "advisory")
+
+
+class ComparisonUnavailableTests(unittest.TestCase):
+    """A comparison GitHub will not answer must not block a merge.
+
+    On 2026-08-17 `/repos/.../compare/A...B` returned 404 for this repository
+    for every pair — including two adjacent commits on `main` — while
+    `/commits/<sha>` resolved both SHAs. The call was unguarded in all three
+    of its sites, so `collaboration-policy` exited 1 on a traceback and a
+    required check nobody could turn green stopped every merge in the fleet.
+    """
+
+    def event(self, tmp: Path, *, draft: bool = False) -> Path:
+        path = tmp / "event.json"
+        path.write_text(json.dumps({"pull_request": {
+            "number": 77,
+            "head": {"ref": "agent/mbp-m5-max-128/claude-1/t-20260817T000000Z-aaaa",
+                     "sha": "head1234"},
+            "base": {"sha": "base5678"},
+            "draft": draft,
+            "body": body(machine="mbp-m5-max-128", agent="claude-1",
+                         paths="`docs/X.md`"),
+        }}))
+        return path
+
+    def run_check(self, compare_raises: bool):
+        """Run `check_pr_action` with only the compare call able to fail."""
+        def fake_github_json(path, token):
+            if "/compare/" in path:
+                if compare_raises:
+                    raise collab.CommandError(
+                        "GitHub API /repos/x/compare/a...b failed (404): "
+                        '{"message":"Not Found"}')
+                return {"status": "ahead", "behind_by": 0}
+            if path.endswith("pulls?state=open&per_page=100"):
+                return []
+            return []
+
+        printed = []
+        tmp = Path(tempfile.mkdtemp(prefix="civvis-compare-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with patch.object(collab, "github_json", side_effect=fake_github_json), \
+                patch.object(collab, "pr_file_ranges", return_value={"docs/X.md": None}), \
+                patch.object(collab, "pr_files", return_value=["docs/X.md"]), \
+                patch.object(collab, "pr_commit_subjects", return_value=["work"]), \
+                patch.object(collab, "pr_added_lines", return_value={}), \
+                patch.object(collab, "machine_registry", return_value=None), \
+                patch("builtins.print", side_effect=lambda *a, **k: printed.append(" ".join(str(x) for x in a))):
+            code = collab.check_pr_action(
+                self.event(tmp), "token", "MartinHalvorson/CIVVIS")
+        return code, "\n".join(printed)
+
+    def test_the_gate_passes_when_github_will_not_compare(self):
+        code, output = self.run_check(compare_raises=True)
+        self.assertEqual(code, 0, output)
+        self.assertIn("::notice::", output)
+        self.assertIn("could not measure how far this branch trails main",
+                      output)
+        self.assertNotIn("::error::", output)
+
+    def test_a_measurable_current_branch_still_passes_silently(self):
+        code, output = self.run_check(compare_raises=False)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("could not measure", output)
+
+    def test_a_real_staleness_error_is_still_an_error(self):
+        # The degradation must not have softened the one refusal that matters.
+        kind, _ = collab.base_staleness("behind", collab.STALE_BASE_LIMIT)
+        self.assertEqual(kind, "error")
+
+    def test_an_unmeasurable_comparison_is_never_read_as_a_verdict(self):
+        for body_value in (None, {}, {"status": ""}, "nonsense"):
+            comparison, reason = collab.comparison_or_reason(
+                lambda value=body_value: value)
+            self.assertIsNone(comparison, body_value)
+            self.assertTrue(reason)
+
+    def test_a_real_comparison_passes_through(self):
+        comparison, reason = collab.comparison_or_reason(
+            lambda: {"status": "behind", "behind_by": 4})
+        self.assertEqual(reason, "")
+        self.assertEqual(comparison["behind_by"], 4)
+
+    def test_the_merged_pr_audit_reports_unknown_not_over_the_limit(self):
+        def fake_gh_json(args, *, cwd=None):
+            joined = " ".join(args)
+            if "compare" in joined:
+                raise collab.CommandError("gh api compare failed (404): x")
+            if "check-runs" in joined:
+                return {"check_runs": []}
+            return {"headRefOid": "head1234",
+                    "mergedAt": "2026-08-17T03:00:00Z"}
+
+        with patch.object(collab, "gh_json", side_effect=fake_gh_json):
+            errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
+        self.assertTrue(any("staleness unverified" in e for e in errors), errors)
+        self.assertFalse(any("past the" in e for e in errors), errors)
 
 
 class MachineRegistryTests(unittest.TestCase):
