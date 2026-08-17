@@ -10109,3 +10109,32 @@ can no longer reach the live seat without an arm that prices it.
 changed is that they can be measured. Each still needs a pre-registered
 `--deployment-comparison` run before anything is claimed about it, and the
 prior on this ledger is that most repairs measure null.
+
+## The civilian snatch prices as a null, and ships off (2026-08-17)
+
+The strategic-scouting axis's aggression item: declare a surprise war on a
+rival whose Settler or Builder stands beside this seat's military with
+movement left, so the ordinary capture pass takes it the same turn. Guards:
+first `standard_duration(100)` turns only, victim visible now, rival military
+power not above ours, one declaration per turn. Entrant
+`advanced_civilian_snatch` (`AdvancedAi::enable_civilian_snatch`).
+
+`ai_eval advanced_civilian_snatch advanced`, 6p 74×46, 9 city-states, online,
+250 turns:
+
+| pairs / seed | paired | Elo (CI) | terminal direction |
+|---|---|---|---|
+| 20 / 80000000 | 42.5% | −53 (−202..+97) | 8/11, p=0.65 |
+| 60 / 90000000 (disjoint) | 52.5% | +17 (−70..+104) | 22/29, p=0.40 |
+| **pooled 80** | **50.0%** | ~0 | 30/40 |
+
+The mechanism is pinned by
+`the_snatch_entrant_declares_and_takes_an_exposed_settler` (declares, captures
+the same turn, declines a stronger rival). The immediate-convert and
+power-parity guards evidently bound the cost the war-trap ledger predicts
+(`at_war → Conquest` still locks the strategy — the snatch arm ran
+conquest↔recovery transitions at 288 against the control's 186 over 60
+seats), but the prize does not pay either: a clean null both seeds. **OFF by
+default; do not enable without a matrix PASS.** If re-opened, the lever worth
+testing is pairing the snatch with a war gate keyed on conversion rather than
+power, not widening the snatch itself.
