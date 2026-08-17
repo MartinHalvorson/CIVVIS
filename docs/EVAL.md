@@ -12,6 +12,11 @@ recent entry; update this file (append, don't overwrite) when numbers move
 for an understood reason. All commands are deterministic for a given build
 and seed set.
 
+The current machine-readable registry and live-ladder snapshot are generated in
+[`EVAL_STATUS.md`](EVAL_STATUS.md) from `src/elo.rs` and
+`docs/civ6_ladder.json`. Run `python3 tools/eval_manifest.py --write` after a
+registry or ladder update; CI rejects a stale snapshot.
+
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
 civvis tournament --ais advanced-20260801-diplomacy=advanced,advanced_v1,basic-20260801-diplomacy=basic,random-20260730=random \
