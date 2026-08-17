@@ -254,6 +254,25 @@ const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 /// city-strike envelope handled by `settlement_tile_risk`.
 const STALLED_SETTLEMENT_ENEMY_CITY_REACH: i32 = 5;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
+/// The denial bar for a lane whose counter is a STOCK, not a switch.
+///
+/// ★★★ Measured on the live ladder 2026-08-16/17: of the THIRTEEN games this
+/// seat finished AHEAD on score, FIVE were ended at t229–t245 by a rival
+/// completing a victory — four Culture, one Diplomatic — and converting them
+/// would have moved the win rate from 23% to 37%. The general alarm sits at
+/// `progress >= 90`, and by then neither of those two counters can act:
+/// a Culture denial answers the leader by raising the bar its tourists must
+/// clear, and that bar is OUR ACCUMULATED domestic tourist count
+/// (`culture_lifetime / 100`) — a stock built across the whole game, not a
+/// rate that can be doubled in the fifteen turns a match-point alarm leaves.
+/// Diplomacy is won two points at a time at a Congress that sits every ~20
+/// turns, so its counter is bounded by the same clock.
+///
+/// The value is Science's existing bar rather than a new invented number:
+/// that lane already carries an early threshold for exactly this reason (a
+/// project queue is not instant either), so this gives the two stock lanes
+/// the lead time the one rate-limited lane already had.
+const STOCK_DENIAL_BAR: i32 = 78;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
 /// refusing the marches that cannot arrive before the window shuts.
@@ -2432,6 +2451,21 @@ pub struct AdvancedAi {
     /// **Off by default, live-bridge only.**
     pub deny_while_targeted: bool,
 
+    /// Whether the two denial lanes whose counter is an ACCUMULATED STOCK —
+    /// Culture and Diplomacy — get the early bar `STOCK_DENIAL_BAR` instead
+    /// of waiting for the general match-point alarm at 90.
+    ///
+    /// Five of the thirteen live games this seat finished ahead on score were
+    /// ended at t229-245 by exactly these two victories. Raising our own
+    /// culture is what raises the bar a Culture leader must clear, and that
+    /// bar is a whole game's accumulation; a Congress sits every ~20 turns.
+    /// Neither answers an alarm that fires with fifteen turns left. Paired
+    /// with `culture_denial_actionable`, which refuses the Culture counter
+    /// outright when a third civilization — not us — holds the bar.
+    ///
+    /// **Off by default, live-bridge only.**
+    pub stock_denial_lead_time: bool,
+
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
     /// capital, and declare only once it is already adjacent.
@@ -3229,7 +3263,7 @@ impl Default for AdvancedAi {
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 68] = [
+pub const LIVE_TREATMENTS: [LiveTreatment; 69] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -3298,6 +3332,7 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 68] = [
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
     ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
+    ("stock_denial_lead_time", "stock-denial-lead-time", AdvancedAi::disable_stock_denial_lead_time),
 ];
 
 impl AdvancedAi {
@@ -3749,6 +3784,7 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             deny_while_targeted: false,
+            stock_denial_lead_time: false,
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -4317,6 +4353,15 @@ impl AdvancedAi {
         self.deny_while_targeted = false;
     }
 
+    /// See [`Self::stock_denial_lead_time`].
+    pub fn enable_stock_denial_lead_time(&mut self) {
+        self.stock_denial_lead_time = true;
+    }
+
+    pub fn disable_stock_denial_lead_time(&mut self) {
+        self.stock_denial_lead_time = false;
+    }
+
     /// Keep a fresh direct declaration out of the final campaign reserve.
     /// Native tournament games leave this disabled so their recorded ladders
     /// stay comparable.
@@ -4754,6 +4799,10 @@ impl AdvancedAi {
         // with the whole counter apparatus gated off. Match point overrides
         // the lane's focus; ordinary pressure still never does.
         self.enable_deny_while_targeted();
+        // ⚠ And the alarm must reach the two lanes it cannot answer late.
+        // Four of the five stolen games above were Culture; the general 90
+        // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
+        self.enable_stock_denial_lead_time();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -7821,12 +7870,52 @@ impl AdvancedAi {
                 && !g.player_city_ids(rival).is_empty())
     }
 
+    /// A Culture denial needs OUR culture to be the bar the leader must clear.
+    ///
+    /// The Culture race is `foreign_tourists(leader) / max(domestic tourists
+    /// of everyone else)` — a maximum this seat does not necessarily hold. If
+    /// a third civilization has the larger domestic count, the denominator is
+    /// theirs, our own culture cannot move it until we pass them, and pivoting
+    /// the empire into the Culture lane buys nothing. It is also the case
+    /// that a third civ holding the bar is already suppressing the leader's
+    /// progress, so the alarm is least useful exactly where it is inert.
+    ///
+    /// Fails closed: not actionable means no denial, and the assigned lane
+    /// keeps its focus — the conservative half of the trade, and the one
+    /// `city_target_floor` (−41 Elo for chasing a correlate) argues for.
+    fn culture_denial_actionable(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        counter: GrandStrategy,
+    ) -> bool {
+        if counter != GrandStrategy::Culture || !self.stock_denial_lead_time {
+            return true;
+        }
+        let bar = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.id != rival
+                    && player.id != pid
+            })
+            .map(|player| g.domestic_tourists(player.id))
+            .max()
+            .unwrap_or(0);
+        g.domestic_tourists(pid) >= bar
+    }
+
     /// The denial response that can actually change an army plan. Keep the
     /// raw signal in [`Self::victory_denial`] for pressure reporting and
     /// non-military counters.
     fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
         self.victory_denial(g, pid).filter(|(rival, counter)| {
             self.conquest_denial_actionable(g, pid, *rival, *counter)
+                && self.culture_denial_actionable(g, pid, *rival, *counter)
         })
     }
 
@@ -7933,8 +8022,16 @@ impl AdvancedAi {
             .count()
             .max(1) as i32;
         let religious_match_point = 100 * living_majors.saturating_sub(1) / living_majors;
+        // See `STOCK_DENIAL_BAR`: Culture and Diplomacy are answered by
+        // out-accumulating the leader, so a match-point alarm reaches them
+        // too late to act at all.
+        let stock_lane = matches!(
+            pressure.strategy,
+            GrandStrategy::Culture | GrandStrategy::Diplomacy
+        );
         pressure.progress >= 90
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
+            || (self.stock_denial_lead_time && stock_lane && pressure.progress >= STOCK_DENIAL_BAR)
             || (pressure.strategy == GrandStrategy::Religion
                 && pressure.progress >= religious_match_point)
     }
@@ -8133,6 +8230,7 @@ impl AdvancedAi {
         };
         let actionable_denial = denial.filter(|(rival, counter)| {
             self.conquest_denial_actionable(g, pid, *rival, *counter)
+                && self.culture_denial_actionable(g, pid, *rival, *counter)
         });
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
@@ -34842,6 +34940,115 @@ mod tests {
             targeted.victory_denial(&game, 0),
             None,
             "sub-match-point pressure never distracts an assigned lane"
+        );
+    }
+
+    /// ★★★ A stock cannot be pumped at match point. Of the thirteen live
+    /// games this seat finished AHEAD on score (2026-08-16/17), FIVE were
+    /// ended at t229-245 by a rival Culture or Diplomatic victory while the
+    /// general 90 alarm had not fired. Those two counters are accumulations,
+    /// so they need Science's lead time, and the Culture counter additionally
+    /// needs OUR culture to be the bar the leader must clear.
+    #[test]
+    fn the_stock_denial_lanes_get_lead_time_and_refuse_an_inert_counter() {
+        let mut game = Game::new_full(3, 30, 18, 7_219, 300, 0, false);
+        for pid in 0..3 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.victory_conditions = crate::game::VictoryConditions::default();
+
+        // Drive the race through the OBSERVED counters — the live path the
+        // mirror fills from Firaxis' own World Rankings screen (#1855/#1860).
+        // Player 1's tourists sit at 80% of the bar: past `STOCK_DENIAL_BAR`,
+        // short of the general 90 alarm. WE hold the bar, so racing culture
+        // moves it.
+        {
+            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            observed.foreign_tourists = Some(80);
+        }
+        {
+            let observed = game.observed_public_empire_stats.entry(0).or_default();
+            observed.domestic_tourists = Some(100);
+        }
+        {
+            let observed = game.observed_public_empire_stats.entry(2).or_default();
+            observed.domestic_tourists = Some(10);
+        }
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_deny_while_targeted();
+        let pressure = ai.rival_victory_pressure(&game, 1);
+        assert_eq!(pressure.strategy, GrandStrategy::Culture);
+        assert!(
+            (78..90).contains(&pressure.progress),
+            "fixture must sit between the stock bar and the general alarm, got {}",
+            pressure.progress
+        );
+
+        assert!(
+            !ai.urgent_victory_threat(&game, 1),
+            "without the flag a Culture race below 90 raises no alarm at all"
+        );
+        ai.enable_stock_denial_lead_time();
+        assert!(
+            ai.urgent_victory_threat(&game, 1),
+            "the stock lane must alarm at its own bar"
+        );
+        // ⚠ Deliberately NOT asserted end-to-end through `victory_denial`
+        // here: on a synthetic three-player board our own Science race reads
+        // progress 100, so the denial's "do not chase a rival barely ahead of
+        // you" margin (`progress < own_progress + 15`) suppresses everything.
+        // That margin is not what this change touches. The two units under
+        // test are the alarm's bar and the counter's actionability.
+        assert!(
+            ai.culture_denial_actionable(&game, 0, 1, GrandStrategy::Culture),
+            "we hold the bar, so racing culture moves it"
+        );
+
+        // Now a third civilization holds the bar, just above ours, so the
+        // leader is still past the stock bar but our own culture cannot move
+        // its denominator. The counter is inert and the lane keeps its focus.
+        {
+            let observed = game.observed_public_empire_stats.entry(2).or_default();
+            observed.domestic_tourists = Some(110);
+        }
+        {
+            let observed = game.observed_public_empire_stats.entry(1).or_default();
+            observed.foreign_tourists = Some(88);
+        }
+        assert!(
+            (78..90).contains(&ai.rival_victory_pressure(&game, 1).progress),
+            "the leader must still be past the stock bar in the inert case"
+        );
+        assert!(
+            !ai.culture_denial_actionable(&game, 0, 1, GrandStrategy::Culture),
+            "a bar we do not hold makes the Culture counter inert"
+        );
+        assert!(
+            ai.culture_denial_actionable(&game, 0, 1, GrandStrategy::Conquest),
+            "the gate speaks only for the Culture counter"
+        );
+
+        // Default off, and the live bridge turns it on.
+        assert!(!AdvancedAi::new().stock_denial_lead_time);
+        assert!(!AdvancedAi::legacy().stock_denial_lead_time);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.stock_denial_lead_time);
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_stock_denial_lead_time();
+        assert!(
+            !withheld.urgent_victory_threat(&game, 1),
+            "the withhold arm returns the lane to the general 90 alarm"
         );
     }
 

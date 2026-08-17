@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 181] = [
+pub const EVAL_ONLY_AIS: [&str; 182] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -88,6 +88,7 @@ pub const EVAL_ONLY_AIS: [&str; 181] = [
     "live_without_war_reinforcement",
     "live_without_war_patience",
     "live_without_deny_while_targeted",
+    "live_without_stock_denial_lead_time",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -258,7 +259,7 @@ pub const EVAL_ONLY_AIS: [&str; 181] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 69] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -327,6 +328,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
+    "stock-denial-lead-time",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -361,7 +363,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 18] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -409,6 +411,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 17] = [
     // Settler seat's standing order) has a target gate to override; the
     // native gate agents are adaptive, so the flag cannot fire there.
     "deny-while-targeted",
+    // Priced on the Settler seat's own steal record (five led games taken at
+    // t229-245); the native lanes end on their own clock and keep the
+    // measured 90 bar until a native run says otherwise.
+    "stock-denial-lead-time",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -595,6 +601,7 @@ define_arm_kinds! {
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
+    LiveWithoutStockDenialLeadTime => "live_without_stock_denial_lead_time",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -3814,6 +3821,7 @@ impl ArmKind {
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
+            Self::LiveWithoutStockDenialLeadTime => live_without("stock-denial-lead-time"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -5815,7 +5823,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 17] = [
+        const EXCLUDED: [&str; 18] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5855,6 +5863,8 @@ mod tests {
             // to override; the native gate agents are adaptive, so the flag
             // cannot fire there.
             "deny_while_targeted",
+            // Same: priced on the live seat's steal record, not native play.
+            "stock_denial_lead_time",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
