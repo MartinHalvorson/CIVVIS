@@ -145,3 +145,49 @@ to wins on this engine. Do not re-run these arms at more pairs — the
 deployment directions are flat, not under-resolved. Re-open only with a new
 mechanism (e.g. the survey driving builder *movement* differently, not just
 production counts), and gate it the same way.
+
+## The axis closes: the other two open ends, priced the same day
+
+The two follow-ups the survey left open were both run on 2026-08-17,
+pre-registered, 400 pairs each. Neither is inconclusive.
+
+**`advanced_build_first`** (seed 95000000, reserved by #1524 and unrun for a
+week) — the building-over-district tilt on the #1520 genes, motivated by
+`advanced_synergy` losing 108 Elo while ending on more districts and fewer
+buildings:
+
+| profile | score | verdict |
+|---|---|---|
+| compact-standard | 51.3% (+9 Elo, CI −25..+43), 66/52, p=0.23 | ACCEPT (inconclusive) |
+| deployment-online | 48.8% (−9 Elo, CI −43..+25), 40/50, p=0.34 | REJECT (inconclusive) |
+
+**RETAIN.** The tilt hypothesis does not convert; the last pre-registered
+point on the production category genes is now a recorded null.
+
+**`advanced_every_lane`** (seed 27000000, arm registered by the follow-up to
+#1861) — the *routing* question: run the strategic governor's valuations
+natively under Science/Culture/Religion/Diplomacy, where production
+otherwise goes through `BasicAi::pick_item`. The fires-check smoke diverged,
+so the arm bites. The gate answer is decisive, and it is the day's most
+informative number:
+
+| profile | score | direction | verdict |
+|---|---|---|---|
+| compact-standard | 41.1% (**−62 Elo**, CI −97..−28) | 49/166, p=0.0000 | RETAIN — e crossed at map 104 |
+| deployment-online | 36.6% (**−95 Elo**, CI −131..−60) | 46/153, p=0.0000 | RETAIN — e crossed at map 78 |
+
+**RETAIN, 0/2, significant against.** The valuation governor, handed every
+lane's cities natively, loses heavily to the scripted cascade it replaces.
+So the "structural hole" reading — that the missing piece was reach — is
+refuted on the native profile: the cascade is not an inferior stand-in for
+the valuations, it is the stronger controller for those lanes. (The live
+bridge keeps `governor_every_lane` on its own evidence in its own regime —
+`docs/FIDELITY.md`'s headless≠live applies; this number says nothing about
+the bridge bundle.)
+
+**Where this leaves the axis.** Four pre-registered gates, four RETAINs, two
+of them significant against extending the valuation system's reach or
+re-tilting its genes. The value/cost estimation layer is built, priced, and
+bounded: it earns its keep where it already runs, and neither sharper
+pricing nor wider routing beats the incumbent. The axis is closed pending a
+genuinely new mechanism.
