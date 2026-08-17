@@ -21706,6 +21706,7 @@ impl AdvancedAi {
     ///   sources feed a stockpile capped near 50 and are worth less as the
     ///   cap approaches. The movement scorer's flat 30 cannot tell these
     ///   apart.
+    #[allow(clippy::too_many_arguments)]
     fn surveyed_improvement_value(
         &self,
         g: &Game,
@@ -21754,8 +21755,12 @@ impl AdvancedAi {
                             45.0
                         } else {
                             let headroom = g.strategic_stockpile_capacity(pid)
-                                - g.strategic_stockpile(pid, resource.clone());
-                            if headroom <= 5.0 { 6.0 } else { 18.0 }
+                                - g.strategic_stockpile(pid, *resource);
+                            if headroom <= 5.0 {
+                                6.0
+                            } else {
+                                18.0
+                            }
                         }
                     }
                     _ => 4.0,
@@ -21785,7 +21790,14 @@ impl AdvancedAi {
             .as_deref()
             .map(|improvement| {
                 self.surveyed_improvement_value(
-                    g, pid, city, pos, improvement, strategy, worked_here, needy_cities,
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
                 )
             })
             .unwrap_or(0.0);
@@ -21795,11 +21807,22 @@ impl AdvancedAi {
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .map(|improvement| {
                 self.surveyed_improvement_value(
-                    g, pid, city, pos, &improvement, strategy, worked_here, needy_cities,
+                    g,
+                    pid,
+                    city,
+                    pos,
+                    &improvement,
+                    strategy,
+                    worked_here,
+                    needy_cities,
                 )
             })
             .fold(0.0_f64, f64::max);
-        if best > current + 0.5 { best - current } else { 0.0 }
+        if best > current + 0.5 {
+            best - current
+        } else {
+            0.0
+        }
     }
 
     /// Every Builder job the empire is holding open, each priced by
@@ -36478,8 +36501,7 @@ mod tests {
         // A fresh capital ringed by unimproved tiles has real jobs open, so
         // the survey bids a real number — and a different one from the flat
         // quota, which is the fires-check that the flag reaches the arm.
-        let rewards =
-            surveyed.builder_job_rewards(&game, 0, game.cities[&city].pos, plan.strategy);
+        let rewards = surveyed.builder_job_rewards(&game, 0, game.cities[&city].pos, plan.strategy);
         assert!(
             !rewards.is_empty(),
             "a fresh capital must have open builder jobs"
@@ -36498,8 +36520,7 @@ mod tests {
         // additional live Builder must never raise the next one's price.
         let mut fewer_jobs = counts;
         fewer_jobs.builders = 3;
-        let saturated =
-            surveyed.production_value(&game, 0, city, &builder, &plan, &fewer_jobs);
+        let saturated = surveyed.production_value(&game, 0, city, &builder, &plan, &fewer_jobs);
         assert!(
             saturated <= priced,
             "a fourth builder cannot be worth more than the first"
@@ -36526,10 +36547,13 @@ mod tests {
             .flat_map(|(name, spec)| {
                 spec.resources
                     .iter()
-                    .map(move |resource| (resource.clone(), name.clone()))
+                    .map(move |resource| (*resource, *name))
             })
             .find(|(resource, _)| {
-                game.rules.resources.get(resource.as_str()).is_some_and(|spec| spec.class == "luxury")
+                game.rules
+                    .resources
+                    .get(resource.as_str())
+                    .is_some_and(|spec| spec.class == "luxury")
             })
             .expect("the ruleset ties at least one luxury to a builder improvement");
         let pos = game.cities[&city]
@@ -36538,14 +36562,13 @@ mod tests {
             .copied()
             .find(|pos| *pos != game.cities[&city].pos)
             .unwrap();
-        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource.clone());
+        game.map.tiles.get_mut(&pos).unwrap().resource = Some(resource);
 
         let ai = AdvancedAi::new();
         let strategy = GrandStrategy::Expansion;
         let holder = game.cities[&city].clone();
-        let first = ai.surveyed_improvement_value(
-            &game, 0, &holder, pos, &improvement, strategy, true, 2,
-        );
+        let first =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
 
         // Connect a second copy elsewhere: the survey must now price this
         // tile as a duplicate.
@@ -36557,12 +36580,11 @@ mod tests {
             .unwrap();
         {
             let tile = game.map.tiles.get_mut(&other).unwrap();
-            tile.resource = Some(resource.clone());
-            tile.improvement = Some(improvement.clone());
+            tile.resource = Some(resource);
+            tile.improvement = Some(improvement);
         }
-        let duplicate = ai.surveyed_improvement_value(
-            &game, 0, &holder, pos, &improvement, strategy, true, 2,
-        );
+        let duplicate =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, true, 2);
         assert!(
             first > duplicate,
             "a first {resource} must outbid a duplicate ({first:.1} vs {duplicate:.1})"
@@ -36570,9 +36592,8 @@ mod tests {
 
         // And the worked-likelihood weight: the same job on a tile no
         // citizen works keeps its connection value but sheds yield value.
-        let idle = ai.surveyed_improvement_value(
-            &game, 0, &holder, pos, &improvement, strategy, false, 2,
-        );
+        let idle =
+            ai.surveyed_improvement_value(&game, 0, &holder, pos, &improvement, strategy, false, 2);
         assert!(
             first >= idle,
             "an unworked tile cannot be worth more than a worked one"
