@@ -4977,6 +4977,39 @@ local function exportState(player, pid, turn)
 				end
 				postsOwn, postsForeign = own, foreign;
 			end);
+			-- What the route PAYS its origin, summed the way the shipped
+			-- TradeSupport.lua sums it for the Trade Overview: yields from the
+			-- route (destination districts), from the path (Trading Posts) and
+			-- from modifiers (policies, Great People, wonders), each yield under
+			-- the origin player's international multiplier. The model cannot
+			-- always derive this — a destination's Campus may stand on ground
+			-- the seat has never seen (Ostia -> Stockholm read "+1 Science",
+			-- run civvis-20260816T233226Z t177+) — so the host's figure is
+			-- carried and stands in for the model's. nil when unreadable.
+			local routeYields = nil;
+			pcall(function()
+				local manager = Game.GetTradeManager();
+				if manager == nil then return; end
+				local fromRoute = manager:CalculateOriginYieldsFromPotentialRoute(pid, originID, destinationPlayer, destinationID);
+				local fromPath = manager:CalculateOriginYieldsFromPath(pid, originID, destinationPlayer, destinationID);
+				local fromModifiers = manager:CalculateOriginYieldsFromModifiers(pid, originID, destinationPlayer, destinationID);
+				if type(fromRoute) ~= "table" then return; end
+				local playerTrade = destinationPlayer ~= pid and player:GetTrade() or nil;
+				local out = {};
+				local names = { food = "FOOD", production = "PRODUCTION", gold = "GOLD", science = "SCIENCE", culture = "CULTURE", faith = "FAITH" };
+				for key, tag in pairs(names) do
+					local index = YieldTypes[tag];
+					if index ~= nil then
+						local total = (fromRoute[index + 1] or 0)
+							+ ((type(fromPath) == "table" and fromPath[index + 1]) or 0)
+							+ ((type(fromModifiers) == "table" and fromModifiers[index + 1]) or 0);
+						local mult = playerTrade and playerTrade:GetInternationalYieldModifier(index) or 1;
+						if type(mult) ~= "number" or mult <= 0 then mult = 1; end
+						out[key] = total * mult;
+					end
+				end
+				routeYields = out;
+			end);
 			tradeRoutes[#tradeRoutes + 1] = {
 				trader = try(function() return route.TraderUnitID; end, -1),
 				origin = originID,
@@ -4988,6 +5021,7 @@ local function exportState(player, pid, turn)
 				destination_y = try(function() return destination and destination:GetY(); end, -1),
 				posts_own = postsOwn,
 				posts_foreign = postsForeign,
+				yields = routeYields,
 			};
 		end
 		local queue = try(function()
