@@ -115,6 +115,10 @@ closed if either drifts.
   visible error.
 - The viewer shows compact commit and build ages in the lower-right provenance
   marker above the World minimap. Exact timestamps remain in its tooltip.
+- The browser lane answers the native-only `/civ6` capability and
+  `/civ6/start` requests with a structured refusal. The setup panel can
+  explain that Civilization VI needs the native desktop build; it never lets
+  that request fall through to the public network as a misleading 404.
 
 The public `/rust` and `/wasm` edge routes remain governed by
 `beta/_worker.js`; the desktop WASM app intentionally uses `beta/serve.py`

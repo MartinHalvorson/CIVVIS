@@ -37,7 +37,7 @@
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
     "/supervisor-new", "/pace", "/next-game", "/host-league",
-    "/machine-metrics",
+    "/machine-metrics", "/civ6", "/civ6/start",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
   const HOST_LEAGUE_URL = new URL("league.json", here);
