@@ -910,3 +910,24 @@ the way every other identity change here does.
 
 Recorded now because #1884 has just made the eleven *registered* treatments
 withholdable, and these five are what is left.
+
+## 2026-08-17 discovery and confirmation prefixes are now mechanically disjoint
+
+The evaluator already labels a gate-selected point estimate as a `DISCOVERY
+ESTIMATE` and a later `--confirm` run as `CONFIRMED`. The remaining integrity
+hole was the word *disjoint*: before this repair the guard rejected only an
+identical base seed. A discovery run on `1000..=1049` could therefore be
+"confirmed" on `1025..=1074`, reusing half the selected maps while claiming an
+independent estimate.
+
+`ai_eval` now checks the full inclusive `[seed, seed + pairs - 1]` intervals,
+rejects any overlap, and fails closed if either endpoint would overflow `u64`.
+Matrix mode applies the same check before adding its fixed compact/deployment
+stride, so both profile streams inherit the separation. The focused evaluator
+tests cover adjacent prefixes, partial overlap, same-base confirmation, and
+overflow; a CLI smoke run exits before starting a game on an overlapping pair.
+
+The confirmation estimate remains the quotable number. A pooled point estimate
+would still contain the discovery prefix selected on the gate, so it is not
+printed as a headline unless per-map results are retained for a separate,
+explicit diagnostic.
