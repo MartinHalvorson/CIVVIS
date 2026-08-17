@@ -6627,6 +6627,41 @@ mod governor_runtime_tests {
         // A small city with a low-adjacency Campus gets nothing at all. Under
         // the old flat +100% the Library's 2 Science doubled here.
         assert_eq!(game.city_yields(city).science, plain);
+        // Nor does doubling that low adjacency with Natural Philosophy reach
+        // the clause: REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT reads the
+        // district's own adjacency, before the percentage cards (live Ostia's
+        // Campus at "+6" — 3 doubled — earned nothing from Rationalism, run
+        // civvis-20260816T233226Z t153-169).
+        {
+            // Two mountains beside the Campus: raw adjacency 2 (plus the
+            // banked half-point of the adjacent centre), doubled to 4+.
+            let ring: Vec<Pos> = game
+                .nbrs(site)
+                .into_iter()
+                .filter(|position| *position != game.cities[&city].pos && game.map.get(*position).is_some())
+                .collect();
+            for position in ring.iter().take(2) {
+                let tile = game.map.tiles.get_mut(position).unwrap();
+                tile.terrain = crate::name!("mountain");
+                tile.feature = None;
+                tile.hills = false;
+                tile.improvement = None;
+                tile.district = None;
+            }
+            let raw = game.district_yields(crate::name!("campus"), site).science;
+            assert!(raw >= 2.0 && raw < 4.0, "raw adjacency below the clause: {raw}");
+            game.players[0].policies.insert(crate::name!("natural_philosophy"));
+            assert!(game.district_yields(crate::name!("campus"), site).science >= 4.0);
+            let with_both = game.city_yields(city).science;
+            game.players[0].policies.remove(&crate::name!("rationalism"));
+            let philosophy_alone = game.city_yields(city).science;
+            assert!(
+                (with_both - philosophy_alone).abs() < 1e-9,
+                "a doubled adjacency does not open the clause: {philosophy_alone} -> {with_both}"
+            );
+            game.players[0].policies.remove(&crate::name!("natural_philosophy"));
+            game.players[0].policies.insert(crate::name!("rationalism"));
+        }
 
         // Fifteen Population pays one half of the card, and exactly half:
         // doubling the card's rating doubles what that half is worth.
@@ -18094,6 +18129,20 @@ pub struct Game {
     /// (`trading_post_route_gold`). Empty on a native game.
     #[serde(default)]
     pub observed_route_posts: BTreeMap<(u32, u32), (i64, i64)>,
+    /// Where the host houses this seat's Great Works, by city and kind, when
+    /// the mirror has read it: the host's own placement is the one that
+    /// pays, not the model's best-slot heuristic (a Relic the host kept in
+    /// Rome's Palace read "+6 from GreatWorks" there while the model housed
+    /// it in Mediolanum's St. Basil's, run civvis-20260816T233226Z t154+).
+    /// `None` on a native game or an export without the works.
+    #[serde(default)]
+    pub observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
+    /// What the host says one of our routes pays its ORIGIN, keyed by
+    /// (origin, destination) city — the Trade Overview's own sum of route,
+    /// path and modifier yields under the international multiplier. Stands
+    /// in for the model's route yield where present; empty on a native game.
+    #[serde(default)]
+    pub observed_route_yields: BTreeMap<(u32, u32), crate::rules::Yields>,
     #[serde(default)]
     pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18593,6 +18642,10 @@ struct GameSer {
     #[serde(default)]
     observed_route_posts: Vec<((u32, u32), (i64, i64))>,
     #[serde(default)]
+    observed_great_work_housing: Option<BTreeMap<u32, BTreeMap<String, usize>>>,
+    #[serde(default)]
+    observed_route_yields: Vec<((u32, u32), crate::rules::Yields)>,
+    #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
     observed_city_specialists: BTreeMap<u32, Vec<String>>,
@@ -18767,6 +18820,8 @@ impl From<GameSer> for Game {
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: s.observed_tile_yield_adjustments.into_iter().collect(),
             observed_route_posts: s.observed_route_posts.into_iter().collect(),
+            observed_great_work_housing: s.observed_great_work_housing,
+            observed_route_yields: s.observed_route_yields.into_iter().collect(),
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -18963,6 +19018,8 @@ impl From<Game> for GameSer {
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
             observed_tile_yield_adjustments: g.observed_tile_yield_adjustments.into_iter().collect(),
             observed_route_posts: g.observed_route_posts.into_iter().collect(),
+            observed_great_work_housing: g.observed_great_work_housing,
+            observed_route_yields: g.observed_route_yields.into_iter().collect(),
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -19027,6 +19084,8 @@ impl Game {
         self.observed_city_housing_adjustments.clear();
         self.observed_tile_yield_adjustments.clear();
         self.observed_route_posts.clear();
+        self.observed_great_work_housing = None;
+        self.observed_route_yields.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -19355,6 +19414,8 @@ impl Game {
             observed_city_housing_adjustments: BTreeMap::new(),
             observed_tile_yield_adjustments: BTreeMap::new(),
             observed_route_posts: BTreeMap::new(),
+            observed_great_work_housing: None,
+            observed_route_yields: BTreeMap::new(),
             observed_city_worked_tiles: BTreeMap::new(),
             observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
@@ -40544,7 +40605,13 @@ impl Game {
             // Rationalism, Free Market, Grand Opera and Simultaneum each pay
             // in two halves in Gathering Storm rather than one flat double:
             // half where the city has 15 Population, half where the district
-            // already earns 4 of that yield from adjacency.
+            // already earns 4 of that yield from adjacency —
+            // REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4, read on
+            // the district's OWN adjacency, before Natural Philosophy and its
+            // kin double it: live Ostia's Campus showed "+6" (3 doubled) and
+            // Antium's "+4" (2 doubled) with Rationalism slotted, and neither
+            // city's Library or University earned a point from it (run
+            // civvis-20260816T233226Z t153-169).
             if let Some(family) = building.district {
                 let (key, yield_of) = match family.as_str() {
                     "campus" => ("campus_building_science_pct", 0),
@@ -40562,7 +40629,13 @@ impl Game {
                     if self
                         .city_district_family_position(city, family)
                         .map(|position| {
-                            let adjacency = self.district_yields(Name::new(family.as_str()), position);
+                            let placed = self.map.tiles[&position].district.unwrap_or(family);
+                            let mut adjacency = Yields::default();
+                            for source in self.district_adjacency_sources(placed, position) {
+                                if source.source != "adjacency_bonus" {
+                                    adjacency.add(source.yields);
+                                }
+                            }
                             match yield_of {
                                 0 => adjacency.science,
                                 1 => adjacency.gold,
@@ -41108,6 +41181,16 @@ impl Game {
                 // their origin (twelve `ADJUST_TRADE_ROUTE_YIELD_MODIFIER`
                 // rows, `Origin=1`); the `Destination=1` half is below.
                 rys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
+                // Where the host has said what THIS route pays its origin
+                // (`observed_route_yields`, from `CalculateOriginYields…` the
+                // way the shipped Trade Overview sums them), that figure stands
+                // in for the model's — the destination's districts may sit on
+                // ground the seat has never seen (Ostia's route to Stockholm
+                // read "+1 Science" from a Campus on an unrevealed plot, run
+                // civvis-20260816T233226Z t177+).
+                if let Some(observed) = self.observed_route_yields.get(&(cid, r.dest)) {
+                    rys = *observed;
+                }
                 ys.add(rys);
             }
         }
@@ -57055,7 +57138,7 @@ impl Game {
 
     /// Housing Great Works assigns them across every city the player owns, and
     /// `city_yields` runs the whole assignment to read one city's entry.
-    fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+    pub(crate) fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
         if let Some(memo) = self.query_memo.housed_works.borrow().as_ref() {
             if let Some(value) = memo.get(&pid) {
                 return value.clone();
@@ -57069,6 +57152,17 @@ impl Game {
     }
 
     fn housed_great_works_uncached(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+        // The host's placement, where the mirror has read it (seat 0 only:
+        // the export names our own cities' works).
+        if pid == 0 {
+            if let Some(observed) = &self.observed_great_work_housing {
+                return observed
+                    .iter()
+                    .filter(|(city, _)| self.cities.get(*city).is_some_and(|c| c.owner == pid))
+                    .map(|(city, kinds)| (*city, kinds.clone()))
+                    .collect();
+            }
+        }
         self.housed_great_works_with_extra(pid, None)
     }
 

@@ -2616,6 +2616,13 @@ mod tests {
         assert_eq!(plan.specialists, vec!["theater_square"]);
         assert_eq!(recon.game.players[0].counters["great_work:writing"], 1);
         assert_eq!(recon.game.players[0].great_work_pieces.len(), 1);
+        // And the host's own housing is the model's: the work sits where the
+        // export says, not where the model's best-slot heuristic would put it.
+        assert_eq!(
+            recon.game.observed_great_work_housing.as_ref().and_then(|h| h.get(&cid)).and_then(|k| k.get("writing")),
+            Some(&1)
+        );
+        assert_eq!(recon.game.housed_great_works(0).get(&cid).and_then(|k| k.get("writing")), Some(&1));
         assert_eq!(recon.game.cities[&cid].production, 12.5);
         assert_eq!(recon.game.city_yields(cid), host_yields);
 
@@ -5864,6 +5871,7 @@ mod tests {
                     y: 5,
                     pop: 3,
                     capital: true,
+                    loyalty: 100.0,
                     ..StateCity::default()
                 },
                 StateCity {
@@ -5872,6 +5880,7 @@ mod tests {
                     x: 6,
                     y: 6,
                     pop: 3,
+                    loyalty: 100.0,
                     ..StateCity::default()
                 },
             ],
@@ -5893,6 +5902,17 @@ mod tests {
                 destination_y: 5,
                 posts_own: Some(2),
                 posts_foreign: Some(1),
+                // The host's Trade Overview is authoritative here: a route
+                // can earn from a destination district that this seat has not
+                // revealed, which the model must not invent from the fog.
+                yields: Some(crate::rules::Yields {
+                    food: 2.0,
+                    production: 3.0,
+                    gold: 7.0,
+                    science: 5.0,
+                    culture: 11.0,
+                    faith: 13.0,
+                }),
                 ..StateTradeRoute::default()
             }],
             // Firaxis allocates city ids per player. This city-state's first city
@@ -5928,9 +5948,40 @@ mod tests {
         // straight-line walk, and survive a save.
         let key = (mirror.game.routes[0].origin, mirror.game.routes[0].dest);
         assert_eq!(mirror.game.observed_route_posts.get(&key), Some(&(2, 1)));
+        let host_route = crate::rules::Yields {
+            food: 2.0,
+            production: 3.0,
+            gold: 7.0,
+            science: 5.0,
+            culture: 11.0,
+            faith: 13.0,
+        };
+        assert_eq!(mirror.game.observed_route_yields.get(&key), Some(&host_route));
+        // The host's total replaces the model's complete route calculation,
+        // rather than being added to it — otherwise an unseen Campus earns
+        // twice. Removing the route leaves exactly its six host values behind.
+        let origin = mirror.game.routes[0].origin;
+        let routed = mirror.game.city_yields(origin);
+        let mut no_route = mirror.game.clone();
+        no_route.routes.clear();
+        let baseline = no_route.city_yields(origin);
+        for (label, observed, got, base) in [
+            ("food", host_route.food, routed.food, baseline.food),
+            ("production", host_route.production, routed.production, baseline.production),
+            ("gold", host_route.gold, routed.gold, baseline.gold),
+            ("science", host_route.science, routed.science, baseline.science),
+            ("culture", host_route.culture, routed.culture, baseline.culture),
+            ("faith", host_route.faith, routed.faith, baseline.faith),
+        ] {
+            assert!(
+                ((got - base) - observed).abs() < 1e-9,
+                "the host's {label} replaces the route model: {base} + {observed} != {got}"
+            );
+        }
         let saved: crate::game::Game =
             serde_json::from_str(&serde_json::to_string(&mirror.game).unwrap()).unwrap();
         assert_eq!(saved.observed_route_posts.get(&key), Some(&(2, 1)));
+        assert_eq!(saved.observed_route_yields.get(&key), Some(&host_route));
 
         // The next authoritative state is the only thing allowed to complete a
         // route.  A persistent mirror must stop counting it immediately once the
@@ -5942,6 +5993,7 @@ mod tests {
         assert!(mirror.active_trade_route_traders.is_empty());
         assert!(mirror.game.units.contains_key(&trader));
         assert!(mirror.game.observed_route_posts.is_empty());
+        assert!(mirror.game.observed_route_yields.is_empty());
     }
 
     #[test]
@@ -8358,6 +8410,13 @@ pub struct StateGreatPerson {
     pub can_activate: bool,
     #[serde(default)]
     pub activation_plots: Vec<StateActivationPlot>,
+    /// Empty Great Work slots anywhere in the empire that this person's work
+    /// fits, counted by the host through its own `GreatWork_ValidSubTypes`
+    /// table. `None` for classes that do not consume slots, and for exports
+    /// from a mod that could not read the slot tables — never a defaulted 0,
+    /// because 0 is a claim ("build capacity") and `None` is an absence.
+    #[serde(default)]
+    pub empty_slots: Option<u32>,
 }
 
 /// One currently recruitable entry in Firaxis's Great Person timeline.
@@ -8449,6 +8508,12 @@ pub struct StateTradeRoute {
     pub posts_own: Option<i64>,
     #[serde(default)]
     pub posts_foreign: Option<i64>,
+    /// What the route pays its origin per turn, as the host sums it
+    /// (`CalculateOriginYieldsFromPotentialRoute` + `…FromPath` +
+    /// `…FromModifiers`, times the international multiplier — the shipped
+    /// TradeSupport recipe). `None` on an older export.
+    #[serde(default)]
+    pub yields: Option<crate::rules::Yields>,
 }
 
 /// Empire-wide facts Civilization VI exposes in standings without exposing
@@ -9345,6 +9410,7 @@ fn restore_active_trade_routes(
 ) -> Vec<String> {
     game.routes.clear();
     game.observed_route_posts.clear();
+    game.observed_route_yields.clear();
     let ends = game.turn.saturating_add(game.max_turns.max(1));
     let mut unresolved = Vec::new();
 
@@ -9394,6 +9460,16 @@ fn restore_active_trade_routes(
             if own >= 0 && foreign >= 0 {
                 game.observed_route_posts
                     .insert((origin, destination), (own, foreign));
+            }
+        }
+        // And what the host says the route pays its origin, which covers a
+        // destination whose districts the seat has never seen.
+        if let Some(yields) = route.yields {
+            let finite = [yields.food, yields.production, yields.gold, yields.science, yields.culture, yields.faith]
+                .iter()
+                .all(|value| value.is_finite() && *value >= 0.0);
+            if finite {
+                game.observed_route_yields.insert((origin, destination), yields);
             }
         }
         game.routes.push(crate::game::TradeRoute {
@@ -9730,7 +9806,21 @@ fn apply_live_great_person_activation_needs(
         let Some(person) = unit.great_person.as_ref() else {
             continue;
         };
-        if person.can_activate || !person.activation_plots.is_empty() {
+        if person.can_activate {
+            continue;
+        }
+        // A non-empty plot list is only proof of a *place*, not of a use:
+        // `GetActivationHighlightPlots` highlights a cultural person's
+        // district whether or not a compatible Great Work slot is free.
+        // Seven Writers, Artists and Musicians stood on one Theater plot for
+        // thirty-plus turns on run civvis-20260817T010950Z, unactivatable,
+        // while this gate read their nine highlighted plots as "nothing to
+        // build". The host's own empty-slot count is the tiebreaker: zero
+        // compatible empty slots empire-wide is a need exactly as surely as
+        // no plot at all — including the moment a person's previous work
+        // fills the last slot, which is when the next building should start.
+        let slot_starved = person.empty_slots == Some(0);
+        if !person.activation_plots.is_empty() && !slot_starved {
             continue;
         }
         let kind = person
@@ -10446,7 +10536,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
-        "destination_x", "destination_y", "posts_own", "posts_foreign",
+        "destination_x", "destination_y", "posts_own", "posts_foreign", "yields",
     ];
     const GOVERNOR: &[&str] = &[
         "type", "city", "city_player", "x", "y", "established", "turns_on_site",
@@ -13233,29 +13323,41 @@ fn apply_observed_city_economy(
         }
         game.players[0].great_work_pieces.clear();
         let mut seen = std::collections::BTreeSet::new();
-        let works = state
-            .cities
-            .iter()
-            .flat_map(|city| city.great_works.as_deref().unwrap_or_default());
-        for work in works {
-            if !seen.insert(work.kind.clone()) {
-                continue;
-            }
-            match great_work_kind(&work.object) {
-                Some(kind) => game.grant_great_work(
-                    0,
-                    kind,
-                    great_work_era(work.era.as_deref()),
-                    &work.creator,
-                ),
-                None => {
-                    let issue = format!("{}:{}:great_work", work.kind, work.object);
-                    if !unmapped.contains(&issue) {
-                        unmapped.push(issue);
+        // ...and WHERE the host keeps each one. The model's own housing picks
+        // the best slot for a work (a Relic goes to St. Basil's over the
+        // Palace); the host's placement is what pays, and it read "+6 from
+        // GreatWorks" in Rome while the model paid Mediolanum (run
+        // civvis-20260816T233226Z t154+).
+        let mut housing: std::collections::BTreeMap<u32, std::collections::BTreeMap<String, usize>> =
+            Default::default();
+        for city in &state.cities {
+            let cid = game.city_at(crate::hex::offset_to_axial(city.x, city.y));
+            for work in city.great_works.as_deref().unwrap_or_default() {
+                if !seen.insert(work.kind.clone()) {
+                    continue;
+                }
+                match great_work_kind(&work.object) {
+                    Some(kind) => {
+                        game.grant_great_work(
+                            0,
+                            kind,
+                            great_work_era(work.era.as_deref()),
+                            &work.creator,
+                        );
+                        if let Some(cid) = cid {
+                            *housing.entry(cid).or_default().entry(kind.to_string()).or_insert(0) += 1;
+                        }
+                    }
+                    None => {
+                        let issue = format!("{}:{}:great_work", work.kind, work.object);
+                        if !unmapped.contains(&issue) {
+                            unmapped.push(issue);
+                        }
                     }
                 }
             }
         }
+        game.observed_great_work_housing = Some(housing);
     }
 
     // ★★★★★ THE HOST'S OWN PER-PLOT YIELDS, WHERE THE EXPORT CARRIES THEM.
@@ -16686,6 +16788,7 @@ mod host_fact_tests {
                     charges: 1,
                     can_activate: false,
                     activation_plots: Vec::new(),
+                    empty_slots: None,
                 }),
                 ..StateUnit::default()
             }],
@@ -16717,6 +16820,61 @@ mod host_fact_tests {
             game.players[0].live_great_person_activation_needs.is_empty(),
             "a host-valid destination clears the production demand immediately"
         );
+    }
+
+    /// A highlighted plot is a *place*, not a *use*. Firaxis highlights a
+    /// cultural person's district whether or not a compatible Great Work slot
+    /// is free, so seven Writers/Artists/Musicians stood on one Theater plot
+    /// for thirty-plus turns on run civvis-20260817T010950Z while the old
+    /// plots-non-empty gate read them as needing nothing. The host's own
+    /// empty-slot count is the tiebreaker: zero compatible slots anywhere is
+    /// a production need exactly as surely as no plot at all.
+    #[test]
+    fn a_slot_starved_person_with_highlighted_plots_is_still_a_need() {
+        let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
+        let person = |empty_slots: Option<u32>, can_activate: bool| StateGreatPerson {
+            individual: Some("GREAT_PERSON_INDIVIDUAL_MARK_TWAIN".to_string()),
+            class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
+            required_district: None,
+            charges: 0,
+            can_activate,
+            activation_plots: vec![StateActivationPlot { x: 25, y: 23, distance: 0 }],
+            empty_slots,
+        };
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 90,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(person(Some(0), false)),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut unmapped = Vec::new();
+
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs.len(),
+            1,
+            "zero empty slots with highlighted plots is a need"
+        );
+        assert_eq!(game.players[0].live_great_person_activation_needs[0].kind, "writer");
+
+        // Slots free: the highlighted plot really is actionable — no need.
+        state.units[0].great_person = Some(person(Some(3), false));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
+
+        // An older mod that cannot count slots sends nothing: old behaviour,
+        // no need while plots are listed.
+        state.units[0].great_person = Some(person(None, false));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
+
+        // And the host saying "activate now" outranks its slot arithmetic.
+        state.units[0].great_person = Some(person(Some(0), true));
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(game.players[0].live_great_person_activation_needs.is_empty());
     }
 
     /// The government HISTORY must reach the planner, so a return switch is

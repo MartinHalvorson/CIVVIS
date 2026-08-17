@@ -909,6 +909,23 @@ and Classical Republic's 15% makes it 8.05 — the host's 8.04. With the
 Prophet class exhausted every one of those points is Faith. Now in
 `great_person_points_per_turn`.
 
+### Round 11: the host houses its own Great Works, and Rationalism reads raw adjacency (2026-08-17, run `civvis-20260816T233226Z`)
+
+- **A Relic the host kept in Rome's Palace read "+6 from GreatWorks" there
+  while the model paid Mediolanum** — the model houses works by its own
+  best-slot heuristic (a Relic goes to St. Basil's over the Palace), and for
+  twenty turns Rome read 6 Faith under and Mediolanum 6 over. The export
+  already names each work's city, building and slot; the mirror now keeps
+  that placement (`Game::observed_great_work_housing`) and `housed_great_works`
+  returns it for the seat instead of distributing.
+- **Rationalism, Free Market, Grand Opera and Simultaneum read the district's
+  own adjacency.** Ostia's Campus showed "+6" (3 doubled by Natural
+  Philosophy) and Antium's "+4" (2 doubled) with Rationalism slotted, and
+  neither city's Library or University earned a point (t153-169); the model
+  paid both +3. `REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4` is
+  met by the district's adjacency before the percentage cards, so the clause
+  now sums the adjacency sources without the `adjacency_bonus` line.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the
