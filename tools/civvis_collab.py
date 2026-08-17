@@ -1608,6 +1608,7 @@ def bootstrap_command(args: argparse.Namespace) -> int:
         raise CommandError(str(failure))
     service_paths = install_freshness_service(root)
     guard = install_memory_guard(root)
+    ladder = install_ladder_supervisor(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
     for path in service_paths:
         print(f"installed CIVVIS freshness service: {path}")
@@ -1615,6 +1616,11 @@ def bootstrap_command(args: argparse.Namespace) -> int:
         print(f"installed CIVVIS memory guard: {guard}")
     else:
         print("memory guard: macOS only, not installed on this platform")
+    for path in ladder:
+        print(f"installed CIVVIS ladder service: {path}")
+    if not ladder:
+        print("ladder supervisor: this host is not a Civilization VI seat, "
+              "not installed")
     print_refresh_report(report)
     return 0
 
@@ -2231,8 +2237,171 @@ def macos_memguard_plist(guard: Path) -> bytes:
         "\t<key>LowPriorityIO</key>\n\t<true/>\n"
         f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
         f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
         "</dict>\n</plist>\n"
     ).encode("utf-8")
+
+
+# ⚠⚠ EVERY MANAGED PLIST MUST CARRY THIS KEY. `write_managed_service` refuses to
+# overwrite a definition that does not contain FRESHNESS_MARKER, and it makes
+# that check BEFORE the "identical, nothing to do" check — so a managed plist
+# written without the marker can be created once and then never updated. The
+# memory guard shipped that way on 2026-08-17 (#1867): the first `bootstrap`
+# installed it and every later `bootstrap` raised "refusing to replace unmanaged
+# scheduler definition" the moment the content had to change, e.g. because the
+# tree moved or a threshold was tuned. Emit this in the plist body, not a
+# comment, so the marker survives plist round-tripping.
+MANAGED_KEY = (f"\t<key>CivvisManagedBy</key>\n\t<string>{FRESHNESS_MARKER}"
+               "</string>\n")
+
+LADDER_LABEL = "com.civvis.ladder"
+LADDER_WATCHDOG_LABEL = "com.civvis.ladder-watchdog"
+LADDER_STALE_HOURS = "3"
+LADDER_WATCHDOG_INTERVAL_SECONDS = 600
+
+
+def ladder_supervisor_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "civvis-game-supervisor.sh"
+
+
+def ladder_watchdog_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "ladder_watchdog.py"
+
+
+def host_plays_civ6(runs: Optional[Path] = None) -> bool:
+    """Whether this host is a Civilization VI seat, on evidence rather than hope.
+
+    The supervisor drives a real Civ 6 install through the macOS GUI: it needs
+    the game, Steam, and Accessibility permission. Installing a game-playing
+    launchd job on a fleet machine that has none of that would be a job that can
+    only fail, so the gate is a runs directory this host has actually written.
+    """
+    runs = runs if runs is not None else Path.home() / "civvis-civ6-runs"
+    return runs.is_dir()
+
+
+def macos_ladder_plist(supervisor: Path, repo: Path) -> bytes:
+    """launchd job for the game supervisor: keep it alive, forever.
+
+    `KeepAlive` is the whole point. The supervisor is an infinite pull/build/
+    play loop, so any exit at all is a failure — a crash, a closed terminal, a
+    logout, a reboot. Before this it was hand-started from a session, which is
+    why 2026-08-17 lost 14.3 hours of attempts when that session ended.
+
+    `ThrottleInterval` bounds the other direction: a supervisor that dies
+    immediately (no Civ 6, no permission) retries once a minute instead of
+    spinning against launchd's 10-second floor.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-ladder.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in ("/bin/zsh", str(supervisor))
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{LADDER_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        f"\t<key>WorkingDirectory</key>\n\t<string>{repo_root(repo)}</string>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        f"\t\t<key>CIVVIS_HEAD_REPO</key>\n\t\t<string>{repo_root(repo)}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>"
+        f"{Path.home() / '.cargo' / 'bin'}:/usr/local/bin:/opt/homebrew/bin"
+        ":/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>KeepAlive</key>\n\t<true/>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>ThrottleInterval</key>\n\t<integer>60</integer>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
+    """launchd job for the staleness watchdog: its own process, its own clock.
+
+    Separate from the supervisor job deliberately. `KeepAlive` above catches a
+    supervisor that EXITED; it cannot catch one that is alive and looping while
+    producing no attempts, which is what a wedged Civ 6 core or a broken build
+    looks like to the process table. This job asks the only question that
+    settles it — when did we last finish a game — and it must be able to outlive
+    the thing it supervises, so it cannot live inside it.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>"
+        for value in (sys.executable, str(watchdog),
+                      "--stale-hours", LADDER_STALE_HOURS,
+                      "--label", LADDER_LABEL)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{LADDER_WATCHDOG_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>StartInterval</key>\n\t<integer>"
+        f"{LADDER_WATCHDOG_INTERVAL_SECONDS}</integer>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>LowPriorityIO</key>\n\t<true/>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def load_managed_job(label: str, path: Path) -> None:
+    """Write-then-(re)load a managed LaunchAgent, idempotently."""
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{label}"),
+                     check=False).returncode
+    if loaded:
+        run(("launchctl", "bootout", f"{domain}/{label}"), check=False)
+    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+    run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
+
+
+def install_ladder_supervisor(repo: Path) -> List[Path]:
+    """Install the game supervisor and its watchdog. Empty where they do not apply.
+
+    Two jobs, two failure modes. See the plist builders above for which is
+    which; the short version is that KeepAlive covers a supervisor that died
+    and the watchdog covers one that is alive but not playing.
+    """
+    if sys.platform != "darwin" or not host_plays_civ6():
+        return []
+    supervisor = ladder_supervisor_source(repo)
+    watchdog = ladder_watchdog_source(repo)
+    for source in (supervisor, watchdog):
+        if not source.is_file():
+            raise CommandError(f"versioned ladder service is missing: {source}")
+
+    installed: List[Path] = []
+    agents = Path.home() / "Library" / "LaunchAgents"
+    for label, data in (
+        (LADDER_LABEL, macos_ladder_plist(supervisor, repo)),
+        (LADDER_WATCHDOG_LABEL, macos_ladder_watchdog_plist(watchdog)),
+    ):
+        path = agents / f"{label}.plist"
+        changed = write_managed_service(path, data)
+        domain = f"gui/{os.getuid()}"
+        loaded = not run(("launchctl", "print", f"{domain}/{label}"),
+                         check=False).returncode
+        if changed or not loaded:
+            load_managed_job(label, path)
+        installed.append(path)
+    return installed
 
 
 def install_memory_guard(repo: Path) -> Optional[Path]:

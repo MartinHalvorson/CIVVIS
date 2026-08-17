@@ -562,6 +562,40 @@ def render(snapshot: Path | None = None, markdown: Path | None = None) -> int:
     return 0
 
 
+def newest_attempt_age_hours(state: dict, now: datetime | None = None
+                             ) -> float | None:
+    """Hours since the newest recorded attempt, or `None` when there are none.
+
+    The one definition of "when did this project last play a game". `check`
+    reports it to a human and `ops/ladder_watchdog.py` acts on it, and those two
+    must never be able to disagree about what stale means — a watchdog that
+    restarts the supervisor on a different clock than the check that reports it
+    is a watchdog nobody can reason about.
+    """
+    newest = None
+    for a in state.get("attempts") or []:
+        if a.get("utc") and (newest is None or a["utc"] > newest):
+            newest = a["utc"]
+    if newest is None:
+        return None
+    now = now or datetime.now(timezone.utc)
+    stamp = datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc)
+    return (now - stamp).total_seconds() / 3600
+
+
+def staleness_problem(state: dict, stale_hours: float,
+                      now: datetime | None = None) -> str | None:
+    """The staleness sentence, or `None` when the loop is producing attempts."""
+    age = newest_attempt_age_hours(state, now=now)
+    if age is None:
+        return "the ledger holds no attempts at all"
+    if age > stale_hours:
+        return (f"newest recorded attempt is {age:.1f}h old "
+                f"(limit {stale_hours:g}h) — is the supervisor running?")
+    return None
+
+
 def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           snapshot: Path | None = None, now: datetime | None = None,
           min_applied: float | None = None,
@@ -601,20 +635,10 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                             f"and land it)")
 
     if stale_hours is not None:
-        newest = None
-        for a in state["attempts"]:
-            if a.get("utc") and (newest is None or a["utc"] > newest):
-                newest = a["utc"]
         now = now or datetime.now(timezone.utc)
-        if newest is None:
-            problems.append("the ledger holds no attempts at all")
-        else:
-            age = (now - datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ")
-                   .replace(tzinfo=timezone.utc)).total_seconds() / 3600
-            if age > stale_hours:
-                problems.append(f"newest recorded attempt is {age:.1f}h old "
-                                f"(limit {stale_hours:g}h) — is the supervisor "
-                                f"running?")
+        stale = staleness_problem(state, stale_hours, now=now)
+        if stale:
+            problems.append(stale)
 
     if min_applied is not None:
         # The newest attempt that measured itself, not the newest attempt: a

@@ -25,8 +25,18 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # Set CIVVIS_PIN=head to go back to tracking main once that is fixed.
 # Re-read EVERY cycle from a one-line file, so the tree can be switched without
 # killing a game in progress. Contents: an absolute path to the tree to play
-# from, or "head" to track origin/main in /Users/martin/CIVVIS.
+# from, or "head" to track origin/main in $HEAD_REPO below.
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
+# ⚠⚠ THE TREE THIS SUPERVISOR PLAYS FROM IS DERIVED, NOT TYPED. It used to read
+# `REPO=/Users/martin/CIVVIS`, which is a path that exists on exactly one
+# machine in the fleet. Everywhere else the supervisor reached `cd "$REPO"`,
+# logged "no tree at ...", slept 60s and did that forever — so on this host it
+# was never installable and the ladder loop was hand-started from a terminal
+# instead. That is how the loop came to be a process nobody supervised, and how
+# 2026-08-17 lost 14.3 hours of attempts to a session that simply ended.
+# `$0` is this script inside `<tree>/tools/ops/`, so the tree is three levels
+# up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
+HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
 STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
 # Attempts per cycle. 1 keeps the ambient loop's contract: every game plays
@@ -215,7 +225,7 @@ while true; do
 
   PIN=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
   if [[ "$PIN" == "head" ]]; then
-    REPO=/Users/martin/CIVVIS
+    REPO=$HEAD_REPO
   else
     REPO=$PIN
   fi
