@@ -6957,8 +6957,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("return isBattlefieldMapScript(state.map.script);"));
         assert!(EMBEDDED_INDEX.contains("syncModeLink(tactics);"));
         // Settled before the engine answers, so a deep link into a
-        // battlefield never spends its first seconds offering Tactics.
-        assert!(EMBEDDED_INDEX.contains("syncModeLink();\nboot();"));
+        // battlefield never spends its first seconds offering Tactics. Since
+        // the viewer split, app.js (loaded first) cannot call syncModeLink at
+        // its own load time — the chip settles in app_setup.js's deferred
+        // cross-file init, the last statements of the second script, still
+        // ahead of boot's first /state answer.
+        assert!(EMBEDDED_INDEX.contains("initAdvancedSettings();\nsyncModeLink();"));
+        assert!(EMBEDDED_INDEX.contains("\nboot();"));
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
         const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
