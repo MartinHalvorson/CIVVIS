@@ -352,3 +352,5 @@ jobs:
         run: lua5.1 tools/civ6_control/mod/peace_submission_test.lua
       - name: World Congress leader selection
         run: lua5.1 tools/civ6_control/mod/congress_leader_test.lua
+      - name: World Congress penalty-ballot target
+        run: lua5.1 tools/civ6_control/mod/victory_threat_test.lua

@@ -1148,6 +1148,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
+        + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
         + [flag for treatment in args.without
            for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
@@ -1211,6 +1212,9 @@ def main() -> int:
                          "defaults to 0 for a pinned batch of more than one "
                          "attempt and to the brain's live-upgrade cadence "
                          "otherwise (see batch_refresh_seconds)")
+    ap.add_argument("--no-counter-resolutions", action="store_true", default=False,
+                    help="withhold counter-resolution targeting for this batch "
+                         "— the control half of its live A/B")
     ap.add_argument("--no-peace-deterrence", action="store_true", default=False,
                     help="withhold the fallback ladder's peacetime deterrence "
                          "for this batch — the control arm of the Lua army "

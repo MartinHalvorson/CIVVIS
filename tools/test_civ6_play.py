@@ -1093,6 +1093,31 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class CounterResolutionConfigTests(unittest.TestCase):
+    """⚠ A flag the mod never receives is a flag that does nothing."""
+
+    @staticmethod
+    def _config(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[],
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", **changes))
+
+    def test_both_keys_reach_the_baked_config(self) -> None:
+        cfg = self._config(counter_resolutions=True, counter_resolution_bar=60.0)
+        self.assertIs(cfg["CounterResolutions"], True)
+        self.assertEqual(cfg["CounterResolutionBar"], 60.0)
+
+    def test_the_withheld_arm_reaches_the_config_too(self) -> None:
+        cfg = self._config(counter_resolutions=False, counter_resolution_bar=60.0)
+        self.assertIs(cfg["CounterResolutions"], False)
+
+
 class PeaceDeterrenceConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing (#1098's
     lesson): the key has to reach the baked config, and the Lua has to read it.
