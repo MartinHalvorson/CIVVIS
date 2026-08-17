@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import builtins
 import os
 import re
 import sys
@@ -1161,6 +1162,43 @@ class ScreenshotFailureTests(unittest.TestCase):
                 Path(temporary) / "never-written.png", (756, 33, 756, 480))
         self.assertEqual(observations, [])
         recognize.assert_not_called()
+
+    def test_a_host_without_pillow_loses_the_crop_not_the_read(self) -> None:
+        """No Pillow must cost the 4x enhancement, never the whole read.
+
+        ⚠ `from PIL import Image` raised `ModuleNotFoundError` past a handler
+        that already returned `[]` for exactly this shape of failure, out of a
+        function whose sibling test is named "a missing shot reads as nothing,
+        not a crash". On ubuntu — no Pillow — it crashed, and the shared
+        `collaboration-policy` gate went red for every open pull request.
+        """
+        real_import = builtins.__import__
+
+        def no_pillow(name, *args, **kwargs):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ModuleNotFoundError("No module named 'PIL'")
+            return real_import(name, *args, **kwargs)
+
+        # An existing file falls back to the native OCR: the crop is gone, the
+        # read is not.
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "shot.png"
+            shot.write_bytes(b"not really a png")
+            with patch.object(builtins, "__import__", side_effect=no_pillow), \
+                 patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "TRAJAN"}]) as recognize:
+                observations = civ6_play._leader_ocr(shot, (756, 33, 756, 480))
+            self.assertEqual(observations, [{"text": "TRAJAN"}])
+            recognize.assert_called_once_with(shot)
+
+        # A missing file still reads as nothing, and never reaches the OCR.
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(builtins, "__import__", side_effect=no_pillow), \
+                 patch.object(civ6_play.macos_ocr, "recognize") as recognize:
+                observations = civ6_play._leader_ocr(
+                    Path(temporary) / "never-written.png", (756, 33, 756, 480))
+            self.assertEqual(observations, [])
+            recognize.assert_not_called()
 
     def test_intro_probe_survives_an_unavailable_ocr(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
