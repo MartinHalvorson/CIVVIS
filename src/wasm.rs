@@ -209,6 +209,25 @@ fn decorate_browser(o: &mut Value) {
     o["supervisor_request"] = Value::Null;
 }
 
+/// The Civilization VI integration drives an application on the machine
+/// serving the native socket. A published page has no access to that machine
+/// (and must never pretend that the browser itself is the host), but it still
+/// answers the same capability request so the setup panel can explain the
+/// boundary instead of sending the call to the public network.
+const CIV6_NATIVE_ONLY_MESSAGE: &str =
+    "Civilization VI integration is available only in the native desktop build";
+
+fn browser_civ6_status() -> Value {
+    json!({
+        "ready": false,
+        "install": Value::Null,
+        "controller": Value::Null,
+        "blocked": CIV6_NATIVE_ONLY_MESSAGE,
+        "holder": Value::Null,
+        "run": Value::Null,
+    })
+}
+
 /// Replace a browser state map with the tile delta from the exact frame the
 /// page says it holds.
 ///
@@ -337,6 +356,15 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // that hosts it. Keep the response shape, but say that plainly rather
         // than substituting the tab's own incomplete measurements.
         ("GET", "/machine-metrics") => machine_metrics_json(),
+
+        // Civilization VI is a native desktop integration. The browser still
+        // answers its capability and start requests so the viewer's hidden
+        // mode cannot fall through to civvis.ai (or report a misleading
+        // generic network failure) when a stored setup selects it.
+        ("GET", "/civ6") => browser_civ6_status(),
+        ("POST", "/civ6/start") => {
+            json!({"error": CIV6_NATIVE_ONLY_MESSAGE, "started": Value::Null})
+        }
 
         ("GET", "/status") => with_session(|session| {
             json!({
