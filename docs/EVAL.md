@@ -10074,3 +10074,38 @@ historical `advanced_without_bounded_recovery` label now resolves to
 new effect size from a flag already absent in the incumbent. The negative
 records and explicit positive controls remain reachable for any fresh,
 pre-registered question.
+
+## 2026-08-17 — fifteen shipped treatments could not be withheld, and now can
+
+Not a result. A gap in what results are *available*, closed.
+
+`AdvancedAi::enable_live_bridge` turns on **67 treatments** on the live
+Civilization VI seat. The paired evaluator carried **52** `live_without_*`
+arms. The other fifteen shipped on the seat with no way to take them back out,
+so the withholding comparison ROADMAP objective 3 asks for could not be run on
+them at all — and nothing said so, because the two lists were never joined.
+
+The fifteen:
+
+| treatment | why it was missed |
+|---|---|
+| `live_trader_route_adapter`, `live_religious_purchase_guard`, `recorded_tactical_step`, `strike_opening`, `ranged_needs_line_of_sight` | no `disable_` twin existed |
+| `settler_stack_discipline`, `settler_target_hysteresis`, `camp_party`, `camp_reach`, `one_launch_pad`, `culture_building_debt`, `culture_coverage`, `tally_great_people`, `buildings_before_projects`, `barbarian_scouts_are_scouts` | twin existed, arm was never registered |
+
+The cause is arithmetic rather than carelessness: adding one arm meant **seven
+separate edits** — the name in `EVAL_ONLY_AIS`, an `ArmKind` variant, its
+`name()` mapping, the `build_arm` case, a provenance row, a second
+`(Vec::new(), name)` mapping, and a `SCRIPTED` whitelist entry — plus the
+`disable_` method. Seven places is six chances to stop.
+
+`ai::LIVE_TREATMENTS` is now the single row per treatment (published name,
+provenance tag, withholding call). `build_arm`, the provenance row and the
+scripted-arm assertion all derive from it, and
+`live_bundle_and_registry_agree` reads `enable_live_bridge`'s own source and
+fails if the bundle turns on anything the registry does not carry. A treatment
+can no longer reach the live seat without an arm that prices it.
+
+⚠ **This is a surface, not a finding.** All fifteen remain unmeasured; what
+changed is that they can be measured. Each still needs a pre-registered
+`--deployment-comparison` run before anything is claimed about it, and the
+prior on this ledger is that most repairs measure null.
