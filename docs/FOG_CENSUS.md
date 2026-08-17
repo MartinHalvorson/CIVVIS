@@ -8,6 +8,25 @@ It is a diagnostic, not a fog-honest controller. Its first purpose is to make
 the production-policy integrity gap measurable before treating a replacement
 controller as a fix.
 
+## End-to-end fair-play arm
+
+`AdvancedAi::fog_honest()` is now the explicit controller for the rules-
+integrity item. At the start of its turn it refreshes the controller-owned
+`BeliefState`, builds one disposable planning world from the acting seat's
+current visibility plus its remembered tiles, and removes every hidden foreign
+unit. Unseen terrain becomes an explicit `unknown` prior; a foreign City Center
+survives only as its last-seen owner, hitpoints, wall hitpoints, and displayed
+combat strength. Production, diplomacy, campaign selection, and tactical
+movement all run inside that same world. The resulting action tape is replayed
+on the authoritative game, where hidden blockers and combat still decide
+legality.
+
+The mode is opt-in and default-off. It is a fair-play implementation and
+correctness boundary, not a strength result; stock `AdvancedAi` remains the
+incumbent until a paired, deployment-shaped screen measures the cost and any
+benefit. Focused regressions cover hidden-unit/terrain redaction, action
+invariance under unseen enemy changes, and a short two-major replay.
+
 ## Run it
 
 ```sh

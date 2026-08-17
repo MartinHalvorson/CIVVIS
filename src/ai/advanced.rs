@@ -8,11 +8,12 @@ use super::{
     UnitMemory, WarPlanReport, Weights,
 };
 use crate::belief::{BeliefState, CitySighting};
+use crate::game::{
+    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal,
+    FogCityMemory, Game, Item,
+};
 use crate::name::Name;
 use crate::parallel::WorkPool;
-use crate::game::{
-    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
-};
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
@@ -1208,6 +1209,11 @@ pub struct AdvancedAi {
     /// that compatibility boundary is guarded by the source contract in the
     /// CLI tests.
     battlefront_observation: bool,
+    /// Run the complete major turn against a fog-redacted planning world and
+    /// replay only the resulting actions on the authoritative game.  This is
+    /// the first end-to-end fair-play controller; the incumbent remains on the
+    /// historical direct-game path until the mode clears a strength screen.
+    pub fog_honest: bool,
     /// Adapt a live Firaxis Trader's zero walking movement to its distinct
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
@@ -3314,6 +3320,18 @@ impl AdvancedAi {
         Self::promoted_policy_envoy(Weights::default(), None)
     }
 
+    /// A major controller whose entire turn is planned from current sight and
+    /// last-known memory.  The returned agent is intentionally opt-in: unlike
+    /// a local evaluator flag, this mode changes the information contract for
+    /// production, diplomacy, campaign selection, and tactical movement at
+    /// once, so it needs its own paired gameplay screen before becoming the
+    /// production incumbent.
+    pub fn fog_honest() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.enable_fog_honest();
+        ai
+    }
+
     /// Evaluator treatment for one unified midgame power-spike appointment.
     /// Kept as a named constructor so callers never have to know which
     /// internal capability flag defines the preregistered arm.
@@ -3647,6 +3665,7 @@ impl AdvancedAi {
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
+            fog_honest: false,
             live_trader_route_adapter: false,
             solvent_faith_army: false,
             battlefront_frame: None,
@@ -4992,6 +5011,22 @@ impl AdvancedAi {
 
     pub fn disable_battlefront_observation(&mut self) {
         self.battlefront_observation = false;
+    }
+
+    /// Put this controller behind the turn-level fog boundary.  Belief
+    /// pressure and conservative objective floors are enabled together so a
+    /// hidden contact is represented as stale uncertainty rather than as an
+    /// empty tile or a live omniscient unit.
+    pub fn enable_fog_honest(&mut self) {
+        self.fog_honest = true;
+        self.battlefront_observation = true;
+        self.belief_pressure = true;
+        self.blind_objective_strength = true;
+        self.blind_objective_units = true;
+    }
+
+    pub fn disable_fog_honest(&mut self) {
+        self.fog_honest = false;
     }
 
     /// Rank district families by how much of the empire still lacks them.
@@ -27494,6 +27529,95 @@ impl AdvancedAi {
     }
 }
 
+impl AdvancedAi {
+    /// Plan one complete major turn on a fog-redacted world, then replay the
+    /// action tape against the authoritative game.  A failed replay is simply
+    /// skipped: the real world may contain a hidden blocker or a combat result
+    /// the private view was not entitled to know, and treating that refusal as
+    /// a new observation is safer than manufacturing a replacement order from
+    /// omniscient state.
+    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
+        // Headless runs normally disable the engine's large remembered-map
+        // snapshots.  This mode explicitly opts back in: terrain and borders
+        // seen on an earlier turn are part of the player's knowledge and are
+        // the map half of the same information boundary as BeliefState.
+        g.set_fog_memory(true);
+        // A controller can be attached to a loaded game after the engine has
+        // already accumulated City Center snapshots.  Seed only the public
+        // fields from that memory (the saved snapshot has no combat-strength
+        // field), using the same conservative floor as a never-seen objective;
+        // the live observation below immediately replaces any city in view.
+        let remembered_from_game: Vec<_> = g
+            .players
+            .get(pid)
+            .map(|player| player.remembered_cities.values().cloned().collect())
+            .unwrap_or_default();
+        for city in remembered_from_game {
+            self.belief.cities.entry(city.id).or_insert(CitySighting {
+                pos: city.pos,
+                turn: city.seen_turn,
+                owner: city.owner,
+                hp: city.hp,
+                wall_hp: city.wall_hp,
+                strength: UNKNOWN_OBJECTIVE_STRENGTH,
+            });
+        }
+        // Refresh the controller's own belief from the real turn-start frame
+        // before constructing the private world.  `run_game` deliberately
+        // disables the engine's heavy remembered-map snapshots, so this
+        // controller-owned memory is the durable source for stale contacts.
+        self.belief.observe(g, pid);
+        let remembered_cities: BTreeMap<u32, FogCityMemory> = self
+            .belief
+            .cities
+            .iter()
+            .map(|(cid, sighting)| {
+                (
+                    *cid,
+                    FogCityMemory {
+                        owner: sighting.owner,
+                        pos: sighting.pos,
+                        hp: sighting.hp,
+                        wall_hp: sighting.wall_hp,
+                        strength: sighting.strength,
+                    },
+                )
+            })
+            .collect();
+        let start = g.log.len();
+        let mut private = g.fogged_clone(pid, &remembered_cities);
+        let pool = self.work_pool.clone();
+        private.with_deferred_visibility_pool(pool.as_deref(), |private| {
+            self.take_turn_inner(private, pid)
+        });
+        let actions: Vec<(usize, Action)> = private
+            .log
+            .since(start)
+            .map(|(seat, action)| (*seat, action.clone()))
+            .collect();
+
+        let pool = self.work_pool.clone();
+        g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
+            for (seat, action) in actions {
+                if authoritative.current != seat {
+                    break;
+                }
+                let end_turn = matches!(&action, Action::EndTurn);
+                let _ = authoritative.apply(seat, &action);
+                if end_turn {
+                    break;
+                }
+            }
+            // A hidden blocker can make a private EndTurn arrive before the
+            // authoritative action tape is ready. Keep the ordinary driver
+            // contract: return with the acting seat closed whenever possible.
+            if authoritative.winner.is_none() && authoritative.current == pid {
+                let _ = authoritative.apply(pid, &Action::EndTurn);
+            }
+        });
+    }
+}
+
 impl Ai for AdvancedAi {
     fn joint_tactics_census(&self) -> Option<(usize, usize)> {
         self.joint_tactics.then(|| self.joint_tactics_census())
@@ -27588,6 +27712,10 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
+        if self.fog_honest {
+            self.take_turn_fog_honest(g, pid);
+            return;
+        }
         let pool = self.work_pool.clone();
         g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
     }
@@ -27987,6 +28115,216 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn fog_honest_planning_view_redacts_hidden_units_and_terrain() {
+        let mut game = Game::new_full(2, 30, 18, 84_201, 200, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let visible = game.player_vision_now(0);
+        let far = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.wdist(home, tile.pos) > 12
+                    && !game.sees(&visible, tile.pos)
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored land tile");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+        assert!(!game.sees(&visible, far));
+
+        let private = game.fogged_clone(0, &BTreeMap::new());
+        assert!(
+            !private.units.contains_key(&enemy),
+            "an enemy that is not in the turn-start frame must not reach the planner"
+        );
+        let redacted = private
+            .map
+            .get(far)
+            .expect("redacted tile remains on the map");
+        assert!(private.rules.is_unknown(redacted));
+        assert!(redacted.assumed_traversable);
+        assert_eq!(redacted.resource, None);
+        assert_eq!(redacted.owner_city, None);
+    }
+
+    #[test]
+    fn fog_honest_planning_keeps_only_stale_hidden_city_combat_memory() {
+        let mut game = Game::new_full(2, 40, 20, 84_204, 200, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let visible = game.player_vision_now(0);
+        let far = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.wdist(home, tile.pos) > 12
+                    && !game.sees(&visible, tile.pos)
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(tile.pos).is_none()
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored settlement site");
+        let settler = game.spawn_test_unit("settler", 1, far);
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .expect("the hidden settlement must be founded");
+        game.current = 0;
+        let enemy_city = game
+            .city_at(far)
+            .expect("the fixture settlement must create a city");
+        let visible = game.player_vision_now(0);
+        assert!(!game.sees(&visible, far));
+
+        let remembered = BTreeMap::from([(
+            enemy_city,
+            FogCityMemory {
+                owner: 1,
+                pos: far,
+                hp: 137,
+                wall_hp: 61,
+                strength: 93.0,
+            },
+        )]);
+        let private = game.fogged_clone(0, &remembered);
+        let city = private
+            .cities
+            .get(&enemy_city)
+            .expect("a remembered hidden city remains a target-shaped contact");
+        assert_eq!(city.owner, 1);
+        assert_eq!(city.pos, far);
+        assert_eq!(city.hp, 137);
+        assert_eq!(city.wall_hp, 61);
+        assert_eq!(city.pop, 1);
+        assert!(city.buildings.is_empty());
+        assert!(city.districts.is_empty());
+        assert_eq!(private.observed_city_strength.get(&enemy_city), Some(&93.0));
+    }
+
+    #[test]
+    fn fog_honest_major_is_invariant_to_hidden_enemy_changes() {
+        let mut source = Game::new_full(2, 30, 18, 84_202, 200, 0, false);
+        for pid in 0..2 {
+            let settler = source
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| source.units[uid].kind == "settler")
+                .expect("each seat starts with a settler");
+            source.current = pid;
+            source
+                .apply(pid, &Action::FoundCity { unit: settler })
+                .expect("fixture capitals must be founded");
+        }
+        source.current = 0;
+        let home = source.cities[&source.player_city_ids(0)[0]].pos;
+        let visible = source.player_vision_now(0);
+        let far = source
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                source.wdist(home, tile.pos) > 12
+                    && !source.sees(&visible, tile.pos)
+                    && source.rules.is_passable(tile)
+                    && !source.rules.is_water(tile)
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs an unexplored land tile");
+        let enemy = source.spawn_test_unit("warrior", 1, far);
+        let mut changed = source.clone();
+        let other_far = changed
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                changed.wdist(home, tile.pos) > 12
+                    && !changed.sees(&visible, tile.pos)
+                    && changed.rules.is_passable(tile)
+                    && !changed.rules.is_water(tile)
+                    && tile.pos != far
+            })
+            .map(|tile| tile.pos)
+            .expect("fixture needs a second unexplored land tile");
+        let hidden = changed
+            .units
+            .get_mut(&enemy)
+            .expect("hidden unit survives the clone");
+        hidden.pos = other_far;
+        hidden.hp = 1;
+
+        let mut first = AdvancedAi::fog_honest();
+        let mut second = AdvancedAi::fog_honest();
+        first.take_turn(&mut source, 0);
+        second.take_turn(&mut changed, 0);
+        let first_actions: Vec<_> = source
+            .log
+            .iter()
+            .filter(|(seat, _)| *seat == 0)
+            .map(|(_, action)| action)
+            .collect();
+        let second_actions: Vec<_> = changed
+            .log
+            .iter()
+            .filter(|(seat, _)| *seat == 0)
+            .map(|(_, action)| action)
+            .collect();
+        assert_eq!(
+            first_actions, second_actions,
+            "the fog-honest turn must not change when an unseen enemy moves or heals"
+        );
+    }
+
+    #[test]
+    fn fog_honest_constructor_enables_memory_and_conservative_objectives() {
+        let ai = AdvancedAi::fog_honest();
+        assert!(ai.fog_honest);
+        assert!(ai.battlefront_observation);
+        assert!(ai.belief_pressure);
+        assert!(ai.blind_objective_strength);
+        assert!(ai.blind_objective_units);
+        assert!(!AdvancedAi::new().fog_honest);
+    }
+
+    #[test]
+    fn two_fog_honest_majors_complete_a_short_turn_sequence() {
+        let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
+        let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::fog_honest()];
+        run_game(&mut game, &mut ais);
+        assert!(
+            game.turn > 0,
+            "the private planning turn must replay EndTurn"
+        );
+        assert!(game
+            .log
+            .iter()
+            .any(|(_, action)| matches!(action, Action::EndTurn)));
+    }
 
     #[test]
     fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {

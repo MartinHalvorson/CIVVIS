@@ -17,6 +17,7 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | supervised exhibition | rank-weighted sample from the current table size's top three conservative outright winners; leader/civilization placement rating breaks equal win bounds |
 | city-state or barbarian | `BasicAi` |
 | human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
+| explicit fair-play arm | `AdvancedAi::fog_honest()` (opt-in; not yet strength-promoted) |
 | `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
 | `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
 
@@ -69,9 +70,13 @@ state; coordinates research, civics, policies, governments, Secret Societies,
 diplomacy, production, spending, religion, trade, and unit orders; and falls
 back to the stable city governor for routine production. `advanced_v1`
 preserves the pre-upgrade agent as a frozen regression control. `BasicAi` is
-the deterministic lightweight agent used by city-states and barbarians. All
-three read full state (cheat on fog); fair-play agents should restrict
-themselves to `civvis::obs::observation(&game, pid)`.
+the deterministic lightweight agent used by city-states and barbarians. Stock
+`AdvancedAi`, `advanced_v1`, and `BasicAi` read full state (cheat on fog).
+`AdvancedAi::fog_honest()` is the explicit fair-play arm: it plans the whole
+turn against one fog-redacted, turn-start view, carries stale City Center
+combat memory, and replays only the resulting actions against the
+authoritative game. It is opt-in and has no strength claim until a paired
+screen promotes it.
 
 ### Policy and envoy production default (2026-08-17)
 
