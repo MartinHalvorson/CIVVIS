@@ -3264,6 +3264,10 @@ impl AdvancedAi {
         // the agent the bridge deploys. `advanced_without_explore_commit`
         // prices the withhold.
         ai.base.explore_commit = true;
+        // And walk to a charted village the sweep passed wide of —
+        // `hut_collection` above only grabs one inside the current turn's
+        // reach. `advanced_without_village_seeking` prices the withhold.
+        ai.base.village_seeking = true;
         ai
     }
 
@@ -3837,6 +3841,13 @@ impl AdvancedAi {
     /// `advanced_without_hut_collection` can price it.
     pub fn disable_hut_collection(&mut self) {
         self.base.hut_collection = false;
+    }
+
+    /// Withhold the charted-village detour that production Advanced carries
+    /// by default (see `BasicAi::village_seeking`), so the evaluator arm
+    /// `advanced_without_village_seeking` can price it.
+    pub fn disable_village_seeking(&mut self) {
+        self.base.village_seeking = false;
     }
 
     /// Withhold the committed exploration goal that production Advanced
@@ -29484,6 +29495,11 @@ mod tests {
                 "explore_commit",
                 frozen.base.explore_commit,
                 production.base.explore_commit,
+            ),
+            (
+                "village_seeking",
+                frozen.base.village_seeking,
+                production.base.village_seeking,
             ),
         ] {
             assert!(
