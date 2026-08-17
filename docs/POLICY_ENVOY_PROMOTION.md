@@ -1,5 +1,11 @@
 # Policy/envoy production promotion
 
+> This document records the 2026-08-01 promotion decision. On 2026-08-17,
+> the measured-null `envoy-infrastructure` valuation was removed from the
+> production constructor after 800 games; `envoy-priority` and the Live policy
+> deck remain deployed. The evaluator controls below preserve the original
+> composite and its negative evidence.
+
 ## Decision
 
 On 2026-08-01, production `advanced` adopted the exact composite that was
@@ -23,10 +29,13 @@ anytime-valid crossing at map 42.
 
 ## Construction boundary
 
-`AdvancedAi::new`, `targeting`, `with_weights`, and
-`with_weights_and_target` all force `PolicyDeck::Live` and enable the two envoy
-flags. `reweight` preserves that live non-gene deck for a production Advanced
-controller, while `advanced_v1` retains the weight it is given.
+Historically, `AdvancedAi::new`, `targeting`, `with_weights`, and
+`with_weights_and_target` forced `PolicyDeck::Live` and enabled the two envoy
+flags. Since the 2026-08-17 null cleanup, those production constructors still
+force the Live deck and retain `envoy_priority`, but leave
+`envoy_infrastructure` at its configured default. `reweight` preserves that
+live non-gene deck for a production Advanced controller, while `advanced_v1`
+retains the weight it is given.
 
 `AdvancedAi::pre_policy_envoy` and its weighted counterpart are crate-private
 evaluator controls. They retain the old Live/Legacy and envoy-flag combinations

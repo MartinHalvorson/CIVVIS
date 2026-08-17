@@ -650,11 +650,14 @@ for the tag lists `differing_axes` reports.
 
 ## 2026-08-11 what the production controller is now known to be worth, flag by flag
 
-`AdvancedAi::new()` routes through `promoted_policy_envoy`, which turns on
-thirteen behaviours, and `configured` turns on ten more for every non-`legacy`
-agent. Before this audit, **all twenty-three shared one composite number**
-between them — the 2026-08-01 promotion. That is the condition that let a
-component costing forty-one Elo ship and sit unnoticed for ten days.
+`AdvancedAi::new()` routes through `promoted_policy_envoy`. Historically that
+constructor turned on thirteen behaviours, while `configured` turned on ten
+more for every non-`legacy` agent. Before this audit, **all twenty-three shared
+one composite number** between them — the 2026-08-01 promotion. That is the
+condition that let a component costing forty-one Elo ship and sit unnoticed
+for ten days. The 2026-08-17 cleanup now leaves the two confirmed null arms at
+their configured defaults; the evaluator and live bridge still expose them
+explicitly so their negative evidence remains reproducible.
 
 Each was priced by **withholding** it and running the paired evaluator at the
 deployment shape. The table is the current state; `docs/EVAL.md` has the runs.
@@ -668,8 +671,8 @@ deployment shape. The table is the current state; `docs/EVAL.md` has the runs.
 | ├ `siege_muster` + `home_defense` | +21 selected → **+15, p=0.18 fresh** | gate REJECT, off |
 | └ `tactical_strategy` + `unit_objective_memory` | +11, p=0.32 | null |
 | `plan_city_target` | null (64/64, p=1.0000) | keep |
-| `bounded_recovery` | null over 600 maps, two seeds | keep |
-| `envoy_infrastructure` | null at 800 games | off |
+| `bounded_recovery` | null over 600 maps, two seeds | **removed from production 2026-08-17**; live bridge/evaluator arm retained |
+| `envoy_infrastructure` | null at 800 games | **removed from production 2026-08-17**; evaluator arm retained |
 | `deny_leaders` | near-inert — **370 of 400 maps unchanged** | keep |
 | `battlefront_observation` | null (49/56, p=0.5584) | keep |
 | the four economy flags together | null (79/87, p=0.5871) | keep |
@@ -678,6 +681,18 @@ deployment shape. The table is the current state; `docs/EVAL.md` has the runs.
 rest are nulls or near-inert. That is the honest shape of this controller: it is
 not a stack of small wins, it is a stack of small nothings with one liability in
 it, and the liability was found only because every part was priced separately.
+
+### 2026-08-17 measured-null cleanup
+
+The production constructor now keeps the confirmed nulls out of the stock
+controller. `envoy_priority` remains on because it is the actuation mechanism
+that can reserve a legal Diplomatic Quarter → Consulate → Chancery stage;
+`envoy_infrastructure` was only the netless valuation term around that path.
+`bounded_recovery` remains available to `enable_live_bridge` and explicit
+evaluator bundles, but `advanced_without_bounded_recovery` resolves to
+`advanced` and fails closed as a historical alias. This removes measured-null
+work from every ordinary production turn without erasing the controls or the
+600/800-game negative records that justify the decision.
 
 ### The four traps this audit walked into, so the next reader does not
 

@@ -51,8 +51,11 @@ Everything the old roadmap called planned has shipped and then some:
    surface where search's cost objection collapses.
 5. **Split the three conflict hotspots** (`src/game.rs`, `src/ai/advanced.rs`,
    `web/assets/app.js`) along existing seams; they tax every concurrent PR.
-6. **Delete measured-null code.** Both cleanup audits paid; the off-flags
-   and netless experiment arms documented as negative results are next.
+6. **Delete measured-null code.** ✅ The 2026-08-17 cleanup removes the
+   confirmed-null `bounded_recovery` and `envoy_infrastructure` arms from
+   production while retaining explicit evaluator/live-bridge controls and
+   their negative records. The remaining off-flags and netless experiment arms
+   are still queued for their own evidence-backed cleanup.
 7. **wasm/native viewer parity.** Panels that read native-only state are
    silently dead on civvis.ai; implement or hide, and gate the contract.
 8. **Headless empire actuation repairs** (housing/loyalty cards, eureka

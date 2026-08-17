@@ -2017,6 +2017,11 @@ fn artifact_effective_alias_from(
         // reverted, so it is `advanced` under another name and its comparisons
         // must fail closed as self-play.
         ArmKind::AdvancedHolyV0 => ArmKind::Advanced,
+        // `bounded_recovery` was removed from production on 2026-08-17 after
+        // a 600-map, two-seed null. Keep the historical withhold name for old
+        // commands, but resolve it to the stock controller so it cannot report
+        // a new comparison against an arm that is already off.
+        ArmKind::AdvancedWithoutBoundedRecovery => ArmKind::Advanced,
         // The production floor was removed on 2026-08-10, so withholding it now
         // builds the production controller. Retained under its own name because
         // `docs/EVAL.md` reports five runs against it; declared effectively
@@ -2117,8 +2122,9 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         // These are the exact pre-promotion factorial controls. Production
-        // `advanced` now has Live policy selection plus both direct envoy
-        // mechanisms, so using its ordinary constructors here would collapse
+        // `advanced` now has Live policy selection plus the retained direct
+        // envoy-priority mechanism; the measured-null infrastructure arm is
+        // deliberately off. Using ordinary constructors here would collapse
         // a control into the treatment it is meant to diagnose.
         "advanced_policy_live_control" => {
             let weights = Weights {
@@ -2628,32 +2634,10 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // The opening figure is Religion's own, so this loses every tie to
         // Religion and can only win the argmax against Conquest and Expansion,
         // which score zero. See `AdvancedAi::diplomatic_opening_score`.
-        // Bound the Recovery posture in time.
-        //
-        // An actuation treatment on a documented **absorbing state**, not a
-        // valuation tune. `assess`'s first arm drops the empire into Recovery
-        // whenever it is at war and `my_power * 1.25 < strongest_rival`.
-        // Recovery does not build an army, so the test stays true *because of
-        // the choice it caused* and re-fires every assessment for the rest of
-        // the game. `bounded_recovery` stops only the power-gap half from
-        // re-firing after `RECOVERY_POSTURE_LIMIT` standard turns; the
-        // threatened-city half is untouched.
-        //
-        // The harm is already on record from a live run
-        // (`civvis-20260802T205959Z`): the journal names that arm 160 times,
-        // the posture held t65..t229 — **72% of the game** — and the empire
-        // finished with ONE warrior, military 34 against 1354, score 205
-        // against 1324. Recovery takes 11.7%-13.9% of observed player-turns at
-        // the deployment shape.
-        //
-        // ⚠ It is **already on** in `advanced` -- `promoted_policy_envoy` sets
-        // it and `AdvancedAi::new()` routes through there -- while the field's
-        // own doc claimed native games left it off and `docs/EVAL.md` has never
-        // mentioned it. It reached deployment inside the 2026-08-01 policy-envoy
-        // composite without ever being priced on its own, which is exactly what
-        // `disable_bounded_recovery`'s doc warns about. So this arm WITHHOLDS
-        // it, which is the only way round that measures anything: an arm built
-        // as "new() plus the flag" is byte-identical to the control.
+        // `bounded_recovery` was historically bundled here, then confirmed
+        // null over 600 maps on two disjoint deployment seeds. The dated
+        // experiment remains in `docs/EVAL.md`; production leaves the arm off,
+        // while live-bridge and explicit evaluator constructors opt in.
         // Withhold the production city-target floor, returning it to the 3 the
         // frozen controller uses.
         //
@@ -2700,9 +2684,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // for. The same screen-then-decompose shape found the district genes
         // inside the roster composite (#1486).
         //
-        // Priced already and therefore NOT withheld here: `city_target_floor`
-        // (-41 Elo, removed #1504), `plan_city_target` (null, #1507),
-        // `bounded_recovery` (null, #1499), `envoy_infrastructure` (null), and
+        // Retired measured-null production arms are no longer withheld here:
+        // `bounded_recovery` (null over 600 maps) and
+        // `envoy_infrastructure` (null at 800 games). The remaining retained
+        // bundle still needs individual pricing. Other priced components are
+        // `city_target_floor` (-41 Elo, removed #1504) and
+        // `plan_city_target` (null, #1507),
         // `settler_commit` — which measured **+30 Elo** (withholding it scores
         // 45.6%, 60/95, sign p=0.0061), so it is a component the bundle should
         // keep and including it here would drag the screen negative for the
@@ -2916,11 +2903,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_plan_city_target" => {
             let mut ai = AdvancedAi::new();
             ai.plan_city_target = false;
-            Box::new(ai)
-        }
-        "advanced_without_bounded_recovery" => {
-            let mut ai = AdvancedAi::new();
-            ai.disable_bounded_recovery();
             Box::new(ai)
         }
         "advanced_diplomatic_opening" => {
@@ -4038,21 +4020,29 @@ impl ArmKind {
             Self::AdvancedSynergyWar => &ENGINE_REPAIR_WAR_TREATMENTS,
             Self::AdvancedSynergyEconomy => &ENGINE_REPAIR_ECONOMY_TREATMENTS,
             Self::AdvancedBeliefPressure => &["belief-pressure"],
-            // `advanced` now owns the confirmed Live + infrastructure +
-            // priority composite. The retained arms below are therefore
-            // explicit reversion controls, not forward treatments.
+            // `advanced` now owns the confirmed Live policy plus the retained
+            // priority reservation. The measured-null infrastructure arm is
+            // off in production; the retained arms below remain explicit
+            // reversion/decomposition controls.
             Self::AdvancedPolicyLiveControl => {
-                &["envoy-infrastructure-off", "envoy-priority-off"]
+                &["envoy-priority-off"]
             }
             Self::AdvancedPolicyEnvoyPriority => &[],
             Self::AdvancedEnvoyPolicy => &[
                 "envoy-influence",
-                "envoy-infrastructure-off",
                 "envoy-priority-off",
             ],
-            Self::AdvancedEnvoyInfrastructure => &["policy-deck-legacy", "envoy-priority-off"],
-            Self::AdvancedEnvoyPriority => &["policy-deck-legacy"],
-            Self::AdvancedEnvoyEconomy => &["envoy-influence", "envoy-priority-off"],
+            Self::AdvancedEnvoyInfrastructure => &[
+                "policy-deck-legacy",
+                "envoy-infrastructure-on",
+                "envoy-priority-off",
+            ],
+            Self::AdvancedEnvoyPriority => &["policy-deck-legacy", "envoy-infrastructure-on"],
+            Self::AdvancedEnvoyEconomy => &[
+                "envoy-influence",
+                "envoy-infrastructure-on",
+                "envoy-priority-off",
+            ],
             Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
             // The two arms differ only in the lane they are told to win, which is
@@ -4106,7 +4096,9 @@ impl ArmKind {
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
-            Self::AdvancedWithoutBoundedRecovery => &["bounded-recovery-withheld"],
+            // Historical alias: production already leaves this measured-null
+            // repair off, so the arm resolves to `advanced` and has no axis.
+            Self::AdvancedWithoutBoundedRecovery => &[],
             Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
             Self::AdvancedWithoutPlanCityTarget => &["plan-city-target-withheld"],
             Self::AdvancedWithoutSettlerCommit => &["settler-commit-withheld"],
@@ -4625,7 +4617,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
-        "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
+        // Historical withhold alias: the repair is already off production,
+        // so this name now resolves to the stock controller and fails closed.
+        "advanced_without_bounded_recovery" => (Vec::new(), "advanced"),
         "advanced_without_city_target_floor" => (Vec::new(), "advanced"),
         "advanced_without_plan_city_target" => (Vec::new(), "advanced_without_plan_city_target"),
         "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
@@ -5675,8 +5669,12 @@ mod tests {
         let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
         assert_eq!(
             economy.spec.differing_axes(&stock.spec),
-            vec!["envoy-influence", "envoy-priority-off"],
-            "the economy control must expose its only changes from the promoted default"
+            vec![
+                "envoy-influence",
+                "envoy-infrastructure-on",
+                "envoy-priority-off",
+            ],
+            "the economy control must expose every change from the cleaned production default"
         );
 
         let policy_priority = builtin_arm("advanced_policy_envoy_priority")
@@ -5703,16 +5701,24 @@ mod tests {
             .expect("pre-promotion control is selectable");
         assert_eq!(
             live_control.spec.differing_axes(&stock.spec),
-            vec!["envoy-infrastructure-off", "envoy-priority-off"],
-            "the live-policy control must revert only the two promoted envoy mechanisms"
+            vec!["envoy-priority-off"],
+            "the live-policy control must revert only the retained envoy-priority mechanism"
         );
 
         let priority = builtin_arm("advanced_envoy_priority")
             .expect("pre-promotion priority control is selectable");
         assert_eq!(
             priority.spec.differing_axes(&stock.spec),
-            vec!["policy-deck-legacy"],
-            "the priority control must retain both direct production mechanisms"
+            vec!["policy-deck-legacy", "envoy-infrastructure-on"],
+            "the priority control must expose its Legacy deck and restored valuation"
+        );
+
+        let bounded = builtin_arm("advanced_without_bounded_recovery")
+            .expect("historical bounded-recovery alias is selectable");
+        assert_eq!(bounded.spec, stock.spec);
+        assert_eq!(
+            builtin_provenance("advanced_without_bounded_recovery", ARTIFACT_DIR).effective,
+            "advanced"
         );
 
         let league_top = builtin_arm("advanced_league_top").expect("arm is selectable");
@@ -5948,9 +5954,13 @@ mod tests {
                 "live_without_wide_map_capacity",
                 "live_without_wonder_ring_settle_value",
             ];
-            const SCRIPTED_ALIASES: [&str; 7] = [
+            const SCRIPTED_ALIASES: [&str; 8] = [
                 "advanced_policy_envoy_priority",
                 "advanced_holy_v0",
+                // The measured-null recovery repair is already off in
+                // production; retain its old withhold name as a self-play
+                // alias so historical commands fail closed.
+                "advanced_without_bounded_recovery",
                 "advanced_without_city_target_floor",
                 "advanced_plan_city_target",
                 // The war-half withhold arms alias `advanced` since the
