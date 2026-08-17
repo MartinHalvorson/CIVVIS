@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import unittest
@@ -205,6 +207,79 @@ class WatchdogDecides(WatchdogTestCase):
                 "--state", str(tmp / "state.json"), "--log", str(log)])
             self.assertEqual(code, 1)
             self.assertIn("could not restart", log.read_text())
+
+
+class AFailedKickIsNotACooldown(WatchdogTestCase):
+    """The cooldown protects against restarting a wedge, not against retrying.
+
+    Measured on this host at 2026-08-17T20:41:48Z: the watchdog's first kick
+    failed because the supervisor job was not loaded yet, and recording it as a
+    kick parked the retry for two hours — extending the exact outage the
+    watchdog exists to end.
+    """
+
+    def test_a_failed_kick_is_retried_next_interval(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            self.launchctl.returncode = 113
+            argv = ["--runs", str(runs), "--stale-hours", "3",
+                    "--cooldown-hours", "2",
+                    "--state", str(tmp / "state.json"),
+                    "--log", str(tmp / "log")]
+            ladder_watchdog.main(argv)
+            ladder_watchdog.main(argv)
+            kicks = [c for c in self.calls if "kickstart" in c]
+            self.assertEqual(len(kicks), 2,
+                             "a kick that never reached launchd changed "
+                             "nothing and must be tried again")
+
+    def test_a_failed_kick_is_counted_separately(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            state = tmp / "state.json"
+            self.launchctl.returncode = 113
+            ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--state", str(state), "--log", str(tmp / "log")])
+            recorded = json.loads(state.read_text())
+            self.assertEqual(recorded.get("failed_kicks"), 1)
+            self.assertNotIn("last_kick_utc", recorded,
+                             "a failure must not start the cooldown clock")
+
+    def test_a_kick_that_lands_still_holds_the_cooldown(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            argv = ["--runs", str(runs), "--stale-hours", "3",
+                    "--cooldown-hours", "2",
+                    "--state", str(tmp / "state.json"),
+                    "--log", str(tmp / "log")]
+            ladder_watchdog.main(argv)
+            ladder_watchdog.main(argv)
+            kicks = [c for c in self.calls if "kickstart" in c]
+            self.assertEqual(len(kicks), 1)
+
+
+class TheLogIsWrittenOnce(WatchdogTestCase):
+    """launchd points StandardOutPath at the same file `log()` appends to."""
+
+    def test_a_non_tty_run_does_not_double_every_line(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                ladder_watchdog.main([
+                    "--runs", str(runs), "--stale-hours", "3",
+                    "--state", str(tmp / "state.json"), "--log", str(log)])
+            stale = [line for line in log.read_text().splitlines()
+                     if "STALE" in line]
+            self.assertEqual(len(stale), 1, log.read_text())
+            self.assertEqual(captured.getvalue(), "",
+                             "under launchd stdout IS the log file")
 
 
 class StalenessHasOneDefinition(unittest.TestCase):

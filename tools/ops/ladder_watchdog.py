@@ -62,8 +62,17 @@ LOG_DEFAULT = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
 
 
 def log(path: Path, message: str) -> None:
+    """Append to the log, and echo to a terminal only when there is one.
+
+    ⚠ launchd points this job's StandardOutPath at the same file this writes,
+    so an unconditional `print` puts every line in twice. That is what the
+    first run of this watchdog produced, and a log that repeats itself is a log
+    that makes you doubt the count. `isatty` keeps the echo for an operator
+    running it by hand and drops it under launchd, where stdout IS the file.
+    """
     line = f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} {message}"
-    print(line, flush=True)
+    if sys.stdout.isatty():
+        print(line, flush=True)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as handle:
@@ -172,15 +181,26 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     ok, detail = kick(args.label)
-    memory["last_kick_utc"] = now.isoformat(timespec="seconds")
-    memory["kicks"] = int(memory.get("kicks", 0)) + 1
     memory["last_problem"] = problem
-    write_state(args.state, memory)
-
     if ok:
+        # ⚠ THE COOLDOWN CLOCK STARTS ON A KICK THAT LANDED, NOT ON ONE THAT
+        # FAILED. It exists to stop us restarting a wedge we cannot clear every
+        # ten minutes until morning — that reasoning only applies when the
+        # remedy actually ran. A kick that never reached launchd ("Could not
+        # find service") has changed nothing, so parking it for two hours just
+        # extends the outage the watchdog was built to end. Measured on this
+        # host at 2026-08-17T20:41:48Z: the first kick failed because the
+        # supervisor job was not loaded yet, and the failure took the full
+        # cooldown with it.
+        memory["last_kick_utc"] = now.isoformat(timespec="seconds")
+        memory["kicks"] = int(memory.get("kicks", 0)) + 1
+        write_state(args.state, memory)
         log(args.log, f"  restarted {args.label} (kick #{memory['kicks']})")
         notify("CIVVIS ladder loop restarted", problem)
     else:
+        memory["last_failed_kick_utc"] = now.isoformat(timespec="seconds")
+        memory["failed_kicks"] = int(memory.get("failed_kicks", 0)) + 1
+        write_state(args.state, memory)
         log(args.log, f"  could not restart {args.label}: {detail}")
         notify("CIVVIS ladder loop is stopped",
                f"restart failed: {detail}. See {args.log}.")
