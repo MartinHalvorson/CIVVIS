@@ -276,8 +276,59 @@ class TheCooldownBoundsTheActing(KeeperTestCase):
             self.assertEqual(len(self.starts), 2,
                              "an action that never took effect changed nothing")
             recorded = json.loads(state.read_text())
-            self.assertEqual(recorded.get("failed_kicks"), 2)
-            self.assertNotIn("last_kick_utc", recorded)
+            self.assertEqual(recorded.get("failed_starts"), 2)
+            self.assertNotIn("last_start_utc", recorded)
+
+    def test_an_absent_loop_is_restarted_in_minutes_not_hours(self):
+        """A loop that is GONE is not a loop that is WEDGED.
+
+        Stopping a wedged supervisor is disruptive and may not help, so it waits
+        hours. Starting an absent one is cheap and is the whole point, so making
+        it wait the same two hours reproduces in miniature the outage the keeper
+        exists to end.
+        """
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            state = tmp / "state.json"
+            gone = (datetime.now(timezone.utc)
+                    - timedelta(minutes=20)).isoformat(timespec="seconds")
+            state.write_text(json.dumps({"last_start_utc": gone, "starts": 1}))
+            ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--cooldown-hours", "2", "--start-cooldown-minutes", "15",
+                "--lock", str(tmp / "absent"),
+                "--state", str(state), "--log", str(tmp / "log")])
+            self.assertEqual(len(self.starts), 1,
+                             "20 minutes is past the start cooldown; a two-hour "
+                             "wait to restart a dead loop is the outage itself")
+
+    def test_a_crash_loop_is_still_bounded(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            argv = ["--runs", str(runs), "--stale-hours", "3",
+                    "--start-cooldown-minutes", "15",
+                    "--lock", str(tmp / "absent"),
+                    "--state", str(tmp / "state.json"), "--log", str(tmp / "log")]
+            for _ in range(4):
+                ladder_watchdog.main(argv)
+            self.assertEqual(len(self.starts), 1)
+
+    def test_stopping_a_wedge_and_starting_a_loop_keep_separate_clocks(self):
+        """A stop must not silence a start, nor the other way round."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            state = tmp / "state.json"
+            common = ["--runs", str(runs), "--stale-hours", "3",
+                      "--cooldown-hours", "2", "--start-cooldown-minutes", "15",
+                      "--state", str(state), "--log", str(tmp / "log")]
+            ladder_watchdog.main(common + ["--lock", str(self.live_lock(tmp))])
+            self.assertEqual(len(self.stopped), 1)
+            ladder_watchdog.main(common + ["--lock", str(tmp / "absent")])
+            self.assertEqual(len(self.starts), 1,
+                             "stopping a wedge must not block the restart")
 
     def test_an_action_that_lands_does_start_the_cooldown(self):
         with TemporaryDirectory() as raw:
