@@ -2306,11 +2306,17 @@ mod tests {
 
         let mut game = crate::game::Game::new(2, 8, 8, 42, 250, 0);
         game.victory_conditions = crate::game::VictoryConditions::default();
-        let seat = Seat { victories: Some(victories), ..Seat::default() };
+        let seat = Seat {
+            victories: Some(victories),
+            ..Seat::default()
+        };
         apply_seat_victories(&mut game, &seat);
         assert!(!game.victory_conditions.domination, "conquest off crosses");
         assert!(!game.victory_conditions.culture);
-        assert!(game.victory_conditions.science, "technology maps to science");
+        assert!(
+            game.victory_conditions.science,
+            "technology maps to science"
+        );
         assert!(game.victory_conditions.score);
         assert!(game.victory_conditions.diplomatic);
         assert!(
@@ -9459,10 +9465,7 @@ fn apply_rival_public_economy(
             .then(|| value.round() as usize)
     };
     {
-        let observed = game
-            .observed_public_empire_stats
-            .entry(owner)
-            .or_default();
+        let observed = game.observed_public_empire_stats.entry(owner).or_default();
         observed.techs = count(rival.techs);
         observed.civics = count(rival.civics);
         observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
@@ -10743,8 +10746,17 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
     const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
-        "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
-        "destination_x", "destination_y", "posts_own", "posts_foreign", "yields",
+        "trader",
+        "origin",
+        "destination",
+        "destination_player",
+        "origin_x",
+        "origin_y",
+        "destination_x",
+        "destination_y",
+        "posts_own",
+        "posts_foreign",
+        "yields",
     ];
     const GOVERNOR: &[&str] = &[
         "type", "city", "city_player", "x", "y", "established", "turns_on_site",
@@ -10759,7 +10771,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
-        "science_projects", "foreign_tourists", "domestic_tourists",
+        "science_projects",
+        "foreign_tourists",
+        "domestic_tourists",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
