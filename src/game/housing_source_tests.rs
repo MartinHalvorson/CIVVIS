@@ -18,9 +18,9 @@ fn played(turns: u32, seed: u64) -> Game {
     let mut game = Game::new_full(3, 32, 24, seed, 200, 0, false);
     let mut ais: Vec<BasicAi> = (0..game.players.len()).map(|_| BasicAi::new()).collect();
     for _ in 0..turns {
-        for pid in 0..game.players.len() {
+        for (pid, ai) in ais.iter_mut().enumerate() {
             if game.players[pid].alive {
-                ais[pid].take_turn(&mut game, pid);
+                ai.take_turn(&mut game, pid);
             }
             let _ = game.apply(pid, &Action::EndTurn);
         }
