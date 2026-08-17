@@ -485,6 +485,112 @@ class RedrawingIsNotPublishing(LedgerCase):
         self.assertIn("landed", tags)
 
 
+class TheBoardRecordsEveryVictoryNotJustTheRung(LedgerCase):
+    """★★★★★ `wins` has ONE SLOT PER DIFFICULTY and the Settler slot is full.
+
+    The objective list is five victory types at one difficulty. The rung claim
+    keeps the earliest win at a difficulty — right for a rung, and unable to
+    represent "Settler, but by Science this time": a later win at a claimed rung
+    loses the comparison and survives only as an ordinary attempt row.
+    """
+
+    def _state(self, *attempts, victory_types=None):
+        state = {"attempts": list(attempts), "wins": {}}
+        if victory_types is not None:
+            state["victory_types"] = victory_types
+        return state
+
+    @staticmethod
+    def _win(index, utc, difficulty="DIFFICULTY_SETTLER", name=None,
+             configured=True):
+        return {"victory": index, "victory_type": name, "utc": utc, "won": True,
+                "configured": configured, "difficulty": difficulty}
+
+    def test_a_second_victory_type_at_a_claimed_rung_is_recorded(self):
+        """The exact case the rung table drops."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(0, "2026-08-16T06:49:58Z", name="VICTORY_SCORE"),
+            self._win(5, "2026-08-20T00:00:00Z", name="VICTORY_TECHNOLOGY"),
+        ))
+        rows = {index: beaten for index, _, beaten in board}
+        self.assertEqual(rows[0]["DIFFICULTY_SETTLER"], "2026-08-16T06:49:58Z")
+        self.assertEqual(rows[5]["DIFFICULTY_SETTLER"], "2026-08-20T00:00:00Z")
+
+    def test_the_rung_table_really_does_drop_it(self):
+        """Not an assumption about the other code — a check on it, so this
+        test fails loudly if `wins` ever gains its own per-type key."""
+        state = {"attempts": [], "wins": {}}
+        for tag, utc, victory in (("score-first", "2026-08-16T06:49:58Z", 0),
+                                  ("science-later", "2026-08-20T00:00:00Z", 5)):
+            civ6_ladder.apply(state, summary(
+                tag, won=True, finished=utc,
+                outcome={"kind": "victory", "won": True, "victory": victory}))
+        self.assertEqual(len(state["wins"]), 1)
+        self.assertEqual(state["wins"]["DIFFICULTY_SETTLER"]["victory"], 0)
+        # ...while the board carries both.
+        self.assertEqual(
+            sorted(index for index, _, _ in civ6_ladder.victory_board(state)),
+            [0, 5])
+
+    def test_earliest_wins_per_type_the_same_way_the_rung_does(self):
+        board = civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z"),
+            self._win(5, "2026-08-18T00:00:00Z"),
+        ))
+        self.assertEqual(board[0][2]["DIFFICULTY_SETTLER"], "2026-08-18T00:00:00Z")
+
+    def test_each_difficulty_is_its_own_column(self):
+        board = civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z"),
+            self._win(5, "2026-08-25T00:00:00Z", difficulty="DIFFICULTY_CHIEFTAIN"),
+        ))
+        self.assertEqual(board[0][2], {
+            "DIFFICULTY_SETTLER": "2026-08-20T00:00:00Z",
+            "DIFFICULTY_CHIEFTAIN": "2026-08-25T00:00:00Z"})
+
+    def test_a_win_in_a_game_that_drifted_off_its_settings_claims_nothing(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z", configured=False))), [])
+
+    def test_a_difficulty_that_is_not_a_rung_claims_nothing(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state(
+            self._win(5, "2026-08-20T00:00:00Z", difficulty="DIFFICULTY_SANDBOX"))),
+            [])
+
+    def test_every_victory_the_host_offers_gets_a_row_even_unbeaten(self):
+        """A checklist, not a list of things that happened."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(0, "2026-08-16T06:49:58Z"),
+            victory_types=[{"index": 0, "type": "VICTORY_SCORE"},
+                           {"index": 5, "type": "VICTORY_TECHNOLOGY"},
+                           {"index": 3, "type": "VICTORY_CULTURE"}]))
+        self.assertEqual([(index, name) for index, name, _ in board],
+                         [(0, "VICTORY_SCORE"), (5, "VICTORY_TECHNOLOGY"),
+                          (3, "VICTORY_CULTURE")])
+        self.assertEqual(board[1][2], {})
+
+    def test_a_win_the_host_table_does_not_carry_is_still_on_the_board(self):
+        """The win is the evidence; the table is only the gloss."""
+        board = civ6_ladder.victory_board(self._state(
+            self._win(6, "2026-08-20T00:00:00Z"),
+            victory_types=[{"index": 0, "type": "VICTORY_SCORE"}]))
+        self.assertEqual([index for index, _, _ in board], [0, 6])
+
+    def test_nothing_won_and_no_host_table_renders_no_board_at_all(self):
+        self.assertEqual(civ6_ladder.victory_board(self._state()), [])
+
+    def test_the_host_table_is_kept_from_the_first_run_that_exports_it(self):
+        state = {"attempts": [], "wins": {}}
+        table = [{"index": 0, "type": "VICTORY_SCORE"}]
+        civ6_ladder.apply(state, summary("first", seat={"victory_types": table}))
+        self.assertEqual(state["victory_types"], table)
+        # It is a property of the game, not the run: a later run does not
+        # overwrite it, so one bad export cannot rewrite the board's rows.
+        civ6_ladder.apply(state, summary(
+            "second", seat={"victory_types": [{"index": 9, "type": "VICTORY_ODD"}]}))
+        self.assertEqual(state["victory_types"], table)
+
+
 class TheCensusSaysWhichLanesComplete(unittest.TestCase):
     """Which victory conditions have ended a game here — the record's only
     empirical evidence about lane reachability inside the turn budget."""

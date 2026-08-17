@@ -415,9 +415,35 @@ def apply(state: dict, summary: dict) -> bool:
         if recorded is None or (entry.get("utc") or "￿") < (
                 recorded.get("utc") or "￿"):
             state["wins"][difficulty] = entry
+        # ⚠⚠ AND SEPARATELY BY VICTORY TYPE, BECAUSE `wins` HAS ONE SLOT PER
+        # DIFFICULTY AND THAT SLOT IS ALREADY FULL.
+        #
+        # A rung is claimed by the first win at a difficulty, which is the right
+        # rule for a rung and the wrong one for anything else: the Settler slot
+        # holds a Score win from 2026-08-16, so a Settler *Science* win arriving
+        # tomorrow is strictly later, loses the comparison above, and is kept
+        # only as an ordinary attempt row. The record would show one Settler
+        # milestone forever no matter how many distinct victories were won at
+        # it.
+        #
+        # That is not hypothetical bookkeeping. The current objective list is
+        # five separate victory types at ONE difficulty, and until this line
+        # existed the ladder could represent exactly one of them.
+        #
+        # The per-type record is NOT materialised beside this one. It is derived
+        # from `attempts` in `victory_board`, applying the same earliest-wins
+        # rule to a different key — so it needs no migration, it is correct for
+        # the 307 attempts already committed the moment this ships, and it
+        # cannot drift from the rows it summarises.
     elif entry["won"] and not entry["configured"]:
         print("won, but the game was not the one this run configured; "
               "not claiming the rung", file=sys.stderr)
+    # The host's own victory table, kept once so the board below can list every
+    # victory Civilization VI offers rather than only the ones already beaten.
+    # First writer wins; it is a property of the game, not of the run.
+    table = (summary.get("seat") or {}).get("victory_types")
+    if table and not state.get("victory_types"):
+        state["victory_types"] = table
     return True
 
 
@@ -629,6 +655,64 @@ def cell(value) -> str:
     return "—" if value is None or value == "" else str(value)
 
 
+def victory_board(state: dict) -> list[tuple[int, str | None, dict]]:
+    """Every victory condition, and the date each was first beaten per rung.
+
+    ★★★★★ THE OBJECTIVE LIST IS FIVE VICTORY TYPES AT ONE DIFFICULTY AND THE
+    RECORD HAD ONE SLOT FOR THEM. `wins` is keyed by difficulty alone and holds
+    the earliest win there, which is exactly right for claiming a rung and
+    cannot represent "Settler, but by Science this time". This is that record.
+
+    Rows come from the host's `GameInfo.Victories()` when a run has exported it,
+    so a condition this install offers and nobody has beaten is still a visible
+    empty row rather than a silent absence — the difference between a checklist
+    and a list of things that happened. Before any run exports the table, the
+    rows are the indices that have actually been won, which is the same
+    conservative fallback the rest of this file takes.
+    """
+    beaten: dict[int, dict[str, str]] = {}
+    names: dict[int, str] = {}
+    for entry in state.get("attempts") or []:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("victory")
+        difficulty = entry.get("difficulty")
+        # The same three conditions the rung claim demands: we won it, the game
+        # was the one the run configured, and the difficulty is a rung. A win in
+        # a game that drifted off its settings claims nothing here either.
+        if index is None or not entry.get("won") or not entry.get("configured"):
+            continue
+        if difficulty not in NAMES:
+            continue
+        name = entry.get("victory_type")
+        if name and index not in names:
+            names[index] = str(name)
+        stamp = entry.get("utc")
+        held = beaten.setdefault(index, {}).get(difficulty)
+        # Earliest wins, by the clock — the same rule and the same reason as the
+        # rung claim above: the milestone is when it was first done.
+        if held is None or (stamp or "￿") < held:
+            beaten[index][difficulty] = stamp
+    if not beaten and not state.get("victory_types"):
+        return []
+    rows: list[tuple[int, str | None, dict]] = []
+    seen: set[int] = set()
+    for row in state.get("victory_types") or []:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("index")
+        if not isinstance(index, int) or index in seen:
+            continue
+        seen.add(index)
+        name = row.get("type") or names.get(index)
+        rows.append((index, str(name) if name else None, beaten.get(index, {})))
+    # Anything won whose index the exported table does not carry still belongs
+    # on the board: the win is the evidence, the table is only the gloss.
+    for index in sorted(set(beaten) - seen):
+        rows.append((index, names.get(index), beaten[index]))
+    return rows
+
+
 def victory_census(attempts: list) -> list[tuple[int, str | None, int]]:
     """Which victory conditions have actually ended a game here, most first.
 
@@ -694,6 +778,28 @@ def markdown_for(state: dict) -> str:
         else:
             lines.append(f"| {index} | {label} | — | | | | |")
     lines += ["", f"Attempts recorded: {len(attempts)}.", ""]
+
+    board = victory_board(state)
+    if board:
+        lines += [
+            "## Which victories have been won, per difficulty",
+            "",
+            "A rung is claimed by the FIRST win at a difficulty; this table is the",
+            "other question — which of Civilization VI's victory conditions the",
+            "controller has beaten, and where. The two differ as soon as a second",
+            "victory type is won at a rung already claimed, which the rung table",
+            "records as an ordinary repeat.",
+            "",
+            "Rows are the host's own `GameInfo.Victories()`, so a condition this",
+            "install offers and nobody has won still appears, empty.",
+            "",
+            "| victory | type | " + " | ".join(label for _, label in LADDER) + " |",
+            "|---|---|" + "---|" * len(LADDER),
+        ]
+        for index, name, beaten in board:
+            row = " | ".join(cell(beaten.get(key)) for key, _ in LADDER)
+            lines.append(f"| {cell(index)} | {cell(name)} | {row} |")
+        lines.append("")
 
     endings = victory_census(attempts)
     if endings:
