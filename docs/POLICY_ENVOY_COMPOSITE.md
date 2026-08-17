@@ -1,5 +1,11 @@
 # Live policy plus direct envoy production
 
+> Historical experiment record: the composite below was promoted on
+> 2026-08-01. Its `envoy-infrastructure` valuation later measured null at 800
+> games and was removed from the production constructor on 2026-08-17;
+> `envoy-priority` remains the deployed actuation mechanism. The composite and
+> its controls stay documented so the negative result is reproducible.
+
 ## Question
 
 Can the two independently favorable but unresolved deployment directions compose

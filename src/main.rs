@@ -1352,7 +1352,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `great_person_class_earnable`) and one absent from its current
 /// `live_great_person_offers` screen; native boards carry neither list and are
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd215_4140_b41f_04c1;
+/// The 2026-08-17 measured-null production cleanup changes the shared source
+/// file but leaves `AdvancedAi::legacy()` gated away from both retired arms;
+/// compatibility re-pin, not a new rating protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3334_ce4d_f8e8_3946;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

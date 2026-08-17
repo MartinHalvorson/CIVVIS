@@ -10055,3 +10055,22 @@ not more native maps: the native game's loyalty pressure is evidently not
 where those losses come from.
 
 One look, recorded, lane rests. No disjoint confirm is owed to a null.
+
+## 2026-08-17 — measured-null production arms leave the default
+
+The two nulls that had remained inside the 2026-08-01 policy/repair
+constructor are now retired from ordinary `AdvancedAi` seats:
+
+| arm | evidence | production decision |
+|---|---|---|
+| `bounded_recovery` | 600 maps on two disjoint deployment seeds; outcome null while Recovery occupancy moved as expected | leave off in `AdvancedAi::new`; keep explicit live-bridge/evaluator opt-ins |
+| `envoy_infrastructure` | 800-game matrix; null on the promotion gate | leave off in `AdvancedAi::new`; keep `advanced_envoy_infrastructure` and related decomposition controls |
+
+This is a constructor cleanup, not a retroactive rewrite of either experiment.
+The retained `envoy_priority` reservation is the actuation mechanism that can
+queue the first legal Diplomatic Quarter → Consulate → Chancery stage. The
+historical `advanced_without_bounded_recovery` label now resolves to
+`advanced` and is reported as self-play, so old commands cannot manufacture a
+new effect size from a flag already absent in the incumbent. The negative
+records and explicit positive controls remain reachable for any fresh,
+pre-registered question.
