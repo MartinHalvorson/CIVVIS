@@ -815,3 +815,47 @@ the mode is default-off and has no strength claim yet. Focused tests prove
 redaction, invariance to unseen enemy movement/health changes, and a short
 two-major replay. A paired deployment-shaped gameplay screen remains the next
 step before promotion.
+
+## 2026-08-17 the great-work veto outranks the treatment that pays for great-work buildings
+
+★★★★★ **Unpriced, and it makes an existing measured null unattributable.**
+
+`production_value`'s `Item::Building` arm opens with a hard veto
+(`src/ai/advanced.rs:18482-18489`): any building carrying a great-work slot
+returns `-10_000.0` when a `victory_target` is set to anything other than
+Culture. Roughly 115 lines later the same arm pays `CULTURE_BUILDING_DEBT` to
+Theater Square buildings whose district is already standing (`:18597`).
+
+Every Theater Square building except `marae` has great-work slots
+(`data/buildings.json`: amphitheater `writing:2`, art_museum `art:3`,
+archaeological_museum `artifact:3`, broadcast_center `music:1`, film_studio
+`music:1`). So on any seat with a non-Culture target the veto returns first and
+`culture_building_debt` cannot fire for the buildings it exists to buy. The
+treatment is live only on an untargeted seat (`AdvancedAi::new()`), which is
+what `advanced` is in the evaluator — so the arm measures the mechanism, while a
+targeted deployment gets none of it. **Any reading taken from a targeted seat is
+a reading of the veto, not of the treatment**, and the two are not currently
+distinguished anywhere.
+
+Two further consequences, both unmeasured:
+
+1. The veto is keyed on the great-work slot rather than on the district, so it
+   also refuses `national_history_museum` — a **Government Plaza** building
+   (`data/buildings.json`, `great_work_slots: {any: 4}`). A science-targeted
+   seat declines a Government Plaza building because a culture lane it is not
+   playing would have wanted it. Whether that is intended is not recorded.
+2. The veto is total rather than a discount, so a targeted seat builds no
+   Amphitheater at any price, and the Amphitheater is also the civic-yield
+   building on that district.
+
+This bears directly on the objective list, because #1871 made Culture
+selectable: a Culture-targeted seat is the *only* configuration in which either
+mechanism has ever been able to act, and none of the 307 recorded ladder
+attempts ran one.
+
+**Do not tune this.** It needs an arm and a pre-registered run, not a judgement:
+price the veto's district-vs-slot key (`advanced_great_work_veto_by_district`)
+against stock on the deployment profile, and re-read `culture_building_debt` on
+a Culture-targeted seat where it can actually fire. The measurement route and
+its integrity rules are in `docs/EVAL.md`; the standing prior on this ledger is
+that most such repairs measure null.
