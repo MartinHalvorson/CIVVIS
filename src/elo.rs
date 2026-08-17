@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 187] = [
+pub const EVAL_ONLY_AIS: [&str; 188] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -203,6 +203,7 @@ pub const EVAL_ONLY_AIS: [&str; 187] = [
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
     "advanced_recon_fleet",
+    "advanced_without_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
     // survey of the work it would do, and military units credited for
     // strength-per-production and the civ's own unique window. Reserved
@@ -717,6 +718,7 @@ define_arm_kinds! {
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedReconFleet => "advanced_recon_fleet",
+    AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
@@ -2114,6 +2116,10 @@ fn artifact_effective_alias_from(
         // `docs/EVAL.md` reports five runs against it; declared effectively
         // `advanced` so the pair fails closed as self-play.
         ArmKind::AdvancedWithoutCityTargetFloor => ArmKind::Advanced,
+        // Promoted 2026-08-17 on the corrected-gate matrix (see
+        // `promoted_policy_envoy`): the quartet is production now, so the
+        // treatment arm is a re-labelling of `advanced`.
+        ArmKind::AdvancedReconFleet => ArmKind::Advanced,
         // Same story on 2026-08-14 for the war half: the withhold passed the
         // corrected-gate promotion matrix (+38, CI +10..+66, seed stream
         // 18000000) and `promoted_policy_envoy` stopped setting the four
@@ -2998,19 +3004,17 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
-        // The reconnaissance quartet the live bridge has carried since its
-        // repair era, applied to stock native production: rebuild a lost
-        // scout (`recon_is_the_missing_arm` is dead code without
-        // `recon_replacement`), slip a threatened one away, put a hull on
-        // unseen water, and bring embarked explorers ashore. The native
-        // fleet peaks at 1.83 concurrent recon units and wins ~13% of the
-        // board's villages; this arm prices giving it the bridge's eyes.
-        "advanced_recon_fleet" => {
+        // The reconnaissance quartet was PROMOTED into `promoted_policy_envoy`
+        // after the corrected-gate matrix PASSED at 400 pairs (deployment
+        // 55.0%, Elo +35, CI +1..+69; compact no-regression ACCEPT; seed
+        // stream 120000000). `advanced_recon_fleet` collapsed to a declared
+        // alias of `advanced` above; withholding is the live question now.
+        "advanced_without_recon_fleet" => {
             let mut ai = AdvancedAi::new();
-            ai.enable_recon_replacement();
-            ai.enable_recon_flight();
-            ai.enable_naval_recon();
-            ai.enable_come_ashore();
+            ai.disable_recon_replacement();
+            ai.disable_recon_flight();
+            ai.disable_naval_recon();
+            ai.disable_come_ashore();
             Box::new(ai)
         }
         "advanced_settler_founds_when_stalled" => {
@@ -4012,6 +4016,7 @@ impl ArmKind {
                 "naval-recon",
                 "come-ashore",
             ],
+            Self::AdvancedWithoutReconFleet => &["recon-fleet-withheld"],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
@@ -4492,7 +4497,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
-        "advanced_recon_fleet" => (Vec::new(), "advanced_recon_fleet"),
+        "advanced_recon_fleet" => (Vec::new(), "advanced"),
+        "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
@@ -5705,7 +5711,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 91] = [
+            const SCRIPTED: [&str; 92] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5773,6 +5779,7 @@ mod tests {
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
                 "advanced_recon_fleet",
+                "advanced_without_recon_fleet",
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
@@ -5802,8 +5809,11 @@ mod tests {
                 "live",
                 "random",
             ];
-            const SCRIPTED_ALIASES: [&str; 8] = [
+            const SCRIPTED_ALIASES: [&str; 9] = [
                 "advanced_policy_envoy_priority",
+                // Aliases `advanced` since the 2026-08-17 recon-fleet
+                // promotion shipped the quartet it used to apply.
+                "advanced_recon_fleet",
                 "advanced_holy_v0",
                 // The measured-null recovery repair is already off in
                 // production; retain its old withhold name as a self-play
