@@ -472,44 +472,16 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         }
 
         ("POST", "/action") => with_session(|session| {
-            let ending_turn = parsed["action"]["type"].as_str() == Some("end_turn");
-            let movement_path = serde_json::from_value::<Action>(parsed["action"].clone())
-                .ok()
-                .and_then(|action| match action {
-                    Action::MoveTo { unit, to } => {
-                        let start = session.game.units.get(&unit)?.pos;
-                        let mut path = session.game.path_to(unit, to)?;
-                        path.insert(0, start);
-                        Some((unit, path))
-                    }
-                    _ => None,
-                });
-            let err = session.act(&parsed["action"]);
-            let mut out = session.state();
-            if err.is_none() {
-                if let Some((unit, mut path)) = movement_path {
-                    if let Some(actual) = session.game.units.get(&unit).map(|unit| unit.pos) {
-                        if let Some(end) = path.iter().position(|position| *position == actual) {
-                            path.truncate(end + 1);
-                        } else if let Some(start) = path.first().copied() {
-                            path = vec![start, actual];
-                        }
-                    }
-                    if path.len() > 1 {
-                        out["movement_paths"] = json!({unit.to_string(): path});
-                    }
-                }
-            }
-            let refused = err.is_some();
-            out["error"] = match err {
-                Some(e) => Value::String(e),
-                None => Value::Null,
-            };
-            // The native build autosaves to disk at the top of every turn.
-            // The page is told to do the same into its own storage; it holds
-            // the only copy this build has.
-            if ending_turn && !refused && !session.params.spectate {
-                out["autosave_due"] = json!(session.game.turn);
+            let spectating = session.params.spectate;
+            let turn = session.game.turn;
+            let outcome = crate::protocol::action(session, &parsed);
+            let autosave = outcome.autosave_due(spectating);
+            let mut out = outcome.out;
+            // The native build autosaves to disk at the top of every turn. The
+            // page is told to do the same into its own storage; it holds the
+            // only copy this build has.
+            if autosave {
+                out["autosave_due"] = json!(turn);
             }
             decorate_browser(&mut out);
             out
@@ -606,30 +578,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             })
         }
 
-        ("POST", "/route") => with_session(|session| {
-            let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
-            let to = parsed["to"]
-                .as_array()
-                .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
-            match (unit, to) {
-                (Some(unit), Some(to)) => {
-                    let owned = session
-                        .game
-                        .units
-                        .get(&unit)
-                        .is_some_and(|held| held.owner == 0);
-                    if !owned {
-                        json!({"error": "not your unit"})
-                    } else {
-                        match session.game.route_step(unit, to, 0) {
-                            Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
-                            None => json!({"step": Value::Null, "error": Value::Null}),
-                        }
-                    }
-                }
-                _ => json!({"error": "route needs a unit and a destination"}),
-            }
-        }),
+        ("POST", "/route") => {
+            with_session(|session| crate::protocol::route_step(session, &parsed))
+        }
 
         // The same one-unit question the native server answers, and it has to
         // be answered here too: this router is the whole server on the
@@ -643,19 +594,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         }),
 
         ("POST", "/view") => with_session(|session| {
-            let result = match parsed.get("player") {
-                Some(Value::Null) => session.set_view_player(None),
-                Some(value) => value
-                    .as_u64()
-                    .ok_or_else(|| "player must be a non-negative integer or null".to_string())
-                    .and_then(|pid| session.set_view_player(Some(pid as usize))),
-                None => Err("missing player".to_string()),
-            };
-            let mut out = session.state();
-            out["error"] = match result {
-                Ok(()) => Value::Null,
-                Err(error) => Value::String(error),
-            };
+            let mut out = crate::protocol::view(session, &parsed);
             decorate_browser(&mut out);
             out
         }),
