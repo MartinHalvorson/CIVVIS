@@ -6807,6 +6807,16 @@ local function exportState(player, pid, turn)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- Our own two culture-victory counters, same accessors as each
+		-- rival's (WorldRankings.lua:1674-1675): OUR staycationers are the
+		-- bar every rival's visiting tourists must clear, so the victory
+		-- tracker's culture lane needs the pair on both sides of the fog.
+		foreign_tourists = try(function()
+			return player:GetCulture():GetTouristsTo();
+		end, -1),
+		domestic_tourists = try(function()
+			return player:GetCulture():GetStaycationers();
+		end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		-- ★★★★★ THE AGE, WHICH THE BRIDGE HAS NEVER CARRIED.

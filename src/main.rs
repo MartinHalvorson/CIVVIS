@@ -2785,6 +2785,7 @@ mod tests {
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
                 ("war_patience", ai.war_patience),
+                ("deny_while_targeted", ai.deny_while_targeted),
                 ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),

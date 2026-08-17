@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 175] = [
+pub const EVAL_ONLY_AIS: [&str; 176] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -87,6 +87,7 @@ pub const EVAL_ONLY_AIS: [&str; 175] = [
     "live_without_war_economy",
     "live_without_war_reinforcement",
     "live_without_war_patience",
+    "live_without_deny_while_targeted",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -241,7 +242,7 @@ pub const EVAL_ONLY_AIS: [&str; 175] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 67] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 68] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -309,6 +310,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 67] = [
     "settler-stack-discipline",
     "camp-party",
     "buildings-before-projects",
+    "deny-while-targeted",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -572,6 +574,7 @@ define_arm_kinds! {
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
+    LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -5738,7 +5741,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 16] = [
+        const EXCLUDED: [&str; 17] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5773,6 +5776,11 @@ mod tests {
             "tally_great_people",
             // Firaxis' barbarian scouts do not capture; CIVVIS's do.
             "barbarian_scouts_are_scouts",
+            // Only a seat playing under an assigned lane (`--victory
+            // science`, the Settler seat's standing order) has a target gate
+            // to override; the native gate agents are adaptive, so the flag
+            // cannot fire there.
+            "deny_while_targeted",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
