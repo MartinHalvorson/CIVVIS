@@ -1049,6 +1049,11 @@ const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
 /// See `recon_flight`.
 const RECON_FLIGHT_RISK: f64 = 12.0;
 
+/// At most this many already-built, unlinked ships may be assigned to chart
+/// the sea. The production arm still buys only the first hull; this cap makes
+/// a spare ship useful without turning an ordinary fleet into endless scouts.
+const NAVAL_RECON_EXPLORER_MAX: usize = 2;
+
 /// A sparse-map fallback may keep one reachable global site alive when every
 /// ordinary candidate is below the normal score floor. It is only considered
 /// after the normal site set is empty, so this cannot make a mediocre distant
@@ -24532,10 +24537,14 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
 
-        // A ship is the sea's scout when it is the empire's only one and there
-        // is water left to chart. See `naval_explorer`.
+        // Up to two free ships are the sea's scouts while water remains dark.
+        // Combat, escort, and recovery already had their chance above, so this
+        // only spends hulls that have no more immediate job. See
+        // `naval_explorer`.
         let naval_explorer =
-            self.base.naval_recon && spec.domain.as_deref() == Some("sea") && self.naval_explorer(g, pid) == Some(uid);
+            self.base.naval_recon
+                && spec.domain.as_deref() == Some("sea")
+                && self.naval_explorer(g, pid).contains(&uid);
         if (doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true))
             || naval_explorer
         {
@@ -25426,17 +25435,24 @@ impl AdvancedAi {
         }
     }
 
-    /// The one ship that explores: the empire's lowest-numbered unlinked sea
-    /// military unit with an open route, while water it has never seen
-    /// remains. A lake-bound hull cannot hold the job over a real scout. A
-    /// fleet keeps every other hull for the war lane; an empire with no ship
-    /// has no explorer and `naval_recon_is_the_missing_arm` buys one. See
-    /// `BasicAi::naval_recon`.
-    fn naval_explorer(&self, g: &Game, pid: usize) -> Option<u32> {
+    /// The bounded set of ships that explore: the first two movable, unlinked
+    /// sea military units with an open route while water remains unseen. A
+    /// lake-bound hull cannot hold the job over a real scout. The production
+    /// arm still buys only the first ship; this merely lets a spare hull open
+    /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
+    fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
         if !self.base.naval_recon {
-            return None;
+            return Vec::new();
         }
-        let ship = g
+        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+        });
+        if !water_left {
+            return Vec::new();
+        }
+        let mut ships = g
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
@@ -25444,16 +25460,14 @@ impl AdvancedAi {
                 let spec = &g.rules.units[unit.kind];
                 spec.class == "military"
                     && spec.domain.as_deref() == Some("sea")
+                    && unit.moves_left > 0.0
                     && unit.linked_to.is_none()
                     && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
             })
-            .min()?;
-        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
-            !g.players[pid].explored.contains(pos)
-                && g.rules.is_passable(tile)
-                && g.rules.is_water(tile)
-        });
-        water_left.then_some(ship)
+            .collect::<Vec<_>>();
+        ships.sort_unstable();
+        ships.truncate(NAVAL_RECON_EXPLORER_MAX);
+        ships
     }
 
     /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
@@ -28235,14 +28249,14 @@ mod tests {
         assert_eq!(game.units[&galley].linked_to, None);
     }
 
-    /// ★★★★ The one Galley of run civvis-20260816T110555Z sailed ten turns and
-    /// died; nothing else ever charted the sea and one rival of five was met
-    /// by t142. See `BasicAi::naval_recon` and `naval_explorer`. A lone
-    /// unlinked ship on an unexplored sea is the explorer and moves toward
-    /// water it has never seen; a second hull leaves the lowest-numbered one
-    /// as the explorer; a charted sea has none; the withheld arm names none.
+    /// ★★★★ Several viable caravels existed in run
+    /// civvis-20260816T223457Z, but only the lowest-id one was assigned to
+    /// explore; the others stood down or circled while six city-states stayed
+    /// uncontacted. See `BasicAi::naval_recon` and `naval_explorer`. A lone
+    /// unlinked ship on an unexplored sea explores; a spare eligible hull joins
+    /// it; a charted sea has none; the withheld arm names none.
     #[test]
-    fn a_lone_ship_on_an_unexplored_sea_is_the_empires_explorer() {
+    fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
         // At war: the wartime unit path is the one the live seat spends most
         // of its turns in, and it is where a ship never explored before.
         let mut game = Game::new_full(2, 20, 14, 71_001, 30, 0, false);
@@ -28279,21 +28293,18 @@ mod tests {
 
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
+        // The Firaxis order adapter also commits explorers to separated fog
+        // goals, so exercise the two-hull branch under its shipped settings.
+        live.enable_explore_commit();
         assert!(live.naval_recon(), "the live seat carries the treatment");
-        assert_eq!(live.naval_explorer(&game, 0), Some(galley), "the lone ship explores");
+        assert_eq!(live.naval_explorer(&game, 0), vec![galley], "the lone ship explores");
 
-        let plan = live.assess(&game, 0);
-        let before = game.units[&galley].pos;
-        let explored_before = game.players[0].explored.len();
-        assert!(
-            live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
-            "the explorer acts"
-        );
-        let after = game.units[&galley].pos;
-        assert!(
-            after != before || game.players[0].explored.len() > explored_before,
-            "it moved toward the dark water ({before:?} -> {after:?})"
-        );
+        // A second hull joins the first. Both are already built, unlinked, and
+        // can chart; this does not ask production for another one.
+        let second = game.spawn_test_unit("galley", 0, water);
+        let mut expected = vec![galley, second];
+        expected.sort_unstable();
+        assert_eq!(live.naval_explorer(&game, 0), expected);
 
         // The withheld arm at war leaves the same ship where it is: the war
         // path never explored before this treatment.
@@ -28312,19 +28323,40 @@ mod tests {
             );
         }
 
-        // A second hull: the lowest-numbered unlinked ship keeps the job.
-        let second = game.spawn_test_unit("galley", 0, water);
-        assert_eq!(live.naval_explorer(&game, 0), Some(galley.min(second)));
+        let plan = live.assess(&game, 0);
+        let before = game.units[&galley].pos;
+        let explored_before = game.players[0].explored.len();
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
+            "the explorer acts"
+        );
+        let after = game.units[&galley].pos;
+        assert!(
+            after != before || game.players[0].explored.len() > explored_before,
+            "it moved toward the dark water ({before:?} -> {after:?})"
+        );
+        let plan = live.assess(&game, 0);
+        let second_before = game.units[&second].pos;
+        let explored_before = game.players[0].explored.len();
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, second, &plan, false),
+            "the second explorer acts"
+        );
+        assert!(
+            game.units[&second].pos != second_before
+                || game.players[0].explored.len() > explored_before,
+            "the second hull also moves toward dark water"
+        );
 
         // A charted sea has no explorer; the withheld arm names none.
         let mut charted = game.clone();
         let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
         charted.players[0].explored.extend(all);
-        assert_eq!(live.naval_explorer(&charted, 0), None);
+        assert!(live.naval_explorer(&charted, 0).is_empty());
         let mut withheld = AdvancedAi::new();
         withheld.enable_live_bridge();
         withheld.disable_naval_recon();
-        assert_eq!(withheld.naval_explorer(&game, 0), None);
+        assert!(withheld.naval_explorer(&game, 0).is_empty());
         assert!(!AdvancedAi::new().naval_recon());
         assert!(!AdvancedAi::legacy().naval_recon());
     }
@@ -28399,7 +28431,7 @@ mod tests {
         live.enable_live_bridge();
         assert_eq!(
             live.naval_explorer(&game, 0),
-            Some(free),
+            vec![free],
             "a trapped lower-id Galley cannot take the explorer job from the open-water hull"
         );
     }
