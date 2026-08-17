@@ -19,10 +19,13 @@ different change than the one that fixes the supervisor:
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -37,6 +40,7 @@ HARDCODED_HOME = re.compile(r"/Users/(?!\$)[A-Za-z][A-Za-z0-9._-]*/")
 # only works on its author's machine is a service that silently does nothing.
 MANAGED = {
     "civvis-game-supervisor.sh",
+    "civvis-ladder-terminal-launcher.sh",
     "ladder_watchdog.py",
 }
 
@@ -203,3 +207,66 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
+    """A Terminal window is not a log.
+
+    Opened directly, the supervisor's shell output lives only in a GUI window
+    that closes when the process ends. On 2026-08-17T21:13Z the loop exited
+    cleanly after one failed attempt and left no evidence on disk about why,
+    because the only copy of its stderr was painted into a window that was gone
+    before anyone looked.
+    """
+
+    LAUNCHER = OPS / "civvis-ladder-terminal-launcher.sh"
+
+    def test_the_keeper_opens_the_launcher_not_the_loop(self):
+        sys.path.insert(0, str(OPS))
+        import ladder_watchdog  # noqa: PLC0415
+
+        self.assertEqual(ladder_watchdog.SUPERVISOR_SCRIPT.name,
+                         "civvis-ladder-terminal-launcher.sh")
+
+    def _run(self, body: str, log: Path) -> subprocess.CompletedProcess:
+        """Run the real launcher against a stub supervisor."""
+        with TemporaryDirectory() as raw:
+            stub = Path(raw) / "stub.sh"
+            stub.write_text("#!/bin/zsh\n" + body)
+            stub.chmod(0o755)
+            return subprocess.run(
+                ["/bin/zsh", str(self.LAUNCHER)],
+                env={**os.environ, "CIVVIS_LADDER_LOG": str(log),
+                     "CIVVIS_LADDER_SUPERVISOR": str(stub)},
+                capture_output=True, text=True, timeout=60)
+
+    def test_the_loops_stdout_and_stderr_land_in_the_file(self):
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            self._run("print -r -- 'on stdout'\nprint -r -- 'on stderr' >&2\n", log)
+            text = log.read_text()
+            self.assertIn("on stdout", text)
+            self.assertIn("on stderr", text,
+                          "stderr is the half that explains an exit")
+
+    def test_the_exit_status_is_a_line_not_the_absence_of_one(self):
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            done = self._run("exit 42\n", log)
+            self.assertIn("supervisor exited with status 42", log.read_text())
+            self.assertEqual(done.returncode, 42,
+                             "the launcher must not swallow the status either")
+
+    def test_a_supervisor_killed_mid_run_still_records_its_exit(self):
+        """The 2026-08-17T21:20Z failure: `{ } | tee` loses the last line.
+
+        `tee` dies with the rest of the pipeline, and the last thing written is
+        exactly the thing worth keeping.
+        """
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            self._run("kill -TERM $$\n", log)
+            self.assertIn("supervisor exited with status", log.read_text())
+
+    def test_the_launcher_derives_its_paths(self):
+        self.assertEqual(hardcoded_homes(self.LAUNCHER), [])

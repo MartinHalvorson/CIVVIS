@@ -89,7 +89,8 @@ SUPERVISOR_LABEL = "com.civvis.ladder"
 STATE_DEFAULT = Path.home() / ".cache" / "civvis" / "ladder-watchdog.json"
 LOG_DEFAULT = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
 SUPERVISOR_LOCK = Path.home() / ".civvis-game-supervisor.lock"
-SUPERVISOR_SCRIPT = Path(__file__).resolve().parent / "civvis-game-supervisor.sh"
+SUPERVISOR_SCRIPT = (Path(__file__).resolve().parent
+                     / "civvis-ladder-terminal-launcher.sh")
 
 
 def log(path: Path, message: str) -> None:
