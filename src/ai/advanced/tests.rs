@@ -12102,6 +12102,61 @@ fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
         .is_none());
 }
 
+/// ★★★★ A border with no city behind it is a city in the fog. Run
+/// civvis-20260818T155552Z: Setia, founded t55 two tiles from Vietnam's border
+/// with none of Vietnam's four cities on the board, read −13.3 Loyalty a turn
+/// on its first export and flipped at t63; the forecast had passed it because
+/// it sums the cities it can see. See `UNSEEN_MAJOR_BORDER_RADIUS` and
+/// `Game::unseen_major_borders`: on the live seat a site within three tiles of
+/// such a border is refused before the walk; four tiles out, an empty set,
+/// stock and the withheld arm judge by the forecast alone as before.
+#[test]
+fn a_site_beside_an_unseen_majors_border_is_doomed_before_the_walk() {
+    let (mut game, capital, home) = empire_with_a_capital(71_121);
+    game.cities.get_mut(&capital).unwrap().pop = 4;
+    // Fully explored, so the fog rule cannot be what refuses.
+    let all: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(all);
+    let site = anchor_at(&game, home, 4);
+    let border = anchor_at(&game, site, 2);
+    let far_border = anchor_at(&game, site, 4);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.frontier_loyalty);
+    assert!(
+        live.settle_site_loyalty_verdict(&game, 0, site).is_none(),
+        "no unseen border on the board: the site is sound"
+    );
+
+    game.unseen_major_borders.insert(border);
+    assert!(AdvancedAi::beside_unseen_major_border(&game, site));
+    let why = live
+        .settle_site_loyalty_verdict(&game, 0, site)
+        .expect("the live seat dooms a site two tiles from an unseen major's border");
+    assert!(
+        why.contains("border whose city the seat has never seen"),
+        "{why}"
+    );
+
+    // Four tiles from the border: outside the radius, judged by the forecast.
+    game.unseen_major_borders.clear();
+    game.unseen_major_borders.insert(far_border);
+    assert!(!AdvancedAi::beside_unseen_major_border(&game, site));
+    assert!(live.settle_site_loyalty_verdict(&game, 0, site).is_none());
+
+    // Stock and the withheld arm never read the set.
+    game.unseen_major_borders.insert(border);
+    let stock = AdvancedAi::new();
+    assert!(stock.settle_site_loyalty_verdict(&game, 0, site).is_none());
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_frontier_loyalty();
+    assert!(withheld
+        .settle_site_loyalty_verdict(&game, 0, site)
+        .is_none());
+}
+
 /// A tile at exactly `distance` from `home`, chosen deterministically so
 /// the assertion is about the radius and not about map iteration order.
 fn anchor_at(game: &Game, home: Pos, distance: i32) -> Pos {

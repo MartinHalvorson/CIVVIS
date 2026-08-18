@@ -6737,6 +6737,103 @@ mod tests {
     /// the same reason the border-growth test above asserts through
     /// `valid_improvements`: the field only matters where it is consulted, and a
     /// test on the field alone would pass on a set nothing reads.
+    /// ★★★★ A met major's border plot the mirror can attribute to no city of
+    /// theirs is a city in the fog. Run civvis-20260818T155552Z founded Setia
+    /// two tiles from such a border (Vietnam: four cities, none seen) and lost
+    /// it eight turns later at −13 Loyalty a turn, while the settle-site
+    /// forecast — which sums the cities on the board — had passed the site.
+    /// `unseen_major_borders` names those plots: a rival with no city on the
+    /// board, or a plot further from every known city of theirs than a
+    /// Civilization VI city can own. A minor's ground and a plot beside a
+    /// KNOWN rival city are not in it.
+    #[test]
+    fn a_met_majors_border_with_no_city_behind_it_is_recorded_as_unseen() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let mut plots = vec![owned(5, 5, 0)];
+        // Rival 3 owns (5,7) and (5,8) and none of their cities is in sight.
+        plots.push(owned(5, 7, 3));
+        plots.push(owned(5, 8, 3));
+        // Rival 4 owns (14, 5) beside their known city at (15, 5), and (5, 12)
+        // ten tiles from it — the second belongs to a city we cannot see.
+        plots.push(owned(15, 5, 4));
+        plots.push(owned(14, 5, 4));
+        plots.push(owned(5, 12, 4));
+        // A city-state owns (9, 9); minors exert no loyalty pressure and are
+        // not majors.
+        plots.push(owned(9, 9, 7));
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+        state.rivals.push(StateRival {
+            player: 4,
+            at_war: false,
+            cities: vec![StateCity {
+                id: 2,
+                name: "Hue".to_string(),
+                x: 15,
+                y: 5,
+                pop: 5,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KUMASI".to_string(),
+            ..StateMinor::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 5, 1, 500, 0);
+        let at = |x: i32, y: i32| crate::hex::offset_to_axial(x, y);
+        let unseen = &mirror.game.unseen_major_borders;
+        assert!(
+            unseen.contains(&at(5, 7)) && unseen.contains(&at(5, 8)),
+            "a met major with no city on the board: its ground is an unseen border, got {unseen:?}"
+        );
+        assert!(
+            unseen.contains(&at(5, 12)),
+            "ten tiles from the only known city of theirs: a city we cannot see owns it"
+        );
+        assert!(
+            !unseen.contains(&at(14, 5)),
+            "beside their known city: the forecast can count that city"
+        );
+        assert!(
+            !unseen.contains(&at(9, 9)),
+            "a minor's ground presses no loyalty and is not a major's border"
+        );
+        assert!(
+            !unseen.contains(&at(5, 5)),
+            "our own ground is never an unseen border"
+        );
+    }
+
     #[test]
     fn a_rival_border_whose_city_is_unseen_still_stops_the_unit() {
         let owned = |x: i32, y: i32, owner: i32| {
@@ -15429,6 +15526,13 @@ fn record_host_observed(game: &mut crate::game::Game) {
 /// The alternative — "any owner that is not a known rival is us" — would hand a plot
 /// belonging to a civilization we have not met to our own empire, and a seat that
 /// believes it owns a rival's capital ring is worse off than one that knows nothing.
+/// The furthest a Civilization VI city ever owns a plot: culture bombs and
+/// border growth stop at five tiles from the centre (`GlobalParameters`
+/// `CITY_MAX_BUY_PLOT_RANGE`, and the plot-acquisition ring). A plot a met
+/// major owns further than this from every city of theirs we can see is owned
+/// by a city we cannot. See [`crate::game::Game::unseen_major_borders`].
+const CIV6_CITY_OWNERSHIP_REACH: i32 = 5;
+
 fn apply_territory(
     game: &mut crate::game::Game,
     snapshot: &Snapshot,
@@ -15465,6 +15569,16 @@ fn apply_territory(
     // open borders open the second while leaving the first shut, and a settler
     // barred by loyalty is barred from founding on ground it may cross freely.
     let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // Ground a MET major owns whose city we cannot see: either the seat holds
+    // no city on this board at all, or its nearest known city stands further
+    // than any Civilization VI city can own (five tiles), so the plot belongs
+    // to one still in the fog. See [`crate::game::Game::unseen_major_borders`].
+    let mut unseen_major: std::collections::BTreeSet<crate::Pos> = Default::default();
+    let is_major = |seat: usize| {
+        game.players
+            .get(seat)
+            .is_some_and(|p| seat != 0 && !p.is_minor && !p.is_barbarian)
+    };
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -15521,14 +15635,25 @@ fn apply_territory(
             // The city that would work it: the owner's nearest. Civ 6 records only
             // the owning PLAYER per plot, so which of their cities holds it is not in
             // the export and the nearest is the only defensible reconstruction.
-            let owner = centres.get(&seat).and_then(|list| {
+            let nearest = centres.get(&seat).and_then(|list| {
                 list.iter()
                     .min_by_key(|(cid, centre)| (game.wdist(pos, *centre), *cid))
-                    .map(|(cid, _)| *cid)
+                    .map(|(cid, centre)| (*cid, game.wdist(pos, *centre)))
             });
+            let owner = nearest.map(|(cid, _)| cid);
             if owner.is_some() {
+                // A plot further from every known city of a major than a city
+                // can own belongs to one this seat has not seen.
+                if is_major(seat)
+                    && nearest.is_some_and(|(_, distance)| distance > CIV6_CITY_OWNERSHIP_REACH)
+                {
+                    unseen_major.insert(pos);
+                }
                 assign.push((pos, owner));
             } else if seat != 0 {
+                if is_major(seat) {
+                    unseen_major.insert(pos);
+                }
                 // A seat we can NAME but that holds no city on this board —
                 // their centre is unrevealed, or refused planting. Their
                 // ground is still not ours to found on; leaving it unassigned
@@ -15584,6 +15709,7 @@ fn apply_territory(
     // that opens — a war declared, borders granted, or simply their city coming
     // into view so the ordinary gate takes over — stops being sealed next turn.
     game.closed_borders = sealed;
+    game.unseen_major_borders = unseen_major;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
