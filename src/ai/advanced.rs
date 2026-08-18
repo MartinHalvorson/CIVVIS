@@ -26032,6 +26032,11 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        // Hoisted out of the tile loop below: `player_vision_now` clones a
+        // whole `TileBits` and `visibility_viewers` walks the alliance graph,
+        // and neither can move while this loop applies nothing. Built lazily,
+        // because most units reach no enemy tile at all.
+        let mut vision_frames = None;
         // The joint search already decided this unit's fight, weighing it
         // against what the rest of the army is doing. Re-running the greedy
         // picker here would let a unit take a trade the plan declined on
@@ -26070,19 +26075,25 @@ impl AdvancedAi {
             // withhold a shot the engine would have allowed. Re-deriving any
             // of the three here would be the same bug in a new place.
             //
-            // This is answer-identical and it is not a strength change. A
-            // refused candidate never wins the argmax, because scoring it
-            // applies it to a clone that refuses it too. Measured: 12 of 12
-            // simulator reports byte-identical across four seeds at the
-            // deployment shape, and `advanced_legal_tactical_candidates`
-            // against `advanced` returned 24 neutral splits on 24 maps -- the
-            // signature of two agents that play the same games. What it buys
-            // is the work: paired A/B over 3 reps x 4 seeds, `--jobs 1`,
-            // **-5.80% user CPU** (135.93s to 128.05s), far outside the 0.02%
-            // noise floor of that harness.
+            // ⚠ This is a CORRECTNESS change and nothing else. Measured on
+            // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
+            // is **-0.18%: inside the +/-0.2% noise floor**, so it buys no
+            // CPU. It buys no strength either -- the arm returned 24 neutral
+            // splits on 24 maps against stock. A refused candidate never wins
+            // the argmax anyway, because scoring it applies it to a clone that
+            // refuses it too. What it buys is that the candidate set is
+            // truthful, which matters to anything that trusts it.
+            //
+            // ⚠⚠ The first version of this gate was a **+6.43% pessimization**
+            // because it called `combat_target_visible`, which recomputes
+            // `player_vision_now` -- a whole `TileBits` clone -- per call. The
+            // frames are hoisted below for that reason. Do not inline them
+            // back.
+            let frames = vision_frames
+                .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
             if spec.has_ranged_attack()
                 && distance <= g.unit_attack_range(uid)
-                && g.combat_target_visible(pid, pos)
+                && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
                 && g.unit_has_line_of_sight(uid, pos)
             {
                 actions.push(Action::Ranged {

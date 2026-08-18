@@ -32715,7 +32715,13 @@ impl Game {
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
     /// still requires a friendly spotter exactly as in Civ VI.
-    fn combat_target_visible_at(
+    /// Whether `pid` may legally fire at `pos` at all, against visibility
+    /// frames the caller already holds. `do_ranged`, `do_attack` and
+    /// `do_city_strike` each apply exactly this before a shot, so a controller
+    /// that proposes a target without asking is proposing an order the engine
+    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// unit and pass them in; the frames cannot move while no action is applied.
+    pub(crate) fn combat_target_visible_at(
         &self,
         pid: usize,
         pos: Pos,
@@ -32744,11 +32750,12 @@ impl Game {
             })
     }
 
-    /// Whether `pid` may legally fire at `pos` at all. `do_ranged`,
-    /// `do_attack` and `do_city_strike` each apply exactly this before a shot,
-    /// so a controller that proposes a target without asking is proposing an
-    /// order the engine will refuse.
-    pub(crate) fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
+    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
+    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
+    /// disk of candidate tiles must hoist the two frames and use
+    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
+    /// candidate tile cost +6.4% of simulator CPU.
+    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
         let visible = self.player_vision_now(pid);
         let viewers = self.visibility_viewers(pid);
         self.combat_target_visible_at(pid, pos, &visible, &viewers)
