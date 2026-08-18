@@ -248,6 +248,14 @@ struct MotionBreakdown {
     major: Motion,
     minor: Motion,
     barbarian: Motion,
+    /// Major unit-turns and idle unit-turns, per unit kind.
+    ///
+    /// The role split above says how much of the game is spent standing still;
+    /// it does not say *what* is standing still, and the two answers want
+    /// different fixes. A galley with no objective, a builder with no charge
+    /// left to spend, and a warrior that declined every trade are three
+    /// separate defects that the one 20% figure reports as a single number.
+    major_by_kind: BTreeMap<String, (u64, u64)>,
 }
 
 fn controller_role(g: &Game, owner: usize) -> &'static str {
@@ -275,6 +283,11 @@ impl MotionBreakdown {
         self.major.add(other.major);
         self.minor.add(other.minor);
         self.barbarian.add(other.barbarian);
+        for (kind, (turns, idle)) in &other.major_by_kind {
+            let entry = self.major_by_kind.entry(kind.clone()).or_insert((0, 0));
+            entry.0 += turns;
+            entry.1 += idle;
+        }
     }
 
     fn total(&self) -> Motion {
@@ -289,6 +302,44 @@ impl MotionBreakdown {
         println!("{indent}       major      {}", self.major.line());
         println!("{indent}       city-state {}", self.minor.line());
         println!("{indent}       barbarian  {}", self.barbarian.line());
+        self.print_major_kinds(indent);
+    }
+
+    /// The major idle-field share, attributed to the units that spend it.
+    /// Ordered by idle unit-turns, because the question a fix has to answer is
+    /// where the mass is, not which kind has the worst rate on four turns.
+    fn print_major_kinds(&self, indent: &str) {
+        let mut rows: Vec<(&String, u64, u64)> = self
+            .major_by_kind
+            .iter()
+            .filter(|(_, (_, idle))| *idle > 0)
+            .map(|(kind, (turns, idle))| (kind, *turns, *idle))
+            .collect();
+        rows.sort_by(|left, right| right.2.cmp(&left.2).then(left.0.cmp(right.0)));
+        let total_idle: u64 = rows.iter().map(|row| row.2).sum();
+        if total_idle == 0 {
+            return;
+        }
+        println!("{indent}       major idle-field by unit (idle unit-turns, share of major idle, own idle rate)");
+        for (kind, turns, idle) in rows.iter().take(12) {
+            println!(
+                "{indent}         {kind:<24} {idle:>6}  {:>5.1}% of idle  {:>5.1}% of its own turns",
+                100.0 * *idle as f64 / total_idle as f64,
+                if *turns == 0 {
+                    0.0
+                } else {
+                    100.0 * *idle as f64 / *turns as f64
+                },
+            );
+        }
+        if rows.len() > 12 {
+            let rest: u64 = rows.iter().skip(12).map(|row| row.2).sum();
+            println!(
+                "{indent}         {:<24} {rest:>6}  {:>5.1}% of idle",
+                format!("({} other kinds)", rows.len() - 12),
+                100.0 * rest as f64 / total_idle as f64
+            );
+        }
     }
 }
 
@@ -538,6 +589,10 @@ fn audit_turn(
     history.tracks.retain(|id, _| g.units.contains_key(id));
     for (id, unit) in &g.units {
         let role = controller_role(g, unit.owner);
+        // Attribute this unit-turn before the shared counters move, so the
+        // per-kind ledger is the same accounting split a different way rather
+        // than a second, independently drifting one.
+        let before = *motion.for_owner(g, unit.owner);
         if let Some(detail) = track_unit(g, history, *id, motion.for_owner(g, unit.owner)) {
             found.symptom(
                 format!(
@@ -546,6 +601,15 @@ fn audit_turn(
                 ),
                 detail,
             );
+        }
+        if role == "major" {
+            let after = *motion.for_owner(g, unit.owner);
+            let entry = motion
+                .major_by_kind
+                .entry(unit.kind.to_string())
+                .or_insert((0, 0));
+            entry.0 += after.unit_turns - before.unit_turns;
+            entry.1 += after.idle_field - before.idle_field;
         }
         if unit.hp <= 0 || unit.hp > 100 {
             found.violation(

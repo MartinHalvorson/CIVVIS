@@ -223,6 +223,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_open_water_navy",
     "advanced_maritime_splice",
     "advanced_sea_answers",
     "advanced_engine_faith_price",
@@ -831,6 +832,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedOpenWaterNavy => "advanced_open_water_navy",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
@@ -3157,6 +3159,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // Build hulls only where they have open water to sail into. The
+        // enqueue path gated on `city_is_coastal`, and a lake is water, so a
+        // lakeside city built Galleys that never left the lake: 20 of 53 major
+        // hulls never moved once in a three-game audit.
+        "advanced_open_water_navy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_open_water_navy();
+            Box::new(ai)
+        }
         // Reach for the +100% naval-production card while hulls are wanted:
         // the family is invisible to the deck scorer until a sea unit heads a
         // queue and appears in no portfolio, so the Galley-era discount was
@@ -4243,6 +4254,7 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedOpenWaterNavy => &["open-water-navy"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
@@ -4741,6 +4753,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_open_water_navy" => (Vec::new(), "advanced_open_water_navy"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
@@ -6050,6 +6063,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_open_water_navy",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
                 "advanced_engine_faith_price",
