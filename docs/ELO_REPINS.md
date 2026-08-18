@@ -1429,4 +1429,3 @@ five anchor profiles.
 definitions of the same thing disagreed and one of them was reachable only by
 accident — a defect repair, not a demonstrated gain. Rows before and after v15
 are not comparable in any game where an improvement was pillaged.
-
