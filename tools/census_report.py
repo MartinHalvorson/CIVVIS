@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Run the crate's censuses and publish what they measured.
+
+## Why
+
+Twenty-eight tests carry `#[ignore]`, twenty of them with the same note:
+*"census, not an assertion; run explicitly with --nocapture."* The reasoning is
+right — a census is a reading, not a pass/fail, and asserting an exact number
+would fail on every legitimate change. The consequence is that the project's
+best diagnostic surface is invisible unless a human remembers to look, and this
+week alone that pattern cost twice:
+
+- a tactics baseline went stale because nothing re-read it, and a "21.7-point
+  regression" was measured against a 40-game number instead of a 480-game one;
+- the ladder loop stopped for 14.3 hours with a correct detector wired to
+  nothing.
+
+A reading nobody takes is not an instrument.
+
+## What this does instead of asserting
+
+It runs them, records what they printed, and makes the DRIFT the signal. The
+absolute number stays free to move — that is what a census is for — but it
+cannot move silently: `--check` fails when today's output differs from the
+committed one, and the remedy is to look at the diff and, if the change is
+intended, `--write` it.
+
+That keeps them censuses and makes them visible, which is the whole complaint.
+
+## Why this is not a per-PR gate
+
+Measured 2026-08-18: the full set takes over ten minutes, and one of them plays
+24 games to a result. That is a scheduled job, not something to put in front of
+every pull request — the `#[ignore]` is not laziness, it is a correct call about
+where this work belongs.
+
+    tools/census_report.py --list
+    tools/census_report.py --write          # take the readings, record them
+    tools/census_report.py --check          # fail on drift
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+LEDGER = REPO / "docs" / "census.json"
+MARKDOWN = REPO / "docs" / "CENSUS.md"
+
+# The note a census carries. `#[ignore]` with no reason is an ordinary skipped
+# test and none of this applies to it.
+CENSUS_NOTE = re.compile(r'#\[ignore\s*=\s*"([^"]*(?:census|microbenchmark)[^"]*)"\s*\]')
+TEST_NAME = re.compile(r"\s*(?:async\s+)?fn\s+([A-Za-z_][\w]*)")
+
+
+def censuses() -> list[dict[str, str]]:
+    """Every ignored test whose reason says it is a census, with where it lives."""
+    found = []
+    for path in sorted((REPO / "src").rglob("*.rs")):
+        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        for index, line in enumerate(lines):
+            note = CENSUS_NOTE.search(line)
+            if not note:
+                continue
+            for ahead in lines[index + 1:index + 4]:
+                name = TEST_NAME.match(ahead)
+                if name:
+                    found.append({
+                        "test": name.group(1),
+                        "file": str(path.relative_to(REPO)),
+                        "line": index + 1,
+                        "note": note.group(1).strip(),
+                    })
+                    break
+    return found
+
+
+def run_one(test: str, timeout: float) -> dict[str, object]:
+    """One census, run alone so its output is unambiguously its own."""
+    done = subprocess.run(
+        # ⚠ NOT `--exact`. That wants the full module path
+        # (`ai::advanced::tests::belief_pressure_census`), and passing the bare
+        # function name to it matches nothing at all — cargo then reports
+        # "running 0 tests" and exits 0, so the census records an empty reading
+        # and looks like a census that printed nothing. Substring matching on a
+        # unique test name is what is wanted here.
+        ["cargo", "test", "--profile", "ci", "--locked", "--lib", "--",
+         "--ignored", "--nocapture", "--test-threads=1", test],
+        cwd=REPO, capture_output=True, text=True, timeout=timeout, check=False,
+    )
+    ran = re.search(r"^running (\d+) tests?$", done.stdout, re.M)
+    if ran and ran.group(1) == "0":
+        return {"ok": False, "output": [f"no test matched {test!r}"]}
+    body = []
+    for line in done.stdout.split("\n"):
+        # ⚠ THE CENSUS PRINTS ON THE HARNESS'S OWN LINE. With `--nocapture` the
+        # runner writes `test path::name ... ` WITHOUT a newline and the test's
+        # output lands on the end of it, so a filter that drops lines beginning
+        # "test " drops exactly the reading this exists to record. Strip the
+        # prefix and keep what follows.
+        if line.startswith("test ") and " ... " in line:
+            tail = line.split(" ... ", 1)[1].strip()
+            if (tail and tail not in ("ok", "FAILED", "ignored")
+                    and not re.search(r"\bin \d+(\.\d+)?s\b", tail)):
+                body.append(tail)
+            continue
+        # The harness's remaining chatter, and anything carrying a duration,
+        # which changes on every machine and would report as drift forever.
+        if line.startswith(("running ", "test result:", "   Compiling",
+                            "    Finished", "     Running", "warning:", "ok")):
+            continue
+        if re.search(r"\bin \d+(\.\d+)?s\b", line):
+            continue
+        if line.strip():
+            body.append(line.rstrip())
+    return {"ok": done.returncode == 0, "output": body}
+
+
+def take(timeout: float, only: str | None) -> dict[str, object]:
+    readings = {}
+    for entry in censuses():
+        if only and only not in entry["test"]:
+            continue
+        print(f"  {entry['test']} ...", flush=True)
+        # ⚠ A FAILURE IS RETRIED ONCE BEFORE IT IS BELIEVED. These run for
+        # minutes on a machine that is also playing Civilization VI, and a
+        # cargo invocation that loses a build lock or gets starved returns
+        # nonzero without the census having failed at all. Recording that
+        # transient bakes `ok: false` into the baseline, and every later run
+        # then reports drift when the census simply passes again — measured on
+        # the first full run here, where `expansion_funnel_blocker_census`
+        # recorded a failure and passed on every attempt afterwards.
+        for attempt in (1, 2):
+            try:
+                reading = run_one(entry["test"], timeout)
+            except subprocess.TimeoutExpired:
+                reading = {"ok": False, "output": [f"timed out after {timeout:g}s"]}
+            if reading["ok"] or attempt == 2:
+                break
+            print(f"    (failed; retrying once before believing it)", flush=True)
+        readings[entry["test"]] = {**entry, **reading}
+    return readings
+
+
+def render(readings: dict) -> str:
+    parts = [
+        "# Census readings",
+        "",
+        "_Generated by `tools/census_report.py --write`. These are the crate's",
+        "`#[ignore]`d censuses: readings, not assertions. The numbers are free to",
+        "move — that is what a census is for — but they cannot move silently, and",
+        "`--check` fails on any change so the diff gets read._",
+        "",
+    ]
+    for name in sorted(readings):
+        row = readings[name]
+        parts.append(f"## {name}")
+        parts.append("")
+        parts.append(f"`{row['file']}:{row['line']}` — {row['note']}")
+        parts.append("")
+        parts.append("```")
+        parts.extend(row["output"] or ["(printed nothing)"])
+        parts.append("```")
+        parts.append("")
+    return "\n".join(parts)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--list", action="store_true", help="name the censuses and exit")
+    mode.add_argument("--write", action="store_true", help="take the readings and record them")
+    mode.add_argument("--check", action="store_true", help="fail when a reading has drifted")
+    parser.add_argument("--timeout", type=float, default=1800.0,
+                        help="seconds allowed per census (default 1800)")
+    parser.add_argument("--only", help="substring filter, for working on one")
+    args = parser.parse_args(argv)
+
+    if args.list:
+        for entry in censuses():
+            print(f"{entry['file']}:{entry['line']}\t{entry['test']}\t{entry['note'][:60]}")
+        return 0
+
+    readings = take(args.timeout, args.only)
+    if not readings:
+        print("no censuses matched", file=sys.stderr)
+        return 1
+
+    if args.write:
+        LEDGER.write_text(json.dumps(readings, indent=2, sort_keys=True) + "\n")
+        MARKDOWN.write_text(render(readings))
+        print(f"recorded {len(readings)} census reading(s) to {LEDGER.name} "
+              f"and {MARKDOWN.name}")
+        return 0
+
+    if not LEDGER.is_file():
+        print(f"{LEDGER} does not exist yet; run --write first", file=sys.stderr)
+        return 1
+    before = json.loads(LEDGER.read_text())
+    if args.only:
+        # ⚠ `--only` narrows what was RUN, so it has to narrow what is compared
+        # too. Comparing a filtered run against the whole ledger reports every
+        # census that was not run as "recorded but no longer present", which is
+        # 21 false alarms and one real answer.
+        before = {k: v for k, v in before.items() if args.only in k}
+    drifted = []
+    for name, row in sorted(readings.items()):
+        was = before.get(name)
+        if was is None:
+            drifted.append(f"{name}: new census, never recorded")
+        elif was.get("output") != row.get("output"):
+            drifted.append(f"{name}: reading changed")
+        elif was.get("ok") != row.get("ok"):
+            drifted.append(f"{name}: now {'passes' if row['ok'] else 'fails'}")
+    for name in sorted(set(before) - set(readings)):
+        drifted.append(f"{name}: recorded but no longer present")
+
+    for line in drifted:
+        print(f"CENSUS DRIFT {line}")
+    if drifted:
+        print("\nA census is a reading, so a change here is not automatically a "
+              "defect — read the diff. If the new number is the intended one, "
+              "`--write` it and say why in the commit.")
+        return 1
+    print(f"{len(readings)} census reading(s) unchanged")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -21927,6 +21927,21 @@ impl Game {
                 *tile = last.clone();
             }
         }
+        // A revealed border tile may still carry the ownership ID of a city
+        // whose City Center is hidden and was removed above.  The tile is
+        // public, but its foreign city record is not; retaining the dangling
+        // ID makes otherwise ordinary map scans index a city that is absent
+        // from this private world.  Clear only those references.  Remembered
+        // City Centers remain valid because their stale city record is kept.
+        let visible_city_ids: BTreeSet<u32> = view.cities.keys().copied().collect();
+        for tile in view.map.tiles.values_mut() {
+            if tile
+                .owner_city
+                .is_some_and(|city_id| !visible_city_ids.contains(&city_id))
+            {
+                tile.owner_city = None;
+            }
+        }
         let mut stale_strength = Vec::new();
         for cid in hidden_cities {
             let Some(memory) = remembered_cities.get(&cid).copied() else {

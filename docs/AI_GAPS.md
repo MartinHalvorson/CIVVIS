@@ -826,11 +826,19 @@ diplomacy, campaign selection, and tactics all consume that same world. The
 action tape is then replayed against the authoritative game, where hidden
 blockers and combat remain the legality authority.
 
-This closes the architecture gap without silently changing the incumbent:
-the mode is default-off and has no strength claim yet. Focused tests prove
-redaction, invariance to unseen enemy movement/health changes, and a short
-two-major replay. A paired deployment-shaped gameplay screen remains the next
-step before promotion.
+This closes the architecture gap without silently changing the incumbent.
+The strict evaluator now exposes the arm as `fog_honest`, and its first
+deployment-shaped screen (20 paired maps, seed prefix `920000..920019`) made
+the decision explicit: stock `advanced` retained the strength gate. The
+fog-honest arm scored 15.0% (95% Wilson CI 5.2%..36.0%), with the incumbent
+favoured on 15 of 20 map directions. The matched compact-standard screen
+(20 pairs, `910000..910019`) was exactly neutral at 50.0% (95% Wilson CI
+29.9%..70.1%) and therefore inconclusive; deployment is the required strength
+profile, so the arm is not promoted into the incumbent. Focused tests prove
+redaction, invariance to unseen enemy
+movement/health changes, stale-city reference cleanup, and a short two-major
+replay. The next useful work is to improve fair-play economic planning before
+re-running the gate, not to relabel this negative screen as a promotion.
 
 ## 2026-08-17 the great-work veto outranks the treatment that pays for great-work buildings
 
