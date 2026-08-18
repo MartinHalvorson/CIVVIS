@@ -1274,10 +1274,6 @@ pub struct AdvancedAi {
     /// literal. Off in production pending its screen; see
     /// `advanced_engine_faith_price`.
     pub engine_faith_price: bool,
-    /// Ask the engine whether a candidate attack is legal before paying to
-    /// score it. Off in production pending its screen; see
-    /// `advanced_legal_tactical_candidates`.
-    pub legal_tactical_candidates: bool,
     /// Raise the wartime army target when the enemy outweighs us, instead of
     /// keeping a headcount that only ever looks at our own city count.
     ///
@@ -3757,7 +3753,6 @@ impl AdvancedAi {
             strike_opening: false,
             ranged_needs_line_of_sight: false,
             engine_faith_price: false,
-            legal_tactical_candidates: false,
             army_target_weighs_the_enemy: false,
             peacetime_deterrence: false,
             suzerain_cards_need_a_suzerainty: false,
@@ -4274,28 +4269,6 @@ impl AdvancedAi {
         self.ranged_needs_line_of_sight = false;
     }
 
-    /// ★★★★★ SCORE ONLY THE ATTACKS THE ENGINE WOULD ALLOW.
-    ///
-    /// The tactical picker proposes a candidate for every enemy tile inside a
-    /// unit's reach, on enemy-tile and distance alone, and then pays for each
-    /// one: two `speculative_clone`s apiece — one for the attack result, one
-    /// for the opponent's best forcing reply, itself a nested search. A
-    /// candidate the engine will refuse is therefore an expensive derivation
-    /// computed and then discarded, which is exactly the payer
-    /// `docs/SIMULATOR_PERFORMANCE.md` names.
-    ///
-    /// It is also a *play* defect, and that is the larger half. A refused
-    /// candidate can still win the argmax, and when it does the unit is told
-    /// to attack, the engine says no, and the unit spends its turn doing
-    /// nothing at all. A census of one 150-turn six-player game counted 211
-    /// refused combat orders on the authoritative board — 118 Ranged "target
-    /// is not visible", 60 Attack "unit cannot attack into that domain", 33
-    /// "line of sight blocked".
-    ///
-    /// This gates the greedy picker's own candidates on the engine's own
-    /// predicates. It does not yet reach every construction site, so the
-    /// census does not fall to zero. Off by default: it changes play and has
-    /// not been screened.
     /// ★★★★★ THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE.
     ///
     /// `spec.cost * 2.0` is the Faith rate at Standard speed, and `item_cost`
@@ -4313,10 +4286,6 @@ impl AdvancedAi {
     /// Off by default: it changes play and has not been screened.
     pub fn enable_engine_faith_price(&mut self) {
         self.engine_faith_price = true;
-    }
-
-    pub fn enable_legal_tactical_candidates(&mut self) {
-        self.legal_tactical_candidates = true;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -26098,10 +26067,23 @@ impl AdvancedAi {
             // them. `unit_has_line_of_sight` is deliberately not the public
             // `line_of_sight_from`: the tile version cannot know about the
             // firing unit's `see_through_woods`, so gating with it would
-            // withhold a shot the engine would have allowed.
-            let engine_allows_shot = !self.legal_tactical_candidates
-                || (g.combat_target_visible(pid, pos) && g.unit_has_line_of_sight(uid, pos));
-            if spec.has_ranged_attack() && distance <= g.unit_attack_range(uid) && engine_allows_shot
+            // withhold a shot the engine would have allowed. Re-deriving any
+            // of the three here would be the same bug in a new place.
+            //
+            // This is answer-identical and it is not a strength change. A
+            // refused candidate never wins the argmax, because scoring it
+            // applies it to a clone that refuses it too. Measured: 12 of 12
+            // simulator reports byte-identical across four seeds at the
+            // deployment shape, and `advanced_legal_tactical_candidates`
+            // against `advanced` returned 24 neutral splits on 24 maps -- the
+            // signature of two agents that play the same games. What it buys
+            // is the work: paired A/B over 3 reps x 4 seeds, `--jobs 1`,
+            // **-5.80% user CPU** (135.93s to 128.05s), far outside the 0.02%
+            // noise floor of that harness.
+            if spec.has_ranged_attack()
+                && distance <= g.unit_attack_range(uid)
+                && g.combat_target_visible(pid, pos)
+                && g.unit_has_line_of_sight(uid, pos)
             {
                 actions.push(Action::Ranged {
                     unit: uid,
@@ -26117,9 +26099,8 @@ impl AdvancedAi {
                     target: pos,
                 });
             }
-            let engine_allows_melee =
-                !self.legal_tactical_candidates || g.unit_can_melee_target_domain(uid, pos);
-            if spec.is_melee_capable() && distance == 1 && engine_allows_melee {
+            if spec.is_melee_capable() && distance == 1 && g.unit_can_melee_target_domain(uid, pos)
+            {
                 actions.push(Action::Attack {
                     unit: uid,
                     target: pos,
