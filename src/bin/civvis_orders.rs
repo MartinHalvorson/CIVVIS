@@ -3813,10 +3813,12 @@ fn main() {
         );
         let w = advanced.weights().clone();
         let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
-        // The live decider plays with the second pipeline slot open and the
-        // host's Settler population floor.
+        // The live decider plays with the second pipeline slot open, the
+        // host's Settler population floor, and the land grab's wider pipeline
+        // and later window (see `AdvancedAi::land_grab`).
         ai.enable_parallel_settlers();
         ai.enable_host_settler_pop();
+        ai.enable_land_grab();
         let pid = 0usize;
         let n_cities = g.player_city_ids(pid).len();
         let settlers = g
@@ -3838,8 +3840,14 @@ fn main() {
             n_cities + settlers,
             w.city_target
         );
-        // The live seat's pipeline width (see `AdvancedAi::parallel_settlers`).
-        let pipeline = if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
+        // The live seat's pipeline width (see `AdvancedAi::land_grab`, and
+        // `AdvancedAi::parallel_settlers` beneath it): two walkers from the
+        // first city, one more per three cities, never more than the seats
+        // still short of the target.
+        let seats_short = (w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+        let pipeline = if seats_short > 0 {
+            (civvis::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
+        } else if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
             2
         } else {
             1
@@ -3856,11 +3864,15 @@ fn main() {
             settler_min_pop,
             w.settler_min_pop
         );
+        // The land grab's window: a settler must still repay before the turn
+        // limit (see `BasicAi::land_grab`); the genome's stop turn alone no
+        // longer closes it.
         println!(
-            "  turn < settler_stop_turn             {:>5}   {} < {:.0}",
+            "  turn < settler_stop_turn             {:>5}   {} < {:.0} (land grab keeps the window open while a settler still repays: {})",
             (g.turn as f64) < w.settler_stop_turn,
             g.turn,
-            w.settler_stop_turn
+            w.settler_stop_turn,
+            g.turn + g.standard_duration(18) < g.max_turns
         );
         // The military branch sits ABOVE the settler gate in `pick_item` and
         // returns first when it fires, so the gate passing means nothing on its

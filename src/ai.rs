@@ -270,6 +270,7 @@ mod advanced;
 mod tactics;
 pub use advanced::{
     LIVE_TREATMENTS,
+    LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY,
     PRODUCTION_CITY_TARGET_FLOOR,
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
     ExpansionCensus, StrategyCensus, VictoryTarget,
@@ -322,6 +323,12 @@ const AMENITY_DISTRICT_LANE_SERVED: usize = 2;
 /// The population at which Civilization VI lets a city start a Settler. See
 /// `BasicAi::host_settler_pop`.
 const HOST_SETTLER_MIN_POP: f64 = 2.0;
+
+/// Standard turns a Settler needs after it is built to walk out, found, and
+/// repay itself: `SETTLE_LAG` + `SETTLE_PAYBACK` in `AdvancedAi`. The land
+/// grab's `pick_item` window closes this far before the turn limit instead of
+/// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
+const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
 
 /// The headroom a city is steered to keep. `Game::housing_growth_mult` pays
 /// full growth at 2 and half at 1, so 2 is the first value that is not a
@@ -2293,6 +2300,16 @@ pub struct BasicAi {
     /// bridge); native constructors and the frozen anchor keep the genome's
     /// figure. See `pick_item`.
     pub(crate) host_settler_pop: bool,
+    /// Expand to the land the empire can hold, at pipeline pace: the settler
+    /// pipeline is `LAND_GRAB_PIPELINE_BASE + cities / 3` walkers bounded by
+    /// the seats still short of `city_target`, and the window closes
+    /// `LAND_GRAB_SETTLE_HORIZON` standard turns before the turn limit rather
+    /// than at the genome's `settler_stop_turn`. Set only through
+    /// `AdvancedAi::enable_land_grab` (the Civilization VI bridge), which
+    /// also raises the target it threads through `delegated_cities`; native
+    /// constructors and the frozen anchor keep the one-at-a-time gate and the
+    /// gene. See `pick_item` and `AdvancedAi::land_grab`.
+    pub(crate) land_grab: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -3735,6 +3752,7 @@ impl BasicAi {
             settler_strand_discount: false,
             parallel_settlers: false,
             host_settler_pop: false,
+            land_grab: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -3758,6 +3776,14 @@ impl BasicAi {
     /// `--explain-settler` probe can play the same gate.
     pub fn enable_host_settler_pop(&mut self) {
         self.host_settler_pop = true;
+    }
+
+    /// Expand at pipeline pace to the land the empire can hold (see
+    /// `land_grab`). The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_land_grab`; exposed here so the bridge's
+    /// `--explain-settler` probe can play the same gate.
+    pub fn enable_land_grab(&mut self) {
+        self.land_grab = true;
     }
 
     /// Give up an exploration target the host will not move the unit toward
@@ -3965,6 +3991,7 @@ impl BasicAi {
             settler_strand_discount: false,
             parallel_settlers: false,
             host_settler_pop: false,
+            land_grab: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -8462,7 +8489,15 @@ impl BasicAi {
             // holds two cities and is still at least two short of its target;
             // the target stays the hard cap and every other gate below is
             // unchanged.
-            let pipeline = if self.parallel_settlers
+            // ★★★★ AND UNDER THE LAND GRAB THE PIPELINE WIDENS WITH THE
+            // EMPIRE: two walkers from the first city, one more per three
+            // cities, never more than the seats still short. See `land_grab`
+            // and `AdvancedAi::settler_in_flight_allowed`, which opens the
+            // same width for the strategic governor.
+            let seats_short = (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+            let pipeline = if self.land_grab && seats_short > 0 {
+                (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
+            } else if self.parallel_settlers
                 && n_cities >= 2
                 && ((n_cities + settlers + 1) as f64) < self.w.city_target
             {
@@ -8481,7 +8516,11 @@ impl BasicAi {
                 self.w.settler_min_pop
             };
             let grown = (city_pop as f64) >= settler_min_pop;
-            let in_window = (g.turn as f64) < self.w.settler_stop_turn;
+            // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
+            // REPAY, not until the genome's turn. See `land_grab`.
+            let in_window = (g.turn as f64) < self.w.settler_stop_turn
+                || (self.land_grab
+                    && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
                     return Some(Item::Unit {
@@ -14518,6 +14557,93 @@ mod tests {
         game.cities.get_mut(&capital).unwrap().pop = 2;
         treated.w.settler_min_pop = 1.5;
         assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
+    }
+
+    /// The land grab's early Cities route: the pipeline is two walkers from
+    /// the first city and one more per three cities, bounded by the seats
+    /// still short; the window stays open until a settler can no longer
+    /// repay, not until the genome's `settler_stop_turn`. Off unless the
+    /// bridge asks. See `land_grab`.
+    #[test]
+    fn the_land_grab_widens_the_pipeline_and_outlives_the_genomes_stop_turn() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("LANDGRAB", 91_779), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 5;
+        game.turn = 30;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        let ask = |game: &Game, ai: &BasicAi, cities: usize, settlers: usize| {
+            ai.pick_item(game, 0, capital, cities, settlers, 6, 2, 1, 20, 10, 10)
+        };
+        let is_settler = |item: Option<Item>| {
+            matches!(item, Some(Item::Unit { unit }) if unit == "settler")
+        };
+
+        // The wide target the bridge threads through `delegated_cities`.
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 12.0;
+        assert!(!treated.land_grab, "off unless the bridge asks");
+        assert!(
+            !is_settler(ask(&game, &treated, 1, 1)),
+            "stock: one city, one walker — a settler is already in flight"
+        );
+        treated.enable_land_grab();
+        assert!(
+            is_settler(ask(&game, &treated, 1, 1)),
+            "the land grab lets the capital queue its next settler while the first walks"
+        );
+        assert!(
+            !is_settler(ask(&game, &treated, 1, 2)),
+            "two walkers from one city is the base width"
+        );
+        assert!(
+            is_settler(ask(&game, &treated, 3, 2)),
+            "three cities: a third walker"
+        );
+        assert!(!is_settler(ask(&game, &treated, 3, 3)));
+        assert!(
+            is_settler(ask(&game, &treated, 6, 3)),
+            "six cities: a fourth"
+        );
+        // Never more than the seats still short.
+        assert!(
+            !is_settler(ask(&game, &treated, 11, 1)),
+            "one seat short: one walker covers it"
+        );
+        assert!(
+            !is_settler(ask(&game, &treated, 12, 0)),
+            "at the target: no settler"
+        );
+
+        // The window: the genome says stop at 150; the land grab keeps
+        // settling while a settler can still repay before the turn limit.
+        treated.w.settler_stop_turn = 150.0;
+        game.turn = 200;
+        let mut stock = BasicAi::new();
+        stock.w.city_target = 12.0;
+        stock.w.settler_stop_turn = 150.0;
+        assert!(
+            !is_settler(ask(&game, &stock, 3, 0)),
+            "stock: past settler_stop_turn"
+        );
+        assert!(
+            is_settler(ask(&game, &treated, 3, 0)),
+            "the land grab settles at t200 of 250"
+        );
+        game.turn = 250 - game.standard_duration(LAND_GRAB_SETTLE_HORIZON);
+        assert!(
+            !is_settler(ask(&game, &treated, 3, 0)),
+            "and stops when a settler can no longer repay"
+        );
     }
 
     /// A scout the host will not move gives up its target: civvis-20260816T040537Z

@@ -137,6 +137,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_explore_dead_targets",
     "live_without_explore_commit",
     "live_without_bank_envoys",
+    "live_without_land_grab",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -376,6 +377,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "explore-dead-targets",
     "explore-commit",
     "bank-envoys",
+    "land-grab",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -529,6 +531,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // a live treatment so the deployment bundle and its ablation registry are
     // complete, not because `advanced_synergy` needs to turn it on again.
     "explore-commit",
+    // Prices the Settler seat's uncontested land against Firaxis rivals who
+    // out-settle the seat late; the league cadence was bred against CIVVIS
+    // rivals who contest the ground.
+    "land-grab",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -763,6 +769,7 @@ define_arm_kinds! {
     LiveWithoutExploreDeadTargets => "live_without_explore_dead_targets",
     LiveWithoutExploreCommit => "live_without_explore_commit",
     LiveWithoutBankEnvoys => "live_without_bank_envoys",
+    LiveWithoutLandGrab => "live_without_land_grab",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4185,6 +4192,7 @@ impl ArmKind {
             Self::LiveWithoutExploreDeadTargets => live_without("explore-dead-targets"),
             Self::LiveWithoutExploreCommit => live_without("explore-commit"),
             Self::LiveWithoutBankEnvoys => live_without("bank-envoys"),
+            Self::LiveWithoutLandGrab => live_without("land-grab"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -6511,6 +6519,9 @@ mod tests {
             "explore_dead_targets",
             "explore_commit",
             "bank_envoys",
+            // The Settler seat's land, at the Settler seat's pace; the league
+            // cadence stays bred.
+            "land_grab",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {

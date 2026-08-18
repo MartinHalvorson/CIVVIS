@@ -1419,8 +1419,13 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
         live.era_paced_expansion,
         "the live seat carries the treatment"
     );
+    // The land grab (2026-08-18) sits over the rung clock on the deployed
+    // seat; hold it out here so the rungs themselves stay pinned. See
+    // `the_land_grab_wants_the_land_not_a_rung` for the seat as deployed.
+    live.disable_land_grab();
     let mut stock_pace = AdvancedAi::new();
     stock_pace.enable_live_bridge();
+    stock_pace.disable_land_grab();
     stock_pace.disable_era_paced_expansion();
 
     for (turn, stock_want, live_want) in [(50, 6, 7), (100, 7, 8), (120, 8, 9), (170, 8, 10)] {
@@ -1443,6 +1448,130 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
 
     assert!(!AdvancedAi::new().era_paced_expansion);
     assert!(!AdvancedAi::legacy().era_paced_expansion);
+}
+
+/// ★★★★ The seat leads the count at t50 and loses it by t150 because the
+/// target climbs one rung per era while Firaxis rivals settle to the ground.
+/// See `land_grab`: the deployed seat wants the fog-estimated capacity itself
+/// — `2 + land / LAND_GRAB_TILES_PER_CITY`, clamped to the floor and ceiling
+/// — from turn one, and the number does not move with the turn. Withholding
+/// it recovers the era-paced rungs; the default constructors and the frozen
+/// anchor never carry it.
+#[test]
+fn the_land_grab_wants_the_land_not_a_rung() {
+    let mut game = Game::new_full(2, 74, 46, 11, 250, 0, false);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        let position = game.units[&settler].pos;
+        game.found_city_for(pid, position, None);
+        game.remove_unit(settler);
+    }
+    game.current = 0;
+    let land = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        .count();
+    let capacity = (2 + AdvancedAi::fog_land_estimate(&game, land) / LAND_GRAB_TILES_PER_CITY)
+        .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING);
+    assert!(
+        capacity > PRODUCTION_CITY_TARGET_FLOOR + 1,
+        "the league board holds more than the wide opening's floor: {capacity}"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.land_grab && live.base.land_grab,
+        "the live seat carries the treatment in both settler routes"
+    );
+    let mut rungs = AdvancedAi::new();
+    rungs.enable_live_bridge();
+    rungs.disable_land_grab();
+    assert!(!rungs.land_grab && !rungs.base.land_grab);
+
+    for turn in [1, 50, 100, 120, 170, 240] {
+        game.turn = turn;
+        assert_eq!(
+            live.assess(&game, 0).desired_cities,
+            capacity,
+            "the land grab wants the land at t{turn}"
+        );
+        assert!(
+            rungs.assess(&game, 0).desired_cities < capacity,
+            "the rung clock wants less at t{turn}"
+        );
+    }
+    // A one-city, population-one empire is still asked for the floor: the
+    // land grab never reads below `LAND_GRAB_CITY_FLOOR`.
+    game.turn = 1;
+    game.cities.values_mut().for_each(|city| city.pop = 1);
+    assert!(live.assess(&game, 0).desired_cities >= LAND_GRAB_CITY_FLOOR);
+
+    assert!(!AdvancedAi::new().land_grab);
+    assert!(!AdvancedAi::new().base.land_grab);
+    assert!(!AdvancedAi::legacy().land_grab);
+    assert!(!AdvancedAi::legacy().base.land_grab);
+}
+
+/// The land grab's pipeline: two walkers from the first city, one more per
+/// three cities, never more than the seats still short. Every default
+/// constructor and the frozen anchor keep the one-at-a-time gate.
+#[test]
+fn the_land_grab_pipeline_widens_with_the_empire() {
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.settler_in_flight_allowed(16, 1, 0), 1, "off unless the bridge asks");
+    ai.enable_land_grab();
+    assert_eq!(ai.settler_in_flight_allowed(16, 1, 0), 2, "one city: two walkers");
+    assert_eq!(ai.settler_in_flight_allowed(16, 1, 1), 2, "the second may start while the first walks");
+    assert_eq!(ai.settler_in_flight_allowed(16, 2, 1), 2);
+    assert_eq!(ai.settler_in_flight_allowed(16, 3, 0), 3, "three cities: three walkers");
+    assert_eq!(ai.settler_in_flight_allowed(16, 6, 2), 4, "six cities: four");
+    assert_eq!(ai.settler_in_flight_allowed(16, 9, 0), 5, "nine cities: five");
+    assert_eq!(ai.settler_in_flight_allowed(16, 14, 0), 2, "two seats short: two walkers");
+    assert_eq!(ai.settler_in_flight_allowed(16, 15, 0), 1, "one seat short: one walker");
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 15, 1),
+        1,
+        "the walker covers the last seat; the target stays the hard cap"
+    );
+    assert_eq!(ai.settler_in_flight_allowed(16, 16, 0), 1, "at the target the arm's own gate refuses");
+    assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(16, 3, 0), 1);
+}
+
+/// The land grab's window: a Settler must still repay before the turn
+/// limit, whatever the lane. Under an assigned lane the stock window shuts
+/// at `standard_duration(175)` — t116 Online — and run T104654Z then read
+/// "7 cities of 8..11 wanted" for 130 turns without a settler.
+#[test]
+fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
+    let (mut game, capital, _) = empire_with_a_capital(71_117);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    game.max_turns = 250;
+    let mut targeted = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    game.turn = game.standard_duration(175);
+    assert!(
+        !targeted.settler_expansion_window_open(&game, 0, capital),
+        "stock: the assigned lane's window is shut at t{}",
+        game.turn
+    );
+    targeted.enable_land_grab();
+    assert!(
+        targeted.settler_expansion_window_open(&game, 0, capital),
+        "the land grab keeps settling at t{}",
+        game.turn
+    );
+    game.turn = 200;
+    assert!(targeted.settler_expansion_window_open(&game, 0, capital));
+    // But not once a settler cannot repay before the end.
+    game.turn = game.max_turns - 2;
+    assert!(!targeted.settler_expansion_window_open(&game, 0, capital));
 }
 
 #[test]
