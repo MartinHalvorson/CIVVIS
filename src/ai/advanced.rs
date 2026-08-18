@@ -2121,6 +2121,48 @@ pub struct AdvancedAi {
     /// the native repair bundle — a CIVVIS-vs-CIVVIS empire in a Science lane
     /// has the same holes. Off for ordinary and frozen controllers.
     pub governor_every_lane: bool,
+
+    /// The victory half of `governor_every_lane`: Science, Culture, Religion,
+    /// Diplomacy. Set by `enable_governor_every_lane` along with its sibling,
+    /// so the composite behaves exactly as before; separable so the −95 can be
+    /// attributed. Evaluator arm `advanced_governor_victory_lanes`, seed
+    /// 29000000.
+    pub governor_victory_lanes: bool,
+
+    /// The Expansion half of `governor_every_lane`. This is the half that
+    /// replaces `BasicAi::cities`'s Settler gate with `production_value`'s,
+    /// and the composite's fingerprint is a city deficit, so it is the prime
+    /// suspect. Evaluator arm `advanced_governor_expansion_lane`, seed
+    /// 30000000.
+    pub governor_expansion_lane: bool,
+
+    /// Let the strategic governor run the cities under an adaptive Recovery
+    /// plan — the one lane where it decides production for the SHIPPED agent.
+    ///
+    /// ⚠⚠⚠ **On in production, and the arm withholds**, because the evidence
+    /// now runs the other way from the comment above. `advanced_every_lane`
+    /// gave the governor the other five lanes natively and measured **−62 Elo
+    /// compact and −95 deployment**, both directions significant
+    /// (`docs/PRODUCTION_VALUE.md`). The census is not a re-prioritisation but
+    /// a uniformly smaller empire — cities 5.11 vs 6.62, pop 55.9 vs 82.2,
+    /// production 258 vs 394, buildings 61 vs 98, trade routes 7.75 vs 11.82,
+    /// with 5× the city-deficit boundary events. Whatever the governor does to
+    /// an empire, it did it to five lanes and cost 95 Elo.
+    ///
+    /// Recovery is the sixth lane, it is 10–21% of player-turns, and the
+    /// governor has never been withheld from it. If the deficit is a property
+    /// of the governor rather than of those five lanes, removing it here is a
+    /// gain rather than a regression — and the repository's own audit lesson is
+    /// that the only gain it ever found came from deleting work. The redirect
+    /// passes that Recovery actually depends on
+    /// (`redirect_threatened_recovery_queue_for_walls`,
+    /// `redirect_repeatable_projects_for_force_gap`) run BEFORE this gate and
+    /// are unaffected, as are gold and faith purchases, which price through
+    /// `production_value` on their own paths.
+    ///
+    /// Evaluator arm `advanced_without_governor_recovery`; reserved matrix seed
+    /// 28000000.
+    pub governor_in_recovery: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -3763,6 +3805,9 @@ impl AdvancedAi {
             amenity_project_preemption: false,
             amenity_district_path: false,
             governor_every_lane: false,
+            governor_victory_lanes: false,
+            governor_expansion_lane: false,
+            governor_in_recovery: true,
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -5181,10 +5226,32 @@ impl AdvancedAi {
     /// Run the strategic governor under every lane. See `governor_every_lane`.
     pub fn enable_governor_every_lane(&mut self) {
         self.governor_every_lane = true;
+        self.governor_victory_lanes = true;
+        self.governor_expansion_lane = true;
     }
 
     pub fn disable_governor_every_lane(&mut self) {
         self.governor_every_lane = false;
+        self.governor_victory_lanes = false;
+        self.governor_expansion_lane = false;
+    }
+
+    /// Half the composite: the governor under the four victory lanes only.
+    /// See `governor_victory_lanes`.
+    pub fn enable_governor_victory_lanes(&mut self) {
+        self.governor_victory_lanes = true;
+    }
+
+    /// The other half: the governor under Expansion only. See
+    /// `governor_expansion_lane`.
+    pub fn enable_governor_expansion_lane(&mut self) {
+        self.governor_expansion_lane = true;
+    }
+
+    /// Withhold the strategic governor from the Recovery lane, so the baseline
+    /// cascade runs those cities too. See `governor_in_recovery`.
+    pub fn disable_governor_in_recovery(&mut self) {
+        self.governor_in_recovery = false;
     }
 
     /// Let a developed live city take the cheapest legal wonder whatever the
@@ -28087,16 +28154,24 @@ impl AdvancedAi {
             // ONE wonder all game — every valuation this file carries (the
             // wonder race, the tally price of culture, the amenity path, the
             // district table) absent exactly when the empire was growing.
-            let every_lane = self.governor_every_lane
+            // ⚠ Split into its two halves 2026-08-17 so the composite can be
+            // bisected. `enable_governor_every_lane` sets both, so every
+            // existing arm and the live bridge are unchanged; the halves exist
+            // because the composite measured −95 Elo and a composite bounds
+            // only its net. The city-deficit fingerprint (5× the control's
+            // boundary events, cities 5.11 vs 6.62) points at the Expansion
+            // half, where this route replaces the baseline Settler gate.
+            let every_lane = (self.governor_victory_lanes
                 && matches!(
                     plan.strategy,
                     GrandStrategy::Science
                         | GrandStrategy::Culture
                         | GrandStrategy::Religion
                         | GrandStrategy::Diplomacy
-                        | GrandStrategy::Expansion
-                );
-            if plan.strategy == GrandStrategy::Recovery
+                ))
+                || (self.governor_expansion_lane
+                    && plan.strategy == GrandStrategy::Expansion);
+            if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
@@ -37431,6 +37506,79 @@ mod tests {
         assert!(
             resumed > fresh,
             "incremental evaluation should prefer finishing invested infrastructure"
+        );
+    }
+
+    #[test]
+    fn splitting_the_every_lane_composite_leaves_it_exactly_as_it_was() {
+        // The halves exist to attribute a −95 Elo composite. If enabling the
+        // composite stopped covering a lane it used to cover, the live bridge
+        // would change behaviour and the attribution would be measured against
+        // the wrong incumbent — the trap this repo records as "a composite
+        // gate licenses the composite, never its parts".
+        let mut composite = AdvancedAi::new();
+        composite.enable_governor_every_lane();
+        assert!(composite.governor_victory_lanes && composite.governor_expansion_lane);
+
+        let mut halves = AdvancedAi::new();
+        halves.enable_governor_victory_lanes();
+        halves.enable_governor_expansion_lane();
+        assert_eq!(
+            composite.governor_victory_lanes,
+            halves.governor_victory_lanes
+        );
+        assert_eq!(
+            composite.governor_expansion_lane,
+            halves.governor_expansion_lane
+        );
+
+        // The withhold still clears both, so `live_without_governor_every_lane`
+        // keeps measuring the whole composite.
+        composite.disable_governor_every_lane();
+        assert!(!composite.governor_victory_lanes && !composite.governor_expansion_lane);
+
+        // Each half alone must cover its own lanes and no others.
+        let mut victory_only = AdvancedAi::new();
+        victory_only.enable_governor_victory_lanes();
+        assert!(!victory_only.governor_expansion_lane);
+        let mut expansion_only = AdvancedAi::new();
+        expansion_only.enable_governor_expansion_lane();
+        assert!(!expansion_only.governor_victory_lanes);
+
+        let source = include_str!("advanced.rs");
+        assert!(
+            source.contains("&& plan.strategy == GrandStrategy::Expansion)"),
+            "the Expansion half must gate on its own flag"
+        );
+    }
+
+    #[test]
+    fn the_governor_recovery_withhold_changes_who_decides_a_recovery_city() {
+        // A pure routing flag can look alive in the struct and be dead in the
+        // dispatch, which is how a withhold arm ends up measuring nothing. Pin
+        // both halves: the shipped controller carries the governor into
+        // Recovery, the withhold arm does not, and nothing else moves.
+        let shipped = AdvancedAi::new();
+        assert!(
+            shipped.governor_in_recovery,
+            "production ships with the governor deciding Recovery cities"
+        );
+        let mut withheld = AdvancedAi::new();
+        withheld.disable_governor_in_recovery();
+        assert!(!withheld.governor_in_recovery);
+        // The withhold must not disturb the other five lanes' routing, which
+        // `advanced_every_lane` governs and which is measured separately.
+        assert_eq!(shipped.governor_every_lane, withheld.governor_every_lane);
+        assert_eq!(shipped.victory_planning, withheld.victory_planning);
+
+        // And the gate itself reads the flag: the source of the dispatch must
+        // conjoin it with the Recovery test rather than testing Recovery alone.
+        let source = include_str!("advanced.rs");
+        assert!(
+            source.contains(
+                "if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)"
+            ),
+            "the Recovery arm of the production dispatch must consult the flag"
         );
     }
 
