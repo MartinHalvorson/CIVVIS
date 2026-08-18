@@ -3549,6 +3549,23 @@ impl AdvancedAi {
         // the agent the bridge deploys. `advanced_without_explore_commit`
         // prices the withhold.
         ai.base.explore_commit = true;
+        // ★★★★★ AND A HULL IS BUILT ONLY WHERE IT HAS OPEN WATER TO SAIL INTO.
+        //
+        // `city_is_coastal` asks only whether some adjacent tile is water, and
+        // a **lake is water**, so a lakeside city built Galleys that spent the
+        // whole game on the lake — Firaxis allows it, so the trap is
+        // faithfully reproduced and the controller walked into it every game.
+        // Over three 150-turn six-player games majors built 53 hulls, **20 of
+        // which never moved once**, 12 of those sitting on `lake` terrain, and
+        // only 17.2% of major naval unit-turns involved any movement. With the
+        // rule on, the same three seeds: 26 hulls, 3 never-movers, Galley
+        // movement 13.0% → 43.7%, and `audit` major idle-field 21.19% → 17.13%.
+        //
+        // Promoted on the corrected-gate matrix at 200 pairs, seed 8700000:
+        // deployment-online **+61 Elo-equivalent (CI +21..+109), PASS**;
+        // compact-standard +16 (CI −8..+39), no established regression.
+        // `advanced_without_open_water_navy` prices the withhold.
+        ai.base.open_water_navy = true;
         // And walk to a charted village the sweep passed wide of —
         // `hut_collection` above only grabs one inside the current turn's
         // reach. `advanced_without_village_seeking` prices the withhold.
@@ -5159,10 +5176,16 @@ impl AdvancedAi {
     /// moved, Galley movement up from 13.0% to 43.7% of its turns, and the
     /// `audit` major idle-field share down from 21.19% to 17.13%.
     ///
-    /// Evaluator arm `advanced_open_water_navy`; off in production pending its
-    /// strength screen.
+    /// **Promoted to production 2026-08-18** on the matrix at 200 pairs, seed
+    /// 8700000. `advanced_without_open_water_navy` prices the withhold.
     pub fn enable_open_water_navy(&mut self) {
         self.base.open_water_navy = true;
+    }
+
+    /// Withholding twin for `enable_open_water_navy`, so the promoted rule can
+    /// still be priced out of the bundle. See `LIVE_TREATMENTS`.
+    pub fn disable_open_water_navy(&mut self) {
+        self.base.open_water_navy = false;
     }
 
     /// Reach for the naval-production discount while hulls are wanted. See
