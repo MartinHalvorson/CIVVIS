@@ -1658,9 +1658,7 @@ here and any null is uninformative"
     // outside the profile it was measured on, which is the same mistake.
     if speed.eq_ignore_ascii_case("online") {
         for arm in [a, b] {
-            if let Some((_, why)) =
-                DEGENERATE_CONTROLS.iter().find(|(name, _)| *name == arm)
-            {
+            if let Some((_, why)) = DEGENERATE_CONTROLS.iter().find(|(name, _)| *name == arm) {
                 println!(
                     "warning: {arm} {why}, so a margin against it measures ITS floor and not the other arm's strength; compare against an arm that finishes, and read a large number here as a broken control rather than a discovery"
                 );
