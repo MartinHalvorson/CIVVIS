@@ -1,17 +1,75 @@
 {
+  "coverage": {
+    "named": 19,
+    "never_named": 35,
+    "never_named_treatments": [
+      "amenity-district-path",
+      "amenity-project-preemption",
+      "army-target-weighs-enemy",
+      "blind-objective-strength",
+      "blind-objective-units",
+      "campus-every-city",
+      "district-coverage",
+      "endgame-war-runway",
+      "escort-unstick",
+      "garrison-under-fire",
+      "garrison-walls",
+      "governor-every-lane",
+      "housing-buildings",
+      "housing-cards",
+      "housing-districts",
+      "housing-research",
+      "loyalty-rate-alarm",
+      "muster-at-command-radius",
+      "ranged-line-of-sight",
+      "relief-targets-the-siege",
+      "religion-sues-peace",
+      "score-horizon",
+      "settler-site-agreement",
+      "siege-commitment",
+      "siege-role",
+      "siege-tracks-wall",
+      "slot-kind-tiebreak",
+      "stacked-escort",
+      "stranded-settler-discount",
+      "suzerain-cards",
+      "war-economy",
+      "war-patience",
+      "war-reinforcement",
+      "wide-map-capacity",
+      "wonder-ring-settle-value"
+    ],
+    "withholdable": 54
+  },
   "derived": {
-    "eval_only_count": 193,
-    "firaxis_only_count": 18,
-    "live_bridge_count": 69,
-    "native_engine_repair_count": 51,
-    "withholdable_live_count": 51
+    "eval_only_count": 217,
+    "firaxis_only_count": 24,
+    "live_bridge_count": 78,
+    "native_engine_repair_count": 54,
+    "withholdable_live_count": 54
   },
   "ladder": {
-    "attempts": 307,
-    "configured": 303,
-    "latest_utc": "2026-08-17T05:43:41Z",
-    "terminal": 199,
-    "wins": 2
+    "ahead": 6,
+    "attempts": 317,
+    "configured": 310,
+    "full_length": 133,
+    "graded": 17,
+    "latest_utc": "2026-08-18T06:17:27Z",
+    "lead_best": 409,
+    "lead_median": -83,
+    "rival_bar_median": 1035,
+    "score_best": 1191,
+    "score_median": 449,
+    "stolen": {
+      "conquest": 1,
+      "culture": 24,
+      "diplomatic": 41,
+      "religious": 5,
+      "technology": 3
+    },
+    "stolen_while_ahead": 3,
+    "terminal": 209,
+    "wins": 3
   },
   "registry": {
     "BUILTIN_AIS": {
@@ -28,13 +86,14 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 23,
+      "declared_count": 24,
       "items": [
         "escort-unstick",
         "stacked-escort",
         "settler-stack-discipline",
         "buildings-before-projects",
         "wonder-ring-settle-value",
+        "settler-site-agreement",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -56,7 +115,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 51,
+      "declared_count": 54,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -74,6 +133,7 @@
         "siege-tracks-wall",
         "siege-commitment",
         "war-patience",
+        "siege-is-progress",
         "endgame-war-runway",
         "home-defense",
         "garrison-under-fire",
@@ -82,6 +142,7 @@
         "ranged-line-of-sight",
         "recon-replacement",
         "recon-flight",
+        "barbarian-scouts-are-scouts",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -91,6 +152,7 @@
         "settler-stack-discipline",
         "buildings-before-projects",
         "wonder-ring-settle-value",
+        "settler-site-agreement",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -112,7 +174,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 28,
+      "declared_count": 30,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -130,6 +192,7 @@
         "siege-tracks-wall",
         "siege-commitment",
         "war-patience",
+        "siege-is-progress",
         "endgame-war-runway",
         "home-defense",
         "garrison-under-fire",
@@ -138,6 +201,7 @@
         "ranged-line-of-sight",
         "recon-replacement",
         "recon-flight",
+        "barbarian-scouts-are-scouts",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -145,13 +209,20 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 193,
+      "declared_count": 217,
       "items": [
+        "fog_honest",
         "advanced_build_first",
         "advanced_synergy",
         "advanced_synergy_war",
         "advanced_synergy_economy",
         "live",
+        "live_target_science",
+        "live_target_culture",
+        "live_target_religious",
+        "live_target_diplomatic",
+        "live_target_domination",
+        "live_target_score",
         "live_without_amenity_project_preemption",
         "live_without_amenity_district_path",
         "live_without_governor_every_lane",
@@ -221,6 +292,15 @@
         "live_without_settler_stack_discipline",
         "live_without_camp_party",
         "live_without_buildings_before_projects",
+        "live_without_parallel_settlers",
+        "live_without_host_settler_pop",
+        "live_without_explore_dead_targets",
+        "live_without_explore_commit",
+        "live_without_bank_envoys",
+        "live_without_land_grab",
+        "live_without_siege_is_progress",
+        "live_without_spy_mission_patience",
+        "live_without_settler_site_agreement",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -266,7 +346,9 @@
         "advanced_target_domination",
         "advanced_target_score",
         "advanced_target_science",
+        "advanced_great_work_veto_by_district",
         "advanced_target_culture",
+        "advanced_target_culture_with_culture_building_debt",
         "advanced_target_religious",
         "advanced_target_diplomatic",
         "advanced_measured_dedication",
@@ -290,7 +372,13 @@
         "advanced_lower_city_target",
         "advanced_settler_founds_when_stalled",
         "advanced_fortify_idle_units",
+        "advanced_without_open_water_navy",
         "advanced_maritime_splice",
+        "advanced_sea_answers",
+        "advanced_camp_bounty",
+        "advanced_without_barbarian_scouts_are_scouts",
+        "advanced_engine_faith_price",
+        "advanced_maintenance_deck",
         "advanced_recon_fleet",
         "advanced_without_recon_fleet",
         "advanced_every_lane",
@@ -343,7 +431,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 18,
+      "declared_count": 24,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -360,13 +448,19 @@
         "culture-coverage",
         "frontier-loyalty",
         "tally-great-people",
-        "barbarian-scouts-are-scouts",
         "deny-while-targeted",
-        "stock-denial-lead-time"
+        "stock-denial-lead-time",
+        "parallel-settlers",
+        "host-settler-pop",
+        "explore-dead-targets",
+        "bank-envoys",
+        "explore-commit",
+        "land-grab",
+        "spy-mission-patience"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 69,
+      "declared_count": 78,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -436,7 +530,16 @@
         "camp-party",
         "buildings-before-projects",
         "deny-while-targeted",
-        "stock-denial-lead-time"
+        "stock-denial-lead-time",
+        "parallel-settlers",
+        "host-settler-pop",
+        "explore-dead-targets",
+        "explore-commit",
+        "bank-envoys",
+        "land-grab",
+        "siege-is-progress",
+        "spy-mission-patience",
+        "settler-site-agreement"
       ]
     }
   },

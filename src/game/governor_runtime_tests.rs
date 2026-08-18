@@ -1077,8 +1077,7 @@ fn finest_hour_and_the_pillage_cards_pay_what_they_ship_with() {
     assert_eq!(air(&game, "bomber"), bomber + 0.5);
     assert_eq!(air(&game, "jet_bomber"), jet);
 
-    // Gathering Storm reduced Raid and Total War to +50%. Letters of
-    // Marque doubles trade-route plunder, not improvements or districts.
+    // Gathering Storm reduced Raid and Total War to +50%.
     for card in ["raid", "total_war"] {
         assert_eq!(
             game.rules.policies[card].effects["pillage_yield_pct"],
@@ -1086,9 +1085,6 @@ fn finest_hour_and_the_pillage_cards_pay_what_they_ship_with() {
             "{card} adds half to pillage yields"
         );
     }
-    assert!(!game.rules.policies["letters_of_marque"]
-        .effects
-        .contains_key("pillage_yield_pct"));
 }
 
 #[test]
@@ -1228,6 +1224,64 @@ fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
         .copied()
         .unwrap_or(0.0);
     assert_eq!(after_flight - before_flight, church_faith - bare_faith);
+}
+
+#[test]
+fn a_mine_accepts_flat_volcanic_soil_without_a_resource() {
+    let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+    let city = found_capital(&mut game, 0);
+    let mine = game.nbrs(game.cities[&city].pos)[0];
+    {
+        let tile = game.map.tiles.get_mut(&mine).unwrap();
+        tile.owner_city = Some(city);
+        tile.terrain = crate::name!("plains");
+        tile.feature = Some(crate::name!("volcanic_soil"));
+        tile.resource = None;
+        tile.hills = false;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    if !game.cities[&city].owned_tiles.contains(&mine) {
+        game.cities.get_mut(&city).unwrap().owned_tiles.push(mine);
+    }
+    game.players[0].techs.insert(crate::name!("mining"));
+
+    assert!(game
+        .valid_improvements(0, mine)
+        .contains(&crate::name!("mine")));
+}
+
+#[test]
+fn a_terrace_farm_accepts_flat_volcanic_soil() {
+    let mut game = Game::new_full(1, 24, 16, 91_978, 200, 0, false);
+    let city = found_capital(&mut game, 0);
+    let terrace = game.nbrs(game.cities[&city].pos)[0];
+    {
+        let tile = game.map.tiles.get_mut(&terrace).unwrap();
+        tile.owner_city = Some(city);
+        tile.terrain = crate::name!("plains");
+        tile.feature = Some(crate::name!("volcanic_soil"));
+        tile.resource = None;
+        tile.hills = false;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    if !game.cities[&city].owned_tiles.contains(&terrace) {
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .owned_tiles
+            .push(terrace);
+    }
+    game.players[0].civ = "Inca".to_string();
+
+    assert!(game
+        .valid_improvements(0, terrace)
+        .contains(&crate::name!("terrace_farm")));
 }
 
 #[test]
@@ -1422,6 +1476,13 @@ fn armagh_monastery_matches_firaxis_placement_faith_and_religious_healing() {
     assert!(game
         .valid_improvements(0, monastery)
         .contains(&crate::name!("monastery")));
+    // The shipped Armagh terrain rows include each base terrain and its Hills
+    // variant; this is not a flat-only improvement.
+    game.map.tiles.get_mut(&monastery).unwrap().hills = true;
+    assert!(game
+        .valid_improvements(0, monastery)
+        .contains(&crate::name!("monastery")));
+    game.map.tiles.get_mut(&monastery).unwrap().hills = false;
 
     let bare = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
     game.map.tiles.get_mut(&monastery).unwrap().improvement =

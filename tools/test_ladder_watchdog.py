@@ -8,7 +8,9 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ import ladder_watchdog  # noqa: E402
 
 
 class FakeRunner:
-    """Records the argv the keeper would run, e.g. `open -a Terminal ...`."""
+    """Records the argv the keeper would run, e.g. `open -g -j -a Terminal`."""
 
     def __init__(self, returncode: int = 0):
         self.calls: list[list[str]] = []
@@ -78,13 +80,17 @@ class KeeperTestCase(unittest.TestCase):
             mock.patch.object(ladder_watchdog, "stop_supervisor",
                               lambda pid, **kw: (self.stopped.append(pid),
                                                  (True, f"SIGTERM to {pid}"))[1]),
+            mock.patch.object(ladder_watchdog, "interactive_host_pid",
+                              lambda lock=None: None),
         ):
             patch.start()
             self.addCleanup(patch.stop)
 
     @property
     def starts(self):
-        return [c for c in self.runner.calls if c[:3] == ["open", "-a", "Terminal"]]
+        return [c for c in self.runner.calls
+                if c and c[0] == "open" and "-a" in c
+                and c[c.index("-a") + 1:c.index("-a") + 2] == ["Terminal"]]
 
     def live_lock(self, tmp: Path) -> Path:
         """A lock directory naming a process that really is alive: this one."""
@@ -119,7 +125,25 @@ class WhenNoLoopIsRunning(KeeperTestCase):
                 "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
             self.assertEqual(code, 1)
             self.assertEqual(len(self.starts), 1, self.runner.calls)
+            self.assertIn("-g", self.starts[0])
+            self.assertIn("-j", self.starts[0])
             self.assertEqual(self.starts[0][-1], "/x/supervisor.sh")
+
+    def test_an_existing_interactive_host_is_not_given_a_second_terminal(self):
+        with TemporaryDirectory() as raw, \
+             mock.patch.object(ladder_watchdog, "interactive_host_pid",
+                               lambda lock=None: os.getpid()):
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--host-lock", str(tmp / "host.lock"),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertEqual(code, 1)
+            self.assertEqual(self.starts, [])
+            self.assertIn("not opening a second Terminal", log.read_text())
 
     def test_a_lock_from_a_dead_supervisor_is_not_a_supervisor(self):
         with TemporaryDirectory() as raw:
@@ -410,5 +434,286 @@ class StalenessHasOneDefinition(unittest.TestCase):
             self.assertEqual(code, 1)
 
 
+@unittest.skipUnless(Path("/bin/zsh").exists(),
+                     "the interactive host is a zsh script")
+class InteractiveHostOwnership(unittest.TestCase):
+    """A recovery host must adopt a live loop instead of competing with it."""
+
+    HOST = Path(__file__).resolve().parent / "ops" / "civvis-interactive-host.sh"
+
+    def test_the_terminal_launcher_routes_normal_recovery_through_the_host(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-ladder-terminal-launcher.sh").read_text()
+        self.assertIn('civvis-interactive-host.sh', source)
+        self.assertIn('CIVVIS_LADDER_HOST', source)
+
+    def test_an_adopted_supervisor_survives_the_host(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            host_lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor_lock.mkdir()
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text("#!/bin/zsh\nwhile true; do sleep 1; done\n")
+            supervisor.chmod(0o755)
+            external = subprocess.Popen(["/bin/zsh", str(supervisor)])
+            host = None
+            try:
+                (supervisor_lock / "pid").write_text(f"{external.pid}\n")
+                helper_marks = []
+                helpers = []
+                for name in ("popup-keeper.sh", "mirror-keeper.sh"):
+                    marker = tmp / f"{name}.started"
+                    helper = tmp / name
+                    helper.write_text(
+                        "#!/bin/zsh\n"
+                        f"print -r -- started > {marker}\n"
+                        "while true; do sleep 1; done\n")
+                    helper.chmod(0o755)
+                    helper_marks.append(marker)
+                    helpers.append(helper)
+                env = {
+                    **os.environ,
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_POPUP_KEEPER": str(helpers[0]),
+                    "CIVVIS_MIRROR_KEEPER": str(helpers[1]),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(host_lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                    "CIVVIS_INTERACTIVE_HOST_POLL_S": "1",
+                }
+                host = subprocess.Popen(["/bin/zsh", str(self.HOST)], env=env)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if log.exists() and "adopted already-live game supervisor" in log.read_text():
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(log.exists(), "host did not write a health record")
+                self.assertIn("adopted already-live game supervisor", log.read_text())
+                self.assertFalse(any(mark.exists() for mark in helper_marks),
+                                 "an adopted batch must not get duplicate helpers")
+                host.terminate()
+                host.wait(timeout=5)
+                self.assertIsNone(external.poll(),
+                                  "the host must not terminate an adopted supervisor")
+            finally:
+                if host is not None and host.poll() is None:
+                    host.terminate()
+                    host.wait(timeout=5)
+                if external.poll() is None:
+                    external.terminate()
+                    external.wait(timeout=5)
+
+
+@unittest.skipUnless(Path("/bin/zsh").exists(),
+                     "the supervisor ownership check is a zsh function")
+class SupervisorUnownedHarnessDetection(unittest.TestCase):
+    """A filename in an operator shell must not impersonate a live harness."""
+
+    SUPERVISOR = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-game-supervisor.sh")
+
+    def test_a_global_candidate_is_typed_before_it_delays_a_batch(self):
+        """macOS `ps -o comm` truncates Python, so use the executable mapping.
+
+        This guards the exact restart failure where a harmless diagnostic
+        command containing the harness filename looked like an unowned game
+        and made the supervisor sleep for a retry interval.
+        """
+        source = self.SUPERVISOR.read_text()
+        start = source.index("unowned_harness_pid() {")
+        end = source.index("\n# The live display", start)
+        detector = source[start:end]
+
+        self.assertIn("pgrep -f '[c]iv6_play.py'", detector)
+        self.assertIn('lsof -a -p "$pid" -d txt -Fn', detector)
+        self.assertIn('*/Python|*/python|*/python[0-9]*', detector)
+        self.assertLess(detector.index('lsof -a -p "$pid" -d txt -Fn'),
+                        detector.index('print -r -- "$pid"'))
+        self.assertIn('UNOWNED_PID=$(unowned_harness_pid || true)', source)
+        self.assertNotIn("if pgrep -f '[c]iv6_play.py'", source)
+
+    def test_a_shell_argument_cannot_delay_the_next_batch(self):
+        """Only the candidate whose executable is Python is reported.
+
+        Use real sleeping PIDs because the function deliberately performs
+        `kill -0` before trusting any process-table answer.  The command and
+        executable readers are tiny stand-ins for the macOS tools, letting the
+        test model the original shell diagnostic and a real Python harness
+        without starting a game.
+        """
+        source = self.SUPERVISOR.read_text()
+        start = source.index("unowned_harness_pid() {")
+        end = source.index("\n# The live display", start)
+        detector = source[start:end]
+        shell_candidate = subprocess.Popen(["/bin/zsh", "-c", "exec sleep 30"])
+        harness_candidate = subprocess.Popen(["/bin/zsh", "-c", "exec sleep 30"])
+        try:
+            with TemporaryDirectory() as raw:
+                tmp = Path(raw)
+                bin_dir = tmp / "bin"
+                bin_dir.mkdir()
+
+                def fake(name: str, body: str) -> None:
+                    path = bin_dir / name
+                    path.write_text("#!/bin/zsh\n" + body)
+                    path.chmod(0o755)
+
+                fake("pgrep", f"print -r -- {shell_candidate.pid}\n"
+                              f"print -r -- {harness_candidate.pid}\n")
+                fake("ps", "if [[ \"$2\" == \"%s\" ]]; then\n"
+                           "  print -r -- '/bin/zsh -c inspect civ6_play.py'\n"
+                           "else\n"
+                           "  print -r -- '/usr/local/bin/python3 -u /tmp/civ6_play.py'\n"
+                           "fi\n" % shell_candidate.pid)
+                fake("lsof", "if [[ \"$3\" == \"%s\" ]]; then\n"
+                             "  print -r -- 'n/bin/zsh'\n"
+                             "else\n"
+                             "  print -r -- 'n/usr/local/bin/python3'\n"
+                             "fi\n" % shell_candidate.pid)
+
+                result = subprocess.run(
+                    ["/bin/zsh", "-c", detector + "\nunowned_harness_pid\n"],
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                    capture_output=True, text=True, timeout=5)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(harness_candidate.pid))
+        finally:
+            for process in (shell_candidate, harness_candidate):
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
+
+
+class OvernightWatchdogHasNoImplicitDeadline(unittest.TestCase):
+    def test_the_default_watchdog_is_unbounded_but_accepts_an_operator_deadline(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-watchdog.sh").read_text()
+        self.assertIn(
+            'AUDIT=${CIVVIS_OVERNIGHT_AUDIT:-${SELF_DIR}/civvis-overnight-audit.sh}',
+            source)
+        self.assertIn('STOP_AT=${CIVVIS_OVERNIGHT_STOP_AT:-}', source)
+        self.assertIn('if [[ -n "$STOP_AT" ]]', source)
+        self.assertIn('if [[ -n "$stop_epoch" ]] && (( now >= stop_epoch ))', source)
+
+
+class OvernightAuditRecovery(unittest.TestCase):
+    def test_a_live_legacy_supervisor_is_adopted_without_another_terminal(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-audit.sh").read_text()
+        self.assertIn('supervisor_pid=$(live_supervisor_pid || true)', source)
+        self.assertIn('host_state=supervisor-only', source)
+        self.assertIn('/usr/bin/open -g -j -a Terminal "$HOST_LAUNCHER"', source)
+        self.assertIn('/usr/bin/open -g -j -a Terminal "$MIRROR_KEEPER"', source)
+        self.assertNotIn('/usr/bin/nohup /bin/zsh "$MIRROR_KEEPER"', source)
+        self.assertIn(
+            'if (( live_events && tiles_exported && ! mirror_healthy ))', source)
+        self.assertLess(source.index('collect_mirror\nmirror_keeper_pid'),
+                        source.index('if (( live_events && tiles_exported && ! mirror_healthy ))'))
+        self.assertNotIn('tell application "Terminal" to do script', source)
+
+    def test_a_healthy_primary_mirror_does_not_wait_for_an_absent_backup_keeper(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-audit.sh").read_text()
+        self.assertIn('&& mirror_needs_settle; then', source)
+        start = source.index('mirror_needs_settle() {')
+        end = source.index('\n}', start) + 2
+        predicate = source[start:end]
+        cases = (("primary", 1, 1), ("", 1, 0), ("primary", 0, 0))
+        shell = "/bin/zsh" if Path("/bin/zsh").exists() else "/bin/bash"
+        for follower, healthy, expected in cases:
+            result = subprocess.run(
+                [shell, "-c",
+                 f"{predicate}\nfollower_pid={follower!r}\n"
+                 f"mirror_healthy={healthy}\nmirror_needs_settle"],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, expected, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
+    """A restart is this keeper's only remedy, so a cause no restart can reach
+    has to stop it acting.
+
+    An operator halt takes the game lock and sleeps. The ledger then goes stale
+    exactly as a wedge does, and every supervisor started against it is refused
+    at the lock having played nothing. Observed on `mbp-m5-pro-64`: a halt taken
+    2026-08-02 was still in force on 2026-08-18, fifteen days of `blocked` rows
+    that nobody attributed.
+    """
+
+    def held(self):
+        return mock.patch.object(
+            ladder_watchdog.gamelock, "standing_hold",
+            lambda: "the game is held by pid 4242 under tag 'operator-halt', "
+                    "and no harness is driving that tag")
+
+    def test_a_held_game_is_not_answered_with_a_restart(self):
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [],
+                             "started a loop that cannot take the game")
+
+    def test_a_held_game_does_not_get_the_live_supervisor_killed_either(self):
+        """The other arm: alive, not playing. Stopping it is disruptive and
+        cannot help while the hold stands."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.stopped, [])
+            self.assertEqual(self.starts, [])
+
+    def test_the_hold_is_named_in_the_log_not_swallowed(self):
+        """Standing down silently would reproduce the outage this tool ends."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            written = log.read_text()
+            self.assertIn("operator-halt", written)
+            self.assertIn("Release the hold", written)
+
+    def test_a_healthy_ledger_is_still_left_alone_while_held(self):
+        """A hold is not a problem to report; it only explains a stale ledger."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.2])
+            log = tmp / "log"
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertEqual(code, 0)
+            self.assertFalse(log.exists() and log.read_text().strip())
+
+    def test_an_unreadable_process_table_does_not_invent_a_hold(self):
+        """`standing_hold` leans on `_tag_has_live_owner`, which fails CLOSED:
+        with no readable `ps` it says a tag IS owned, so no hold is reported and
+        the keeper behaves exactly as it did before this arm existed."""
+        with mock.patch.object(ladder_watchdog.gamelock, "_processes",
+                               lambda: []), \
+             mock.patch.object(ladder_watchdog.gamelock, "_holder",
+                               lambda: {"pid": os.getpid(), "tag": "whatever",
+                                        "since": "2026-08-02T20:03:01Z"}):
+            self.assertIsNone(ladder_watchdog.gamelock.standing_hold())

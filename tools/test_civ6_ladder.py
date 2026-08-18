@@ -721,7 +721,49 @@ class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
             {"ruleset": "RULESET_EXPANSION_2"}, {"ruleset": None}, {"ruleset": None},
         ]))
         self.assertIn("RULESET_EXPANSION_2", note)
-        self.assertIn("2 row(s) predate", note)
+        self.assertIn("2 row(s) carry no ruleset readback", note)
+
+    def test_an_unreadable_readback_is_unverified_not_a_ruleset_recorded(self):
+        """★★★★★ `?` IS THE MOD'S ANSWER FOR A LOOKUP THAT FAILED, and because
+        it is a truthy string it was printed as a ruleset this record had
+        observed. The published prose read "Rulesets recorded: ?,
+        RULESET_EXPANSION_2" over three rows whose ruleset nobody knows —
+        `civvis-20260818T032030Z`, `040903Z` and `045332Z`, all three played to
+        223/250/250 turns.
+        """
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_EXPANSION_2"},
+            {"ruleset": civ6_ladder.UNREADABLE},
+            {"ruleset": None},
+        ]))
+        self.assertIn("Rulesets recorded: RULESET_EXPANSION_2.", note)
+        self.assertNotIn("?,", note)
+        self.assertIn("2 row(s) carry no ruleset readback", note)
+
+    def test_the_note_says_unverified_is_not_a_mismatch(self):
+        """The prose is the only thing a reader has. It must not let an
+        unverified row be read as a game played under the wrong rules."""
+        note = " ".join(civ6_ladder.same_game_note([{"ruleset": None}]))
+        self.assertIn("Unverified is not a mismatch", note)
+
+    def test_rows_misfiled_before_the_distinction_existed_are_owned(self):
+        """⚠ ROWS ARE NEVER REWRITTEN, so the three games filed as
+        `wrong_ruleset` on an unreadable readback still read that way in the
+        table. Without this line the note above contradicts them."""
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": civ6_ladder.UNREADABLE, "reason": "wrong_ruleset"},
+            {"ruleset": civ6_ladder.UNREADABLE, "reason": "wrong_ruleset"},
+            {"ruleset": "RULESET_EXPANSION_2", "reason": "stopped"},
+        ]))
+        self.assertIn("2 of those row(s) were nevertheless recorded as", note)
+
+    def test_a_genuinely_wrong_ruleset_row_is_not_called_misfiled(self):
+        """The game reported a ruleset and it differed. That refusal was
+        correct and must not be excused by this line."""
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_STANDARD", "reason": "wrong_ruleset"},
+        ]))
+        self.assertNotIn("nevertheless recorded", note)
 
     def test_a_mode_that_was_on_is_called_out(self):
         note = " ".join(civ6_ladder.same_game_note([
@@ -735,7 +777,83 @@ class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
             {"ruleset": "RULESET_EXPANSION_2", "modes": []},
         ]))
         self.assertNotIn("⚠", note)
-        self.assertNotIn("predate", note)
+        self.assertNotIn("no ruleset readback", note)
+
+
+class ADefeatIsNotAStall(LedgerCase):
+    """★★★★★ OUR OWN DEFEAT WAS INDISTINGUISHABLE FROM THE HARNESS HANGING.
+
+    `civ6_play.py` keeps the terminal event for a defeat exactly as it does for
+    a victory, and the mod synthesises one when no cities remain. `entry_from`
+    projected only `won`, `victory` and `victory_type`, and a defeat carries
+    none of them, so an elimination landed as `{"reason": "stopped",
+    "victory": null, "won": false}` — byte-identical to a run that wedged.
+    Measured on `civvis-20260815T160346Z` (t233), `195951Z` (t102) and
+    `210845Z` (t226), each carrying `{"kind": "defeat", "ours": true}` in
+    `events.jsonl` and each filed as `stopped`.
+    """
+
+    @staticmethod
+    def _defeat(tag, *, ours=True, turn=233, **extra):
+        return summary(tag, last_turn=turn, reason="stopped",
+                       outcome={"kind": "defeat", "ours": ours, "player": 0,
+                                "turn": turn},
+                       **extra)
+
+    def test_our_elimination_reaches_the_row(self):
+        entry = civ6_ladder.entry_from(self._defeat("civvis-20260815T160346Z"))
+        self.assertTrue(entry["defeat"])
+        self.assertFalse(entry["won"], "losing is not winning")
+
+    def test_a_stall_and_a_defeat_are_not_the_same_row(self):
+        """The whole defect: two different endings, one indistinguishable row."""
+        stalled = civ6_ladder.entry_from(
+            summary("hung", reason="stalled: no event for 240s"))
+        lost = civ6_ladder.entry_from(self._defeat("lost"))
+        self.assertNotEqual(
+            (stalled["won"], stalled["defeat"]), (lost["won"], lost["defeat"]))
+        self.assertFalse(stalled["defeat"])
+
+    def test_a_rivals_elimination_is_not_ours(self):
+        """⚠ Civilization VI emits a `defeat` when ANY player is eliminated,
+        including a city-state; 39 of the 111 run event streams still on
+        this machine carry at least one.
+        `civ6_play.finished()` already refuses to stop on those — a run was cut
+        sixteen turns short of a score victory because player 7 died — and the
+        recording side needs the same distinction."""
+        entry = civ6_ladder.entry_from(self._defeat("rival-died", ours=False))
+        self.assertFalse(entry["defeat"])
+
+    def test_a_victory_is_not_recorded_as_a_defeat(self):
+        entry = civ6_ladder.entry_from(summary("won-it", won=True))
+        self.assertTrue(entry["won"])
+        self.assertFalse(entry["defeat"])
+
+    def test_a_row_from_before_the_column_existed_reads_false_not_none(self):
+        self.assertFalse(civ6_ladder.entry_from(summary("older"))["defeat"])
+
+    def test_the_attempt_table_says_defeat_where_it_said_stopped(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, self._defeat("civvis-20260815T195951Z", turn=102)))
+        row = next(line for line in civ6_ladder.markdown_for(
+            self.state()).splitlines() if "civvis-20260815T195951Z" in line)
+        self.assertIn("| defeat |", row)
+        self.assertNotIn("| stopped |", row)
+
+    def test_a_stalled_row_still_reports_how_it_stalled(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary(
+            "wedged", reason="stalled: no event for 240s")))
+        row = next(line for line in civ6_ladder.markdown_for(
+            self.state()).splitlines() if "`wedged`" in line)
+        self.assertIn("stalled: no event for 240s", row)
+        self.assertNotIn("defeat", row)
+
+    def test_the_ending_census_counts_eliminations_apart_from_the_stalls(self):
+        for tag in ("civvis-a", "civvis-b"):
+            civ6_ladder.record_summary(write_run(self.runs, self._defeat(tag)))
+        civ6_ladder.record_summary(write_run(self.runs, summary("won-it", won=True)))
+        table = civ6_ladder.markdown_for(self.state())
+        self.assertIn("2 more ended in our own elimination", table)
 
     def test_an_empty_record_renders_nothing(self):
         self.assertEqual(civ6_ladder.same_game_note([]), [])
@@ -853,3 +971,138 @@ class LatestCodeGuarantee(LedgerCase):
         beat = {"utc": "2026-08-17T11:59:00Z",
                 "last_error": "cargo build failed (101): expected `;`"}
         self.assertIn("cargo build failed", self.heartbeat_problem(beat))
+
+
+class TheHealthFloorStaysFalsifiable(LedgerCase):
+    """A gap in measurement is not a gap in attempts.
+
+    `--min-applied` reads only attempts that carry a rate, so an instrument
+    that goes dark makes it silently unfalsifiable — while `--stale-hours`
+    stays quiet, because attempts are still arriving. Measured on the live
+    ledger 2026-08-18: attempts 266 to 306 — forty-one consecutive games, all
+    played to the 250-turn clock, **including both Settler wins** — recorded no
+    rate at all, and `check` was green the whole way. The bridge health of the
+    project's only two external results is unknown as a result.
+    """
+
+    def _attempts(self, rates: list) -> None:
+        for index, rate in enumerate(rates):
+            kwargs = {}
+            if rate is not None:
+                kwargs = {"orders_seen": 1000,
+                          "orders_applied": int(round(rate * 10))}
+            civ6_ladder.record_summary(write_run(
+                self.runs, summary(f"run-{index:03d}", **kwargs)))
+
+    def test_a_single_unmeasured_run_is_still_not_a_problem(self):
+        """The original reasoning holds for one: a run that died before its
+        first turn has no rate and is the staleness check's business."""
+        self._attempts([97.0, None])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                              min_applied=95.0), 0)
+
+    def test_a_run_of_unmeasured_attempts_is_reported(self):
+        self._attempts([97.0] + [None] * 6)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                     min_applied=95.0)
+        self.assertEqual(code, 1)
+        self.assertIn("unmeasured on the last 6 attempt(s)", out.getvalue())
+
+    def test_the_limit_is_configurable(self):
+        self._attempts([97.0] + [None] * 6)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                  min_applied=95.0, unmeasured_limit=99), 0)
+
+    def test_the_instrument_coming_back_clears_it(self):
+        self._attempts([97.0] + [None] * 6 + [96.0])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                  min_applied=95.0), 0)
+
+    def test_it_is_silent_without_the_floor_it_protects(self):
+        """This exists to keep `--min-applied` honest. Asking for no floor is
+        asking for no bridge-health opinion at all."""
+        self._attempts([None] * 20)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            civ6_ladder.check(self.runs, self.ledger, None, self.snapshot), 0)
+
+    def test_old_rows_from_before_the_rate_existed_are_not_counted_forever(self):
+        """Counted from the END, not totalled: the ledger legitimately holds
+        hundreds of rows from before the rate was recorded at all."""
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": None}] * 300 + [{"applied_pct": 97.0}]), 0)
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 3), 3)
+
+
+class TheBackfillRecoversBridgeHealth(LedgerCase):
+    """The self-healing path could not heal the one number it was built for.
+
+    `civ6_play.py` sums `events.jsonl` into the summary when a run ends, and
+    `sync` exists precisely because that write is best-effort and may not
+    happen. But `sync` recorded whatever the summary contained, so a run whose
+    bookkeeping failed lost its bridge health permanently — while its own
+    events file sat beside it on disk. Rows 266 to 306 of the live ledger, the
+    same 41 summaries `heal_the_ladder` was written to rescue, carry no rate at
+    all, and both Settler wins are among them.
+    """
+
+    def _run_missing_totals(self, tag: str, seen: int, applied: int):
+        """A summary written without totals, beside events that hold them."""
+        path = write_run(self.runs, summary(tag))
+        (path.parent / "events.jsonl").write_text("\n".join(
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": turn,
+                        "orders_seen": seen, "orders_applied": applied})
+            for turn in (1,)))
+        return path
+
+    def test_sync_reads_the_events_the_summary_forgot(self):
+        self._run_missing_totals("backfilled", 200, 194)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.sync(self.runs, self.ledger)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 97.0)
+
+    def test_the_automatic_path_recovers_it_too(self):
+        path = self._run_missing_totals("live-but-unwritten", 100, 88)
+        civ6_ladder.record_summary(path)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 88.0)
+
+    def test_a_summary_that_already_measured_itself_is_not_second_guessed(self):
+        """The summary is the run's own reading; this only fills an absence."""
+        path = write_run(self.runs, summary(
+            "measured", orders_seen=200, orders_applied=194))
+        (path.parent / "events.jsonl").write_text(json.dumps(
+            {"kind": "turn", "ctx": "agent", "turn": 1,
+             "orders_seen": 10, "orders_applied": 1}))
+        civ6_ladder.record_summary(path)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 97.0)
+
+    def test_no_events_file_still_records_the_attempt(self):
+        """Recording is best-effort by design: a finished game must never be
+        lost to a bookkeeping error, and that outranks the number."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("no-events")))
+        self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
+        self.assertEqual(len(self.state()["attempts"]), 1)
+
+    def test_an_unreadable_events_file_is_not_fatal(self):
+        path = write_run(self.runs, summary("torn"))
+        (path.parent / "events.jsonl").write_text('{"kind": "turn", "ctx": "ag')
+        civ6_ladder.record_summary(path)
+        self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
+        self.assertEqual(len(self.state()["attempts"]), 1)

@@ -58,6 +58,31 @@ class TheReferenceIsChecked(unittest.TestCase):
         self.assertEqual(
             civ6_fidelity.refuse_a_reference_from_another_ruleset(vanilla, Path("x")), 2)
 
+    def test_the_loader_itself_refuses_a_foreign_ruleset(self):
+        """⚠⚠ THE CHECK HAS TO BE IN THE DOOR, NOT BESIDE IT.
+
+        `main` called the refusal after loading, so every other caller got
+        nothing — and on 2026-08-18 an agent read the Founder-belief modifiers
+        straight out of a cache that happened to hold the base game and shipped
+        them as a Gathering Storm fidelity fix (#2049, reverted by #2050). The
+        loader refuses now, so opening the cache at all is enough.
+        """
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            empty = Path(directory) / "DebugGameplay.sqlite"
+            sqlite3.connect(empty).close()
+            with self.assertRaises(SystemExit) as refused:
+                civ6_fidelity.load_cache_database(empty)
+            self.assertEqual(refused.exception.code, 2)
+            # And the deliberate escape hatch still works, so a caller that
+            # genuinely wants a foreign ruleset has one clearly-named way in.
+            allowed = civ6_fidelity.load_cache_database(
+                empty, require_gathering_storm=False
+            )
+            self.assertEqual(allowed.tables, {})
+
     def test_one_sentinel_is_not_enough_to_pass(self):
         """Sentinels are spread across three tables so a partial or corrupt
         reference cannot pass by carrying one of them."""
@@ -76,6 +101,143 @@ class TheReferenceIsChecked(unittest.TestCase):
         source = Path(civ6_fidelity.__file__).read_text(encoding="utf-8")
         self.assertNotIn('(Gathering Storm load order).")', source)
         self.assertIn("expansion sentinels", source)
+
+
+class ResourcePlacementWeightsAreAudited(unittest.TestCase):
+    def test_projected_resources_keep_land_and_sea_weights_distinct(self):
+        database = database_with({
+            "Resources": [
+                {
+                    "ResourceType": "RESOURCE_FISH",
+                    "ResourceClassType": "RESOURCECLASS_BONUS",
+                    "Frequency": "0",
+                    "SeaFrequency": "23",
+                },
+                {
+                    "ResourceType": "RESOURCE_WHALES",
+                    "ResourceClassType": "RESOURCECLASS_LUXURY",
+                    "Frequency": "0",
+                    "SeaFrequency": "1",
+                },
+                {
+                    "ResourceType": "RESOURCE_STONE",
+                    "ResourceClassType": "RESOURCECLASS_BONUS",
+                    "Frequency": "10",
+                    "SeaFrequency": "0",
+                },
+            ]
+        })
+
+        projected = civ6_fidelity.project_resources(database)
+        self.assertEqual(projected["fish"]["frequency"], 0)
+        self.assertEqual(projected["fish"]["sea_frequency"], 23)
+        self.assertEqual(projected["whales"]["sea_frequency"], 1)
+        self.assertEqual(projected["stone"]["frequency"], 10)
+        self.assertEqual(projected["stone"]["sea_frequency"], 0)
+
+
+class ImprovementPlacementAlternativesAreAudited(unittest.TestCase):
+    def test_a_feature_can_be_an_alternative_to_hills(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+            "Improvement_ValidFeatures": [
+                {
+                    "ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH",
+                    "FeatureType": "FEATURE_VOLCANIC_SOIL",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["rock_hewn_church"]
+        self.assertFalse(projected["requires_hills"])
+        self.assertTrue(projected["hills_or_feature"])
+
+    def test_hills_only_improvement_stays_hills_only(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_HILL_FORT"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_HILL_FORT",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["hill_fort"]
+        self.assertTrue(projected["requires_hills"])
+        self.assertFalse(projected["hills_or_feature"])
+
+    def test_resource_and_feature_are_independent_hill_alternatives(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_MINE"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+            "Improvement_ValidFeatures": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "FeatureType": "FEATURE_VOLCANIC_SOIL",
+                },
+            ],
+            "Improvement_ValidResources": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "ResourceType": "RESOURCE_IRON",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["mine"]
+        self.assertFalse(projected["requires_hills"])
+        self.assertFalse(projected["hills_or_resource"])
+        self.assertFalse(projected["hills_or_feature"])
+        self.assertTrue(projected["hills_or_resource_or_feature"])
+
+
+class PolicyRosterIsStrict(unittest.TestCase):
+    def test_a_policy_only_civvis_offers_is_a_divergence(self):
+        result = civ6_fidelity.compare(
+            "Policies",
+            {
+                "discipline": {"slot": "military"},
+                "retired_card": {"slot": "wildcard"},
+            },
+            {"discipline": {"slot": "military"}},
+        )
+
+        self.assertEqual(result["only_ours"], ["retired_card"])
+        self.assertEqual(
+            result["divergences"],
+            [{
+                "table": "Policies",
+                "entry": "retired_card",
+                "field": "row",
+                "ours": "present",
+                "theirs": "absent",
+            }],
+        )
+
+    def test_an_unmodeled_source_policy_remains_a_scope_reading(self):
+        result = civ6_fidelity.compare(
+            "Policies",
+            {"discipline": {"slot": "military"}},
+            {
+                "discipline": {"slot": "military"},
+                "future_card": {"slot": "wildcard"},
+            },
+        )
+
+        self.assertEqual(result["only_theirs"], ["future_card"])
+        self.assertEqual(result["divergences"], [])
 
 
 if __name__ == "__main__":

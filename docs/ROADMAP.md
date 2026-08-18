@@ -41,11 +41,19 @@ Everything the old roadmap called planned has shipped and then some:
 ## Active objectives (ranked 2026-08-17)
 
 1. **Make Settler repeatable, then take Chieftain.** The rung is claimed; two
-   wins in 119 attempts is a result, not a capability. The next milestone is
-   a win rate that survives a batch, and the rung above it.
-2. **Close the actuation gap.** Applied-rate floored on the ledger; envoy
-   spending and the built-in production ladder's ~27% share are the open
-   holes.
+   wins in 119 attempts is a result, not a capability. The installed supervisor
+   now runs a three-game pinned batch by default and asks the read-only
+   `tools/civ6_ladder_policy.py` gate which rung to target. It will not advance
+   until the trailing comparable window has at least two wins, three valid
+   outcomes, and matching in-game settings; a live batch still has to satisfy
+   that gate before Chieftain is attempted.
+2. **Close the actuation gap.** ✅ The bridge now carries a host-timed
+   `produce_next` lease instead of letting the built-in ladder answer a queue
+   completion unseen by CIVVIS; the lease is preserved across slow frames and
+   its consume/expiry counts are recorded. Optional envoy spending now has a
+   next-frame host readback (`envoy_reconcile`) rather than treating an issued
+   request as proof. Batch runs still measure the resulting applied-rate and
+   ladder-share change before the next objective is reprioritized.
 3. **Price the shipped live-seat bundle by withholding.** `live_without_*`
    arms exist for every withholdable treatment; run the unpriced ones
    through the paired evaluator before the next `city_target_floor` hides
@@ -54,8 +62,55 @@ Everything the old roadmap called planned has shipped and then some:
    portfolio search now auto-activates for promoted `AdvancedAi` on the 20×20
    Battlefield, is measured on the skirmish benchmark, and leaves native-world
    and frozen-anchor identities unchanged.
-5. **Split the three conflict hotspots** (`src/game.rs`, `src/ai/advanced.rs`,
-   `web/assets/app.js`) along existing seams; they tax every concurrent PR.
+5. **Relieve the measured conflict hotspots**, which are not the three this
+   objective used to name. Measured over the 200 merges preceding 2026-08-18
+   (`tools/conflict_hotspots.py`; CI checks the targets below are real):
+
+   | file | merges touching it | why it is contended |
+   |---|---:|---|
+   | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
+   | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
+   | `src/game.rs` | 17% | size |
+   | `src/main.rs` | 16% | one shared line: the anchor-behaviour re-pin |
+   | `src/ai.rs` | 10% | size |
+   | `tools/civ6_control/mod/CivvisControlAgent.lua` | 10% | size — 12.2k lines in one chunk, against a 199-local ceiling |
+   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` arms |
+
+   ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
+   `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository
+   could not appear in the ranking however contended it became — and an absent
+   file prints exactly like an uncontended one. The tool now ranks every
+   hand-written source suffix, and a test pins that rather than the rank.
+
+   The old list was built from file size, and size is not the tax. `elo.rs` is
+   a seventh of `game.rs`'s length and is contended more often. And
+   `web/assets/app.js` — the third-largest file in the repository, and one of
+   the three this objective used to name — is touched by **one merge in fifty**;
+   it is off the list, because splitting a file nobody edits costs a large diff
+   and buys nothing.
+
+   **Two problems, two remedies.** Splitting along seams answers the ones
+   contended for their size — `advanced.rs`, then `game.rs`. It does nothing
+   for `main.rs`, `elo.rs` and `civvis_orders.rs`, where every treatment PR
+   appends to *one shared line or list*: two such PRs conflict whatever the
+   file's length, and the fix is to move that data out of source, the way
+   `docs/eval/` did it for `docs/EVAL.md`'s single append point.
+
+   **`advanced.rs` had both problems, and its shared-anchor half is done
+   (2026-08-18).** It is the most contended file in the repository *and* the
+   one every live-treatment PR appends to. Both of its append anchors have now left it:
+   the `LIVE_TREATMENTS` table to `advanced/treatments.rs` (#2022), and the 182
+   `enable_*`/`disable_*` toggles — the anchor whose collisions had already
+   swallowed a function's closing brace twice — to
+   `advanced/treatment_flags.rs`. A guard in the new file fails when a toggle
+   is defined in `advanced.rs` again, so the move does not quietly reverse.
+   The size half is untouched: `advanced.rs` is still 27k lines and still
+   first on the table above.
+
+   ⚠ Touch rate is exposure, not pain — two PRs editing distant parts of one
+   file do not collide. Real conflict counts are not recoverable from `main`,
+   because a squash merge records the resolution and never the collision. The
+   ranking is what the available evidence supports; a conflict count is not.
 6. **Delete measured-null code.** ✅ The 2026-08-17 cleanup removes the
    confirmed-null `bounded_recovery` and `envoy_infrastructure` arms from
    production while retaining explicit evaluator/live-bridge controls and

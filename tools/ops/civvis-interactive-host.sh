@@ -7,15 +7,25 @@
 # necessary App Management and Accessibility responsibility.
 set -u
 
-SUPERVISOR=/Users/martin/civvis-game-supervisor.sh
-POPUP_KEEPER=/Users/martin/civvis-popup-keeper.sh
-MIRROR_KEEPER=/Users/martin/civvis-mirror-keeper.sh
-LOG=/Users/martin/civvis-civ6-runs/interactive_host.log
+# Keep every helper beside this source-owned entry point. A previous copy in
+# $HOME restarted an older supervisor after recovery, so the live loop and its
+# repair path could silently run different revisions.
+SELF_DIR=${0:A:h}
+SUPERVISOR=${CIVVIS_SUPERVISOR:-${SELF_DIR}/civvis-game-supervisor.sh}
+POPUP_KEEPER=${CIVVIS_POPUP_KEEPER:-${SELF_DIR}/civvis-popup-keeper.sh}
+MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-${SELF_DIR}/civvis-mirror-keeper.sh}
+LOG=${CIVVIS_INTERACTIVE_HOST_LOG:-$HOME/civvis-civ6-runs/interactive_host.log}
 LOCK=${CIVVIS_INTERACTIVE_HOST_LOCK:-$HOME/.civvis-interactive-host.lock}
 PID_FILE=$LOCK/pid
+SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$HOME/.civvis-game-supervisor.lock}
+SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
+POLL_S=${CIVVIS_INTERACTIVE_HOST_POLL_S:-5}
 supervisor_pid=""
+supervisor_owned=0
 popup_keeper_pid=""
+popup_keeper_owned=0
 mirror_keeper_pid=""
+mirror_keeper_owned=0
 
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
@@ -26,9 +36,15 @@ release_lock() {
 }
 
 stop_children() {
-  [[ -n "$mirror_keeper_pid" ]] && kill -TERM "$mirror_keeper_pid" 2>/dev/null || true
-  [[ -n "$popup_keeper_pid" ]] && kill -TERM "$popup_keeper_pid" 2>/dev/null || true
-  [[ -n "$supervisor_pid" ]] && kill -TERM "$supervisor_pid" 2>/dev/null || true
+  # An audit can reopen this host after the ladder launcher has already started
+  # a valid supervisor. Adopt that supervisor, but never signal it on host exit:
+  # this host did not create it and may otherwise end a healthy game.
+  (( mirror_keeper_owned )) && [[ -n "$mirror_keeper_pid" ]] \
+      && kill -TERM "$mirror_keeper_pid" 2>/dev/null || true
+  (( popup_keeper_owned )) && [[ -n "$popup_keeper_pid" ]] \
+      && kill -TERM "$popup_keeper_pid" 2>/dev/null || true
+  (( supervisor_owned )) && [[ -n "$supervisor_pid" ]] \
+      && kill -TERM "$supervisor_pid" 2>/dev/null || true
 }
 
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -48,48 +64,108 @@ print -r -- "$$" > "$PID_FILE"
 trap 'stop_children; release_lock' EXIT
 trap 'exit 0' HUP INT TERM
 
+pid_is_live() {
+  [[ -n "$1" ]] && kill -0 "$1" 2>/dev/null
+}
+
+live_supervisor_pid() {
+  local holder="" command=""
+  [[ -r "$SUPERVISOR_PID_FILE" ]] || return 1
+  holder=$(<"$SUPERVISOR_PID_FILE")
+  case "$holder" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  pid_is_live "$holder" || return 1
+  command=$(ps -p "$holder" -o command= 2>/dev/null)
+  [[ "$command" == *"${SUPERVISOR:t}"* ]] || return 1
+  print -r -- "$holder"
+}
+
 start_supervisor() {
-  /usr/bin/caffeinate -dims /bin/zsh "$SUPERVISOR" >>/Users/martin/civvis-game-supervisor.interactive.log 2>&1 &
+  local existing=""
+  existing=$(live_supervisor_pid || true)
+  if [[ -n "$existing" ]]; then
+    supervisor_pid=$existing
+    supervisor_owned=0
+    say "adopted already-live game supervisor pid $supervisor_pid"
+    return 0
+  fi
+  if [[ ! -f "$SUPERVISOR" ]]; then
+    say "cannot start game supervisor: missing $SUPERVISOR"
+    supervisor_pid=""
+    supervisor_owned=0
+    return 1
+  fi
+  /usr/bin/caffeinate -dims /bin/zsh "$SUPERVISOR" \
+      >>"$HOME/civvis-game-supervisor.interactive.log" 2>&1 &
   supervisor_pid=$!
+  supervisor_owned=1
   say "started game supervisor pid $supervisor_pid"
 }
 
 start_popup_keeper() {
-  /bin/zsh "$POPUP_KEEPER" >>/Users/martin/civvis-civ6-runs/popup_clear.keeper.launch.log 2>&1 &
+  if [[ ! -f "$POPUP_KEEPER" ]]; then
+    say "cannot start popup keeper: missing $POPUP_KEEPER"
+    popup_keeper_pid=""
+    popup_keeper_owned=0
+    return 1
+  fi
+  /bin/zsh "$POPUP_KEEPER" \
+      >>"$HOME/civvis-civ6-runs/popup_clear.keeper.launch.log" 2>&1 &
   popup_keeper_pid=$!
+  popup_keeper_owned=1
   say "started popup keeper pid $popup_keeper_pid"
 }
 
 start_mirror_keeper() {
   local holder=""
   [[ -f "$HOME/.civvis-mirror-keeper.lock/pid" ]] && holder=$(<"$HOME/.civvis-mirror-keeper.lock/pid")
-  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+  if pid_is_live "$holder"; then
     mirror_keeper_pid=$holder
+    mirror_keeper_owned=0
     say "adopted mirror keeper pid $mirror_keeper_pid"
-    return
+    return 0
   fi
-  /bin/zsh "$MIRROR_KEEPER" >>/Users/martin/civvis-civ6-mirror/mirror-keeper.launch.log 2>&1 &
+  if [[ ! -f "$MIRROR_KEEPER" ]]; then
+    say "cannot start mirror keeper: missing $MIRROR_KEEPER"
+    mirror_keeper_pid=""
+    mirror_keeper_owned=0
+    return 1
+  fi
+  /bin/zsh "$MIRROR_KEEPER" \
+      >>"$HOME/civvis-civ6-mirror/mirror-keeper.launch.log" 2>&1 &
   mirror_keeper_pid=$!
+  mirror_keeper_owned=1
   say "started mirror keeper pid $mirror_keeper_pid"
 }
 
 say "host up (pid $$)"
-start_supervisor
-start_popup_keeper
-start_mirror_keeper
+if start_supervisor; then
+  if (( supervisor_owned )); then
+    start_popup_keeper || true
+    start_mirror_keeper || true
+  else
+    say "external supervisor already owns the live batch; not starting duplicate helpers"
+  fi
+fi
 
 while true; do
-  if [[ -z "$supervisor_pid" ]] || ! kill -0 "$supervisor_pid" 2>/dev/null; then
+  if ! pid_is_live "$supervisor_pid"; then
     say "game supervisor exited; restarting"
-    start_supervisor
+    if start_supervisor && (( supervisor_owned )); then
+      start_popup_keeper || true
+      start_mirror_keeper || true
+    fi
   fi
-  if [[ -z "$popup_keeper_pid" ]] || ! kill -0 "$popup_keeper_pid" 2>/dev/null; then
-    say "popup keeper exited; restarting"
-    start_popup_keeper
+  if (( supervisor_owned )); then
+    if ! pid_is_live "$popup_keeper_pid"; then
+      say "popup keeper exited; restarting"
+      start_popup_keeper || true
+    fi
+    if ! pid_is_live "$mirror_keeper_pid"; then
+      say "mirror keeper exited; restarting"
+      start_mirror_keeper || true
+    fi
   fi
-  if [[ -z "$mirror_keeper_pid" ]] || ! kill -0 "$mirror_keeper_pid" 2>/dev/null; then
-    say "mirror keeper exited; restarting"
-    start_mirror_keeper
-  fi
-  sleep 5
+  sleep "$POLL_S"
 done

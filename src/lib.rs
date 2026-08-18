@@ -1,6 +1,8 @@
-//! Martin Halvorson's Civilization VIS — Rust performance core.
-//! Same ruleset JSON, action protocol, and mechanics as the Python
-//! reference engine (`civvis/`); deterministic per seed within this engine.
+//! Martin Halvorson's Civilization VIS — the engine: one pure-Rust crate
+//! carrying the `data/` ruleset JSON, the action protocol, the mechanics, the
+//! agents, and the GUI server. The Python reference implementation it was
+//! ported from was removed on 2026-07-21 (`docs/ROADMAP.md`, v0.6), so there is
+//! no second implementation to agree with; this one is deterministic per seed.
 #![recursion_limit = "512"]
 
 // The action encoder's consumers are all in `experiments/closed/`; the module
@@ -664,10 +666,9 @@ mod tests {
         assert!(g.winner.is_some());
         assert!(g.cities.len() >= 2);
         for p in &g.players {
-            if !p.is_barbarian {
+            if p.alive && !p.is_barbarian {
                 assert!(
-                    p.techs.len() > 1
-                        || (p.is_minor && p.research.is_some() && p.research_progress > 0.0),
+                    p.techs.len() > 1 || (p.research.is_some() && p.research_progress > 0.0),
                     "player {} ({}) alive={} cities={} ended with {:?}, research {:?} at {:.1}",
                     p.id,
                     p.civ,

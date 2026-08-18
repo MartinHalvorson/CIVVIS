@@ -77,6 +77,85 @@ function initSidebarSections() {
   remember();
 }
 initSidebarSections();
+// Where each section label stops once the deck starts scrolling. The stack is
+// packed tighter than the flowing column — a stuck label is an index entry
+// rather than a card in a list — and the label at the head of the stack holds
+// that same gap to the command card. The stylesheet spreads each label's own
+// ground by this gap to paint the seams, so it is published as a custom
+// property rather than written down in two places that could drift apart.
+const SECTION_STOP_GAP = 4;
+// The window the stack has to leave for the section that is open. Below this
+// the stops come off: a deck short enough that its menu would take most of the
+// height is better scrolled than pinned.
+const SECTION_STOP_MIN_WINDOW = 140;
+// Measure the stack the deck's menu makes when its labels stick, and write
+// each label's two stops onto its section: how far down the ones above it hold
+// it, and how far up the ones below it do. Everything here is read from the
+// page rather than assumed, because every term moves — the command card is
+// taller with a player in the seat than with a spectator watching, Government
+// and the two logs come and go with the game being shown, and the labels
+// themselves are sized by the deck's type-size setting.
+function syncSectionStops() {
+  const side = document.getElementById("side");
+  const scroller = side && side.querySelector(".side-scroll");
+  if (!scroller) return;
+  const sections = [...document.querySelectorAll(SIDEBAR_SECTIONS)]
+    // A section the game is not showing — Government before there is one, the
+    // logs on a battlefield — is not in the menu and takes no stop.
+    .filter(section => section.getClientRects().length);
+  const card = scroller.querySelector(".side-actions");
+  // The command card sticks at the top of the scroller ahead of every label,
+  // so the stack starts under it. Its own margin is not part of the stop: the
+  // margin belongs to the flowing column, and a stuck label holds the stack's
+  // gap to the card exactly as it holds it to the label above it.
+  const top = (card ? card.getBoundingClientRect().height : 0) + SECTION_STOP_GAP;
+  const steps = sections.map(section =>
+    section.querySelector(":scope > .section-label").getBoundingClientRect().height + SECTION_STOP_GAP);
+  const stack = steps.reduce((total, step) => total + step, 0);
+  // The open section reads through what the stack leaves. Its own label is in
+  // the stack too, so the window is the same whichever section is open.
+  const room = scroller.clientHeight - top - stack;
+  side.style.setProperty("--stop-gap", `${SECTION_STOP_GAP}px`);
+  side.classList.toggle("deck-stops", room >= SECTION_STOP_MIN_WINDOW);
+  let above = top;
+  let below = stack;
+  sections.forEach((section, index) => {
+    below -= steps[index];
+    section.style.setProperty("--stop-top", `${Math.round(above)}px`);
+    section.style.setProperty("--stop-bottom", `${Math.round(below)}px`);
+    above += steps[index];
+  });
+}
+// The stops are a measurement, so they are retaken whenever the page could
+// have changed one: the deck resized, the command card swapped between a
+// spectator's and a player's, a section joining or leaving the menu. A
+// ResizeObserver sees all three, since a section that leaves is a label that
+// resizes to nothing. The retake is deferred to the next frame so that writing
+// the stops during the callback cannot feed itself.
+let sectionStopsPending = false;
+function scheduleSectionStops() {
+  if (sectionStopsPending) return;
+  sectionStopsPending = true;
+  requestAnimationFrame(() => {
+    sectionStopsPending = false;
+    syncSectionStops();
+  });
+}
+function watchSectionStops() {
+  const side = document.getElementById("side");
+  const scroller = side && side.querySelector(".side-scroll");
+  if (!scroller) return;
+  syncSectionStops();
+  if (typeof ResizeObserver !== "function") return;
+  const observer = new ResizeObserver(scheduleSectionStops);
+  observer.observe(scroller);
+  const card = scroller.querySelector(".side-actions");
+  if (card) observer.observe(card);
+  for (const label of document.querySelectorAll(`${SIDEBAR_SECTIONS} > .section-label`)) {
+    observer.observe(label);
+  }
+}
+watchSectionStops();
 // The short setup pass, in the order its questions are asked. Which game is
 // being set up decides what every control under it means, so it is asked
 // first — before who is playing it, the way a menu asks for the game before
@@ -8814,10 +8893,10 @@ function drawStrategicWoodlandIcon(t, x, y) {
   cx.scale(STRATEGIC_WOODLAND_ICON_SCALE, STRATEGIC_WOODLAND_ICON_SCALE);
   cx.translate(-x, -y);
   if (jungle) {
-    // Rainforest sweeps up and left, using broad canopies rather than firs.
-    for (const [dx, dy, height, spread] of [[-10, -3, 12, 7.5],
-                                              [1, 3, 15, 8.5],
-                                              [10, 7, 11, 6.8]]) {
+    // Rainforest sweeps up and right, using broad canopies rather than firs.
+    for (const [dx, dy, height, spread] of [[-10, 7, 11, 6.8],
+                                              [-1, 3, 15, 8.5],
+                                              [10, -3, 12, 7.5]]) {
       const tx = x + dx, base = y + dy + 4 + lift + STRATEGIC_WOODLAND_CONTENT_INSET;
       cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.9;
       cx.beginPath(); cx.moveTo(tx, base); cx.lineTo(tx, base - height); cx.stroke();
@@ -8828,11 +8907,11 @@ function drawStrategicWoodlandIcon(t, x, y) {
                                  spread * .72, 2.35, -.12, 0, 7); cx.fill();
     }
   } else {
-    // Woods climb from lower left to upper right. That reversed diagonal keeps
+    // Woods climb from lower right to upper left. That reversed diagonal keeps
     // their pointed fir stand distinct from rainforest beneath an army token.
-    for (const [dx, dy, height, spread] of [[-10, 9, 13, 6.5],
+    for (const [dx, dy, height, spread] of [[-10, -7, 18, 8.5],
                                               [0, 1, 16, 7.5],
-                                              [10, -7, 18, 8.5]]) {
+                                              [10, 9, 13, 6.5]]) {
       const tx = x + dx, base = y + dy + 4 + lift + STRATEGIC_WOODLAND_CONTENT_INSET;
       cx.strokeStyle = "#142d1b"; cx.lineWidth = 1.15;
       cx.beginPath(); cx.moveTo(tx, base + 1); cx.lineTo(tx, base - height * .28); cx.stroke();
@@ -9879,6 +9958,14 @@ const WORLD_WONDER_KEYLINE_RADIUS = 0.62;
 // below, and it is always drawn back at exactly this many user units.
 const WORLD_WONDER_SPRITE_SIZE = 192;
 const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
+// World wonders are rare enough to give their names a wider reading lane than
+// a resource gets. The longest shipped names still shrink from the measured
+// width, rather than overflowing into an unrelated part of the map.
+const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;
+const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;
+const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;
+const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;
+const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;
 // ⚠ The wonder art is code-native vector: `BUILT_WONDER_PAINTER` draws paths,
 // so it has no fixed resolution of its own and costs no asset bytes. The only
 // thing that was ever low-resolution here is this cache. The sprite used to be
@@ -10106,6 +10193,38 @@ function drawWonder(x, y, scale = 1) {
 
 function drawWorldWonderIcon(wonder, x, y, scale = 1) {
   if (!drawWorldWonder(wonder, x, y, scale)) drawWonder(x, y, scale);
+}
+
+// A completed wonder's silhouette says what sort of landmark it is; its name
+// says exactly which one it is. Mirror the resource word treatment at reading
+// zoom, but let a long name use a smaller type size before it is constrained
+// to the nameplate's generous two-hex reading lane.
+function drawWorldWonderWordLabel(wonder, x, y, scale = 1) {
+  if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;
+  const label = titleCase(wonder);
+  const maxWidth = WORLD_WONDER_LABEL_MAX_WIDTH * scale;
+  const labelY = y + WORLD_WONDER_LABEL_BASELINE * scale;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.font = `800 ${WORLD_WONDER_LABEL_FONT_SIZE * scale}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const naturalWidth = Math.max(1, cx.measureText(label).width);
+  const fontSize = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,
+    Math.min(WORLD_WONDER_LABEL_FONT_SIZE * scale,
+      WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth));
+  cx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  // Like resource labels, an ink keyline makes the name readable above every
+  // terrain and territory wash without adding another opaque tile plate.
+  cx.strokeStyle = "rgba(4,8,7,.96)"; cx.lineWidth = Math.max(1.3 * scale, fontSize * .21);
+  cx.strokeText(label, x, labelY, maxWidth);
+  cx.fillStyle = "#fffdf3";
+  cx.fillText(label, x, labelY, maxWidth);
+  cx.restore();
+}
+
+function drawWorldWonderMarker(wonder, x, y, scale = 1) {
+  drawWorldWonderIcon(wonder, x, y, scale);
+  drawWorldWonderWordLabel(wonder, x, y, scale);
 }
 
 // Below this zoom the fine pass inside a motif — furrows, patchwork, doorways —
@@ -17921,7 +18040,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       if (resourceMarkerVisible(t)) drawResourceBadge(t, 0, 0);
       const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
       if (t.district) drawDistrict(t, 0, -built, districtBuildings.get(tileKey));
-      if (t.wonder) drawWorldWonderIcon(t.wonder, 0, -built);
+      if (t.wonder) drawWorldWonderMarker(t.wonder, 0, -built);
     });
   }
 }
@@ -20094,7 +20213,7 @@ function drawScene() {
     // below, seated by the terrain pass above.
     const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
     if (t.district) drawDistrict(t, x, y - built, districtBuildings.get(k));
-    if (t.wonder) drawWorldWonderIcon(t.wonder, x, y - built);
+    if (t.wonder) drawWorldWonderMarker(t.wonder, x, y - built);
   }
   // Lens passes replace or grade the finished ground while leaving the map's
   // geometry and controls alone. Empire goes first because Settler's site

@@ -72,14 +72,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x87f1_ed28_5af9_e065;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x3bda_c2f2_b84d_30fc;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 20_464;
+const ANCHOR_DECISIONS: usize = 18_572;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -782,6 +782,43 @@ fn simultaneous_soak_job_split(games: usize, jobs: usize) -> (usize, usize, usiz
     )
 }
 
+/// Subcommands that seat entrants from `--ais`. Everything else builds its
+/// fleet from `AdvancedAi::fleet` or reads a committed roster, and cannot
+/// honour the flag.
+///
+/// ⚠ `arena` looks like it belongs here and does not: it runs from the
+/// committed league roster and never reads `--ais` either. Checked rather than
+/// assumed, because assuming it was the first version of this list.
+const ENTRANT_SEATING_COMMANDS: [&str; 1] = ["tournament"];
+
+/// ★★★★★ A FLAG THE SUBCOMMAND CANNOT HONOUR IS REFUSED, NOT IGNORED.
+///
+/// `--ais` is advertised in the one shared usage line, so it reads as global.
+/// Only `tournament` parses it. `civvis simulate --ais basic,basic,...`
+/// therefore played a full game with `AdvancedAi` in every seat and printed a
+/// winner, with no indication that the instruction had been dropped — and an
+/// unknown controller name was not rejected either, because nothing ever
+/// looked at it.
+///
+/// That is the worst kind of defect an experiment tool can have: it does not
+/// fail, it answers a different question and says nothing. It cost this session
+/// a whole line of investigation. Four games seating
+/// `advanced_target_diplomatic` in all six chairs, then three more each for
+/// culture and domination, came back byte-identical to the default run and to
+/// each other, which read as "the AI cannot complete these victories" and was
+/// really "the flag did nothing".
+fn refuse_unhonoured_entrant_flag(cmd: &str, args: &[String]) {
+    if ENTRANT_SEATING_COMMANDS.contains(&cmd) || !args.iter().any(|arg| arg == "--ais") {
+        return;
+    }
+    eprintln!(
+        "--ais is not honoured by `{cmd}`: it seats every chair with the default controller. \
+         Only `{}` reads it. Remove the flag, or use that.",
+        ENTRANT_SEATING_COMMANDS.join("`, `")
+    );
+    std::process::exit(2);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
@@ -806,6 +843,7 @@ fn main() {
             }
         }
     }
+    refuse_unhonoured_entrant_flag(cmd, &args);
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
@@ -2335,11 +2373,36 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+
+    /// The list is the whole guard, so it has to match what the dispatch
+    /// actually does. `arena` was in the first version of it and does not read
+    /// `--ais` at all.
+    #[test]
+    fn only_the_commands_that_seat_entrants_accept_ais() {
+        assert_eq!(ENTRANT_SEATING_COMMANDS, ["tournament"]);
+        // Every other name in the usage line builds its fleet itself.
+        for cmd in [
+            "simulate",
+            "soak",
+            "benchmark",
+            "arena",
+            "league",
+            "evolve",
+            "play",
+            "validate",
+        ] {
+            assert!(
+                !ENTRANT_SEATING_COMMANDS.contains(&cmd),
+                "{cmd} is listed as seating entrants; confirm it reads --ais before allowing it"
+            );
+        }
+    }
+
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era, tactics_rules,
-        simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
-        turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS,
-        DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        simultaneous_soak_job_split, single_simulation_jobs_arg, start_era, strict_f64_arg,
+        strict_i64_arg, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS,
+        DEFAULT_TOURNAMENT_ENTRANTS, ENTRANT_SEATING_COMMANDS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::ai::AdvancedAi;
     use civvis::game::{Action, Game};

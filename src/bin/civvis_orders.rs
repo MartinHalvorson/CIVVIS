@@ -54,6 +54,12 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 /// that mirror this list in Python.
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
+/// Direct invocations without `--victory` must agree with the high-level
+/// launchers' one central default. The launcher chain selected Diplomacy after
+/// deployment-shaped evidence; keeping a named mirror here prevents a bare
+/// recovery or manual invocation from silently reviving an old lane.
+const DEFAULT_VICTORY: &str = "diplomatic";
+
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
 /// ⚠ THE SIX NAMES ARE NOT A SEPARATE LIST. They come from
@@ -381,7 +387,32 @@ fn civ6_civic_name(civvis: &str) -> String {
 /// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
 /// few deliberate vocabulary contractions explicit in both directions rather than
 /// asking Lua to guess from localized display names.
+///
+/// ★★★ A SPY PROMOTION IS NOT SPELLED LIKE A SOLDIER'S. Civilization VI puts the
+/// promotion class in the identifier — `PROMOTION_SPY_SMEAR_CAMPAIGN`, not
+/// `PROMOTION_SMEAR_CAMPAIGN` — and the uppercase fallthrough below produced the
+/// second one for all seventeen. Nothing failed loudly: the mod answered
+/// `unknown_promotion_PROMOTION_SMEAR_CAMPAIGN`, the order was counted refused,
+/// and the spy kept its level.
+///
+/// It arrived with espionage (#1929) and is measurable in the ledger's own
+/// bridge-health column: `orders_applied / orders_seen` ran 95–98.4% for every
+/// run through `civvis-20260818T003523Z` and 84.0–90.6% for every run after it,
+/// with 259–341 `unknown_promotion_PROMOTION_*` refusals per game — the largest
+/// single refusal category on the seat.
+///
+/// `Game::SPY_PROMOTIONS` is the engine's own list, read here rather than copied,
+/// so a promotion added there cannot go out under the wrong spelling. Sixteen of
+/// the seventeen take the prefix unchanged; Firaxis spells the last one
+/// `GUERILLA_LEADER`, with one `r`.
 fn civ6_unit_promotion_name(civvis: &str) -> String {
+    if civvis == "guerrilla_leader" {
+        // Firaxis' own spelling, in `Expansion1_UnitPromotions.xml`.
+        return "PROMOTION_SPY_GUERILLA_LEADER".to_string();
+    }
+    if civvis::game::Game::SPY_PROMOTIONS.contains(&civvis) {
+        return format!("PROMOTION_SPY_{}", civvis.to_ascii_uppercase());
+    }
     let suffix = match civvis {
         "cobra_strike" | "dancing_crane" | "disciples" | "exploding_palms" | "shadow_strike"
         | "sweeping_wind" | "twilight_veil" => {
@@ -401,6 +432,26 @@ struct Order {
     subject: Option<i64>,
     verb: Option<String>,
     pos: Option<(i32, i32)>,
+}
+
+/// Marker kept in `ours` while a `produce_next` lease is waiting for the host
+/// queue to finish.  It prevents the next fresh planning board from releasing
+/// the still-running item as foreign before the blocker consumes the lease.
+const DEFERRED_PRODUCTION_PREFIX: &str = "__civvis_next__:";
+
+/// Whether a host-reported queue is expected to finish during this turn.
+///
+/// A next-build hint is only safe when the current item is already paid for by
+/// the city's own production forecast.  Unknown host metrics deliberately do
+/// not qualify: guessing would turn a deferred handoff into an early queue
+/// replacement, which is the exact actuation bug this path is meant to avoid.
+fn host_production_finishes_this_turn(city: &mirror::StateCity) -> bool {
+    city.producing.is_some()
+        && city.production >= 0.0
+        && city.production_cost > 0.0
+        && city.production_progress >= 0.0
+        && (city.production_turns >= 0.0 && city.production_turns <= 1.0 + f64::EPSILON
+            || city.production_progress + city.production + f64::EPSILON >= city.production_cost)
 }
 
 /// Firaxis remembers a submitted peace offer per target for five turns.
@@ -1111,6 +1162,195 @@ fn host_minor_target(
         .map(|(minor, _)| minor.player as i64)
 }
 
+// ★★★★★ SURPLUS SOLD, NOT HOARDED. CIVVIS's planner already decides these
+// sales — `Game::quick_deals` quotes a duplicate luxury copy to a rival that
+// lacks it, a strategic block, a Great Work, a favor block — and every one of
+// them fell through `translate`'s `_ => None`: **17 `Trade` skips in run
+// civvis-20260818T083142Z alone** (dyes ×5, turtles ×2, a favor block, and the
+// buys), while the seat ended that game holding 423 unspent favor and a
+// stockpile pinned at the 25 cap on four strategics for a hundred turns. A
+// sale is one host deal: the Lua side puts exactly these items in the outgoing
+// working deal, asks the rival's own valuation for the gold with
+// `DealProposalAction.EQUALIZE`, and accepts the answer only at or above the
+// floor carried here. Nothing on this side prices what the rival will pay; it
+// says what CIVVIS is willing to let go and what it would have taken.
+//
+// Only SALES cross: our side resources and/or favor, theirs gold. A purchase
+// (their luxury for our gold), a Great Work, a city, a captive or Open Borders
+// is a different risk class with a different validation and stays in the
+// skipped tally, named, until it earns its own arm.
+/// The verb a `sell` order carries: `RESOURCE_DYES=1,FAVOR=10` — Firaxis's own
+/// resource type names (the mirror's `strategic_resource` import is the exact
+/// inverse) with the favor block last. `None` when the offer holds anything
+/// the arm does not sell, or nothing at all.
+fn sale_verb(offer: &civvis::game::DealItems) -> Option<String> {
+    if offer.gold != 0.0
+        || offer.gold_per_turn != 0.0
+        || !offer.great_works.is_empty()
+        || !offer.captured_spies.is_empty()
+        || !offer.cities.is_empty()
+        || offer.open_borders
+        || !offer.diplomatic_favor.is_finite()
+        || offer.diplomatic_favor < 0.0
+    {
+        return None;
+    }
+    let mut parts: Vec<String> = offer
+        .resources
+        .iter()
+        .filter(|(_, amount)| **amount > 0)
+        .map(|(resource, amount)| format!("RESOURCE_{}={amount}", resource.to_ascii_uppercase()))
+        .collect();
+    let favor = offer.diplomatic_favor.floor() as i64;
+    if favor > 0 {
+        parts.push(format!("FAVOR={favor}"));
+    }
+    (!parts.is_empty()).then(|| parts.join(","))
+}
+
+/// The gold-equivalent below which the host must NOT close the sale, from what
+/// CIVVIS asked: lump gold plus per-turn gold at CIVVIS's own 25× factor
+/// (`Game::receive_items_value`), at a discount — the rival prices by its own
+/// book, and a surplus copy the plan was going to let go for 90 is still worth
+/// letting go for 50 — but never below `SALE_FLOOR_MIN`, so a valuation gap
+/// cannot become a gift.
+const SALE_FLOOR_SHARE: f64 = 0.5;
+const SALE_FLOOR_MIN: i32 = 10;
+
+fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
+    if !request.resources.is_empty()
+        || request.diplomatic_favor != 0.0
+        || !request.great_works.is_empty()
+        || !request.captured_spies.is_empty()
+        || !request.cities.is_empty()
+        || request.open_borders
+        || !request.gold.is_finite()
+        || !request.gold_per_turn.is_finite()
+        || request.gold < 0.0
+        || request.gold_per_turn < 0.0
+    {
+        return None;
+    }
+    let asked = request.gold + 25.0 * request.gold_per_turn;
+    Some(((asked * SALE_FLOOR_SHARE).ceil() as i32).max(SALE_FLOOR_MIN))
+}
+
+// ★★★★★ THE FAVOR BANK, SPENT ON THE PLAN THAT IS ACTUALLY RUNNING. Diplomatic
+// favor is votes at the World Congress and nothing else; on the live seat the
+// bank has read 200–420 at the end of every game measured, and the 2026-08-18
+// study found the ballot's favor spend never registers at all. Under a
+// Diplomacy plan every point is a vote CIVVIS means to cast, so nothing sells
+// (the native `quick_deals` block never fires there either: it wants a partner
+// two DVP richer). Under any other plan the points are idle capital, and the
+// one rival that must never buy them is one already close to the twenty-point
+// win — favor in that treasury is the win. So: not on a Diplomacy plan, hold
+// `FAVOR_RESERVE` for the emergency ballot, sell the rest in blocks to the
+// richest met major we are at peace with that is below `FAVOR_BUYER_DVP_MAX`,
+// on a cadence offset from the planner's own trade turn (`turn % 6 == pid`),
+// at a floor of one gold a point — the rival's own valuation sets the price.
+const FAVOR_RESERVE: f64 = 120.0;
+const FAVOR_SALE_MIN: f64 = 20.0;
+const FAVOR_SALE_MAX: f64 = 150.0;
+const FAVOR_SALE_CADENCE: u32 = 6;
+const FAVOR_SALE_PHASE: u32 = 3;
+const FAVOR_BUYER_DVP_MAX: i64 = 12;
+const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
+
+/// Whether the plan in force means to cast its favor: a Diplomacy strategy or
+/// an assigned diplomatic lane. `plan` is the plan report's
+/// `(strategy, victory_target)`; no plan at all holds too.
+fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
+    match plan {
+        None => true,
+        Some((strategy, victory_target)) => {
+            strategy == "diplomacy" || victory_target == Some("diplomatic")
+        }
+    }
+}
+
+/// Drop the planner's own favor sales when the plan means to cast that favor.
+/// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
+/// plan-blind; on a Diplomacy plan those ten points are two votes at the next
+/// session. Returns how many orders were held back.
+fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
+    if !plan_keeps_favor(plan) {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        !(order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR=")))
+    });
+    before - orders.len()
+}
+
+/// Why no favor sale order was appended this turn, for the note; `None` when
+/// one was. `plan` is the plan report's `(strategy, victory_target)`.
+fn append_favor_sale_order(
+    plan: Option<(&str, Option<&str>)>,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if plan.is_none() {
+        return Some("favor_hold:no_plan");
+    }
+    if plan_keeps_favor(plan) {
+        return Some("favor_hold:diplomacy_plan");
+    }
+    if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
+        return Some("favor_hold:cadence");
+    }
+    let Some(favor) = state.favor.filter(|favor| favor.is_finite()) else {
+        return Some("favor_hold:unknown");
+    };
+    let surplus = favor - FAVOR_RESERVE;
+    if surplus < FAVOR_SALE_MIN {
+        return Some("favor_hold:reserve");
+    }
+    // The planner may already be selling favor this turn through its own
+    // quote; one block per turn keeps the two from bidding the same bank.
+    if orders.iter().any(|order| {
+        order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR="))
+    }) {
+        return Some("favor_hold:planner_sale");
+    }
+    let buyer = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war && rival.dvp.unwrap_or(0) < FAVOR_BUYER_DVP_MAX)
+        .max_by(|left, right| {
+            let gold = |rival: &civvis::mirror::StateRival| {
+                if rival.gold.is_finite() {
+                    rival.gold
+                } else {
+                    0.0
+                }
+            };
+            gold(left)
+                .partial_cmp(&gold(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.player.cmp(&left.player))
+        });
+    let Some(buyer) = buyer else {
+        return Some("favor_hold:no_buyer");
+    };
+    let amount = surplus.min(FAVOR_SALE_MAX).floor() as i32;
+    orders.push(Order {
+        kind: "sell",
+        subject: Some(buyer.player as i64),
+        verb: Some(format!("FAVOR={amount}")),
+        pos: Some((amount * FAVOR_GOLD_FLOOR_PER_POINT, 0)),
+    });
+    None
+}
+
 /// How many `envoy` orders one turn may carry. The planning board spends every
 /// held envoy in one pass (`advanced_envoys` loops until `envoys_free` is 0),
 /// and a seat that has banked fifty of them — every Settler game to date —
@@ -1383,6 +1623,102 @@ impl Order {
     }
 }
 
+/// Add deferred production choices for host queues that will finish this turn.
+///
+/// The ordinary `produce` orders still actuate immediately.  These hints are a
+/// separate, non-mutating order kind: the Lua controller stores them and uses
+/// one only if the corresponding city later raises its production blocker.  A
+/// city with a direct choice is intentionally excluded because replacing its
+/// queue would make the hint race the decision it is meant to follow.
+fn append_next_production_hints(
+    ai: &civvis::ai::AdvancedAi,
+    planned_game: &civvis::game::Game,
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    ours: &mut std::collections::BTreeMap<i64, String>,
+) -> usize {
+    let mut hinted = 0;
+    for city in &state.cities {
+        if !host_production_finishes_this_turn(city)
+            || orders
+                .iter()
+                .any(|order| order.kind == "produce" && order.subject == Some(city.id))
+        {
+            continue;
+        }
+        let Some(cid) = mirror_state.cid_of.get(&city.id).copied() else {
+            continue;
+        };
+        let Some(item) = ai.preview_live_production(planned_game, 0, cid) else {
+            continue;
+        };
+        let Some(name) = civ6_live_build_name(&item, planned_game) else {
+            continue;
+        };
+        // The hint is a CIVVIS choice that the host has not consumed yet.  Keep
+        // a marker in the persistent production ownership map so the next mirror
+        // does not classify the still-running queue as foreign and immediately
+        // release it.  `settle_deferred_production_hints` removes the marker once
+        // the host reports the hinted item as its current queue.
+        ours.insert(city.id, format!("{DEFERRED_PRODUCTION_PREFIX}{name}"));
+        orders.push(Order {
+            kind: "produce_next",
+            subject: Some(city.id),
+            verb: Some(name),
+            pos: civ6_build_pos(&item),
+        });
+        hinted += 1;
+    }
+    hinted
+}
+
+/// Reconcile deferred production ownership against the next authoritative host
+/// frame.  A matching queue means the hint was consumed and becomes ordinary
+/// CIVVIS ownership.  A different queue is released only when it is not itself
+/// still approaching its blocker; this keeps a slow or lagging host queue intact
+/// for another frame instead of turning a timing miss into an early replacement.
+fn settle_deferred_production_hints(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> (usize, usize) {
+    let pending: Vec<(i64, String)> = ours
+        .iter()
+        .filter_map(|(city, value)| {
+            value
+                .strip_prefix(DEFERRED_PRODUCTION_PREFIX)
+                .map(|name| (*city, name.to_string()))
+        })
+        .collect();
+    let mut consumed = 0;
+    let mut expired = 0;
+    for (city_id, expected) in pending {
+        let Some(city) = state.cities.iter().find(|city| city.id == city_id) else {
+            ours.remove(&city_id);
+            expired += 1;
+            continue;
+        };
+        match city.producing.as_deref() {
+            Some(current) if current == expected => {
+                ours.insert(city_id, expected);
+                consumed += 1;
+            }
+            Some(_) if host_production_finishes_this_turn(city) => {
+                // The old queue is still near its blocker; leave the lease in
+                // place for the host's next production callback.
+            }
+            Some(_) | None => {
+                // A different, non-finishing queue means the host answered the
+                // blocker without consuming this lease.  Let normal foreign
+                // production release recover the city on this frame.
+                ours.remove(&city_id);
+                expired += 1;
+            }
+        }
+    }
+    (consumed, expired)
+}
+
 /// One turn's decision, against a mirror and an agent that PERSIST across turns.
 ///
 /// ★★★★★ WHY PERSISTENCE IS THE WHOLE POINT. A fresh `AdvancedAi` on a fresh board
@@ -1466,7 +1802,11 @@ fn release_foreign_production(
         let Some(producing) = city.producing.as_deref() else {
             continue;
         };
-        if ours.get(&city.id).map(String::as_str) == Some(producing) {
+        if ours
+            .get(&city.id)
+            .is_some_and(|owned| owned.starts_with(DEFERRED_PRODUCTION_PREFIX))
+            || ours.get(&city.id).map(String::as_str) == Some(producing)
+        {
             continue;
         }
         let Some(cid) = cid_of.get(&city.id).copied() else {
@@ -1920,6 +2260,8 @@ fn decide(
             std::process::exit(2);
         }
     }
+    let (production_hints_consumed, production_hints_expired) =
+        settle_deferred_production_hints(ours, state);
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -2161,6 +2503,47 @@ fn decide(
         orders.push(policy_deck_order(&planned_game, 0));
     }
 
+    let production_hints =
+        append_next_production_hints(ai, &planned_game, mirror_state, state, &mut orders, ours);
+    if production_hints > 0 {
+        note_bits.push(format!("production_next_hints={production_hints}"));
+    }
+    if production_hints_consumed > 0 {
+        note_bits.push(format!(
+            "production_next_consumed={production_hints_consumed}"
+        ));
+    }
+    if production_hints_expired > 0 {
+        note_bits.push(format!(
+            "production_next_expired={production_hints_expired}"
+        ));
+    }
+
+    let plan = ai.plan_report();
+    let plan_facts = plan
+        .as_ref()
+        .map(|report| (report.strategy, report.victory_target));
+    let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
+    if held_favor_sales > 0 {
+        note_bits.push(format!(
+            "favor_hold:planner_sales_dropped={held_favor_sales}"
+        ));
+    }
+    match append_favor_sale_order(plan_facts, state, &mut orders) {
+        None => note_bits.push("favor_sale=1".to_string()),
+        Some(why) => {
+            // Only the holds worth a glance in the ledger: a bank sitting on
+            // a plan that would sell it, with nobody to sell to.
+            if why == "favor_hold:no_buyer" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
+    let sales = orders.iter().filter(|order| order.kind == "sell").count();
+    if sales > 0 {
+        note_bits.push(format!("sales={sales}"));
+    }
+
     let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
@@ -2198,7 +2581,6 @@ fn decide(
         note_bits.push(format!("released={released}"));
     }
 
-    let plan = ai.plan_report();
     if let Some(report) = &plan {
         note_bits.push(format!(
             "plan strategy={} victory={:?} target_player={:?} desired_cities={}",
@@ -3050,6 +3432,25 @@ fn translate(
                 pos: None,
             })
         }
+        // A sale the planner decided — surplus luxury copies, a strategic
+        // block, a favor block — for the rival's gold. See `sale_verb`; the
+        // floor rides in `x`, the Lua arm asks the rival's own valuation with
+        // EQUALIZE and closes only at or above it. Anything else in a `Trade`
+        // (a purchase, a Great Work, a city) stays skipped and named.
+        Action::Trade {
+            player,
+            offer,
+            request,
+        } => {
+            let verb = sale_verb(offer)?;
+            let floor = sale_floor(request)?;
+            Some(Order {
+                kind: "sell",
+                subject: host_player_target(mirror_state, state, *player),
+                verb: Some(verb),
+                pos: Some((floor, 0)),
+            })
+        }
         _ => None,
     }
 }
@@ -3178,7 +3579,7 @@ fn main() {
     let frontier: u32 = arg_text(&args, "--frontier")
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
-    let victory = arg_text(&args, "--victory").unwrap_or_else(|| "domination".to_string());
+    let victory = arg_text(&args, "--victory").unwrap_or_else(|| DEFAULT_VICTORY.to_string());
     let rated = resolve_strategy(&args);
     let mut ai = match victory_lane(&victory) {
         Some(lane) => lane,
@@ -3192,28 +3593,10 @@ fn main() {
     if let Some(chosen) = &rated {
         ai.reweight(chosen.weights.clone());
     }
-    // The old parallel-settler fires-check was near-inert with the lower target:
-    // the governor never wanted a second Settler while the first city target was
-    // still three. This live seat already raises the target to six, and its fresh
-    // baseline shows the remaining rate limit: one Settler is walking while the
-    // empire is still short of its city plan. Measure the previously untested
-    // target-plus-throughput cell as one explicit live treatment.
-    ai.enable_parallel_settlers();
-    // And build the Settler at Civilization VI's own population floor rather
-    // than the genome's: see `BasicAi::host_settler_pop`.
-    ai.enable_host_settler_pop();
-    // And give up an exploration target the host accepts but never walks to:
-    // see `BasicAi::explore_dead_targets`.
-    ai.enable_explore_dead_targets();
-    // And hold an exploration goal, chosen from deeper fog and farthest from
-    // home, instead of re-deriving the nearest fringe every turn: the lone
-    // scout of run civvis-20260816T123936Z paced a ten-by-ten box from t34
-    // to t75. See `BasicAi::explore_commit`.
-    ai.enable_explore_commit();
-    // And bank an envoy the plan has no positive use for, so the next
-    // city-state met can be taken outright — this seat meets its city-states
-    // over 250 turns, not 50. See `AdvancedAi::bank_envoys`.
-    ai.enable_bank_envoys();
+    // Configure before recording the startup identity, so the metadata names
+    // the same controller that will answer the first turn. `decide` repeats
+    // this idempotently for fresh agents and after each `--without` ablation.
+    ai.enable_live_bridge();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -3430,10 +3813,12 @@ fn main() {
         );
         let w = advanced.weights().clone();
         let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
-        // The live decider plays with the second pipeline slot open and the
-        // host's Settler population floor.
+        // The live decider plays with the second pipeline slot open, the
+        // host's Settler population floor, and the land grab's wider pipeline
+        // and later window (see `AdvancedAi::land_grab`).
         ai.enable_parallel_settlers();
         ai.enable_host_settler_pop();
+        ai.enable_land_grab();
         let pid = 0usize;
         let n_cities = g.player_city_ids(pid).len();
         let settlers = g
@@ -3455,8 +3840,14 @@ fn main() {
             n_cities + settlers,
             w.city_target
         );
-        // The live seat's pipeline width (see `AdvancedAi::parallel_settlers`).
-        let pipeline = if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
+        // The live seat's pipeline width (see `AdvancedAi::land_grab`, and
+        // `AdvancedAi::parallel_settlers` beneath it): two walkers from the
+        // first city, one more per three cities, never more than the seats
+        // still short of the target.
+        let seats_short = (w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+        let pipeline = if seats_short > 0 {
+            (civvis::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
+        } else if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
             2
         } else {
             1
@@ -3473,11 +3864,15 @@ fn main() {
             settler_min_pop,
             w.settler_min_pop
         );
+        // The land grab's window: a settler must still repay before the turn
+        // limit (see `BasicAi::land_grab`); the genome's stop turn alone no
+        // longer closes it.
         println!(
-            "  turn < settler_stop_turn             {:>5}   {} < {:.0}",
+            "  turn < settler_stop_turn             {:>5}   {} < {:.0} (land grab keeps the window open while a settler still repays: {})",
             (g.turn as f64) < w.settler_stop_turn,
             g.turn,
-            w.settler_stop_turn
+            w.settler_stop_turn,
+            g.turn + g.standard_duration(18) < g.max_turns
         );
         // The military branch sits ABOVE the settler gate in `pick_item` and
         // returns first when it fires, so the gate passing means nothing on its
@@ -4191,6 +4586,18 @@ mod tests {
         assert_eq!(
             super::VICTORY_LANES.split('|').collect::<Vec<_>>(),
             expected
+        );
+    }
+
+    #[test]
+    fn direct_default_uses_the_safe_launcher_lane() {
+        assert_eq!(super::DEFAULT_VICTORY, "diplomatic");
+        assert!(super::VICTORY_LANES
+            .split('|')
+            .any(|lane| lane == super::DEFAULT_VICTORY));
+        assert_eq!(
+            super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
+            Some(civvis::ai::VictoryTarget::Diplomacy)
         );
     }
 
@@ -5162,6 +5569,27 @@ mod tests {
         (snapshot, state)
     }
 
+    #[test]
+    fn host_production_finish_gate_requires_authoritative_metrics() {
+        let mut city = StateCity {
+            producing: Some("UNIT_WARRIOR".to_string()),
+            production: 8.0,
+            production_cost: 40.0,
+            production_progress: 32.0,
+            production_turns: 1.0,
+            ..StateCity::default()
+        };
+        assert!(host_production_finishes_this_turn(&city));
+
+        city.production_progress = 10.0;
+        city.production_turns = 4.0;
+        assert!(!host_production_finishes_this_turn(&city));
+
+        city.production_progress = -1.0;
+        city.production_turns = -1.0;
+        assert!(!host_production_finishes_this_turn(&city));
+    }
+
     /// ⚠⚠ The defect: the mod ladder answers `ENDTURN_BLOCKING_PRODUCTION`, the next
     /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
     /// which only produces for a city whose queue is empty — says nothing. Measured at
@@ -5209,7 +5637,10 @@ mod tests {
     fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
         let (snapshot, state) = production_board();
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
-        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
         let mut planned = mirror.game.clone();
         assert!(
             !planned.cities[&cid].queue.is_empty(),
@@ -5251,6 +5682,42 @@ mod tests {
         assert!(
             !planned.cities[&cid].queue.is_empty(),
             "work in progress CIVVIS asked for must survive, or it re-chooses every turn"
+        );
+    }
+
+    #[test]
+    fn a_deferred_production_hint_preserves_a_slow_host_queue() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].production = 8.0;
+        state.cities[0].production_cost = 40.0;
+        state.cities[0].production_progress = 32.0;
+        state.cities[0].production_turns = 1.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        let mut ours = std::collections::BTreeMap::from([(
+            7_i64,
+            format!("{DEFERRED_PRODUCTION_PREFIX}UNIT_SETTLER"),
+        )]);
+
+        assert_eq!(settle_deferred_production_hints(&mut ours, &state), (0, 0));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "a near-finished old queue stays intact until its blocker consumes the lease"
+        );
+        assert!(!planned.cities[&cid].queue.is_empty());
+
+        state.cities[0].production_progress = 10.0;
+        state.cities[0].production_turns = 4.0;
+        assert_eq!(settle_deferred_production_hints(&mut ours, &state), (0, 1));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1,
+            "a stale lease is released once the host is no longer approaching its blocker"
         );
     }
 
@@ -6764,6 +7231,323 @@ mod tests {
     }
 
     #[test]
+    fn planner_sales_cross_as_sell_orders_with_a_floor() {
+        use civvis::game::DealItems;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 144,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 144,
+            rivals: vec![StateRival {
+                player: 4,
+                civ: "CIVILIZATION_PERSIA".to_string(),
+                leader: "LEADER_NADER_SHAH".to_string(),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        // The exact quote run civvis-20260818T083142Z dropped at t156: one
+        // surplus dyes copy for 84 gold and 1.1 a turn.
+        let mut offer = DealItems::default();
+        offer.resources.insert("dyes".to_string(), 1);
+        let request = DealItems {
+            gold: 84.0,
+            gold_per_turn: 1.1,
+            ..DealItems::default()
+        };
+        let sale = translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(offer),
+                request: Box::new(request),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a luxury sale to a mapped rival translates");
+        assert_eq!(sale.kind, "sell");
+        assert_eq!(sale.subject, Some(4));
+        assert_eq!(sale.verb.as_deref(), Some("RESOURCE_DYES=1"));
+        // Half of 84 + 25 × 1.1 = 55.75, rounded up.
+        assert_eq!(sale.pos, Some((56, 0)));
+
+        // A favor block and a strategic block ride the same verb, favor last,
+        // and a tiny ask still carries the minimum floor.
+        let mut mixed = DealItems::default();
+        mixed.resources.insert("iron".to_string(), 10);
+        mixed.resources.insert("dyes".to_string(), 1);
+        mixed.diplomatic_favor = 10.0;
+        let sale = translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(mixed),
+                request: Box::new(DealItems {
+                    gold: 18.0,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a mixed sale translates");
+        assert_eq!(
+            sale.verb.as_deref(),
+            Some("RESOURCE_DYES=1,RESOURCE_IRON=10,FAVOR=10")
+        );
+        assert_eq!(sale.pos, Some((SALE_FLOOR_MIN, 0)));
+
+        // An unmapped seat still crosses for the ledger, subject-less, like
+        // the delegation arm: the Lua side names it `sell_target_unmapped`.
+        let favor = DealItems {
+            diplomatic_favor: 10.0,
+            ..DealItems::default()
+        };
+        let unmapped = translate(
+            &Action::Trade {
+                player: 3,
+                offer: Box::new(favor),
+                request: Box::new(DealItems {
+                    gold: 30.0,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("an unmapped buyer still crosses");
+        assert_eq!(unmapped.subject, None);
+    }
+
+    #[test]
+    fn purchases_and_other_deal_shapes_stay_untranslated() {
+        use civvis::game::DealItems;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 84,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 84,
+            rivals: vec![StateRival {
+                player: 2,
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let trade = |offer: DealItems, request: DealItems| Action::Trade {
+            player: 1,
+            offer: Box::new(offer),
+            request: Box::new(request),
+        };
+
+        // Buying tea for gold (t84 of the same run) is not a sale.
+        let mut tea = DealItems::default();
+        tea.resources.insert("tea".to_string(), 1);
+        let purchase = trade(
+            DealItems {
+                gold: 75.0,
+                gold_per_turn: 1.4,
+                ..DealItems::default()
+            },
+            tea,
+        );
+        assert!(translate(&purchase, &mirror, &state).is_none());
+
+        // A Great Work sale is a different validation and stays skipped.
+        let mut work = DealItems::default();
+        work.great_works.insert("religious_art".to_string(), 1);
+        let art = trade(
+            work,
+            DealItems {
+                gold: 103.0,
+                gold_per_turn: 2.7,
+                ..DealItems::default()
+            },
+        );
+        assert!(translate(&art, &mirror, &state).is_none());
+
+        // A resource-for-resource swap asks for something other than gold.
+        let mut dyes = DealItems::default();
+        dyes.resources.insert("dyes".to_string(), 1);
+        let mut silk = DealItems::default();
+        silk.resources.insert("silk".to_string(), 1);
+        assert!(translate(&trade(dyes, silk), &mirror, &state).is_none());
+
+        // Open Borders for gold is an agreement, not a sale.
+        let borders = trade(
+            DealItems {
+                open_borders: true,
+                ..DealItems::default()
+            },
+            DealItems {
+                gold: 40.0,
+                ..DealItems::default()
+            },
+        );
+        assert!(translate(&borders, &mirror, &state).is_none());
+
+        // Nothing offered is nothing sold.
+        assert!(translate(
+            &trade(
+                DealItems::default(),
+                DealItems {
+                    gold: 40.0,
+                    ..DealItems::default()
+                }
+            ),
+            &mirror,
+            &state
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn idle_favor_sells_on_every_plan_but_diplomacy() {
+        // The bank the live seat actually holds: 300 favor at t141 with three
+        // met rivals — one rich, one richer but two points short of the
+        // twenty-point win, one at war with us.
+        let state = StateSnapshot {
+            turn: 141,
+            favor: Some(300.0),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    gold: 250.0,
+                    dvp: Some(3),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    gold: 1300.0,
+                    dvp: Some(17),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    gold: 900.0,
+                    dvp: Some(2),
+                    at_war: true,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let science = Some(("science", None));
+
+        let mut orders = Vec::new();
+        assert_eq!(append_favor_sale_order(science, &state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "sell");
+        // Not the richest (Persia at 17 DVP would spend it on the win), not
+        // the one at war: the rich rival at 3 DVP.
+        assert_eq!(orders[0].subject, Some(2));
+        // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
+        // floor of a gold a point.
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=150"));
+        assert_eq!(orders[0].pos, Some((150, 0)));
+
+        // A Diplomacy plan holds every point, whether the strategy or the
+        // assigned lane says so.
+        let mut held = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(Some(("diplomacy", None)), &state, &mut held),
+            Some("favor_hold:diplomacy_plan")
+        );
+        assert_eq!(
+            append_favor_sale_order(Some(("expansion", Some("diplomatic"))), &state, &mut held),
+            Some("favor_hold:diplomacy_plan")
+        );
+        assert_eq!(
+            append_favor_sale_order(None, &state, &mut held),
+            Some("favor_hold:no_plan")
+        );
+        assert!(held.is_empty());
+
+        // Off the cadence, nothing; inside the reserve, nothing.
+        let mut off_cadence = state.clone();
+        off_cadence.turn = 142;
+        assert_eq!(
+            append_favor_sale_order(science, &off_cadence, &mut held),
+            Some("favor_hold:cadence")
+        );
+        let mut small = state.clone();
+        small.favor = Some(139.0);
+        assert_eq!(
+            append_favor_sale_order(science, &small, &mut held),
+            Some("favor_hold:reserve")
+        );
+        // The last twenty above the reserve still sell, in a smaller block.
+        let mut tail = state.clone();
+        tail.favor = Some(140.0);
+        assert_eq!(append_favor_sale_order(science, &tail, &mut held), None);
+        assert_eq!(
+            held.pop().and_then(|order| order.verb),
+            Some("FAVOR=20".to_string())
+        );
+
+        // The planner's own favor quote this turn takes precedence.
+        let mut planned = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(
+            append_favor_sale_order(science, &state, &mut planned),
+            Some("favor_hold:planner_sale")
+        );
+        assert_eq!(planned.len(), 1);
+
+        // The planner's own ten-favor block is held on a Diplomacy plan and
+        // passes on any other; a resource sale is never touched.
+        let mut planner = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("FAVOR=10".to_string()),
+                pos: Some((10, 0)),
+            },
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_DYES=1".to_string()),
+                pos: Some((56, 0)),
+            },
+        ];
+        assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
+        assert_eq!(planner.len(), 2);
+        assert_eq!(
+            hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
+            1
+        );
+        assert_eq!(planner.len(), 1);
+        assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
+        assert_eq!(hold_planner_favor_sales(None, &mut planner), 0);
+
+        // Nobody eligible: every met rival at war or already near the win.
+        let mut nobody = state.clone();
+        nobody.rivals.remove(0);
+        assert_eq!(
+            append_favor_sale_order(science, &nobody, &mut held),
+            Some("favor_hold:no_buyer")
+        );
+        assert!(held.is_empty());
+    }
+
+    #[test]
     fn city_state_war_and_peace_orders_name_the_firaxis_seat() {
         // Live run civvis-20260816T070212Z reached this shape at t92: CIVVIS
         // chose a staged war on Nazca (host player 13), but translating only
@@ -7776,6 +8560,23 @@ mod civ6_name_audit {
     /// cannot see. `civ6_build_name` records why it is left untranslated and
     /// where the repair belongs. Listing it keeps that decision declared instead
     /// of indistinguishable from a name nobody has checked.
+    /// Promotions that belong to a unit Civilization VI does not have.
+    ///
+    /// The Nihang is CIVVIS content: `data/promotions.json` gives it its own
+    /// promotion class and the shipped ruleset has no row for any of them. They
+    /// can never reach the wire on a live seat — the mirror cannot build a unit
+    /// the host never fielded — so this is an absence, not an unfixed mapping.
+    /// Naming them keeps that judgement declared and re-checked on every run.
+    const CIVVIS_ONLY_PROMOTIONS: [&str; 7] = [
+        "PROMOTION_CHAKRAM",
+        "PROMOTION_DUMALLA",
+        "PROMOTION_JANGI_KARA",
+        "PROMOTION_JANGI_MOJEH",
+        "PROMOTION_SANJO",
+        "PROMOTION_TEGH",
+        "PROMOTION_TREHSOOL_MUKH",
+    ];
+
     const NO_CIV6_EQUIVALENT: [&str; 5] = [
         "IMPROVEMENT_NATIONAL_PARK",
         "IMPROVEMENT_ARCHAEOLOGICAL_DIG",
@@ -7852,6 +8653,7 @@ mod civ6_name_audit {
         let mut check = |kind: &'static str, name: &str, emitted: String| {
             if !shipped.contains(&emitted)
                 && !NO_CIV6_EQUIVALENT.contains(&emitted.as_str())
+                && !CIVVIS_ONLY_PROMOTIONS.contains(&emitted.as_str())
             {
                 missing.push((kind, name.to_string(), emitted));
             }
@@ -7911,6 +8713,26 @@ mod civ6_name_audit {
             if let Some(emitted) = civ6_live_build_name(&item, &board) {
                 check("building-repair", name.as_str(), emitted);
             }
+        }
+        // ★★★ AND PROMOTIONS, WHICH THIS AUDIT DID NOT COVER UNTIL A WHOLE
+        // FAMILY OF THEM WAS WRONG.
+        //
+        // The comment above says a name audit is only worth what it covers, and
+        // then the audit covered five families out of six. Every spy promotion
+        // went out as `PROMOTION_<NAME>` when the host ships
+        // `PROMOTION_SPY_<NAME>` — 259-341 refusals a game, the seat's largest
+        // refusal category, and a bridge-health drop from 96% to 87% that no
+        // test noticed. Both sources are driven here: the ruleset's own table
+        // and `Game::SPY_PROMOTIONS`, which is not in it.
+        for name in rules.promotions.keys() {
+            check(
+                "promotion",
+                name.as_str(),
+                civ6_unit_promotion_name(name.as_str()),
+            );
+        }
+        for name in civvis::game::Game::SPY_PROMOTIONS {
+            check("spy-promotion", name, civ6_unit_promotion_name(name));
         }
 
         assert!(

@@ -270,6 +270,16 @@ pub struct FeatureSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ResourceSpec {
     pub class: String,
+    /// The shipped `Resources.Frequency` land-placement weight. A zero means
+    /// this resource does not participate in the ordinary land lottery; some
+    /// resources are placed by a dedicated quota pass instead.
+    #[serde(default)]
+    pub frequency: u32,
+    /// The shipped `Resources.SeaFrequency` water-placement weight. Firaxis
+    /// keeps this separate from the land value: Fish (23) and Crabs (17) are
+    /// intentionally much more common than Pearls and Whales (1 each).
+    #[serde(default)]
+    pub sea_frequency: u32,
     /// Strategic and archaeological resources remain hidden until this node.
     #[serde(default)]
     pub tech: Option<Name>,
@@ -407,6 +417,11 @@ pub struct ImprovementSpec {
     pub requires_hills: bool,
     #[serde(default)]
     pub hills_or_resource: bool,
+    /// The plot may be Hills, or qualify through a valid resource or feature.
+    /// Gathering Storm's Mine permits its normal resource route and Volcanic
+    /// Soil as independent alternatives.
+    #[serde(default)]
+    pub hills_or_resource_or_feature: bool,
     /// The plot must be Hills unless it qualifies through a valid feature.
     /// Ethiopia's Rock-Hewn Church uses this for its Volcanic Soil route.
     #[serde(default)]
@@ -1086,8 +1101,13 @@ pub struct CivSpec {
     /// `city_production`, `city_gold`, `city_science`, `city_culture` and
     /// `city_faith` are flat yields every city of this civilization earns;
     /// `unit_production_pct`, `settler_production_pct`,
-    /// `building_production_pct`, `district_production_pct` and
-    /// `wonder_production_pct` speed what a city is building;
+    /// `building_production_pct`, `district_production_pct`,
+    /// `encampment_district_production_pct`, `holy_site_district_production_pct`,
+    /// `theater_square_district_production_pct`, `dam_district_production_pct`
+    /// and `wonder_production_pct` speed what a city is building;
+    /// `happy_science_pct`, `happy_production_pct`,
+    /// `happy_campus_scientist_gpp`, and `happy_industrial_engineer_gpp` are
+    /// Scotland's Happy-city effects, which double in Ecstatic cities;
     /// `combat_strength` and `unit_xp_pct` belong to its units;
     /// `free_trading_posts` and `own_trading_post_route_gold` are Rome's
     /// All Roads Lead to Rome — every city holds a Trading Post from founding
@@ -3172,30 +3192,18 @@ mod tests {
         // DOUBLED — a ratio checked across all 16 housing improvements before either
         // was touched, since matching the raw column would have doubled every one.
         //
-        // Moved again by the ELEVEN remaining `civ6_fidelity` divergences, nine of
-        // which are corrected here and each confirmed by querying the shipped
-        // database directly: `pike_and_shot` maintenance 3 -> 4;
-        // `eyjafjallajokull` adjacent food 2 -> 1; `chemamull`, `mission` and
-        // `stepwell` had feature lists the host does not give them at all;
-        // `chateau` carried an extra `volcanic_soil`; `colossal_head` and
-        // `terrace_farm` were MISSING the `volcanic_soil` the host does give
-        // them; `ice_hockey_rink` claimed a culture yield the host prices at
-        // zero.
+        // Moved again by the installed Gathering Storm load order: Pike and
+        // Shot maintenance is 3, Tagma costs 180 with 3 maintenance and upgrades
+        // directly to Tank, Prasat is Faith 4 with two Relic slots, Sukiennice
+        // is Gold 3, Tlachtli is Culture 1, Eyjafjallajökull gives adjacent Food
+        // 2, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
+        // resource, or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept
+        // Hills or Volcanic Soil. The historical XML snippets that suggested
+        // the opposite values are not the effective ruleset.
         //
-        // ⚠ `rock_hewn_church` is deliberately NOT corrected, and the suite is
-        // why. The audit wants `requires_hills`, since every host TERRAIN for it
-        // is a `*_HILLS` variant — but the host ALSO gives it the valid FEATURE
-        // `VOLCANIC_SOIL`, so it is buildable on flat volcanic soil. Setting the
-        // flag broke `rock_hewn_church_matches_firaxis_placement_yields_appeal_
-        // and_tourism`, which asserts exactly that placement. The audit's
-        // `requires_hills` expectation is a simplification that is wrong
-        // wherever a feature also qualifies.
-        //
-        // ⚠ `vampire_castle` is deliberately NOT corrected. The audit wants a
-        // terrain list on it, but CIVVIS marks it `unbuildable` and
-        // `scenario_only`, so a terrain list would be noise on an improvement
-        // that can never be built. The audit therefore stands at 2, not 0, on
-        // purpose.
+        // Rock-Hewn Church's Hills and Volcanic Soil alternatives are carried
+        // as one semantic field (`hills_or_feature`) in both the ruleset and
+        // the audit; it is neither a false Hills-only rule nor an audit waiver.
         //
         // `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
         // 31337 --jobs 1 --deployment-comparison` was BYTE-IDENTICAL with the
@@ -3293,9 +3301,23 @@ mod tests {
         // the model, for its last twenty turns — three Wonders under Divine
         // Inspiration. A real change for every simulated seat: the Prophet
         // has four more beliefs to choose from.
+        // Moved by Scottish Enlightenment's eight active Gathering Storm rows.
+        // CIVVIS had invented +1 Science and Production in every Scottish city;
+        // the shipped modifier data instead gives Happy cities +5% of each,
+        // doubling to +10% when Ecstatic, plus one Great Scientist point per
+        // active Campus and one Great Engineer point per active Industrial Zone
+        // (again doubled when Ecstatic). The named Ibn Khaldun Great Scientist
+        // action uses the same happiness-yield effect but remains deliberately
+        // outside the modeled-person roster, rather than being conflated with
+        // Scotland's civilization trait.
+        // ⚠ Nothing moved it on 2026-08-18. #2049 changed four Founder
+        // beliefs to the base game's forms and re-pinned this to
+        // `fnv1a64:2effccaa9b3512e3`; #2050 reverted the data and this went
+        // back to the value below unchanged, which is how the revert was
+        // verified rather than trusted. See `docs/FIDELITY.md`.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:0e2a4f8234db4bfa"
+            "fnv1a64:585ff2655ffd3a6d"
         );
     }
 
@@ -3862,7 +3884,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "cuirassier"),
+            ("tagma", "tank"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),
@@ -3941,13 +3963,13 @@ mod tests {
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
-        // 118 civic-unlocked cards plus the thirteen Dark Age cards
+        // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.
-        assert_eq!(rules.policies.len(), 131);
+        assert_eq!(rules.policies.len(), 129);
         assert_eq!(
             rules.policies.values().filter(|spec| spec.dark_age).count(),
-            13
+            11
         );
         assert_eq!(rules.governments.len(), 13);
 

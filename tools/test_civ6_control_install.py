@@ -479,6 +479,19 @@ class ProtectedInstallTest(unittest.TestCase):
         for reason in ("levy_target_unmapped", "levy_no_operation", "levy_refused_", "levy_unaffordable"):
             self.assertIn(reason, handler)
 
+    def test_envoy_spend_records_a_next_frame_host_reconciliation(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        begin = source.split("local function beginTurn", 1)[1].split(
+            "if cfg.EnvoyEnabled then", 1
+        )[0]
+        self.assertIn("local pending = envoyTally.pending", begin)
+        self.assertIn("fresh:GetTokensToGive()", begin)
+        self.assertIn('emit("envoy_reconcile"', begin)
+        self.assertIn("minimum_after", begin)
+        self.assertIn("envoyTally.pending = nil", begin)
+        spend = source.split('emit("envoy", {', 1)[1].split("if levied ~= nil", 1)[0]
+        self.assertIn("envoyTally.pending = { turn = turn", spend)
+
     def test_trade_route_exports_use_firaxis_own_origin_yield_sum(self) -> None:
         """Fogged destination districts must not make the mirror guess a route."""
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

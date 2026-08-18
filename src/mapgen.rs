@@ -1819,11 +1819,11 @@ fn tennis_ball_gap_tiles(wm: &WorldMap) -> usize {
 }
 
 fn tennis_ball_seam_point(longitude: f64) -> [f64; 3] {
-    let latitude = TENNIS_BALL_SEAM_AMPLITUDE * (2.0 * longitude).sin();
+    let latitude = TENNIS_BALL_SEAM_AMPLITUDE * trig::sin(2.0 * longitude);
     [
-        latitude.cos() * longitude.cos(),
-        latitude.cos() * longitude.sin(),
-        latitude.sin(),
+        trig::cos(latitude) * trig::cos(longitude),
+        trig::cos(latitude) * trig::sin(longitude),
+        trig::sin(latitude),
     ]
 }
 
@@ -1847,7 +1847,7 @@ fn tennis_ball_seam_proximity(point: [f64; 3], samples: usize) -> f64 {
 fn tennis_ball_seam_water(wm: &WorldMap) -> BTreeSet<Pos> {
     let arc = tile_arc(wm);
     let half_width = tennis_ball_gap_tiles(wm) as f64 * arc / 2.0;
-    let seam_cutoff = half_width.cos();
+    let seam_cutoff = trig::cos(half_width);
     let samples = (std::f64::consts::PI / arc)
         .ceil()
         .clamp(TENNIS_BALL_SEAM_MIN_SAMPLES as f64, TENNIS_BALL_SEAM_MAX_SAMPLES as f64)
@@ -1930,9 +1930,9 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
         // either side of the equator, depending on how big a tile is here.
         let latitude = side * (coast_stand_off - TENNIS_BALL_SEAM_AMPLITUDE);
         let target = [
-            latitude.cos() * longitude.cos(),
-            latitude.cos() * longitude.sin(),
-            latitude.sin(),
+            trig::cos(latitude) * trig::cos(longitude),
+            trig::cos(latitude) * trig::sin(longitude),
+            trig::sin(latitude),
         ];
         let pick = pool
             .iter()
@@ -1940,8 +1940,8 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
             .filter(|position| {
                 let direction = wm.direction(*position);
                 let seam = TENNIS_BALL_SEAM_AMPLITUDE
-                    * (2.0 * direction[1].atan2(direction[0])).sin();
-                side * (direction[2].asin() - seam) > 0.0
+                    * trig::sin(2.0 * trig::atan2(direction[1], direction[0]));
+                side * (trig::asin(direction[2]) - seam) > 0.0
             })
             .max_by(|first, second| {
                 dot(wm.direction(*first), target)
@@ -3921,8 +3921,8 @@ pub fn generate_with_script_and_leader_starts(
                 })
                 .map(|(name, _)| *name)
                 .collect();
-            if !valid.is_empty() {
-                let pick = valid[rng.below(valid.len())];
+            let water = rules.is_water(&wm.tiles[&pos]);
+            if let Some(pick) = weighted_resource_pick(rules, &valid, water, rng) {
                 wm.tiles.get_mut(&pos).unwrap().resource = Some(pick);
             }
         }
@@ -4497,6 +4497,48 @@ pub fn generate_with_script_and_leader_starts(
         }
     }
     (wm, spawns)
+}
+
+/// Draw one eligible resource using the game's separate land and sea weights.
+///
+/// A zero weight is not an equally likely entry: it means the ordinary map
+/// lottery does not place that resource. This keeps artifacts out of the early
+/// pass so their per-civilization quota owns them, and preserves the extreme
+/// Fish (23) / Whale (1) difference in the shipped sea table.
+fn weighted_resource_pick(
+    rules: &Rules,
+    candidates: &[Name],
+    water: bool,
+    rng: &mut Rng,
+) -> Option<Name> {
+    let total = candidates
+        .iter()
+        .map(|name| {
+            let spec = &rules.resources[name];
+            if water {
+                spec.sea_frequency as usize
+            } else {
+                spec.frequency as usize
+            }
+        })
+        .sum::<usize>();
+    if total == 0 {
+        return None;
+    }
+    let mut draw = rng.below(total);
+    for name in candidates {
+        let spec = &rules.resources[name];
+        let weight = if water {
+            spec.sea_frequency as usize
+        } else {
+            spec.frequency as usize
+        };
+        if draw < weight {
+            return Some(*name);
+        }
+        draw -= weight;
+    }
+    unreachable!("a positive resource-weight total must select a candidate")
 }
 
 /// Hexes the generator tries to keep between any two natural wonders, and the
@@ -7732,44 +7774,50 @@ mod river_tests {
     #[test]
     fn the_same_seed_generates_the_same_world_on_every_platform() {
         let rules = Rules::embedded();
-        let cases: [(u64, MapTopology, u64); 6] = [
-            (1013, GLOBE, 0x5882_57c1_2847_3376),
-            (1037, GLOBE, 0xea88_b67e_6785_f742),
-            (4242, GLOBE, 0xaffb_235c_3df8_79fe),
-            (31337, GLOBE, 0x1dec_b624_0de4_3098),
-            (777, FLAT, 0x8c54_302a_be4c_7bab),
-            (4242, FLAT, 0xf08d_d844_42a1_ec99),
+        // ⚠ THIS PINNED CONTINENTS AND NOTHING ELSE, AND THE DEFAULT SCRIPT IS
+        // `tennis_ball`. `MapScript::Continents` is one script out of several,
+        // so the gate that exists to stop a platform-trig call reaching mapgen
+        // could not see the one map most games are actually played on — and
+        // `tennis_ball_seam_point` was calling `f64::sin`/`cos`/`asin`/`atan2`
+        // directly. Two of six tennis-ball globe seeds changed when those were
+        // routed through `trig`, which is the same signature #1061 had: the
+        // native build and the wasm bundle were generating different worlds
+        // from the same seed, on the default script.
+        let cases: [(u64, MapTopology, MapScript, u64); 10] = [
+            (1013, GLOBE, MapScript::Continents, 0xea69_d8c9_78c9_37d5),
+            (1037, GLOBE, MapScript::Continents, 0x62af_c4f3_e3ca_e62d),
+            (4242, GLOBE, MapScript::Continents, 0x862d_3621_3709_9632),
+            (31337, GLOBE, MapScript::Continents, 0x67ca_377f_e3c0_a0c3),
+            (777, FLAT, MapScript::Continents, 0x74bb_31f1_8a07_85b5),
+            (4242, FLAT, MapScript::Continents, 0x1372_9640_e654_940f),
+            // The default script, on the topology the CLI also defaults to.
+            // Seeds 1013 and 31337 are the two that demonstrably moved when the
+            // seam geometry stopped calling the platform's trig.
+            (1013, GLOBE, MapScript::TeninsBall, 0xc602_acaf_77ab_c55d),
+            (31337, GLOBE, MapScript::TeninsBall, 0x5bfe_42ef_86d1_ad66),
+            (4242, GLOBE, MapScript::TeninsBall, 0x57cc_e70a_852f_ee4c),
+            (777, FLAT, MapScript::TeninsBall, 0xff78_2010_3972_2ed8),
         ];
         let actual: Vec<String> = cases
             .iter()
-            .map(|(seed, topology, _)| {
+            .map(|(seed, topology, script, _)| {
                 let mut rng = Rng::new(*seed);
                 let (world, spawns) = generate_with_script(
-                    &rules,
-                    74,
-                    46,
-                    6,
-                    9,
-                    4,
-                    3,
-                    MapScript::Continents,
-                    *topology,
-                    POLED,
-                    &mut rng,
+                    &rules, 74, 46, 6, 9, 4, 3, *script, *topology, POLED, &mut rng,
                 );
                 format!("{:016x}", world_digest(&world, &spawns))
             })
             .collect();
         let expected: Vec<String> = cases
             .iter()
-            .map(|(_, _, digest)| format!("{digest:016x}"))
+            .map(|(_, _, _, digest)| format!("{digest:016x}"))
             .collect();
         assert_eq!(
             actual, expected,
             "a seed no longer generates the world every platform agreed on \
              (seeds {:?}); if mapgen changed deliberately, pin the left column \
              — computed on one platform, verified by the rest",
-            cases.map(|(seed, ..)| seed)
+            cases.map(|(seed, _, script, _)| (seed, script))
         );
     }
 
@@ -10770,6 +10818,105 @@ mod river_tests {
                 );
             }
         }
+    }
+
+    /// `Resources.Frequency` and `SeaFrequency` are separate lotteries in the
+    /// shipped rules. Keeping the entire nonzero row set here makes adding a
+    /// data field without wiring its map-generation consumer fail loudly.
+    #[test]
+    fn resource_placement_frequencies_match_the_shipped_rules() {
+        let rules = Rules::embedded();
+        let actual: Vec<(&str, u32, u32)> = rules
+            .resources
+            .iter()
+            .filter(|(_, spec)| spec.frequency > 0 || spec.sea_frequency > 0)
+            .map(|(name, spec)| (name.as_str(), spec.frequency, spec.sea_frequency))
+            .collect();
+        let expected = vec![
+            ("aluminum", 7, 0),
+            ("amber", 2, 1),
+            ("bananas", 4, 0),
+            ("cattle", 6, 0),
+            ("citrus", 2, 0),
+            ("coal", 10, 0),
+            ("cocoa", 2, 0),
+            ("coffee", 2, 0),
+            ("copper", 4, 0),
+            ("cotton", 2, 0),
+            ("crabs", 0, 17),
+            ("deer", 4, 0),
+            ("diamonds", 2, 0),
+            ("dyes", 2, 0),
+            ("fish", 0, 23),
+            ("furs", 2, 0),
+            ("gypsum", 2, 0),
+            ("honey", 2, 0),
+            ("horses", 11, 0),
+            ("incense", 2, 0),
+            ("iron", 10, 0),
+            ("ivory", 2, 0),
+            ("jade", 2, 0),
+            ("maize", 6, 0),
+            ("marble", 2, 0),
+            ("mercury", 2, 0),
+            ("niter", 10, 0),
+            ("oil", 10, 8),
+            ("olives", 2, 0),
+            ("pearls", 0, 1),
+            ("rice", 6, 0),
+            ("salt", 2, 0),
+            ("sheep", 4, 0),
+            ("silk", 2, 0),
+            ("silver", 2, 0),
+            ("spices", 2, 0),
+            ("stone", 10, 0),
+            ("sugar", 2, 0),
+            ("tea", 2, 0),
+            ("tobacco", 2, 0),
+            ("truffles", 2, 0),
+            ("turtles", 0, 5),
+            ("uranium", 5, 0),
+            ("whales", 0, 1),
+            ("wheat", 10, 0),
+            ("wine", 2, 0),
+        ];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn resource_placement_draws_by_weight_and_skips_zero_weight_entries() {
+        let rules = Rules::embedded();
+        let mut rng = Rng::new(47);
+        let sea = [Name::new("fish"), Name::new("whales")];
+        let mut fish = 0;
+        let mut whales = 0;
+        for _ in 0..24_000 {
+            match weighted_resource_pick(&rules, &sea, true, &mut rng) {
+                Some(name) if name == "fish" => fish += 1,
+                Some(name) if name == "whales" => whales += 1,
+                other => panic!("unexpected sea choice {other:?}"),
+            }
+        }
+        assert!(fish > whales * 18, "Fish {fish}, Whales {whales}");
+
+        let land = [Name::new("stone"), Name::new("copper")];
+        let mut stone = 0;
+        let mut copper = 0;
+        for _ in 0..14_000 {
+            match weighted_resource_pick(&rules, &land, false, &mut rng) {
+                Some(name) if name == "stone" => stone += 1,
+                Some(name) if name == "copper" => copper += 1,
+                other => panic!("unexpected land choice {other:?}"),
+            }
+        }
+        assert!(stone > copper * 2, "Stone {stone}, Copper {copper}");
+
+        let artifacts = [Name::new("antiquity_site"), Name::new("shipwreck")];
+        assert_eq!(
+            weighted_resource_pick(&rules, &artifacts, false, &mut rng),
+            None,
+            "the ordinary lottery must leave artifacts to their quota pass"
+        );
     }
 
     #[test]

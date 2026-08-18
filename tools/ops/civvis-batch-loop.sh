@@ -75,18 +75,18 @@ set -u
 # launchd starts a job with a near-empty PATH, and `cargo` here is a rustup shim in
 # ~/.cargo/bin that is NOT on the login PATH at all (civvis-ship-needs-cargo-on-path).
 # A build that fails for that reason looks exactly like a build that fails on the code.
-export PATH=/Users/martin/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-REPO=/Users/martin/CIVVIS
-RUNNER=/Users/martin/civvis-batch-runner
-RUNS=/Users/martin/civvis-civ6-runs
+REPO=$HOME/CIVVIS
+RUNNER=$HOME/civvis-batch-runner
+RUNS=$HOME/civvis-civ6-runs
 LOG=$RUNS/batch-loop.log
 PROV=$RUNS/BATCH-PROVENANCE-runner.txt
-STATE=/Users/martin/.civvis-batch-loop.state
+STATE=$HOME/.civvis-batch-loop.state
 BUILDLOG=$RUNS/batch-loop-build.log
 # One driver, named. There is exactly ONE Civilization VI on this machine and a batch
 # takes it whole, so two drivers is not "slower", it is corrupt rows.
-LOCK=/Users/martin/.civvis-batch-loop.pid
+LOCK=$HOME/.civvis-batch-loop.pid
 
 # Attempts per batch. A batch is a COMPARISON pinned to one program, so this is also
 # how long the loop will decline to pick up a newer tip. Eight attempts is what the
@@ -97,6 +97,39 @@ ATTEMPTS=${CIVVIS_BATCH_ATTEMPTS:-8}
 # click has caused this exact symptom), and blaming the code for it would park the
 # loop on an old build for a host fault.
 NOGAME_LIMIT=${CIVVIS_NOGAME_LIMIT:-2}
+# The victory objective this loop plays for. It used to be the literal `civvis`
+# written into all three sites below, while the installed supervisor service
+# passed nothing at all and inherited `science` — two production loops running
+# two different experiments into one ladder. Neither value survived measurement:
+# `science` completes 0/16 at this profile and `civvis` is the untargeted agent.
+# Empty means "whatever the tree we are about to play declares", asked of that
+# tree rather than restated here — the same reason the genome probe below asks
+# the binary which strategy `auto` resolves to instead of ranking them again.
+# `victory_lane` resolves it once per pass, after the checkout, so a batch always
+# reports the lane the code it pinned would use.
+VICTORY=${CIVVIS_VICTORY:-}
+# The rung this loop plays for. It expressed NOTHING here and inherited
+# `civ6_civvis_climb.py`'s `DIFFICULTY_SETTLER`, silently — the same shape as
+# the victory lane before #1960, and now the same divergence: since #1969 the
+# installed supervisor selects its rung from the live ledger through
+# `civ6_ladder_policy.py`, so the two production loops would be climbing on two
+# different rules and only one of them would ever reach Chieftain.
+#
+# Empty means "whatever the policy says", asked of the tree about to be played,
+# exactly as the lane is. `CIVVIS_DIFFICULTY` pins one instead.
+DIFFICULTY_OVERRIDE=${CIVVIS_DIFFICULTY:-}
+ladder_rung() {
+  [[ -n $DIFFICULTY_OVERRIDE ]] && { print -r -- "$DIFFICULTY_OVERRIDE"; return 0 }
+  [[ -f $RUNNER/tools/civ6_ladder_policy.py ]] || return 0
+  ( cd $RUNNER && python3 tools/civ6_ladder_policy.py \
+      --runs $RUNS/control target ) 2>/dev/null
+}
+victory_lane() {
+  [[ -n $VICTORY ]] && { print -r -- "$VICTORY"; return 0 }
+  ( cd $RUNNER && python3 -c \
+      'import sys; sys.path.insert(0, "tools"); import civ6_play; print(civ6_play.DEFAULT_CIVVIS_VICTORY)' \
+  ) 2>/dev/null
+}
 # How long to wait before looking again. This is the width of the window in which
 # another driver can take the game between one batch ending and this loop noticing —
 # so it is a contention parameter, not a politeness one. Observed 2026-08-02: other
@@ -254,7 +287,7 @@ say "=== batch loop starting: attempts=$ATTEMPTS nogame_limit=$NOGAME_LIMIT pid=
 #
 # Checked once, at startup, and said loudly. It cannot be fixed from in here: TCC
 # grants need a person.
-APP_BUNDLE_PROBE="/Users/martin/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/.civvis-tcc-probe"
+APP_BUNDLE_PROBE="$HOME/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/.civvis-tcc-probe"
 if touch "$APP_BUNDLE_PROBE" 2>/dev/null; then
   rm -f "$APP_BUNDLE_PROBE"
   say "app-bundle write: OK — the mod can be synced at attempt start"
@@ -358,8 +391,27 @@ while true; do
   # Ask the binary itself which strategy `auto` resolves to, rather than reimplementing
   # the ranking here and risking a provenance file that disagrees with the run.
   probe_dir=$(mktemp -d /tmp/civvis-genome-probe.XXXXXX)
+  lane=$(victory_lane)
+  # An unresolved lane must not become a bare `--victory` with nothing after it.
+  # Skip the pass and say why: a checkout mid-swap fixes itself next time round,
+  # and a permanent breakage names itself in the log instead of running a batch
+  # under an objective nobody chose.
+  if [[ -z $lane ]]; then
+    say "cannot resolve the victory lane from $RUNNER; skipping this pass"
+    sleep $IDLE_S
+    continue
+  fi
+  rung=$(ladder_rung)
+  # Same rule as the lane, and the same reason: an unresolved rung must not
+  # become a bare `--difficulty`, and a batch run at a rung nobody chose is a
+  # row that cannot be compared with the supervisor's.
+  if [[ ! $rung =~ ^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$ ]]; then
+    say "ladder policy returned invalid difficulty '${rung:-<empty>}'; skipping this pass"
+    sleep $IDLE_S
+    continue
+  fi
   genome=$( ( cd $RUNNER && ./target/release/civvis_orders --mirror $probe_dir --turn 0 \
-              --victory civvis --strategy auto ) 2>&1 >/dev/null \
+              --victory $lane --strategy auto ) 2>&1 >/dev/null \
             | grep -m1 '"kind":"genome"' )
   rm -rf $probe_dir
   [[ -z $genome ]] && genome='{"kind":"genome","strategy":"UNKNOWN — the probe printed nothing"}'
@@ -379,7 +431,7 @@ while true; do
     # it is written by hand beside the command it claims to describe. It said
     # `--war-from-plan` for hours after the flag was removed below. If you change
     # the invocation, change this in the same edit.
-    print -r -- "  batch     --attempts $ATTEMPTS --victory civvis --strategy auto"
+    print -r -- "  batch     --attempts $ATTEMPTS --victory $lane --difficulty $rung --strategy auto"
     print -r -- "  log       $batchlog"
   } >> $PROV
 
@@ -433,7 +485,8 @@ while true; do
   # read a before/after difference as a code effect.
   ( cd $RUNNER && python3 -u tools/civ6_civvis_climb.py \
       --attempts $ATTEMPTS \
-      --victory civvis \
+      --victory $lane \
+      --difficulty $rung \
       --strategy auto \
       --logs $RUNS/control ) >> $batchlog 2>&1
   rc=$?

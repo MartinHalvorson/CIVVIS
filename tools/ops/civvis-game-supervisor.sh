@@ -39,14 +39,28 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
 STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
-# Attempts per cycle. 1 keeps the ambient loop's contract: every game plays
-# whatever origin/main is at launch and the brain live-upgrades mid-game. N>1
-# turns each cycle into a PINNED BATCH — the pull and build above the climb run
-# once, the climb pins the revision and freezes the decider, and one sha
-# accumulates N comparable ladder rows. Live score stdev is ~178 on a median
-# ~233, so n=1 per sha measures nothing; batches are how a rung's win rate is
-# ever established. The price is that a merge waits out the batch.
-ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-1}
+# Attempts per cycle. One game per source revision cannot establish
+# repeatability; the policy below advances only after a comparable trailing
+# batch. Three is the smallest useful default and can be raised or lowered for
+# an operator's host with CIVVIS_PLAY_ATTEMPTS.
+ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}
+# The live ladder policy is read-only and chooses the lowest rung that still
+# needs a first win or a repeatable trailing batch. CIVVIS_DIFFICULTY remains an
+# explicit emergency/operator override; absent that override, the selected rung
+# is always passed to civ6_civvis_climb rather than inherited from its default.
+RUNS_DIR=$HOME/civvis-civ6-runs/control
+EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
+# The victory objective. This service passed NOTHING here, and inheriting a
+# launcher default silently is how it spent 307 attempts aiming at Science —
+# the one lane `victory_eval` completes 0/16 at this exact profile, while the
+# hand-run batch loop was inheriting nothing and hard-coding `civvis`. The two
+# production loops were running two different experiments into one ledger.
+#
+# Empty still means "the default the tree declares", which is now stated once in
+# `civ6_play.DEFAULT_CIVVIS_VICTORY` with its evidence; the flag is passed only
+# when this knob is set, so the default has exactly one home and this file does
+# not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
+VICTORY=${CIVVIS_VICTORY:-}
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -112,10 +126,11 @@ trap 'exit 0' HUP INT TERM
 consecutive_failures=0
 
 # The harness publishes its exact PID before it starts interacting with Civ VI.
-# Never infer ownership from a global `pgrep`: other CIVVIS worktrees (or an
-# operator's separate run) can legitimately contain a civ6_play.py process.
-# An invalid or stale holder is deliberately *not* a reason to signal another
-# process; the outer loop waits for an unowned run to finish instead.
+# Never accept an untyped global `pgrep` result as ownership: other CIVVIS
+# worktrees (or an operator's separate run) can legitimately contain a
+# civ6_play.py process.  An invalid or stale holder is deliberately *not* a
+# reason to signal another process; the outer loop waits for an unowned run to
+# finish instead.
 owned_harness_pid() {
   local holder="$HOME/.civvis-civ6-game.lock/holder.json"
   local pid="" command=""
@@ -129,6 +144,30 @@ owned_harness_pid() {
   command=$(ps -p "$pid" -o command= 2>/dev/null)
   [[ "$command" == *"civ6_play.py"* ]] || return 1
   print -r -- "$pid"
+}
+
+# A `pgrep` candidate alone is not a harness.  In particular, a diagnostic
+# shell whose command text happens to mention civ6_play.py used to make the
+# supervisor wait an extra minute at a clean batch boundary.  `ps -o comm` is
+# truncated on macOS, so inspect lsof's first txt mapping instead: it is the
+# actual executable path and lets us distinguish a Python harness from a shell
+# that merely carries the filename as an argument.  We still leave a verified
+# unowned harness completely alone.
+unowned_harness_pid() {
+  local pid="" command="" executable=""
+  for pid in ${(f)"$(pgrep -f '[c]iv6_play.py' 2>/dev/null)"}; do
+    kill -0 "$pid" 2>/dev/null || continue
+    command=$(ps -p "$pid" -o command= 2>/dev/null)
+    [[ "$command" == *"civ6_play.py"* ]] || continue
+    executable=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+    case "$executable" in
+      */Python|*/python|*/python[0-9]*) ;;
+      *) continue ;;
+    esac
+    print -r -- "$pid"
+    return 0
+  done
+  return 1
 }
 
 # The live display is a shared machine-level resource, so its owner must be
@@ -169,8 +208,9 @@ while true; do
   while true; do
     OWNED_PID=$(owned_harness_pid || true)
     if [[ -z "$OWNED_PID" ]]; then
-      if pgrep -f '[c]iv6_play.py' >/dev/null 2>&1; then
-        say "an unowned civ6_play.py is present; leaving it alone and retrying in 60s"
+      UNOWNED_PID=$(unowned_harness_pid || true)
+      if [[ -n "$UNOWNED_PID" ]]; then
+        say "an unowned Civ VI harness is present (pid $UNOWNED_PID); leaving it alone and retrying in 60s"
         sleep 60
         continue
       fi
@@ -244,12 +284,55 @@ while true; do
   fi
   rm -f status.json                     # tools/follow.py dirties the tree
   if [[ "$PIN" == "head" ]]; then
-    git pull -q --ff-only origin main 2>/dev/null
+    # This tree normally has a detached HEAD.  `git pull` can leave that HEAD
+    # unchanged while its failure is hidden, so a batch appears healthy but
+    # keeps replaying an old decider.  Fetch and detach-checkout explicitly,
+    # then refuse the cycle unless the checkout reads back as exact main.
+    if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
+      say "could not fetch origin/main; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    if ! git checkout --quiet --detach origin/main >>"$SUP" 2>&1; then
+      say "could not checkout fetched origin/main; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
   fi
-  HEAD_SHA=$(git rev-parse --short HEAD)
+  HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
+  if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    say "could not resolve the batch checkout HEAD; refusing to run an unverified batch; retrying in 120s"
+    sleep 120
+    continue
+  fi
+  if [[ "$PIN" == "head" ]]; then
+    ORIGIN_MAIN_SHA=$(git rev-parse origin/main 2>/dev/null || true)
+    if [[ "$HEAD_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
+      say "checkout $HEAD_SHA does not equal fetched origin/main ${ORIGIN_MAIN_SHA:-<unresolved>}; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+  fi
+  HEAD_SHA=${HEAD_SHA:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
     sleep 120
+    continue
+  fi
+
+  DIFFICULTY=$EXPLICIT_DIFFICULTY
+  if [[ -z "$DIFFICULTY" ]]; then
+    if [[ ! -f "$REPO/tools/civ6_ladder_policy.py" ]]; then
+      say "ladder policy missing at $REPO/tools/civ6_ladder_policy.py; refusing an un-gated run"
+      sleep 300
+      continue
+    fi
+    DIFFICULTY=$(python3 "$REPO/tools/civ6_ladder_policy.py" \
+      --runs "$RUNS_DIR" target 2>>"$SUP") || DIFFICULTY=""
+  fi
+  if [[ ! "$DIFFICULTY" =~ ^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$ ]]; then
+    say "ladder policy returned invalid difficulty '${DIFFICULTY:-<empty>}'; refusing an ungated run"
+    sleep 300
     continue
   fi
 
@@ -290,7 +373,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA (log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -301,7 +384,9 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
-  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" --strategy "$STRATEGY" \
+  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
+      --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      ${VICTORY:+--victory "$VICTORY"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,

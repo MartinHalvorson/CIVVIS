@@ -390,7 +390,25 @@ def refuse_a_reference_from_another_ruleset(database: "Database", where: Path) -
     return 2
 
 
-def load_cache_database(path: Path) -> Database:
+def load_cache_database(path: Path, *, require_gathering_storm: bool = True) -> Database:
+    """The compiled cache, refused unless it is the ruleset CIVVIS models.
+
+    ★★★★★ THE CHECK IS IN THE DOOR AND NOT BESIDE IT, BECAUSE BESIDE IT WAS
+    WALKED PAST. `main` called `refuse_a_reference_from_another_ruleset` right
+    after loading and that was the whole protection: any other caller — a tool,
+    a test, an agent opening the same file with `sqlite3` in three lines —
+    inherited none of it. On 2026-08-18 that is exactly what happened. #2049
+    read the Founder-belief modifiers straight out of this cache, found the
+    domestic/foreign distinction the base game draws, and shipped it as a
+    fidelity fix. The cache held Vanilla. `Expansion2_RemoveData.xml` deletes
+    all four of those modifiers and Gathering Storm replaces them with the
+    per-city and per-follower forms `beliefs.json` already had, so the "fix"
+    replaced correct expansion values with base-game ones, moved the frozen
+    rating anchor and burned a ledger version. #2050 reverted it.
+
+    `require_gathering_storm=False` is for a caller that deliberately wants a
+    foreign ruleset — the tests do — and is the only way past this.
+    """
     database = Database()
     uri = f"file:{urllib.parse.quote(str(path))}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
@@ -421,6 +439,10 @@ def load_cache_database(path: Path) -> Database:
                 rows[key] = row
     finally:
         connection.close()
+    if require_gathering_storm:
+        code = refuse_a_reference_from_another_ruleset(database, path)
+        if code != 0:
+            raise SystemExit(code)
     return database
 
 
@@ -968,6 +990,8 @@ def project_resources(database: Database) -> dict[str, dict]:
         bases, flat_land, hills, _ = collapse_terrains(terrains.get(name, []))
         entry = {
             "class": RESOURCE_CLASSES.get(row.get("ResourceClassType"), "?"),
+            "frequency": number(row.get("Frequency")),
+            "sea_frequency": number(row.get("SeaFrequency")),
             "yields": yields.get(name, {}),
             "terrain": bases,
             # Some(true): hills-only spawns (Sheep); Some(false): flat-only
@@ -1023,18 +1047,31 @@ def project_improvements(database: Database) -> dict[str, dict]:
     for row in database.rows("Improvements"):
         name = slug(row["ImprovementType"], "IMPROVEMENT_")
         bases, flat_land, hills, mountain = collapse_terrains(terrains.get(name, []))
+        valid_features = features.get(name, set()) & civvis_features
+        hills_only = hills and not flat_land
+        has_resources = bool(resources.get(name))
+        has_features = bool(valid_features)
+        hills_or_resource_or_feature = (
+            hills_only and has_resources and has_features
+        )
+        hills_or_resource = hills_only and has_resources and not has_features
+        hills_or_feature = hills_only and has_features and not has_resources
         entry = {
             "yields": yields.get(name, {}),
             # The game column counts half-Housing steps: Farms carry 1 for
             # their +0.5, Seasteads 4 for their +2.
             "housing": number(row.get("Housing")),
             "terrain": bases,
-            "feature": features.get(name, set()) & civvis_features,
+            "feature": valid_features,
             "resources": resources.get(name, set()),
             "builder_buildable": name in builder_built,
             "requires_flat": flat_land and not hills and not mountain,
-            "requires_hills": hills and not flat_land and not resources.get(name),
-            "hills_or_resource": hills and not flat_land and bool(resources.get(name)),
+            "requires_hills": hills_only and not has_resources and not has_features,
+            "hills_or_resource": hills_or_resource,
+            # Valid resources and features are independent alternative hosts.
+            # Mine accepts Hills, its resource rows, or Volcanic Soil.
+            "hills_or_resource_or_feature": hills_or_resource_or_feature,
+            "hills_or_feature": hills_or_feature,
         }
         if row.get("PrereqTech"):
             entry["tech"] = slug(row["PrereqTech"], "TECH_")
@@ -2070,6 +2107,8 @@ def ours_resources() -> dict[str, dict]:
     for name, entry in load_ours("resources").items():
         row = {
             "class": entry.get("class", "bonus"),
+            "frequency": entry.get("frequency", 0),
+            "sea_frequency": entry.get("sea_frequency", 0),
             "yields": {k: v for k, v in entry.get("yields", {}).items() if v},
             "terrain": lakes_are_coast(set(entry.get("terrain", []))),
             "feature": set(entry.get("feature", [])),
@@ -2101,6 +2140,10 @@ def ours_improvements() -> dict[str, dict]:
             "requires_flat": entry.get("requires_flat", False),
             "requires_hills": entry.get("requires_hills", False),
             "hills_or_resource": entry.get("hills_or_resource", False),
+            "hills_or_resource_or_feature": entry.get(
+                "hills_or_resource_or_feature", False
+            ),
+            "hills_or_feature": entry.get("hills_or_feature", False),
         }
         for key in ("tech", "civic"):
             if entry.get(key):
@@ -2291,6 +2334,14 @@ def waived(table: str, entry: str, field: str) -> bool:
 # grant the game does not make, and is reported rather than skipped.
 STRICT_TABLES = {"ImprovementUpgrades"}
 
+# CIVVIS intentionally scopes many tables to the content it models, so an
+# unmatched row cannot be universally treated as a defect. Policies are
+# different: a CIVVIS-only card is a selectable rules change that Gathering
+# Storm does not offer. Treat its absence from the resolved source roster as a
+# divergence instead of merely printing an easy-to-miss count in the report.
+STRICT_ROW_TABLES = {"Policies"}
+ROW_PRESENCE_FIELD = "row"
+
 
 def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
     divergences = []
@@ -2337,11 +2388,25 @@ def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
                 waived_count += 1
             else:
                 divergences.append(divergence)
+    only_ours = sorted(set(ours) - set(theirs))
+    if table in STRICT_ROW_TABLES:
+        for name in only_ours:
+            divergence = {
+                "table": table,
+                "entry": name,
+                "field": ROW_PRESENCE_FIELD,
+                "ours": "present",
+                "theirs": "absent",
+            }
+            if waived(table, name, ROW_PRESENCE_FIELD):
+                waived_count += 1
+            else:
+                divergences.append(divergence)
     return {
         "table": table,
         "compared": len(set(ours) & set(theirs)),
         "waived": waived_count,
-        "only_ours": sorted(set(ours) - set(theirs)),
+        "only_ours": only_ours,
         "only_theirs": sorted(
             name for name in set(theirs) - set(ours) if not name.startswith(IGNORED_PREFIXES)
         ),
@@ -2425,9 +2490,10 @@ def main() -> int:
             )
             return 2
         install = cache
+        # The refusal is inside `load_cache_database` now, so this path gets it
+        # for free and so does every other caller. `SystemExit` carries the
+        # same exit code the explicit call used to return.
         database = load_cache_database(cache)
-        if (code := refuse_a_reference_from_another_ruleset(database, install)) != 0:
-            return code
     else:
         install = find_install(args.civ6)
         database = load_database(install)

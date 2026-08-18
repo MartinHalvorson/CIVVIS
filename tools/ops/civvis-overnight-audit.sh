@@ -8,10 +8,16 @@
 
 set -u
 
-BASE=/Users/martin
+BASE=$HOME
+SELF_DIR=${0:A:h}
 RUNS=$BASE/civvis-civ6-runs/control
 PLAY_LOGS=$BASE/civvis-climb-logs
 AUDIT_LOG=$BASE/civvis-civ6-runs/overnight_audit.log
+HOST_LAUNCHER=${CIVVIS_HOST_LAUNCHER:-$SELF_DIR/civvis-ladder-terminal-launcher.sh}
+MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-$SELF_DIR/civvis-mirror-keeper.sh}
+DISPLAY_KEEPER=${CIVVIS_DISPLAY_KEEPER:-$BASE/civvis-display-keeper.mjs}
+SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$BASE/.civvis-game-supervisor.lock}
+SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
 JQ=/opt/homebrew/bin/jq
 [[ -x "$JQ" ]] || JQ=$(command -v jq 2>/dev/null || true)
 EVENT_FRESH_S=${CIVVIS_OVERNIGHT_EVENT_FRESH_S:-180}
@@ -39,15 +45,36 @@ newest_events() {
 }
 
 start_host() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh /Users/martin/civvis-interactive-host.sh"' >/dev/null 2>&1
+  # Only the host needs Terminal's App Management grant. `-g -j` avoids
+  # stealing Civ VI's foreground or leaving a recovery window in the way.
+  /usr/bin/open -g -j -a Terminal "$HOST_LAUNCHER" >/dev/null 2>&1
 }
 
 start_mirror_keeper() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh /Users/martin/civvis-mirror-keeper.sh"' >/dev/null 2>&1
+  # The keeper may need to restore Chrome through AppleScript, so it needs
+  # Terminal's GUI grant. Keep that recovery hidden and out of Civ VI's
+  # foreground rather than opening an ordinary Terminal window.
+  /usr/bin/open -g -j -a Terminal "$MIRROR_KEEPER" >/dev/null 2>&1
 }
 
 start_display_keeper() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /opt/homebrew/bin/node /Users/martin/civvis-display-keeper.mjs"' >/dev/null 2>&1
+  # This Node keeper needs no Accessibility grant; detach it directly instead
+  # of creating another visible shell solely to hold it.
+  /usr/bin/nohup /opt/homebrew/bin/node "$DISPLAY_KEEPER" \
+      >>"$BASE/civvis-civ6-mirror/display-keeper.launch.log" 2>&1 &
+}
+
+live_supervisor_pid() {
+  local holder="" command=""
+  [[ -r "$SUPERVISOR_PID_FILE" ]] || return 1
+  holder=$(<"$SUPERVISOR_PID_FILE")
+  case "$holder" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$holder" 2>/dev/null || return 1
+  command=$(ps -p "$holder" -o command= 2>/dev/null)
+  [[ "$command" == *"civvis-game-supervisor.sh"* ]] || return 1
+  print -r -- "$holder"
 }
 
 frontmost_app() {
@@ -83,6 +110,13 @@ collect_mirror() {
   fi
 }
 
+mirror_needs_settle() {
+  # The backup keeper is deliberately absent while the primary follower is
+  # serving a healthy, painted mirror.  Wait only for a missing follower or an
+  # unhealthy mirror that may still be settling.
+  [[ -z "$follower_pid" ]] || (( ! mirror_healthy ))
+}
+
 display_page=0
 collect_display_page() {
   local pages
@@ -100,17 +134,23 @@ warnings=()
 actions=()
 
 host_pid=$(first_pid '[c]ivvis-interactive-host\.sh')
+supervisor_pid=$(live_supervisor_pid || true)
 host_state=up
 if [[ -z "$host_pid" ]]; then
-  if start_host; then
+  if [[ -n "$supervisor_pid" ]]; then
+    # A legacy launcher can own a healthy batch without an interactive host.
+    # Starting another host here used to create a competing supervisor every
+    # five seconds; the next true outage will reopen the single managed host.
+    host_state=supervisor-only
+  elif start_host; then
     actions+=(host_reopened)
     sleep 5
     host_pid=$(first_pid '[c]ivvis-interactive-host\.sh')
   fi
-  if [[ -z "$host_pid" ]]; then
+  if [[ -z "$host_pid" && "$host_state" != supervisor-only ]]; then
     host_state=absent
     warnings+=(host_absent)
-  else
+  elif [[ -n "$host_pid" ]]; then
     host_state=reopened
   fi
 fi
@@ -167,14 +207,19 @@ if (( live_events )) && [[ -z "$popup_pid" ]]; then
   warnings+=(fresh_events_without_popup_clear)
 fi
 
+collect_mirror
 mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
 follower_pid=$(first_pid '[t]ools/follow\.py')
-if (( live_events && tiles_exported )) && [[ -n "$host_pid" && -z "$mirror_keeper_pid" ]]; then
-  # The interactive host restarts children every five seconds. Give it one
-  # bounded chance before opening the exact missing helper.
+if (( live_events && tiles_exported && ! mirror_healthy )) \
+    && [[ -n "$host_pid" && -z "$mirror_keeper_pid" ]]; then
+  # A healthy mirror proves the live follower is already serving frames; a
+  # separate keeper is redundant. Only an actual mirror outage warrants the
+  # hidden GUI-capable recovery window below.
   sleep 8
   mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
-  if [[ -z "$mirror_keeper_pid" ]] && start_mirror_keeper; then
+  collect_mirror
+  if [[ -z "$mirror_keeper_pid" ]] && (( ! mirror_healthy )) \
+      && start_mirror_keeper; then
     actions+=(mirror_keeper_reopened)
     sleep 5
     mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
@@ -183,16 +228,18 @@ fi
 
 collect_mirror
 if (( live_events && tiles_exported )) \
-    && { [[ -z "$mirror_keeper_pid" || -z "$follower_pid" ]] || (( ! mirror_healthy )); }; then
+    && mirror_needs_settle; then
   sleep "$MIRROR_SETTLE_S"
   mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
   follower_pid=$(first_pid '[t]ools/follow\.py')
   collect_mirror
 fi
 if (( live_events && tiles_exported )); then
-  [[ -n "$mirror_keeper_pid" ]] || warnings+=(mirror_keeper_absent)
-  [[ -n "$follower_pid" ]] || warnings+=(follower_absent)
-  (( mirror_healthy )) || warnings+=(mirror_not_ready)
+  if (( ! mirror_healthy )); then
+    [[ -n "$mirror_keeper_pid" ]] || warnings+=(mirror_keeper_absent)
+    [[ -n "$follower_pid" ]] || warnings+=(follower_absent)
+    warnings+=(mirror_not_ready)
+  fi
 fi
 
 display_pid=$(first_pid '[c]ivvis-display-keeper\.mjs')

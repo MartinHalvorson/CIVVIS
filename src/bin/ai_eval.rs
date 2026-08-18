@@ -25,6 +25,38 @@ const MINOR_DEPENDENT_ARMS: [&str; 6] = [
     "advanced_policy_envoy_priority",
 ];
 
+/// Arms measured to complete so rarely at the deployment profile that a margin
+/// against them measures THEIR floor rather than the other arm's strength.
+///
+/// ⚠⚠ THIS IS A CONTROL PROBLEM, AND IT HAS ALREADY PRODUCED A NUMBER NOBODY
+/// SHOULD QUOTE. `victory_eval --players 6 --turns 250 --speed online`, 96
+/// games on two disjoint seed streams, completes:
+///
+///   diplomatic 14/16 · culture 12/16 · religious 8/16 · domination 2/16 ·
+///   **science 0/16**
+///
+/// Every named lane was then compared against `advanced_target_science` and all
+/// four beat it — diplomatic by +669 Elo, "CONFIRMED", 23-0-1. Promoted effects
+/// on this ledger run +30..+40, so a +669 is a broken incumbent rather than a
+/// discovery, and the demonstration is in the ledger too: diplomatic against
+/// religious, the fair fight between two lanes that BOTH finish, is 47.9%,
+/// −14 Elo, p=1.0000, inconclusive. If Diplomacy were strong it would beat
+/// Religion. It does not.
+///
+/// `EVAL_INTEGRITY.md` R1 names this family — "controls are not matched" — and
+/// the repository has repaired the genome-matching instance of it already. This
+/// is the same defect one level up: the control is the arm carrying less.
+///
+/// Listed rather than derived because "can this arm finish" is a measurement,
+/// not something the binary can compute at startup. Add an arm here when a
+/// screen shows it cannot complete at this shape, and cite the screen.
+const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
+    "advanced_target_science",
+    "completes 0/16 at the deployment profile (victory_eval, 96 games, two disjoint streams)",
+)];
+
+use civvis::rng::Rng;
+
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
@@ -34,6 +66,12 @@ const ANYTIME_TAIL_ALPHA: f64 = 0.025;
 /// `1 + lambda * (score - 0.5)` is nonnegative and has expectation at most one
 /// for the challenger-side test. Negating the bet tests the incumbent side.
 const BET_LAMBDAS: [f64; 10] = [0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 0.90, 1.15, 1.45, 1.80];
+/// Candidate means scanned when the betting test is inverted into an interval.
+/// The scan only has to isolate each endpoint's cell; bisection inside that
+/// cell supplies the precision the report prints.
+const INTERVAL_GRID: usize = 1_000;
+/// Bisection steps per endpoint, which take a 1/1000 cell below 1e-9.
+const INTERVAL_REFINEMENTS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PromotionVerdict {
@@ -47,8 +85,14 @@ enum PromotionVerdict {
 struct PairedInference {
     maps: usize,
     score: f64,
+    /// Anytime-valid betting interval. This is the gate's interval.
     low: f64,
     high: f64,
+    /// The maximum-variance Wilson interval this gate used to decide on, kept
+    /// so every historical run stays comparable and the width the old rule
+    /// charged is visible beside the width the evidence supports.
+    wilson_low: f64,
+    wilson_high: f64,
     elo: f64,
     elo_low: f64,
     elo_high: f64,
@@ -86,10 +130,77 @@ fn elo_edge(score: f64) -> f64 {
     400.0 * (bounded / (1.0 - bounded)).log10()
 }
 
-fn game_score(winner: Option<usize>, seats: &[&str], challenger: &str) -> f64 {
-    winner
-        .and_then(|pid| seats.get(pid))
-        .map_or(0.5, |name| if *name == challenger { 1.0 } else { 0.0 })
+/// Who sits in each chair for one game of a pair, and which chairs the verdict
+/// is computed from.
+///
+/// Fieldless — every recorded result in `docs/EVAL.md` — each chair alternates
+/// between the entrants and `swap` moves the challenger around the whole map,
+/// so start-position quality cancels across the pair. With a field the entrants
+/// hold seats 0 and 1 and still swap, which is the same balancing argument over
+/// two chairs instead of all of them, and the field cycles through the rest.
+///
+/// ⚠ The returned seat sets are the verdict's, not the telemetry's. Per-agent
+/// metrics stay keyed by name, because two chairs holding the same agent should
+/// pool their telemetry; the verdict must not, because a field agent is neither
+/// entrant and its victory belongs to neither of them.
+fn seat_plan<'a>(
+    players: usize,
+    swap: usize,
+    a: &'a str,
+    b: &'a str,
+    field: &[&'a str],
+) -> (Vec<&'a str>, BTreeSet<usize>, BTreeSet<usize>) {
+    let entrant = |pid: usize| if (pid + swap).is_multiple_of(2) { a } else { b };
+    let seats: Vec<&str> = (0..players)
+        .map(|pid| {
+            if field.is_empty() || pid < 2 {
+                entrant(pid)
+            } else {
+                field[(pid - 2) % field.len()]
+            }
+        })
+        .collect();
+    let entrant_seats: Vec<usize> = if field.is_empty() {
+        (0..players).collect()
+    } else {
+        (0..players.min(2)).collect()
+    };
+    let challenger_seats = entrant_seats
+        .iter()
+        .copied()
+        .filter(|pid| seats[*pid] == a)
+        .collect();
+    let incumbent_seats = entrant_seats
+        .iter()
+        .copied()
+        .filter(|pid| seats[*pid] == b)
+        .collect();
+    (seats, challenger_seats, incumbent_seats)
+}
+
+/// The pair's half-point for one game.
+///
+/// ⚠ Indexed by seat, not by name, because `--field` puts agents on the board
+/// that are neither entrant. Naming the winner was enough while every chair
+/// held `a` or `b`: anything that was not the challenger was the incumbent by
+/// construction. With a field it is not, and the name test would have scored a
+/// field seat's victory as a win *for the incumbent* — the one arrangement that
+/// could make a denial treatment look worse precisely when it worked.
+///
+/// A game won by neither entrant is a draw, exactly as a game nobody won
+/// already was: neither side achieved the objective. Fieldless, the two seat
+/// sets partition every chair, so this is identical to the name test it
+/// replaces.
+fn game_score(
+    winner: Option<usize>,
+    challenger_seats: &BTreeSet<usize>,
+    incumbent_seats: &BTreeSet<usize>,
+) -> f64 {
+    match winner {
+        Some(pid) if challenger_seats.contains(&pid) => 1.0,
+        Some(pid) if incumbent_seats.contains(&pid) => 0.0,
+        _ => 0.5,
+    }
 }
 
 /// Construct one evaluator seat through the same strict boundary that guards
@@ -110,13 +221,17 @@ fn evaluator_ai(
 /// Challenger share of terminal Civilization score across the evaluated
 /// seats. This is a bounded secondary development diagnostic, not a win and
 /// never an input to the promotion verdict.
-fn terminal_score_share(g: &Game, seats: &[&str], challenger: &str) -> f64 {
+fn terminal_score_share(
+    g: &Game,
+    challenger_seats: &BTreeSet<usize>,
+    incumbent_seats: &BTreeSet<usize>,
+) -> f64 {
     let mut challenger_score = 0_i64;
     let mut total_score = 0_i64;
-    for (pid, name) in seats.iter().enumerate() {
-        let score = g.score(pid).max(0);
+    for pid in challenger_seats.iter().chain(incumbent_seats.iter()) {
+        let score = g.score(*pid).max(0);
         total_score += score;
-        if *name == challenger {
+        if challenger_seats.contains(pid) {
             challenger_score += score;
         }
     }
@@ -138,6 +253,170 @@ fn log_mean_exp(values: &[f64]) -> f64 {
         - (values.len() as f64).ln()
 }
 
+/// Peak evidence, in each direction, from a mixture of betting martingales
+/// against the hypothesis that the true paired-map mean is `candidate`.
+///
+/// `BET_LAMBDAS` is declared against parity, where a map score's edge spans
+/// +/- 0.5 and the largest safe stake is 2. A candidate mean `m` moves that
+/// span to `[-m, 1 - m]`, so every stake is rescaled by `stake_cap(m) / 2`:
+/// the shipped grid is reproduced exactly at `m == 0.5`, and no factor can go
+/// nonpositive anywhere else.
+///
+/// One extra bet is **adaptive**: it stakes the growth-rate-optimal amount
+/// implied by the running mean and variance. Ville's inequality needs only
+/// that a stake be *predictable* — a function of the maps already seen — so
+/// this stays exactly as valid as the fixed grid while concentrating capital
+/// on the bet size the data actually supports. A uniform grid spends nine
+/// tenths of its wealth on stakes the run has already ruled out.
+struct BettingPeaks {
+    challenger_log_e: f64,
+    incumbent_log_e: f64,
+    challenger_crossed_at: Option<usize>,
+    incumbent_crossed_at: Option<usize>,
+}
+
+/// The largest stake that keeps `1 +/- lambda * (score - candidate)` positive
+/// for every score in [0, 1]. Two at parity, and never below one.
+fn stake_cap(candidate: f64) -> f64 {
+    1.0 / candidate.max(1.0 - candidate).max(f64::MIN_POSITIVE)
+}
+
+fn betting_peaks(scores: &[f64], candidate: f64, monitor_from: usize) -> BettingPeaks {
+    let cap = stake_cap(candidate);
+    let scale = cap / 2.0;
+    let mut challenger_log_wealth = [0.0; BET_LAMBDAS.len()];
+    let mut incumbent_log_wealth = [0.0; BET_LAMBDAS.len()];
+    let mut challenger_adaptive = 0.0_f64;
+    let mut incumbent_adaptive = 0.0_f64;
+    let mut challenger_peak = 0.0_f64;
+    let mut incumbent_peak = 0.0_f64;
+    let mut challenger_crossed_at = None;
+    let mut incumbent_crossed_at = None;
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    // Shrunk running moments, so the first map bets from parity rather than
+    // from a degenerate one-sample estimate.
+    let mut seen = 0.0_f64;
+    let mut sum = 0.0_f64;
+    let mut sum_squared_deviation = 0.0_f64;
+    let mut mixture = [0.0; BET_LAMBDAS.len() + 1];
+
+    for (index, raw_score) in scores.iter().enumerate() {
+        debug_assert!((0.0..=1.0).contains(raw_score));
+        let edge = raw_score.clamp(0.0, 1.0) - candidate;
+        for (bet, lambda) in BET_LAMBDAS.iter().enumerate() {
+            let stake = lambda * scale;
+            challenger_log_wealth[bet] += (1.0 + stake * edge).ln();
+            incumbent_log_wealth[bet] += (1.0 - stake * edge).ln();
+        }
+        // Predictable: every term below is fixed before this map is read.
+        let running_mean = (0.5 + sum) / (1.0 + seen);
+        let running_variance = (0.25 + sum_squared_deviation) / (1.0 + seen);
+        let drift = running_mean - candidate;
+        let optimal = drift / (running_variance + drift * drift);
+        let adaptive_cap = 0.9 * cap;
+        challenger_adaptive += (1.0 + optimal.clamp(0.0, adaptive_cap) * edge).ln();
+        incumbent_adaptive += (1.0 - (-optimal).clamp(0.0, adaptive_cap) * edge).ln();
+        seen += 1.0;
+        sum += raw_score;
+        let updated_mean = (0.5 + sum) / (1.0 + seen);
+        sum_squared_deviation += (raw_score - updated_mean).powi(2);
+
+        let maps = index + 1;
+        if maps < monitor_from {
+            continue;
+        }
+        mixture[..BET_LAMBDAS.len()].copy_from_slice(&challenger_log_wealth);
+        mixture[BET_LAMBDAS.len()] = challenger_adaptive;
+        let challenger_log_e = log_mean_exp(&mixture);
+        mixture[..BET_LAMBDAS.len()].copy_from_slice(&incumbent_log_wealth);
+        mixture[BET_LAMBDAS.len()] = incumbent_adaptive;
+        let incumbent_log_e = log_mean_exp(&mixture);
+        challenger_peak = challenger_peak.max(challenger_log_e);
+        incumbent_peak = incumbent_peak.max(incumbent_log_e);
+        if challenger_crossed_at.is_none() && challenger_log_e >= crossing_log_e {
+            challenger_crossed_at = Some(maps);
+        }
+        if incumbent_crossed_at.is_none() && incumbent_log_e >= crossing_log_e {
+            incumbent_crossed_at = Some(maps);
+        }
+    }
+
+    BettingPeaks {
+        challenger_log_e: challenger_peak,
+        incumbent_log_e: incumbent_peak,
+        challenger_crossed_at,
+        incumbent_crossed_at,
+    }
+}
+
+/// Invert the betting test into a confidence interval: keep every candidate
+/// mean the run's own evidence cannot reject at `ANYTIME_TAIL_ALPHA` per side.
+///
+/// This is the interval the promotion gate needs and Wilson cannot supply.
+/// Wilson charges a split map — the commonest outcome of a mirrored A/B, and
+/// the one carrying no direction at all — the full `p(1 - p)` variance of a
+/// coin flip. Real evaluator runs sit 3x to 6x under that, so the interval is
+/// roughly twice as wide as the evidence warrants and a genuine edge reads as
+/// inconclusive. A betting interval is finite-sample valid for *any* bounded
+/// observation, so it narrows on concentrated runs without ever assuming the
+/// dispersion it is measuring: it does not estimate a variance, it bets.
+///
+/// Monitoring begins at the same map the gate's evidence does, so at
+/// `PROMOTION_MIN_MAPS` or more the interval excludes parity on exactly the
+/// runs `anytime_evidence` calls decisive. Shorter runs are reported from
+/// their final prefix and remain `Insufficient`.
+fn betting_interval(scores: &[f64]) -> (f64, f64) {
+    if scores.is_empty() {
+        return (0.0, 1.0);
+    }
+    let monitor_from = PROMOTION_MIN_MAPS.min(scores.len());
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    let retained = |candidate: f64| {
+        let peaks = betting_peaks(scores, candidate, monitor_from);
+        peaks.challenger_log_e < crossing_log_e && peaks.incumbent_log_e < crossing_log_e
+    };
+    // The stake rescaling makes each side's evidence very nearly monotone in
+    // the candidate but not provably so, so isolate the endpoints by scan
+    // rather than by assuming one crossing, then bisect for precision.
+    let mut first = None;
+    let mut last = None;
+    for step in 0..=INTERVAL_GRID {
+        let candidate = step as f64 / INTERVAL_GRID as f64;
+        if retained(candidate) {
+            first.get_or_insert(step);
+            last = Some(step);
+        }
+    }
+    let (Some(first), Some(last)) = (first, last) else {
+        // Every candidate rejected: the run is its own best estimate.
+        let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+        return (mean, mean);
+    };
+    let cell = 1.0 / INTERVAL_GRID as f64;
+    let refine = |mut rejected: f64, mut kept: f64| {
+        for _ in 0..INTERVAL_REFINEMENTS {
+            let middle = 0.5 * (rejected + kept);
+            if retained(middle) {
+                kept = middle;
+            } else {
+                rejected = middle;
+            }
+        }
+        kept
+    };
+    let low = if first == 0 {
+        0.0
+    } else {
+        refine(first as f64 * cell - cell, first as f64 * cell)
+    };
+    let high = if last == INTERVAL_GRID {
+        1.0
+    } else {
+        refine(last as f64 * cell + cell, last as f64 * cell)
+    };
+    (low.clamp(0.0, 1.0), high.clamp(0.0, 1.0))
+}
+
 /// Anytime-valid evidence against parity from a finite mixture of betting
 /// martingales. The process starts with one unit of wealth; Ville's inequality
 /// makes `1 / peak wealth` a valid upper bound on the probability of ever
@@ -147,53 +426,34 @@ fn log_mean_exp(values: &[f64]) -> f64 {
 /// Monitoring begins only at `PROMOTION_MIN_MAPS`, so a lucky sub-minimum prefix
 /// cannot earn a permanent promotion before the representativeness floor.
 fn anytime_evidence(scores: &[f64]) -> AnytimeEvidence {
-    let mut challenger_log_wealth = [0.0; BET_LAMBDAS.len()];
-    let mut incumbent_log_wealth = [0.0; BET_LAMBDAS.len()];
-    let mut challenger_peak_log_e = 0.0_f64;
-    let mut incumbent_peak_log_e = 0.0_f64;
-    let mut challenger_crossed_at = None;
-    let mut incumbent_crossed_at = None;
-    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
-
-    for (index, raw_score) in scores.iter().enumerate() {
-        debug_assert!((0.0..=1.0).contains(raw_score));
-        let edge = raw_score.clamp(0.0, 1.0) - 0.5;
-        for (bet, lambda) in BET_LAMBDAS.iter().enumerate() {
-            challenger_log_wealth[bet] += (1.0 + lambda * edge).ln();
-            incumbent_log_wealth[bet] += (1.0 - lambda * edge).ln();
-        }
-        let maps = index + 1;
-        if maps < PROMOTION_MIN_MAPS {
-            continue;
-        }
-        let challenger_log_e = log_mean_exp(&challenger_log_wealth);
-        let incumbent_log_e = log_mean_exp(&incumbent_log_wealth);
-        challenger_peak_log_e = challenger_peak_log_e.max(challenger_log_e);
-        incumbent_peak_log_e = incumbent_peak_log_e.max(incumbent_log_e);
-        if challenger_crossed_at.is_none() && challenger_log_e >= crossing_log_e {
-            challenger_crossed_at = Some(maps);
-        }
-        if incumbent_crossed_at.is_none() && incumbent_log_e >= crossing_log_e {
-            incumbent_crossed_at = Some(maps);
-        }
-    }
-
+    let peaks = betting_peaks(scores, 0.5, PROMOTION_MIN_MAPS);
     AnytimeEvidence {
-        challenger_peak_e: challenger_peak_log_e.min(f64::MAX.ln()).exp(),
-        incumbent_peak_e: incumbent_peak_log_e.min(f64::MAX.ln()).exp(),
-        challenger_p: (-challenger_peak_log_e).exp().min(1.0),
-        incumbent_p: (-incumbent_peak_log_e).exp().min(1.0),
-        challenger_crossed_at,
-        incumbent_crossed_at,
+        challenger_peak_e: peaks.challenger_log_e.min(f64::MAX.ln()).exp(),
+        incumbent_peak_e: peaks.incumbent_log_e.min(f64::MAX.ln()).exp(),
+        challenger_p: (-peaks.challenger_log_e).exp().min(1.0),
+        incumbent_p: (-peaks.incumbent_log_e).exp().min(1.0),
+        challenger_crossed_at: peaks.challenger_crossed_at,
+        incumbent_crossed_at: peaks.incumbent_crossed_at,
     }
 }
 
-/// A conservative Wilson score interval with one observation per mirrored map.
+/// Paired-map inference: the score, both intervals, and the promotion verdict.
 ///
 /// Pair scores can be fractional because a split scores 0.5 and a game without
-/// a winner is a draw. Treating each bounded map score as one Bernoulli-equivalent
-/// observation uses the maximum variance for that mean, so the swapped games are
-/// never falsely counted as independent evidence.
+/// a winner is a draw. One mirrored map is one observation, so the swapped
+/// games are never falsely counted as independent evidence.
+///
+/// ⚠ The interval that *decides* is `betting_interval`, not Wilson. Wilson
+/// treats each map score as Bernoulli and so charges it the maximum variance
+/// `p(1 - p)` for its mean. That is the right bound for a coin flip and the
+/// wrong one for this design: a mirrored A/B between close agents splits most
+/// of its maps, and a split is exactly the observation that carries no
+/// dispersion at all. Measured on the runs this repository has actually
+/// recorded, the empirical variance is 3.3x to 5.6x under the Bernoulli
+/// bound, so the old interval ran about twice as wide as the evidence
+/// warranted and rejected real edges as inconclusive. The betting interval is
+/// finite-sample valid for any bounded observation and adapts to the
+/// dispersion instead of assuming the worst of it. Both are reported.
 fn paired_inference(scores: &[f64]) -> PairedInference {
     let maps = scores.len();
     let anytime = anytime_evidence(scores);
@@ -203,6 +463,8 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
             score: 0.5,
             low: 0.0,
             high: 1.0,
+            wilson_low: 0.0,
+            wilson_high: 1.0,
             elo: 0.0,
             elo_low: elo_edge(0.0),
             elo_high: elo_edge(1.0),
@@ -217,8 +479,9 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
     let denominator = 1.0 + z2 / n;
     let center = (score + z2 / (2.0 * n)) / denominator;
     let radius = Z_95 * ((score * (1.0 - score) / n + z2 / (4.0 * n * n)).sqrt()) / denominator;
-    let low = (center - radius).clamp(0.0, 1.0);
-    let high = (center + radius).clamp(0.0, 1.0);
+    let wilson_low = (center - radius).clamp(0.0, 1.0);
+    let wilson_high = (center + radius).clamp(0.0, 1.0);
+    let (low, high) = betting_interval(scores);
     let challenger_evidence = anytime.challenger_p <= ANYTIME_TAIL_ALPHA;
     let incumbent_evidence = anytime.incumbent_p <= ANYTIME_TAIL_ALPHA;
     let verdict = if maps < PROMOTION_MIN_MAPS {
@@ -240,11 +503,131 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
         score,
         low,
         high,
+        wilson_low,
+        wilson_high,
         elo: elo_edge(score),
         elo_low: elo_edge(low),
         elo_high: elo_edge(high),
         anytime,
         verdict,
+    }
+}
+
+/// Trials per candidate edge when measuring what this run could have resolved.
+/// Fixed so two readings of the same run agree. The measurement is a property
+/// of the map count and break rate, not of when it was asked.
+const RESOLUTION_SEED: u64 = 20_260_818;
+const RESOLUTION_TRIALS: usize = 400;
+/// The power a reported edge is quoted at.
+const RESOLUTION_POWER: f64 = 0.80;
+/// Bisection steps over the candidate edge. Twelve takes a [0.5, 1.0] bracket
+/// below 0.0002 of paired-map score, far finer than the Elo it is printed as.
+const RESOLUTION_STEPS: usize = 12;
+
+/// Whether the gate would promote this score vector, without building the
+/// interval.
+///
+/// `paired_inference` inverts the betting test over a grid of candidate means
+/// to report an interval, which costs a thousand times what the verdict does.
+/// The power search below asks only for the verdict, hundreds of thousands of
+/// times, so it asks this instead. The two agree by construction — the
+/// interval's `low > 0.5` is the same statement as the challenger direction
+/// rejecting parity — and
+/// `the_fast_verdict_agrees_with_the_full_one` holds them to it.
+fn gate_would_promote(scores: &[f64]) -> bool {
+    if scores.len() < PROMOTION_MIN_MAPS {
+        return false;
+    }
+    let peaks = betting_peaks(scores, 0.5, PROMOTION_MIN_MAPS);
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    let challenger = peaks.challenger_log_e >= crossing_log_e;
+    let incumbent = peaks.incumbent_log_e >= crossing_log_e;
+    challenger && !incumbent
+}
+
+/// ★★★★★ THE SMALLEST TRUE EDGE THIS RUN COULD HAVE RESOLVED.
+///
+/// `INCONCLUSIVE` is two completely different statements wearing one word:
+/// "the arms are close" and "this run was too short to tell". Only the map
+/// count and the break rate separate them, and a reader has neither to hand.
+/// Left unsaid, the second reads as the first, and a real effect gets filed as
+/// a null — which is exactly what this repository's log shows happening to
+/// point estimates of +44 to +100 Elo-equivalent.
+///
+/// So the run says it. Simulate the *whole* gate — both conjuncts, the
+/// `PROMOTION_MIN_MAPS` floor, the nonstationarity veto — on synthetic runs of
+/// this length whose maps break at the rate this one did, and bisect for the
+/// smallest edge it would have promoted `RESOLUTION_POWER` of the time.
+///
+/// ⚠ The break rate is taken from the observed run, which is the only estimate
+/// available and is itself noisy on a short run. This is a scale, not a
+/// certificate: it is meant to stop `INCONCLUSIVE` being read as `no effect`,
+/// not to price the next experiment to the Elo.
+fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
+    if maps < PROMOTION_MIN_MAPS || !(0.0..=1.0).contains(&break_rate) || break_rate <= 0.0 {
+        return None;
+    }
+    let mut rng = Rng::new(seed);
+    let power_at = |rng: &mut Rng, score: f64| -> f64 {
+        // A map breaks with probability `break_rate`; when it does the
+        // challenger takes it with whatever probability puts the mean at
+        // `score`. An unbroken map contributes exactly 0.5, as it does live.
+        let win_given_break = 0.5 + (score - 0.5) / break_rate;
+        if !(0.0..=1.0).contains(&win_given_break) {
+            return if score > 0.5 { 1.0 } else { 0.0 };
+        }
+        let mut promoted = 0usize;
+        for _ in 0..RESOLUTION_TRIALS {
+            let scores: Vec<f64> = (0..maps)
+                .map(|_| {
+                    if rng.f64() < break_rate {
+                        f64::from(rng.f64() < win_given_break)
+                    } else {
+                        0.5
+                    }
+                })
+                .collect();
+            promoted += usize::from(gate_would_promote(&scores));
+        }
+        promoted as f64 / RESOLUTION_TRIALS as f64
+    };
+    // The gate cannot promote a score the break rate cannot reach.
+    let mut low = 0.5;
+    let mut high = 0.5 + 0.5 * break_rate;
+    if power_at(&mut rng, high) < RESOLUTION_POWER {
+        return None;
+    }
+    for _ in 0..RESOLUTION_STEPS {
+        let middle = 0.5 * (low + high);
+        if power_at(&mut rng, middle) >= RESOLUTION_POWER {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some(elo_edge(high))
+}
+
+/// One line telling the reader which of the two `INCONCLUSIVE`s this is.
+fn resolution_note(maps: usize, resolved: usize, seed: u64) -> String {
+    if maps == 0 {
+        return String::new();
+    }
+    let break_rate = resolved as f64 / maps as f64;
+    match resolvable_edge(maps, break_rate, seed) {
+        Some(edge) => format!(
+            "resolution: {maps} maps, {:.0}% of them breaking — this gate promotes a true edge of \
+             about {edge:+.0} Elo-equivalent {:.0}% of the time, and anything smaller reads as \
+             INCONCLUSIVE here whether or not it is real",
+            100.0 * break_rate,
+            100.0 * RESOLUTION_POWER,
+        ),
+        None => format!(
+            "resolution: {maps} maps, {:.0}% of them breaking — too few for this gate to promote \
+             any edge {:.0}% of the time; INCONCLUSIVE here carries no evidence either way",
+            100.0 * break_rate,
+            100.0 * RESOLUTION_POWER,
+        ),
     }
 }
 
@@ -370,6 +753,15 @@ struct PlanTrace {
     /// Villages standing on the whole board at first observation — the
     /// denominator that turns final claims into a contested share.
     board_villages: Option<usize>,
+    /// Barbarian camps standing within six tiles of one of the seat's own
+    /// cities the first time the seat is observed at or past the middle
+    /// exploration mark; `None` when the game ended first. Six tiles is the
+    /// engine's own near-a-city radius for the camp-destroyed moment.
+    camps_near_home_by_mark: Option<usize>,
+    /// Cities the seat holds the first time it is observed at or past t60 —
+    /// the opening-tempo correlate the live ladder records as
+    /// `cities_at_60`; `None` when the game ended first.
+    cities_at_t60: Option<usize>,
 }
 
 /// Turns at which each seat's explored-plot count is sampled. These match the
@@ -495,6 +887,25 @@ impl PlanTrace {
                     .copied()
                     .unwrap_or(0),
             );
+        }
+        // Early-game barbarian exposure: how many camps stand beside this
+        // seat's cities when the opening is over. Sampled, because by the
+        // final position the world era has moved and camps have churned.
+        if g.turn >= EXPLORATION_MARKS[1] && self.camps_near_home_by_mark.is_none() {
+            let homes: Vec<_> = g
+                .player_city_ids(pid)
+                .iter()
+                .map(|cid| g.cities[cid].pos)
+                .collect();
+            self.camps_near_home_by_mark = Some(
+                g.barb_camps
+                    .keys()
+                    .filter(|camp| homes.iter().any(|home| g.wdist(**camp, *home) <= 6))
+                    .count(),
+            );
+        }
+        if g.turn >= 60 && self.cities_at_t60.is_none() {
+            self.cities_at_t60 = Some(g.player_city_ids(pid).len());
         }
         let recon_now = g
             .units
@@ -712,6 +1123,18 @@ struct Metrics {
     majors_met_by_t50: f64,
     first_major_meet_turn_sum: f64,
     first_major_meet_seats: usize,
+    /// Barbarian ledger, both sides: what the seat took from the barbarians
+    /// and what the barbarians took from it, plus the camp exposure that
+    /// frames those numbers.
+    camps_cleared: f64,
+    barbs_killed: f64,
+    lost_to_barbarians: f64,
+    civilians_lost_to_barbarians: f64,
+    camps_near_home: f64,
+    camps_near_home_seats: usize,
+    camps_standing: f64,
+    cities_at_t60: f64,
+    cities_at_t60_seats: usize,
 }
 
 impl Metrics {
@@ -868,6 +1291,19 @@ impl Metrics {
         let counter = |name: &str| g.players[pid].counters.get(name).copied().unwrap_or(0) as f64;
         self.goody_huts_claimed += counter("goody_huts_claimed");
         self.meteor_goodies_claimed += counter("meteor_goodies_claimed");
+        self.camps_cleared += counter("camps");
+        self.barbs_killed += counter("barbs_killed");
+        self.lost_to_barbarians += counter("lost_to_barbarians");
+        self.civilians_lost_to_barbarians += counter("civilians_lost_to_barbarians");
+        if let Some(camps) = trace.camps_near_home_by_mark {
+            self.camps_near_home += camps as f64;
+            self.camps_near_home_seats += 1;
+        }
+        self.camps_standing += g.barb_camps.len() as f64;
+        if let Some(cities) = trace.cities_at_t60 {
+            self.cities_at_t60 += cities as f64;
+            self.cities_at_t60_seats += 1;
+        }
         self.era_score += g.players[pid].era_score as f64;
         self.natural_wonders_discovered += g.players[pid].discovered_natural_wonders.len() as f64;
         if let Some(early) = trace.villages_by_mark {
@@ -1061,6 +1497,23 @@ struct MatrixProfile {
     /// ~23% higher decisive-map rate measured in `docs/EVAL.md` (2026-08-11,
     /// the gate's three-victory entry).
     victories: &'static str,
+    /// The agents seated in the chairs the two entrants do not take, as
+    /// `--field` takes them; empty for a profile where every chair is an
+    /// entrant.
+    ///
+    /// ★★★★★ THIS IS WHY THE MATRIX WAS BLIND TO TWO THIRDS OF WHAT KILLS US.
+    /// Both fieldless profiles seat `AdvancedAi` variants in every chair,
+    /// `AdvancedAi` routes to religion, and the deployment profile was measured
+    /// on 2026-08-18 producing **religious and score and zero diplomatic, zero
+    /// culture over 40 games** — twice, on two disjoint seed streams. The live
+    /// Civilization VI ladder over the same period lost **41 games to a rival's
+    /// diplomatic victory and 24 to culture**: 65 of 310 attempts, ended by two
+    /// conditions no promotion decision in this repository's history could see.
+    field: &'static str,
+    /// Relative cost of one game on this profile, used only to split the
+    /// concurrency budget. The deployment shape measures about twice the
+    /// compact one.
+    cost_weight: usize,
     requirement: MatrixRequirement,
 }
 
@@ -1090,7 +1543,7 @@ enum MatrixVerdict {
     Insufficient,
 }
 
-const PROMOTION_PROFILES: [MatrixProfile; 2] = [
+const PROMOTION_PROFILES: [MatrixProfile; 3] = [
     MatrixProfile {
         name: "compact-standard",
         players: 4,
@@ -1100,6 +1553,8 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         turns: 500,
         speed: "standard",
         victories: "science,culture,domination",
+        field: "",
+        cost_weight: 1,
         requirement: MatrixRequirement::NoRegression,
     },
     MatrixProfile {
@@ -1115,7 +1570,42 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         // attaches to the game the exhibition and the live bridge actually
         // play).
         victories: "science,culture,religious,diplomatic,domination,score",
+        field: "",
+        cost_weight: 2,
         requirement: MatrixRequirement::Strength,
+    },
+    // ★★★★★ THE BOARD THE FRONT LINE ACTUALLY PLAYS ON.
+    //
+    // Same shape as `deployment-online`, and the only difference is who else is
+    // in the game: the chairs the entrants do not take are seated with agents
+    // that pursue the two lanes Firaxis' AI pursues. Fieldless that shape
+    // produces diplomatic 0 and culture 0 of 40; with this field it produces
+    // culture 11 and diplomatic 6 of 40 (seed 32000000, `docs/eval/`).
+    //
+    // ⚠ **`NoRegression`, deliberately, and this is the whole of the policy
+    // choice.** A third `Strength` bar would make every future treatment clear
+    // a profile it was never designed for, and this repository has no evidence
+    // that would be a good trade. A tripwire adds what is missing without
+    // adding a hurdle: a treatment that measurably *harms* the contested board
+    // is refused, and one that is merely inconclusive there passes as before.
+    // Raising it to `Strength` is a separate decision needing its own evidence.
+    //
+    // ⚠ Its numbers are not comparable to `deployment-online`'s. Two entrants
+    // hold two chairs here instead of six, so a game is one contest rather than
+    // three and a fixed pair count carries less information. Read the two
+    // profiles as different questions, never as a replication.
+    MatrixProfile {
+        name: "deployment-contested",
+        players: 6,
+        width: 74,
+        height: 46,
+        city_states: 9,
+        turns: 250,
+        speed: "online",
+        victories: "science,culture,religious,diplomatic,domination,score",
+        field: "live_target_diplomatic,live_target_culture",
+        cost_weight: 2,
+        requirement: MatrixRequirement::NoRegression,
     },
 ];
 
@@ -1180,6 +1670,14 @@ fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
     ]
     .into_iter()
     .collect();
+    // The command line may not pass `--field` alongside `--matrix` — the
+    // matrix owns its profiles — but the matrix supplies it to the child that
+    // declares one. The child is a plain `ai_eval` invocation with no
+    // `--matrix`, so nothing here is bypassing that refusal.
+    if !profile.field.is_empty() {
+        args.push("--field".to_string());
+        args.push(profile.field.to_string());
+    }
     if require_artifacts {
         args.push("--require-artifacts".to_string());
     }
@@ -1267,17 +1765,47 @@ fn matrix_profile_accepts(requirement: MatrixRequirement, verdict: MatrixVerdict
 /// compact idle while deployment determines wall time; integer division also
 /// discarded every odd remainder. Keep every requested worker and give the
 /// heavier profile about two thirds, while retaining at least one per profile.
-fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
-    if total_jobs < PROMOTION_PROFILES.len() {
+fn matrix_job_budgets(total_jobs: usize) -> Vec<usize> {
+    let weights: Vec<usize> = PROMOTION_PROFILES
+        .iter()
+        .map(|profile| profile.cost_weight.max(1))
+        .collect();
+    if total_jobs < weights.len() {
         // These run sequentially, so each child can use the sole worker.
-        return [1, 1];
+        return vec![1; weights.len()];
     }
-    let compact = total_jobs.div_ceil(3).max(1);
-    [compact, total_jobs - compact]
+    let total_weight: usize = weights.iter().sum();
+    let mut budgets: Vec<usize> = weights
+        .iter()
+        .map(|weight| (total_jobs * weight / total_weight).max(1))
+        .collect();
+    // Keep every requested worker, and never hand one to a profile that has
+    // none: the integer division discards remainders and the floor above can
+    // overshoot when the budget is barely larger than the profile count.
+    let heaviest_first = |budgets: &[usize]| -> Vec<usize> {
+        let mut order: Vec<usize> = (0..weights.len()).collect();
+        order.sort_by_key(|index| (std::cmp::Reverse(weights[*index]), budgets[*index], *index));
+        order
+    };
+    while budgets.iter().sum::<usize>() < total_jobs {
+        let index = heaviest_first(&budgets)[0];
+        budgets[index] += 1;
+    }
+    while budgets.iter().sum::<usize>() > total_jobs {
+        let Some(index) = heaviest_first(&budgets)
+            .into_iter()
+            .rev()
+            .find(|index| budgets[*index] > 1)
+        else {
+            break;
+        };
+        budgets[index] -= 1;
+    }
+    budgets
 }
 
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
-    const PROFILE_FLAGS: [&str; 11] = [
+    const PROFILE_FLAGS: [&str; 12] = [
         "--players",
         "--width",
         "--height",
@@ -1289,6 +1817,11 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
         "--poles",
         "--victories",
         "--randomize-civs",
+        // Who else is on the board is a profile axis, and the strongest one:
+        // it decides which victory conditions the run can produce at all. The
+        // matrix's two recorded profiles are fieldless and every promotion
+        // number in `docs/EVAL.md` was taken that way.
+        "--field",
     ];
     if let Some(flag) = PROFILE_FLAGS
         .into_iter()
@@ -1368,6 +1901,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 .map(|(index, profile)| {
                     let executable = executable.clone();
                     let difficulty = difficulty.clone();
+                    let jobs = job_budgets[index];
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let profile_confirm_seed =
@@ -1376,7 +1910,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             challenger,
                             incumbent,
                             pairs,
-                            jobs: job_budgets[index],
+                            jobs,
                             seed: profile_seed,
                             profile,
                             difficulty: &difficulty,
@@ -1439,6 +1973,47 @@ fn main() {
             "unknown AI {name:?}: builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
         );
     }
+    // ★★★★★ WHO ELSE IS ON THE BOARD, AND WHY THAT IS THE WHOLE QUESTION.
+    //
+    // This evaluator seats the two entrants and nobody else: every one of
+    // `--players` chairs is `a` or `b`. Both are `AdvancedAi` variants in
+    // practice, `AdvancedAi` routes to religion, and the consequence was
+    // measured on 2026-08-18 (`docs/eval/`): over 12 games at the deployment
+    // shape the profile produced **9 religious, 3 science, and zero
+    // diplomatic, culture or domination**, while the live Civilization VI
+    // ladder over the same period lost **41 games to a rival's diplomatic
+    // victory and 24 to culture**. The two distributions are nearly disjoint.
+    // We screen against ourselves and deploy against somebody who plays
+    // differently, and `advanced_congress_counter`,
+    // `advanced_congress_votes` and `advanced_congress_counter_hard` have sat
+    // unscreened in the registry because the board can never produce the
+    // condition they answer. An inert reading would have said nothing.
+    //
+    // `--field` names the agents that fill the chairs the paired entrants do
+    // not take, so a denial treatment can be screened against its incumbent on
+    // a board that actually produces the lanes Firaxis' AI pursues. Measured
+    // the same day: `--field live_target_diplomatic` turns diplomatic 0 of 12
+    // into 3 of 12 and produces culture as well.
+    //
+    // ⚠ Empty by default, and every existing number in `docs/EVAL.md` was
+    // taken with it empty. A field changes the experiment, not the harness: it
+    // is a different profile and its results are not comparable to fieldless
+    // ones. `--matrix` refuses it for that reason — the promotion matrix's
+    // recorded profiles are fieldless.
+    let field_names = text(&args, "--field", "");
+    let field: Vec<&str> = field_names
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    for name in &field {
+        if !BUILTIN_AIS.contains(name) && !EVAL_ONLY_AIS.contains(name) {
+            eprintln!(
+                "--field: unknown AI {name:?}; builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
+            );
+            std::process::exit(2);
+        }
+    }
     if args.iter().any(|argument| argument == "--matrix") {
         run_profile_matrix(&args, a, b);
     }
@@ -1472,7 +2047,18 @@ fn main() {
         );
         std::process::exit(2);
     }
-    let provenance = builtin_provenances(&[a, b], &artifact_dir);
+    // The field is in the game, so it is in the provenance: "a result is never
+    // filed under an agent that was never in the game" applies to the chairs
+    // that decide which victories are reachable just as much as to the two
+    // being compared. Named here rather than only in the profile line so the
+    // degraded and `--require-artifacts` checks below cover them as well.
+    let mut named: Vec<&str> = vec![a, b];
+    for name in &field {
+        if !named.contains(name) {
+            named.push(name);
+        }
+    }
+    let provenance = builtin_provenances(&named, &artifact_dir);
     for entry in &provenance {
         println!("{}", entry.line());
     }
@@ -1579,6 +2165,22 @@ here and any null is uninformative"
     // checked that one transfers to the other. This flag is what makes that
     // check possible; it defaults to the previous behaviour.
     let speed = text(&args, "--speed", &civvis::game::default_speed());
+    // ⚠ A CONTROL THAT CANNOT FINISH TURNS EVERY MARGIN AGAINST IT INTO A
+    // READING OF ITSELF. Warned at the profile where the screen was run —
+    // Online is the shape the deployment evaluator and the live ladder both
+    // play, and `victory_eval` read the opposite answer at Standard/250, which
+    // is a Standard game stopped halfway rather than the Online game it looks
+    // like. A warning that fired at every speed would be quoting a number
+    // outside the profile it was measured on, which is the same mistake.
+    if speed.eq_ignore_ascii_case("online") {
+        for arm in [a, b] {
+            if let Some((_, why)) = DEGENERATE_CONTROLS.iter().find(|(name, _)| *name == arm) {
+                println!(
+                    "warning: {arm} {why}, so a margin against it measures ITS floor and not the other arm's strength; compare against an arm that finishes, and read a large number here as a broken control rather than a discovery"
+                );
+            }
+        }
+    }
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
@@ -1641,8 +2243,20 @@ here and any null is uninformative"
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    if !field.is_empty() && players < 3 {
+        eprintln!(
+            "--field needs a chair to sit in: the two entrants take seats 0 and 1, so \
+             --players must be at least 3"
+        );
+        std::process::exit(2);
+    }
+    let enabled_victories = VictoryConditions::NAMES
+        .into_iter()
+        .filter(|name| victory_conditions.is_enabled(name))
+        .collect::<Vec<_>>()
+        .join(",");
     println!(
-        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {}",
+        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}",
         map_script.id(),
         map_topology.id(),
         map_poles.id(),
@@ -1651,17 +2265,51 @@ here and any null is uninformative"
         } else {
             "fixed"
         },
-        VictoryConditions::NAMES
-            .into_iter()
-            .filter(|name| victory_conditions.is_enabled(name))
-            .collect::<Vec<_>>()
-            .join(","),
     );
+    // A result is never filed without saying who was in the game. Printed
+    // whether or not a field was named, so a fieldless run states that too
+    // rather than leaving the reader to infer it from silence.
+    if field.is_empty() {
+        println!(
+            "field: none — all {players} seats are the paired entrants (every recorded \
+             result in docs/EVAL.md was taken this way)"
+        );
+    } else {
+        let seating: Vec<String> = (2..players)
+            .map(|pid| format!("{}={}", pid, field[(pid - 2) % field.len()]))
+            .collect();
+        println!(
+            "field: {} — entrants take seats 0 and 1 and swap; the rest are {}",
+            field.join(", "),
+            seating.join(" ")
+        );
+        println!(
+            "⚠ a field is a different profile: these numbers are not comparable to \
+             fieldless runs, and a game won by a field seat is a draw for the pair"
+        );
+    }
     let mut totals: BTreeMap<String, Metrics> = [a, b]
         .into_iter()
+        .chain(field.iter().copied())
         .map(|name| (name.to_string(), Metrics::default()))
         .collect();
     let mut total_turns = 0_u64;
+    // ★★★★★ WHICH VICTORY CONDITIONS THIS PROFILE ACTUALLY PRODUCES.
+    //
+    // A run enables six victories and reports on none of them, so nobody knows
+    // which ones it exercised. Measured on the deployment profile with
+    // `AdvancedAi` in every seat, 12 games at 250 turns: **9 religious, 3
+    // science, and zero diplomatic, culture, domination or score.** The live
+    // Civilization VI ladder over the same period lost 41 games to a rival's
+    // diplomatic victory and 24 to culture, against 5 religious and 3
+    // technology (`docs/EVAL_STATUS.md`).
+    //
+    // The two distributions are very nearly disjoint, and that has a hard
+    // consequence: a treatment aimed at denying a diplomatic or culture
+    // victory cannot be screened here, because no such victory happens. It
+    // will read as inert, be filed as a null, and the profile will never say
+    // that it was the wrong question to ask of it.
+    let mut game_victories: BTreeMap<String, usize> = BTreeMap::new();
     let mut pair_scores = Vec::with_capacity(pairs);
     let mut pair_terminal_scores = Vec::with_capacity(pairs);
 
@@ -1670,6 +2318,8 @@ here and any null is uninformative"
     struct PlayedGame<'a> {
         game: Game,
         seats: Vec<&'a str>,
+        challenger_seats: BTreeSet<usize>,
+        incumbent_seats: BTreeSet<usize>,
         traces: Vec<PlanTrace>,
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
@@ -1698,18 +2348,10 @@ here and any null is uninformative"
             let local_pair = pair + index / 2;
             let swap = index % 2;
             let game_seed = seed + local_pair as u64;
-            let seats: Vec<&str> = (0..players)
-                .map(|pid| if (pid + swap) % 2 == 0 { a } else { b })
-                .collect();
-            let challenger_seats: BTreeSet<usize> = seats
-                .iter()
-                .enumerate()
-                .filter(|(_, name)| **name == a)
-                .map(|(pid, _)| pid)
-                .collect();
+            let (seats, challenger_seats, incumbent_seats) = seat_plan(players, swap, a, b, &field);
             let mut game = Game::new_with(GameOptions {
                 difficulty: difficulty.clone(),
-                human_seats: challenger_seats,
+                human_seats: challenger_seats.clone(),
                 speed: speed.clone(),
                 map_script,
                 map_topology,
@@ -1746,6 +2388,8 @@ here and any null is uninformative"
             PlayedGame {
                 game,
                 seats,
+                challenger_seats,
+                incumbent_seats,
                 traces,
                 targets,
                 censuses,
@@ -1757,6 +2401,8 @@ here and any null is uninformative"
             let PlayedGame {
                 game,
                 seats,
+                challenger_seats,
+                incumbent_seats,
                 traces,
                 targets,
                 censuses,
@@ -1764,8 +2410,15 @@ here and any null is uninformative"
                 war_reports,
             } = result;
             total_turns += game.reported_turn() as u64;
-            let score = game_score(game.winner, &seats, a);
-            let terminal = terminal_score_share(&game, &seats, a);
+            *game_victories
+                .entry(
+                    game.victory_type
+                        .clone()
+                        .unwrap_or_else(|| "no winner".to_string()),
+                )
+                .or_default() += 1;
+            let score = game_score(game.winner, &challenger_seats, &incumbent_seats);
+            let terminal = terminal_score_share(&game, &challenger_seats, &incumbent_seats);
             if index % 2 == 0 {
                 pair_scores.push(score);
                 pair_terminal_scores.push(terminal);
@@ -1872,13 +2525,16 @@ here and any null is uninformative"
     let outcomes = pair_outcomes(&pair_scores);
     let directions = directional_outcomes(&pair_scores);
     println!(
-        "paired-map score for {a}: {:.1}% (95% Wilson CI {:.1}%..{:.1}%), Elo-equivalent {:+.0} (CI {:+.0}..{:+.0})",
+        "paired-map score for {a}: {:.1}% (95% betting CI {:.1}%..{:.1}%), Elo-equivalent {:+.0} (CI {:+.0}..{:+.0}); \
+         the retired maximum-variance Wilson interval on the same maps: {:.1}%..{:.1}%",
         100.0 * inference.score,
         100.0 * inference.low,
         100.0 * inference.high,
         inference.elo,
         inference.elo_low,
         inference.elo_high,
+        100.0 * inference.wilson_low,
+        100.0 * inference.wilson_high,
     );
     println!(
         "paired outcomes: {a} sweeps {}, neutral splits/draws {}, {b} sweeps {}, draw-mixed {}",
@@ -1934,6 +2590,15 @@ here and any null is uninformative"
             inference.maps,
         ),
     }
+    // What the verdict above could and could not have seen. Printed for every
+    // verdict, not only the inconclusive one: a PASS earned on a run that
+    // could barely resolve the edge it reports is also worth knowing about.
+    if inference.maps > 0 {
+        println!(
+            "{}",
+            resolution_note(inference.maps, resolved_maps(&directions), RESOLUTION_SEED)
+        );
+    }
     // Separate the decision from the estimate, in the tool rather than in the
     // discipline. The gate above decides; this line says what the number under
     // it is worth, and it is deliberately printed even when the gate did not
@@ -1978,6 +2643,69 @@ here and any null is uninformative"
         "direction resolution: wins rest on {win_resolved} of {} maps that broke, terminal score on {terminal_resolved}",
         inference.maps,
     );
+    if !game_victories.is_empty() {
+        let total: usize = game_victories.values().sum();
+        let mut mix: Vec<(&String, &usize)> = game_victories.iter().collect();
+        mix.sort_by(|left, right| right.1.cmp(left.1).then(left.0.cmp(right.0)));
+        let detail = mix
+            .iter()
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("victory conditions exercised, over all {total} games: {detail}");
+        // A condition the profile enabled and never produced is one this run
+        // could not have measured a change to. Say so by name.
+        let produced: BTreeSet<&str> = game_victories
+            .keys()
+            .map(|name| name.as_str())
+            .filter(|name| *name != "no winner")
+            .collect();
+        let silent: Vec<&str> = enabled_victories
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty() && !produced.contains(name))
+            .collect();
+        if !silent.is_empty() {
+            println!(
+                "⚠ enabled but never produced here: {}. A treatment aimed at one of those cannot \
+                 be measured on this profile — an inert reading would say nothing about it",
+                silent.join(", ")
+            );
+        }
+    }
+    // ★★★★★ NOTHING DIFFERED, WHICH IS NOT THE SAME AS PARITY.
+    //
+    // Wins break on about a third of maps by construction, so an all-neutral
+    // win column is ordinary and says little. Terminal score is continuous and
+    // breaks on nearly every map — two agents that play even slightly
+    // differently will separate on it somewhere. When *both* columns are
+    // neutral on *every* map, the arms did not play close games: they played
+    // the same games, and the treatment never changed an outcome on this
+    // profile.
+    //
+    // That is a completely different finding from a null, and it was being
+    // reported as one. `advanced_sea_answers` returned 40 of 40 neutral on
+    // both columns in the 2026-08-18 triage sweep and read as ordinary parity;
+    // the honest reading is that its treatment did not fire. A null asks for a
+    // longer screen, this asks for a mechanism check, and buying the former for
+    // the latter is how a 200-pair screen gets spent on nothing.
+    //
+    // ⚠ Deliberately not a `RETAIN`/`Insufficient` verdict change. The gate
+    // reports what the evidence supports and this is a note about what the
+    // evidence *is*; conflating the two is how the maximum-variance interval
+    // came to override the anytime evidence in the first place.
+    if inference.maps > 0
+        && win_resolved == 0
+        && terminal_resolved == 0
+        && outcomes.mixed_with_draw == 0
+    {
+        println!(
+            "⚠ nothing differed: all {} maps were neutral on wins AND on terminal score, so {a} and \
+             {b} played the same games. The verdict above is not evidence about the treatment — it \
+             did not fire on this profile. Check the mechanism before buying a longer run",
+            inference.maps,
+        );
+    }
     match (
         direction_sign(&directions),
         direction_sign(&terminal_directions),
@@ -2106,12 +2834,19 @@ here and any null is uninformative"
             m.era_score / n,
         );
     }
-    println!("AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major recon-peak");
+    println!(
+        "AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major recon-peak cities@t60"
+    );
     for name in [a, b] {
         let m = &totals[name];
         let n = m.games as f64;
+        let tempo = if m.cities_at_t60_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.cities_at_t60 / m.cities_at_t60_seats as f64)
+        };
         println!(
-            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9} {:>10.2}",
+            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>10}",
             m.minors_met / n,
             m.minors_met_by_t50 / n,
             mean_turn(m.first_minor_meet_turn_sum, m.first_minor_meet_seats),
@@ -2119,6 +2854,27 @@ here and any null is uninformative"
             m.majors_met_by_t50 / n,
             mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
             m.recon_peak / n,
+            tempo,
+        );
+    }
+    println!("\nBarbarians:");
+    println!("AI          cleared kills lost civ-lost camps<=6@t50 standing");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        let near_home = if m.camps_near_home_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.camps_near_home / m.camps_near_home_seats as f64)
+        };
+        println!(
+            "{name:<11} {:>7.2} {:>5.2} {:>4.2} {:>8.2} {:>12} {:>8.2}",
+            m.camps_cleared / n,
+            m.barbs_killed / n,
+            m.lost_to_barbarians / n,
+            m.civilians_lost_to_barbarians / n,
+            near_home,
+            m.camps_standing / n,
         );
     }
     println!("\nVictory types:");
@@ -2385,6 +3141,123 @@ mod tests {
         }
     }
 
+    /// Fieldless seating is exactly what it always was.
+    ///
+    /// Every number in `docs/EVAL.md` was taken through this path, so the
+    /// interesting assertion is not that a field works — it is that adding one
+    /// changed nothing when nobody asked for it.
+    #[test]
+    fn a_fieldless_pair_alternates_the_entrants_across_every_chair() {
+        for swap in [0, 1] {
+            let (seats, challenger, incumbent) = seat_plan(6, swap, "chal", "inc", &[]);
+            assert_eq!(seats.len(), 6);
+            for (pid, name) in seats.iter().enumerate() {
+                let expected = if (pid + swap) % 2 == 0 { "chal" } else { "inc" };
+                assert_eq!(*name, expected, "seat {pid} at swap {swap}");
+            }
+            assert_eq!(challenger.len(), 3, "swap {swap}");
+            assert_eq!(incumbent.len(), 3, "swap {swap}");
+            // The verdict sets partition the board, which is exactly why the
+            // old name test was sufficient here and is not once a field exists.
+            assert_eq!(challenger.union(&incumbent).count(), 6, "swap {swap}");
+        }
+    }
+
+    /// With a field, the entrants hold two chairs and swap between them.
+    #[test]
+    fn a_field_takes_every_chair_but_the_two_being_compared() {
+        let field = ["dip", "cul"];
+        let (first, chal_a, inc_a) = seat_plan(6, 0, "chal", "inc", &field);
+        assert_eq!(first, vec!["chal", "inc", "dip", "cul", "dip", "cul"]);
+        assert_eq!(chal_a.iter().copied().collect::<Vec<_>>(), vec![0]);
+        assert_eq!(inc_a.iter().copied().collect::<Vec<_>>(), vec![1]);
+        let (second, chal_b, inc_b) = seat_plan(6, 1, "chal", "inc", &field);
+        assert_eq!(second, vec!["inc", "chal", "dip", "cul", "dip", "cul"]);
+        assert_eq!(chal_b.iter().copied().collect::<Vec<_>>(), vec![1]);
+        assert_eq!(inc_b.iter().copied().collect::<Vec<_>>(), vec![0]);
+        // Balanced: the challenger holds each of the two chairs exactly once
+        // across the pair, and the field is identical in both games.
+        assert_eq!(first[2..], second[2..]);
+    }
+
+    /// ⚠⚠ A GAME WON BY THE FIELD IS NOT A WIN FOR THE INCUMBENT.
+    ///
+    /// `game_score` used to read the winner's *name* and score anything that
+    /// was not the challenger as `0.0`. That was correct while the two entrants
+    /// held every chair and is a defect the moment a field exists: a diplomatic
+    /// victory by a `live_target_diplomatic` seat would have counted as a win
+    /// for the incumbent — so a denial treatment that failed to stop it would
+    /// be penalised, and one that stopped it would gain nothing. The arrangement
+    /// makes the arm look worse exactly when it works.
+    #[test]
+    fn a_victory_by_neither_entrant_is_a_draw_for_the_pair() {
+        let field = ["dip", "cul"];
+        let (_, challenger, incumbent) = seat_plan(6, 0, "chal", "inc", &field);
+        assert_eq!(game_score(Some(0), &challenger, &incumbent), 1.0);
+        assert_eq!(game_score(Some(1), &challenger, &incumbent), 0.0);
+        for field_seat in 2..6 {
+            assert_eq!(
+                game_score(Some(field_seat), &challenger, &incumbent),
+                0.5,
+                "seat {field_seat} is neither entrant"
+            );
+        }
+        assert_eq!(game_score(None, &challenger, &incumbent), 0.5);
+        // And the fieldless board still cannot produce that third outcome.
+        let (_, chal, inc) = seat_plan(6, 0, "chal", "inc", &[]);
+        for pid in 0..6 {
+            assert_ne!(
+                game_score(Some(pid), &chal, &inc),
+                0.5,
+                "fieldless seat {pid} belongs to one entrant or the other"
+            );
+        }
+    }
+
+    /// The promotion matrix cannot be handed a different board.
+    ///
+    /// Who else is in the game decides which victory conditions are reachable
+    /// at all, which makes it the strongest profile axis there is. The matrix's
+    /// recorded profiles are fieldless, so `--field` has to be refused there
+    /// with the rest of them.
+    #[test]
+    fn the_promotion_matrix_refuses_a_field() {
+        // Mirrors `run_profile_matrix`'s own list, which cannot be reached from
+        // a test because it diverges. Pinning the membership is the part that
+        // would silently regress.
+        let flags = [
+            "--players",
+            "--width",
+            "--height",
+            "--city-states",
+            "--turns",
+            "--speed",
+            "--map",
+            "--shape",
+            "--poles",
+            "--victories",
+            "--randomize-civs",
+            "--field",
+        ];
+        let source = include_str!("ai_eval.rs");
+        let declared = source
+            .split("const PROFILE_FLAGS: [&str; ")
+            .nth(1)
+            .and_then(|tail| tail.split("];").next())
+            .expect("the matrix profile-flag list is where this test can read it");
+        assert!(
+            declared.starts_with(&format!("{}]", flags.len())),
+            "PROFILE_FLAGS is no longer {} long; update this list with it: {declared}",
+            flags.len()
+        );
+        for flag in flags {
+            assert!(
+                declared.contains(&format!("\"{flag}\"")),
+                "{flag} is not refused by --matrix"
+            );
+        }
+    }
+
     #[test]
     fn a_confirmation_names_both_seeds_and_is_marked_quotable() {
         let line = effect_size_line(86.0, PromotionVerdict::Promote, 77_200_000, Some(4000));
@@ -2392,6 +3265,44 @@ mod tests {
         assert!(line.contains("77200000"), "{line}");
         assert!(line.contains("4000"), "{line}");
         assert!(line.contains("quotable"), "{line}");
+    }
+
+    /// A control that cannot finish makes every margin against it a reading of
+    /// itself, and this evaluator produced exactly that: all four named lanes
+    /// "beat" `advanced_target_science` — diplomatic by +669, 23-0-1 — while
+    /// diplomatic against religious, both of which finish, is 47.9%, p=1.0000.
+    #[test]
+    fn a_degenerate_control_is_named_and_says_why() {
+        assert!(
+            DEGENERATE_CONTROLS
+                .iter()
+                .any(|(name, _)| *name == "advanced_target_science"),
+            "the lane that completes 0/16 is not listed as a degenerate control"
+        );
+        for (name, why) in DEGENERATE_CONTROLS {
+            // A bare list would be a claim; the screen behind each entry is the
+            // only thing that makes it checkable by a reader.
+            assert!(
+                why.contains("victory_eval") || why.contains("games"),
+                "{name} is listed without citing the screen that measured it: {why}"
+            );
+            assert!(
+                civvis::elo::builtin_arm(name).is_some(),
+                "{name} is listed but is not a selectable arm"
+            );
+        }
+    }
+
+    /// Every entry has to be an arm somebody would reach for as a control,
+    /// which in practice means the incumbent of a lane comparison.
+    #[test]
+    fn a_degenerate_control_is_not_also_the_thing_it_warns_about_measuring() {
+        for (name, _) in DEGENERATE_CONTROLS {
+            assert!(
+                name.starts_with("advanced_"),
+                "{name} is not a scripted arm"
+            );
+        }
     }
 
     /// The two halves of R3 have to agree, or this tool prints numbers the
@@ -2552,18 +3463,143 @@ mod tests {
         assert!(overflow.contains("overflows u64"), "{overflow}");
     }
 
+    /// The split is stated as invariants rather than a table, because the table
+    /// is what broke when a third profile arrived — and a table is the part
+    /// nobody reads before adding one.
     #[test]
     fn promotion_matrix_uses_every_worker_and_weights_the_critical_path() {
-        assert_eq!(matrix_job_budgets(1), [1, 1]);
-        assert_eq!(matrix_job_budgets(2), [1, 1]);
-        assert_eq!(matrix_job_budgets(3), [1, 2]);
-        assert_eq!(matrix_job_budgets(4), [2, 2]);
-        assert_eq!(matrix_job_budgets(5), [2, 3]);
-        assert_eq!(matrix_job_budgets(6), [2, 4]);
-        assert_eq!(matrix_job_budgets(12), [4, 8]);
-        for jobs in 2..32 {
-            assert_eq!(matrix_job_budgets(jobs).iter().sum::<usize>(), jobs);
-            assert!(matrix_job_budgets(jobs).into_iter().all(|budget| budget > 0));
+        let profiles = PROMOTION_PROFILES.len();
+        // Fewer workers than profiles: they run sequentially and each child
+        // takes the sole worker rather than being handed a fraction of one.
+        for jobs in 0..profiles {
+            assert_eq!(matrix_job_budgets(jobs), vec![1; profiles], "{jobs} jobs");
+        }
+        for jobs in profiles..64 {
+            let budgets = matrix_job_budgets(jobs);
+            assert_eq!(budgets.len(), profiles, "{jobs} jobs");
+            // Every requested worker is used, and none is given to nobody.
+            assert_eq!(
+                budgets.iter().sum::<usize>(),
+                jobs,
+                "{jobs} jobs: {budgets:?}"
+            );
+            assert!(
+                budgets.iter().all(|budget| *budget > 0),
+                "{jobs} jobs: {budgets:?}"
+            );
+            // A heavier profile is never given less than a lighter one: the
+            // matrix's wall time is the slowest child, so starving the
+            // expensive shape is the one allocation that costs real time.
+            for (index, budget) in budgets.iter().enumerate() {
+                for (other, other_budget) in budgets.iter().enumerate() {
+                    if PROMOTION_PROFILES[index].cost_weight > PROMOTION_PROFILES[other].cost_weight
+                    {
+                        assert!(
+                            budget >= other_budget,
+                            "{jobs} jobs: {} got {budget} and the lighter {} got {other_budget}",
+                            PROMOTION_PROFILES[index].name,
+                            PROMOTION_PROFILES[other].name
+                        );
+                    }
+                }
+            }
+        }
+        // The deployment shape really is the heavy one, so the invariant above
+        // is pointed at the right profile rather than being vacuously true.
+        assert!(PROMOTION_PROFILES
+            .iter()
+            .any(|profile| profile.cost_weight > 1));
+    }
+
+    /// ⚠⚠ THE GATE MUST BE ABLE TO PRODUCE THE VICTORIES IT IS GATING ON.
+    ///
+    /// Every promotion decision in this repository's history was taken on two
+    /// profiles that seat `AdvancedAi` in every chair. `AdvancedAi` routes to
+    /// religion, and the deployment profile was measured producing **zero
+    /// diplomatic and zero culture victories over 40 games**, twice, on two
+    /// disjoint seed streams — while the live Civilization VI ladder lost 41
+    /// games to a rival's diplomatic victory and 24 to culture. This pins the
+    /// repair: at least one profile is contested, it is the deployment shape,
+    /// and it is a tripwire rather than a third hurdle.
+    #[test]
+    fn one_promotion_profile_is_contested_and_is_a_tripwire() {
+        let contested: Vec<&MatrixProfile> = PROMOTION_PROFILES
+            .iter()
+            .filter(|profile| !profile.field.is_empty())
+            .collect();
+        assert_eq!(
+            contested.len(),
+            1,
+            "exactly one profile should carry a field; the others are the recorded fieldless ones"
+        );
+        let contested = contested[0];
+        // The lanes the front line actually loses to have to be the ones seated.
+        for lane in ["live_target_diplomatic", "live_target_culture"] {
+            assert!(
+                contested.field.contains(lane),
+                "{} does not seat {lane}",
+                contested.name
+            );
+            assert!(
+                EVAL_ONLY_AIS.contains(&lane) || BUILTIN_AIS.contains(&lane),
+                "{lane} is not a constructible agent"
+            );
+        }
+        // Same board as deployment, so the only difference is the company.
+        let deployment = PROMOTION_PROFILES
+            .iter()
+            .find(|profile| profile.name == "deployment-online")
+            .expect("the deployment profile is still named that");
+        assert_eq!(contested.players, deployment.players);
+        assert_eq!(contested.width, deployment.width);
+        assert_eq!(contested.height, deployment.height);
+        assert_eq!(contested.city_states, deployment.city_states);
+        assert_eq!(contested.turns, deployment.turns);
+        assert_eq!(contested.speed, deployment.speed);
+        assert_eq!(contested.victories, deployment.victories);
+        // A tripwire, not a hurdle: an inconclusive reading here must not block
+        // a promotion, and a measured regression must.
+        assert_eq!(contested.requirement, MatrixRequirement::NoRegression);
+        assert!(matrix_profile_accepts(
+            contested.requirement,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(!matrix_profile_accepts(
+            contested.requirement,
+            MatrixVerdict::Retain
+        ));
+        // And the child invocation actually carries the field, which is the
+        // step that would silently make this whole profile a duplicate of
+        // `deployment-online`.
+        let args = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 60,
+            jobs: 4,
+            seed: 2_090_000,
+            profile: *contested,
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: None,
+        });
+        assert_eq!(text(&args, "--field", "missing"), contested.field);
+        for profile in PROMOTION_PROFILES.iter().filter(|p| p.field.is_empty()) {
+            let fieldless = matrix_child_args(MatrixChildRequest {
+                challenger: "challenger",
+                incumbent: "incumbent",
+                pairs: 60,
+                jobs: 4,
+                seed: 90_000,
+                profile: *profile,
+                difficulty: "prince",
+                require_artifacts: false,
+                confirm_seed: None,
+            });
+            assert!(
+                !fieldless.iter().any(|argument| argument == "--field"),
+                "{} is a recorded fieldless profile and must stay one",
+                profile.name
+            );
         }
     }
 
@@ -2663,9 +3699,20 @@ mod tests {
         let one_map = paired_inference(&[1.0]);
         let two_maps = paired_inference(&[1.0, 1.0]);
         assert_eq!(one_map.maps, 1);
-        assert!(one_map.low < two_maps.low);
+        // Wilson narrows on the second map because its width is a function of
+        // the count alone. The gate's interval does not, and should not: two
+        // maps cannot exclude any mean at 2.5% per side, so an interval that
+        // claimed otherwise would be claiming evidence the run has not got.
+        assert!(one_map.wilson_low < two_maps.wilson_low);
+        assert_eq!((one_map.low, one_map.high), (0.0, 1.0));
+        assert_eq!((two_maps.low, two_maps.high), (0.0, 1.0));
         assert!(one_map.high <= 1.0);
         assert_eq!(one_map.verdict, PromotionVerdict::Insufficient);
+        // Replication is what narrows it, and it narrows a long way.
+        let twenty = paired_inference(&[1.0; PROMOTION_MIN_MAPS]);
+        let forty = paired_inference(&[1.0; 2 * PROMOTION_MIN_MAPS]);
+        assert!(twenty.low > 0.5);
+        assert!(forty.low > twenty.low);
     }
 
     #[test]
@@ -2769,11 +3816,12 @@ mod tests {
 
     #[test]
     fn games_without_a_head_to_head_winner_are_draws() {
-        let seats = ["challenger", "incumbent"];
-        assert_eq!(game_score(Some(0), &seats, "challenger"), 1.0);
-        assert_eq!(game_score(Some(1), &seats, "challenger"), 0.0);
-        assert_eq!(game_score(None, &seats, "challenger"), 0.5);
-        assert_eq!(game_score(Some(2), &seats, "challenger"), 0.5);
+        let challenger = BTreeSet::from([0]);
+        let incumbent = BTreeSet::from([1]);
+        assert_eq!(game_score(Some(0), &challenger, &incumbent), 1.0);
+        assert_eq!(game_score(Some(1), &challenger, &incumbent), 0.0);
+        assert_eq!(game_score(None, &challenger, &incumbent), 0.5);
+        assert_eq!(game_score(Some(2), &challenger, &incumbent), 0.5);
     }
 
     /// A threaded batch must produce the serial numbers exactly. Every game
@@ -2796,13 +3844,190 @@ mod tests {
     /// drop-in replacement that is both narrower and calibrated. Recorded
     /// as an experiment rather than shipped as a statistic.
     #[test]
-    fn no_narrower_interval_here_is_also_calibrated() {
+    fn the_fast_verdict_agrees_with_the_full_one() {
+        let mut rng = Rng::new(4_242);
+        for _ in 0..200 {
+            let maps = PROMOTION_MIN_MAPS + rng.below(40);
+            let scores: Vec<f64> = (0..maps)
+                .map(|_| match rng.below(10) {
+                    0..=2 => 1.0,
+                    3 => 0.0,
+                    _ => 0.5,
+                })
+                .collect();
+            assert_eq!(
+                gate_would_promote(&scores),
+                paired_inference(&scores).verdict == PromotionVerdict::Promote,
+                "fast and full verdicts disagree on {scores:?}"
+            );
+        }
+    }
+
+    /// The number this prints is the whole point, so pin its shape: more maps
+    /// must resolve a smaller edge, and the counts this repository actually
+    /// runs at must land either side of the effects it actually produces.
+    /// The all-neutral case has to be distinguishable from close play, and the
+    /// distinction is that terminal score is continuous: agents that play even
+    /// slightly differently separate on it somewhere.
+    #[test]
+    fn identical_games_are_distinguishable_from_close_ones() {
+        // Two agents that played the same games: every map neutral on both.
+        let identical = vec![0.5; 30];
+        assert_eq!(resolved_maps(&directional_outcomes(&identical)), 0);
+        assert_eq!(pair_outcomes(&identical).mixed_with_draw, 0);
+        assert_eq!(pair_outcomes(&identical).neutral, 30);
+
+        // Close play: the win column is all-neutral, which is ordinary, but
+        // terminal score separates. This must NOT read as "nothing differed".
+        let wins = vec![0.5; 30];
+        let terminal: Vec<f64> = (0..30)
+            .map(|index| if index % 2 == 0 { 0.55 } else { 0.45 })
+            .collect();
+        assert_eq!(resolved_maps(&directional_outcomes(&wins)), 0);
+        assert_eq!(resolved_maps(&directional_outcomes(&terminal)), 30);
+
+        // And a draw-mixed map is a difference even when neither column
+        // resolves a direction, so it also blocks the claim.
+        let mixed = vec![0.75, 0.5, 0.5];
+        assert_eq!(pair_outcomes(&mixed).mixed_with_draw, 1);
+    }
+
+    #[test]
+    fn the_reported_resolution_tightens_with_map_count() {
+        let break_rate = 0.28;
+        let forty = resolvable_edge(40, break_rate, RESOLUTION_SEED);
+        let two_hundred = resolvable_edge(200, break_rate, RESOLUTION_SEED);
+        let (forty, two_hundred) = (
+            forty.expect("40 maps resolves something"),
+            two_hundred.expect("200 maps resolves something"),
+        );
+        println!("40 maps: {forty:+.0} Elo   200 maps: {two_hundred:+.0} Elo");
+        assert!(
+            two_hundred < forty,
+            "more maps must resolve a smaller edge: {two_hundred:+.0} against {forty:+.0}"
+        );
+        // The finding this exists to make visible: a 40-map run cannot see the
+        // size of edge this repository's changes actually produce, so an
+        // INCONCLUSIVE there is not evidence of absence.
+        assert!(
+            forty > 60.0,
+            "40 maps was expected to be unable to resolve a small edge, got {forty:+.0}"
+        );
+        assert!(
+            two_hundred < forty * 0.8,
+            "200 maps should be materially better than 40: {two_hundred:+.0} against {forty:+.0}"
+        );
+    }
+
+    #[test]
+    fn a_run_under_the_map_floor_reports_no_resolution() {
+        assert_eq!(
+            resolvable_edge(PROMOTION_MIN_MAPS - 1, 0.3, RESOLUTION_SEED),
+            None
+        );
+        assert!(resolution_note(10, 3, RESOLUTION_SEED).contains("too few"));
+    }
+
+    /// A run where nothing broke has no break rate to reason from, and must
+    /// say so rather than quoting a number derived from a division by zero.
+    #[test]
+    fn a_run_with_no_broken_maps_reports_no_resolution() {
+        let note = resolution_note(40, 0, RESOLUTION_SEED);
+        assert!(note.contains("too few"), "{note}");
+    }
+
+    #[test]
+    fn the_gate_resolves_the_edges_it_used_to_call_inconclusive() {
+        // The three paired-map score vectors this repository has actually
+        // recorded and filed as inconclusive, reconstructed from the pair
+        // outcomes in docs/EVAL.md. Every one of them is a run where the
+        // maximum-variance interval, not the evidence, was the binding
+        // constraint: its lower bound sat far under parity while the mean
+        // stood at +89 to +100 Elo-equivalent.
+        // The fourth field is whether the betting lower bound is expected to
+        // beat Wilson's. It does not at exactly the 20-map floor, where only
+        // one prefix is monitored and the mixture still pays for the bets the
+        // run did not need; it does from 25 maps up, and the margin grows.
+        // Deployment runs are decided at 40 maps and above.
+        let recorded: [(&str, usize, usize, usize, bool); 3] = [
+            ("advanced vs basic", 6, 13, 1, false),
+            ("deployment 36-map", 6, 29, 1, true),
+            ("strategic 25-map", 8, 16, 1, true),
+        ];
+        for (name, favored, neutral, against, tighter) in recorded {
+            let scores: Vec<f64> = std::iter::repeat_n(1.0, favored)
+                .chain(std::iter::repeat_n(0.5, neutral))
+                .chain(std::iter::repeat_n(0.0, against))
+                .collect();
+            let inference = paired_inference(&scores);
+            println!(
+                "{name}: n={} mean={:.3} betting [{:.3},{:.3}] wilson [{:.3},{:.3}]",
+                inference.maps,
+                inference.score,
+                inference.low,
+                inference.high,
+                inference.wilson_low,
+                inference.wilson_high
+            );
+            assert!(
+                inference.wilson_low < 0.5,
+                "{name}: the retired interval is expected to have blocked this run"
+            );
+            assert_eq!(
+                inference.low > inference.wilson_low,
+                tighter,
+                "{name}: betting low {:.3} against wilson low {:.3}",
+                inference.low,
+                inference.wilson_low
+            );
+        }
+    }
+
+    /// The gate's promise is 2.5% per direction. Measure what it actually
+    /// spends when the two arms are the same agent, on the map shape these
+    /// runs produce, so a later widening of the bet grid cannot quietly turn
+    /// a conservative gate into a permissive one.
+    #[test]
+    fn the_promotion_gate_stays_inside_its_declared_error_budget() {
+        let mut rng = Rng::new(20_260_818);
+        let trials = 600;
+        let mut promoted = 0;
+        let mut retained = 0;
+        for _ in 0..trials {
+            let scores: Vec<f64> = (0..40)
+                .map(|_| match rng.below(20) {
+                    0..=3 => 1.0,
+                    4..=7 => 0.0,
+                    _ => 0.5,
+                })
+                .collect();
+            match paired_inference(&scores).verdict {
+                PromotionVerdict::Promote => promoted += 1,
+                PromotionVerdict::Retain => retained += 1,
+                _ => {}
+            }
+        }
+        println!("null verdicts: {promoted} promote, {retained} retain of {trials}");
+        assert!(
+            promoted * 40 <= trials,
+            "promotion spent more than 2.5% of its null budget: {promoted}/{trials}"
+        );
+        assert!(
+            retained * 40 <= trials,
+            "retention spent more than 2.5% of its null budget: {retained}/{trials}"
+        );
+    }
+
+    #[test]
+    fn a_betting_interval_is_the_narrower_calibrated_one() {
         let mut rng = Rng::new(20_260_726);
         let mut covered = 0;
+        let mut betting_covered = 0;
         let mut wilson_covered = 0;
         let mut eb_width = 0.0;
         let mut boot_covered = 0;
         let mut boot_width = 0.0;
+        let mut betting_width = 0.0;
         let mut wilson_width = 0.0;
         let trials = 400;
         let maps = 120;
@@ -2828,9 +4053,13 @@ mod tests {
             boot_width += bhigh - blow;
             let inference = paired_inference(&scores);
             if inference.low <= 0.5 && 0.5 <= inference.high {
+                betting_covered += 1;
+            }
+            betting_width += inference.high - inference.low;
+            if inference.wilson_low <= 0.5 && 0.5 <= inference.wilson_high {
                 wilson_covered += 1;
             }
-            wilson_width += inference.high - inference.low;
+            wilson_width += inference.wilson_high - inference.wilson_low;
         }
         println!(
             "normal/sample-variance: {covered}/{trials} covered, mean width {:.4}",
@@ -2841,15 +4070,27 @@ mod tests {
             boot_width / trials as f64
         );
         println!(
-            "wilson:                 {wilson_covered}/{trials} covered, mean width {:.4}",
+            "betting (shipped):      {betting_covered}/{trials} covered, mean width {:.4}",
+            betting_width / trials as f64
+        );
+        println!(
+            "wilson (retired):       {wilson_covered}/{trials} covered, mean width {:.4}",
             wilson_width / trials as f64
         );
-        // The finding, pinned so it is not rediscovered: on the map shape
-        // these runs produce, Wilson covers every replication — it is not
-        // 95% conservative, it is total — at 2.2x the width of either
-        // variance-adaptive alternative, and both of those land slightly
-        // *under* nominal rather than at it. There is no drop-in narrower
-        // interval here that is also calibrated.
+        // The finding this test used to pin was that no drop-in narrower
+        // interval here is also calibrated: Wilson covered every replication
+        // at 2.2x the width of the two variance-adaptive alternatives, and
+        // both of those landed *under* nominal. The first half still holds and
+        // is asserted below. The conclusion does not, and the reason it did
+        // not is worth keeping: both alternatives estimate a dispersion from
+        // 120 observations that are mostly the same number, and an interval
+        // built on an underestimated variance undercovers.
+        //
+        // A betting interval never estimates that dispersion. It inverts the
+        // e-process the gate already trusts for its evidence, so its coverage
+        // is Ville's inequality rather than an approximation, and it is valid
+        // for any bounded observation whatever its shape. On this shape it
+        // covers at or above nominal while landing well inside Wilson.
         assert_eq!(
             wilson_covered, trials,
             "Wilson is expected to cover every replication on this shape"
@@ -2861,6 +4102,16 @@ mod tests {
         assert!(
             boot_covered * 100 < trials * 95,
             "the bootstrap interval undercovered when measured: {boot_covered}/{trials}"
+        );
+        assert!(
+            betting_covered * 100 >= trials * 95,
+            "the betting interval must hold nominal coverage: {betting_covered}/{trials}"
+        );
+        assert!(
+            betting_width < wilson_width,
+            "the betting interval should be narrower than Wilson: {:.4} against {:.4}",
+            betting_width / trials as f64,
+            wilson_width / trials as f64
         );
         assert!(
             eb_width * 2.0 < wilson_width,
@@ -2936,7 +4187,7 @@ mod tests {
                 (
                     game.turn,
                     game.winner,
-                    game_score(game.winner, &seats, "advanced"),
+                    game_score(game.winner, &BTreeSet::from([0]), &BTreeSet::from([1])),
                 )
             })
         };
@@ -2967,13 +4218,15 @@ mod tests {
         for pid in 0..seats.len() {
             game.players[pid].era_score = 0;
         }
-        let baseline = terminal_score_share(&game, &seats, "challenger");
+        let left = BTreeSet::from([0]);
+        let right = BTreeSet::from([1]);
+        let baseline = terminal_score_share(&game, &left, &right);
         assert!((baseline - 0.5).abs() < 1e-12);
 
         game.players[0].techs.insert(civvis::name!("writing"));
         game.winner = Some(1);
-        let challenger = terminal_score_share(&game, &seats, "challenger");
-        let incumbent = terminal_score_share(&game, &seats, "incumbent");
+        let challenger = terminal_score_share(&game, &left, &right);
+        let incumbent = terminal_score_share(&game, &right, &left);
         assert!(challenger > baseline);
         assert!((challenger + incumbent - 1.0).abs() < 1e-12);
     }

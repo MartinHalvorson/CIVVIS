@@ -167,7 +167,7 @@ while true; do
 
   if [ $((now - last_summary)) -ge $SUMMARY_EVERY ]; then
     last_summary=$now
-    rated=$(/usr/bin/python3 -c "import json;print(json.load(open('/Users/martin/civvis-spectator-src/league/league.json'))['round'])" 2>/dev/null)
+    rated=$(/usr/bin/python3 -c "import json;print(json.load(open(''"$HOME"'/civvis-spectator-src/league/league.json'))['round'])" 2>/dev/null)
     echo "SUMMARY turn $turn/$last_inst | viewers $viewers | $games games this watch | league round $rated | $pulls pull-forwards | $(( (DEADLINE - now) / 3600 ))h left"
   fi
 

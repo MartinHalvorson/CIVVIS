@@ -85,6 +85,62 @@ fn assert_close(actual: f64, expected: f64) {
     );
 }
 
+#[test]
+fn gathering_storm_district_production_rows_apply_to_every_owner() {
+    let (mut game, cities) = game_with_capitals(1, 89_094);
+    let city = cities[0];
+    let pos = owned_non_center_site(&game, city);
+    let district = |family: &str| Item::District {
+        district: Name::new(family),
+        pos,
+    };
+
+    // MINOR_CIV_PRODUCTION_HARBORS applies to every type, and each of the
+    // six type traits pays the matching specialty-district row.
+    for (city_state, specialty) in [
+        ("Geneva", "campus"),
+        ("Mohenjo-Daro", "theater_square"),
+        ("Yerevan", "holy_site"),
+        ("Kabul", "encampment"),
+        ("Auckland", "industrial_zone"),
+        ("Zanzibar", "commercial_hub"),
+    ] {
+        game.players[0].is_minor = true;
+        game.players[0].civ = city_state.to_string();
+        assert_close(game.item_prod_mult(0, city, Some(&district("harbor"))), 6.0);
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            6.0,
+        );
+        assert_close(game.item_prod_mult(0, city, Some(&district("dam"))), 1.0);
+    }
+
+    game.players[0].is_minor = false;
+    game.players[0].civ = "Japan".to_string();
+    for specialty in ["encampment", "holy_site", "theater_square"] {
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            2.0,
+        );
+    }
+    assert_close(game.item_prod_mult(0, city, Some(&district("campus"))), 1.0);
+
+    game.players[0].civ = "Netherlands".to_string();
+    assert_close(game.item_prod_mult(0, city, Some(&district("dam"))), 1.5);
+    assert_close(game.item_prod_mult(0, city, Some(&district("campus"))), 1.0);
+
+    // Veterans' two rows were already represented by the shared policy key;
+    // keep that behavior pinned while adding the remaining eleven rows.
+    game.players[0].civ = "Rome".to_string();
+    game.players[0].policies.insert(crate::name!("veterancy"));
+    for specialty in ["encampment", "harbor"] {
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            1.3,
+        );
+    }
+}
+
 fn owned_non_center_site(game: &Game, city: u32) -> Pos {
     let center = game.cities[&city].pos;
     game.cities[&city]
@@ -904,8 +960,17 @@ fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
     }
 }
 
+/// Valletta sells the city centre for Faith. It does not sell the walls.
+///
+/// This test used to assert `walls` cost 80 Faith and then buy them. The
+/// shipped ruleset disagrees: no base or expansion file gives any wall tier a
+/// `PurchaseYield`, so Civilization VI offers them for no currency, and
+/// Valletta's `ENABLE_BUILDING_FAITH_PURCHASE` changes the currency of a
+/// purchasable building rather than making an unpurchasable one buyable. The
+/// live seat issued 99 such purchases across the two Valletta runs and the host
+/// refused every one.
 #[test]
-fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls() {
+fn valletta_purchases_city_center_and_encampment_buildings_but_never_the_walls() {
     let (mut game, cities) = game_with_capitals(2, 89_006);
     let city = cities[0];
     let valletta = add_city_state(&mut game, "Valletta");
@@ -922,21 +987,33 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
         game.building_faith_purchase_cost(0, city, "granary"),
         Some(130.0)
     );
-    assert_eq!(
-        game.building_faith_purchase_cost(0, city, "walls"),
-        Some(80.0)
-    );
     assert_eq!(game.building_faith_purchase_cost(0, city, "library"), None);
+    // A city defence is Production-only in both currencies, which is what
+    // `building_gold_purchase_cost` has always said and what this path used to
+    // contradict.
+    for defence in ["walls", "medieval_walls", "renaissance_walls", "tsikhe"] {
+        assert_eq!(
+            game.building_faith_purchase_cost(0, city, defence),
+            None,
+            "{defence} has no PurchaseYield in the shipped ruleset, so no \
+             currency buys it -- not even a Valletta suzerain's Faith"
+        );
+        assert_eq!(
+            game.building_gold_purchase_cost(0, city, defence),
+            None,
+            "{defence} must stay Production-only for Gold too"
+        );
+    }
     let purchase = Action::BuyBuilding {
         city,
         building: crate::name!("walls"),
         currency: "faith".to_string(),
     };
-    assert!(game.legal_actions(0).contains(&purchase));
-    game.apply(0, &purchase).unwrap();
-    assert_close(game.players[0].faith, 920.0);
-    assert!(game.cities[&city].buildings.contains(&crate::name!("walls")));
-    assert_eq!(game.cities[&city].wall_hp, 100);
+    assert!(
+        !game.legal_actions(0).contains(&purchase),
+        "buying walls with Faith must not be offered as a legal action"
+    );
+    assert!(!game.cities[&city].buildings.contains(&crate::name!("walls")));
 
     install_district(&mut game, city, "encampment");
     assert_eq!(

@@ -79,6 +79,27 @@ MIN_REPUBLISH_SECONDS = 1.0
 RUN_FRESH_SECONDS = 900.0
 
 
+class EventLines(list):
+    """The complete event stream plus the revisions that can change the board.
+
+    The control mod also writes a large amount of diagnostic telemetry between
+    state snapshots.  Those records are useful to the decider, but they do not
+    change the board the mirror is displaying.  Keeping that distinction beside
+    the cached lines lets the follower avoid rebuilding the mirror for every
+    refusal, order, or popup record.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.board_revision = 0
+
+
+# The follower follows one live run at a time.  A single cache avoids reparsing
+# the whole append-only journal once per poll and, unlike a dict keyed by run,
+# cannot retain every finished game's multi-megabyte event stream forever.
+_EVENT_CACHE = None
+
+
 def log(message):
     line = f"[mirror] {time.strftime('%FT%TZ', time.gmtime())} {message}"
     print(line, flush=True)
@@ -111,39 +132,95 @@ def read_events(run_dir):
     """Complete JSON lines only — the game is appending to this file as we read.
 
     A half-written final line is normal, not corruption; dropping it costs at
-    most one poll and keeps the reconstruction deterministic.
+    most one poll and keeps the reconstruction deterministic.  The file is
+    tailed incrementally: old, already-validated lines are retained in the
+    single-run cache instead of being read and decoded again on every poll.
 
     The last element is whether the run has exported a map YET, which is the
     precondition `start_visible_server` needs and this is the only pass that
     already reads every event. See `main` for what it is guarding.
     """
-    path = os.path.join(run_dir, "events.jsonl")
-    good, turn, players, height, tiles = [], None, 4, 38, False
+    global _EVENT_CACHE
+
+    path = os.path.abspath(os.path.join(run_dir, "events.jsonl"))
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None, None, 4, 38, False
+
+    cache = _EVENT_CACHE
+    if (
+        cache is None
+        or cache["path"] != path
+        or cache["inode"] != stat.st_ino
+        or stat.st_size < cache["offset"]
+    ):
+        cache = {
+            "path": path,
+            "inode": stat.st_ino,
+            "offset": 0,
+            "partial": b"",
+            "lines": EventLines(),
+            "turn": None,
+            "players": 4,
+            "height": 38,
+            "tiles": False,
+        }
+        _EVENT_CACHE = cache
+
     try:
         with open(path, "rb") as handle:
-            raw = handle.read()
+            handle.seek(cache["offset"])
+            fresh = handle.read()
+            end = handle.tell()
     except OSError:
-        return None, None, players, height, tiles
-    for chunk in raw.split(b"\n"):
+        return None, None, cache["players"], cache["height"], cache["tiles"]
+
+    previous_partial = cache["partial"]
+    chunks = (previous_partial + fresh).split(b"\n")
+    cache["partial"] = chunks.pop() if chunks else b""
+    cache["offset"] = end
+
+    def accept(chunk):
         if not chunk.strip():
-            continue
+            return False
         try:
             event = json.loads(chunk)
         except Exception:
-            continue
-        good.append(chunk)
+            return False
+        if not isinstance(event, dict):
+            return False
+        cache["lines"].append(chunk)
         kind = event.get("kind")
         if kind == "seat":
-            players = int(event.get("players") or players)
+            cache["players"] = int(event.get("players") or cache["players"])
         # The map's own height decides the reflection axis; taking it from the
         # export beats assuming a size, because the ladder changes map size.
         if kind == "tiles":
-            tiles = True
+            cache["tiles"] = True
             if isinstance(event.get("height"), int):
-                height = event["height"]
+                cache["height"] = event["height"]
+        # Only these records alter the reconstructed board.  Orders, refusals,
+        # and UI diagnostics remain in `lines` for the next rebuild, but do not
+        # by themselves justify launching another throwaway CIVVIS process.
+        if kind in ("state", "tiles"):
+            cache["lines"].board_revision += 1
         if kind in ("state", "turn") and isinstance(event.get("turn"), int):
-            turn = event["turn"]
-    return good, turn, players, height, tiles
+            cache["turn"] = event["turn"]
+        return True
+
+    for chunk in chunks:
+        accept(chunk)
+    # A clean writer can flush a complete final JSON object without a trailing
+    # newline. Treat that as complete; retain only genuinely incomplete JSON so
+    # it can be joined with the next append.
+    if cache["partial"] and (fresh or cache["partial"] != previous_partial) \
+            and accept(cache["partial"]):
+        cache["partial"] = b""
+    return (
+        cache["lines"], cache["turn"], cache["players"],
+        cache["height"], cache["tiles"],
+    )
 
 
 def mirror_axis(height):
@@ -580,6 +657,9 @@ MIRROR_URL = f"http://127.0.0.1:{PORT}/"
 # Left half of the display, beside the Civilization VI window the controller
 # parks on the right (`civ6_play --window-side right`).
 MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
+MIRROR_ENUM_CACHE_SECONDS = 5.0
+_MIRROR_ENUM_CACHE_AT = 0.0
+_MIRROR_ENUM_CACHE_VALUE = None
 
 
 def chrome(script):
@@ -628,20 +708,41 @@ def mirror_target_url():
     return MIRROR_URL
 
 
-def mirror_on_screen():
+def mirror_on_screen(*, fresh=True):
     """Is a Chrome tab pointing at the mirror?
 
     Returns None when Chrome cannot be enumerated. An empty answer is NOT an
     empty browser — the enumeration fails intermittently under load, and
     treating that as "the window is gone" is what had civvis-keeper.sh opening a
     fresh window every couple of minutes and leaving the page no time to paint.
+
+    Presence is sampled at most every five seconds by the steady-state loop.
+    AppleScript enumeration is much more expensive than the local HTTP poll and
+    it can briefly wait on macOS Automation, so doing it once per game poll was
+    needless pressure on the same desktop that must keep Civ 6 rendering. Calls
+    that repair or refresh a tab use the default fresh read.
     """
+    global _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE
+    now = time.monotonic()
+    if (
+        not fresh
+        and _MIRROR_ENUM_CACHE_AT
+        and now - _MIRROR_ENUM_CACHE_AT < MIRROR_ENUM_CACHE_SECONDS
+    ):
+        return _MIRROR_ENUM_CACHE_VALUE
     if subprocess.run(["pgrep", "-x", "Google Chrome"], capture_output=True).returncode != 0:
-        return False
-    answer = chrome('tell application "Google Chrome" to get URL of tabs of every window')
-    if not answer:
-        return None
-    return f":{PORT}" in answer
+        value = False
+    else:
+        answer = chrome('tell application "Google Chrome" to get URL of tabs of every window')
+        value = None if not answer else f":{PORT}" in answer
+    _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE = now, value
+    return value
+
+
+def forget_mirror_presence():
+    """Drop the short browser-presence cache after we navigate a tab."""
+    global _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE
+    _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE = 0.0, None
 
 
 def refresh_mirror_page(server_pid):
@@ -680,7 +781,7 @@ def ensure_on_screen(misses):
     stealing the foreground every few seconds would stop the very game this
     window exists to show (civvis-civ6-computer-control).
     """
-    shown = mirror_on_screen()
+    shown = mirror_on_screen(fresh=False)
     if shown is None or shown:
         return 0
     misses += 1
@@ -691,6 +792,7 @@ def ensure_on_screen(misses):
       make new window
       set URL of active tab of window 1 to "{mirror_target_url()}"
     end tell''')
+    forget_mirror_presence()
     return 0
 
 
@@ -726,17 +828,18 @@ def ensure_watching(watch):
     tab — a full navigation reboots the client; after two revivals without a
     cure, replace the tab entirely, which also abandons its sessionStorage.
     """
-    if not server_alive(PORT):
-        watch["dead_since"] = None
-        return
     viewers = mirror_viewers()
     if viewers is None:
+        # `/status` is already the server liveness check. Avoid a second HTTP
+        # request in the hot path and keep the browser check for the only case
+        # where it can make a useful distinction: a present but wedged page.
+        watch["dead_since"] = None
         return
     if viewers > 0:
         watch["dead_since"] = None
         watch["revivals"] = 0
         return
-    if mirror_on_screen() is not True:
+    if mirror_on_screen(fresh=False) is not True:
         # No tab, or Chrome could not be enumerated: presence is
         # ensure_on_screen's job, and an unreadable browser is not evidence.
         watch["dead_since"] = None
@@ -853,7 +956,10 @@ def main():
         if lines is None:
             time.sleep(POLL_SECONDS)
             continue
-        size = len(lines)
+        # EventLines separates board-changing exports from the mod's diagnostic
+        # chatter.  Test doubles and older callers still return a plain list, so
+        # their length remains a safe fallback.
+        size = getattr(lines, "board_revision", len(lines))
 
         if not server_alive(PORT):
             # ⚠⚠ SPAWNING HERE BEFORE THE FIRST EXPORT COSTS THE GAME ITS FRAMES.

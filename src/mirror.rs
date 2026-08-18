@@ -2208,6 +2208,139 @@ mod tests {
         assert_eq!(mirror.game.players[1].dvp, 19);
     }
 
+    /// 🔴🔴🔴 The congress standing seats the majors this seat never met.
+    ///
+    /// Replays `civvis-20260818T103630Z`, which lost a diplomatic victory at
+    /// turn 222 while leading on score by 213. Six majors, and the seat had met
+    /// exactly one of them: the per-turn rival export therefore topped out at
+    /// LAUTARO's 14 points (70% of the 20 needed), comfortably under the denial
+    /// alarm, while the congress table the seat votes from showed player 4
+    /// holding 22. `urgent_victory_threat` never fired once in 222 turns.
+    #[test]
+    fn congress_standing_seats_the_majors_this_seat_never_met() {
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":221,
+            "dvp":2, "favor":847.0,
+            "congress_dvp":{"turn":221, "points":[
+                {"player":0, "points":2}, {"player":1, "points":10},
+                {"player":3, "points":14}, {"player":4, "points":22},
+                {"player":5, "points":16}]},
+            "rivals":[{"player":3, "dvp":14}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the congress standing wire parses");
+        assert!(
+            state.schema_gaps.is_empty(),
+            "congress_dvp must be schema-recognized: {:?}",
+            state.schema_gaps
+        );
+        // The seat arrives as its own event rather than inside `state`.
+        state.seat.local_player = 0;
+        state.seat.players = 6;
+        let congress = state.congress_dvp.as_ref().expect("the table parses");
+        assert_eq!(congress.turn, Some(221));
+        assert_eq!(congress.points.len(), 5);
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 221,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        // Seat 0 is ours and seat 1 is the one met rival, whose own per-turn
+        // export is the fresher number. The three we never met take the free
+        // seats in ascending host order: 1, 4, 5.
+        assert_eq!(rebuilt.game.players[0].dvp, 2);
+        assert_eq!(rebuilt.game.players[1].dvp, 14);
+        assert_eq!(rebuilt.game.players[2].dvp, 10);
+        assert_eq!(rebuilt.game.players[3].dvp, 22);
+        assert_eq!(rebuilt.game.players[4].dvp, 16);
+        assert_eq!(
+            rebuilt
+                .game
+                .players
+                .iter()
+                .map(|player| player.dvp)
+                .max()
+                .unwrap_or(0),
+            22,
+            "the empire actually about to win must be visible somewhere on the board"
+        );
+
+        // The point of the plumbing: the denial alarm can now see the empire
+        // that is one resolution from winning. Diplomatic progress is
+        // `dvp * 5`, so 22 points reads as a finished race and 14 reads 70 --
+        // under every bar in `urgent_victory_threat`, which is why the shipped
+        // seat sat on 847 unspent Favor while the game ended.
+        let planner = crate::ai::AdvancedAi::default();
+        assert_eq!(planner.rival_pressure(&rebuilt.game, 3).1, 100);
+        assert!(
+            planner.denial_is_urgent(&rebuilt.game, 3),
+            "a rival holding 22 of the 20 points needed is a terminal clock"
+        );
+        let blind = rebuild_from_state(
+            &snapshot,
+            &StateSnapshot {
+                congress_dvp: None,
+                ..state.clone()
+            },
+            6,
+            1,
+            250,
+            0,
+        );
+        assert!(
+            !planner.denial_is_urgent(&blind.game, 3),
+            "and without the congress table it is exactly the silence that lost the game"
+        );
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        assert_eq!(mirror.game.players[3].dvp, 22);
+        // The met rival's live export stays authoritative even when it falls,
+        // because `WC_RES_DIPLOVICTORY` option B takes two points away.
+        state.turn = 222;
+        state.rivals[0].dvp = Some(12);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[1].dvp, 12,
+            "a met rival's per-turn read outranks a congress table refreshed once a session"
+        );
+        assert_eq!(mirror.game.players[3].dvp, 22);
+
+        // An older control mod omits the table entirely; that must not erase
+        // what a persistent mirror already seated.
+        state.turn = 223;
+        state.congress_dvp = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[3].dvp, 22);
+    }
+
+    /// A met rival whose `dvp` the mod could not read still gets the congress
+    /// number rather than a silent zero.
+    #[test]
+    fn congress_standing_backfills_a_met_rival_with_no_live_reading() {
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":180,
+            "congress_dvp":{"turn":180, "points":[
+                {"player":0, "points":5}, {"player":2, "points":17}]},
+            "rivals":[{"player":2}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the congress standing wire parses");
+        state.seat.local_player = 0;
+        state.seat.players = 4;
+        assert_eq!(state.rivals[0].dvp, None);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 180,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(rebuilt.game.players[1].dvp, 17);
+    }
+
     /// Rival victory progress crosses the bridge. Five of the twelve runs the
     /// seat was leading on 2026-08-16/17 ended at t229-245 on a rival's
     /// culture, technology or diplomatic victory: rival space programs and
@@ -2445,6 +2578,106 @@ mod tests {
                 .values()
                 .any(|keys| keys.contains(&key)),
             "unknown capacity must fail closed"
+        );
+    }
+
+    /// ★★★★ A FRESH LIVE SPY OWES NO PROMOTION, so the mission layer is
+    /// reachable at all. Civilization VI grants a Spy its first promotion at
+    /// level 2; the native rule owes one per level. Seating the host's level
+    /// unshifted made every fresh live Spy permanently "promotable", and
+    /// `legal_spy_actions` returns promotions as the ONLY legal actions while
+    /// one is owed — so no live Spy ever received a travel or mission order
+    /// (run civvis-20260818T095712Z: the same impossible promotion sent for
+    /// 73 consecutive turns). And a Spy that finished its travel must seat in
+    /// the RIVAL city it stands in — matching own cities only imported it
+    /// with no city, which generates no missions either.
+    #[test]
+    fn a_fresh_live_spy_owes_no_promotion_and_a_travelled_one_seats_abroad() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![
+                plot(3, 3, "TERRAIN_GRASS"),
+                plot(4, 4, "TERRAIN_GRASS"),
+                plot(5, 5, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 120,
+            spy_capacity: Some(3),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 1,
+            cities: vec![StateCity {
+                id: 9,
+                name: "Aduatuca".to_string(),
+                x: 5,
+                y: 5,
+                pop: 6,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+        // A fresh Spy at home, a travelled one standing in the rival city, and
+        // a genuinely levelled one whose earned pick must survive the shift.
+        for (id, x, y, level) in [(77, 4, 4, 1), (78, 5, 5, 1), (79, 4, 4, 2)] {
+            state.units.push(StateUnit {
+                id,
+                kind: "UNIT_SPY".to_string(),
+                x,
+                y,
+                level: Some(level),
+                ..StateUnit::default()
+            });
+        }
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let uid = |civ6: i64| {
+            *rebuilt
+                .unit_ids
+                .iter()
+                .find(|(_, mapped)| **mapped == civ6)
+                .map(|(uid, _)| uid)
+                .expect("the spy is mirrored")
+        };
+
+        let fresh = &rebuilt.game.spies[&uid(77)];
+        assert_eq!(fresh.level, 0, "host level 1 is zero promotions owed");
+        assert!(
+            rebuilt
+                .game
+                .legal_spy_actions(0, fresh.id)
+                .iter()
+                .all(|action| !matches!(action, crate::game::Action::PromoteSpy { .. })),
+            "a fresh Spy must not be gated behind a promotion the host refuses"
+        );
+
+        let travelled = &rebuilt.game.spies[&uid(78)];
+        let seat = travelled.city.expect("the travelled Spy seats in a city");
+        assert_ne!(
+            rebuilt.game.cities[&seat].owner, 0,
+            "the city it stands in is the rival's, which is what missions aim from"
+        );
+
+        let levelled = &rebuilt.game.spies[&uid(79)];
+        assert_eq!(levelled.level, 1, "host level 2 owes exactly one pick");
+        assert!(
+            rebuilt
+                .game
+                .legal_spy_actions(0, levelled.id)
+                .iter()
+                .any(|action| matches!(action, crate::game::Action::PromoteSpy { .. })),
+            "the promotion a mission actually earned is still offered"
         );
     }
 
@@ -6504,6 +6737,103 @@ mod tests {
     /// the same reason the border-growth test above asserts through
     /// `valid_improvements`: the field only matters where it is consulted, and a
     /// test on the field alone would pass on a set nothing reads.
+    /// ★★★★ A met major's border plot the mirror can attribute to no city of
+    /// theirs is a city in the fog. Run civvis-20260818T155552Z founded Setia
+    /// two tiles from such a border (Vietnam: four cities, none seen) and lost
+    /// it eight turns later at −13 Loyalty a turn, while the settle-site
+    /// forecast — which sums the cities on the board — had passed the site.
+    /// `unseen_major_borders` names those plots: a rival with no city on the
+    /// board, or a plot further from every known city of theirs than a
+    /// Civilization VI city can own. A minor's ground and a plot beside a
+    /// KNOWN rival city are not in it.
+    #[test]
+    fn a_met_majors_border_with_no_city_behind_it_is_recorded_as_unseen() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let mut plots = vec![owned(5, 5, 0)];
+        // Rival 3 owns (5,7) and (5,8) and none of their cities is in sight.
+        plots.push(owned(5, 7, 3));
+        plots.push(owned(5, 8, 3));
+        // Rival 4 owns (14, 5) beside their known city at (15, 5), and (5, 12)
+        // ten tiles from it — the second belongs to a city we cannot see.
+        plots.push(owned(15, 5, 4));
+        plots.push(owned(14, 5, 4));
+        plots.push(owned(5, 12, 4));
+        // A city-state owns (9, 9); minors exert no loyalty pressure and are
+        // not majors.
+        plots.push(owned(9, 9, 7));
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+        state.rivals.push(StateRival {
+            player: 4,
+            at_war: false,
+            cities: vec![StateCity {
+                id: 2,
+                name: "Hue".to_string(),
+                x: 15,
+                y: 5,
+                pop: 5,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KUMASI".to_string(),
+            ..StateMinor::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 5, 1, 500, 0);
+        let at = |x: i32, y: i32| crate::hex::offset_to_axial(x, y);
+        let unseen = &mirror.game.unseen_major_borders;
+        assert!(
+            unseen.contains(&at(5, 7)) && unseen.contains(&at(5, 8)),
+            "a met major with no city on the board: its ground is an unseen border, got {unseen:?}"
+        );
+        assert!(
+            unseen.contains(&at(5, 12)),
+            "ten tiles from the only known city of theirs: a city we cannot see owns it"
+        );
+        assert!(
+            !unseen.contains(&at(14, 5)),
+            "beside their known city: the forecast can count that city"
+        );
+        assert!(
+            !unseen.contains(&at(9, 9)),
+            "a minor's ground presses no loyalty and is not a major's border"
+        );
+        assert!(
+            !unseen.contains(&at(5, 5)),
+            "our own ground is never an unseen border"
+        );
+    }
+
     #[test]
     fn a_rival_border_whose_city_is_unseen_still_stops_the_unit() {
         let owned = |x: i32, y: i32, owner: i32| {
@@ -8830,6 +9160,28 @@ pub struct StatePublicEmpireStats {
     pub thermonuclear_devices: Option<i64>,
 }
 
+/// The World Congress diplomatic standing as of the last session, and the turn
+/// that session was held. See [`StateSnapshot::congress_dvp`] for why a
+/// met-gated rival list cannot answer "who is about to win diplomatically".
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCongressDvp {
+    /// The game turn the seat was shown this standing.
+    #[serde(default)]
+    pub turn: Option<i64>,
+    /// One entry per alive major, the seat included.
+    #[serde(default)]
+    pub points: Vec<StateCongressDvpEntry>,
+}
+
+/// One civilization's diplomatic-victory points as the congress reported them.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCongressDvpEntry {
+    #[serde(default)]
+    pub player: usize,
+    #[serde(default)]
+    pub points: i64,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
@@ -9312,6 +9664,27 @@ pub struct StateSnapshot {
     /// `None` means unavailable rather than an authoritative zero.
     #[serde(default)]
     pub favor: Option<f64>,
+    /// 🔴🔴🔴 THE DIPLOMATIC STANDING THE SEAT IS SHOWN AND THE TRACKER NEVER SAW.
+    ///
+    /// [`StateRival`] is met-gated, so `players[*].dvp` only ever carried the
+    /// civilizations this seat had contacted. The World Congress seats every
+    /// alive major and shows the seat all of their points, and the host's own
+    /// `WC_RES_DIPLOVICTORY` ballot names them as targets — which is why
+    /// `voteWorldCongress` has always been free to pick its leader from the
+    /// full set. That knowledge stopped at the ballot box.
+    ///
+    /// Measured over the 50 live runs carrying a congress table, **40 (80%)
+    /// showed a DVP standing higher than any rival the decider could see**, and
+    /// in five the difference crossed the denial alarm. In
+    /// `civvis-20260818T103630Z` the eventual winner sat at 22 points while the
+    /// best visible rival read 14, so `urgent_victory_threat` never fired once
+    /// in 222 turns and the seat lost a game it led by 213.
+    ///
+    /// This is a congress-time snapshot, not a live read: it is what the last
+    /// session showed, stamped with the turn it showed it, and it goes stale
+    /// between sessions the same way a human's memory of the last vote does.
+    #[serde(default)]
+    pub congress_dvp: Option<StateCongressDvp>,
     /// How many Spies Civilization VI will let this empire field, from the
     /// accessor the shipped Espionage Overview prints
     /// (`GetDiplomacy():GetSpyCapacity()`).
@@ -10893,7 +11266,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "taken_religion_beliefs", "religions", "prophet_pending",
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "faith_sources", "science",
-        "culture", "public_stats", "score", "dvp", "favor",
+        "culture", "public_stats", "score", "dvp", "favor", "congress_dvp",
         "spy_capacity",
         "foreign_tourists", "domestic_tourists",
         "military",
@@ -12019,6 +12392,30 @@ fn block_live_spy_production(game: &mut crate::game::Game, capacity: Option<i64>
 /// The unit id is reused as the spy id so an order can be translated straight
 /// back onto the unit it came from. `city` is the city the agent is standing
 /// in, which is what the host's own missions are aimed from.
+///
+/// ★★★★ A LIVE SPY'S PROMOTION ENTITLEMENT IS `level − 1`, NOT `level`. The
+/// native rule (`spy_needs_promotion`) owes a Spy one promotion per level, so
+/// a freshly trained native Spy — level 1, none chosen — picks immediately.
+/// Civilization VI grants the FIRST promotion at level 2: a new Spy has
+/// nothing to pick until a mission levels it. Seating the host's level
+/// unshifted made every fresh live Spy permanently "promotable", and
+/// `legal_spy_actions` returns promotions as the ONLY legal actions while one
+/// is owed — so the whole mission layer was unreachable, not merely
+/// deprioritised. Measured on run civvis-20260818T095712Z: spy 2621443 was
+/// sent the same promotion for 73 consecutive turns (t116–t188), the seat's
+/// four spies drew 129 promotion orders between them, and not one
+/// `SPY_TRAVEL_NEW_CITY` or mission order crossed the bridge in any run on
+/// record. Seat the Spy at `host level − 1` so the mirror owes it exactly
+/// what the host would let it choose; a genuinely levelled Spy still gets
+/// its offer, named per #2012.
+///
+/// ★★ AND THE CITY IT STANDS IN MUST MATCH RIVAL CITIES TOO. Offensive
+/// missions are generated only for `spy.city` (`spy_operation_actions`), and
+/// `advanced_spies` treats a Spy as offensive only when that city has a rival
+/// owner — so matching `unit.pos` against OUR cities alone meant a Spy that
+/// completed its travel imported with `city: None` and could never be handed
+/// the mission it travelled for. Match whatever city stands on the tile; the
+/// counterspy branch already guards on ownership itself.
 fn seat_live_spies(game: &mut crate::game::Game) {
     game.spies.retain(|_, spy| spy.owner != 0);
     let live: Vec<(u32, i64, std::collections::BTreeSet<String>, Option<u32>)> = game
@@ -12029,11 +12426,11 @@ fn seat_live_spies(game: &mut crate::game::Game) {
             let city = game
                 .cities
                 .iter()
-                .find(|(_, city)| city.owner == 0 && city.pos == unit.pos)
+                .find(|(_, city)| city.pos == unit.pos)
                 .map(|(id, _)| *id);
             (
                 unit.id,
-                unit.level.max(1) as i64,
+                (unit.level - 1).max(0) as i64,
                 unit.promotions
                     .iter()
                     .map(|name| name.to_string())
@@ -14134,6 +14531,67 @@ fn apply_observed_host_metrics(
     }
 }
 
+/// Seat the World Congress diplomatic standing, including the majors this seat
+/// has not met.
+///
+/// The rival loops assign seats `1..n` in export order and that list is
+/// met-gated, so before this ran `players[*].dvp` could only ever describe
+/// contacted empires. `state.seat.players` sizes the board to every major in
+/// the game, so the seats past the met rivals already exist as the
+/// reconstruction's stand-ins for the ones we have not found — attaching the
+/// congress standing to them is the one public fact we hold about them.
+///
+/// Deliberately conservative in three ways:
+///
+/// - a met rival keeps its own per-turn export, which is sampled every turn
+///   against a congress table refreshed once a session. Only a rival whose
+///   `dvp` the mod could not read falls back to the congress value. DVP can
+///   go *down* (`WC_RES_DIPLOVICTORY` option B is −2), so preferring the
+///   larger of the two would latch a stale high standing.
+/// - the seat's own entry is ignored; `state.dvp` is the live read.
+/// - unmet entries are seated in ascending host-player order, so the same
+///   congress table always lands the same way.
+fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let Some(congress) = &state.congress_dvp else {
+        return;
+    };
+    // Host player id -> mirror seat, exactly as the rival loops assign them.
+    let seat_of: std::collections::BTreeMap<usize, usize> = state
+        .rivals
+        .iter()
+        .enumerate()
+        .map(|(index, rival)| (rival.player, index + 1))
+        .collect();
+    let ours = state.seat.local_player.max(0) as usize;
+    let mut unmet: Vec<&StateCongressDvpEntry> = Vec::new();
+    for entry in &congress.points {
+        if entry.player == ours {
+            continue;
+        }
+        match seat_of.get(&entry.player) {
+            // A met rival the mod could not read a live `dvp` for. Everyone
+            // else keeps the fresher per-turn number.
+            Some(&seat) => {
+                let stale = state
+                    .rivals
+                    .get(seat - 1)
+                    .is_none_or(|rival| rival.dvp.is_none());
+                if stale && seat < game.players.len() {
+                    game.players[seat].dvp = entry.points;
+                }
+            }
+            None => unmet.push(entry),
+        }
+    }
+    unmet.sort_by_key(|entry| entry.player);
+    for (seat, entry) in (state.rivals.len() + 1..).zip(unmet) {
+        if seat >= game.players.len() {
+            break;
+        }
+        game.players[seat].dvp = entry.points;
+    }
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -14314,6 +14772,7 @@ pub fn rebuild_from_state(
     if let Some(dvp) = state.dvp {
         game.players[0].dvp = dvp;
     }
+    apply_congress_dvp(&mut game, state);
     if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
         game.players[0].diplomatic_favor = favor;
     }
@@ -15067,6 +15526,13 @@ fn record_host_observed(game: &mut crate::game::Game) {
 /// The alternative — "any owner that is not a known rival is us" — would hand a plot
 /// belonging to a civilization we have not met to our own empire, and a seat that
 /// believes it owns a rival's capital ring is worse off than one that knows nothing.
+/// The furthest a Civilization VI city ever owns a plot: culture bombs and
+/// border growth stop at five tiles from the centre (`GlobalParameters`
+/// `CITY_MAX_BUY_PLOT_RANGE`, and the plot-acquisition ring). A plot a met
+/// major owns further than this from every city of theirs we can see is owned
+/// by a city we cannot. See [`crate::game::Game::unseen_major_borders`].
+const CIV6_CITY_OWNERSHIP_REACH: i32 = 5;
+
 fn apply_territory(
     game: &mut crate::game::Game,
     snapshot: &Snapshot,
@@ -15103,6 +15569,16 @@ fn apply_territory(
     // open borders open the second while leaving the first shut, and a settler
     // barred by loyalty is barred from founding on ground it may cross freely.
     let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // Ground a MET major owns whose city we cannot see: either the seat holds
+    // no city on this board at all, or its nearest known city stands further
+    // than any Civilization VI city can own (five tiles), so the plot belongs
+    // to one still in the fog. See [`crate::game::Game::unseen_major_borders`].
+    let mut unseen_major: std::collections::BTreeSet<crate::Pos> = Default::default();
+    let is_major = |seat: usize| {
+        game.players
+            .get(seat)
+            .is_some_and(|p| seat != 0 && !p.is_minor && !p.is_barbarian)
+    };
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -15159,14 +15635,25 @@ fn apply_territory(
             // The city that would work it: the owner's nearest. Civ 6 records only
             // the owning PLAYER per plot, so which of their cities holds it is not in
             // the export and the nearest is the only defensible reconstruction.
-            let owner = centres.get(&seat).and_then(|list| {
+            let nearest = centres.get(&seat).and_then(|list| {
                 list.iter()
                     .min_by_key(|(cid, centre)| (game.wdist(pos, *centre), *cid))
-                    .map(|(cid, _)| *cid)
+                    .map(|(cid, centre)| (*cid, game.wdist(pos, *centre)))
             });
+            let owner = nearest.map(|(cid, _)| cid);
             if owner.is_some() {
+                // A plot further from every known city of a major than a city
+                // can own belongs to one this seat has not seen.
+                if is_major(seat)
+                    && nearest.is_some_and(|(_, distance)| distance > CIV6_CITY_OWNERSHIP_REACH)
+                {
+                    unseen_major.insert(pos);
+                }
                 assign.push((pos, owner));
             } else if seat != 0 {
+                if is_major(seat) {
+                    unseen_major.insert(pos);
+                }
                 // A seat we can NAME but that holds no city on this board —
                 // their centre is unrevealed, or refused planting. Their
                 // ground is still not ours to found on; leaving it unassigned
@@ -15222,6 +15709,7 @@ fn apply_territory(
     // that opens — a war declared, borders granted, or simply their city coming
     // into view so the ordinary gate takes over — stops being sealed next turn.
     game.closed_borders = sealed;
+    game.unseen_major_borders = unseen_major;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
@@ -15463,25 +15951,17 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     // tile at a time. The movement points are real; tile movement is not the
     // operation that spends them.
     //
-    // ⚠⚠⚠ THIS COMMENT USED TO CLAIM THE SPY STILL ACTS, AND IT DOES NOT.
-    // It read "`AssignSpy`, `SpyMission` and `PromoteSpy` … are already
-    // translated by the bridge, and are untouched", by analogy with the trader
-    // clause. The trader half of that analogy is true (`Action::TradeRoute`
-    // really is translated); the spy half was never true. `civvis_orders`'
-    // `translate` has no arm for any of the three, so they fall to its `_ =>
-    // None` and are counted untranslatable, and the mod's resolved-operation
-    // table carries no `UNITOPERATION_SPY_*` verb to receive one.
-    //
-    // What actually stops here is the walking the spy was never able to do —
-    // and with it a decision the planner spent on that unit every turn. What
-    // was ALREADY stopped, everywhere else, is the whole espionage layer: a
-    // live Civilization VI Spy is an ordinary `UNIT_SPY` this mirror imports,
-    // so `Game::spies` — the only structure `AdvancedAi::advanced_spies` and
-    // `BasicAi::spies` iterate — stays empty for the entire game. The engine
-    // models twelve missions and the AI aims them at the denial target; on the
-    // live bridge none of it can fire. Say so here rather than imply otherwise:
-    // the disruption a leading rival should be answered with is the axis this
-    // comment sent readers away from.
+    // ⚠ HISTORY: this comment once claimed the spy still acts, then (correctly,
+    // at the time) that it could not — `civvis_orders`' `translate` had no arm
+    // for `AssignSpy`, `SpyMission` or `PromoteSpy`, and `Game::spies` stayed
+    // empty for the whole of a live game. #1929 added the translate arms, the
+    // mod's `UNITOPERATION_SPY_*` verbs, and `seat_live_spies`; #2012 named
+    // the promotions the host's way; and the promotion-entitlement shift in
+    // `seat_live_spies` is what finally let a live Spy be offered travel and
+    // missions at all (`legal_spy_actions` returns promotions as the ONLY
+    // legal actions while one is owed, and an unshifted fresh Spy owed one
+    // forever). What stops HERE is only the tile-walking a Civilization VI
+    // Spy never does — it travels by `SPY_TRAVEL_NEW_CITY`, not by steps.
     //
     // ⚠ Mirror only. `data/units.json` still gives `spy` its 1 move, so
     // `Rules::source_fingerprint` does not shift and an ordinary CIVVIS game is
@@ -15783,6 +16263,7 @@ impl LiveMirror {
         if let Some(dvp) = state.dvp {
             self.game.players[0].dvp = dvp;
         }
+        apply_congress_dvp(&mut self.game, state);
         if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
             self.game.players[0].diplomatic_favor = favor;
         }

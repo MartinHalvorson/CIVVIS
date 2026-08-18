@@ -150,6 +150,27 @@ struct History {
     reported_unit: BTreeMap<u32, bool>,
     reported_city: BTreeMap<u32, bool>,
     tracks: BTreeMap<u32, Track>,
+    /// Per major unit, for its whole life: its kind, whether it has ever
+    /// changed tile, and whether its work mark has ever moved.
+    ///
+    /// ★★★★★ THIS IS THE QUESTION THE IDLE TABLE CANNOT ASK. A share tells you
+    /// how much of a kind's time is spent standing still; it cannot separate a
+    /// fleet that works hard and rests from a fleet half of which was never
+    /// usable. The Galley was the second: 53 hulls built and **20 that never
+    /// moved once**, because a lakeside city counts as coastal and its hull can
+    /// never leave the lake (#1989, promoted #1997). The idle share said 54.3%
+    /// and did not say that.
+    lives: BTreeMap<u32, UnitLife>,
+}
+
+#[derive(Clone)]
+struct UnitLife {
+    kind: String,
+    turns: u64,
+    moved: bool,
+    worked: bool,
+    last: civvis::Pos,
+    last_mark: WorkMark,
 }
 
 /// Everything about a unit that changes when it accomplishes something:
@@ -193,12 +214,27 @@ struct Motion {
     idle_field: u64,
     /// Of those, the ones that COULD have fortified: unembarked land military.
     ///
-    /// ⚠ The split is the whole point. `idle_field` alone is the largest motion
-    /// symptom in the audit — 23.84% of major-civ unit-turns — but a settler or
-    /// a trader standing still is not squandering anything it had, while a
-    /// warrior standing still is giving up **+3 combat strength per fortified
-    /// turn, capped at +6** (`unit_strength`), about 30% of its base. Only this
-    /// half is a defect; reporting the total invites work on the other one.
+    /// The split is worth keeping: a settler or a trader standing still is not
+    /// squandering anything it had, while a warrior standing still is giving up
+    /// **+3 combat strength per fortified turn, capped at +6**
+    /// (`unit_strength`), about 30% of its base.
+    ///
+    /// ⚠⚠ **BUT THIS COLUMN IS NOT A DEFECT, AND THIS COMMENT USED TO SAY IT
+    /// WAS.** "Only this half is a defect" was an argument from the mechanic,
+    /// never a measurement, and the measurement disagrees.
+    /// `advanced_fortify_idle_units` — which does exactly what the column asks
+    /// for, fortifying every unit the planner gave nothing to do — was screened
+    /// on the two-profile matrix at 200 pairs (seed 9300000) and came back
+    /// **RETAIN advanced, 1/2 profiles cleared**: deployment-online 49.8%,
+    /// −2 Elo-equivalent (CI −35..+29); compact-standard 50.0%, +0 (CI −14..+16).
+    /// Both intervals are tight against resolutions of +37 and +35, so that is
+    /// a null and not a short look, and the terminal-score direction agreed
+    /// (p=0.53 and p=0.47).
+    ///
+    /// Read the column as *description*, not as a backlog item. The free
+    /// defensive bonus on 3,307 major unit-turns per three games is real and
+    /// collecting it wins nothing; whatever those units should be doing
+    /// instead, standing still with a fortify order is not it.
     idle_could_fortify: u64,
     /// Stood still in the open, fortified. A picket is legitimate; a
     /// stampede into this column is a livelock fix that only hid the problem.
@@ -248,6 +284,18 @@ struct MotionBreakdown {
     major: Motion,
     minor: Motion,
     barbarian: Motion,
+    /// Major unit-turns and idle unit-turns, per unit kind.
+    ///
+    /// The role split above says how much of the game is spent standing still;
+    /// it does not say *what* is standing still, and the two answers want
+    /// different fixes. A galley with no objective, a builder with no charge
+    /// left to spend, and a warrior that declined every trade are three
+    /// separate defects that the one 20% figure reports as a single number.
+    major_by_kind: BTreeMap<String, (u64, u64)>,
+    /// Per major unit kind: how many were ever seen, how many never acted at
+    /// all, and how many of those lived long enough for that to be a decision
+    /// rather than a birth. See `History::lives`.
+    major_lives: BTreeMap<String, (u64, u64, u64)>,
 }
 
 fn controller_role(g: &Game, owner: usize) -> &'static str {
@@ -275,6 +323,17 @@ impl MotionBreakdown {
         self.major.add(other.major);
         self.minor.add(other.minor);
         self.barbarian.add(other.barbarian);
+        for (kind, (turns, idle)) in &other.major_by_kind {
+            let entry = self.major_by_kind.entry(kind.clone()).or_insert((0, 0));
+            entry.0 += turns;
+            entry.1 += idle;
+        }
+        for (kind, (built, never, never_long)) in &other.major_lives {
+            let entry = self.major_lives.entry(kind.clone()).or_insert((0, 0, 0));
+            entry.0 += built;
+            entry.1 += never;
+            entry.2 += never_long;
+        }
     }
 
     fn total(&self) -> Motion {
@@ -289,8 +348,87 @@ impl MotionBreakdown {
         println!("{indent}       major      {}", self.major.line());
         println!("{indent}       city-state {}", self.minor.line());
         println!("{indent}       barbarian  {}", self.barbarian.line());
+        self.print_major_kinds(indent);
+        self.print_major_lives(indent);
+    }
+
+    /// Units that lived and never did one thing.
+    ///
+    /// The idle table above is a share of time; this is a count of units. A
+    /// kind can idle 50% of its turns because it works in bursts, or because
+    /// half of the ones built were never usable, and only this line tells them
+    /// apart. It is printed narrow on purpose: a kind with no never-actors is
+    /// not news.
+    fn print_major_lives(&self, indent: &str) {
+        let mut rows: Vec<(&String, u64, u64, u64)> = self
+            .major_lives
+            .iter()
+            .filter(|(_, (_, _, never_long))| *never_long > 0)
+            .map(|(kind, (built, never, never_long))| (kind, *built, *never, *never_long))
+            .collect();
+        rows.sort_by(|left, right| {
+            right
+                .3
+                .cmp(&left.3)
+                .then(right.1.cmp(&left.1))
+                .then(left.0.cmp(right.0))
+        });
+        if rows.is_empty() {
+            return;
+        }
+        println!(
+            "{indent}       major units that never acted (lived {NEVER_ACTED_MIN_TURNS}+ turns and \
+             never moved or worked, of all built)"
+        );
+        for (kind, built, _never, never_long) in rows.iter().take(10) {
+            println!(
+                "{indent}         {kind:<24} {never_long:>4} of {built:<4}  {:>5.1}% of the ones built",
+                100.0 * *never_long as f64 / (*built).max(1) as f64,
+            );
+        }
+    }
+
+    /// The major idle-field share, attributed to the units that spend it.
+    /// Ordered by idle unit-turns, because the question a fix has to answer is
+    /// where the mass is, not which kind has the worst rate on four turns.
+    fn print_major_kinds(&self, indent: &str) {
+        let mut rows: Vec<(&String, u64, u64)> = self
+            .major_by_kind
+            .iter()
+            .filter(|(_, (_, idle))| *idle > 0)
+            .map(|(kind, (turns, idle))| (kind, *turns, *idle))
+            .collect();
+        rows.sort_by(|left, right| right.2.cmp(&left.2).then(left.0.cmp(right.0)));
+        let total_idle: u64 = rows.iter().map(|row| row.2).sum();
+        if total_idle == 0 {
+            return;
+        }
+        println!("{indent}       major idle-field by unit (idle unit-turns, share of major idle, own idle rate)");
+        for (kind, turns, idle) in rows.iter().take(12) {
+            println!(
+                "{indent}         {kind:<24} {idle:>6}  {:>5.1}% of idle  {:>5.1}% of its own turns",
+                100.0 * *idle as f64 / total_idle as f64,
+                if *turns == 0 {
+                    0.0
+                } else {
+                    100.0 * *idle as f64 / *turns as f64
+                },
+            );
+        }
+        if rows.len() > 12 {
+            let rest: u64 = rows.iter().skip(12).map(|row| row.2).sum();
+            println!(
+                "{indent}         {:<24} {rest:>6}  {:>5.1}% of idle",
+                format!("({} other kinds)", rows.len() - 12),
+                100.0 * rest as f64 / total_idle as f64
+            );
+        }
     }
 }
+
+/// A unit has to have lived a while before never acting is a verdict on the
+/// controller rather than on when the game ended.
+const NEVER_ACTED_MIN_TURNS: u64 = 15;
 
 /// Update one unit's episode and account for this turn of its life. Returns a
 /// livelock detail exactly once per episode, when it first crosses the
@@ -538,6 +676,10 @@ fn audit_turn(
     history.tracks.retain(|id, _| g.units.contains_key(id));
     for (id, unit) in &g.units {
         let role = controller_role(g, unit.owner);
+        // Attribute this unit-turn before the shared counters move, so the
+        // per-kind ledger is the same accounting split a different way rather
+        // than a second, independently drifting one.
+        let before = *motion.for_owner(g, unit.owner);
         if let Some(detail) = track_unit(g, history, *id, motion.for_owner(g, unit.owner)) {
             found.symptom(
                 format!(
@@ -546,6 +688,37 @@ fn audit_turn(
                 ),
                 detail,
             );
+        }
+        if role == "major" {
+            // Whole-life ledger, kept beside the per-turn one. `work_mark`
+            // already carries everything that changes when a unit accomplishes
+            // something, so "has this unit ever done anything" is one
+            // comparison rather than a second definition of work.
+            let mark = work_mark(g, *id);
+            let life = history.lives.entry(*id).or_insert_with(|| UnitLife {
+                kind: unit.kind.to_string(),
+                turns: 0,
+                moved: false,
+                worked: false,
+                last: unit.pos,
+                last_mark: mark,
+            });
+            life.turns += 1;
+            // Self-contained on purpose: the two comparisons below are against
+            // this ledger's own previous values, not against `tracks` or
+            // `unit_still_since`, both of which are rewritten elsewhere in this
+            // same loop and would make the answer depend on statement order.
+            life.moved |= life.last != unit.pos;
+            life.worked |= life.last_mark != mark;
+            life.last = unit.pos;
+            life.last_mark = mark;
+            let after = *motion.for_owner(g, unit.owner);
+            let entry = motion
+                .major_by_kind
+                .entry(unit.kind.to_string())
+                .or_insert((0, 0));
+            entry.0 += after.unit_turns - before.unit_turns;
+            entry.1 += after.idle_field - before.idle_field;
         }
         if unit.hp <= 0 || unit.hp > 100 {
             found.violation(
@@ -903,6 +1076,19 @@ fn main() {
             }
         }
         audit_result(&g, &mut found);
+        for life in history.lives.values() {
+            let entry = motion
+                .major_lives
+                .entry(life.kind.clone())
+                .or_insert((0, 0, 0));
+            entry.0 += 1;
+            if !life.moved && !life.worked {
+                entry.1 += 1;
+                if life.turns >= NEVER_ACTED_MIN_TURNS {
+                    entry.2 += 1;
+                }
+            }
+        }
         totals_motion.add(&motion);
 
         if !quiet {

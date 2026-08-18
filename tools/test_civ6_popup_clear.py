@@ -20,6 +20,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from civ6_control import popup_clear  # noqa: E402
 
 
+class PixelSamplingCompatibilityTest(unittest.TestCase):
+    def test_the_current_pillow_pixel_api_is_preferred(self) -> None:
+        class CurrentImage:
+            def get_flattened_data(self):
+                return (1, 2, 3)
+
+            def getdata(self):
+                raise AssertionError("deprecated getdata should not be used")
+
+        self.assertEqual(list(popup_clear.pixel_values(CurrentImage())), [1, 2, 3])
+
+    def test_old_pillow_images_keep_the_backstop_working(self) -> None:
+        class LegacyImage:
+            def getdata(self):
+                return (4, 5, 6)
+
+        self.assertEqual(list(popup_clear.pixel_values(LegacyImage())), [4, 5, 6])
+
+
 # Unlike the module under test, these checks really do need Pillow: every one
 # of them paints a synthetic Civilization VI screen and asserts on what the
 # classifier makes of the pixels. A host without it skips them by name rather

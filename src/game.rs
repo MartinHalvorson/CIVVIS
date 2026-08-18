@@ -5146,6 +5146,17 @@ pub struct Game {
     /// ground on the following turn instead of sealing our own invasion out.
     #[serde(default)]
     pub closed_borders: BTreeSet<Pos>,
+    /// Ground a MET major civilization owns whose owning city this seat has
+    /// never seen — the border in the fog. Written fresh from the export every
+    /// turn beside `closed_borders`, and empty on any board that is not a
+    /// live mirror. A settle site beside such a border sits four to seven
+    /// tiles from a city the loyalty forecast cannot count, and the forecast
+    /// then says nothing while the host says −13 a turn: run
+    /// civvis-20260818T155552Z founded Setia at t55 two tiles from Vietnam's
+    /// border (four Vietnamese cities, none seen), read −13.3 Loyalty on its
+    /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
+    #[serde(default)]
+    pub unseen_major_borders: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -5585,6 +5596,7 @@ impl From<GameSer> for Game {
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
+            unseen_major_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -6178,6 +6190,7 @@ impl Game {
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
+            unseen_major_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -9123,22 +9136,6 @@ impl Game {
         if self.fallout_at(unit.pos) {
             return 0;
         }
-        // Twilight Valor: the army that fights harder cannot patch itself up
-        // on somebody else's ground.
-        if self.policy_effect(unit.owner, "no_healing_abroad") > 0.0
-            && self.healing_location(unit.owner, unit.pos) != HealingLocation::FriendlyTerritory
-            && !self
-                .city_at(unit.pos)
-                .is_some_and(|city| self.cities[&city].owner == unit.owner)
-            && self
-                .map
-                .get(unit.pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|city_id| self.cities.get(&city_id))
-                .is_none_or(|city| city.owner != unit.owner)
-        {
-            return 0;
-        }
         if spec.domain.as_deref() == Some("air") && self.air_capacity_at(unit.owner, unit.pos) <= 0
         {
             return 0;
@@ -10162,7 +10159,13 @@ impl Game {
         }) * spy_level.max(0) as f64
     }
 
-    const SPY_PROMOTIONS: [&'static str; 17] = [
+    /// Every promotion a spy can take, in the order the offer generator walks.
+    ///
+    /// Public because the live bridge translates these to Civilization VI's own
+    /// identifiers and must not keep a second copy: a spy promotion is spelled
+    /// `PROMOTION_SPY_<NAME>` on the host, and `civ6_unit_promotion_name` reads
+    /// this list to decide which names take that prefix.
+    pub const SPY_PROMOTIONS: [&'static str; 17] = [
         "ace_driver",
         "cat_burglar",
         "con_artist",
@@ -11823,9 +11826,21 @@ impl Game {
         };
         let sacred_places = effect("yield_per_wonder_city") * wonder_cities;
         Yields {
+            // ⚠ Every arm here has a belief that sets it, and that is
+            // checked: `tools/civvis_inert.py` fails when this function prices
+            // a key no belief supplies.
+            //
+            // ⚠⚠ THE SHAPES HERE ARE GATHERING STORM'S, NOT THE BASE GAME'S,
+            // AND THE TWO DISAGREE ABOUT EXACTLY THESE BELIEFS. Vanilla pays
+            // Tithe per follower, World Church and Pilgrimage on what is
+            // foreign, and ships Church Property; `Expansion2_RemoveData.xml`
+            // deletes all four of those modifiers and `Expansion2_Beliefs.xml`
+            // replaces them with the per-city and per-follower forms below.
+            // #2049 read the domestic/foreign distinction out of a compiled
+            // cache that happened to hold the base game and changed these to
+            // match it; #2050 put them back. See `docs/FIDELITY.md`.
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
-                + effect("gold_per_foreign_city") * foreign_following
                 + sacred_places,
             culture: (effect("culture_per_followers") * followers).floor()
                 + (effect("culture_per_foreign_followers") * foreign_followers).floor()
@@ -13086,6 +13101,7 @@ impl Game {
         }
         for c in self.cities.values().filter(|c| c.owner == pid) {
             let mut city_earn: BTreeMap<String, f64> = BTreeMap::new();
+            let scottish_happiness = self.scottish_enlightenment_happiness_scale(c);
             for position in &c.owned_tiles {
                 let tile = &self.map.tiles[position];
                 if !tile.pillaged && tile.improvement.as_deref() == Some("industry") {
@@ -13123,6 +13139,28 @@ impl Game {
                             .get("city_district_gpp")
                             .copied()
                             .unwrap_or(0.0);
+                    }
+                }
+                // Scottish Enlightenment's four live modifiers require the
+                // exact active district type, not a district family: Happy
+                // contributes one Scientist point per Campus and one Engineer
+                // point per Industrial Zone; Ecstatic doubles both amounts.
+                // They enter the city ledger here so Pingala, governments,
+                // policies, and Patronage multiply them with every other city
+                // source exactly once.
+                if scottish_happiness != 0.0 {
+                    match d.as_str() {
+                        "campus" => {
+                            *city_earn.entry("scientist".to_string()).or_insert(0.0) +=
+                                scottish_happiness
+                                    * self.civ_effect(pid, "happy_campus_scientist_gpp");
+                        }
+                        "industrial_zone" => {
+                            *city_earn.entry("engineer".to_string()).or_insert(0.0) +=
+                                scottish_happiness
+                                    * self.civ_effect(pid, "happy_industrial_engineer_gpp");
+                        }
+                        _ => {}
                     }
                 }
                 // The building scan stays INSIDE the condition. It walks the
@@ -14280,6 +14318,37 @@ impl Game {
             .map_or("trade", |seat| seat.kind.as_str())
     }
 
+    /// The seven `ADJUST_DISTRICT_PRODUCTION` rows every city-state carries:
+    /// all of them construct Harbors 500% faster, and each type constructs
+    /// its specialty district 500% faster.  These are city-state-owned
+    /// modifiers, not Envoy bonuses a major civilization receives.
+    fn city_state_district_production_pct(&self, pid: usize, family: &str) -> f64 {
+        let Some(player) = self
+            .players
+            .get(pid)
+            .filter(|player| player.is_minor && !player.is_barbarian)
+        else {
+            return 0.0;
+        };
+        if family == "harbor" {
+            return 500.0;
+        }
+        let specialty = match self.cs_type(&player.civ) {
+            "scientific" => "campus",
+            "cultural" => "theater_square",
+            "religious" => "holy_site",
+            "militaristic" => "encampment",
+            "industrial" => "industrial_zone",
+            "trade" => "commercial_hub",
+            _ => return 0.0,
+        };
+        if family == specialty {
+            500.0
+        } else {
+            0.0
+        }
+    }
+
     /// The bespoke Suzerain bonus key a city-state carries, if the engine
     /// implements one. A declared-but-unimplemented bonus reads as `None` so
     /// no code path can act on a bonus that does not exist yet.
@@ -15188,9 +15257,6 @@ impl Game {
                         .city_building_effect(&self.cities[&cid], "naval_unit_production_pct")
                         / 100.0;
                 }
-                if spec.promotion_class == "naval_raider" {
-                    bonus += self.policy_effect(pid, "naval_raider_production_pct") / 100.0;
-                }
                 if spec.promotion_class == "naval_ranged" {
                     bonus += self.players[pid]
                         .counters
@@ -15305,11 +15371,14 @@ impl Game {
                 ) / 100.0;
             }
             Some(Item::District { district, .. }) => {
+                let family = self.district_family(*district);
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
-                if matches!(self.district_family(*district).as_str(), "encampment" | "harbor") {
+                if matches!(family.as_str(), "encampment" | "harbor") {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
+                bonus += self.civ_effect(pid, &format!("{family}_district_production_pct")) / 100.0;
+                bonus += self.city_state_district_production_pct(pid, family.as_str()) / 100.0;
             }
             Some(Item::Wonder { wonder, pos }) => {
                 bonus += self.policy_effect(pid, "wonder_production_pct") / 100.0;
@@ -15741,7 +15810,10 @@ impl Game {
         }
     }
 
-    fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
+    /// Whether this unit's domain lets it melee that tile at all -- the check
+    /// `do_attack` applies before anything else about the fight. A land unit
+    /// proposing a shot at a ship never gets past here.
+    pub(crate) fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -15793,12 +15865,6 @@ impl Game {
         } else {
             0.0
         }
-    }
-
-    /// Twilight Valor's half: strength that applies only while a unit is the
-    /// one making a melee attack, so it never shows up on defense.
-    fn melee_attack_bonus(&self, u: &Unit) -> f64 {
-        self.policy_effect(u.owner, "melee_attack_combat")
     }
 
     fn unit_unembarked_strength(&self, u: &Unit) -> f64 {
@@ -16136,6 +16202,21 @@ impl Game {
             .iter()
             .filter(|p| self.wdist(city.pos, **p) <= 3)
         {
+            // ⚠ A PILLAGED IMPROVEMENT GIVES NOTHING UNTIL IT IS REPAIRED, AND
+            // THIS LOOP USED TO IGNORE THAT. The building loop below has always
+            // honoured `city.pillaged_buildings`; this one never looked at
+            // `tile.pillaged`, so a razed farm kept feeding the city's growth
+            // ceiling forever. Housing is what caps growth, so the city went on
+            // planning against a ceiling the host had already taken away.
+            //
+            // The per-source drift comparison is what surfaced it: on the live
+            // seat `improvements` read HIGH against the host — Ostia +1.5,
+            // Cumae +2, Aquileia +1 — while every other category agreed. A
+            // total-only comparison had shown the same cities off by ±1 to ±2
+            // for weeks without naming anything.
+            if self.map.tiles[pos].pillaged {
+                continue;
+            }
             if let Some(improvement) = self.map.tiles[pos].improvement.as_deref() {
                 let spec = self
                     .rules
@@ -18563,6 +18644,20 @@ impl Game {
         }
     }
 
+    /// Scottish Enlightenment has four city-local happiness modifiers. Its
+    /// Happy values apply at a +3 surplus and its Ecstatic values are exactly
+    /// double at +5; Content and lower bands receive none of the trait.
+    fn scottish_enlightenment_happiness_scale(&self, city: &City) -> f64 {
+        if !self.owns_civ_unique(city.owner, "Scotland") {
+            return 0.0;
+        }
+        match self.city_happiness(city) {
+            "ecstatic" => 2.0,
+            "happy" => 1.0,
+            _ => 0.0,
+        }
+    }
+
     /// Happiness is a direct Loyalty source in Rise & Fall / Gathering
     /// Storm: Happy/Ecstatic add +3/+6; Displeased and every worse state
     /// subtract -3/-6 respectively.
@@ -20838,7 +20933,12 @@ impl Game {
         self.has_line_of_sight(from, to, true)
     }
 
-    fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
+    /// The line-of-sight test `do_ranged` applies, asked of a unit that
+    /// already exists. This is *not* `line_of_sight_from`: that one asks about
+    /// a tile a unit is only considering standing on, and cannot know about
+    /// the firing unit's own `see_through_woods`. Gating a candidate shot with
+    /// the tile version would refuse a Ranger the engine would have allowed.
+    pub(crate) fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
             let attacker_height = self.see_from_level(unit.pos);
@@ -20880,9 +20980,6 @@ impl Game {
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
             moves += self.empire_wonder_effect(u.owner, "naval_movement");
-        }
-        if spec.promotion_class == "naval_raider" {
-            moves += self.policy_effect(u.owner, "naval_raider_movement");
         }
         if spec.class == "religious"
             && self.wdisk(u.pos, 1).into_iter().any(|position| {
@@ -21925,6 +22022,21 @@ impl Game {
                 }
             } else if let Some(last) = remembered_tiles.get(&tile.pos) {
                 *tile = last.clone();
+            }
+        }
+        // A revealed border tile may still carry the ownership ID of a city
+        // whose City Center is hidden and was removed above.  The tile is
+        // public, but its foreign city record is not; retaining the dangling
+        // ID makes otherwise ordinary map scans index a city that is absent
+        // from this private world.  Clear only those references.  Remembered
+        // City Centers remain valid because their stale city record is kept.
+        let visible_city_ids: BTreeSet<u32> = view.cities.keys().copied().collect();
+        for tile in view.map.tiles.values_mut() {
+            if tile
+                .owner_city
+                .is_some_and(|city_id| !visible_city_ids.contains(&city_id))
+            {
+                tile.owner_city = None;
             }
         }
         let mut stale_strength = Vec::new();
@@ -28309,10 +28421,6 @@ impl Game {
                     rys.production +=
                         self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
-                // Letters of Marque: -50% of what this seat's routes earn at
-                // their origin (twelve `ADJUST_TRADE_ROUTE_YIELD_MODIFIER`
-                // rows, `Origin=1`); the `Destination=1` half is below.
-                rys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
                 // Where the host has said what THIS route pays its origin
                 // (`observed_route_yields`, from `CalculateOriginYields…` the
                 // way the shipped Trade Overview sums them), that figure stands
@@ -28332,8 +28440,7 @@ impl Game {
             .iter()
             .filter(|route| route.dest == cid && route.owner != city.owner)
             .count() as f64;
-        // What this city earns as a DESTINATION, gathered so Letters of
-        // Marque's `Destination=1` half can dock it as one figure.
+        // What this city earns as a destination from incoming routes.
         let mut iys = Yields::default();
         for route in self.routes.iter().filter(|route| route.dest == cid) {
             let government = self.gov_effects(route.owner);
@@ -28375,7 +28482,6 @@ impl Game {
         {
             iys.gold += 4.0 * incoming_foreign_routes;
         }
-        iys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
         ys.add(iys);
         if incoming_routes > 0.0 && city.wonders
 .contains_key(&crate::name!("university_of_sankore")) {
@@ -28706,6 +28812,14 @@ impl Game {
         // Aerodrome/Spaceport cities (`COMMEMORATION_AERONAUTICAL_GA_*` grants
         // tech boosts, air-unit XP and Aluminum, no yield), were CIVVIS's own.
         let band = (self.amenity_yield_mult(city) - 1.0) * 100.0;
+        // Scottish Enlightenment is separate from the ordinary amenity band:
+        // its four live modifiers add +5% Science and Production at Happy,
+        // then +10% at Ecstatic. Like every other city-yield modifier, these
+        // are terms in Civ VI's one additive percentage sum, not a chained
+        // multiplier over the ordinary +10% / +20% Happiness bonus.
+        let scottish_happiness = self.scottish_enlightenment_happiness_scale(city);
+        pct.science += scottish_happiness * self.civ_effect(city.owner, "happy_science_pct");
+        pct.production += scottish_happiness * self.civ_effect(city.owner, "happy_production_pct");
         // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
         // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
         // (0.75 / 0.25 / 0) is what a disloyal city pays, and
@@ -29072,6 +29186,10 @@ impl Game {
                 || t.improvement.as_deref() == Some(name)
                 || (spec.requires_hills && !t.hills)
                 || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
+                || (spec.hills_or_resource_or_feature
+                    && !t.hills
+                    && visible_resource.is_none()
+                    && !feature_route)
                 || (spec.hills_or_feature && !t.hills && !feature_route)
                 || (spec.requires_flat
                     && t.hills
@@ -32677,7 +32795,13 @@ impl Game {
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
     /// still requires a friendly spotter exactly as in Civ VI.
-    fn combat_target_visible_at(
+    /// Whether `pid` may legally fire at `pos` at all, against visibility
+    /// frames the caller already holds. `do_ranged`, `do_attack` and
+    /// `do_city_strike` each apply exactly this before a shot, so a controller
+    /// that proposes a target without asking is proposing an order the engine
+    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// unit and pass them in; the frames cannot move while no action is applied.
+    pub(crate) fn combat_target_visible_at(
         &self,
         pid: usize,
         pos: Pos,
@@ -32706,6 +32830,11 @@ impl Game {
             })
     }
 
+    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
+    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
+    /// disk of candidate tiles must hoist the two frames and use
+    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
+    /// candidate tile cost +6.4% of simulator CPU.
     fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
         let visible = self.player_vision_now(pid);
         let viewers = self.visibility_viewers(pid);
@@ -33588,7 +33717,10 @@ impl Game {
     /// As with ordinary movement, a unit that has all of its Movement may
     /// always perform one attack even when the terrain costs more than its
     /// maximum Movement.
-    fn can_pay_melee_entry(&self, uid: u32, target: Pos) -> bool {
+    /// This is also the exact movement preflight for an `AdvancedAi` melee
+    /// candidate, so its tactical evaluator does not price a strike the game
+    /// will reject for an expensive terrain or river entry.
+    pub(crate) fn can_pay_melee_entry(&self, uid: u32, target: Pos) -> bool {
         let u = &self.units[&uid];
         if !self.map.tiles.contains_key(&target) {
             return false;
@@ -33894,8 +34026,7 @@ impl Game {
             let mut att_base = self.unit_unembarked_strength(&attacker)
                 + self.matchup_bonus(uid, &d, true)
                 + self.flanking_bonus(uid, target)
-                + self.vs_bonus(pid, d.owner)
-                + self.melee_attack_bonus(&attacker);
+                + self.vs_bonus(pid, d.owner);
             if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
                 att_base -= 10.0;
             }
@@ -34006,8 +34137,7 @@ impl Game {
                 self.record_war_unit_participation(&attacker, defender);
                 self.record_war_city_garrison_participation(cid, attacker.owner);
                 let mut att_base = self.unit_unembarked_strength(&attacker)
-                    + self.vs_bonus(pid, self.cities[&cid].owner)
-                    + self.melee_attack_bonus(&attacker);
+                    + self.vs_bonus(pid, self.cities[&cid].owner);
                 if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
                     att_base -= 10.0;
                 }
@@ -34124,6 +34254,10 @@ impl Game {
                 .get(pos)
                 .map(|tile| self.rules.is_water(tile))
                 .unwrap_or(false);
+        // Free Cities also carry `is_barbarian`; only the true barbarian
+        // seat's takings belong on the raid ledger.
+        let mover_is_barbarian =
+            self.players[owner].is_barbarian && !self.players[owner].is_free_city;
         let mut affected_owners = BTreeSet::new();
         for oid in self.units_at(pos) {
             if oid == uid || self.units[&oid].owner == owner {
@@ -34132,10 +34266,18 @@ impl Game {
             let kind = self.units[&oid].kind;
             let class = self.rules.units[kind].class.as_str();
             if can_capture && matches!(kind.as_str(), "builder" | "settler") {
-                affected_owners.insert(self.units[&oid].owner);
+                let old = self.units[&oid].owner;
+                affected_owners.insert(old);
+                if mover_is_barbarian {
+                    bump(&mut self.players[old], "civilians_lost_to_barbarians");
+                }
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
-                affected_owners.insert(self.units[&oid].owner);
+                let old = self.units[&oid].owner;
+                affected_owners.insert(old);
+                if mover_is_barbarian {
+                    bump(&mut self.players[old], "civilians_lost_to_barbarians");
+                }
                 self.remove_unit(oid);
             }
         }
@@ -37007,6 +37149,35 @@ impl Game {
 
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
+        // ★★★ CIVILIZATION VI SELLS A CITY DEFENCE FOR NO CURRENCY AT ALL.
+        //
+        // Every purchasable building in the shipped ruleset declares a
+        // `PurchaseYield` -- Monument, Barracks, Granary, Library, Shrine, all
+        // of them. `BUILDING_WALLS`, `BUILDING_CASTLE`, `BUILDING_STAR_FORT`
+        // and Georgia's `BUILDING_TSIKHE` declare none, in any base or
+        // expansion file, so no currency can buy them. Valletta's suzerain
+        // bonus is `MODIFIER_PLAYER_CITIES_ENABLE_BUILDING_FAITH_PURCHASE` with
+        // `DistrictType = DISTRICT_CITY_CENTER`: it changes which currency a
+        // purchasable building takes, not whether an unpurchasable one becomes
+        // buyable. The three `..._PURCHASE_CHEAPER_WALLS/CASTLE/STAR_BONUS`
+        // cost modifiers beside it are vestigial -- they discount a purchase
+        // the game never offers.
+        //
+        // This function granted the opposite, and `building_gold_purchase_cost`
+        // twelve lines below has always refused the same buildings for the same
+        // reason ("City defenses ... remain Production-only"). One engine, two
+        // purchase paths, opposite answers for one building.
+        //
+        // The live seat paid for it: runs `civvis-20260818T113115Z` and
+        // `104654Z`, the two whose minors list carries Valletta with this seat
+        // as suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
+        // `BUILDING_STAR_FORT` (32) and `BUILDING_WALLS` (14). The host refused
+        // every one, with no reason text and with all four of the mod's probed
+        // parameter shapes answering `can = false`. The other six runs, which
+        // have no Valletta, refused none.
+        if spec.outer_defense > 0 {
+            return None;
+        }
         let valletta = self.grants_city_state_unique_bonus(pid, "Valletta")
             && matches!(district.as_str(), "city_center" | "encampment")
             && self.can_produce(pid, cid, &item);
@@ -37036,11 +37207,10 @@ impl Game {
         if !valletta && (!(worship || jesuit) || !religious_requirements) {
             return None;
         }
-        let discounted_walls = valletta
-            && ["walls", "medieval_walls", "renaissance_walls"]
-                .into_iter()
-                .any(|family| self.building_is_family(Name::new(building), Name::new(family)));
-        let conversion = if discounted_walls { 1.0 } else { 2.0 };
+        // The halved conversion existed only for the wall tiers above, which
+        // are now refused outright; every remaining Faith purchase pays the
+        // stock two-for-one.
+        let conversion = 2.0;
         let discount = self
             .city_district_effect(city, "gold_faith_purchase_discount_pct")
             .clamp(0.0, 100.0);
@@ -39752,7 +39922,7 @@ impl Game {
             + surcharge
     }
 
-    fn unit_gold_maintenance(&self, pid: usize) -> f64 {
+    pub(crate) fn unit_gold_maintenance(&self, pid: usize) -> f64 {
         let units = self
             .player_unit_ids(pid)
             .into_iter()
@@ -45712,6 +45882,14 @@ impl Game {
             .counters
             .entry(format!("kill_kind:{}", victim.kind))
             .or_insert(0) += 1;
+        // The loss side of the same ledger. Only `kills` and `barbs_killed`
+        // existed, so a game could say what an empire took from the
+        // barbarians but never what the barbarians took from it. Free Cities
+        // also carry `is_barbarian`; a revolt's garrison is not a raider, so
+        // it is excluded here.
+        if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
+            bump(&mut self.players[victim.owner], "lost_to_barbarians");
+        }
         if self.players[victim.owner].is_barbarian {
             bump(&mut self.players[pid], "barbs_killed");
         } else {

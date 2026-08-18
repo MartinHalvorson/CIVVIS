@@ -36,10 +36,46 @@ from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import (gamelock, launcher, macos_input, macos_ocr,
                           popup_clear, vision, watch)  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
+# The mod's sentinel for a readback it could not resolve, imported rather than
+# repeated: this harness and the ledger have to agree on what "unreadable"
+# looks like, and a second copy of that fact is a second place for it to rot.
+from civ6_ladder import UNREADABLE  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CIVVIS_VICTORY = "science"
+# ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
+# launchers forward `--victory` down one chain and each of them used to declare
+# its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
+# name for the same reason they already import `VICTORY_LANES` — a second copy
+# of a fact is a second place for it to go stale, and these had already drifted
+# from the two `tools/ops/` supervisors, which passed `civvis` and nothing at
+# all. Two production loops were running two different experiments into one
+# ledger.
+#
+# ⚠ SCIENCE WAS THE DEFAULT AND IS THE ONE LANE THAT NEVER LANDS. The bar for
+# moving it was set where the old value was written — "Science stays the default
+# until a lane is measured to beat it" — and 2026-08-17 measured it, twice, at
+# the profile the ladder actually plays (6 players, 250 turns, Online):
+#
+#   * completion (`victory_eval`, 96 games, two disjoint streams, docs/EVAL.md):
+#     diplomatic 14/16, culture 12/16, religious 8/16, domination 2/16,
+#     science **0/16**;
+#   * strength (`ai_eval <lane> advanced_target_science --deployment-comparison`,
+#     docs/EVAL.md): all four named lanes beat the science-targeted incumbent,
+#     diplomatic by +669 CONFIRMED (97.9%, 23-0-1).
+#
+# Diplomacy is the choice among the lanes that land, and it is chosen on the
+# HOST's own census rather than on that +669: `docs/CIV6_LADDER.md` ranks 199
+# real terminal events 6-diplomatic (41) > 3-culture (24) > 4-religious (5).
+# The +669 measures science's floor, not Diplomacy's ceiling — diplomatic vs
+# religious, the fair fight between two lanes that both finish, is 47.9%,
+# p=1.0000, INCONCLUSIVE. So this moves the aim off a lane that cannot finish;
+# it does not claim the new one is strong.
+#
+# ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
+# separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
+# untargeted `civvis` the batch loop used to hard-code.
+DEFAULT_CIVVIS_VICTORY = "diplomatic"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
@@ -2322,9 +2358,23 @@ def play(args: argparse.Namespace) -> int:
 
 def seat_matches_requested(
     event: dict, args: argparse.Namespace
-) -> tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool | None]:
     """Return (full_config_match, modes_match, ruleset_match) from the game's own
     seat report.
+
+    ⚠⚠ `ruleset_match` IS THREE-WAY AND THE THIRD STATE IS THE POINT. `True` is
+    the game reporting the ruleset that was asked for, `False` is it reporting a
+    different one, and `None` is it not managing to report at all. Only `False`
+    is a refusal. Collapsing `None` into `False` — treating "we could not read
+    it" as "it was wrong" — cost three complete games on 2026-08-18:
+    `civvis-20260818T032030Z` (223 turns, score 937, ended on a rival's
+    VICTORY_CULTURE), `040903Z` (250 turns, score 1138, lead -24) and `045332Z`
+    (250 turns, score 683). Their seat events reported EVERY other axis
+    correctly — difficulty, size, speed, map script, leader, modes — and only
+    the ruleset string came back `?`, because the mod's guarded `GameInfo`
+    lookup raised on a value that was already a type name (see `typeName` in
+    `CivvisControlAgent.lua`). All three were filed as `wrong_ruleset` and
+    thrown away.
 
     ★★★★★ THE RULESET WAS THE ONE SETTING THIS HARNESS SET AND NEVER READ BACK.
     Difficulty, size, speed, map, leader and modes are all verified from inside
@@ -2344,13 +2394,13 @@ def seat_matches_requested(
     modes = event.get("modes")
     modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
     reported_ruleset = event.get("ruleset")
-    # An older mod build reports nothing; treat that as unverified rather than
-    # as agreement, for the same reason a missing `modes` list is not an empty
-    # one. "?" is the mod's own answer for a value it could not resolve.
+    # An older mod build reports nothing and "?" is the mod's own answer for a
+    # value it could not resolve. Neither is agreement -- a missing `modes` list
+    # is not an empty one -- but neither is disagreement either, so both answer
+    # `None`. Evidence of a wrong game requires the game to have said so.
     ruleset_match = (
-        reported_ruleset is not None
-        and reported_ruleset != "?"
-        and reported_ruleset == args.ruleset
+        None if reported_ruleset is None or reported_ruleset == UNREADABLE
+        else reported_ruleset == args.ruleset
     )
     return (
         event.get("difficulty") == args.difficulty
@@ -2359,10 +2409,42 @@ def seat_matches_requested(
         and event.get("map") == args.map
         and (args.leader is None or event.get("leader") == args.leader)
         and modes_match
-        and ruleset_match,
+        # `is not False`, not truthiness: an unreadable ruleset leaves the rest
+        # of the seat report standing. `configured` gates BOTH the ladder's
+        # comparability column and `finished()`, which stops a run at the seat
+        # event, so folding `None` in here does not merely mislabel a row -- it
+        # refuses to play the game at all.
+        and ruleset_match is not False,
         modes_match,
         ruleset_match,
     )
+
+
+def summary_reason(state: dict, reason: str) -> str:
+    """How the run ended: a refusal outranks the loop's own reason.
+
+    A run that never played the game being measured is a refusal, not a result,
+    and must not be filed beside games that were played and lost. Wrong modes
+    and a wrong ruleset are both that; so is a seat that disagrees with the
+    request on any other axis.
+
+    ⚠ NOTHING ELSE MAY TAKE THE COLUMN. `reason` is the only field saying how a
+    game ENDED, so a refusal written over it destroys the ending. That is what
+    an unreadable ruleset used to do: `civvis-20260818T032030Z` ended on a
+    rival's culture victory at turn 223 and the ledger recorded `wrong_ruleset`.
+
+    The three-way `ruleset_match` is carried into the state and collapsed HERE,
+    rather than being flattened into a boolean at the seat event, so the one
+    place that turns "the game disagreed" into a refusal is a place a test can
+    call. `is False` and not truthiness: `None` is the readback failing.
+    """
+    if state.get("ruleset_match") is False:
+        return "wrong_ruleset"
+    if state.get("mode_mismatch"):
+        return "wrong_game_modes"
+    if state.get("seat") and not state.get("configured"):
+        return "wrong_game_configuration"
+    return reason
 
 
 def _play(args: argparse.Namespace) -> int:
@@ -2453,7 +2535,8 @@ def _play(args: argparse.Namespace) -> int:
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
-        "ruleset": None, "ruleset_mismatch": False,
+        # Three-way: True agreed, False disagreed, None never read back.
+        "ruleset": None, "ruleset_match": None,
         # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
         # ladder has ever shown. Measured over the 35 completed runs of
         # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
@@ -2507,15 +2590,24 @@ def _play(args: argparse.Namespace) -> int:
             state["modes"] = modes
             state["mode_mismatch"] = not modes_match
             state["ruleset"] = event.get("ruleset")
-            state["ruleset_mismatch"] = not ruleset_match
+            # Carried whole, not flattened: `None` means the mod could not read
+            # the ruleset back, which is not evidence that it differed, and it
+            # is `summary_reason` that decides what counts as a refusal.
+            state["ruleset_match"] = ruleset_match
             state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
-            if not ruleset_match:
-                print(f"[agent] ruleset is {event.get('ruleset') or 'UNREPORTED'}, "
+            if ruleset_match is False:
+                print(f"[agent] ruleset is {event.get('ruleset')}, "
                       f"asked for {args.ruleset} -- CIVVIS models Gathering Storm "
                       f"and nothing else, so this is a different game", file=sys.stderr)
+            elif ruleset_match is None:
+                print(f"[agent] ruleset did not read back "
+                      f"({event.get('ruleset') or 'UNREPORTED'}); asked for "
+                      f"{args.ruleset}. UNVERIFIED, not wrong -- the run "
+                      f"continues and the ledger records it as unverified",
+                      file=sys.stderr)
             if not modes_match:
                 print(f"[agent] game modes are {modes if modes is not None else 'UNREPORTED'}, "
                       f"asked for {args.game_mode or '[]'} -- this is not the "
@@ -2817,10 +2909,8 @@ def _play(args: argparse.Namespace) -> int:
         # beside games that were played and lost.
         # A run on the wrong ruleset is a refusal, not a result, exactly as a
         # run with the wrong modes is: it never played the game being measured.
-        "reason": ("wrong_ruleset" if state["ruleset_mismatch"]
-                   else "wrong_game_modes" if state["mode_mismatch"]
-                   else "wrong_game_configuration" if state["seat"] and not state["configured"]
-                   else reason),
+        # An UNREADABLE ruleset is neither -- see `summary_reason`.
+        "reason": summary_reason(state, reason),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -3125,7 +3215,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--civvis-victory", default=DEFAULT_CIVVIS_VICTORY,
                     choices=VICTORY_LANES,
                     help="victory objective passed to the supervised CIVVIS worker; "
-                         "defaults to Science")
+                         f"defaults to {DEFAULT_CIVVIS_VICTORY}")
     ap.add_argument("--civvis-strategy", default=DEFAULT_CIVVIS_STRATEGY,
                     help="rated CIVVIS strategy name; empty keeps stock AdvancedAi. "
                          "auto is an uncalibrated opt-in")

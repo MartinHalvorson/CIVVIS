@@ -63,6 +63,14 @@ LEDGER = REPO / "docs" / "CIV6_LADDER.md"
 DATA = REPO / "docs" / "civ6_ladder.json"
 RUNS_DEFAULT = Path.home() / "civvis-civ6-runs" / "control"
 
+# ⚠ THE MOD'S OWN ANSWER FOR A SETTING IT COULD NOT RESOLVE, on every axis it
+# surveys: `CivvisControlAgent.lua` writes `try(..., "?") or "?"` for the
+# difficulty, speed, map, size and ruleset alike. It is the ABSENCE of an
+# answer, never an answer that disagrees, and the two must not be folded
+# together — `civ6_play.seat_matches_requested` imports this name so the record
+# and the harness cannot drift on what the sentinel is.
+UNREADABLE = "?"
+
 LADDER = [
     ("DIFFICULTY_SETTLER", "Settler"),
     ("DIFFICULTY_CHIEFTAIN", "Chieftain"),
@@ -194,6 +202,33 @@ def is_win(summary: dict) -> bool:
     return bool(outcome.get("kind") == "victory" and outcome.get("won"))
 
 
+def is_defeat(summary: dict) -> bool:
+    """Whether OUR civilization was eliminated — the ending, not the ceiling.
+
+    ★★★★★ A LEDGER THAT CANNOT TELL DEFEAT FROM A WEDGE CANNOT BE USED TO
+    COMPARE ANYTHING. `civ6_play.py` keeps the terminal event for a defeat
+    exactly as it does for a victory, and the mod synthesises one when no
+    cities remain, but nothing here ever read it: only `won`, `victory` and
+    `victory_type` were projected, and a defeat carries none of the three. Our
+    own elimination therefore landed as `{"reason": "stopped", "victory": null,
+    "won": false}` — byte-identical to a run that hung. Measured on three live
+    rows: `civvis-20260815T160346Z` (eliminated at t233, score 272),
+    `195951Z` (t102, score 153) and `210845Z` (t226, score 313). All three
+    carry `reason: "stopped"` — the same answer 259 of the ledger's 325 rows
+    give, including all 30 of its stalls.
+
+    ⚠ `ours` IS LOAD-BEARING. Civilization VI emits a `defeat` every time ANY
+    player is eliminated, including a city-state, and 39 of the 111 runs whose
+    event streams are still on this machine carry at least one rival's.
+    `civ6_play.finished()` already refuses to stop on those — a run was once
+    cut sixteen turns short of a score victory because player 7 died — and
+    reading the flag off the event here is the same distinction on the
+    recording side.
+    """
+    outcome = summary.get("outcome") or {}
+    return bool(outcome.get("kind") == "defeat" and outcome.get("ours"))
+
+
 def orders_totals(events_path: Path) -> tuple[int, int] | None:
     """Sum (seen, applied) over the run's agent turn events.
 
@@ -322,6 +357,53 @@ def applied_pct(summary: dict) -> float | None:
     return round(100.0 * (applied or 0) / seen, 1)
 
 
+def with_bridge_health(summary: dict, summary_path: Path) -> dict:
+    """Fill a summary's order totals from the run's own events, if it lacks them.
+
+    ⚠⚠ THE BACKFILL RECORDED FORTY-ONE ATTEMPTS WITH NO BRIDGE HEALTH WHILE THE
+    EVIDENCE SAT BESIDE THEM ON DISK. `civ6_play.py` sums `events.jsonl` into
+    the summary at the end of a run, and `sync` — the self-healing path that
+    exists precisely because that write is best-effort and may not happen —
+    recorded whatever the summary happened to contain. So the one path built
+    for runs whose bookkeeping failed was the path that could not repair the
+    number, and it lost it permanently: rows 266 to 306 of the live ledger, the
+    same 41 summaries `civ6_civvis_climb.heal_the_ladder` was written to
+    rescue, carry no `applied_pct` at all. **Both Settler wins are among them**,
+    so the bridge health of the project's only external results is unknown.
+
+    A run's `events.jsonl` is the evidence and it outlives the summary write.
+    Reading it here means a backfilled row is as complete as a live one, and
+    the derivation stays in one place rather than two that can disagree.
+
+    Non-destructive: a summary that already carries totals is returned
+    unchanged, and an unreadable or absent events file leaves it as it was.
+    """
+    if summary.get("orders_seen"):
+        return summary
+    totals = orders_totals(Path(summary_path).parent / "events.jsonl")
+    if not totals:
+        return summary
+    enriched = dict(summary)
+    enriched["orders_seen"], enriched["orders_applied"] = totals
+    return enriched
+
+
+def trailing_unmeasured(attempts: list) -> int:
+    """How many of the newest attempts carry no bridge-health rate.
+
+    Counted from the end in recorded order rather than filtered, because the
+    question is "has the instrument gone dark", not "how many rows lack it" —
+    the ledger legitimately holds hundreds of older rows from before the rate
+    was recorded at all, and a total would report those forever.
+    """
+    dark = 0
+    for attempt in reversed(attempts):
+        if attempt.get("applied_pct") is not None:
+            break
+        dark += 1
+    return dark
+
+
 def victory_type(summary: dict) -> str | None:
     """The name of the victory this run ended on, from the HOST'S OWN table.
 
@@ -361,6 +443,11 @@ def entry_from(summary: dict) -> dict:
         "difficulty": summary.get("difficulty"),
         "configured": bool(summary.get("configured")),
         "won": is_win(summary),
+        # ⚠⚠ AND WHETHER WE LOST, which is a different question from not
+        # winning. `won` keeps its meaning exactly — a victory event naming our
+        # team — and this column carries the other terminal ending, so a stall
+        # and an elimination stop being the same row. See `is_defeat`.
+        "defeat": is_defeat(summary),
         "victory": (summary.get("outcome") or {}).get("victory"),
         # Kept BESIDE the index, never instead of it. The index is what the
         # event reported and stays the primary key; the name is the host's
@@ -492,7 +579,8 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     if ledger is None:
         # <runs>/<tag>/summary.json -> the ledger beside <runs>.
         ledger = live_ledger_for(summary_path.parent.parent)
-    summary = json.loads(summary_path.read_text())
+    summary = with_bridge_health(json.loads(summary_path.read_text()),
+                                 summary_path)
     # Load INSIDE the lock. Reading first and locking second would reintroduce
     # exactly the lost update the lock exists to prevent.
     with ledger_lock(ledger):
@@ -542,6 +630,7 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
             if summary.get("tag") in seen:
                 skipped += 1
                 continue
+            summary = with_bridge_health(summary, path)
             if apply(state, summary):
                 seen.add(summary.get("tag"))
                 recorded += 1
@@ -661,7 +750,8 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           min_applied: float | None = None,
           heartbeat_minutes: float | None = None,
           heartbeat: Path | None = None,
-          max_city_two_turn: float | None = None) -> int:
+          max_city_two_turn: float | None = None,
+          unmeasured_limit: int = 5) -> int:
     """Exit nonzero when the record is behind the truth on disk.
 
     Three separate failures, reported together, because they have three
@@ -714,6 +804,24 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                     f"orders applied on {latest.get('tag')} (floor "
                     f"{min_applied:g}%) — read the refusal ledger, "
                     f"docs/CIV6_COMPUTER_CONTROL.md")
+        # ⚠⚠ A GAP IN MEASUREMENT IS NOT A GAP IN ATTEMPTS, AND NOTHING WAS
+        # WATCHING FOR IT. The reasoning above is right for ONE unmeasured run
+        # and wrong for a run of them: this floor only ever reads attempts that
+        # carry a rate, so an instrument that goes dark makes it silently
+        # unfalsifiable, while `--stale-hours` stays quiet because attempts are
+        # still arriving. Measured on the live ledger 2026-08-18: attempts 266
+        # to 306 — forty-one consecutive games, every one of them played to the
+        # 250-turn clock, INCLUDING BOTH SETTLER WINS — recorded no rate at all,
+        # and `check` was green throughout. The bridge health of the project's
+        # only two external results is therefore unknown.
+        dark = trailing_unmeasured(state["attempts"])
+        if dark >= unmeasured_limit:
+            problems.append(
+                f"bridge health is unmeasured on the last {dark} attempt(s) "
+                f"(limit {unmeasured_limit}): no `applied_pct` reached the "
+                f"ledger, so the {min_applied:g}% floor cannot fire on them. "
+                f"An unmeasured bridge is not a healthy one — check that the "
+                f"run summaries carry `orders_seen`")
 
     if max_city_two_turn is not None:
         problem = opening_tempo_problem(state["attempts"], max_city_two_turn)
@@ -820,13 +928,21 @@ def same_game_note(attempts: list) -> list[str]:
     Rows recorded before those fields existed answer `None`, which is reported as
     unverified rather than folded in with the ones that agree — an old row is not
     a row that was checked.
+
+    ⚠ AND `?` BELONGS IN THAT SAME BUCKET, not in the list of rulesets recorded.
+    `?` is the mod's answer for a readback that failed (`UNREADABLE`), so a row
+    carrying it was never checked either — but because it is a truthy string it
+    used to be printed as a ruleset this record had observed, and the published
+    prose read "Rulesets recorded: ?, RULESET_EXPANSION_2" over three rows whose
+    ruleset nobody knows.
     """
     if not attempts:
         return []
     rulesets = {a.get("ruleset") for a in attempts if isinstance(a, dict)}
     unverified = sum(
-        1 for a in attempts if isinstance(a, dict) and a.get("ruleset") is None)
-    named = sorted(r for r in rulesets if r)
+        1 for a in attempts if isinstance(a, dict)
+        and a.get("ruleset") in (None, UNREADABLE))
+    named = sorted(r for r in rulesets if r and r != UNREADABLE)
     moded = sorted({
         mode
         for a in attempts if isinstance(a, dict)
@@ -838,8 +954,27 @@ def same_game_note(attempts: list) -> list[str]:
         out.append(f"Rulesets recorded: {', '.join(named)}.")
     if unverified:
         out.append(
-            f"{unverified} row(s) predate the ruleset readback and are "
-            f"unverified rather than agreed.")
+            f"{unverified} row(s) carry no ruleset readback — the run predates "
+            f"it, or the game could not report one — and are unverified rather "
+            f"than agreed. Unverified is not a mismatch: those games were "
+            f"played and their endings stand.")
+    # ⚠ AND THE ROWS WHERE THAT WENT WRONG SAY SO, because a row is never
+    # rewritten. Three games were filed as `wrong_ruleset` on an UNREADABLE
+    # readback rather than a differing one — `civvis-20260818T032030Z` at 223
+    # turns and score 937, `040903Z` at 250/1138, `045332Z` at 250/683 — and
+    # without this line the sentence above contradicts the table below, where
+    # all three still read `wrong_ruleset` and `configured: NO`.
+    misfiled = sum(
+        1 for a in attempts if isinstance(a, dict)
+        and a.get("reason") == "wrong_ruleset"
+        and a.get("ruleset") in (None, UNREADABLE))
+    if misfiled:
+        out.append(
+            f"⚠ {misfiled} of those row(s) were nevertheless recorded as "
+            f"`wrong_ruleset` and non-comparable, back when an unreadable "
+            f"readback and a differing one were the same answer. They were "
+            f"played to the end; rows are never rewritten, so the misfiling "
+            f"stands in the record and this line is how it is known.")
     if moded:
         out.append(
             f"⚠ Optional game modes were on in some rows: {', '.join(moded)}. "
@@ -955,20 +1090,37 @@ def markdown_for(state: dict) -> str:
         for index, name, count in endings:
             share = f"{100.0 * count / total:.0f}%" if total else "—"
             lines.append(f"| {cell(index)} | {cell(name)} | {count} | {share} |")
+        lost = sum(1 for a in attempts
+                   if isinstance(a, dict) and a.get("defeat"))
+        # A defeat IS a terminal ending; it is simply not a `TeamVictory`, so it
+        # is absent from the table above and used to be swept into "the rest"
+        # alongside the stalls it is nothing like.
         lines += ["",
-                  f"{total} of {len(attempts)} attempts reached a terminal event; "
-                  "the rest stalled, exited, or were stopped before one.",
+                  f"{total} of {len(attempts)} attempts reached a terminal "
+                  "victory event"
+                  + (f", and {lost} more ended in our own elimination"
+                     if lost else "")
+                  + "; the rest stalled, exited, or were stopped before one.",
                   ""]
 
     if attempts:
         lines += [
             "## Every attempt",
             "",
+            "`outcome` is what the game did, not what the harness saw last.",
+            "`defeat` means this controller was eliminated and the game said so;",
+            "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost.",
+            "A ledger that cannot tell defeat from a wedge cannot be used to",
+            "compare anything, and until `defeat` existed here the two were the",
+            "same row.",
+            "",
             "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
             "|---|---|---|---|---|---|---|---|",
         ]
         for a in attempts[-40:]:
-            outcome = "win" if a["won"] else cell(a.get("reason"))
+            outcome = ("win" if a["won"]
+                       else "defeat" if a.get("defeat")
+                       else cell(a.get("reason")))
             difficulty = NAMES.get(a.get("difficulty"), a.get("difficulty"))
             lines.append(
                 f"| `{a.get('tag')}` | {cell(difficulty)} "
@@ -1020,6 +1172,11 @@ def main(argv: list[str] | None = None) -> int:
         "watch",
         help="only the origin/main watcher probe, for loops that poll it")
     wat.add_argument("--minutes", type=float, default=10.0)
+    chk.add_argument("--max-unmeasured", type=int, default=5,
+                     help="consecutive newest attempts allowed to record no "
+                          "bridge-health rate before that is itself a problem "
+                          "(default 5); only read when --min-applied is set, "
+                          "because it is that floor this keeps falsifiable")
     chk.add_argument("--max-city-two-turn", type=float, default=None,
                      help="fail when the MEDIAN second-city founding turn over "
                           "the last ten recorded runs exceeds this — the "
@@ -1049,6 +1206,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return check(args.runs, ledger, args.stale_hours,
                      min_applied=args.min_applied,
+                     unmeasured_limit=args.max_unmeasured,
                      heartbeat_minutes=args.heartbeat_minutes,
                      max_city_two_turn=args.max_city_two_turn)
     if args.command == "watch":

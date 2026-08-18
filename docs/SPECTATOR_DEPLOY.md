@@ -35,6 +35,23 @@ step.
 
 Watch any host with:  `tail -f <deploy-checkout>/spectator-supervisor.log`
 
+## Keeping it up
+
+`civvis_collab.py bootstrap` installs `com.civvis.spectator`, a launchd job with
+`KeepAlive` running `tools/ops/civvis-spectator-runner.sh`. It is installed only
+on a host that actually holds the source worktree below, because a service that
+can only log a missing prerequisite is worse than an honest absence.
+
+⚠ Unlike the Civilization VI ladder's supervisor, this one runs **directly**
+under launchd. The ladder has to be started through Terminal, because installing
+the control mod writes inside `Civ6.app` and macOS attributes that permission to
+the responsible process. The exhibition drives no GUI — `--no-open`, build,
+serve HTTP, play headless games — so it needs no such grant.
+
+Before this existed the supervisor was started by hand from one operator's home
+directory, and on 2026-08-18 it exited and the exhibition stayed down until
+somebody looked.
+
 ## Deploy checkout
 
 Run the supervisor from a **dedicated checkout pinned to `origin/main`**, not the
@@ -46,6 +63,16 @@ git -C <shared-checkout> worktree add --detach <...>/civvis-spectator origin/mai
 
 `ROOT` (where it fetches and stages the runtime) then derives from that path;
 the private build worktree is `<...>/civvis-spectator-spectator-src`.
+
+⚠ **`--detach` is load-bearing, not incidental.** A deploy checkout is clean,
+idle, and has its HEAD plainly on GitHub — which is every property
+`civvis_worktree_audit.py --reap` looks for in finished task scaffolding. On
+2026-08-18 the reaper removed `civvis-spectator-src` on exactly that reasoning
+and took the exhibition down; the supervisor's own restart loop then failed
+because the script it execs had gone with it. The reaper now removes only
+worktrees on an `agent/*` branch — the shape `civvis_collab.py start` creates —
+and never one a live process is running from. Creating a deploy checkout any
+other way puts it back in range.
 
 ## Windows (Task Scheduler)
 

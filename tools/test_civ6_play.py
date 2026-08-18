@@ -47,8 +47,12 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
-    def test_supervised_defaults_are_stock_science(self) -> None:
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
+    def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
+        """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
+        which also holds the evidence that moved it off `science`. This asserts
+        only that the supervised worker takes the chain's one default and stock
+        weights, so a second copy cannot appear here."""
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
 
     def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
@@ -1410,11 +1414,83 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
         self.assertIn("GameConfiguration.GetRuleSet()", lua)
         self.assertIn("row.RulesetType", lua, "typeName must resolve a Ruleset row")
 
+    def test_string_ruleset_readback_is_not_treated_as_a_hash(self):
+        """GetRuleSet returns a type name, not the numeric hash used by other axes.
+
+        The old generic lookup indexed ``GameInfo.Rulesets`` with that string.
+        The Lua error was swallowed by ``try``, so a valid live game reported
+        ``?`` and was rejected as an unconfigured ruleset.
+        """
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text(encoding="utf-8")
+        self.assertIn('if type(hash) == "string" then return hash; end', lua)
+
+    def test_an_unreadable_ruleset_is_unverified_not_a_mismatch(self):
+        """★★★★★ `?` MEANS THE READBACK FAILED, NOT THAT THE RULESET DIFFERED.
+
+        Three complete games were thrown away on 2026-08-18 because the two were
+        the same answer: `civvis-20260818T032030Z` (223 turns, score 937, ended
+        on a rival's VICTORY_CULTURE), `040903Z` (250 turns, score 1138, lead
+        -24) and `045332Z` (250 turns, score 683). Every other axis of their
+        seat events was correct.
+        """
+        for absent in (None, "?"):
+            with self.subTest(absent=absent):
+                configured, modes, ruleset = civ6_play.seat_matches_requested(
+                    self._seat(ruleset=absent), args())
+                self.assertIsNone(
+                    ruleset, "an unreadable readback is neither agreement nor "
+                             "disagreement")
+                self.assertTrue(
+                    configured,
+                    "a seat correct on every axis it could report is the game "
+                    "that was asked for")
+                self.assertTrue(modes, "the modes axis is unaffected")
+
+    def test_a_different_ruleset_is_still_a_mismatch(self):
+        """The weakening must stop at unreadable. A game that reports a ruleset
+        CIVVIS does not model is still a different game."""
+        configured, _, ruleset = civ6_play.seat_matches_requested(
+            self._seat(ruleset="RULESET_STANDARD"), args())
+        self.assertIs(ruleset, False)
+        self.assertFalse(configured)
+
     def test_a_wrong_ruleset_run_is_a_refusal_not_a_result(self):
+        """A ruleset the game reported and that differs still takes the column:
+        the run never played the game being measured."""
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"ruleset_match": False, "mode_mismatch": False,
+                 "seat": {"civ": "CIVILIZATION_ROME"}, "configured": False},
+                "stopped"),
+            "wrong_ruleset")
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
-        self.assertIn('"wrong_ruleset" if state["ruleset_mismatch"]', source)
         self.assertIn('"ruleset_requested": args.ruleset,', source)
+
+    def test_an_unreadable_ruleset_does_not_overwrite_the_real_ending(self):
+        """⚠ `reason` IS THE ONLY FIELD SAYING HOW A GAME ENDED, and
+        `wrong_ruleset` sat first in the precedence chain, so an unreadable
+        readback erased it. `civvis-20260818T032030Z` ended on a rival's culture
+        victory at turn 223 and the ledger recorded a refusal."""
+        state = {"ruleset_match": None, "mode_mismatch": False,
+                 "seat": {"ruleset": "?"}, "configured": True}
+        for ending in ("stopped", "stalled: no event for 240s", "timeout"):
+            with self.subTest(ending=ending):
+                self.assertEqual(civ6_play.summary_reason(state, ending), ending)
+
+    def test_the_seat_report_still_decides_the_refusals_it_can_prove(self):
+        """Deleting one false refusal must not delete the true ones."""
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"mode_mismatch": True, "seat": {}, "configured": False},
+                "stopped"),
+            "wrong_game_modes")
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
+                "stopped"),
+            "wrong_game_configuration")
 
 
 class VictoryLaneListTests(unittest.TestCase):
@@ -1439,6 +1515,37 @@ class VictoryLaneListTests(unittest.TestCase):
         self.assertIsNotNone(match, "civvis_orders.rs no longer names its lanes")
         self.assertEqual(match.group(1).split("|"), civ6_play.VICTORY_LANES)
 
+    def test_every_direct_or_high_level_default_uses_one_launcher_value(self):
+        """A bare `civvis_orders` launch must use the launch chain's current
+        central default. The direct fallback is reachable from manual and
+        recovery paths, so it is part of the live controller contract rather
+        than merely a CLI convenience."""
+        binary = self._rust_source("src/bin/civvis_orders.rs")
+        match = re.search(r'const DEFAULT_VICTORY: &str = "([^"]+)";', binary)
+        self.assertIsNotNone(match, "civvis_orders.rs has no named default")
+        self.assertEqual(match.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
+        self.assertEqual(match.group(1), "diplomatic")
+        self.assertIn(
+            "unwrap_or_else(|| DEFAULT_VICTORY.to_string())",
+            binary,
+            "the direct invocation must use its named default rather than a detached literal",
+        )
+
+        here = Path(__file__).resolve().parent
+        for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
+            with self.subTest(launcher=launcher):
+                source = (here / launcher).read_text(encoding="utf-8")
+                self.assertRegex(
+                    source,
+                    r"from civ6_play import [^\n]*DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY",
+                    f"{launcher} must import the central default",
+                )
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^DEFAULT_VICTORY\s*=\s*['\"]", re.MULTILINE),
+                    f"{launcher} declared a second default",
+                )
+
     def test_the_launcher_list_matches_the_engine_enum(self):
         """Every `VictoryTarget` variant, spelled the way the enum prints it."""
         source = self._rust_source("src/ai/advanced.rs")
@@ -1462,8 +1569,30 @@ class VictoryLaneListTests(unittest.TestCase):
         for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
             with self.subTest(launcher=launcher):
                 source = (here / launcher).read_text(encoding="utf-8")
-                self.assertIn("from civ6_play import VICTORY_LANES", source)
+                # The fact, not one spelling of it: the name has to arrive from
+                # `civ6_play`, and the launcher must not declare a list itself.
+                self.assertRegex(
+                    source,
+                    r"from civ6_play import [^\n]*\bVICTORY_LANES\b",
+                    f"{launcher} no longer imports the lane list",
+                )
                 self.assertIn("choices=VICTORY_LANES", source)
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^VICTORY_LANES\s*=", re.MULTILINE),
+                    f"{launcher} declared its own copy of the lane list",
+                )
+                # ⚠ THE SAME CLASS, ONE LEVEL DOWN. The list was collapsed here
+                # in #1871 and the DEFAULT was not: all three launchers declared
+                # `science` while `tools/ops/` held a fourth value that disagreed.
+                # `test_ops_ladder_objective.py` owns that fact; this only stops a
+                # launcher growing a literal of its own again.
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^DEFAULT_(CIVVIS_)?VICTORY\s*=\s*[\"']",
+                               re.MULTILINE),
+                    f"{launcher} declared its own default objective",
+                )
 
 
 if __name__ == "__main__":

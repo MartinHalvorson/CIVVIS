@@ -1,5 +1,8 @@
 from pathlib import Path
+from unittest import mock
 import concurrent.futures
+import ast
+import re
 import json
 import os
 import shutil
@@ -617,6 +620,22 @@ class EffectSizeEvidenceTests(unittest.TestCase):
         self.assertTrue(any("no evidence beside it" in error for error in errors), errors)
 
 
+
+def green_rows_for_unmentioned_required(rows):
+    """Top up a fixture with a green row for every required check it omits.
+
+    ⚠ Fixtures used to spell the required set out by hand, so adding a third
+    required check broke six tests that were not about that check at all. The
+    set is derived here for the same reason the production code has one tuple:
+    a copy of a fact is a place for it to go stale.
+    """
+    named = {row.get("name") for row in rows}
+    return list(rows) + [
+        {"name": name, "startedAt": "2026-07-23T23:59:00Z",
+         "status": "COMPLETED", "conclusion": "SUCCESS"}
+        for name in collab.REQUIRED_CHECKS if name not in named
+    ]
+
 class PolicyTests(unittest.TestCase):
     branch = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
 
@@ -895,6 +914,15 @@ class PolicyTests(unittest.TestCase):
                 "completed_at": "2026-07-23T22:37:19Z",
                 "conclusion": "failure",
             },
+        ] + [
+            {
+                "name": name,
+                "started_at": "2026-07-23T22:32:11Z",
+                "completed_at": "2026-07-23T22:37:02Z",
+                "conclusion": "success",
+            }
+            for name in collab.REQUIRED_CHECKS
+            if name not in ("cargo-test", "collaboration-policy")
         ]
         self.assertEqual(
             collab.required_check_gate_errors(runs, merged_at),
@@ -909,7 +937,7 @@ class PolicyTests(unittest.TestCase):
                 "completed_at": "2026-07-23T22:35:00Z",
                 "conclusion": "success",
             }
-            for name in ("cargo-test", "collaboration-policy")
+            for name in collab.REQUIRED_CHECKS
         ]
         self.assertEqual(
             collab.required_check_gate_errors(runs, "2026-07-23T22:36:00Z"), []
@@ -981,6 +1009,13 @@ class LiveBuildWaitTests(unittest.TestCase):
         self.assertLessEqual(
             elapsed, collab.LIVE_PRESENCE_GRACE_S + 2.0,
             "nothing listening must cost the grace, not --live-timeout-seconds")
+
+    def test_ship_default_waits_through_a_safe_spectator_handoff(self):
+        """A healthy 250-turn spectator must not be restarted to verify a ship."""
+        args = collab.build_parser().parse_args(["ship"])
+        self.assertEqual(
+            args.live_timeout_seconds, collab.LIVE_BUILD_HANDOFF_TIMEOUT_S)
+        self.assertEqual(args.live_timeout_seconds, 30 * 60.0)
 
     def test_a_spectator_that_is_merely_restarting_is_still_waited_for(self):
         """⚠ `ship` runs exactly when a spectator may be restarting.
@@ -1115,6 +1150,60 @@ Added the fast shipping path.
             collab.ship_pr_errors(finished, finished["headRefName"]), []
         )
 
+    def test_explicit_merge_race_accepts_the_auto_merged_pr(self):
+        """Auto-merge can land after the successful-check poll but before PUT."""
+        merged = {
+            "state": "MERGED",
+            "mergeCommit": {"oid": "squash123"},
+        }
+        with (
+            patch.object(collab, "gh_api_write", return_value=None) as write,
+            patch.object(collab, "current_pr", return_value=merged),
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertEqual(result, "squash123")
+        write.assert_called_once_with(
+            "PUT", f"repos/{collab.REPOSITORY}/pulls/9/merge",
+            {"merge_method": "squash", "sha": "head123"}, check=False,
+        )
+
+    def test_in_progress_auto_merge_is_rechecked_not_called_a_failure(self):
+        still_open = {"state": "OPEN", "mergeCommit": {"oid": "not-yet"}}
+        with (
+            patch.object(collab, "gh_api_write", return_value=None),
+            patch.object(collab, "current_pr", return_value=still_open),
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertIsNone(result)
+
+    def test_explicit_merge_uses_its_returned_squash_commit(self):
+        with (
+            patch.object(collab, "gh_api_write",
+                         return_value={"merged": True, "sha": "squash123"}),
+            patch.object(collab, "current_pr") as current,
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertEqual(result, "squash123")
+        current.assert_not_called()
+
+    def test_real_merge_rejection_still_names_the_reason(self):
+        open_pr = {"state": "OPEN", "mergeCommit": {"oid": "not-yet"}}
+        with (
+            patch.object(collab, "gh_api_write",
+                         return_value={"merged": False, "message": "not mergeable"}),
+            patch.object(collab, "current_pr", return_value=open_pr),
+        ):
+            with self.assertRaisesRegex(collab.CommandError, "not mergeable"):
+                collab.merge_pr_or_observe_auto_merge(
+                    Path.cwd(), number=9, local_head="head123"
+                )
+
     def test_required_checks_use_the_newest_run_for_each_name(self):
         rows = [
             {
@@ -1136,7 +1225,9 @@ Added the fast shipping path.
                 "conclusion": "SUCCESS",
             },
         ]
-        self.assertEqual(collab.required_check_state(rows), ("success", []))
+        self.assertEqual(
+            collab.required_check_state(
+                green_rows_for_unmentioned_required(rows)), ("success", []))
 
     def test_ready_transition_does_not_reuse_an_old_draft_policy_check(self):
         rows = [
@@ -1155,7 +1246,7 @@ Added the fast shipping path.
         ]
         self.assertEqual(
             collab.required_check_state(
-                rows,
+                green_rows_for_unmentioned_required(rows),
                 minimum_started={"collaboration-policy": "2026-07-23T22:35:00Z"},
             ),
             ("pending", ["collaboration-policy"]),
@@ -1172,7 +1263,7 @@ Added the fast shipping path.
         ]
         self.assertEqual(
             collab.required_check_state(pending),
-            ("pending", ["cargo-test", "collaboration-policy"]),
+            ("pending", sorted(collab.REQUIRED_CHECKS)),
         )
         failed = pending + [
             {
@@ -1183,9 +1274,140 @@ Added the fast shipping path.
             }
         ]
         self.assertEqual(
-            collab.required_check_state(failed),
+            collab.required_check_state(
+                green_rows_for_unmentioned_required(failed)),
             ("failed", ["collaboration-policy"]),
         )
+
+    def test_a_cancelled_check_is_retryable_not_a_failure(self):
+        """A cancelled run reached no verdict, and nothing re-starts it.
+
+        This is the shape that stranded PR #1933: `cargo-test` was superseded
+        by its own concurrency group, ended CANCELLED, and armed auto-merge
+        then waited for a green check that could never arrive. Reporting it as
+        a failure blames the tree for something the tree did not do; reporting
+        it as pending waits forever.
+        """
+        for conclusion in ("CANCELLED", "TIMED_OUT", "STALE"):
+            with self.subTest(conclusion=conclusion):
+                rows = [
+                    {
+                        "name": "cargo-test",
+                        "startedAt": "2026-08-18T00:52:20Z",
+                        "status": "COMPLETED",
+                        "conclusion": conclusion,
+                    },
+                    {
+                        "name": "collaboration-policy",
+                        "startedAt": "2026-08-18T00:52:21Z",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                    },
+                ]
+                self.assertEqual(
+                    collab.required_check_state(rows),
+                    ("retryable", ["cargo-test"]),
+                )
+
+    def test_a_real_failure_outranks_a_cancellation_beside_it(self):
+        """Report the verdict the tree earned, not the noise next to it."""
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "status": "COMPLETED",
+                "conclusion": "CANCELLED",
+            },
+            {
+                "name": "collaboration-policy",
+                "startedAt": "2026-08-18T00:52:21Z",
+                "status": "COMPLETED",
+                "conclusion": "FAILURE",
+            },
+        ]
+        self.assertEqual(
+            collab.required_check_state(rows),
+            ("failed", ["collaboration-policy"]),
+        )
+
+    def test_a_cancellation_outranks_a_pending_sibling(self):
+        """Dispatch the re-run now; the sibling can keep running meanwhile."""
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "status": "COMPLETED",
+                "conclusion": "CANCELLED",
+            },
+            {
+                "name": "collaboration-policy",
+                "startedAt": "2026-08-18T00:52:21Z",
+                "status": "IN_PROGRESS",
+                "conclusion": "",
+            },
+        ]
+        self.assertEqual(
+            collab.required_check_state(rows),
+            ("retryable", ["cargo-test"]),
+        )
+
+    def test_check_run_id_reads_the_run_not_the_job(self):
+        """`gh` hands back the job URL; only the run can be re-dispatched."""
+        self.assertEqual(
+            collab.check_run_id(
+                {
+                    "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS"
+                    "/actions/runs/32086139697/job/95570795617"
+                }
+            ),
+            "32086139697",
+        )
+        # A status context from outside Actions has nothing to re-dispatch.
+        self.assertIsNone(
+            collab.check_run_id({"detailsUrl": "https://example.com/scan/17"})
+        )
+        self.assertIsNone(collab.check_run_id({}))
+
+    def test_rerun_targets_the_newest_run_of_the_named_check(self):
+        calls: list = []
+
+        def fake_write(method, path, payload, *, check=True):
+            calls.append((method, path))
+            return {}
+
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:49:31Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/111/job/1",
+            },
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/222/job/2",
+            },
+            {
+                "name": "overwrite-guard",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/333/job/3",
+            },
+        ]
+        original = collab.gh_api_write
+        collab.gh_api_write = fake_write
+        try:
+            self.assertTrue(collab.rerun_required_check(rows, "cargo-test"))
+            # An advisory check: `ship` does not gate on it, so it must not
+            # spend CI re-running it either. This case named `rust-quality`
+            # until it became required — and being required is exactly what
+            # earns a check the retry, because a cancelled run reaches no
+            # verdict and GitHub restarts nothing on its own.
+            self.assertFalse(collab.rerun_required_check(rows, "overwrite-guard"))
+            self.assertFalse(collab.rerun_required_check([], "cargo-test"))
+        finally:
+            collab.gh_api_write = original
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "POST")
+        self.assertTrue(calls[0][1].endswith("/actions/runs/222/rerun"))
 
     def test_a_pin_only_edit_is_not_a_real_collision(self):
         """The source-contract pin collides by construction; see SOURCE_CONTRACT_PIN."""
@@ -1399,3 +1621,217 @@ class MachineRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryManagedServiceIsRepairedOnEveryTask(unittest.TestCase):
+    """A service `bootstrap` installs and `start` does not repair reaches only
+    the machines bootstrapped after it was written.
+
+    That is not hypothetical. `com.civvis.ladder-watchdog` was built on
+    2026-08-17 to end a 14.3-hour silent ladder outage, and on 2026-08-18
+    `mbp-m5-pro-64` — a host `host_plays_civ6()` calls a Civilization VI seat,
+    with both freshness services loaded — did not have it, because the machine
+    was bootstrapped before it existed and `start` repaired only the push guard
+    and the freshness service.
+    """
+
+    def _source(self) -> str:
+        return Path(collab.__file__).read_text(encoding="utf-8")
+
+    def test_every_launchagent_installer_is_in_the_registry(self):
+        """Discovered, not listed: find the installers, do not trust a list.
+
+        Any `install_*` whose body writes into `~/Library/LaunchAgents` is a
+        managed service and has to be repaired like one.
+        """
+        tree = ast.parse(self._source())
+        installers = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not node.name.startswith("install_"):
+                continue
+            body = ast.dump(node)
+            if "LaunchAgents" in body:
+                installers.add(node.name)
+        self.assertTrue(installers, "no LaunchAgent installer was found at all")
+        registered = {function for _name, function, _absent
+                      in collab.MANAGED_SERVICES}
+        self.assertEqual(
+            installers - registered, set(),
+            "an installer writes a LaunchAgent but nothing repairs it on "
+            "`start`; add it to MANAGED_SERVICES",
+        )
+
+    def test_the_registry_names_real_functions(self):
+        for _name, function, _absent in collab.MANAGED_SERVICES:
+            with self.subTest(function=function):
+                self.assertTrue(callable(getattr(collab, function, None)),
+                                f"MANAGED_SERVICES names {function}, which does "
+                                f"not exist")
+
+    def test_start_repairs_the_services_and_not_one_of_them(self):
+        """`start` used to call `install_freshness_service` directly, which is
+        precisely the shape that could not grow."""
+        source = self._source()
+        start = source.split("def start_task(")[1].split("\ndef ")[0]
+        self.assertIn("install_managed_services(root)", start)
+        self.assertNotIn("install_freshness_service(root)", start)
+
+    def test_bootstrap_repairs_through_the_same_registry(self):
+        source = self._source()
+        boot = source.split("def bootstrap_command(")[1].split("\ndef ")[0]
+        self.assertIn("install_managed_services(root)", boot)
+        for _name, function, _absent in collab.MANAGED_SERVICES:
+            with self.subTest(function=function):
+                self.assertNotIn(f"{function}(root)", boot)
+
+
+class EveryCheckIsRequiredOrSaysWhyNot(unittest.TestCase):
+    """There is no branch protection on this repository, so `REQUIRED_CHECKS`
+    is the only thing that makes a check binding.
+
+    `rust-quality` was in neither list and merged red: five commits on `main`
+    in its forty most recent runs are failures, and #1954 merged with its final
+    `rust-quality` run FAILING while every other check was green. A ratchet
+    nobody has to pass ratchets nothing.
+
+    Discovered, not listed: the check names are read out of the workflows that
+    actually run on a pull request, so a gate added tomorrow is a deliberate
+    decision rather than an omission nobody can tell from an oversight.
+    """
+
+    WORKFLOWS = Path(collab.__file__).resolve().parent.parent / ".github" / "workflows"
+
+    def pull_request_checks(self) -> set:
+        """Every check name a pull request gets: one per job, not per workflow.
+
+        `published-build` and `control-mod` are jobs inside `cargo-test`'s
+        workflow, so keying on workflow names alone would miss two of the six.
+        """
+        names = set()
+        for path in sorted(self.WORKFLOWS.glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            trigger = text.split("jobs:", 1)[0]
+            if "pull_request" not in trigger:
+                continue
+            inside = False
+            for line in text.splitlines():
+                if line.startswith("jobs:"):
+                    inside = True
+                    continue
+                if inside and line and not line[0].isspace():
+                    break
+                if inside and re.match(r"^  [A-Za-z][\w-]*:\s*$", line):
+                    names.add(line.strip().rstrip(":"))
+        return names
+
+    def test_the_workflows_are_read_not_assumed(self):
+        found = self.pull_request_checks()
+        self.assertTrue(found, "no pull-request workflow jobs were found")
+        # The two that live inside another workflow are the reason this reads
+        # jobs rather than workflow names.
+        self.assertIn("published-build", found)
+        self.assertIn("control-mod", found)
+
+    def test_every_one_is_required_or_carries_a_reason(self):
+        unaccounted = sorted(
+            self.pull_request_checks()
+            - set(collab.REQUIRED_CHECKS)
+            - set(collab.ADVISORY_CHECKS))
+        self.assertEqual(unaccounted, [], (
+            "these checks run on every pull request and nothing says whether "
+            "they may block a merge. Add them to REQUIRED_CHECKS, or to "
+            "ADVISORY_CHECKS with the reason they may go red and merge anyway: "
+            f"{unaccounted}"))
+
+    def test_no_check_is_both(self):
+        self.assertEqual(
+            set(collab.REQUIRED_CHECKS) & set(collab.ADVISORY_CHECKS), set())
+
+    def test_an_advisory_reason_is_a_reason(self):
+        for name, reason in collab.ADVISORY_CHECKS.items():
+            with self.subTest(check=name):
+                self.assertGreater(len(reason), 40,
+                                   f"{name} is waved through without a reason")
+
+    def test_rust_quality_is_required(self):
+        """The specific hole this closes; a rename must not silently reopen it."""
+        self.assertIn("rust-quality", collab.REQUIRED_CHECKS)
+
+
+class AManagedJobThatFailsToLoadSaysSo(unittest.TestCase):
+    """`launchctl bootout` is asynchronous and `bootstrap` behind it fails.
+
+    Measured on `mbp-m5-max-128` 2026-08-18: `bootstrap` printed "installed
+    CIVVIS spectator service" while `launchctl print` could not find the job at
+    all. The identical command by hand a moment later loaded it first try — the
+    signature of a race, not a bad plist. Every call in the loader passed
+    `check=False`, so nothing said a word, and the service simply stopped
+    existing.
+    """
+
+    def _driver(self, script):
+        """A fake `run` whose `launchctl print` answers follow `script`."""
+        state = {"loaded": script.pop(0), "calls": []}
+
+        class Done:
+            def __init__(self, rc):
+                self.returncode = rc
+                self.stdout = ""
+                self.stderr = ""
+
+        def run(argv, **kwargs):
+            state["calls"].append(list(argv))
+            verb = argv[1] if len(argv) > 1 else ""
+            if verb == "print":
+                return Done(0 if state["loaded"] else 1)
+            if verb == "bootout":
+                return Done(0)
+            if verb == "bootstrap":
+                if script:
+                    state["loaded"] = script.pop(0)
+                return Done(0 if state["loaded"] else 1)
+            return Done(0)
+
+        return run, state
+
+    def test_a_bootstrap_that_loses_the_race_is_retried(self):
+        # loaded, then still-not-loaded once, then loaded.
+        run, state = self._driver([True, False, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            collab.load_managed_job("com.example.job", Path("/x.plist"))
+        bootstraps = [c for c in state["calls"] if c[1] == "bootstrap"]
+        self.assertGreaterEqual(len(bootstraps), 2, state["calls"])
+
+    def test_a_job_that_never_loads_raises_rather_than_reporting_success(self):
+        run, _ = self._driver([False])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            with self.assertRaises(collab.CommandError) as caught:
+                collab.load_managed_job("com.example.job", Path("/x.plist"),
+                                               attempts=3)
+        self.assertIn("absent", str(caught.exception))
+
+    def test_a_job_that_loads_first_try_is_not_retried(self):
+        run, state = self._driver([False, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            collab.load_managed_job("com.example.job", Path("/x.plist"))
+        bootstraps = [c for c in state["calls"] if c[1] == "bootstrap"]
+        self.assertEqual(len(bootstraps), 1, state["calls"])
+
+    def test_the_bootout_is_waited_out_before_bootstrapping(self):
+        run, state = self._driver([True, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            try:
+                collab.load_managed_job("com.example.job", Path("/x.plist"),
+                                               attempts=2)
+            except collab.CommandError:
+                pass
+        order = [c[1] for c in state["calls"]]
+        self.assertIn("bootout", order)
+        self.assertLess(order.index("bootout"), order.index("bootstrap"),
+                        "the teardown has to be waited out first")

@@ -462,9 +462,9 @@
     "agenda": "billboard",
     "effects": {
       "city_gold": 1,
-      "city_production": 1
+      "dam_district_production_pct": 50
     },
-    "note": "Grootscheepsvaart: +1 gold and +1 production in every city",
+    "note": "Grootscheepsvaart: +1 gold in every city and +50% production toward Dams",
     "traits": [
       "pursue_diplomatic_victory"
     ]
@@ -565,10 +565,12 @@
     "ability": "scottish_enlightenment",
     "agenda": "bannockburn",
     "effects": {
-      "city_science": 1,
-      "city_production": 1
+      "happy_science_pct": 5,
+      "happy_production_pct": 5,
+      "happy_campus_scientist_gpp": 1,
+      "happy_industrial_engineer_gpp": 1
     },
-    "note": "Scottish Enlightenment: +1 science and +1 production in every city",
+    "note": "Scottish Enlightenment: Happy cities receive +5% science and production, +1 Great Scientist point per Campus and +1 Great Engineer point per Industrial Zone; Ecstatic cities double all of these amounts",
     "traits": [
       "science_major_civ"
     ]
@@ -1128,10 +1130,12 @@
     "ability": "divine_wind",
     "agenda": "bushido",
     "effects": {
-      "city_production": 1,
+      "encampment_district_production_pct": 100,
+      "holy_site_district_production_pct": 100,
+      "theater_square_district_production_pct": 100,
       "combat_strength": 2
     },
-    "note": "Divine Wind: +1 production and +2 combat strength",
+    "note": "Divine Wind: +100% production toward Encampment, Holy Site, and Theater Square districts; +2 combat strength",
     "traits": [
       "aggressive_military"
     ]

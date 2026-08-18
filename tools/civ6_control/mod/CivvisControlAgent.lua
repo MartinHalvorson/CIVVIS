@@ -239,6 +239,11 @@ end
 -- ------------------------------------------------------------------ survey
 
 local function typeName(kindTable, hash)
+	-- `GetRuleSet()` returns the configuration's type name directly, unlike
+	-- the numeric hashes returned by difficulty, map size, and game speed.
+	-- Indexing GameInfo with that string raises on the live build, and the
+	-- guarded lookup silently turned every correctly configured game into `?`.
+	if type(hash) == "string" then return hash; end
 	return try(function()
 		local row = kindTable[hash];
 		return row and (row.DifficultyType or row.MapSizeType or row.GameSpeedType
@@ -2621,7 +2626,16 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local wanted = nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
-		if cityId ~= nil then wanted = civvisBuild[cityId]; end
+		if cityId ~= nil then
+			-- A direct choice owns the current queue.  If that queue was already
+			-- finishing when the board was exported, the Rust decider also sent a
+			-- deferred next-build lease under a string key in this same table (the
+			-- Lua 5.1 main chunk is at its 200-local ceiling). Consume that lease
+			-- only after the host raises the production blocker, never while the old
+			-- item is still running.
+			wanted = civvisBuild[cityId]
+				or civvisBuild[tostring(cityId) .. ":next"];
+		end
 	end
 	local function playable(name)
 		-- Already asked for this one on this turn and the game did not start it.
@@ -3671,6 +3685,9 @@ local function driveProduction(player, turn, force)
 						if ok then
 							issued = issued + 1;
 							lastBuild[cityId] = { turn = turn, item = name };
+							if civvisBuild[tostring(cityId) .. ":next"] == name then
+								civvisBuild[tostring(cityId) .. ":next"] = nil;
+							end
 							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
 							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
 							elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
@@ -4496,6 +4513,10 @@ local function chooseEnvoy(player, pid, turn)
 		turn = turn, held = tokens, placed = placed, target = target,
 		met_minors = #seen, suzerainties = suzerainties, levied = levied,
 	});
+	-- The following turn's beginTurn reads the host's fresh influence object and
+	-- emits `envoy_reconcile`; do not call this an immediate confirmation because
+	-- the UI operation can be asynchronous and the old handle is unsafe to read.
+	envoyTally.pending = { turn = turn, held_before = tokens, requested = placed };
 	if levied ~= nil then return "levy"; end
 	if placed > 0 then return "envoy"; end
 	return "envoy_considered";
@@ -6877,6 +6898,14 @@ local function exportState(player, pid, turn)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- The World Congress standing as of the last session, recorded where
+		-- the review is read. Every alive major appears, including ones this
+		-- seat has not met -- the congress seats them all and shows the seat
+		-- their points, and the ballot the host hands us for
+		-- `WC_RES_DIPLOVICTORY` already names them as targets, which is why
+		-- `voteWorldCongress` may pick a leader from the same set. Carrying it
+		-- no further than the ballot is what left the victory tracker blind.
+		congress_dvp = envoyTally.congress_dvp,
 		-- How many Spies this empire may field, from the same accessor the
 		-- shipped Espionage Overview prints. The mirror blocks Spy production
 		-- outright without it, which is why the seat has never held one.
@@ -8158,6 +8187,128 @@ local function onGovernorAppointed(playerID, governorID)
 	});
 end
 
+-- ★★★★★ THE SALE LANE'S STATE AND THE RIVAL'S ANSWER TO IT.
+--
+-- A `sell` order (see the arm in `applyOrder`) puts CIVVIS's surplus — a
+-- duplicate luxury copy, a strategic block, idle diplomatic favor — into the
+-- outgoing working deal and asks the rival's own valuation for the gold with
+-- `DealProposalAction.EQUALIZE`, exactly the shipped "What would you give me
+-- for this?" button (DiplomacyDealView.lua `RequestEqualizeWorkingDeal`). The
+-- rival answers through `Events.DiplomacyIncomingDeal` with its balanced
+-- INCOMING working deal; the shipped screen copies that over the outgoing deal
+-- and, when the two are equal, sends `ACCEPTED` — which is what enacts the
+-- trade (`OnProposeOrAcceptDeal`). This handler is that click, made only when
+-- the answer is what was asked for: our side holds exactly the items offered,
+-- their side holds gold and nothing else, and the gold clears the floor the
+-- order carried. Anything else is left on the table: the outgoing deal is
+-- cleared and nothing is sent, the same exit the shipped screen takes when the
+-- human simply walks away from a deal they opened.
+--
+-- ⚠ Every incoming deal is written to the ledger (`deal_response`), whether or
+-- not this lane asked for it — the peace lane above has submitted hundreds of
+-- proposals without ever seeing an answer, and this is the first record of
+-- what the engine says back. A deal this lane did not ask for (a rival's own
+-- proposal, which arrives with `PROPOSED`) is logged and otherwise untouched:
+-- that screen belongs to the harness's closers.
+--
+-- Bare globals, both: the main chunk sits at Lua's 200-register ceiling, and
+-- the offline regression (`deal_sale_test.lua`) reads them.
+CivvisTrade = { pending = {}, asked = {} };
+
+CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 or toPlayer ~= pid or fromPlayer == nil then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local trade = CivvisTrade;
+	local pending = trade.pending[fromPlayer];
+	local incoming = try(function()
+		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, fromPlayer);
+	end, nil);
+	-- Read both sides. `theirs` is what the rival puts up; only gold counts
+	-- and anything else marks the answer foreign. `mine` is what the answer
+	-- says we give, matched against the offer by Firaxis type, value and
+	-- amount, so an equalizer that touched our side cannot slip a bigger
+	-- block or a different item through the accept.
+	local gold, gpt, foreign, mine, offered = 0, 0, 0, {}, 0;
+	local mineText = {};
+	if incoming ~= nil then
+		pcall(function()
+			for item in incoming:Items() do
+				local kind = item:GetType();
+				local from = item:GetFromPlayerID();
+				local duration = item:GetDuration() or 0;
+				local amount = item:GetAmount() or 0;
+				if from == fromPlayer then
+					if kind == DealItemTypes.GOLD then
+						if duration == 0 then gold = gold + amount; else gpt = gpt + amount; end
+					else
+						foreign = foreign + 1;
+					end
+				else
+					local key;
+					if kind == DealItemTypes.FAVOR then
+						key = "FAVOR";
+					elseif kind == DealItemTypes.RESOURCES then
+						key = "RESOURCES:" .. tostring(item:GetValueType());
+					else
+						key = "OTHER:" .. tostring(kind);
+					end
+					mine[key] = (mine[key] or 0) + amount;
+					mineText[#mineText + 1] = key .. "=" .. tostring(amount) .. "x" .. tostring(duration);
+				end
+			end
+		end);
+	end
+	local matches = pending ~= nil;
+	if pending ~= nil then
+		for key, amount in pairs(pending.gave or {}) do
+			offered = offered + 1;
+			if mine[key] ~= amount then matches = false; end
+		end
+		for key, _ in pairs(mine) do
+			if (pending.gave or {})[key] == nil then matches = false; end
+		end
+	end
+	local worth = gold + gpt * 25;
+	local session = try(function()
+		return DiplomacyManager.FindOpenSessionID(pid, fromPlayer);
+	end, nil);
+	local closable = pending ~= nil and matches and foreign == 0 and offered > 0
+		and worth >= (pending.floor or 0)
+		and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
+	emit("deal_response", {
+		turn = turn, from = fromPlayer, action = action,
+		gold = gold, gold_per_turn = gpt, worth = worth, foreign = foreign,
+		ours = table.concat(mineText, ","),
+		asked = pending ~= nil, asked_turn = pending and pending.turn or nil,
+		floor = pending and pending.floor or nil, matches = matches,
+		session = session ~= nil and session or -1,
+		closable = closable,
+	});
+	if pending == nil then return; end
+	-- One answer settles one ask, whichever way it went.
+	trade.pending[fromPlayer] = nil;
+	if not closable then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);
+		emit("deal_declined", {
+			turn = turn, from = fromPlayer, action = action, worth = worth,
+			floor = pending.floor, matches = matches, foreign = foreign,
+		});
+		return;
+	end
+	local ok, sent = pcall(function()
+		DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
+		if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
+		DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, fromPlayer);
+		return true;
+	end);
+	emit("deal_closed", {
+		turn = turn, from = fromPlayer, gold = gold, gold_per_turn = gpt, worth = worth,
+		floor = pending.floor, gave = pending.verb, sent = (ok and sent) and true or false,
+		threw = not ok,
+	});
+end
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -8725,6 +8876,159 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "delegation_asked" or "throw";
 	end
 
+	-- ★★★★★ SURPLUS SOLD FOR GOLD, AT THE RIVAL'S OWN PRICE. `verb` is what
+	-- CIVVIS lets go — `RESOURCE_DYES=1,FAVOR=10`, Firaxis's own resource type
+	-- names, favor as a lump — and `x` is the gold-equivalent floor (lump plus
+	-- 25× per-turn) below which the answer is declined. Built the way the
+	-- shipped deal screen builds it (DiplomacyDealView_Expansion2.lua
+	-- `OnClickAvailableResource` / `OnClickAvailableOneTimeFavor`): a resource
+	-- item carries the type from `GetPossibleDealItems`, thirty turns for a
+	-- luxury and a lump for a stockpiled (`Accumulate`) strategic, clipped to
+	-- the engine's own `GetMaxAmount`; favor is a lump clipped the same way.
+	-- Then EQUALIZE, not PROPOSED: the rival fills in its side and
+	-- `CivvisOnIncomingDeal` above closes at or above the floor. No session is
+	-- opened — the deal screen's only unattended exit is refusal.
+	--
+	-- One ask per rival at a time, one ask per rival per `TradeRetryTurns`;
+	-- an ask the engine never answered is dropped after `TradeResponseTurns`
+	-- so it cannot hold the working deal against the peace arm forever.
+	-- Nothing here may claim more than "asked": the close is the handler's,
+	-- and the enacted trade shows in the next export as gold up and the
+	-- stock or favor down.
+	if kind == "sell" then
+		if subject < 0 then return false, "sell_target_unmapped"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "sell_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "sell_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "sell_not_major";
+		end
+		local trade = CivvisTrade;
+		local pending = trade.pending[subject];
+		if pending ~= nil then
+			if (turn - (pending.turn or turn)) < (cfg.TradeResponseTurns or 2) then
+				return false, "sell_pending";
+			end
+			trade.pending[subject] = nil;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
+		end
+		if try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
+			return false, "sell_host_pending";
+		end
+		local asked = trade.asked[subject];
+		if asked ~= nil and (turn - asked) < (cfg.TradeRetryTurns or 3) then
+			return false, "sell_cooldown";
+		end
+		local wanted = {};
+		for name, amount in string.gmatch(verb, "([%w_]+)=(%d+)") do
+			wanted[#wanted + 1] = { name = name, amount = tonumber(amount) or 0 };
+		end
+		if #wanted == 0 then return false, "sell_no_items"; end
+		local floor = math.max(0, math.floor(x or 0));
+		local ran, submitted, reason, gave, gaveText = pcall(function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			if deal == nil then return false, "no_working_deal", {}, ""; end
+			local possible = try(function()
+				return DealManager.GetPossibleDealItems(pid, subject, DealItemTypes.RESOURCES, deal);
+			end, nil) or {};
+			local gave, text = {}, {};
+			for _, want in ipairs(wanted) do
+				if want.name == "FAVOR" then
+					-- Favor is a Gathering Storm item; a ruleset without it has
+					-- no `DealItemTypes.FAVOR` and simply nothing to sell here.
+					local item = DealItemTypes.FAVOR ~= nil
+						and deal:AddItemOfType(DealItemTypes.FAVOR, pid) or nil;
+					if item ~= nil then
+						item:SetDuration(0);
+						local cap = try(function() return item:GetMaxAmount(); end, nil);
+						local amount = want.amount;
+						if cap ~= nil and cap < amount then amount = cap; end
+						local set = amount > 0 and pcall(function() item:SetAmount(amount); end);
+						if set and try(function() return item:IsValid(); end, true) then
+							gave["FAVOR"] = amount;
+							text[#text + 1] = "FAVOR=" .. tostring(amount);
+						else
+							pcall(function() deal:RemoveItemByID(item:GetID()); end);
+						end
+					end
+				else
+					local row = try(function() return GameInfo.Resources[want.name]; end, nil);
+					if row == nil then return false, "unknown_resource:" .. want.name, {}, ""; end
+					local forType = nil;
+					for _, entry in ipairs(possible) do
+						local desc = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+						if desc ~= nil and desc.ResourceType == want.name and entry.IsValid ~= false
+								and (entry.MaxAmount or 0) > 0 then
+							forType = entry.ForType;
+						end
+					end
+					if forType ~= nil then
+						local consumption = try(function()
+							return GameInfo.Resource_Consumption[want.name];
+						end, nil);
+						local lump = consumption ~= nil
+							and (consumption.Accumulate == true or consumption.Accumulate == 1);
+						local item = deal:AddItemOfType(DealItemTypes.RESOURCES, pid);
+						if item ~= nil then
+							item:SetValueType(forType);
+							item:SetDuration(lump and 0 or 30);
+							local cap = try(function() return item:GetMaxAmount(); end, nil);
+							local amount = want.amount;
+							if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+							local set = amount > 0 and pcall(function() item:SetAmount(amount); end);
+							if set and try(function() return item:IsValid(); end, true) then
+								gave["RESOURCES:" .. tostring(forType)] = amount;
+								text[#text + 1] = want.name .. "=" .. tostring(amount)
+									.. "x" .. (lump and "0" or "30");
+							else
+								pcall(function() deal:RemoveItemByID(item:GetID()); end);
+							end
+						end
+					end
+				end
+			end
+			if next(gave) == nil then return false, "nothing_tradeable", gave, ""; end
+			deal:Validate();
+			if not deal:IsValid() then return false, "invalid_deal", gave, table.concat(text, ","); end
+			-- Registered BEFORE the ask goes out: should the engine answer
+			-- synchronously, from inside this very call, the handler must
+			-- already know what was offered and at what floor.
+			trade.pending[subject] = {
+				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
+			};
+			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			return true, "asked", gave, table.concat(text, ",");
+		end);
+		if not ran then
+			submitted, reason, gave, gaveText = false, "throw", {}, "";
+		end
+		if submitted then
+			trade.asked[subject] = turn;
+		elseif trade.pending[subject] ~= nil and trade.pending[subject].turn == turn then
+			-- The ask itself threw after registering; nothing is in flight.
+			trade.pending[subject] = nil;
+		end
+		if not submitted and (reason == "nothing_tradeable" or reason == "invalid_deal") then
+			-- The engine has nothing to sell here right now; do not re-ask
+			-- every turn for the same answer.
+			trade.asked[subject] = turn;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+		end
+		emit("deal_offer", {
+			turn = turn, target = subject, verb = verb, floor = floor,
+			submitted = submitted and true or false, reason = reason,
+			gave = gaveText, threw = reason == "throw",
+		});
+		return submitted, submitted and "sell_asked" or reason;
+	end
+
 	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
 	-- met city-state, decided on the reconstructed board by `advanced_envoys`
 	-- (type-aware, suzerainty-priced, denial-aware) now that `envoys_free`
@@ -9220,6 +9524,27 @@ local function applyOrder(player, pid, row, turn)
 		local op = isTech and PlayerOperations.RESEARCH or PlayerOperations.PROGRESS_CIVIC;
 		local ok = pcall(function() UI.RequestPlayerOperation(pid, op, params); end);
 		return ok, ok and verb or "throw";
+	end
+
+	if kind == "produce_next" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		verb = CIVVIS_PROJECT_TYPES[verb]
+			or CIVVIS_GOVERNMENT_BUILDING_TYPES[verb]
+			or verb;
+		local row2, resolved = resolveType(GameInfo.Types, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		local cityId = tonumber(subject) or -1;
+		civvisBuild[tostring(cityId) .. ":next"] = resolved;
+		-- This is a durable handoff, not a build request.  The queue remains
+		-- untouched until `driveProduction` sees the matching end-turn blocker.
+		emit("build_hint", {
+			turn = turn, city = cityId, item = resolved,
+			production_turns = try(function()
+				return city:GetBuildQueue():GetTurnsLeft();
+			end, -1),
+		});
+		return true, "queued";
 	end
 
 	if kind == "produce" then
@@ -10577,7 +10902,7 @@ end
 -- `orders` event that says only "CIVVIS decided" reads identical whether every
 -- order landed or every one was refused.
 local function applyOrders(player, pid, turn, rows)
-	local applied, refused = 0, 0;
+	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
@@ -10648,7 +10973,14 @@ local function applyOrders(player, pid, turn, rows)
 		end);
 		if safe then ok, why = res1, res2; end
 		if ok then
-			applied = applied + 1;
+			if kind == "produce_next" then
+				-- A lease is accepted by the control channel but has not yet
+				-- mutated the host. Keep it out of the host applied-rate numerator
+				-- and denominator; the later `build` event is the actuation proof.
+				deferred = deferred + 1;
+			else
+				applied = applied + 1;
+			end
 			byKind[kind] = (byKind[kind] or 0) + 1;
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
@@ -10776,8 +11108,9 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, source = "civvis", seen = #rows,
+		turn = turn, source = "civvis", seen = #rows - deferred,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		deferred = deferred,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
 		-- Also not part of `applied`: Great People driven to their own use —
@@ -10829,9 +11162,10 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows,
+		orders_seen = #rows - deferred,
 		orders_applied = applied,
 		orders_refused = refused,
+		orders_deferred = deferred,
 		orders_polls = awaiting.polls,
 		residual = residualAnswers,
 		blocker = blockerName(currentBlocker(pid)),
@@ -10996,6 +11330,32 @@ local function beginTurn(player, pid, turn)
 	-- `playTurn` never executes. A call added there would have been inert in
 	-- exactly the configuration that matters — the same trap the `come_ashore`
 	-- comment records for the tactical path.
+	--
+	-- Read back the previous turn's host token count before planning another
+	-- spend. The immediate `envoy` event is intentionally issuing-side: the
+	-- gameplay object can lag while `UI.RequestPlayerOperation` is resolving.
+	-- This next-frame record is the first authoritative host value, and the
+	-- lower bound makes token generation between frames explicit rather than
+	-- mistaking a changed purse for a failed order.
+	pcall(function()
+		local pending = envoyTally.pending;
+		if pending == nil then return; end
+		local fresh = player:GetInfluence();
+		if fresh == nil then return; end
+		local heldAfter = try(function() return fresh:GetTokensToGive(); end);
+		if heldAfter == nil then return; end
+		local heldBefore = tonumber(pending.held_before) or 0;
+		local requested = tonumber(pending.requested) or 0;
+		emit("envoy_reconcile", {
+			turn = turn,
+			requested_turn = pending.turn,
+			held_before = heldBefore,
+			requested = requested,
+			held_after = heldAfter,
+			minimum_after = math.max(0, heldBefore - requested),
+		});
+		envoyTally.pending = nil;
+	end);
 	if cfg.EnvoyEnabled then
 		pcall(function() chooseEnvoy(player, pid, turn); end);
 	end
@@ -11107,10 +11467,73 @@ local function beginTurn(player, pid, turn)
 				end, 0)) or 0 };
 			end
 		end
+		local favorNow = tonumber(try(function() return player:GetFavor(); end, 0)) or 0;
 		emit("wc_outcome", {
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
-			favor = tonumber(try(function() return player:GetFavor(); end, 0)) or 0,
+			favor = favorNow,
 		});
+		-- ★★★★★ AND THE HALF THAT MAKES THE BALLOT A CHECK INSTEAD OF A CLAIM.
+		--
+		-- `wc_vote` has always reported what the ballot INTENDED -- `cast 3,
+		-- spent 612` -- and nothing ever compared that with what the host went
+		-- on to record. It recorded one vote, every time, for 961 resolutions
+		-- across 29 runs, and the Favor was never taken. An operation that is
+		-- queued and then silently declined is indistinguishable from one that
+		-- worked, unless something reads the result back.
+		--
+		-- This is that read. `PlayerSelections` above is the host's own count
+		-- for our seat; the ask is what this turn's ballot sent. `registered`
+		-- being false is the defect reporting itself, per resolution, with the
+		-- Favor readings that priced it -- which is what the next repair needs
+		-- and what no run so far has had.
+		if type(envoyTally.ballot_ask) == "table" then
+			for _, r in ipairs(resolutions) do
+				local ask = envoyTally.ballot_ask[r.type];
+				if type(ask) == "table" and type(r.ours) == "table" then
+					local recorded = tonumber(r.ours.votes) or 0;
+					local asked = tonumber(ask.votes) or 0;
+					emit("wc_ballot_verdict", {
+						turn = turn, resolution = r.type,
+						asked = asked, recorded = recorded,
+						registered = recorded >= asked,
+						option_asked = ask.option, option_recorded = r.ours.option,
+						favor_at_ballot = envoyTally.ballot_favor_now,
+						favor_entering_congress = envoyTally.ballot_favor_entering,
+						favor_now = favorNow,
+						max_votes = envoyTally.ballot_max_votes,
+						costs = envoyTally.ballot_costs,
+						votes_sent = (type(envoyTally.ballot_sent) == "table")
+							and envoyTally.ballot_sent[r.type] or nil,
+					});
+				end
+			end
+			envoyTally.ballot_ask = {};
+		end
+		-- ★★★★★ AND THE SAME TABLE, KEPT FOR THE STATE EXPORT.
+		--
+		-- `wc_outcome` is a log event: nothing on the CIVVIS side has ever read
+		-- it. Meanwhile the per-turn rival export is met-gated, so the victory
+		-- tracker's diplomatic lane only ever saw the civilizations this seat
+		-- had already contacted. Measured over the 50 runs carrying a congress
+		-- table, 40 of them (80%) had a congress DVP standing HIGHER than any
+		-- rival the decider could see, and in five the gap crossed the denial
+		-- alarm: `civvis-20260818T103630Z` lost a diplomatic victory to a
+		-- player sitting at 22 DVP while the tracker's best visible rival read
+		-- 14, so `urgent_victory_threat` never fired once all game.
+		--
+		-- This is the congress standing and nothing more: the table the seat is
+		-- shown when it votes, stamped with the turn it was shown. It is not a
+		-- live per-turn read of an uncontacted empire — between sessions it
+		-- goes stale exactly the way a human's memory of the last session does.
+		--
+		-- ⚠ Guarded on a non-empty list: an empty Lua table encodes as `{}`, not
+		-- `[]`, and a `points` object where the schema wants an array fails the
+		-- whole state parse rather than this one field. `GetAliveMajorIDs`
+		-- cannot be empty while this seat is playing, so the guard is insurance
+		-- against a host that answered oddly, not an expected branch.
+		if #dvp > 0 then
+			envoyTally.congress_dvp = { turn = turn, points = dvp };
+		end
 	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--
@@ -11165,6 +11588,9 @@ local function beginTurn(player, pid, turn)
 	awaiting.source = "pending";
 	-- Per turn, or the tally becomes cumulative and unreadable.
 	residualAnswers = {};
+	-- The same table carries direct choices and deferred `city:next` leases.
+	-- Keeping one table is necessary because Lua 5.1's main chunk has only
+	-- 200 registers and this file already uses the practical ceiling.
 	civvisBuild = {};
 end
 
@@ -11445,7 +11871,78 @@ local function tick()
 			local costs = wc:GetVotesandFavorCost(pid);
 			if type(resolutions) ~= "table" then return 0, 0, "no_resolutions"; end
 			if type(costs) ~= "table" then costs = {}; end
-			local favor = try(function() return Players[pid]:GetFavor(); end, 0) or 0;
+			-- ★★★★★ NINE HUNDRED AND SIXTY-ONE RESOLUTIONS, ONE VOTE EVERY TIME.
+			--
+			-- The ballot below has reported `spent 264-924` on every session
+			-- since #1766, and the host's own review has recorded our seat at
+			-- `votes = 1` on 961 of 961 resolutions across 29 recorded runs --
+			-- never once above the free vote -- while Favor rose monotonically
+			-- through every "spend" (run civvis-20260818T091159Z: 584, 676, 681,
+			-- 809, 816, 952 across four of them). Rivals cast 5 to 14. The
+			-- OPTION we choose does register, and changes when we change it, so
+			-- the operation reaches the core and only the extra votes are
+			-- refused: what is failing is the purchase, not the ballot.
+			--
+			-- The one difference from the shipped screen is the budget it is
+			-- priced against. `WorldCongressPopup.lua` reads
+			-- `GetFavorEnteringCongress()` for every stage of a live session and
+			-- `GetFavor()` only after it ends (line 466); this asked for as many
+			-- votes as CURRENT Favor could buy. Asking beyond what the core will
+			-- sell is a coherent explanation for a purchase that fails whole and
+			-- leaves the free vote standing.
+			--
+			-- So price it the way the screen does, and -- because that is a
+			-- hypothesis and not a finding -- record both readings and what the
+			-- host went on to record, rather than assuming this fixed it. The
+			-- lower of the two cannot lose a vote we are already not getting.
+			-- `wc_ballot_verdict`, emitted beside the next `wc_outcome`, is the
+			-- half that settles it.
+			local favorNow = tonumber(try(function() return Players[pid]:GetFavor(); end, 0)) or 0;
+			local favorEntering = tonumber(try(function()
+				return Players[pid]:GetFavorEnteringCongress();
+			end, nil));
+			local favor = favorNow;
+			if favorEntering ~= nil and favorEntering >= 0 and favorEntering < favor then
+				favor = favorEntering;
+			end
+			envoyTally.ballot_favor_now = favorNow;
+			envoyTally.ballot_favor_entering = favorEntering;
+			envoyTally.ballot_ask = {};
+			-- ★★★★★ AND WHAT THE VOTES WERE PRICED AGAINST, BECAUSE THE FIRST
+			-- READBACK RULED OUT THE REASON IT WAS BUILT TO TEST.
+			--
+			-- #2013 priced the ballot against `GetFavorEnteringCongress` on the
+			-- theory that it was the smaller number and that asking past it
+			-- refused the purchase whole. The first decisive session says
+			-- otherwise: run `civvis-20260818T161918Z` turn 162 reports
+			-- `favor_at_ballot 439, favor_entering_congress 439` -- the same
+			-- value -- with `asked 15, recorded 1, registered false`, while the
+			-- one-vote ballot on the SAME resolution one turn later reports
+			-- `asked 1, recorded 1, registered true`. A controlled pair inside
+			-- one session: the free vote lands, the purchase does not, and the
+			-- budget was never the difference.
+			--
+			-- What is left unobserved is the pricing itself. `n` came out at
+			-- FIFTEEN votes for 420 Favor, and this file's own comment says
+			-- twelve votes cost 780 on the shipped ladder -- so either the cost
+			-- table is not the cumulative-per-vote-count array the loop below
+			-- assumes, or `MaxVotes` is not the cap being read. Both are
+			-- answerable, and neither is answerable from the outside: the
+			-- numbers never leave this function.
+			--
+			-- So they leave it now. `GetVotesandFavorCost` is a small array;
+			-- carrying it and the vote count it produced turns the next session
+			-- into the experiment instead of the one after that. This changes
+			-- no decision -- it is the same ballot, reported.
+			envoyTally.ballot_costs = {};
+			for index = 0, 20 do
+				if costs[index] ~= nil then
+					envoyTally.ballot_costs[#envoyTally.ballot_costs + 1] =
+						{ index = index, cost = tonumber(costs[index]) };
+				end
+			end
+			envoyTally.ballot_max_votes = tonumber(costs.MaxVotes);
+			envoyTally.ballot_sent = {};
 			-- The diplomatic-victory leader among the others.  Keep this sampling
 			-- beside the actual vote: it is the host API contract and exposes a
 			-- useful DVP/score snapshot to the pure selector below.
@@ -11646,10 +12143,55 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
-					local sent = pcall(function()
-						UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
-					end);
+					-- ★★★★★ NINETY-FIVE OF NINETY-FIVE ONE-VOTE BALLOTS REGISTER.
+					-- SEVENTEEN OF SEVENTEEN MULTI-VOTE BALLOTS DO NOT.
+					--
+					-- 112 `wc_ballot_verdict` rows over four runs, and the split
+					-- is perfect in both directions: no ballot asking one vote
+					-- was ever refused, and no ballot asking more than one was
+					-- ever recorded above one. It does not depend on the moment
+					-- (one-vote ballots register from the `stage1` trigger and
+					-- from the `popup` trigger alike), on the option (both
+					-- register and flip as asked), or on affordability -- run
+					-- `civvis-20260818T175125Z` t162 asked thirteen votes at a
+					-- charged 312 Favor holding 352, inside `MaxVotes = 13`, and
+					-- the host recorded one.
+					--
+					-- Every explanation the mod controls is now eliminated:
+					-- parameters match the shipped `OnAccept` exactly, both
+					-- triggers fire, the option registers, the budget is not the
+					-- difference (#2039: `favor_entering_congress` equals
+					-- `GetFavor` on every row), and the ask is affordable and
+					-- within the cap. What is left is the count parameter
+					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
+					-- through this path.
+					--
+					-- So stop sending it. One vote per operation, repeated: if
+					-- the core accumulates them the seat can finally buy votes,
+					-- and if it does not, the host records one -- which is what
+					-- it records today, so this cannot cost a vote the seat is
+					-- already not getting. `votes_sent` and the verdict's
+					-- `recorded` say which happened, on the first session past
+					-- the floor.
+					local sent, submitted = false, 0;
+					for _ = 1, math.max(1, votes) do
+						local one = {};
+						for key, value in pairs(params) do one[key] = value; end
+						one[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1;
+						local ok = pcall(function()
+							UI.RequestPlayerOperation(pid,
+								PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, one);
+						end);
+						if ok then submitted = submitted + 1; sent = true; end
+					end
 					if sent then cast = cast + 1; end
+					envoyTally.ballot_sent = envoyTally.ballot_sent or {};
+					envoyTally.ballot_sent[rtype] = submitted;
+					-- What this ballot ASKED for, per resolution, so the next
+					-- review can be compared with it rather than trusted. `pcall`
+					-- reports only that the call did not raise; the host's own
+					-- `PlayerSelections` is the only thing that reports a vote.
+					envoyTally.ballot_ask[rtype] = { votes = votes, option = option };
 				end
 			end
 			pcall(function()
@@ -12154,6 +12696,7 @@ function Initialize()
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
+		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,

@@ -1373,3 +1373,32 @@ unchanged. Compatibility re-pin; the Elo protocol does not move.
 The 2026-08-17 measured-null production cleanup changes the shared source
 file but leaves `AdvancedAi::legacy()` gated away from both retired arms;
 compatibility re-pin, not a new rating protocol.
+
+---
+
+## v13 (2026-08-18) — WITHDRAWN, and v14 puts the v12 ruleset back
+
+v13 argued that a rules correction is meant to reach every seat, so moving the
+frozen anchor was correct and the ledger should restart. The argument was fine.
+**The correction was not a correction.**
+
+#2049 read four Founder-belief modifiers out of the compiled gameplay cache and
+changed `beliefs.json` to match them. The cache holds whatever ruleset the game
+last ran, and it held the base game. Gathering Storm's
+`Expansion2_RemoveData.xml` deletes all four of those modifiers and replaces
+them with the per-city and per-follower forms `beliefs.json` already had, so
+the change replaced correct expansion values with base-game ones.
+
+#2050 reverted it. The anchor returned to **18,572 decisions** and
+`0x3bda_c2f2_b84d_30fc` and the ruleset fingerprint to
+`fnv1a64:585ff2655ffd3a6d` — all three the values from before v13, which is how
+the revert was verified instead of trusted.
+
+⚠ The version advances to **14** rather than returning to 12. Rows written
+under v13 were played on the base game's beliefs and have to stay
+identifiable: **v14 rows are comparable to v12 rows, and v13 rows to neither.**
+
+⚠ The lesson is not "be careful with the cache". It is that
+`civ6_fidelity.py` had refused a non-Gathering-Storm reference since #1946 and
+the refusal sat in `main`, so three lines of `sqlite3` walked past it. It is in
+`load_cache_database` now.

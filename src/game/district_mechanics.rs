@@ -4554,6 +4554,10 @@ fn tagma_replaces_knights_buffs_its_formation_and_is_the_hippodrome_reward() {
             unit: crate::name!("tagma"),
         },
     ));
+    let tagma = &game.rules.units["tagma"];
+    assert_eq!(tagma.cost, 180.0);
+    assert_eq!(tagma.maintenance, 3.0);
+    assert_eq!(tagma.upgrade_to.as_deref(), Some("tank"));
 
     let warrior = game
         .player_unit_ids(0)

@@ -135,6 +135,39 @@ class FollowTest(unittest.TestCase):
             self.assertEqual((turn, players, height, tiles), (3, 6, 46, True))
             self.assertEqual(len(lines), 3)
 
+    def test_read_events_tails_incrementally_and_ignores_diagnostic_chatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(
+                json.dumps({"kind": "seat", "players": 6}) + "\n"
+                + json.dumps({"kind": "state", "turn": 3}) + "\n"
+                + json.dumps({"kind": "blocked", "turn": 3}) + "\n"
+            )
+            with mock.patch.object(follow.json, "loads", wraps=json.loads) as loads:
+                lines, _, _, _, _ = follow.read_events(temporary)
+                initial_decodes = loads.call_count
+                self.assertEqual(lines.board_revision, 1)
+
+                # A writer can leave a valid JSON object without its closing
+                # bytes. It must be held for the next poll, not discarded and
+                # reparsed from the beginning of a growing journal.
+                with events.open("a") as handle:
+                    handle.write('{"kind":"state","turn":4')
+                follow.read_events(temporary)
+                self.assertEqual(
+                    loads.call_count, initial_decodes + 1,
+                    "only the new incomplete tail should be decoded",
+                )
+
+                with events.open("a") as handle:
+                    handle.write("}\n")
+                updated, turn, _, _, _ = follow.read_events(temporary)
+
+            self.assertIs(updated, lines)
+            self.assertEqual(turn, 4)
+            self.assertEqual(len(updated), 4)
+            self.assertEqual(updated.board_revision, 2)
+
     def test_a_run_with_no_export_yet_does_not_spawn_a_mirror_server(self) -> None:
         """40 spawn-and-die cycles in four minutes, on run civvis-20260807T134625Z.
 

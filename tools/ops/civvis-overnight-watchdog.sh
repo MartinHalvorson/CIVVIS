@@ -7,11 +7,14 @@
 
 set -u
 
-AUDIT=/Users/martin/civvis-overnight-audit.sh
-WATCH_LOG=/Users/martin/civvis-civ6-runs/overnight_watchdog.log
-LOCK=/Users/martin/.civvis-overnight-watchdog.lock
+SELF_DIR=${0:A:h}
+AUDIT=${CIVVIS_OVERNIGHT_AUDIT:-${SELF_DIR}/civvis-overnight-audit.sh}
+WATCH_LOG=$HOME/civvis-civ6-runs/overnight_watchdog.log
+LOCK=$HOME/.civvis-overnight-watchdog.lock
 PID_FILE=$LOCK/pid
-STOP_AT=${CIVVIS_OVERNIGHT_STOP_AT:-2026-08-12T05:12:01Z}
+# An unattended verification loop should not inherit an old one-night cutoff.
+# Operators may still request a bounded run by setting this ISO-8601 deadline.
+STOP_AT=${CIVVIS_OVERNIGHT_STOP_AT:-}
 INTERVAL_S=${CIVVIS_OVERNIGHT_AUDIT_INTERVAL_S:-300}
 
 say() {
@@ -32,10 +35,13 @@ if [[ "${1:-}" == "--once" ]]; then
   exit $?
 fi
 
-stop_epoch=$(/bin/date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$STOP_AT" +%s 2>/dev/null || true)
-if [[ -z "$stop_epoch" || "$stop_epoch" != <-> ]]; then
-  say "invalid stop deadline '$STOP_AT'; refusing to run"
-  exit 64
+stop_epoch=""
+if [[ -n "$STOP_AT" ]]; then
+  stop_epoch=$(/bin/date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$STOP_AT" +%s 2>/dev/null || true)
+  if [[ -z "$stop_epoch" || "$stop_epoch" != <-> ]]; then
+    say "invalid stop deadline '$STOP_AT'; refusing to run"
+    exit 64
+  fi
 fi
 
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -64,21 +70,26 @@ release_lock() {
 trap release_lock EXIT
 trap 'exit 0' HUP INT TERM
 
-say "watchdog up (pid $$), every ${INTERVAL_S}s, through $STOP_AT"
+if [[ -n "$stop_epoch" ]]; then
+  say "watchdog up (pid $$), every ${INTERVAL_S}s, through $STOP_AT"
+else
+  say "watchdog up (pid $$), every ${INTERVAL_S}s, no stop deadline"
+fi
 while true; do
   now=$(date +%s)
-  if (( now >= stop_epoch )); then
+  if [[ -n "$stop_epoch" ]] && (( now >= stop_epoch )); then
     say "requested deadline reached; stopping"
     exit 0
   fi
 
   run_audit || true
 
-  now=$(date +%s)
-  remaining=$(( stop_epoch - now ))
-  (( remaining > 0 )) || continue
   sleep_for=$INTERVAL_S
-  (( sleep_for > remaining )) && sleep_for=$remaining
+  if [[ -n "$stop_epoch" ]]; then
+    now=$(date +%s)
+    remaining=$(( stop_epoch - now ))
+    (( remaining > 0 )) || continue
+    (( sleep_for > remaining )) && sleep_for=$remaining
+  fi
   sleep "$sleep_for"
 done
-

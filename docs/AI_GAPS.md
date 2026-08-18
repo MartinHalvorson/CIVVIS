@@ -4,6 +4,95 @@ This is the current assessment of the game-playing AI. `docs/EVAL.md` is the
 chronological experiment log; older entries there preserve what was believed at
 the time and are not automatically the current conclusion.
 
+The same rule now applies inside this file. **The list immediately below is the
+only live ranking here.** Three sections used to compete for that role; all
+three are still present, under `Superseded ranking` headings, because what was
+believed and why is evidence — but none of them is an instruction any more.
+
+## Current ranked next work (2026-08-17)
+
+Ordered by the largest remaining decision risk rather than by how local the next
+code edit is. This is the 2026-07-31 turn-frame ordering further down, minus the
+entries the dated sections after it record as answered, plus the one entry the
+later rankings dropped without ever resolving. Nothing here is re-ranked on
+judgement: every surviving entry keeps the relative position its own list gave
+it, and the note on each says what has since moved under it.
+
+1. **Test one rational composite, pre-registered.** Evaluate the live policy
+   deck plus direct envoy production on new stable deployment and compact
+   prefixes, preserving the matrix gate and recording build opportunity costs.
+   Mark it as a deployment comparison; do not attribute its outcome to either
+   component or sweep parameters on the confirmation seeds. *(Turn-frame #2.
+   The 2026-07-31 full-prefix resolution below closed the single-component
+   question in both directions — neither the 120-map direct envoy-production
+   treatment nor the 300-map live-policy control cleared the unchanged matrix
+   rule, though both pointed +30 Elo-equivalent at deployment — which is what
+   leaves one bounded composite worth running. No dated section since records
+   the composite as run.)*
+2. **Validate a fresh action-conditioned candidate.** Use the trainer and
+   fixed-threshold evaluator on disjoint action corpora; do not tune coverage on
+   the deployment profile, and do not integrate a candidate before the mirrored
+   gameplay gate. A state-value argmax is not an action-value policy.
+   *(Turn-frame #4. The infrastructure half landed 2026-08-17: the corpus →
+   trainer → schema-validated artifact → abstaining loader path is reproducible
+   and refuses to emit on held-out BCE, coverage, or gated-lift failure. What
+   remains is exactly the evidence — a fresh external screen and the mirrored
+   A/B. No policy file is embedded and no default AI loads one.)*
+3. **Search the full expansion investment, then price strategic search.** Model
+   production, population, travel, settlement, and payback together; retain
+   expensive macro search only if a genome-matched deployment comparison pays
+   for its measured turn cost. *(Turn-frame #5. `AdvancedAi::coupled_expansion`
+   now prices one legal Settler as a bounded investment against a 90-turn payoff
+   horizon and is registered as a typed evaluator arm, off in production
+   (2026-08-17). The modelling is done; the disjoint gameplay screen that would
+   promote or reject it has not run. The strategic-search half is untouched.)*
+4. **External calibration.** Complete retained games against Firaxis' AI and
+   humans with named settings. Internal Elo remains an internal ruler.
+   *(Carried from the 2026-07-30 ranking, the last list to contain it: the two
+   rankings after it dropped this entry without recording an answer, and
+   “Internal ratings are not external strength” is still a live failure below.
+   The two Settler-rung claims out of 119 attempts are the first external
+   datapoints and the file already says what they establish — that the
+   integration path can finish a game in front, not that the controller is
+   strong.)*
+
+Answered, and therefore **not** carried forward:
+
+- **Separate discovery from confirmation effect sizes** (turn-frame #1) —
+  landed. `ai_eval` now compares full inclusive `[seed, seed + pairs - 1]`
+  intervals, rejects any overlap, fails closed on `u64` overflow, and applies
+  the check in matrix mode before the fixed compact/deployment stride. The word
+  *disjoint* is now mechanical rather than a convention (2026-08-17, below).
+- **Screen the fog-honest major controller** (turn-frame #3) — screened and
+  decided in #1940. The opt-in `AdvancedAi::fog_honest()` arm consumes
+  observation, memory and belief end-to-end and is exposed as `fog_honest`; its
+  first deployment-shaped screen scored 15.0% (95% Wilson CI 5.2%..36.0%, 20
+  paired maps, seed prefix `920000..920019`), the matched compact screen was
+  exactly neutral, and stock `advanced` retained the strength gate. The arm
+  shipped; the incumbent did not change. The successor the screen itself names
+  is to improve fair-play economic planning *before* re-running the gate —
+  which is not yet a ranked item because no ranking in this file has priced it
+  (2026-08-17, below).
+- **Policy-deck transfer confirmation** (2026-07-30 #4) — resolved against the
+  treatment by the full-prefix follow-through below; it survives only as the
+  first component of item 1.
+
+Nothing on this list is licensed to skip the dated sections below. Several of
+them record ★★★★★ defects with named, unrun remedies (the great-work veto's
+district-vs-slot key; the five bridge flags the `live` arm is missing). Those
+are findings with a route, not ranked work, and they are deliberately left where
+their evidence is.
+
+For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
+and its corrections see `docs/EVAL.md`; for the rating/seating contract see
+`docs/LEAGUE.md`. Closed lanes keep their writeups in `docs/closed/`, including
+the two that answer the recurring “spend the terminal Faith” question with a
+measured null: `docs/closed/FAITH_CONVERSION.md` (the conversion-policy
+development screen, stopped with no gameplay integration) and
+`docs/closed/TERMINAL_FAITH_OPPORTUNITIES.md` (the frozen descriptive contract
+over 376 terminal major seats holding a mean 4,486.5 Faith). A closed writeup
+records what was measured, never what the code does now.
+
 ## First: what “AI” means in CIVVIS
 
 CIVVIS has no runtime LLM, prompt pipeline, or hosted-model dependency. The
@@ -399,7 +488,15 @@ but it does prevent a profile-independent “top-tier” claim. The strongest
 supported conclusion is that `advanced` remains the production incumbent and
 no tested replacement cleared the deployment gate.
 
-## Next priorities
+## Superseded ranking (2026-07-30): next priorities
+
+*Superseded — kept as the record of what was believed and why. The live
+ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
+at the top of this file.*
+
+The first of the three rankings this file accumulated. Items 1–4 were
+re-expressed by the two rankings after it; item 5, external calibration, was
+not, and is item 4 of the current list.
 
 1. **Fog-honest major controller.** Extend the bounded belief-pressure use into
    a major civilization that consumes the existing observation, memory, and
@@ -447,7 +544,14 @@ canonicalized through the same table used by construction; strict evaluator
 construction now fails closed on degraded artifacts, and effective self-play
 also fails closed in promotion mode.
 
-## Next ranked work after the identity implementation
+## Superseded ranking (2026-07-31): next ranked work after the identity implementation
+
+*Superseded — kept as the record of what was believed and why. The live
+ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
+at the top of this file.*
+
+Superseded by the turn-frame ranking immediately below, which says so in its
+own closing line.
 
 The former first item is now landed: every selectable arm has a typed
 `AgentSpec`, evaluator preflight prints its actual comparison axes, and an
@@ -484,7 +588,15 @@ that boundary rather than re-running the old stringly comparisons.
    with a genome-matched sequential control and keep it out of the live league
    unless its measured gain justifies its roughly 6.4× turn cost.
 
-## Ranked next work after the turn-frame repair
+## Superseded ranking (2026-07-31): ranked next work after the turn-frame repair
+
+*Superseded — kept as the record of what was believed and why. The live
+ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
+at the top of this file.*
+
+The direct ancestor of the current list: items 2, 4 and 5 survive there, items
+1 and 3 have since been answered, and the resolution of each is recorded at the
+top rather than here.
 
 The current-main battlefront follow-up froze the already-promoted observation
 boundary for one major turn. The opt-in `AdvancedAi::fog_honest()` arm now
@@ -826,11 +938,19 @@ diplomacy, campaign selection, and tactics all consume that same world. The
 action tape is then replayed against the authoritative game, where hidden
 blockers and combat remain the legality authority.
 
-This closes the architecture gap without silently changing the incumbent:
-the mode is default-off and has no strength claim yet. Focused tests prove
-redaction, invariance to unseen enemy movement/health changes, and a short
-two-major replay. A paired deployment-shaped gameplay screen remains the next
-step before promotion.
+This closes the architecture gap without silently changing the incumbent.
+The strict evaluator now exposes the arm as `fog_honest`, and its first
+deployment-shaped screen (20 paired maps, seed prefix `920000..920019`) made
+the decision explicit: stock `advanced` retained the strength gate. The
+fog-honest arm scored 15.0% (95% Wilson CI 5.2%..36.0%), with the incumbent
+favoured on 15 of 20 map directions. The matched compact-standard screen
+(20 pairs, `910000..910019`) was exactly neutral at 50.0% (95% Wilson CI
+29.9%..70.1%) and therefore inconclusive; deployment is the required strength
+profile, so the arm is not promoted into the incumbent. Focused tests prove
+redaction, invariance to unseen enemy
+movement/health changes, stale-city reference cleanup, and a short two-major
+replay. The next useful work is to improve fair-play economic planning before
+re-running the gate, not to relabel this negative screen as a promotion.
 
 ## 2026-08-17 the great-work veto outranks the treatment that pays for great-work buildings
 

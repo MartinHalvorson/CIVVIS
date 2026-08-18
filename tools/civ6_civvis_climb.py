@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import collections
 import json
 import math
 import os
@@ -47,7 +48,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
-DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
 
 sys.path.insert(0, str(HERE))
@@ -57,6 +57,9 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # verbatim to `civvis_orders --victory`; a second copy of the names is a second
 # place for them to go stale, which is exactly how three of the six lanes stayed
 # unreachable. `test_civ6_play.py` pins this list against the Rust const.
+# The default is imported for the same reason the list is: this launcher used
+# to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
+from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import VICTORY_LANES  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
@@ -1075,6 +1078,38 @@ def resolvable_win_rate(attempts: int, baseline: float = 0.25,
     return None
 
 
+def batch_composition_line(reasons) -> str:
+    """What the batch actually measured, by how each attempt ended.
+
+    ⚠⚠ A GAME KILLED BY OUR OWN CLOCK IS NOT A LOSS, AND NOTHING SAID SO.
+    An attempt that hits the wall-clock ceiling is written to the ledger with
+    `reason` set and `outcome.won` left **None** — so every win-rate that
+    counts `won == True` over the rows silently scores it as a non-win. Game
+    1 of the first pinned batch (2026-08-17) hit the ceiling at turn 203
+    while LEADING by 46, under a machine load of ~55 from un-niced eval
+    sweeps: a four-times pace collapse, not a stall and not a defeat.
+
+    A batch that does not say how many of its attempts ended that way reads
+    exactly like a batch that completed them all, which is the same silent
+    truncation `batch_power_line` exists to prevent. Composition is the other
+    half of "what did this batch buy".
+    """
+    total = sum(reasons.values())
+    if total == 0:
+        return "no attempts were played, so the batch measured nothing"
+    completed = reasons.get("stopped", 0)
+    parts = ", ".join(
+        f"{reason}={count}" for reason, count in sorted(reasons.items())
+    )
+    line = f"batch composition: {completed}/{total} played to a finish ({parts})"
+    if completed < total:
+        line += (
+            " — an attempt that did not finish is NOT a loss and NOT a "
+            "measurement; count wins over the finished ones"
+        )
+    return line
+
+
 def batch_power_line(attempts: int, baseline: float = 0.25) -> str:
     """One line naming what this batch can and cannot settle."""
     if attempts <= 1:
@@ -1391,11 +1426,19 @@ def main() -> int:
     # until a lane is measured to beat it; rows are still separated by
     # `code_rev`, and an attempt that passes `--victory culture` is a different
     # experiment from the rows above it.
+    #
+    # 2026-08-18: A LANE WAS MEASURED TO BEAT IT, so the default moved and this
+    # launcher stopped declaring one. `victory_eval` at this exact profile put
+    # science at 0/16 and diplomatic at 14/16, and every named lane beat the
+    # science-targeted incumbent under `ai_eval`. The value now lives once, in
+    # `civ6_play.DEFAULT_CIVVIS_VICTORY`, with the evidence beside it; the
+    # reasoning above is kept because it is the record of what was believed
+    # while 307 attempts were spent on a lane this screen cannot make land.
     ap.add_argument("--victory", default=DEFAULT_VICTORY,
                     choices=VICTORY_LANES,
-                    help="victory objective; defaults to Science. Every "
-                         "VictoryTarget the engine implements is selectable; "
-                         "`civvis` lets the agent choose its own")
+                    help=f"victory objective; defaults to {DEFAULT_VICTORY}. "
+                         "Every VictoryTarget the engine implements is "
+                         "selectable; `civvis` lets the agent choose its own")
     # The rated genome is an opt-in experiment. Its internal league strength does
     # not establish Firaxis transfer, while stock AdvancedAi has the powered
     # deployment-shaped result and makes concurrent controller work attributable.
@@ -1540,6 +1583,7 @@ def main() -> int:
         print("decider frozen for the batch (--civvis-refresh-seconds 0): "
               "a pinned batch must measure one program", flush=True)
 
+    outcomes = collections.Counter()   # how each played attempt ended
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
     blocked_streak = 0
@@ -1770,6 +1814,7 @@ def main() -> int:
 
         played += 1
         blocked_streak = 0
+        outcomes[str(record.get("reason") or "unknown")] += 1
         record["attempt"] = played
         with LEDGER.open("a") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
@@ -1779,10 +1824,12 @@ def main() -> int:
               flush=True)
         if won(record):
             print(f"*** WON on attempt {played} ({tag}) ***", flush=True)
+            print(batch_composition_line(outcomes), flush=True)
             return 0
 
     print(f"no win in {played} attempts played "
           f"({started - played} starts produced no game)", flush=True)
+    print(batch_composition_line(outcomes), flush=True)
     return 1
 
 

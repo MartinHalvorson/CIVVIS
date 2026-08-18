@@ -84,11 +84,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import civ6_ladder  # noqa: E402
+from civ6_control import gamelock  # noqa: E402
 
 SUPERVISOR_LABEL = "com.civvis.ladder"
 STATE_DEFAULT = Path.home() / ".cache" / "civvis" / "ladder-watchdog.json"
 LOG_DEFAULT = Path.home() / "Library" / "Logs" / "civvis-ladder-watchdog.log"
 SUPERVISOR_LOCK = Path.home() / ".civvis-game-supervisor.lock"
+INTERACTIVE_HOST_LOCK = Path.home() / ".civvis-interactive-host.lock"
 SUPERVISOR_SCRIPT = (Path(__file__).resolve().parent
                      / "civvis-ladder-terminal-launcher.sh")
 
@@ -142,15 +144,15 @@ def hours_since(stamp: str | None, now: datetime) -> float | None:
     return (now - then).total_seconds() / 3600
 
 
-def supervisor_pid(lock: Path | None = None) -> int | None:
-    """The live supervisor's pid, or `None`. A dead holder is not a supervisor.
+def pid_from_lock(lock: Path) -> int | None:
+    """A live lock holder, or `None`. A pid file is a claim, never an answer.
 
-    The supervisor writes its pid into its own lock directory and removes the
-    directory from an EXIT trap, but a `kill -9` or a power cut leaves the
-    directory behind — so the pid file is read as a claim to be verified, never
-    as an answer.
+    Both the supervisor and its Terminal-host use the same stale-lock pattern:
+    an interrupted process can leave a directory behind, and an operating
+    system can later reuse that pid. Checking liveness prevents the former; the
+    host only uses this as a reason to avoid opening a second Terminal, so a
+    rare reused pid fails safely by waiting for the next watchdog pass.
     """
-    lock = lock or SUPERVISOR_LOCK
     try:
         pid = int((lock / "pid").read_text().strip())
     except (OSError, ValueError):
@@ -160,6 +162,16 @@ def supervisor_pid(lock: Path | None = None) -> int | None:
     except (ProcessLookupError, PermissionError):
         return None
     return pid
+
+
+def supervisor_pid(lock: Path | None = None) -> int | None:
+    """The live game supervisor's pid, or `None`."""
+    return pid_from_lock(lock or SUPERVISOR_LOCK)
+
+
+def interactive_host_pid(lock: Path | None = None) -> int | None:
+    """The live Terminal-host's pid, or `None`."""
+    return pid_from_lock(lock or INTERACTIVE_HOST_LOCK)
 
 
 def start_supervisor(script: Path | None = None, runner=None) -> tuple[bool, str]:
@@ -176,10 +188,16 @@ def start_supervisor(script: Path | None = None, runner=None) -> tuple[bool, str
     `open` returns as soon as Terminal has the document, so this reports that
     the loop was ASKED to start. Whether it took the lock is the next tick's
     question, which is the right place for it: that tick re-reads the lock.
+    `-g -j` keeps the recovery window out of the foreground and hidden when it
+    is newly launched. The process is still a real Terminal child and retains
+    the App Management grant that the game requires.
     """
     runner = runner or subprocess.run
     script = script or SUPERVISOR_SCRIPT
-    done = runner(["open", "-a", "Terminal", str(script)],
+    command = ["open", "-a", "Terminal"]
+    command[1:1] = ["-g", "-j"]
+    command.append(str(script))
+    done = runner(command,
                   capture_output=True, text=True, timeout=60)
     detail = (done.stderr or done.stdout or "").strip()
     return done.returncode == 0, detail or f"exit {done.returncode}"
@@ -226,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="the loop to start (default: beside this file)")
     parser.add_argument("--lock", type=Path, default=None,
                         help="the supervisor's lock directory")
+    parser.add_argument("--host-lock", type=Path, default=None,
+                        help="the interactive host's lock directory")
     parser.add_argument("--runs", type=Path, default=None,
                         help="runs directory the live ledger sits beside")
     parser.add_argument("--state", type=Path, default=STATE_DEFAULT)
@@ -257,6 +277,26 @@ def main(argv: list[str] | None = None) -> int:
             return start_the_loop(args, now, "no supervisor is running")
         return 0
 
+    # ⚠⚠ A RESTART IS THIS TOOL'S ONLY REMEDY, SO IT MUST FIRST ASK WHETHER THE
+    # CAUSE IS ONE A RESTART CAN REACH. A standing hold on the game — an
+    # operator halt is the ordinary case, and takes the lock and sleeps — makes
+    # the ledger go stale exactly like a wedge does, and no supervisor started
+    # against it can ever play a turn. Left unasked, the keeper starts a loop
+    # every `--start-cooldown-minutes` for as long as the halt stands, each one
+    # refused at the lock, and the log fills with restarts that could not have
+    # worked. Observed on this host: a halt taken 2026-08-02 was still in force
+    # fifteen days later.
+    #
+    # This does NOT clear the hold. A halt anything can override is not a halt;
+    # the keeper's job here is to name the cause and stand down, so the silence
+    # is a reported decision rather than an outage nobody attributed.
+    standing = gamelock.standing_hold()
+    if standing is not None:
+        log(args.log, f"HELD {problem} — {standing}. A restart cannot play "
+                      f"against a held game; not starting or stopping "
+                      f"anything. Release the hold to resume.")
+        return 2
+
     if alive is None:
         return start_the_loop(args, now, problem)
 
@@ -286,8 +326,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def start_the_loop(args: argparse.Namespace, now: datetime,
                    reason: str) -> int:
-    """No supervisor is running. Start one, through Terminal."""
+    """No supervisor is running. Start one managed host, through Terminal."""
     memory = read_state(args.state)
+    host = interactive_host_pid(args.host_lock)
+    if host is not None:
+        log(args.log, f"{reason} — interactive host pid {host} is already "
+                      "recovering the supervisor; not opening a second Terminal")
+        return 1
     # ⚠⚠ A LOOP THAT IS GONE IS NOT A LOOP THAT IS WEDGED, AND THE TWO DO NOT
     # DESERVE THE SAME PATIENCE. Stopping a wedged supervisor is disruptive and
     # may not help, so it waits hours. Starting an absent one is cheap and is
@@ -303,9 +348,9 @@ def start_the_loop(args: argparse.Namespace, now: datetime,
                       f"start cooldown; not starting another")
         return 1
 
-    log(args.log, f"{reason} — starting the loop through Terminal")
+    log(args.log, f"{reason} — starting the loop through its managed host in Terminal")
     if args.dry_run:
-        log(args.log, f"  DRY RUN — would run: open -a Terminal "
+        log(args.log, f"  DRY RUN — would run: open -g -j -a Terminal "
                       f"{args.supervisor or SUPERVISOR_SCRIPT}")
         return 1
 

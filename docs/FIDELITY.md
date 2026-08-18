@@ -71,12 +71,11 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
-- **`Buildings` — three uniques carrying their base building's yield.** The
-  Prasat replaces the Temple (Faith 4, one Relic slot) and ships Faith **6** with
-  the same single slot; CIVVIS had the Temple's 4 and an invented second slot.
-  The Sukiennice replaces the Market (Gold 2) and does not raise it; CIVVIS had
-  3. The Tlachtli replaces the Arena (Culture 1) and doubles it to **2**; CIVVIS
-  had the Arena's 1. One error repeated three times, which is what identified it.
+- **`Buildings` — three uniques must follow the installed Gathering Storm rows,
+  not stale expansion snippets.** The Prasat ships Faith **4** with two Relic
+  slots; CIVVIS had 6 and one. The Sukiennice ships Gold **3**; CIVVIS had 2.
+  The Tlachtli ships Culture **1**; CIVVIS had 2. The XML load order, not an
+  isolated historical row, is the authority for all three.
 - **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.
@@ -375,41 +374,21 @@ Verified unchanged in the same pass: the ±20 clamp is exactly
 `STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
 and the `LoyaltyLevels` yield/growth bands.
 
-## Open, and needing a judgement call: resource placement frequency
+## Resolved: resource placement follows the shipped weights
 
-`Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
-CIVVIS picks **uniformly** among the resources valid for a tile:
+`Resources.Frequency` and `SeaFrequency` weight Civilization VI's placement
+lottery. CIVVIS now exports both columns from the shipped database and draws
+each valid land or sea resource by its matching weight. That restores important
+ratios such as Stone and Wheat at 10 versus Copper, Deer, Sheep and Bananas at
+4, and Fish at 23 versus Whales and Pearls at 1.
 
-```rust
-let pick = valid[rng.below(valid.len())].clone();
-```
-
-The shipped weights are not close to uniform. On land, Stone and Wheat are 10
-against Copper, Deer, Sheep and Bananas at 4 — two and a half times as likely.
-At sea it is starker: Fish 23, Crabs 17, Turtles 5, and Amber, Pearls and Whales
-1 apiece, so a Whale should be a twenty-third as common as a Fish and CIVVIS
-makes them equally likely. Land luxuries are the one group that really is
-uniform, all at 2, which CIVVIS gets right by accident.
-
-**Why this is not simply fixed.** The lottery runs before start selection and
-feeds it: resources are part of what scores a start, through
-`StartBias::weight(resource_tier)`. Weighting the lottery therefore moves
-starts. Implementing it made two of roughly a hundred sampled (size, seed)
-combinations miss the start-spacing tolerance in
-`stock_map_profiles_produce_spread_and_complete_spawn_sets` and
-`islands_flat_poles_spread_starts_across_the_whole_archipelago` — both
-marginally, 207% against a 200% cap and 64.7% against a 65% floor.
-
-One or two marginal misses in a hundred is consistent with ordinary variance
-around a tight threshold, and it is also consistent with a small real
-degradation. n=1 does not separate them, and even start spacing is a
-tournament-fairness property this project cares about. Loosening the tolerance
-or reseeding until the sample passes would settle the argument in the change's
-favour without evidence, so the code is not in the tree.
-
-What would settle it: run the spacing property over a few hundred seeds with and
-without the weighting and compare failure rates. If they match, the weighting is
-correct and the thresholds simply sit close to the natural spread.
+The normal lottery excludes resources with a zero applicable weight. That is
+intentional: artifacts remain assigned only by their later, dedicated quota
+pass instead of becoming accidental ordinary resources. The fidelity audit
+compares every exported land and sea weight against the installed game data; a
+mapgen test pins the full shipped table and checks the weighted draws, including
+the zero-weight case. Existing stock-map start and spawn properties continue to
+exercise the changed generator without relaxed spacing thresholds.
 
 ## Swept clean: the systematic comparisons already run
 
@@ -839,10 +818,11 @@ matched; only the Dark Age set did not:
   which exists nowhere in the Expansion data). **Isolationism** +2 Food and
   +2 Production on domestic routes that stay on one continent
   (`Intercontinental=0`) — no route capacity, no Gold, which were both
-  invented. **Letters of Marque** +100% plunder from every unit and −50% Trade
-  Route yields at the origin AND the destination (twelve rows) — no capacity
-  penalty. **Elite Forces** +2 maintenance (was 1) and Industrial–Future (was
-  Classical–Renaissance).
+  invented. **Letters of Marque** initially appeared to supply +100% plunder
+  from every unit and −50% Trade Route yields at both ends, but the later
+  resolved Byzantium & Gaul removal data retires that policy entirely in the
+  target ruleset. **Elite Forces** +2 maintenance (was 1) and
+  Industrial–Future (was Classical–Renaissance).
 - **Six cards CIVVIS never carried**, now on the roster with the shipped
   amounts: Collectivism (Modern–Atomic: +2 Housing, +1 Food per worked
   Farm, +100% Industrial Zone adjacency, −50% Great Person points), Rogue
@@ -925,6 +905,63 @@ Prophet class exhausted every one of those points is Faith. Now in
   paid both +3. `REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4` is
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
+
+### The Founder beliefs were already right, and a compiled cache said otherwise (2026-08-18)
+
+**This entry is a retraction, and the most useful thing in it is how the
+mistake was made.**
+
+`tools/civvis_inert.py` gained a mirror direction — which keys does the engine
+*price* that no data supplies — and it reported four dead arms in
+`founder_belief_yields`: `gold_per_followers`, `culture_per_foreign_followers`,
+`faith_per_foreign_city`, `gold_per_foreign_city`. Reading the compiled
+gameplay cache at `Cache/DebugGameplay.sqlite` showed modifier ids that named
+the distinction outright — `TITHE_GOLD_FOLLOWER`,
+`WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER`, `PILGRIMAGE_FAITH_FOREIGN_CITY`,
+`CHURCH_PROPERTY_GOLD_CITY` — so #2049 rewrote `beliefs.json` to match, on the
+argument that Civilization VI pays a founder for converting its rivals.
+
+**The cache held the base game.** It is whatever ruleset Civilization VI last
+ran, and `civ6_fidelity.py` has refused a non-Gathering-Storm reference since
+#1946 for exactly this reason — but that refusal lived in `main`, and #2049
+opened the same file with three lines of `sqlite3` and never met it.
+
+`Expansion2_RemoveData.xml` deletes all four of those modifiers.
+`Expansion2_Beliefs.xml` replaces them:
+
+| belief | base game | **Gathering Storm** | `beliefs.json` |
+|---|---|---|---|
+| Tithe | +1 Gold per 4 followers | `TITHE_GOLD_CITY` — **+3 Gold per following city** | `gold_per_city: 3` ✓ |
+| World Church | +1 Culture per 5 foreign followers | `WORLD_CHURCH_CULTURE_FOLLOWER` — **+1 Culture per 4 followers** | `culture_per_followers: 0.25` ✓ |
+| Pilgrimage | +2 Faith per foreign city | `PILGRIMAGE_FAITH_CITY` — **+2 Faith per following city** | `faith_per_city: 2` ✓ |
+| Church Property | +2 Gold per city | **deleted** | absent ✓ |
+
+The data was correct on all four. #2050 reverted it, and the revert is verified
+rather than asserted: the frozen anchor returned to 18,572 decisions and
+`0x3bda_c2f2_b84d_30fc`, and the ruleset fingerprint to
+`fnv1a64:585ff2655ffd3a6d`, all unchanged from before #2049.
+
+**Two things were kept, because both are real.**
+
+- The mirror direction of `civvis_inert.py` stays, with the three arms waived
+  by name in `BELIEF_YIELD_WAIVERS` and the ruleset reason spelled out for
+  each. They are the base game's forms of beliefs Gathering Storm replaces, so
+  the engine implementing both and the data selecting one is correct — and now
+  it is *written down*, which it was not when #2049 read the same evidence and
+  drew the opposite conclusion. `gold_per_foreign_city` has no belief of its
+  shape in **either** ruleset and stays removed.
+- `load_cache_database` now refuses a foreign ruleset itself rather than
+  leaving that to its caller, with `require_gathering_storm=False` as the one
+  named way past it, and a test that opens an empty database and expects the
+  refusal. A guard beside the door protects only the people who walk through
+  that door.
+
+⚠ **One genuine divergence surfaced and is deliberately not fixed here.**
+Gathering Storm's Cross-Cultural Dialogue is `BELIEF_YIELD_PER_FOLLOWER`
+(+1 Science per 4 followers); `beliefs.json` has
+`science_per_foreign_followers: 0.25` — the right rate on the wrong scope. It
+is a real correction, it needs an engine arm that does not exist yet, and it
+is not going into a revert.
 
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
@@ -1104,8 +1141,9 @@ wonder.** Fixed together with the roster:
   retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
   Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
   is correct not to have. Loading them also retires Twilight Valor and Letters
-  of Marque, which the same pack deletes and CIVVIS still carries — those two
-  now show in "Only in CIVVIS" as genuine backlog.
+  of Marque. CIVVIS now removes both cards and treats any policy that exists
+  only on its side as a fidelity divergence, so that a future retired card
+  cannot hide behind the report's informational "Only in CIVVIS" count.
 
 With both fixed, **Wonders and Features compare 53 and 50 entries with zero
 divergences and nothing missing on either side.**
@@ -1272,26 +1310,19 @@ era spans are exact where the Civilopedia states them (Exodus of the
 Evangelists through the Renaissance, Automaton Warfare and Wish You Were
 Here in the last two eras) and era-appropriate where it does not.
 
-**Dark Age policy cards.** A Dark Age also opens a Wildcard slot to cards
-no civic unlocks: strong effects bought with a real drawback. The seven
-with published effects are implemented and execute both halves — Twilight
-Valor (+5 melee attack Strength, no healing outside your own territory),
-Isolationism (+1 Trade Route capacity and +2 Food/+2 Production at home,
-but no Settlers trained, bought or settled), Monasticism (Science doubled
-in Holy Site cities, -25% Culture), Inquisition (+15 Religious Combat
-Strength at home, -25% Science), Letters of Marque (+100% naval-raider
-Production, +2 Movement, doubled plunder, -2 Trade Route capacity), Elite
-Forces (+100% unit experience, +2 Gold per military unit) and Robber
-Barons (+50% Gold with a Stock Exchange, +25% Production with a Factory,
--2 Amenities everywhere). They are offered only while the civilization is
-actually in a Dark Age and inside the card's own eras, and an age change
-takes them back out of their slot.
-
-The ten cards Gathering Storm added (Collectivism, Cyber Warfare,
-Decentralization, Despotic Paternalism, Disinformation Campaign, Flower
-Power, Rogue State, Samoderzhaviye, Soft Targets, Automated Workforce) are
-not modelled: their effects are not published in a form worth copying, and
-guessing at a card's numbers is worse than not shipping it.
+**Dark Age policy cards.** A Dark Age also opens a Wildcard slot to
+era-appropriate cards with no civic unlock: strong effects bought with a real
+drawback. The five early cards detailed here are Isolationism (+2 Food/+2
+Production on qualifying domestic routes, but no Settlers trained, bought or
+settled), Monasticism (+75% Science in Holy Site cities, -25% Culture),
+Inquisition (+15 Religious Combat Strength at home, -25% Science), Elite
+Forces (+100% unit experience, +2 Gold per military unit) and Robber Barons
+(+50% Gold with a Stock Exchange, +25% Production with a Factory, -2 Amenities
+everywhere). They are offered only while the civilization is actually in a Dark
+Age and inside the card's own eras, and an age change takes them back out of
+their slot. Twilight Valor and Letters of Marque appear in the older expansion
+rows but are deleted by Byzantium & Gaul's all-content Gathering Storm removal
+data, so CIVVIS neither offers nor executes them.
 
 ### Next inside phase 1
 

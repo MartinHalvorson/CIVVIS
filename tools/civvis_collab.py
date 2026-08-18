@@ -30,13 +30,61 @@ import urllib.request
 
 REPOSITORY = "MartinHalvorson/CIVVIS"
 DEFAULT_BRANCH = "main"
-REQUIRED_CHECKS = ("cargo-test", "collaboration-policy")
+#: Checks `ship` will not merge without. ⚠ THERE IS NO BRANCH PROTECTION AND NO
+#: RULESET ON THIS REPOSITORY — both API reads come back empty — so this tuple
+#: is the only thing that makes a check binding. A gate absent from here is
+#: advisory no matter how red it goes.
+#:
+#: `rust-quality` was absent, and it was not a theoretical gap: five commits on
+#: `main` in the forty most recent runs are red on it, and #1954 merged with its
+#: final `rust-quality` run FAILING while every other check was green. The
+#: format-and-clippy ratchet is scoped to the lines a change touches precisely
+#: so it is always satisfiable; a ratchet nobody has to pass ratchets nothing,
+#: and it trains a fleet at a hundred merges a day to read red as normal.
+REQUIRED_CHECKS = ("cargo-test", "collaboration-policy", "rust-quality")
+
+#: Every other check a pull request gets, with the reason it is NOT required.
+#: `test_civvis_collab.py` discovers the checks the workflows actually produce
+#: and fails when one is in neither place — so a new gate is a deliberate
+#: decision rather than an omission nobody can tell from an oversight.
+ADVISORY_CHECKS = {
+    "overwrite-guard":
+        "Blocking-worthy, and deliberately queued behind the cancelled-check "
+        "retry: it is cancelled on 15 of its 50 most recent runs (body edits "
+        "and ready-for-review transitions retrigger it), and GitHub does not "
+        "restart a cancelled run on its own. Requiring it before `ship` retries "
+        "a cancellation would strand pull requests on a non-verdict.",
+    "published-build":
+        "A job inside `cargo-test`'s workflow, and skipped by design on a diff "
+        "of zero bytes. Never observed red on a merged pull request; promote it "
+        "when there is evidence it can be, not on the strength of its name.",
+    "control-mod":
+        "Same workflow and same reasoning as `published-build`.",
+}
+# Terminal check conclusions that say nothing about the code. A run that was
+# superseded by its own concurrency group, killed by the runner clock, or
+# marked stale never reached a verdict — and, critically, GitHub will not start
+# another one on its own. Auto-merge waits for a required check to go green, so
+# a check that ends in one of these and is never re-run leaves the PR open
+# forever with nothing watching it. `ship` re-runs them instead of reporting a
+# failure the code did not earn. `failure` is deliberately absent: that IS a
+# verdict, and re-running it would just burn CI on a broken tree.
+RETRYABLE_CHECK_CONCLUSIONS = frozenset({"cancelled", "timed_out", "stale"})
+# How many times `ship` re-runs one required check before it stops and says so.
+# A check that is cancelled twice is not being superseded; something is wrong
+# with it, and quietly re-running forever would hide that.
+CHECK_RERUN_LIMIT = 2
 # How long `ship` waits for the production spectator to be LISTENING at all
 # before deciding it is not running. Distinct from `--live-timeout-seconds`,
 # which is how long a spectator that IS up may take to reach the merged
 # revision. `ship` runs when a spectator may be restarting onto that revision,
 # so this is a grace for it to reappear, not a single probe.
 LIVE_PRESENCE_GRACE_S = 30.0
+# A supervised spectator finishes its current game before rebuilding from main.
+# A four-seat, 250-turn exhibition can exceed the old ten-minute allowance, so
+# ``ship`` must wait through that safe handoff instead of reporting an
+# unverified merge while the healthy spectator is still serving the old build.
+LIVE_BUILD_HANDOFF_TIMEOUT_S = 30 * 60.0
 BRANCH_RE = re.compile(
     r"^agent/(?P<machine>[a-z0-9][a-z0-9-]{0,31})/"
     r"(?P<agent>[a-z0-9][a-z0-9-]{0,31})/"
@@ -799,6 +847,7 @@ def required_check_state(
     """
     missing_or_pending: List[str] = []
     failed: List[str] = []
+    retryable: List[str] = []
     thresholds = minimum_started or {}
     for name in required:
         candidates = [
@@ -827,13 +876,67 @@ def required_check_state(
         ).lower()
         if status and status != "completed":
             missing_or_pending.append(name)
+        elif conclusion in RETRYABLE_CHECK_CONCLUSIONS:
+            retryable.append(name)
         elif conclusion not in {"success", "successful"}:
             failed.append(name)
+    # A real failure outranks a cancellation: report the verdict the tree
+    # earned rather than the infrastructure noise beside it. A cancellation
+    # outranks a pending sibling so the re-run is dispatched now instead of
+    # after everything else finishes.
     if failed:
         return "failed", failed
+    if retryable:
+        return "retryable", retryable
     if missing_or_pending:
         return "pending", missing_or_pending
     return "success", []
+
+
+def check_run_id(row: Dict[str, Any]) -> Optional[str]:
+    """The Actions run id behind a check rollup row, if it has one.
+
+    The rollup carries the job URL, not the run id, and the run is what can be
+    re-dispatched: `.../actions/runs/<run>/job/<job>`. Status contexts from
+    outside Actions have no such URL and return ``None``.
+    """
+    match = re.search(
+        r"/actions/runs/(\d+)", str(row.get("detailsUrl") or row.get("details_url") or "")
+    )
+    return match.group(1) if match else None
+
+
+def rerun_required_check(
+    rows: Sequence[Dict[str, Any]], name: str, *, required: Iterable[str] = REQUIRED_CHECKS
+) -> bool:
+    """Re-dispatch the newest run behind required check ``name``.
+
+    Returns whether a re-run was actually requested, so the caller can report
+    an un-retryable check rather than silently looping on it.
+    """
+    if name not in tuple(required):
+        return False
+    candidates = [
+        row
+        for row in rows
+        if str(row.get("name") or row.get("context") or "") == name and check_run_id(row)
+    ]
+    if not candidates:
+        return False
+    latest = max(
+        candidates,
+        key=lambda row: str(row.get("startedAt") or row.get("started_at") or ""),
+    )
+    run_id = check_run_id(latest)
+    return (
+        gh_api_write(
+            "POST",
+            f"repos/{REPOSITORY}/actions/runs/{run_id}/rerun",
+            {},
+            check=False,
+        )
+        is not None
+    )
 
 
 def ship_pr_errors(pr: Dict[str, Any], branch: str) -> List[str]:
@@ -1091,6 +1194,46 @@ def finish_ship(
     return 0
 
 
+def merge_pr_or_observe_auto_merge(
+    repo: Path, *, number: int, local_head: str
+) -> Optional[str]:
+    """Squash-merge a green PR, accepting auto-merge that wins the same race.
+
+    Auto-merge is deliberately armed before the required checks finish.  Once
+    they do, GitHub can land the PR between our successful-check poll and this
+    explicit merge request.  A 405 in that interval is either a successful
+    shipment or a brief propagation gap; re-read the PR, then let the caller
+    poll again rather than reporting a false failure.
+    """
+    merge_result = gh_api_write(
+        "PUT",
+        f"repos/{REPOSITORY}/pulls/{number}/merge",
+        {"merge_method": "squash", "sha": local_head},
+        check=False,
+    )
+    if isinstance(merge_result, dict) and merge_result.get("merged"):
+        merged_sha = str(merge_result.get("sha") or "")
+        if merged_sha:
+            return merged_sha
+
+    # The API's non-success response is ambiguous: an actual rejection and an
+    # auto-merge that completed a moment earlier both return here.  The PR is
+    # authoritative for which happened.
+    merged_sha = pr_merge_sha(current_pr(repo))
+    if merged_sha:
+        return merged_sha
+
+    if merge_result is None:
+        return None
+
+    message = (
+        str(merge_result.get("message") or "unknown reason")
+        if isinstance(merge_result, dict)
+        else "the merge request did not complete"
+    )
+    raise CommandError("GitHub refused the green squash merge: " + message)
+
+
 def ship_task(args: argparse.Namespace) -> int:
     """Push a finished task, wait for green CI, squash-merge, and verify live."""
     root = repo_root()
@@ -1119,6 +1262,7 @@ def ship_task(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + max(1.0, args.timeout_seconds)
     ready_thresholds: Dict[str, str] = {}
     auto_merge_armed = False
+    rerun_attempts: Dict[str, int] = {name: 0 for name in REQUIRED_CHECKS}
 
     def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
         merged_sha = pr_merge_sha(pr)
@@ -1180,7 +1324,41 @@ def ship_task(args: argparse.Namespace) -> int:
 
         while True:
             if time.monotonic() >= deadline:
-                raise CommandError("timed out waiting for required checks")
+                # ⚠ A timeout is not a verdict, and the agent that reads it has
+                # to know which of two very different situations it is in. With
+                # auto-merge armed and every required check still running, the
+                # PR finishes without us and waiting was the whole plan. With a
+                # check that has stopped without a verdict, nothing is coming —
+                # so sweep once more on the way out rather than leaving a PR
+                # that no one will look at again.
+                pr = current_pr(root)
+                if (finished := finish_merged(pr)) is not None:
+                    return finished
+                rollup = pr.get("statusCheckRollup") or []
+                state, names = required_check_state(
+                    rollup, minimum_started=ready_thresholds
+                )
+                if state == "retryable":
+                    for name in names:
+                        rerun_required_check(rollup, name)
+                    raise CommandError(
+                        "timed out, and "
+                        + ", ".join(names)
+                        + " had stopped without a verdict; re-ran them, so watch "
+                        f"PR #{pr['number']} rather than assuming it merges"
+                    )
+                if state == "failed":
+                    raise CommandError("required checks failed: " + ", ".join(names))
+                raise CommandError(
+                    "timed out waiting for required checks ("
+                    + (", ".join(names) or "none outstanding")
+                    + ")"
+                    + (
+                        "; auto-merge is armed and merges this PR when they pass"
+                        if auto_merge_armed
+                        else "; auto-merge is NOT armed, so this PR needs a look"
+                    )
+                )
             pr = current_pr(root)
             if (finished := finish_merged(pr)) is not None:
                 return finished
@@ -1271,23 +1449,45 @@ def ship_task(args: argparse.Namespace) -> int:
                     time.sleep(args.poll_seconds)
                     continue
 
+            rollup = pr.get("statusCheckRollup") or []
             state, names = required_check_state(
-                pr.get("statusCheckRollup") or [], minimum_started=ready_thresholds
+                rollup, minimum_started=ready_thresholds
             )
             if state == "failed":
                 raise CommandError("required checks failed: " + ", ".join(names))
-            if state == "success":
-                merge_result = gh_api_write(
-                    "PUT",
-                    f"repos/{REPOSITORY}/pulls/{pr['number']}/merge",
-                    {"merge_method": "squash", "sha": local_head},
-                )
-                if not merge_result.get("merged"):
+            if state == "retryable":
+                # Nothing else will start these. Auto-merge is armed and waiting
+                # for a green required check that can no longer arrive, so the
+                # PR is stuck until someone re-dispatches the run.
+                stuck: List[str] = []
+                for name in names:
+                    if rerun_attempts[name] >= CHECK_RERUN_LIMIT:
+                        stuck.append(f"{name} (re-run {rerun_attempts[name]}x already)")
+                    elif rerun_required_check(rollup, name):
+                        rerun_attempts[name] += 1
+                        print(
+                            f"required check {name} ended without a verdict and "
+                            f"nothing re-starts it; re-running "
+                            f"({rerun_attempts[name]}/{CHECK_RERUN_LIMIT})"
+                        )
+                    else:
+                        stuck.append(f"{name} (no Actions run to re-dispatch)")
+                if stuck:
                     raise CommandError(
-                        "GitHub refused the green squash merge: "
-                        + str(merge_result.get("message") or "unknown reason")
+                        "required checks cannot reach a verdict: "
+                        + ", ".join(stuck)
+                        + " — re-running did not help, so this needs a look"
                     )
-                merged_sha = str(merge_result.get("sha") or "")
+                time.sleep(max(0.1, args.poll_seconds))
+                continue
+            if state == "success":
+                merged_sha = merge_pr_or_observe_auto_merge(
+                    root, number=int(pr["number"]), local_head=local_head
+                )
+                if not merged_sha:
+                    print("GitHub is still publishing the auto-merge result; rechecking")
+                    time.sleep(max(0.1, args.poll_seconds))
+                    continue
                 return finish_ship(
                     root,
                     number=int(pr["number"]),
@@ -1606,21 +1806,13 @@ def bootstrap_command(args: argparse.Namespace) -> int:
     )
     if failure:
         raise CommandError(str(failure))
-    service_paths = install_freshness_service(root)
-    guard = install_memory_guard(root)
-    ladder = install_ladder_supervisor(root)
+    services = install_managed_services(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
-    for path in service_paths:
-        print(f"installed CIVVIS freshness service: {path}")
-    if guard is not None:
-        print(f"installed CIVVIS memory guard: {guard}")
-    else:
-        print("memory guard: macOS only, not installed on this platform")
-    for path in ladder:
-        print(f"installed CIVVIS ladder service: {path}")
-    if not ladder:
-        print("ladder supervisor: this host is not a Civilization VI seat, "
-              "not installed")
+    for name, absent, paths in services:
+        for path in paths:
+            print(f"installed CIVVIS {name}: {path}")
+        if not paths and absent:
+            print(f"{name}: {absent}")
     print_refresh_report(report)
     return 0
 
@@ -1690,7 +1882,12 @@ def start_task(args: argparse.Namespace) -> int:
         raise CommandError(
             "cannot start from a synchronized origin/main: " + str(failure)
         )
-    install_freshness_service(root)
+    # Every managed service, not the two that existed when this line was
+    # written: a host bootstrapped before a service was added never got it, and
+    # the ladder keeper was missing from a Civilization VI seat for that reason.
+    # Repairs are quiet — this runs on every task, and a launcher that reports
+    # three green services on every start is a launcher nobody reads.
+    install_managed_services(root)
     git(root, "worktree", "add", "-b", branch, str(worktree), "origin/main")
     git(worktree, "commit", "--allow-empty", "-m", f"claim: {args.task.replace('-', ' ')}")
     git(worktree, "push", "-u", "origin", branch)
@@ -2254,6 +2451,8 @@ def macos_memguard_plist(guard: Path) -> bytes:
 MANAGED_KEY = (f"\t<key>CivvisManagedBy</key>\n\t<string>{FRESHNESS_MARKER}"
                "</string>\n")
 
+SPECTATOR_LABEL = "com.civvis.spectator"
+
 LADDER_LABEL = "com.civvis.ladder"
 LADDER_WATCHDOG_LABEL = "com.civvis.ladder-watchdog"
 LADDER_STALE_HOURS = "3"
@@ -2326,14 +2525,50 @@ def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
     ).encode("utf-8")
 
 
-def load_managed_job(label: str, path: Path) -> None:
-    """Write-then-(re)load a managed LaunchAgent, idempotently."""
+def managed_job_is_loaded(label: str) -> bool:
     domain = f"gui/{os.getuid()}"
-    loaded = not run(("launchctl", "print", f"{domain}/{label}"),
-                     check=False).returncode
-    if loaded:
+    return not run(("launchctl", "print", f"{domain}/{label}"),
+                   check=False).returncode
+
+
+def load_managed_job(label: str, path: Path, attempts: int = 10) -> None:
+    """Write-then-(re)load a managed LaunchAgent, and confirm it is there.
+
+    ⚠⚠ `launchctl bootout` IS ASYNCHRONOUS, AND `bootstrap` RIGHT BEHIND IT
+    FAILS. The service is still tearing down when the next command arrives, so
+    the bootstrap is refused — and because every call here passes `check=False`,
+    nothing said a word. The plist was written, the job was gone, and the only
+    symptom was a service that had simply stopped existing.
+
+    Measured on this host 2026-08-18: `bootstrap` reported "installed CIVVIS
+    spectator service" while `launchctl print` could not find the job at all.
+    Running the identical `bootstrap` by hand a moment later loaded it first
+    try, which is the signature of a race rather than a bad plist.
+
+    So: wait for the bootout to actually take effect, retry the bootstrap while
+    launchd is still busy, and RAISE if the job is not there at the end. A
+    service reported as installed and absent is the failure mode this whole
+    registry exists to prevent.
+    """
+    domain = f"gui/{os.getuid()}"
+    if managed_job_is_loaded(label):
         run(("launchctl", "bootout", f"{domain}/{label}"), check=False)
-    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        for _ in range(attempts):
+            if not managed_job_is_loaded(label):
+                break
+            time.sleep(0.5)
+
+    for attempt in range(attempts):
+        run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        if managed_job_is_loaded(label):
+            break
+        time.sleep(0.5)
+    else:
+        raise CommandError(
+            f"launchd would not load {label} from {path}. The plist is written "
+            f"but the service is absent, which is the one outcome this must "
+            f"never report as success; try `launchctl bootstrap {domain} {path}`"
+        )
     run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
 
 
@@ -2384,6 +2619,84 @@ def install_ladder_supervisor(repo: Path) -> List[Path]:
     return [path]
 
 
+def spectator_runner_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "civvis-spectator-runner.sh"
+
+
+def host_serves_the_exhibition(source: Optional[Path] = None) -> bool:
+    """Whether this host holds the spectator's canonical source worktree.
+
+    `docs/SPECTATOR_DEPLOY.md` has the operator create it explicitly, so its
+    presence is the host saying "I serve the exhibition". Installing the job
+    without it would give the machine a service that can only log a missing
+    prerequisite forever.
+    """
+    source = source if source is not None else Path.home() / "civvis-spectator-src"
+    return (source / "tools" / "spectator_supervisor.py").is_file()
+
+
+def macos_spectator_plist(runner: Path, repo: Path) -> bytes:
+    """launchd job for the exhibition supervisor: keep it alive.
+
+    ⚠ UNLIKE THE LADDER, THIS ONE CAN RUN DIRECTLY UNDER launchd. The ladder's
+    supervisor has to be started through Terminal because installing the
+    Civilization VI control mod writes inside `Civ6.app` and macOS attributes
+    that permission to the responsible process. The exhibition drives no GUI —
+    `--no-open`, build, serve HTTP, play headless games — so it needs no such
+    grant, and it is already running under launchd today.
+
+    `KeepAlive` is the point. On 2026-08-18 the supervisor exited and the
+    exhibition stayed down until somebody looked; its own restart loop could not
+    help, because the worktree it execs its supervisor from had been deleted.
+    `ThrottleInterval` bounds the other direction: a runner that refuses for a
+    missing prerequisite (exit 78) retries once a minute instead of spinning.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-spectator.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>" for value in ("/bin/zsh", str(runner))
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{SPECTATOR_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        f"\t<key>WorkingDirectory</key>\n\t<string>{repo_root(repo)}</string>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        f"\t\t<key>CIVVIS_DEPLOY_ROOT</key>\n\t\t<string>{repo_root(repo)}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>"
+        f"{Path.home() / '.cargo' / 'bin'}:/usr/local/bin:/opt/homebrew/bin"
+        ":/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>KeepAlive</key>\n\t<true/>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>ThrottleInterval</key>\n\t<integer>60</integer>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def install_spectator_service(repo: Path) -> Optional[Path]:
+    """Keep the exhibition supervisor alive. `None` where it does not apply."""
+    if sys.platform != "darwin" or not host_serves_the_exhibition():
+        return None
+    runner = spectator_runner_source(repo)
+    if not runner.is_file():
+        raise CommandError(f"versioned spectator runner is missing: {runner}")
+    path = Path.home() / "Library" / "LaunchAgents" / f"{SPECTATOR_LABEL}.plist"
+    changed = write_managed_service(path, macos_spectator_plist(runner, repo))
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{SPECTATOR_LABEL}"),
+                     check=False).returncode
+    if changed or not loaded:
+        load_managed_job(SPECTATOR_LABEL, path)
+    return path
+
+
 def install_memory_guard(repo: Path) -> Optional[Path]:
     """Install the memory guard as a launchd job. `None` where it does not apply.
 
@@ -2411,6 +2724,57 @@ def install_memory_guard(repo: Path) -> Optional[Path]:
     run(("launchctl", "bootstrap", domain, str(path)), check=False)
     run(("launchctl", "kickstart", f"{domain}/{MEMGUARD_LABEL}"), check=False)
     return path
+
+
+#: Every managed background service, with the sentence to print when a host
+#: does not get one. `bootstrap` installs them; `start` REPAIRS them, which is
+#: the half that was missing.
+#:
+#: ⚠⚠ A SERVICE ADDED AFTER A MACHINE WAS BOOTSTRAPPED NEVER REACHED IT.
+#: `bootstrap` is documented as a once-per-clone step and behaves like one, so
+#: for a year the repair path on every task installed exactly the two
+#: safeguards that existed when it was written — the push guard and the
+#: freshness service. The memory guard and the ladder keeper were added later
+#: and were bootstrap-only. Measured on `mbp-m5-pro-64` 2026-08-18: a host that
+#: `host_plays_civ6()` calls a Civilization VI seat, with the freshness services
+#: loaded and `com.civvis.ladder-watchdog` **absent** — so the keeper built on
+#: 2026-08-17 to end a 14.3-hour silent outage was not running on the machine it
+#: was built for. AGENTS.md said "the task launcher repairs both safeguards",
+#: and "both" was the whole bug.
+#:
+#: ⚠ DISCOVERED, NOT LISTED. `test_civvis_collab.py` finds every installer that
+#: writes into `~/Library/LaunchAgents` and fails if it is missing here, because
+#: a hand-written list of things to repair is complete on the day it is written
+#: and silently shrinks afterwards.
+MANAGED_SERVICES: Tuple[Tuple[str, str, str], ...] = (
+    ("freshness service", "install_freshness_service", ""),
+    ("memory guard", "install_memory_guard",
+     "macOS only, not installed on this platform"),
+    ("ladder service", "install_ladder_supervisor",
+     "this host is not a Civilization VI seat, not installed"),
+    ("spectator service", "install_spectator_service",
+     "this host does not hold the exhibition's source worktree, not installed"),
+)
+
+
+def install_managed_services(repo: Path) -> List[Tuple[str, str, List[Path]]]:
+    """Install or repair every managed service. Idempotent, and cheap when green.
+
+    Each installer already returns without touching launchd when its plist is
+    unchanged and its job is loaded, which is what makes this safe to run on
+    every `start` — the freshness service has been called that way all along.
+    """
+    results: List[Tuple[str, str, List[Path]]] = []
+    for name, function, absent in MANAGED_SERVICES:
+        produced = globals()[function](repo)
+        if produced is None:
+            paths: List[Path] = []
+        elif isinstance(produced, Path):
+            paths = [produced]
+        else:
+            paths = list(produced)
+        results.append((name, absent, paths))
+    return results
 
 
 def install_freshness_service(repo: Path) -> List[Path]:
@@ -3057,7 +3421,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ship.add_argument("--timeout-seconds", type=float, default=1200.0)
     ship.add_argument("--poll-seconds", type=float, default=10.0)
-    ship.add_argument("--live-timeout-seconds", type=float, default=600.0)
+    ship.add_argument(
+        "--live-timeout-seconds",
+        type=float,
+        default=LIVE_BUILD_HANDOFF_TIMEOUT_S,
+    )
     ship.add_argument(
         "--live-url",
         default=os.environ.get(
