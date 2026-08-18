@@ -3300,7 +3300,7 @@ mod tests {
         // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3ea4ed6c30d86aa6"
+            "fnv1a64:54c03cef66aa12fd"
         );
     }
 
