@@ -3305,7 +3305,7 @@ mod tests {
         // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:a40a1eed7688b5a7"
+            "fnv1a64:0b61ec54b9646c96"
         );
     }
 
@@ -3951,13 +3951,13 @@ mod tests {
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
-        // 118 civic-unlocked cards plus the thirteen Dark Age cards
+        // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.
-        assert_eq!(rules.policies.len(), 131);
+        assert_eq!(rules.policies.len(), 129);
         assert_eq!(
             rules.policies.values().filter(|spec| spec.dark_age).count(),
-            13
+            11
         );
         assert_eq!(rules.governments.len(), 13);
 

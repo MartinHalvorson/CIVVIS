@@ -384,9 +384,7 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     let mut game = two_player_game();
     game.world_era = 1;
     game.players[0].age = "dark".to_string();
-    game.players[0]
-        .policies
-        .insert(crate::name!("monasticism"));
+    game.players[0].policies.insert(crate::name!("monasticism"));
     game.players[0].policies.insert(crate::name!("discipline"));
     // Cross into the Classical era with enough Era Score for a Heroic Age.
     game.players[0].era_score = game.players[0].golden_age_threshold;
@@ -461,25 +459,52 @@ fn the_dark_age_cards_carry_the_shipped_modifier_amounts() {
     assert_eq!(effect("inquisition", "city_science_pct"), Some(-25.0));
     // Monasticism: the Culture penalty has no requirement set.
     assert_eq!(effect("monasticism", "city_culture_pct"), Some(-25.0));
-    assert_eq!(effect("monasticism", "holy_site_city_science_pct"), Some(75.0));
+    assert_eq!(
+        effect("monasticism", "holy_site_city_science_pct"),
+        Some(75.0)
+    );
     assert_eq!(effect("monasticism", "no_holy_site_city_culture_pct"), None);
     // Robber Barons: Stock Exchange for the Gold, Factory for the Production.
-    assert_eq!(effect("robber_barons", "stock_exchange_city_gold_pct"), Some(50.0));
-    assert_eq!(effect("robber_barons", "factory_city_production_pct"), Some(25.0));
+    assert_eq!(
+        effect("robber_barons", "stock_exchange_city_gold_pct"),
+        Some(50.0)
+    );
+    assert_eq!(
+        effect("robber_barons", "factory_city_production_pct"),
+        Some(25.0)
+    );
     assert_eq!(effect("robber_barons", "city_amenities"), Some(-2.0));
     // Elite Forces: ELITEFORCES_EXTRA_MAINTENANCE Amount=-2.
-    assert_eq!(effect("elite_forces", "unit_maintenance_surcharge"), Some(2.0));
+    assert_eq!(
+        effect("elite_forces", "unit_maintenance_surcharge"),
+        Some(2.0)
+    );
     // The six late cards CIVVIS now carries.
-    assert_eq!(effect("disinformation_campaign", "city_science_pct"), Some(-10.0));
-    assert_eq!(effect("disinformation_campaign", "city_culture_pct"), Some(-10.0));
+    assert_eq!(
+        effect("disinformation_campaign", "city_science_pct"),
+        Some(-10.0)
+    );
+    assert_eq!(
+        effect("disinformation_campaign", "city_culture_pct"),
+        Some(-10.0)
+    );
     assert_eq!(effect("automated_workforce", "city_amenities"), Some(-1.0));
     assert_eq!(effect("automated_workforce", "city_loyalty"), Some(-5.0));
-    assert_eq!(effect("automated_workforce", "project_production_pct"), Some(20.0));
+    assert_eq!(
+        effect("automated_workforce", "project_production_pct"),
+        Some(20.0)
+    );
     assert_eq!(effect("collectivism", "city_housing"), Some(2.0));
     assert_eq!(effect("collectivism", "great_people_pct"), Some(-50.0));
-    assert_eq!(effect("rogue_state", "nuclear_project_production_pct"), Some(50.0));
+    assert_eq!(
+        effect("rogue_state", "nuclear_project_production_pct"),
+        Some(50.0)
+    );
     assert_eq!(effect("flower_power", "unit_production_pct"), Some(-100.0));
-    assert_eq!(effect("cyber_warfare", "combat_vs_information_era"), Some(10.0));
+    assert_eq!(
+        effect("cyber_warfare", "combat_vs_information_era"),
+        Some(10.0)
+    );
 }
 
 #[test]
