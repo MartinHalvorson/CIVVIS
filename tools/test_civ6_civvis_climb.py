@@ -579,6 +579,39 @@ class BatchCompositionTests(unittest.TestCase):
             collections.Counter({"stopped": 1, "attempt frozen; resume failed": 1}))
         self.assertIn("attempt frozen; resume failed=1", line)
 
+
+class BusyPatternTest(unittest.TestCase):
+    """`busy()` must see a running game, not a command line that names one.
+
+    The pattern was `Civ6_Exe|civ6_play.py|civ6_brain.py` and `pgrep -f` matches
+    whole command lines, so the harness's own window probe --
+    `osascript -e 'tell ... process "Civ6_Exe_Child" ...'`, which the mirror
+    keeper runs while the lane is idle -- reported a game that was not running.
+    `start` then refused ("something already holds the game"), the batch recorded
+    PLAYED NO TURNS, and four of those put the supervisor to sleep for ten
+    minutes. Measured 2026-08-18 with no game running at all.
+    """
+
+    def _match(self, command: str) -> bool:
+        return re.search(climb.RUNNING_GAME_PATTERN, command) is not None
+
+    def test_a_running_game_and_its_harness_are_seen(self) -> None:
+        for command in (
+            "/Users/x/Civ6.app/Contents/MacOS/Civ6_Exe_Child",
+            "/usr/bin/python3 /Users/x/CIVVIS/tools/civ6_play.py --tag civvis-1",
+            "/usr/bin/python3 /Users/x/CIVVIS/tools/civ6_brain.py --run-dir /x",
+        ):
+            self.assertTrue(self._match(command), command)
+
+    def test_a_mention_is_not_a_running_game(self) -> None:
+        for command in (
+            'osascript -e tell application "System Events" to tell process '
+            '"Civ6_Exe_Child" to get position of window 1',
+            "pgrep -fl Civ6_Exe|civ6_play.py|civ6_brain.py",
+            "/bin/zsh -c echo checking civ6_play.py status",
+        ):
+            self.assertFalse(self._match(command), command)
+
 if __name__ == "__main__":
     unittest.main()
 
