@@ -55,7 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y lld
+      - name: Install lld with a resilient Ubuntu mirror
+        run: bash .github/scripts/install-apt-packages.sh lld
       # Only the dependency registry is cached. `target` was cached here too,
       # but against this crate's shape it could not help: the workspace is a
       # single ~220k-line crate with CARGO_INCREMENTAL pinned to 0, so any
@@ -244,7 +245,8 @@ jobs:
       # which sat in a configured game for half an hour emitting only autoclose
       # events because CivvisControlAgent.lua never loaded. A gate on the wrong
       # version would have called that commit green.
-      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Install Lua 5.1 with a resilient Ubuntu mirror
+        run: bash .github/scripts/install-apt-packages.sh lua5.1
       - name: Compile every mod script under the game's Lua version
         run: |
           set -eu
