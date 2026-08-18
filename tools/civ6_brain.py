@@ -40,9 +40,8 @@ from civ6_control.orders import orders_db_path
 # `civ6_play.py --civvis-victory`, which forwards it here, which forwards it to
 # `civvis_orders --victory`; each restatement of the names was a place for the
 # chain to reject a lane the far end supports, and one of them did.
-from civ6_play import VICTORY_LANES
+from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY, VICTORY_LANES
 
-DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
 DEFAULT_GITHUB_REFRESH_SECONDS = 30.0
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
