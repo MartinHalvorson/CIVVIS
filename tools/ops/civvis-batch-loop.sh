@@ -75,18 +75,18 @@ set -u
 # launchd starts a job with a near-empty PATH, and `cargo` here is a rustup shim in
 # ~/.cargo/bin that is NOT on the login PATH at all (civvis-ship-needs-cargo-on-path).
 # A build that fails for that reason looks exactly like a build that fails on the code.
-export PATH=/Users/martin/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-REPO=/Users/martin/CIVVIS
-RUNNER=/Users/martin/civvis-batch-runner
-RUNS=/Users/martin/civvis-civ6-runs
+REPO=$HOME/CIVVIS
+RUNNER=$HOME/civvis-batch-runner
+RUNS=$HOME/civvis-civ6-runs
 LOG=$RUNS/batch-loop.log
 PROV=$RUNS/BATCH-PROVENANCE-runner.txt
-STATE=/Users/martin/.civvis-batch-loop.state
+STATE=$HOME/.civvis-batch-loop.state
 BUILDLOG=$RUNS/batch-loop-build.log
 # One driver, named. There is exactly ONE Civilization VI on this machine and a batch
 # takes it whole, so two drivers is not "slower", it is corrupt rows.
-LOCK=/Users/martin/.civvis-batch-loop.pid
+LOCK=$HOME/.civvis-batch-loop.pid
 
 # Attempts per batch. A batch is a COMPARISON pinned to one program, so this is also
 # how long the loop will decline to pick up a newer tip. Eight attempts is what the
@@ -287,7 +287,7 @@ say "=== batch loop starting: attempts=$ATTEMPTS nogame_limit=$NOGAME_LIMIT pid=
 #
 # Checked once, at startup, and said loudly. It cannot be fixed from in here: TCC
 # grants need a person.
-APP_BUNDLE_PROBE="/Users/martin/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/.civvis-tcc-probe"
+APP_BUNDLE_PROBE="$HOME/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/.civvis-tcc-probe"
 if touch "$APP_BUNDLE_PROBE" 2>/dev/null; then
   rm -f "$APP_BUNDLE_PROBE"
   say "app-bundle write: OK — the mod can be synced at attempt start"
