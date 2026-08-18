@@ -30,7 +30,7 @@ use super::AdvancedAi;
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
+pub const LIVE_TREATMENTS: [LiveTreatment; 78] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -83,7 +83,6 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("fog_land_capacity", "fog-land-capacity", AdvancedAi::disable_fog_land_capacity),
     ("recon_flight", "recon-flight", AdvancedAi::disable_recon_flight),
     ("score_horizon", "score-horizon", AdvancedAi::disable_score_horizon),
-    ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
     ("one_launch_pad", "one-launch-pad", AdvancedAi::disable_one_launch_pad),
     ("naval_recon", "naval-recon", AdvancedAi::disable_naval_recon),
     ("counter_in_lane", "counter-in-lane", AdvancedAi::disable_counter_in_lane),
@@ -110,4 +109,25 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("siege_is_progress", "siege-is-progress", AdvancedAi::disable_siege_is_progress),
     ("spy_mission_patience", "spy-mission-patience", AdvancedAi::disable_spy_mission_patience),
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
+];
+
+/// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
+///
+/// `LIVE_TREATMENTS` names everything the live bridge ADDS to production, so a
+/// live behaviour can be withheld and priced. Nothing named what production
+/// itself adds — `promoted_policy_envoy` turns on a dozen behaviours that
+/// `configured` leaves off, and each has a `disable_*` twin and an
+/// `advanced_without_*` arm in `src/elo.rs`, but no table joined the three. The
+/// consequence is small and real: a tool that wants to run "the shipped agent,
+/// minus one promoted behaviour" has to be taught each name by hand, which is
+/// how `civvis_orders` came to carry 57 hand-written arms against 68 rows.
+///
+/// ⚠ This table is CORRECT, not COMPLETE: `production_bundle_rows_are_real`
+/// checks that every row names a behaviour `promoted_policy_envoy` actually
+/// turns on and that its withholding twin exists, and it does not require that
+/// every promoted behaviour appear. Claiming completeness would be a claim
+/// nothing checks. Add a row when a promotion needs to be withheld by name.
+#[rustfmt::skip]
+pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
+    ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
 ];

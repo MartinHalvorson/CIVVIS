@@ -3578,7 +3578,7 @@ impl Default for AdvancedAi {
 /// repository. `docs/ROADMAP.md` objective 5 names that as the case splitting
 /// does not answer and moving the data out does. See `advanced/treatments.rs`.
 mod treatments;
-pub use treatments::{LiveTreatment, LIVE_TREATMENTS};
+pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_TREATMENTS};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///

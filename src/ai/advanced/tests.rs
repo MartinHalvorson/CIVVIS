@@ -27,6 +27,54 @@
 /// So it is checked instead. The bundle's own source is the input: a
 /// treatment added to `enable_live_bridge` without a registry row fails
 /// here, naming itself.
+/// ★★★★ THE MIRROR THE REGISTRY DID NOT HAVE.
+///
+/// `live_bundle_and_registry_agree` above pins what the live bridge adds. Ask
+/// the same question of production and there was no table to ask it of, so a
+/// tool that wanted "the shipped agent minus one promoted behaviour" learned
+/// each name by hand — the exact shape that left `civvis_orders` carrying 57
+/// hand-written arms against 68 registry rows, with eleven shipped treatments
+/// uncontrolled.
+///
+/// `PRODUCTION_TREATMENTS` is that table, and this is what keeps it honest: a
+/// row must name a behaviour `promoted_policy_envoy` really turns on, and must
+/// have the withholding twin its third field points at.
+///
+/// ⚠ Correctness, not completeness — and that is deliberate. A promoted
+/// behaviour with no row is not a defect; a row that names a behaviour
+/// production does not have is a `--without` that silently withholds nothing.
+#[test]
+fn production_bundle_rows_are_real() {
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
+    let start = source
+        .find("fn promoted_policy_envoy(")
+        .expect("promoted_policy_envoy must exist to be checked");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("promoted_policy_envoy must be a complete function");
+    let bundle = &body[..end];
+
+    for (field, tag, _) in PRODUCTION_TREATMENTS.iter() {
+        // Either form the constructor uses: the toggle, or the field directly.
+        let enabled = bundle.contains(&format!("enable_{field}();"))
+            || bundle.contains(&format!("{field} = true;"));
+        assert!(
+            enabled,
+            "PRODUCTION_TREATMENTS lists `{tag}` but promoted_policy_envoy \
+             never turns `{field}` on, so withholding it withholds nothing"
+        );
+        assert!(
+            source.contains(&format!("pub fn disable_{field}(&mut self)")),
+            "`{tag}` has no withholding twin `disable_{field}`, so it ships \
+             unpriceable"
+        );
+    }
+}
+
 #[test]
 fn live_bundle_and_registry_agree() {
     // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles

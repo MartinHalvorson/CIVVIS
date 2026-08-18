@@ -154,14 +154,22 @@ fn main() {
                 eprintln!("--without requires a treatment name");
                 std::process::exit(2);
             };
+            // ⚠ BOTH TABLES, NOT ONE. `LIVE_TREATMENTS` is what the live
+            // bridge adds; `PRODUCTION_TREATMENTS` is what production itself
+            // adds. A tool that reads only the first cannot withhold a
+            // behaviour the shipped agent has and the bridge did not give it.
             match civvis::ai::LIVE_TREATMENTS
                 .iter()
+                .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
                 .find(|(field, tag, _)| field == name || tag == name)
             {
                 Some(row) => rows.push(*row),
                 None => {
                     eprintln!("unknown treatment {name:?}; known names:");
-                    for (field, tag, _) in civvis::ai::LIVE_TREATMENTS.iter() {
+                    for (field, tag, _) in civvis::ai::LIVE_TREATMENTS
+                        .iter()
+                        .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
+                    {
                         eprintln!("  {tag} ({field})");
                     }
                     std::process::exit(2);
