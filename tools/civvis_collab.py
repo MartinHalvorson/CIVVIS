@@ -2484,14 +2484,50 @@ def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
     ).encode("utf-8")
 
 
-def load_managed_job(label: str, path: Path) -> None:
-    """Write-then-(re)load a managed LaunchAgent, idempotently."""
+def managed_job_is_loaded(label: str) -> bool:
     domain = f"gui/{os.getuid()}"
-    loaded = not run(("launchctl", "print", f"{domain}/{label}"),
-                     check=False).returncode
-    if loaded:
+    return not run(("launchctl", "print", f"{domain}/{label}"),
+                   check=False).returncode
+
+
+def load_managed_job(label: str, path: Path, attempts: int = 10) -> None:
+    """Write-then-(re)load a managed LaunchAgent, and confirm it is there.
+
+    ⚠⚠ `launchctl bootout` IS ASYNCHRONOUS, AND `bootstrap` RIGHT BEHIND IT
+    FAILS. The service is still tearing down when the next command arrives, so
+    the bootstrap is refused — and because every call here passes `check=False`,
+    nothing said a word. The plist was written, the job was gone, and the only
+    symptom was a service that had simply stopped existing.
+
+    Measured on this host 2026-08-18: `bootstrap` reported "installed CIVVIS
+    spectator service" while `launchctl print` could not find the job at all.
+    Running the identical `bootstrap` by hand a moment later loaded it first
+    try, which is the signature of a race rather than a bad plist.
+
+    So: wait for the bootout to actually take effect, retry the bootstrap while
+    launchd is still busy, and RAISE if the job is not there at the end. A
+    service reported as installed and absent is the failure mode this whole
+    registry exists to prevent.
+    """
+    domain = f"gui/{os.getuid()}"
+    if managed_job_is_loaded(label):
         run(("launchctl", "bootout", f"{domain}/{label}"), check=False)
-    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        for _ in range(attempts):
+            if not managed_job_is_loaded(label):
+                break
+            time.sleep(0.5)
+
+    for attempt in range(attempts):
+        run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        if managed_job_is_loaded(label):
+            break
+        time.sleep(0.5)
+    else:
+        raise CommandError(
+            f"launchd would not load {label} from {path}. The plist is written "
+            f"but the service is absent, which is the one outcome this must "
+            f"never report as success; try `launchctl bootstrap {domain} {path}`"
+        )
     run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
 
 
