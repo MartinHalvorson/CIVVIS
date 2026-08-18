@@ -68,21 +68,64 @@ class OnlyTheTargetTableCounts(unittest.TestCase):
         self.assertEqual(named, ["src/ai/advanced.rs"])
 
 
+def needs_history(count: int = 60):
+    """Skip where the clone has no history to rank.
+
+    ⚠ `origin/main` is often absent in a pull-request checkout, which is how
+    the first CI run of this tool died. The tool falls back to `HEAD`; these
+    tests still skip rather than fail on a genuinely shallow clone, because a
+    depth-1 checkout is a fact about the runner and not a defect in the tree.
+    """
+    reachable = len(conflict_hotspots.recent_merges(count))
+    return unittest.skipIf(reachable < count,
+                           f"only {reachable} of {count} merges are reachable")
+
+
 class TheRankingIsReal(unittest.TestCase):
+    @needs_history()
     def test_it_ranks_something_and_ranks_it_by_merges(self):
         rows = conflict_hotspots.ranking(60)
         self.assertTrue(rows, "no file was touched by 3 of the last 60 merges")
         counts = [hits for _, hits, _ in rows]
         self.assertEqual(counts, sorted(counts, reverse=True))
 
+    @needs_history()
     def test_generated_and_non_source_paths_are_left_out(self):
         """Their contention is answered by regenerating, not by splitting."""
         paths = [path for path, _, _ in conflict_hotspots.ranking(60)]
         self.assertEqual([p for p in paths if p.endswith(".md")], [])
         self.assertEqual([p for p in paths if p.endswith(".json")], [])
 
+    def test_a_missing_origin_main_falls_back_to_head(self):
+        """The exact CI failure: the PR checkout had no `origin/main` ref."""
+        real = conflict_hotspots.subprocess.run
+
+        def only_head(args, **kwargs):
+            if "origin/main" in args:
+                return real(["git", "-C", str(conflict_hotspots.REPO),
+                             "log", "does-not-exist", "--format=%H", "-1"],
+                            **kwargs)
+            return real(args, **kwargs)
+
+        conflict_hotspots.subprocess.run = only_head
+        try:
+            self.assertTrue(conflict_hotspots.recent_merges(5))
+        finally:
+            conflict_hotspots.subprocess.run = real
+
+    def test_a_shallow_clone_refuses_rather_than_passing_vacuously(self):
+        """Every file reads 0% there, so the check would pass by measuring
+        nothing — which is the failure a check exists to not have."""
+        real = conflict_hotspots.recent_merges
+        conflict_hotspots.recent_merges = lambda count: ["sha"] * 10
+        try:
+            self.assertEqual(conflict_hotspots.main(["--check"]), 1)
+        finally:
+            conflict_hotspots.recent_merges = real
+
 
 class TheCheckIsWiredAndOneDirectional(unittest.TestCase):
+    @needs_history()
     def test_the_live_roadmap_passes_its_own_check(self):
         self.assertEqual(conflict_hotspots.main(["--check"]), 0)
 

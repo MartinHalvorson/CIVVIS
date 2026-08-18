@@ -70,11 +70,28 @@ def touched(sha: str) -> set[str]:
     return {line.strip() for line in out.splitlines() if line.strip()}
 
 
+#: Below this many merges the ranking is not worth judging on. A shallow clone
+#: reports every file at 0%, which would make `--check` PASS BY MEASURING
+#: NOTHING — the failure a check exists to not have.
+MIN_HISTORY = 50
+
+
 def recent_merges(count: int) -> list[str]:
-    out = subprocess.run(
-        ["git", "-C", str(REPO), "log", "origin/main", "--format=%H", f"-{count}"],
-        capture_output=True, text=True, check=False).stdout
-    return out.split()
+    """Merge SHAs, newest first, from `origin/main` or whatever history exists.
+
+    ⚠ `origin/main` IS OFTEN ABSENT. A pull-request checkout fetches the PR ref
+    and need not create that remote-tracking branch at all; the first CI run of
+    this tool died on exactly that. `HEAD` is the honest fallback there — in a
+    PR checkout its history IS main's history plus the branch's own commits,
+    which shifts a touch rate by a few tenths at most.
+    """
+    for rev in ("origin/main", "HEAD"):
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "log", rev, "--format=%H", f"-{count}"],
+            capture_output=True, text=True, check=False).stdout
+        if out.split():
+            return out.split()
+    return []
 
 
 def ranking(count: int = DEFAULT_MERGES,
@@ -87,7 +104,7 @@ def ranking(count: int = DEFAULT_MERGES,
     """
     shas = recent_merges(count)
     if not shas:
-        raise SystemExit("no merges found on origin/main; fetch first")
+        raise SystemExit("no history to rank; fetch before measuring")
     tally: dict[str, int] = {}
     for sha in shas:
         for path in touched(sha):
@@ -122,6 +139,13 @@ def main(argv: list[str] | None = None) -> int:
                              "measured top ranks, or misses one inside them")
     args = parser.parse_args(argv)
 
+    shas = recent_merges(args.merges)
+    if args.check and len(shas) < MIN_HISTORY:
+        print(f"only {len(shas)} merges are reachable (need {MIN_HISTORY}); a "
+              f"shallow clone reads every file at 0% and would pass this check "
+              f"by measuring nothing. Check out with fetch-depth: 0.",
+              file=sys.stderr)
+        return 1
     rows = ranking(args.merges)
     if not args.check:
         print(f"of the last {len(recent_merges(args.merges))} merges to main:")
