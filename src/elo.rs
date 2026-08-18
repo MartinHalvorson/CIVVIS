@@ -289,7 +289,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "strategic_h80",
     "strategic_rot20",
     "strategic_rot10",
-    "strategic_deep",
     "strategic_ultra",
     "strategic_deep_default",
     "strategic_deep_tempo",
@@ -6084,6 +6083,42 @@ mod tests {
                 "provenance and factory disagree for {name}"
             );
         }
+    }
+
+    /// ⚠⚠ A NAME MAY NOT BE REGISTERED TWICE, AND THE TWO LISTS MAY NOT OVERLAP.
+    ///
+    /// `EVAL_ONLY_AIS` exists to keep a control out of the persistent rating
+    /// keys, which its own doc comment says in as many words. A name in both
+    /// lists is therefore not a harmless duplicate: it is evaluator-only *and*
+    /// pooled into tournament ratings at the same time, and the two statements
+    /// cannot both be acted on.
+    ///
+    /// `strategic_deep` was in both for three weeks. `3c543665` — "Add
+    /// strategic_deep, and decline to promote it" — put it in `EVAL_ONLY_AIS`,
+    /// and an hour later `dc6f661e` — "Promote strategic_deep: pre-registered
+    /// PASS at 300 maps" — added it to `BUILTIN_AIS` and did not take the first
+    /// entry out. Nothing looked, because nothing was looking.
+    #[test]
+    fn no_agent_name_is_registered_twice() {
+        let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (list, names) in [
+            ("BUILTIN_AIS", BUILTIN_AIS),
+            ("EVAL_ONLY_AIS", EVAL_ONLY_AIS),
+        ] {
+            for name in names {
+                seen.entry(name).or_default().push(list);
+            }
+        }
+        let twice: Vec<String> = seen
+            .iter()
+            .filter(|(_, lists)| lists.len() > 1)
+            .map(|(name, lists)| format!("{name} in {lists:?}"))
+            .collect();
+        assert!(
+            twice.is_empty(),
+            "a name is registered more than once; a builtin is rated and an \
+             evaluator-only control is deliberately not, so it cannot be both: {twice:?}"
+        );
     }
 
     #[test]
