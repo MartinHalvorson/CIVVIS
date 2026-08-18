@@ -42,9 +42,9 @@
     "withholdable": 53
   },
   "derived": {
-    "eval_only_count": 211,
-    "firaxis_only_count": 23,
-    "live_bridge_count": 76,
+    "eval_only_count": 212,
+    "firaxis_only_count": 24,
+    "live_bridge_count": 77,
     "native_engine_repair_count": 53,
     "withholdable_live_count": 53
   },
@@ -207,7 +207,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 211,
+      "declared_count": 212,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -297,6 +297,7 @@
         "live_without_bank_envoys",
         "live_without_land_grab",
         "live_without_siege_is_progress",
+        "live_without_spy_mission_patience",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -423,7 +424,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 23,
+      "declared_count": 24,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -447,11 +448,12 @@
         "explore-dead-targets",
         "bank-envoys",
         "explore-commit",
-        "land-grab"
+        "land-grab",
+        "spy-mission-patience"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 76,
+      "declared_count": 77,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -528,7 +530,8 @@
         "explore-commit",
         "bank-envoys",
         "land-grab",
-        "siege-is-progress"
+        "siege-is-progress",
+        "spy-mission-patience"
       ]
     }
   },

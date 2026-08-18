@@ -19942,6 +19942,102 @@ fn science_strategy_uses_an_established_spy_to_steal_a_rival_technology() {
 }
 
 #[test]
+fn a_spy_order_in_flight_is_not_re_sent_to_a_rebuilt_board() {
+    // The live mirror is rebuilt from the host export every decision, and the
+    // export does not carry a running Spy operation — so the seated Spy
+    // always reads `mission: None` and the same order went out every turn:
+    // run civvis-20260818T155500Z sent SPY_GAIN_SOURCES 35 times over
+    // t107–t141. The contract: with `spy_mission_patience` an ordered Spy is
+    // left alone for the order's duration, a frozen controller keeps the
+    // historical re-order, and after the window expires the seat may ask
+    // again.
+    let mut game = Game::new_full(2, 24, 16, 109, 120, 0, false);
+    let cities: Vec<u32> = (0..2)
+        .map(|pid| {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None)
+        })
+        .collect();
+    let target = cities[1];
+    let spy = game.next_id;
+    game.next_id += 1;
+    game.spies.insert(
+        spy,
+        crate::game::Spy {
+            id: spy,
+            owner: 0,
+            level: 0,
+            promotions: Default::default(),
+            city: Some(target),
+            ready_turn: game.turn,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let fresh = game.clone();
+
+    let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+    live.enable_spy_mission_patience();
+    live.advanced_spies(&mut game, 0, &plan);
+    assert!(
+        game.spies[&spy].mission.is_some(),
+        "the first order goes out"
+    );
+
+    let mut rebuilt = fresh.clone();
+    live.advanced_spies(&mut rebuilt, 0, &plan);
+    assert!(
+        rebuilt.spies[&spy].mission.is_none(),
+        "an order still running on the host is not re-sent to the rebuilt board"
+    );
+
+    let mut expired = fresh.clone();
+    expired.turn += expired.standard_duration(SPY_MISSION_ORDER_PATIENCE) + 1;
+    if let Some(agent) = expired.spies.get_mut(&spy) {
+        agent.ready_turn = expired.turn;
+    }
+    live.advanced_spies(&mut expired, 0, &plan);
+    assert!(
+        expired.spies[&spy].mission.is_some(),
+        "after the patience window the seat may ask again"
+    );
+
+    let mut historical = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut first = fresh.clone();
+    historical.advanced_spies(&mut first, 0, &plan);
+    let mut re_sent = fresh.clone();
+    historical.advanced_spies(&mut re_sent, 0, &plan);
+    assert!(
+        re_sent.spies[&spy].mission.is_some(),
+        "frozen controllers keep the historical re-order"
+    );
+
+    let mut bridged = AdvancedAi::new();
+    bridged.enable_live_bridge();
+    assert!(
+        bridged.spy_mission_patience,
+        "the live bundle carries the repair"
+    );
+    bridged.disable_spy_mission_patience();
+    assert!(!bridged.spy_mission_patience);
+}
+
+#[test]
 fn basil_stages_hippodromes_then_resumes_them_at_divine_right() {
     let mut game = Game::new_full(
         2,
