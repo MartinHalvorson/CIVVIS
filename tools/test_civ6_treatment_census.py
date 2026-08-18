@@ -142,5 +142,63 @@ class WindowTest(unittest.TestCase):
                 census.turn_window(Path(raw), None, 10)
 
 
+class SeatIdentityTest(unittest.TestCase):
+    """A census must replay the agent that played, not a default one."""
+
+    def _run(self, tmp: Path, *, brain: str | None, summary: dict | None) -> dict:
+        if brain is not None:
+            (tmp / "brain.log").write_text(brain)
+        if summary is not None:
+            (tmp / "summary.json").write_text(json.dumps(summary))
+        return census.played_as(tmp)
+
+    def test_the_run_records_what_it_was_played_with(self) -> None:
+        """The exact shape `civ6_brain` prints and `civ6_play` writes.
+
+        Measured consequence of getting this wrong: censusing
+        `civvis-20260818T104654Z` under the old defaults (`auto` / `civvis`)
+        against its recorded seat (`WildCard9` / `diplomatic`) flips the verdict
+        for **8 of 74 treatments** — six read live that are inert, and two read
+        inert that are live.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            found = self._run(
+                tmp,
+                brain=(
+                    "[brain] mode=civvis run=civvis-x db=/x/orders.sqlite decider=server\n"
+                    "[brain] decider server up (fresh board, persistent agent, "
+                    "strategy=WildCard9 civ=CIVILIZATION_ROME, explaining into /x/why.log)\n"
+                ),
+                summary={"victory_target": "diplomatic", "tag": "civvis-x"},
+            )
+        self.assertEqual(
+            found, {"strategy": "WildCard9", "civ": "CIVILIZATION_ROME", "victory": "diplomatic"}
+        )
+
+    def test_a_run_that_records_nothing_reports_nothing(self) -> None:
+        """Silence must not be reported as a reading.
+
+        The caller prints which fields it had to assume, and it can only do that
+        if an unrecorded field is absent here rather than defaulted here.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            self.assertEqual(self._run(Path(raw), brain=None, summary=None), {})
+
+    def test_an_unparseable_summary_does_not_take_the_brain_log_with_it(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "summary.json").write_text("{not json")
+            found = self._run(tmp, brain="strategy=auto civ=CIVILIZATION_ROME,\n", summary=None)
+        self.assertEqual(found.get("strategy"), "auto")
+        self.assertNotIn("victory", found)
+
+
 if __name__ == "__main__":
     unittest.main()
