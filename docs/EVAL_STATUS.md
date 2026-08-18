@@ -19,11 +19,11 @@ page is the current inventory and live-bridge snapshot.
 
 ## Live ladder
 
-- Attempts recorded: **307**
-- Configured attempts: **303**
-- Terminal outcomes: **199**
-- Configured wins: **2**
-- Latest ledger entry: **2026-08-17T05:43:41Z**
+- Attempts recorded: **313**
+- Configured attempts: **309**
+- Terminal outcomes: **205**
+- Configured wins: **3**
+- Latest ledger entry: **2026-08-18T03:16:49Z**
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this

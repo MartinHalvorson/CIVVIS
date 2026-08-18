@@ -25,10 +25,10 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 307.
+Attempts recorded: 313.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. 307 row(s) predate the ruleset readback and are unverified rather than agreed.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. 313 row(s) predate the ruleset readback and are unverified rather than agreed.
 
 ## Which victories have been won, per difficulty
 
@@ -43,7 +43,13 @@ install offers and nobody has won still appears, empty.
 
 | victory | type | Settler | Chieftain | Warlord | Prince | King | Emperor | Immortal | Deity |
 |---|---|---|---|---|---|---|---|---|---|
-| 0 | — | 2026-08-16T06:49:58Z | — | — | — | — | — | — | — |
+| 0 | VICTORY_SCORE | 2026-08-16T06:49:58Z | — | — | — | — | — | — | — |
+| 1 | VICTORY_DEFAULT | — | — | — | — | — | — | — | — |
+| 2 | VICTORY_CONQUEST | — | — | — | — | — | — | — | — |
+| 3 | VICTORY_CULTURE | — | — | — | — | — | — | — | — |
+| 4 | VICTORY_RELIGIOUS | — | — | — | — | — | — | — | — |
+| 5 | VICTORY_TECHNOLOGY | — | — | — | — | — | — | — | — |
+| 6 | VICTORY_DIPLOMATIC | — | — | — | — | — | — | — | — |
 
 ## How these games ended
 
@@ -55,25 +61,19 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | — | 125 | 63% |
-| 6 | — | 41 | 21% |
-| 3 | — | 24 | 12% |
-| 4 | — | 5 | 3% |
-| 5 | — | 3 | 2% |
-| 2 | — | 1 | 1% |
+| 0 | VICTORY_SCORE | 127 | 62% |
+| 6 | VICTORY_DIPLOMATIC | 43 | 21% |
+| 3 | VICTORY_CULTURE | 26 | 13% |
+| 4 | — | 5 | 2% |
+| 5 | — | 3 | 1% |
+| 2 | — | 1 | 0% |
 
-199 of 307 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
+205 of 313 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
-| `civvis-20260814T231425Z` | Settler | — | yes | stopped | 249 | 349 | 2026-08-14T23:57:53Z |
-| `civvis-20260815T000131Z` | Settler | — | yes | stopped | 250 | 430 | 2026-08-15T00:44:04Z |
-| `civvis-20260815T004758Z` | Settler | — | yes | stopped | 250 | 551 | 2026-08-15T01:28:07Z |
-| `civvis-20260815T012815Z` | Settler | — | yes | stopped | 242 | 556 | 2026-08-15T02:03:48Z |
-| `civvis-20260815T024635Z` | Settler | — | yes | stopped | 242 | 348 | 2026-08-15T03:26:18Z |
-| `civvis-20260815T033005Z` | Settler | — | yes | stopped | 250 | 461 | 2026-08-15T04:24:46Z |
 | `civvis-20260815T042826Z` | Settler | — | yes | stopped | 250 | 394 | 2026-08-15T05:13:19Z |
 | `civvis-20260815T051714Z` | Settler | — | yes | stopped | 242 | 442 | 2026-08-15T05:57:44Z |
 | `civvis-20260815T060130Z` | Settler | — | yes | stopped | 250 | 290 | 2026-08-15T06:45:08Z |
@@ -108,3 +108,9 @@ absent from this table have never been completed by anyone here.
 | `civvis-20260816T110555Z` | Settler | — | yes | stopped | 250 | 619 | 2026-08-16T11:50:26Z |
 | `civvis-20260816T123936Z` | Settler | — | yes | stopped | 239 | 828 | 2026-08-16T13:22:46Z |
 | `civvis-20260816T132247Z` | Settler | — | yes | stopped | 250 | 696 | 2026-08-16T14:28:01Z |
+| `civvis-20260817T214710Z` | Settler | science | yes | stopped | 219 | 643 | 2026-08-17T22:28:43Z |
+| `civvis-20260817T223247Z` | Settler | science | yes | stopped | 222 | 958 | 2026-08-17T23:08:57Z |
+| `civvis-20260817T231318Z` | Settler | science | yes | stopped | 243 | 1406 | 2026-08-17T23:52:45Z |
+| `civvis-20260818T003523Z` | Settler | science | yes | win | 250 | 1191 | 2026-08-18T01:17:01Z |
+| `civvis-20260818T012048Z` | Settler | science | yes | stopped | 230 | 871 | 2026-08-18T02:03:46Z |
+| `civvis-20260818T020720Z` | Settler | science | yes | stopped | 250 | 702 | 2026-08-18T03:16:49Z |
