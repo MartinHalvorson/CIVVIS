@@ -3243,7 +3243,7 @@ impl Default for AdvancedAi {
 /// takes it back out. In `elo::LIVE_BRIDGE_TREATMENTS` order.
 ///
 /// ⚠⚠⚠ THE POINT IS THAT A SHIPPED TREATMENT CANNOT GO UNPRICED.
-/// `enable_live_bridge` turns on 67. Before this table, `elo.rs` carried one
+/// `enable_live_bridge` turns on 74. Before this table, `elo.rs` carried one
 /// hand-written `live_without_*` arm per treatment, and each needed **seven
 /// separate edits**: the name in `EVAL_ONLY_AIS`, an `ArmKind` variant, its
 /// `name()` mapping, the `build_arm` case, a provenance row, a second
@@ -3271,7 +3271,7 @@ impl Default for AdvancedAi {
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 69] = [
+pub const LIVE_TREATMENTS: [LiveTreatment; 74] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -3341,6 +3341,11 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 69] = [
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
     ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
     ("stock_denial_lead_time", "stock-denial-lead-time", AdvancedAi::disable_stock_denial_lead_time),
+    ("parallel_settlers", "parallel-settlers", AdvancedAi::disable_parallel_settlers),
+    ("host_settler_pop", "host-settler-pop", AdvancedAi::disable_host_settler_pop),
+    ("explore_dead_targets", "explore-dead-targets", AdvancedAi::disable_explore_dead_targets),
+    ("explore_commit", "explore-commit", AdvancedAi::disable_explore_commit),
+    ("bank_envoys", "bank-envoys", AdvancedAi::disable_bank_envoys),
 ];
 
 impl AdvancedAi {
@@ -3965,6 +3970,13 @@ impl AdvancedAi {
         self.base.parallel_settlers = true;
     }
 
+    /// Withhold the live seat's second Settler pipeline so the evaluator can
+    /// price it against the same otherwise-complete deployment bundle.
+    pub fn disable_parallel_settlers(&mut self) {
+        self.parallel_settlers = false;
+        self.base.parallel_settlers = false;
+    }
+
     /// Enable the evaluator-only paid expansion treatment. It also routes the
     /// adaptive Expansion plan through `advanced_production`; otherwise the
     /// ordinary Cities governor would never consult the coupled scorer.
@@ -3986,11 +3998,21 @@ impl AdvancedAi {
         self.base.enable_host_settler_pop();
     }
 
+    /// Withhold the host population floor from one live evaluator arm.
+    pub fn disable_host_settler_pop(&mut self) {
+        self.base.host_settler_pop = false;
+    }
+
     /// Give up an exploration target the host will not move the unit toward
     /// (see `BasicAi::explore_dead_targets`). Set by the Civilization VI bridge
     /// only.
     pub fn enable_explore_dead_targets(&mut self) {
         self.base.enable_explore_dead_targets();
+    }
+
+    /// Withhold target retirement from one live evaluator arm.
+    pub fn disable_explore_dead_targets(&mut self) {
+        self.base.explore_dead_targets = false;
     }
 
     /// Hold an exploration goal and sweep outward from home (see
@@ -4830,10 +4852,20 @@ impl AdvancedAi {
         // Four of the five stolen games above were Culture; the general 90
         // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
         self.enable_stock_denial_lead_time();
+        // These host-facing controls used to be applied by `civvis_orders`
+        // after this bundle. They belong here: `live` and every
+        // `live_without_*` arm must construct the controller that deployment
+        // actually plays.
+        self.enable_parallel_settlers();
+        self.enable_host_settler_pop();
+        self.enable_explore_dead_targets();
+        self.enable_explore_commit();
+        self.enable_bank_envoys();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
-    /// without the four that encode Firaxis' rules instead of ours.
+    /// without the deployment-profile treatments that do not apply to native
+    /// CIVVIS evaluation.
     ///
     /// ★★★★★ THE WHOLE BUNDLE HAS NEVER BEEN PRICED NATIVELY. The bridge set
     /// grew one measured repair at a time, and each was gated "live-bridge
@@ -4858,7 +4890,7 @@ impl AdvancedAi {
     /// link in a chain that is otherwise whole; it does not price the chain
     /// against no chain at all.
     ///
-    /// Four bridge flags are deliberately excluded:
+    /// The core Firaxis adapters are deliberately excluded:
     ///
     /// | excluded | why |
     /// |---|---|
@@ -4867,7 +4899,8 @@ impl AdvancedAi {
     /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
     /// | `joint_tactics` | not a semantics adapter but an evidence exclusion: the whole-game gate is inconclusive, and the deployment-profile run split **every** map at +0 Elo (95% −148..+148) while evaluating 28 branches against the sequential policy's 11 (`docs/AI_GAPS.md` §7) |
     ///
-    /// `enable_live_bridge` is therefore exactly this function plus those four.
+    /// `enable_live_bridge` is therefore this function plus the
+    /// deployment-profile treatments tracked in `elo::FIRAXIS_ONLY_TREATMENTS`.
     /// `engine_repairs_match_live_bridge` in `src/elo.rs` fails the build if a
     /// flag is ever added to one and not the other, so the bundles cannot
     /// silently drift apart.
@@ -28265,6 +28298,37 @@ impl AdvancedAi {
             let _ = g.apply(pid, &Action::EndTurn);
         }
         self.battlefront_frame = None;
+    }
+}
+
+#[cfg(test)]
+mod live_bundle_tests {
+    use super::AdvancedAi;
+
+    #[test]
+    fn live_bridge_and_each_new_withhold_arm_change_the_host_controls() {
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.parallel_settlers);
+        assert!(live.base.parallel_settlers);
+        assert!(live.base.host_settler_pop);
+        assert!(live.base.explore_dead_targets);
+        assert!(live.base.explore_commit);
+        assert!(live.bank_envoys);
+        assert!(live.base.bank_envoys);
+
+        live.disable_parallel_settlers();
+        live.disable_host_settler_pop();
+        live.disable_explore_dead_targets();
+        live.disable_explore_commit();
+        live.disable_bank_envoys();
+        assert!(!live.parallel_settlers);
+        assert!(!live.base.parallel_settlers);
+        assert!(!live.base.host_settler_pop);
+        assert!(!live.base.explore_dead_targets);
+        assert!(!live.base.explore_commit);
+        assert!(!live.bank_envoys);
+        assert!(!live.base.bank_envoys);
     }
 }
 
