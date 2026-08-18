@@ -2500,7 +2500,9 @@ fn decide(
         .map(|report| (report.strategy, report.victory_target));
     let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
     if held_favor_sales > 0 {
-        note_bits.push(format!("favor_hold:planner_sales_dropped={held_favor_sales}"));
+        note_bits.push(format!(
+            "favor_hold:planner_sales_dropped={held_favor_sales}"
+        ));
     }
     match append_favor_sale_order(plan_facts, state, &mut orders) {
         None => note_bits.push("favor_sale=1".to_string()),
