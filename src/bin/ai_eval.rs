@@ -2022,8 +2022,13 @@ here and any null is uninformative"
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    let enabled_victories = VictoryConditions::NAMES
+        .into_iter()
+        .filter(|name| victory_conditions.is_enabled(name))
+        .collect::<Vec<_>>()
+        .join(",");
     println!(
-        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {}",
+        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}",
         map_script.id(),
         map_topology.id(),
         map_poles.id(),
@@ -2032,17 +2037,28 @@ here and any null is uninformative"
         } else {
             "fixed"
         },
-        VictoryConditions::NAMES
-            .into_iter()
-            .filter(|name| victory_conditions.is_enabled(name))
-            .collect::<Vec<_>>()
-            .join(","),
     );
     let mut totals: BTreeMap<String, Metrics> = [a, b]
         .into_iter()
         .map(|name| (name.to_string(), Metrics::default()))
         .collect();
     let mut total_turns = 0_u64;
+    // ★★★★★ WHICH VICTORY CONDITIONS THIS PROFILE ACTUALLY PRODUCES.
+    //
+    // A run enables six victories and reports on none of them, so nobody knows
+    // which ones it exercised. Measured on the deployment profile with
+    // `AdvancedAi` in every seat, 12 games at 250 turns: **9 religious, 3
+    // science, and zero diplomatic, culture, domination or score.** The live
+    // Civilization VI ladder over the same period lost 41 games to a rival's
+    // diplomatic victory and 24 to culture, against 5 religious and 3
+    // technology (`docs/EVAL_STATUS.md`).
+    //
+    // The two distributions are very nearly disjoint, and that has a hard
+    // consequence: a treatment aimed at denying a diplomatic or culture
+    // victory cannot be screened here, because no such victory happens. It
+    // will read as inert, be filed as a null, and the profile will never say
+    // that it was the wrong question to ask of it.
+    let mut game_victories: BTreeMap<String, usize> = BTreeMap::new();
     let mut pair_scores = Vec::with_capacity(pairs);
     let mut pair_terminal_scores = Vec::with_capacity(pairs);
 
@@ -2145,6 +2161,13 @@ here and any null is uninformative"
                 war_reports,
             } = result;
             total_turns += game.reported_turn() as u64;
+            *game_victories
+                .entry(
+                    game.victory_type
+                        .clone()
+                        .unwrap_or_else(|| "no winner".to_string()),
+                )
+                .or_default() += 1;
             let score = game_score(game.winner, &seats, a);
             let terminal = terminal_score_share(&game, &seats, a);
             if index % 2 == 0 {
@@ -2371,6 +2394,36 @@ here and any null is uninformative"
         "direction resolution: wins rest on {win_resolved} of {} maps that broke, terminal score on {terminal_resolved}",
         inference.maps,
     );
+    if !game_victories.is_empty() {
+        let total: usize = game_victories.values().sum();
+        let mut mix: Vec<(&String, &usize)> = game_victories.iter().collect();
+        mix.sort_by(|left, right| right.1.cmp(left.1).then(left.0.cmp(right.0)));
+        let detail = mix
+            .iter()
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("victory conditions exercised, over all {total} games: {detail}");
+        // A condition the profile enabled and never produced is one this run
+        // could not have measured a change to. Say so by name.
+        let produced: BTreeSet<&str> = game_victories
+            .keys()
+            .map(|name| name.as_str())
+            .filter(|name| *name != "no winner")
+            .collect();
+        let silent: Vec<&str> = enabled_victories
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty() && !produced.contains(name))
+            .collect();
+        if !silent.is_empty() {
+            println!(
+                "⚠ enabled but never produced here: {}. A treatment aimed at one of those cannot \
+                 be measured on this profile — an inert reading would say nothing about it",
+                silent.join(", ")
+            );
+        }
+    }
     // ★★★★★ NOTHING DIFFERED, WHICH IS NOT THE SAME AS PARITY.
     //
     // Wins break on about a third of maps by construction, so an all-neutral
