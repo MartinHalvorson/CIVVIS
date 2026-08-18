@@ -122,6 +122,11 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_stack_discipline",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
+    "live_without_parallel_settlers",
+    "live_without_host_settler_pop",
+    "live_without_explore_dead_targets",
+    "live_without_explore_commit",
+    "live_without_bank_envoys",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -344,6 +349,11 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "deny-while-targeted",
     "stock-denial-lead-time",
+    "parallel-settlers",
+    "host-settler-pop",
+    "explore-dead-targets",
+    "explore-commit",
+    "bank-envoys",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -373,10 +383,9 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The fourteen bridge treatments that stay out of the native bundle, as tags.
-/// Three encode a rule of Firaxis' game rather than repairing one of ours, one
-/// is excluded on evidence, and the wonder race, the Prophet deferral and the
-/// elective-war stand-down price Firaxis-only records. See
+/// The deployment-profile treatments that stay out of the native bundle, as
+/// tags. Some encode a rule of Firaxis' game, while others price host-only
+/// conditions or are already present in the native production baseline. See
 /// `AdvancedAi::enable_engine_repairs`.
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
@@ -430,6 +439,17 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // t229-245); the native lanes end on their own clock and keep the
     // measured 90 bar until a native run says otherwise.
     "stock-denial-lead-time",
+    // These four react to host movement or host production semantics; native
+    // CIVVIS has neither distinction, so the repair bundle must not imply
+    // they are native engine changes.
+    "parallel-settlers",
+    "host-settler-pop",
+    "explore-dead-targets",
+    "bank-envoys",
+    // Production Advanced already carries committed exploration. It remains
+    // a live treatment so the deployment bundle and its ablation registry are
+    // complete, not because `advanced_synergy` needs to turn it on again.
+    "explore-commit",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -650,6 +670,11 @@ define_arm_kinds! {
     LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
+    LiveWithoutParallelSettlers => "live_without_parallel_settlers",
+    LiveWithoutHostSettlerPop => "live_without_host_settler_pop",
+    LiveWithoutExploreDeadTargets => "live_without_explore_dead_targets",
+    LiveWithoutExploreCommit => "live_without_explore_commit",
+    LiveWithoutBankEnvoys => "live_without_bank_envoys",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBuildFirst => "advanced_build_first",
@@ -3914,6 +3939,11 @@ impl ArmKind {
             Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
+            Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),
+            Self::LiveWithoutHostSettlerPop => live_without("host-settler-pop"),
+            Self::LiveWithoutExploreDeadTargets => live_without("explore-dead-targets"),
+            Self::LiveWithoutExploreCommit => live_without("explore-commit"),
+            Self::LiveWithoutBankEnvoys => live_without("bank-envoys"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -5902,8 +5932,24 @@ mod tests {
         );
     }
 
+    /// The evaluator's public tag list and the table that supplies each
+    /// withholding function are two representations of one deployment
+    /// identity. A count alone cannot catch a swapped or renamed treatment.
+    #[test]
+    fn live_bridge_tags_match_the_withholding_table() {
+        let withholding_tags: Vec<&str> = crate::ai::LIVE_TREATMENTS
+            .iter()
+            .map(|(_, tag, _)| *tag)
+            .collect();
+        assert_eq!(
+            LIVE_BRIDGE_TREATMENTS,
+            withholding_tags.as_slice(),
+            "the evaluator stamp and live withholding table disagree; a deployment treatment would be unmeasurable or mislabeled"
+        );
+    }
+
     /// `AdvancedAi::enable_engine_repairs` claims to be `enable_live_bridge`
-    /// minus exactly four Firaxis-semantics flags. Nothing but this test holds
+    /// minus its deployment-profile treatments. Nothing but this test holds
     /// that claim up.
     ///
     /// It fails in the same silent way as the check above, from the other
@@ -6032,6 +6078,14 @@ mod tests {
             "deny_while_targeted",
             // Same: priced on the live seat's steal record, not native play.
             "stock_denial_lead_time",
+            // Host movement and production semantics, not native engine
+            // repairs. `explore_commit` is already set by production
+            // Advanced, but stays in the live registry for full parity.
+            "parallel_settlers",
+            "host_settler_pop",
+            "explore_dead_targets",
+            "explore_commit",
+            "bank_envoys",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
@@ -6229,6 +6283,11 @@ mod tests {
         assert_eq!(
             have, expected,
             "the amenity control must hold amenity-project-preemption, not a later bridge tag"
+        );
+        assert_eq!(
+            held_off, all,
+            "every deployed live treatment needs exactly one live_without_* arm; missing controls: {:?}",
+            all.difference(&held_off).collect::<Vec<_>>()
         );
     }
 

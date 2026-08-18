@@ -3192,28 +3192,10 @@ fn main() {
     if let Some(chosen) = &rated {
         ai.reweight(chosen.weights.clone());
     }
-    // The old parallel-settler fires-check was near-inert with the lower target:
-    // the governor never wanted a second Settler while the first city target was
-    // still three. This live seat already raises the target to six, and its fresh
-    // baseline shows the remaining rate limit: one Settler is walking while the
-    // empire is still short of its city plan. Measure the previously untested
-    // target-plus-throughput cell as one explicit live treatment.
-    ai.enable_parallel_settlers();
-    // And build the Settler at Civilization VI's own population floor rather
-    // than the genome's: see `BasicAi::host_settler_pop`.
-    ai.enable_host_settler_pop();
-    // And give up an exploration target the host accepts but never walks to:
-    // see `BasicAi::explore_dead_targets`.
-    ai.enable_explore_dead_targets();
-    // And hold an exploration goal, chosen from deeper fog and farthest from
-    // home, instead of re-deriving the nearest fringe every turn: the lone
-    // scout of run civvis-20260816T123936Z paced a ten-by-ten box from t34
-    // to t75. See `BasicAi::explore_commit`.
-    ai.enable_explore_commit();
-    // And bank an envoy the plan has no positive use for, so the next
-    // city-state met can be taken outright — this seat meets its city-states
-    // over 250 turns, not 50. See `AdvancedAi::bank_envoys`.
-    ai.enable_bank_envoys();
+    // Configure before recording the startup identity, so the metadata names
+    // the same controller that will answer the first turn. `decide` repeats
+    // this idempotently for fresh agents and after each `--without` ablation.
+    ai.enable_live_bridge();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a

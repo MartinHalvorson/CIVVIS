@@ -10384,3 +10384,24 @@ recon quartet), 6p 74×46, 9 CS, online, 250t:
 Wins lean for on both seeds with the interval through zero; the unit-count
 proxy did not replicate. Ships OFF as a priced entrant; a matrix run is the
 next step if the axis is re-opened.
+
+## The live evaluator now constructs the deployed controller (2026-08-18)
+
+The Civilization VI binary applied five switches *after*
+`AdvancedAi::enable_live_bridge`: `parallel_settlers`, `host_settler_pop`,
+`explore_dead_targets`, `explore_commit`, and `bank_envoys`. The evaluator's
+`live` arm applied the helper alone. Consequently the pre-change live arm and
+its 69-item treatment stamp were not the controller deployed to Civilization
+VI, and none of those five controls had a `live_without_*` comparison.
+
+#1942 moves the five switches into `enable_live_bridge`, registers all five
+withholding arms, and verifies that the public run stamp and withholding table
+are exactly the same ordered list. Startup metadata now initializes the bundle
+before reporting its controller identity. The decision-time deployment settings
+are unchanged; the evaluator's definition of `live` changes from this revision
+onward and emits a 74-item stamp.
+
+This is an integrity repair, not an outcome claim. Earlier `live` ablations
+are not evidence about the five newly represented mechanisms. Re-run any
+screen or promotion decision involving `live` on disjoint seeds with the new
+stamp; do not pool it with prior 69-item results.
