@@ -794,6 +794,12 @@ pub const GOVERNMENT_BASE_ANARCHY_TURNS: u32 = 2;
 /// Shipped `DIPLOMACY_PEACE_MIN_TURNS`: a peace treaty holds for ten turns on
 /// standard speed before either signatory may declare war again.
 const PEACE_TREATY_TURNS: u32 = 10;
+
+/// Extra damage a defender takes when a `force_retreat` attacker beats it and
+/// it has nowhere to withdraw to. Civilization VI's Winged Hussar deals its
+/// retreat damage in place of the move; cornering the loser is the punishment,
+/// not a reprieve.
+const FORCED_RETREAT_BLOCKED_DAMAGE: i32 = 10;
 /// Shipped `Eras_XP1.GameEraMinimumTurns`: every era is held open this many
 /// standard turns before the next one may begin, whatever the field has
 /// researched. It is the same 40 for every era in the table.
@@ -18646,7 +18652,7 @@ impl Game {
         // Ranged strikes require standing walls; Embrasure supplies one more.
     }
 
-    fn encampment_can_strike(&self, city: &City) -> bool {
+    pub(crate) fn encampment_can_strike(&self, city: &City) -> bool {
         city.encampment_hp > 0
             && city.encampment_wall_hp > 0
             && !city.encampment_pillaged
@@ -20154,6 +20160,32 @@ impl Game {
             peer.linked_to = None;
         }
         self.units.get_mut(&uid).unwrap().owner = owner;
+    }
+
+    /// Where a defender forced out of its tile can go, if anywhere.
+    ///
+    /// ★★★★★ POLAND'S WINGED HUSSAR HAD ITS ABILITY IN THE DATA AND NOWHERE
+    /// ELSE. `data/units.json` gives the unit `force_retreat: 1`, the engine
+    /// read the key nowhere, and the audit that would have said so
+    /// (`tools/civvis_inert.py`) was never wired into CI. So the replacement
+    /// for a Cuirassier was a Cuirassier: same strength, same movement, no
+    /// unique. This is the missing half.
+    ///
+    /// Civilization VI pushes the loser directly away from its attacker and
+    /// damages it further when it cannot go. "Away" is every neighbour strictly
+    /// farther from the attacker than the defender's own tile, which on a hex
+    /// board is at most three tiles and on a globe is whatever the sphere says.
+    /// The choice is the first legal one in map order — deliberately not a
+    /// random pick, because combat already consumes the RNG and a retreat that
+    /// drew from it would move every later roll in the game.
+    fn forced_retreat_tile(&self, defender: u32, attacker_at: Pos) -> Option<Pos> {
+        let from = self.units.get(&defender)?.pos;
+        let standing = self.wdist(attacker_at, from);
+        self.wdisk(from, 1)
+            .into_iter()
+            .filter(|pos| *pos != from)
+            .filter(|pos| self.wdist(attacker_at, *pos) > standing)
+            .find(|pos| self.can_enter(defender, from, *pos))
     }
 
     /// Move a unit and keep the occupancy index and revealed ground with it.
@@ -24666,7 +24698,11 @@ impl Game {
         }
     }
 
-    fn city_district_family_position(&self, city: &City, family: impl AsName) -> Option<Pos> {
+    pub(crate) fn city_district_family_position(
+        &self,
+        city: &City,
+        family: impl AsName,
+    ) -> Option<Pos> {
         city.districts.iter().find_map(|(district, position)| {
             self.district_is_family(district, family)
                 .then_some(*position)
@@ -25213,7 +25249,7 @@ impl Game {
                 .and_then(|city_id| self.cities.get(&city_id));
             let owner = owner_city.map(|city| city.owner);
             let gaul = owner.is_some_and(|pid| self.players[pid].civ == "Gaul");
-            let count_uncached = |key: &str| -> usize {
+            let count_uncached = |key: &str, key_family: Option<Name>| -> usize {
                 match key {
                     "self" => 1,
                     "river" => usize::from(tile.has_river()),
@@ -25346,12 +25382,15 @@ impl Game {
                         .filter(|t| t.improvement.as_deref() == Some(key))
                         .count(),
                     district_family if self.rules.districts.contains_key(district_family) => {
-                        // Intern the key once. Inside the filter this cost a
-                        // registry lookup per neighbour per district: the
-                        // shipped ruleset gives fifteen of sixteen districts a
-                        // `government_plaza` key, so one plot paid it about a
-                        // hundred and eighty times over.
-                        let wanted = self.district_family(Name::new(district_family));
+                        // The family this key counts, resolved when the ruleset
+                        // loaded. Interning it here instead cost an `RwLock`
+                        // read and a hash once per plot per district per key —
+                        // about twenty million times in a six-player game, and
+                        // the largest single leaf in the settlement scorer at
+                        // 2.7% of busy CPU. The fallback keeps the old route
+                        // for any caller reaching this arm without a table.
+                        let wanted = key_family
+                            .unwrap_or_else(|| self.district_family(Name::new(district_family)));
                         neighbors
                             .iter()
                             .flatten()
@@ -25375,8 +25414,16 @@ impl Game {
                 }
             };
             let count = count_uncached;
-            for (key, bonus) in &spec.adjacency {
-                let tiles = count(key);
+            let key_families = self.rules.district_adjacency_families.get_interned(dname);
+            debug_assert!(
+                key_families.is_none_or(|families| families.len() == spec.adjacency.len()),
+                "the adjacency family table is built in `spec.adjacency`'s own key order"
+            );
+            for (index, (key, bonus)) in spec.adjacency.iter().enumerate() {
+                let tiles = count(
+                    key,
+                    key_families.and_then(|families| families.get(index).copied().flatten()),
+                );
                 let n = tiles as f64;
                 // Every source has its own TilesRequired bucket in Civ VI.
                 // Fractions from different sources therefore never combine.
@@ -25415,7 +25462,7 @@ impl Game {
                 }
             }
             if gaul && spec.specialty {
-                let mines = count("mine");
+                let mines = count("mine", None);
                 let minor = (mines as f64 * 0.5).trunc();
                 let mut paid = Yields::default();
                 match family.as_str() {
@@ -25443,7 +25490,7 @@ impl Game {
                 self.empire_wonder_effect(pid, "mountain_commercial_industrial_theater_adjacency")
                     > 0.0
             }) {
-                let mountains = count("mountain");
+                let mountains = count("mountain", None);
                 let mut paid = Yields::default();
                 match family.as_str() {
                     "commercial_hub" => paid.gold = mountains as f64,
@@ -25471,7 +25518,7 @@ impl Game {
                     .and_then(|tile| tile.owner_city)
                     .and_then(|city_id| self.cities.get(&city_id))
                 {
-                    let woods = count("forest");
+                    let woods = count("forest", None);
                     let paid = Yields {
                         faith: woods as f64
                             * self.city_building_effect(city, "holy_site_woods_adjacency"),
@@ -33887,6 +33934,30 @@ impl Game {
             }
             if !d_dead {
                 self.award_unit_combat_xp(did, &attacker, false, false, attacker_dead);
+            }
+            // A survivor that loses to a Winged Hussar is pushed off its tile,
+            // and pays for standing its ground when there is nowhere to go.
+            if !d_dead
+                && !attacker_dead
+                && self
+                    .rules
+                    .units[attacker.kind]
+                    .effects
+                    .get("force_retreat")
+                    .copied()
+                    .unwrap_or(0.0)
+                    > 0.0
+            {
+                match self.forced_retreat_tile(did, attacker.pos) {
+                    Some(to) => self.relocate(did, to),
+                    None => {
+                        // Cornered. Civilization VI charges the defender for the
+                        // retreat it could not make; this can finish it, so the
+                        // death is handled by the same path every other kill
+                        // takes rather than a second copy of it here.
+                        self.apply_unit_damage(uid, did, FORCED_RETREAT_BLOCKED_DAMAGE);
+                    }
+                }
             }
             let capture_chance = self.eagle_capture_chance(uid, &d);
             let captured_as_builder = d_dead

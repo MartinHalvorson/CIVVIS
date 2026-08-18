@@ -24346,14 +24346,36 @@ impl AdvancedAi {
         }
         if only_unit.is_none() {
             for city in position.cities.values().filter(|city| city.owner == enemy) {
-                replies.push(Action::CityStrike {
-                    city: city.id,
-                    target: victim_pos,
-                });
-                replies.push(Action::EncampmentStrike {
-                    city: city.id,
-                    target: victim_pos,
-                });
+                // ★★★★ THE CALLER PROVES THESE ILLEGAL BY CLONING THE WHOLE
+                // GAME. Every reply this function returns is tried as
+                // `let mut branch = position.clone(); if branch.apply(..).is_err()
+                // { continue; }` — so a city with no walls left, a spent
+                // strike, no Encampment, or a victim three tiles away cost a
+                // full game copy to establish something the city already
+                // knew. Both strikes were pushed unconditionally for every
+                // enemy city at every forcing node. These are the engine's own
+                // preconditions from `do_city_strike` and
+                // `do_encampment_strike`, asked before the copy rather than
+                // after it; the branch was discarded either way, so no search
+                // value moves. Range only — line of sight and the
+                // occupied-tile rules stay where they are, because those the
+                // clone must still answer.
+                if position.city_can_strike(city) && position.wdist(city.pos, victim_pos) <= 2 {
+                    replies.push(Action::CityStrike {
+                        city: city.id,
+                        target: victim_pos,
+                    });
+                }
+                if position.encampment_can_strike(city)
+                    && position
+                        .city_district_family_position(city, crate::name!("encampment"))
+                        .is_some_and(|source| position.wdist(source, victim_pos) <= 2)
+                {
+                    replies.push(Action::EncampmentStrike {
+                        city: city.id,
+                        target: victim_pos,
+                    });
+                }
             }
         }
         replies
