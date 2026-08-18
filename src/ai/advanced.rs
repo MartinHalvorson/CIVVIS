@@ -20815,9 +20815,7 @@ impl AdvancedAi {
             // A momentarily unavailable route is not a bad site. Under
             // `settler_commit` the stall counter decides when to give up,
             // not a single blocked turn.
-            if !(target == current
-                || g.route_step(uid, target, 0).is_some()
-                || self.settler_commit)
+            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
             {
                 return Some("no route this turn");
             }
