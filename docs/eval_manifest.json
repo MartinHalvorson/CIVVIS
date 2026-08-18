@@ -1,17 +1,17 @@
 {
   "derived": {
-    "eval_only_count": 198,
+    "eval_only_count": 205,
     "firaxis_only_count": 23,
     "live_bridge_count": 74,
     "native_engine_repair_count": 51,
     "withholdable_live_count": 51
   },
   "ladder": {
-    "attempts": 307,
-    "configured": 303,
-    "latest_utc": "2026-08-17T05:43:41Z",
-    "terminal": 199,
-    "wins": 2
+    "attempts": 313,
+    "configured": 309,
+    "latest_utc": "2026-08-18T03:16:49Z",
+    "terminal": 205,
+    "wins": 3
   },
   "registry": {
     "BUILTIN_AIS": {
@@ -145,7 +145,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 198,
+      "declared_count": 205,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -153,6 +153,12 @@
         "advanced_synergy_war",
         "advanced_synergy_economy",
         "live",
+        "live_target_science",
+        "live_target_culture",
+        "live_target_religious",
+        "live_target_diplomatic",
+        "live_target_domination",
+        "live_target_score",
         "live_without_amenity_project_preemption",
         "live_without_amenity_district_path",
         "live_without_governor_every_lane",
@@ -300,6 +306,7 @@
         "advanced_fortify_idle_units",
         "advanced_maritime_splice",
         "advanced_sea_answers",
+        "advanced_maintenance_deck",
         "advanced_recon_fleet",
         "advanced_without_recon_fleet",
         "advanced_every_lane",

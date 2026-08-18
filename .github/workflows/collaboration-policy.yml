@@ -11,7 +11,13 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: collaboration-policy-${{ github.event.pull_request.number || github.ref }}
+  # `github.sha` on a push, for the reason spelled out in tests.yml: on `main`
+  # the ref is one constant, so with `cancel-in-progress: true` every merge
+  # cancelled the previous merge's run and `main`'s own verdict was whatever
+  # the last quiet minute happened to allow. A commit is not superseded by the
+  # commit after it. On a pull request a newer push does supersede an older
+  # one, and cancelling there is pure savings.
+  group: collaboration-policy-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
