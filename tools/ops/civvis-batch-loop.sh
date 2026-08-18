@@ -108,6 +108,22 @@ NOGAME_LIMIT=${CIVVIS_NOGAME_LIMIT:-2}
 # `victory_lane` resolves it once per pass, after the checkout, so a batch always
 # reports the lane the code it pinned would use.
 VICTORY=${CIVVIS_VICTORY:-}
+# The rung this loop plays for. It expressed NOTHING here and inherited
+# `civ6_civvis_climb.py`'s `DIFFICULTY_SETTLER`, silently — the same shape as
+# the victory lane before #1960, and now the same divergence: since #1969 the
+# installed supervisor selects its rung from the live ledger through
+# `civ6_ladder_policy.py`, so the two production loops would be climbing on two
+# different rules and only one of them would ever reach Chieftain.
+#
+# Empty means "whatever the policy says", asked of the tree about to be played,
+# exactly as the lane is. `CIVVIS_DIFFICULTY` pins one instead.
+DIFFICULTY_OVERRIDE=${CIVVIS_DIFFICULTY:-}
+ladder_rung() {
+  [[ -n $DIFFICULTY_OVERRIDE ]] && { print -r -- "$DIFFICULTY_OVERRIDE"; return 0 }
+  [[ -f $RUNNER/tools/civ6_ladder_policy.py ]] || return 0
+  ( cd $RUNNER && python3 tools/civ6_ladder_policy.py \
+      --runs $RUNS/control target ) 2>/dev/null
+}
 victory_lane() {
   [[ -n $VICTORY ]] && { print -r -- "$VICTORY"; return 0 }
   ( cd $RUNNER && python3 -c \
@@ -385,6 +401,15 @@ while true; do
     sleep $IDLE_S
     continue
   fi
+  rung=$(ladder_rung)
+  # Same rule as the lane, and the same reason: an unresolved rung must not
+  # become a bare `--difficulty`, and a batch run at a rung nobody chose is a
+  # row that cannot be compared with the supervisor's.
+  if [[ ! $rung =~ ^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$ ]]; then
+    say "ladder policy returned invalid difficulty '${rung:-<empty>}'; skipping this pass"
+    sleep $IDLE_S
+    continue
+  fi
   genome=$( ( cd $RUNNER && ./target/release/civvis_orders --mirror $probe_dir --turn 0 \
               --victory $lane --strategy auto ) 2>&1 >/dev/null \
             | grep -m1 '"kind":"genome"' )
@@ -406,7 +431,7 @@ while true; do
     # it is written by hand beside the command it claims to describe. It said
     # `--war-from-plan` for hours after the flag was removed below. If you change
     # the invocation, change this in the same edit.
-    print -r -- "  batch     --attempts $ATTEMPTS --victory $lane --strategy auto"
+    print -r -- "  batch     --attempts $ATTEMPTS --victory $lane --difficulty $rung --strategy auto"
     print -r -- "  log       $batchlog"
   } >> $PROV
 
@@ -461,6 +486,7 @@ while true; do
   ( cd $RUNNER && python3 -u tools/civ6_civvis_climb.py \
       --attempts $ATTEMPTS \
       --victory $lane \
+      --difficulty $rung \
       --strategy auto \
       --logs $RUNS/control ) >> $batchlog 2>&1
   rc=$?

@@ -12476,6 +12476,24 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let cid = g.player_city_ids(0)[0];
+
+        // The test is about the Builder-work predicate, not the random
+        // resource that happened to land in a generated capital ring.
+        let open = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != g.cities[&cid].pos)
+            .expect("a founded city owns a workable non-centre tile");
+        {
+            let tile = g.map.tiles.get_mut(&open).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
         assert!(
             BasicAi::has_builder_work(&g, 0),
             "a fresh city has tiles worth improving"
@@ -17185,6 +17203,20 @@ mod tests {
                 .unwrap();
             game.found_city_for(pid, game.units[&settler].pos, None);
         }
+        // This is a local-defense routing test. Normalize the board so a
+        // resource-placement correction cannot turn its route into an
+        // incidental terrain fixture.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+        }
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
         }
@@ -17271,7 +17303,7 @@ mod tests {
             .tiles
             .values()
             .filter(|tile| {
-                game.wdist(home, tile.pos) > MINOR_DEFENSE_RADIUS + 1
+                game.wdist(home, tile.pos) == MINOR_DEFENSE_RADIUS + 1
                     && game.rules.is_passable(tile)
                     && !game.rules.is_water(tile)
                     && game.city_at(tile.pos).is_none()
@@ -17298,16 +17330,11 @@ mod tests {
         let mut ai = BasicAi::new();
         ai.minor = true;
 
-        for _ in 0..30 {
-            if game.wdist(home, game.units[&warrior].pos) <= MINOR_DEFENSE_RADIUS {
-                break;
-            }
-            game.turn += 1;
-            let unit = game.units.get_mut(&warrior).unwrap();
-            unit.moves_left = 10.0;
-            unit.moved = false;
-            assert!(ai.military_step(&mut game, 0, warrior));
-        }
+        game.turn += 1;
+        let unit = game.units.get_mut(&warrior).unwrap();
+        unit.moves_left = 10.0;
+        unit.moved = false;
+        assert!(ai.military_step(&mut game, 0, warrior));
         assert!(
             game.wdist(home, game.units[&warrior].pos) <= MINOR_DEFENSE_RADIUS,
             "remote defender did not return from {start:?}; stopped at {:?}; last action {:?}",

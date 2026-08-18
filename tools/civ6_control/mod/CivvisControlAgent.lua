@@ -239,6 +239,11 @@ end
 -- ------------------------------------------------------------------ survey
 
 local function typeName(kindTable, hash)
+	-- `GetRuleSet()` returns the configuration's type name directly, unlike
+	-- the numeric hashes returned by difficulty, map size, and game speed.
+	-- Indexing GameInfo with that string raises on the live build, and the
+	-- guarded lookup silently turned every correctly configured game into `?`.
+	if type(hash) == "string" then return hash; end
 	return try(function()
 		local row = kindTable[hash];
 		return row and (row.DifficultyType or row.MapSizeType or row.GameSpeedType
