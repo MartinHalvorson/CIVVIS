@@ -106,10 +106,19 @@ print "the strategy it will play"
 # at length why the placement ordering names a different strategy in 23 of 50 pairs.
 if [[ -x $bin ]]; then
   probe=$(mktemp -d /tmp/civvis-chain-probe.XXXXXX)
-  genome=$( ( cd $RUNNER && ./target/release/civvis_orders --mirror $probe --turn 0 \
-              --victory civvis --strategy auto ) 2>&1 >/dev/null | grep -m1 '"kind":"genome"' )
+  # The lane is irrelevant to what this probe reads back — it asks which strategy
+  # `auto` resolves to — but a lane written by hand here is a fourth copy of a
+  # fact that already drifted across the launchers, so it is asked for instead.
+  lane=$( ( cd $RUNNER && python3 -c \
+      'import sys; sys.path.insert(0, "tools"); import civ6_play; print(civ6_play.DEFAULT_CIVVIS_VICTORY)' \
+  ) 2>/dev/null )
+  genome=""
+  [[ -n $lane ]] && genome=$( ( cd $RUNNER && ./target/release/civvis_orders --mirror $probe --turn 0 \
+              --victory $lane --strategy auto ) 2>&1 >/dev/null | grep -m1 '"kind":"genome"' )
   rm -rf $probe
-  if [[ -z $genome ]]; then
+  if [[ -z $lane ]]; then
+    err "cannot resolve the victory lane from $RUNNER — the probe was not run"
+  elif [[ -z $genome ]]; then
     err "the binary printed no genome line — cannot tell which strategy would play"
   elif [[ $genome == *'"strategy":"stock"'* ]]; then
     err "resolves to STOCK — the league did not load, so --strategy auto is doing nothing"

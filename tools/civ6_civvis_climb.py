@@ -48,7 +48,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
-DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
 
 sys.path.insert(0, str(HERE))
@@ -58,6 +57,9 @@ from civ6_control import gamelock, install, launcher  # noqa: E402
 # verbatim to `civvis_orders --victory`; a second copy of the names is a second
 # place for them to go stale, which is exactly how three of the six lanes stayed
 # unreachable. `test_civ6_play.py` pins this list against the Rust const.
+# The default is imported for the same reason the list is: this launcher used
+# to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
+from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import VICTORY_LANES  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
@@ -1424,11 +1426,19 @@ def main() -> int:
     # until a lane is measured to beat it; rows are still separated by
     # `code_rev`, and an attempt that passes `--victory culture` is a different
     # experiment from the rows above it.
+    #
+    # 2026-08-18: A LANE WAS MEASURED TO BEAT IT, so the default moved and this
+    # launcher stopped declaring one. `victory_eval` at this exact profile put
+    # science at 0/16 and diplomatic at 14/16, and every named lane beat the
+    # science-targeted incumbent under `ai_eval`. The value now lives once, in
+    # `civ6_play.DEFAULT_CIVVIS_VICTORY`, with the evidence beside it; the
+    # reasoning above is kept because it is the record of what was believed
+    # while 307 attempts were spent on a lane this screen cannot make land.
     ap.add_argument("--victory", default=DEFAULT_VICTORY,
                     choices=VICTORY_LANES,
-                    help="victory objective; defaults to Science. Every "
-                         "VictoryTarget the engine implements is selectable; "
-                         "`civvis` lets the agent choose its own")
+                    help=f"victory objective; defaults to {DEFAULT_VICTORY}. "
+                         "Every VictoryTarget the engine implements is "
+                         "selectable; `civvis` lets the agent choose its own")
     # The rated genome is an opt-in experiment. Its internal league strength does
     # not establish Firaxis transfer, while stock AdvancedAi has the powered
     # deployment-shaped result and makes concurrent controller work attributable.
