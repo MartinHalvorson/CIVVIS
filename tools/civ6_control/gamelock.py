@@ -206,6 +206,51 @@ def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
         return True
 
 
+def standing_hold() -> str | None:
+    """A description of a live holder that is driving no run, or None.
+
+    ⚠⚠ THE HOLDER CHECK AND THE FOREIGN-RUN CHECK ASK DIFFERENT QUESTIONS, AND
+    THE WEAKER ONE GUARDS THE LOCK. `acquire` treats a holder as real when its
+    *pid is alive*; `foreign_run` — after the 2026-08-03 wedge recorded above —
+    treats a tag as real only when a harness is actually behind it. A process
+    can be alive and driving nothing, and the commonest example is deliberate:
+    `com.civvis.operator-halt` takes this lock and calls `signal.pause()`, which
+    is exactly how an operator stops the machine playing.
+
+    That is a legitimate holder and this module must NOT break it — a halt that
+    anything can override is not a halt. What it must not be is *silent*. On
+    this host a halt taken on 2026-08-02 was still in force fifteen days later;
+    every climb was refused, each wrote one `blocked` row nobody reads, and the
+    ladder keeper would have restarted the loop every fifteen minutes forever
+    because a restart is its only remedy and it could not see the cause.
+
+    So this reports the state rather than resolving it: whoever is deciding
+    whether to act can tell "nothing is playing because the machine is halted"
+    from "nothing is playing because the loop is wedged", which are the same
+    symptom and opposite remedies.
+    """
+    held = _holder()
+    if held is None:
+        return None
+    pid = held.get("pid", -1)
+    if not _alive(pid):
+        return None
+    tag = held.get("tag") or ""
+    if _tag_has_live_owner(tag):
+        return None
+    since = held.get("since")
+    age = ""
+    if since:
+        try:
+            started = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=timezone.utc)
+            age = f", {(datetime.now(timezone.utc) - started).days}d ago"
+        except ValueError:
+            age = ""
+    return (f"the game is held by pid {pid} under tag {tag!r} since {since}"
+            f"{age}, and no harness is driving that tag")
+
+
 def release(force: bool = False) -> None:
     """Give the lock up. Only the holder releases it unless forced."""
     held = _holder()
@@ -224,6 +269,9 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     print(describe())
+    standing = standing_hold()
+    if standing is not None:
+        print(f"standing hold: {standing}")
     if args.break_stale:
         held = _holder()
         if held is not None and not _alive(held.get("pid", -1)):

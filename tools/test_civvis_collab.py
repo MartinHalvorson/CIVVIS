@@ -1,5 +1,6 @@
 from pathlib import Path
 import concurrent.futures
+import ast
 import json
 import os
 import shutil
@@ -1526,3 +1527,67 @@ class MachineRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryManagedServiceIsRepairedOnEveryTask(unittest.TestCase):
+    """A service `bootstrap` installs and `start` does not repair reaches only
+    the machines bootstrapped after it was written.
+
+    That is not hypothetical. `com.civvis.ladder-watchdog` was built on
+    2026-08-17 to end a 14.3-hour silent ladder outage, and on 2026-08-18
+    `mbp-m5-pro-64` — a host `host_plays_civ6()` calls a Civilization VI seat,
+    with both freshness services loaded — did not have it, because the machine
+    was bootstrapped before it existed and `start` repaired only the push guard
+    and the freshness service.
+    """
+
+    def _source(self) -> str:
+        return Path(collab.__file__).read_text(encoding="utf-8")
+
+    def test_every_launchagent_installer_is_in_the_registry(self):
+        """Discovered, not listed: find the installers, do not trust a list.
+
+        Any `install_*` whose body writes into `~/Library/LaunchAgents` is a
+        managed service and has to be repaired like one.
+        """
+        tree = ast.parse(self._source())
+        installers = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not node.name.startswith("install_"):
+                continue
+            body = ast.dump(node)
+            if "LaunchAgents" in body:
+                installers.add(node.name)
+        self.assertTrue(installers, "no LaunchAgent installer was found at all")
+        registered = {function for _name, function, _absent
+                      in collab.MANAGED_SERVICES}
+        self.assertEqual(
+            installers - registered, set(),
+            "an installer writes a LaunchAgent but nothing repairs it on "
+            "`start`; add it to MANAGED_SERVICES",
+        )
+
+    def test_the_registry_names_real_functions(self):
+        for _name, function, _absent in collab.MANAGED_SERVICES:
+            with self.subTest(function=function):
+                self.assertTrue(callable(getattr(collab, function, None)),
+                                f"MANAGED_SERVICES names {function}, which does "
+                                f"not exist")
+
+    def test_start_repairs_the_services_and_not_one_of_them(self):
+        """`start` used to call `install_freshness_service` directly, which is
+        precisely the shape that could not grow."""
+        source = self._source()
+        start = source.split("def start_task(")[1].split("\ndef ")[0]
+        self.assertIn("install_managed_services(root)", start)
+        self.assertNotIn("install_freshness_service(root)", start)
+
+    def test_bootstrap_repairs_through_the_same_registry(self):
+        source = self._source()
+        boot = source.split("def bootstrap_command(")[1].split("\ndef ")[0]
+        self.assertIn("install_managed_services(root)", boot)
+        for _name, function, _absent in collab.MANAGED_SERVICES:
+            with self.subTest(function=function):
+                self.assertNotIn(f"{function}(root)", boot)
