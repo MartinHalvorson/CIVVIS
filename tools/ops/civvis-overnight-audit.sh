@@ -51,10 +51,10 @@ start_host() {
 }
 
 start_mirror_keeper() {
-  # The audit itself is already in the GUI-capable session. Keep the helper in
-  # that context without opening another Terminal window.
-  /usr/bin/nohup /bin/zsh "$MIRROR_KEEPER" \
-      >>"$BASE/civvis-civ6-mirror/mirror-keeper.launch.log" 2>&1 &
+  # The keeper may need to restore Chrome through AppleScript, so it needs
+  # Terminal's GUI grant. Keep that recovery hidden and out of Civ VI's
+  # foreground rather than opening an ordinary Terminal window.
+  /usr/bin/open -g -j -a Terminal "$MIRROR_KEEPER" >/dev/null 2>&1
 }
 
 start_display_keeper() {
@@ -200,14 +200,19 @@ if (( live_events )) && [[ -z "$popup_pid" ]]; then
   warnings+=(fresh_events_without_popup_clear)
 fi
 
+collect_mirror
 mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
 follower_pid=$(first_pid '[t]ools/follow\.py')
-if (( live_events && tiles_exported )) && [[ -n "$host_pid" && -z "$mirror_keeper_pid" ]]; then
-  # The interactive host restarts children every five seconds. Give it one
-  # bounded chance before opening the exact missing helper.
+if (( live_events && tiles_exported && ! mirror_healthy )) \
+    && [[ -n "$host_pid" && -z "$mirror_keeper_pid" ]]; then
+  # A healthy mirror proves the live follower is already serving frames; a
+  # separate keeper is redundant. Only an actual mirror outage warrants the
+  # hidden GUI-capable recovery window below.
   sleep 8
   mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
-  if [[ -z "$mirror_keeper_pid" ]] && start_mirror_keeper; then
+  collect_mirror
+  if [[ -z "$mirror_keeper_pid" ]] && (( ! mirror_healthy )) \
+      && start_mirror_keeper; then
     actions+=(mirror_keeper_reopened)
     sleep 5
     mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
@@ -223,9 +228,11 @@ if (( live_events && tiles_exported )) \
   collect_mirror
 fi
 if (( live_events && tiles_exported )); then
-  [[ -n "$mirror_keeper_pid" ]] || warnings+=(mirror_keeper_absent)
-  [[ -n "$follower_pid" ]] || warnings+=(follower_absent)
-  (( mirror_healthy )) || warnings+=(mirror_not_ready)
+  if (( ! mirror_healthy )); then
+    [[ -n "$mirror_keeper_pid" ]] || warnings+=(mirror_keeper_absent)
+    [[ -n "$follower_pid" ]] || warnings+=(follower_absent)
+    warnings+=(mirror_not_ready)
+  fi
 fi
 
 display_pid=$(first_pid '[c]ivvis-display-keeper\.mjs')
