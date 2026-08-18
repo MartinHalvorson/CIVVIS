@@ -371,6 +371,25 @@ def entry_from(summary: dict) -> dict:
         # rows recorded after it can differ from each other, and a ledger that
         # cannot separate the lanes cannot say which one wins.
         "victory_target": summary.get("victory_target"),
+        # ⚠⚠ WHICH GAME THIS ROW WAS PLAYED IN, which the record could not say.
+        #
+        # `civ6_play.py` verifies both of these from inside the running game and
+        # refuses a run that does not match — a wrong-modes or wrong-ruleset run
+        # is recorded as a refusal rather than a result. None of that reached
+        # here: 307 rows carried neither field, so the published record asserted
+        # that every row was the same game and held no evidence of it.
+        #
+        # It matters because a mode PERSISTS: `GameConfiguration.SetToDefaults()`
+        # does not clear one, and GAMEMODE_HEROES was found true on a live run
+        # that had been playing with twelve hero units while every log said plain
+        # Gathering Storm. The ruleset is the same axis one level up — CIVVIS
+        # models Gathering Storm and nothing else, and the compiled gameplay
+        # cache on the development machine was found to be a Vanilla database.
+        #
+        # Recorded as what the GAME reported, not what the command line asked
+        # for; the two disagreeing is the whole thing worth catching.
+        "ruleset": summary.get("ruleset"),
+        "modes": summary.get("modes"),
         "turns": summary.get("last_turn"),
         "score": summary.get("last_score"),
         "map_size": summary.get("map_size"),
@@ -789,6 +808,46 @@ def victory_board(state: dict) -> list[tuple[int, str | None, dict]]:
     return rows
 
 
+def same_game_note(attempts: list) -> list[str]:
+    """One line saying whether every recorded row was the same game.
+
+    ⚠ A LADDER IS A COMPARISON, AND A COMPARISON NEEDS THE ROWS TO BE THE SAME
+    GAME. `civ6_play.py` checks the ruleset and the optional modes from inside
+    the running game and refuses a run that does not match, but none of that
+    reached this record: rows carried neither field, so "these are all Settler
+    games" was an assertion with no evidence under it.
+
+    Rows recorded before those fields existed answer `None`, which is reported as
+    unverified rather than folded in with the ones that agree — an old row is not
+    a row that was checked.
+    """
+    if not attempts:
+        return []
+    rulesets = {a.get("ruleset") for a in attempts if isinstance(a, dict)}
+    unverified = sum(
+        1 for a in attempts if isinstance(a, dict) and a.get("ruleset") is None)
+    named = sorted(r for r in rulesets if r)
+    moded = sorted({
+        mode
+        for a in attempts if isinstance(a, dict)
+        for mode in (a.get("modes") or [])
+    })
+    out = ["Every row above is one game's settings as the game itself reported "
+           "them, not as the command line asked for them."]
+    if named:
+        out.append(f"Rulesets recorded: {', '.join(named)}.")
+    if unverified:
+        out.append(
+            f"{unverified} row(s) predate the ruleset readback and are "
+            f"unverified rather than agreed.")
+    if moded:
+        out.append(
+            f"⚠ Optional game modes were on in some rows: {', '.join(moded)}. "
+            f"A mode adds units and rules CIVVIS does not model, so those rows "
+            f"are not measuring the same game as the rest.")
+    return ["", " ".join(out), ""]
+
+
 def victory_census(attempts: list) -> list[tuple[int, str | None, int]]:
     """Which victory conditions have actually ended a game here, most first.
 
@@ -854,6 +913,7 @@ def markdown_for(state: dict) -> str:
         else:
             lines.append(f"| {index} | {label} | — | | | | |")
     lines += ["", f"Attempts recorded: {len(attempts)}.", ""]
+    lines += same_game_note(attempts)
 
     board = victory_board(state)
     if board:

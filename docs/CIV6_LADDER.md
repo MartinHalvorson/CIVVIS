@@ -27,6 +27,9 @@ before that export carries the index alone and reads `—` here.
 
 Attempts recorded: 307.
 
+
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. 307 row(s) predate the ruleset readback and are unverified rather than agreed.
+
 ## Which victories have been won, per difficulty
 
 A rung is claimed by the FIRST win at a difficulty; this table is the
