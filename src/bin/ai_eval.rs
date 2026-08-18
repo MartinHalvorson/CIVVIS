@@ -1497,6 +1497,23 @@ struct MatrixProfile {
     /// ~23% higher decisive-map rate measured in `docs/EVAL.md` (2026-08-11,
     /// the gate's three-victory entry).
     victories: &'static str,
+    /// The agents seated in the chairs the two entrants do not take, as
+    /// `--field` takes them; empty for a profile where every chair is an
+    /// entrant.
+    ///
+    /// ★★★★★ THIS IS WHY THE MATRIX WAS BLIND TO TWO THIRDS OF WHAT KILLS US.
+    /// Both fieldless profiles seat `AdvancedAi` variants in every chair,
+    /// `AdvancedAi` routes to religion, and the deployment profile was measured
+    /// on 2026-08-18 producing **religious and score and zero diplomatic, zero
+    /// culture over 40 games** — twice, on two disjoint seed streams. The live
+    /// Civilization VI ladder over the same period lost **41 games to a rival's
+    /// diplomatic victory and 24 to culture**: 65 of 310 attempts, ended by two
+    /// conditions no promotion decision in this repository's history could see.
+    field: &'static str,
+    /// Relative cost of one game on this profile, used only to split the
+    /// concurrency budget. The deployment shape measures about twice the
+    /// compact one.
+    cost_weight: usize,
     requirement: MatrixRequirement,
 }
 
@@ -1526,7 +1543,7 @@ enum MatrixVerdict {
     Insufficient,
 }
 
-const PROMOTION_PROFILES: [MatrixProfile; 2] = [
+const PROMOTION_PROFILES: [MatrixProfile; 3] = [
     MatrixProfile {
         name: "compact-standard",
         players: 4,
@@ -1536,6 +1553,8 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         turns: 500,
         speed: "standard",
         victories: "science,culture,domination",
+        field: "",
+        cost_weight: 1,
         requirement: MatrixRequirement::NoRegression,
     },
     MatrixProfile {
@@ -1551,7 +1570,42 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         // attaches to the game the exhibition and the live bridge actually
         // play).
         victories: "science,culture,religious,diplomatic,domination,score",
+        field: "",
+        cost_weight: 2,
         requirement: MatrixRequirement::Strength,
+    },
+    // ★★★★★ THE BOARD THE FRONT LINE ACTUALLY PLAYS ON.
+    //
+    // Same shape as `deployment-online`, and the only difference is who else is
+    // in the game: the chairs the entrants do not take are seated with agents
+    // that pursue the two lanes Firaxis' AI pursues. Fieldless that shape
+    // produces diplomatic 0 and culture 0 of 40; with this field it produces
+    // culture 11 and diplomatic 6 of 40 (seed 32000000, `docs/eval/`).
+    //
+    // ⚠ **`NoRegression`, deliberately, and this is the whole of the policy
+    // choice.** A third `Strength` bar would make every future treatment clear
+    // a profile it was never designed for, and this repository has no evidence
+    // that would be a good trade. A tripwire adds what is missing without
+    // adding a hurdle: a treatment that measurably *harms* the contested board
+    // is refused, and one that is merely inconclusive there passes as before.
+    // Raising it to `Strength` is a separate decision needing its own evidence.
+    //
+    // ⚠ Its numbers are not comparable to `deployment-online`'s. Two entrants
+    // hold two chairs here instead of six, so a game is one contest rather than
+    // three and a fixed pair count carries less information. Read the two
+    // profiles as different questions, never as a replication.
+    MatrixProfile {
+        name: "deployment-contested",
+        players: 6,
+        width: 74,
+        height: 46,
+        city_states: 9,
+        turns: 250,
+        speed: "online",
+        victories: "science,culture,religious,diplomatic,domination,score",
+        field: "live_target_diplomatic,live_target_culture",
+        cost_weight: 2,
+        requirement: MatrixRequirement::NoRegression,
     },
 ];
 
@@ -1616,6 +1670,14 @@ fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
     ]
     .into_iter()
     .collect();
+    // The command line may not pass `--field` alongside `--matrix` — the
+    // matrix owns its profiles — but the matrix supplies it to the child that
+    // declares one. The child is a plain `ai_eval` invocation with no
+    // `--matrix`, so nothing here is bypassing that refusal.
+    if !profile.field.is_empty() {
+        args.push("--field".to_string());
+        args.push(profile.field.to_string());
+    }
     if require_artifacts {
         args.push("--require-artifacts".to_string());
     }
@@ -1703,13 +1765,43 @@ fn matrix_profile_accepts(requirement: MatrixRequirement, verdict: MatrixVerdict
 /// compact idle while deployment determines wall time; integer division also
 /// discarded every odd remainder. Keep every requested worker and give the
 /// heavier profile about two thirds, while retaining at least one per profile.
-fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
-    if total_jobs < PROMOTION_PROFILES.len() {
+fn matrix_job_budgets(total_jobs: usize) -> Vec<usize> {
+    let weights: Vec<usize> = PROMOTION_PROFILES
+        .iter()
+        .map(|profile| profile.cost_weight.max(1))
+        .collect();
+    if total_jobs < weights.len() {
         // These run sequentially, so each child can use the sole worker.
-        return [1, 1];
+        return vec![1; weights.len()];
     }
-    let compact = total_jobs.div_ceil(3).max(1);
-    [compact, total_jobs - compact]
+    let total_weight: usize = weights.iter().sum();
+    let mut budgets: Vec<usize> = weights
+        .iter()
+        .map(|weight| (total_jobs * weight / total_weight).max(1))
+        .collect();
+    // Keep every requested worker, and never hand one to a profile that has
+    // none: the integer division discards remainders and the floor above can
+    // overshoot when the budget is barely larger than the profile count.
+    let heaviest_first = |budgets: &[usize]| -> Vec<usize> {
+        let mut order: Vec<usize> = (0..weights.len()).collect();
+        order.sort_by_key(|index| (std::cmp::Reverse(weights[*index]), budgets[*index], *index));
+        order
+    };
+    while budgets.iter().sum::<usize>() < total_jobs {
+        let index = heaviest_first(&budgets)[0];
+        budgets[index] += 1;
+    }
+    while budgets.iter().sum::<usize>() > total_jobs {
+        let Some(index) = heaviest_first(&budgets)
+            .into_iter()
+            .rev()
+            .find(|index| budgets[*index] > 1)
+        else {
+            break;
+        };
+        budgets[index] -= 1;
+    }
+    budgets
 }
 
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
@@ -1809,6 +1901,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 .map(|(index, profile)| {
                     let executable = executable.clone();
                     let difficulty = difficulty.clone();
+                    let jobs = job_budgets[index];
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let profile_confirm_seed =
@@ -1817,7 +1910,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             challenger,
                             incumbent,
                             pairs,
-                            jobs: job_budgets[index],
+                            jobs,
                             seed: profile_seed,
                             profile,
                             difficulty: &difficulty,
@@ -3370,18 +3463,143 @@ mod tests {
         assert!(overflow.contains("overflows u64"), "{overflow}");
     }
 
+    /// The split is stated as invariants rather than a table, because the table
+    /// is what broke when a third profile arrived — and a table is the part
+    /// nobody reads before adding one.
     #[test]
     fn promotion_matrix_uses_every_worker_and_weights_the_critical_path() {
-        assert_eq!(matrix_job_budgets(1), [1, 1]);
-        assert_eq!(matrix_job_budgets(2), [1, 1]);
-        assert_eq!(matrix_job_budgets(3), [1, 2]);
-        assert_eq!(matrix_job_budgets(4), [2, 2]);
-        assert_eq!(matrix_job_budgets(5), [2, 3]);
-        assert_eq!(matrix_job_budgets(6), [2, 4]);
-        assert_eq!(matrix_job_budgets(12), [4, 8]);
-        for jobs in 2..32 {
-            assert_eq!(matrix_job_budgets(jobs).iter().sum::<usize>(), jobs);
-            assert!(matrix_job_budgets(jobs).into_iter().all(|budget| budget > 0));
+        let profiles = PROMOTION_PROFILES.len();
+        // Fewer workers than profiles: they run sequentially and each child
+        // takes the sole worker rather than being handed a fraction of one.
+        for jobs in 0..profiles {
+            assert_eq!(matrix_job_budgets(jobs), vec![1; profiles], "{jobs} jobs");
+        }
+        for jobs in profiles..64 {
+            let budgets = matrix_job_budgets(jobs);
+            assert_eq!(budgets.len(), profiles, "{jobs} jobs");
+            // Every requested worker is used, and none is given to nobody.
+            assert_eq!(
+                budgets.iter().sum::<usize>(),
+                jobs,
+                "{jobs} jobs: {budgets:?}"
+            );
+            assert!(
+                budgets.iter().all(|budget| *budget > 0),
+                "{jobs} jobs: {budgets:?}"
+            );
+            // A heavier profile is never given less than a lighter one: the
+            // matrix's wall time is the slowest child, so starving the
+            // expensive shape is the one allocation that costs real time.
+            for (index, budget) in budgets.iter().enumerate() {
+                for (other, other_budget) in budgets.iter().enumerate() {
+                    if PROMOTION_PROFILES[index].cost_weight > PROMOTION_PROFILES[other].cost_weight
+                    {
+                        assert!(
+                            budget >= other_budget,
+                            "{jobs} jobs: {} got {budget} and the lighter {} got {other_budget}",
+                            PROMOTION_PROFILES[index].name,
+                            PROMOTION_PROFILES[other].name
+                        );
+                    }
+                }
+            }
+        }
+        // The deployment shape really is the heavy one, so the invariant above
+        // is pointed at the right profile rather than being vacuously true.
+        assert!(PROMOTION_PROFILES
+            .iter()
+            .any(|profile| profile.cost_weight > 1));
+    }
+
+    /// ⚠⚠ THE GATE MUST BE ABLE TO PRODUCE THE VICTORIES IT IS GATING ON.
+    ///
+    /// Every promotion decision in this repository's history was taken on two
+    /// profiles that seat `AdvancedAi` in every chair. `AdvancedAi` routes to
+    /// religion, and the deployment profile was measured producing **zero
+    /// diplomatic and zero culture victories over 40 games**, twice, on two
+    /// disjoint seed streams — while the live Civilization VI ladder lost 41
+    /// games to a rival's diplomatic victory and 24 to culture. This pins the
+    /// repair: at least one profile is contested, it is the deployment shape,
+    /// and it is a tripwire rather than a third hurdle.
+    #[test]
+    fn one_promotion_profile_is_contested_and_is_a_tripwire() {
+        let contested: Vec<&MatrixProfile> = PROMOTION_PROFILES
+            .iter()
+            .filter(|profile| !profile.field.is_empty())
+            .collect();
+        assert_eq!(
+            contested.len(),
+            1,
+            "exactly one profile should carry a field; the others are the recorded fieldless ones"
+        );
+        let contested = contested[0];
+        // The lanes the front line actually loses to have to be the ones seated.
+        for lane in ["live_target_diplomatic", "live_target_culture"] {
+            assert!(
+                contested.field.contains(lane),
+                "{} does not seat {lane}",
+                contested.name
+            );
+            assert!(
+                EVAL_ONLY_AIS.contains(&lane) || BUILTIN_AIS.contains(&lane),
+                "{lane} is not a constructible agent"
+            );
+        }
+        // Same board as deployment, so the only difference is the company.
+        let deployment = PROMOTION_PROFILES
+            .iter()
+            .find(|profile| profile.name == "deployment-online")
+            .expect("the deployment profile is still named that");
+        assert_eq!(contested.players, deployment.players);
+        assert_eq!(contested.width, deployment.width);
+        assert_eq!(contested.height, deployment.height);
+        assert_eq!(contested.city_states, deployment.city_states);
+        assert_eq!(contested.turns, deployment.turns);
+        assert_eq!(contested.speed, deployment.speed);
+        assert_eq!(contested.victories, deployment.victories);
+        // A tripwire, not a hurdle: an inconclusive reading here must not block
+        // a promotion, and a measured regression must.
+        assert_eq!(contested.requirement, MatrixRequirement::NoRegression);
+        assert!(matrix_profile_accepts(
+            contested.requirement,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(!matrix_profile_accepts(
+            contested.requirement,
+            MatrixVerdict::Retain
+        ));
+        // And the child invocation actually carries the field, which is the
+        // step that would silently make this whole profile a duplicate of
+        // `deployment-online`.
+        let args = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 60,
+            jobs: 4,
+            seed: 2_090_000,
+            profile: *contested,
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: None,
+        });
+        assert_eq!(text(&args, "--field", "missing"), contested.field);
+        for profile in PROMOTION_PROFILES.iter().filter(|p| p.field.is_empty()) {
+            let fieldless = matrix_child_args(MatrixChildRequest {
+                challenger: "challenger",
+                incumbent: "incumbent",
+                pairs: 60,
+                jobs: 4,
+                seed: 90_000,
+                profile: *profile,
+                difficulty: "prince",
+                require_artifacts: false,
+                confirm_seed: None,
+            });
+            assert!(
+                !fieldless.iter().any(|argument| argument == "--field"),
+                "{} is a recorded fieldless profile and must stay one",
+                profile.name
+            );
         }
     }
 
