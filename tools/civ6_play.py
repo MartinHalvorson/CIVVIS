@@ -2320,18 +2320,48 @@ def play(args: argparse.Namespace) -> int:
         gamelock.release()
 
 
-def seat_matches_requested(event: dict, args: argparse.Namespace) -> tuple[bool, bool]:
-    """Return (full_config_match, modes_match) from the game's own seat report."""
+def seat_matches_requested(
+    event: dict, args: argparse.Namespace
+) -> tuple[bool, bool, bool]:
+    """Return (full_config_match, modes_match, ruleset_match) from the game's own
+    seat report.
+
+    ★★★★★ THE RULESET WAS THE ONE SETTING THIS HARNESS SET AND NEVER READ BACK.
+    Difficulty, size, speed, map, leader and modes are all verified from inside
+    the game — because `setup: "(absent)"` on this build means a requested
+    setting can silently fail to apply, which is the entire reason this check
+    exists. `--ruleset` was passed to the mod and taken on trust.
+
+    That is the same shape as the game-modes defect one flag up: GAMEMODE_HEROES
+    ran on a live game while every log said plain Gathering Storm, because
+    nothing reported it. CIVVIS models Gathering Storm and nothing else, so a
+    Vanilla or Rise & Fall game is not a weaker measurement of the same thing —
+    it is a different game, with different technologies, costs and units. The
+    compiled gameplay cache on this development machine was found to be a
+    Vanilla database, so a session running the wrong ruleset is not a
+    hypothetical failure here.
+    """
     modes = event.get("modes")
     modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
+    reported_ruleset = event.get("ruleset")
+    # An older mod build reports nothing; treat that as unverified rather than
+    # as agreement, for the same reason a missing `modes` list is not an empty
+    # one. "?" is the mod's own answer for a value it could not resolve.
+    ruleset_match = (
+        reported_ruleset is not None
+        and reported_ruleset != "?"
+        and reported_ruleset == args.ruleset
+    )
     return (
         event.get("difficulty") == args.difficulty
         and event.get("size") == args.map_size
         and event.get("speed") == args.speed
         and event.get("map") == args.map
         and (args.leader is None or event.get("leader") == args.leader)
-        and modes_match,
+        and modes_match
+        and ruleset_match,
         modes_match,
+        ruleset_match,
     )
 
 
@@ -2423,6 +2453,7 @@ def _play(args: argparse.Namespace) -> int:
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
+        "ruleset": None, "ruleset_mismatch": False,
         # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
         # ladder has ever shown. Measured over the 35 completed runs of
         # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
@@ -2471,14 +2502,20 @@ def _play(args: argparse.Namespace) -> int:
             # field is not the same answer as an empty list: it means nobody
             # looked. Treat it as unknown rather than as clean, or this gate
             # passes for exactly the runs it was added to catch.
-            configured, modes_match = seat_matches_requested(event, args)
+            configured, modes_match, ruleset_match = seat_matches_requested(event, args)
             modes = event.get("modes")
             state["modes"] = modes
             state["mode_mismatch"] = not modes_match
+            state["ruleset"] = event.get("ruleset")
+            state["ruleset_mismatch"] = not ruleset_match
             state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
+            if not ruleset_match:
+                print(f"[agent] ruleset is {event.get('ruleset') or 'UNREPORTED'}, "
+                      f"asked for {args.ruleset} -- CIVVIS models Gathering Storm "
+                      f"and nothing else, so this is a different game", file=sys.stderr)
             if not modes_match:
                 print(f"[agent] game modes are {modes if modes is not None else 'UNREPORTED'}, "
                       f"asked for {args.game_mode or '[]'} -- this is not the "
@@ -2778,7 +2815,10 @@ def _play(args: argparse.Namespace) -> int:
         # A run stopped because the game had the wrong modes never played; it
         # is a refusal, not a result. Recording it as `stopped` would file it
         # beside games that were played and lost.
-        "reason": ("wrong_game_modes" if state["mode_mismatch"]
+        # A run on the wrong ruleset is a refusal, not a result, exactly as a
+        # run with the wrong modes is: it never played the game being measured.
+        "reason": ("wrong_ruleset" if state["ruleset_mismatch"]
+                   else "wrong_game_modes" if state["mode_mismatch"]
                    else "wrong_game_configuration" if state["seat"] and not state["configured"]
                    else reason),
         # Whether the game actually played was the one this run asked for.
@@ -2790,6 +2830,10 @@ def _play(args: argparse.Namespace) -> int:
         # the artefact those comparisons are read from.
         "modes": state["modes"],
         "modes_requested": sorted(args.game_mode),
+        # Which rules this game was actually played under, read back from inside
+        # it rather than echoed from the command line.
+        "ruleset": state["ruleset"],
+        "ruleset_requested": args.ruleset,
         "last_turn": state["turn"],
         "last_score": state["score"],
         "seat": state["seat"],

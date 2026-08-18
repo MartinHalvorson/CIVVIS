@@ -40,6 +40,7 @@ def args(**changes):
         "map": "Continents.lua",
         "leader": "LEADER_TRAJAN",
         "game_mode": [],
+        "ruleset": "RULESET_EXPANSION_2",
     }
     values.update(changes)
     return SimpleNamespace(**values)
@@ -895,16 +896,18 @@ class Civ6PlayTest(unittest.TestCase):
             "map": "Continents.lua",
             "leader": "LEADER_TRAJAN",
             "modes": [],
+            "ruleset": "RULESET_EXPANSION_2",
         }
 
-        self.assertEqual(civ6_play.seat_matches_requested(event, args()), (True, True))
+        self.assertEqual(
+            civ6_play.seat_matches_requested(event, args()), (True, True, True))
         self.assertEqual(
             civ6_play.seat_matches_requested({**event, "leader": "LEADER_CLEOPATRA"}, args()),
-            (False, True),
+            (False, True, True),
         )
         self.assertEqual(
             civ6_play.seat_matches_requested({**event, "map": "Pangaea.lua"}, args()),
-            (False, True),
+            (False, True, True),
         )
 
     def test_seat_match_accepts_the_reported_leader_when_none_was_requested(self) -> None:
@@ -915,11 +918,12 @@ class Civ6PlayTest(unittest.TestCase):
             "map": "Continents.lua",
             "leader": "LEADER_GANDHI",
             "modes": [],
+            "ruleset": "RULESET_EXPANSION_2",
         }
 
         self.assertEqual(
             civ6_play.seat_matches_requested(event, args(leader=None)),
-            (True, True),
+            (True, True, True),
         )
 
 
@@ -1351,6 +1355,66 @@ class TheSummaryNamesTheObjective(unittest.TestCase):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
         self.assertIn("if args.civvis_decides else None", source)
+
+
+class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
+    """★★★★★ The one setting this harness set and never read back.
+
+    Difficulty, size, speed, map, leader and modes are all verified from inside
+    the game, because `setup: "(absent)"` means a requested setting can silently
+    fail to apply. `--ruleset` was passed to the mod and taken on trust — and
+    CIVVIS models Gathering Storm and nothing else, so a Vanilla or Rise & Fall
+    game is a different game with different technologies, costs and units, not a
+    weaker measurement of the same one.
+    """
+
+    @staticmethod
+    def _seat(**changes):
+        event = {
+            "difficulty": "DIFFICULTY_SETTLER",
+            "size": "MAPSIZE_SMALL",
+            "speed": "GAMESPEED_ONLINE",
+            "map": "Continents.lua",
+            "leader": "LEADER_TRAJAN",
+            "modes": [],
+            "ruleset": "RULESET_EXPANSION_2",
+        }
+        event.update(changes)
+        return event
+
+    def test_the_asked_for_ruleset_matches(self):
+        self.assertEqual(
+            civ6_play.seat_matches_requested(self._seat(), args()), (True, True, True))
+
+    def test_a_vanilla_game_is_refused_and_fails_the_whole_config(self):
+        configured, modes, ruleset = civ6_play.seat_matches_requested(
+            self._seat(ruleset="RULESET_STANDARD"), args())
+        self.assertFalse(ruleset)
+        self.assertFalse(configured, "a different ruleset is not a configured game")
+        self.assertTrue(modes, "the modes axis is unaffected")
+
+    def test_an_unreported_ruleset_is_unverified_not_agreement(self):
+        """An older mod build reports nothing. That is not the same as a match,
+        for the same reason a missing `modes` list is not an empty one."""
+        for absent in (None, "?"):
+            with self.subTest(absent=absent):
+                _, _, ruleset = civ6_play.seat_matches_requested(
+                    self._seat(ruleset=absent), args())
+                self.assertFalse(ruleset)
+
+    def test_the_mod_actually_exports_it(self):
+        """The Python half is useless if the survey never sends the field."""
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text(encoding="utf-8")
+        self.assertIn("ruleset = typeName(GameInfo.Rulesets,", lua)
+        self.assertIn("GameConfiguration.GetRuleSet()", lua)
+        self.assertIn("row.RulesetType", lua, "typeName must resolve a Ruleset row")
+
+    def test_a_wrong_ruleset_run_is_a_refusal_not_a_result(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"wrong_ruleset" if state["ruleset_mismatch"]', source)
+        self.assertIn('"ruleset_requested": args.ruleset,', source)
 
 
 class VictoryLaneListTests(unittest.TestCase):

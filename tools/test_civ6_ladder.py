@@ -693,6 +693,54 @@ class EveryRowSaysWhichLaneItPlayed(LedgerCase):
         self.assertNotIn("None", civ6_ladder.markdown_for(self.state()))
 
 
+class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
+    """★★★★★ A ladder is a comparison, and a comparison needs the rows to be
+    the same game.
+
+    `civ6_play.py` checks the ruleset and the optional modes from inside the
+    running game and refuses a run that does not match. None of it reached the
+    record: 307 rows carried neither field, so "these are all Settler games" was
+    an assertion with nothing under it. A mode PERSISTS — GAMEMODE_HEROES ran on
+    a live game with twelve hero units while every log said plain Gathering
+    Storm — and the ruleset is the same axis one level up.
+    """
+
+    def test_the_row_records_what_the_game_reported(self):
+        entry = civ6_ladder.entry_from(summary(
+            "checked", ruleset="RULESET_EXPANSION_2", modes=[]))
+        self.assertEqual(entry["ruleset"], "RULESET_EXPANSION_2")
+        self.assertEqual(entry["modes"], [])
+
+    def test_a_row_from_before_the_readback_is_absent_not_agreed(self):
+        entry = civ6_ladder.entry_from(summary("older"))
+        self.assertIsNone(entry["ruleset"])
+        self.assertIsNone(entry["modes"])
+
+    def test_the_note_counts_unverified_rows_separately(self):
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_EXPANSION_2"}, {"ruleset": None}, {"ruleset": None},
+        ]))
+        self.assertIn("RULESET_EXPANSION_2", note)
+        self.assertIn("2 row(s) predate", note)
+
+    def test_a_mode_that_was_on_is_called_out(self):
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_EXPANSION_2", "modes": ["GAMEMODE_HEROES"]},
+        ]))
+        self.assertIn("GAMEMODE_HEROES", note)
+        self.assertIn("not measuring the same game", note)
+
+    def test_a_clean_record_says_so_without_a_warning(self):
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_EXPANSION_2", "modes": []},
+        ]))
+        self.assertNotIn("⚠", note)
+        self.assertNotIn("predate", note)
+
+    def test_an_empty_record_renders_nothing(self):
+        self.assertEqual(civ6_ladder.same_game_note([]), [])
+
+
 class TheCensusSaysWhichLanesComplete(unittest.TestCase):
     """Which victory conditions have ended a game here — the record's only
     empirical evidence about lane reachability inside the turn budget."""

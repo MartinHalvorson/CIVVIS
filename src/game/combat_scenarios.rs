@@ -4469,3 +4469,92 @@ fn religious_spreads_combat_and_guru_healing_follow_gathering_storm() {
     assert_eq!(g.units[&faithful].hp, 90);
     assert_eq!(g.units[&other_faith].hp, 50);
 }
+
+/// ★★★★★ POLAND'S UNIQUE HAD ITS ABILITY IN THE DATA AND NOWHERE ELSE.
+///
+/// `data/units.json` gives the Winged Hussar `force_retreat: 1`; the engine read
+/// that key nowhere, so the replacement for a Cuirassier was a Cuirassier. The
+/// audit that would have said so, `tools/civvis_inert.py`, documented a CI
+/// ratchet from the day it was written and was never wired into a workflow.
+#[test]
+fn a_winged_hussar_pushes_the_survivor_off_its_tile() {
+    let (mut g, target, ring) = controlled_game(5101);
+    let hussar = g.spawn_unit("winged_hussar", 0, ring[0]);
+    let defender = g.spawn_unit("musketman", 1, target);
+    // Strength 55 against 64 survives one exchange; a Warrior does not, and a
+    // dead defender would pass an assertion about not standing on its tile.
+    g.units.get_mut(&defender).unwrap().hp = 100;
+    let attacker_at = g.units[&hussar].pos;
+
+    g.do_attack(0, hussar, target).expect("the attack resolves");
+
+    let defender_now = g.units[&defender].pos;
+    assert!(g.units[&defender].hp > 0, "this test is about a survivor");
+    assert_ne!(defender_now, target, "the loser is pushed off its tile");
+    assert!(
+        g.wdist(attacker_at, defender_now) > g.wdist(attacker_at, target),
+        "and pushed AWAY from the attacker, not sideways"
+    );
+    assert!(
+        g.units_at(defender_now).contains(&defender),
+        "the occupancy index moves with it, or `units_at` hands out a stale id"
+    );
+}
+
+/// The same attack by the unit the Hussar replaces must not move anything, so
+/// the test above is measuring the ability rather than melee in general.
+#[test]
+fn an_ordinary_cuirassier_leaves_the_survivor_where_it_stood() {
+    let (mut g, target, ring) = controlled_game(5101);
+    let cuirassier = g.spawn_unit("cuirassier", 0, ring[0]);
+    let defender = g.spawn_unit("musketman", 1, target);
+    g.units.get_mut(&defender).unwrap().hp = 100;
+
+    g.do_attack(0, cuirassier, target).expect("the attack resolves");
+
+    if g.units.contains_key(&defender) {
+        assert_eq!(
+            g.units[&defender].pos, target,
+            "only `force_retreat` moves a survivor"
+        );
+    }
+}
+
+/// Cornered: Civilization VI charges the defender for the retreat it cannot
+/// make. The surrounding units are the attacker's own, so nothing the defender
+/// could enter is adjacent.
+#[test]
+fn a_cornered_survivor_pays_for_the_retreat_it_cannot_make() {
+    let (mut g, target, ring) = controlled_game(5102);
+    let hussar = g.spawn_unit("winged_hussar", 0, ring[0]);
+    let defender = g.spawn_unit("musketman", 1, target);
+    g.units.get_mut(&defender).unwrap().hp = 100;
+    // Fill every tile the defender could withdraw to.
+    for pos in ring.iter().skip(1) {
+        g.spawn_unit("musketman", 0, *pos);
+    }
+    let blocked_hp = {
+        let mut open = g.clone();
+        // The same exchange with the ring left open, for the damage the retreat
+        // itself does not add.
+        for pos in ring.iter().skip(1) {
+            let ids: Vec<u32> = open.units_at(*pos).to_vec();
+            for id in ids {
+                open.remove_unit(id);
+            }
+        }
+        open.do_attack(0, hussar, target).expect("the attack resolves");
+        open.units.get(&defender).map(|u| u.hp)
+    };
+
+    g.do_attack(0, hussar, target).expect("the attack resolves");
+
+    assert_eq!(g.units[&defender].pos, target, "there was nowhere to go");
+    if let Some(open_hp) = blocked_hp {
+        assert!(
+            g.units[&defender].hp < open_hp,
+            "being cornered costs more than retreating: {} vs {open_hp}",
+            g.units[&defender].hp
+        );
+    }
+}

@@ -1,5 +1,17 @@
 # Evaluation baselines
 
+> **New rounds go in `docs/eval/`, one file each — not at the end of this**
+> **file.** Every round used to be appended here, and every author queued at
+> the same write point: thirty-two commits touched this file in the seven
+> days to 2026-08-18 and all of them edited the last few lines. One file per
+> round has no shared tail, so that conflict is absent rather than resolved.
+> `tools/eval_round.py "<title>"` starts one. See `docs/eval/README.md`.
+>
+> The 168 rounds below stay exactly where they are — they are cited from
+> `src/elo.rs`, `docs/AI_GUIDE.md` and `tools/eval_manifest.py`, and the
+> archive was never the thing that collided. The measurement doctrine
+> recorded here still governs every new round.
+
 > **Reading note (2026-07-30).** This is an append-only experiment log, so
 > labels such as “deployment,” “strongest,” and “current” describe the dated
 > run that contains them. They are not present-day rankings. The live
