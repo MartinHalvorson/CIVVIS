@@ -1,6 +1,6 @@
 {
   "derived": {
-    "eval_only_count": 189,
+    "eval_only_count": 193,
     "firaxis_only_count": 18,
     "live_bridge_count": 69,
     "native_engine_repair_count": 51,
@@ -145,7 +145,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 189,
+      "declared_count": 193,
       "items": [
         "advanced_build_first",
         "advanced_synergy",
@@ -300,6 +300,10 @@
         "advanced_without_unpriced_war",
         "advanced_without_city_defence",
         "advanced_legacy_policy_deck",
+        "advanced_settlement_gap_target",
+        "advanced_governor_victory_lanes",
+        "advanced_governor_expansion_lane",
+        "advanced_without_governor_recovery",
         "advanced_without_builder_floor",
         "advanced_without_settler_deadline",
         "advanced_without_hut_collection",
