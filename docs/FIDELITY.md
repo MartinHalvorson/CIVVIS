@@ -906,6 +906,69 @@ Prophet class exhausted every one of those points is Faith. Now in
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
 
+### The rules data is at parity and the gap is coverage (2026-08-18)
+
+`tools/civ6_fidelity.py --civ6 <install>` against the real Gathering Storm
+install: **0 divergent fields across 27 tables**, 1,367 fields compared. The
+numbers are right. What the report shows instead is the *only in Civ VI*
+column — content the game has and CIVVIS does not model at all:
+
+| table | only in Civ VI |
+|---|---:|
+| GreatPeople | 184 |
+| Units | 58 |
+| Promotions | 26 (16 of them spy promotions) |
+| Beliefs | 22 |
+| Projects | 17 |
+| Policies | 11 |
+
+**Pantheons were the largest coherent piece of that**: the game has 23 and
+`beliefs.json` had 6. The pantheon is the earliest religious choice every
+civilization makes, and religion decides about three quarters of the games on
+the evaluator's own board.
+
+Five were added, chosen because the existing per-improvement pantheon socket
+already expressed them — `pasture_culture` and `fishing_boats_production` are
+the same shape — so the engine surface is one predicate rather than five:
+
+| pantheon | Gathering Storm | note |
+|---|---|---|
+| Goddess of the Hunt | +1 Food, +1 Production from Camps | |
+| Stone Circles | +2 Faith from Quarries | |
+| Goddess of Festivals | +1 Culture from Plantations | ⚠ expansion **deletes** the base game's Food row |
+| Religious Idols | +2 Faith from Mines over Bonus/Luxury | two modifiers, one per class |
+| God of Craftsmen | +1 Production, +1 Faith from improved Strategic | ⚠ expansion **deletes** the base game's Mine-only row |
+
+Two of the five are cases where a compiled cache from a base-game machine
+states the opposite of the shipped rule. Every id was checked against
+`Expansion2_RemoveData.xml` before being modelled, which is the discipline the
+entry below exists to enforce.
+
+**★★★ And the content would have been unreachable.** The AI's pantheon chooser
+was a hand-written list of exactly the six that existed, tried in order,
+stopping at the first that took. A pantheon is exclusive, so in an eight-player
+game — the `audit` and `soak` default — the seventh and eighth empires found
+every name taken and founded **nothing**, holding the faith for the rest of the
+game. The list is now a preference prefix over a roster read from the rules,
+which is what the follower and founder choosers twenty lines below it have
+always done. `every_major_can_found_a_pantheon_when_there_are_more_majors_than_favourites`
+fails against the old list with two empires reading `None`.
+
+⚠ The frozen anchor does **not** move: its five profiles have at most six
+majors, so the named six still answer every one of them and no rated game
+changes. That also means these five are not yet reachable on the six-player
+deployment profile — they are reachable in eight-player games, and they are
+what the live mirror needs to represent a rival's pantheon at all.
+
+**Twelve pantheons remain**, and they need engine surface the improvement
+socket does not provide: Holy Site terrain and feature adjacency (Desert
+Folklore, Dance of the Aurora, Sacred Path), post-combat yields (God of War),
+healing (God of Healing), district amenities and housing on a river (River
+Goddess), first-district production (City Patron Goddess), wonder-era
+production (Monument to the Gods), barbarian-camp dispersal faith (Initiation
+Rites), feature yields (Lady of the Reeds and Marshes, Goddess of Fire) and
+appeal (Earth Goddess). Their authoritative definitions are in the install.
+
 ### The Founder beliefs were already right, and a compiled cache said otherwise (2026-08-18)
 
 **This entry is a retraction, and the most useful thing in it is how the
