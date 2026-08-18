@@ -11502,6 +11502,8 @@ local function beginTurn(player, pid, turn)
 						favor_now = favorNow,
 						max_votes = envoyTally.ballot_max_votes,
 						costs = envoyTally.ballot_costs,
+						votes_sent = (type(envoyTally.ballot_sent) == "table")
+							and envoyTally.ballot_sent[r.type] or nil,
 					});
 				end
 			end
@@ -11940,6 +11942,7 @@ local function tick()
 				end
 			end
 			envoyTally.ballot_max_votes = tonumber(costs.MaxVotes);
+			envoyTally.ballot_sent = {};
 			-- The diplomatic-victory leader among the others.  Keep this sampling
 			-- beside the actual vote: it is the host API contract and exposes a
 			-- useful DVP/score snapshot to the pure selector below.
@@ -12140,10 +12143,50 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
-					local sent = pcall(function()
-						UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
-					end);
+					-- ★★★★★ NINETY-FIVE OF NINETY-FIVE ONE-VOTE BALLOTS REGISTER.
+					-- SEVENTEEN OF SEVENTEEN MULTI-VOTE BALLOTS DO NOT.
+					--
+					-- 112 `wc_ballot_verdict` rows over four runs, and the split
+					-- is perfect in both directions: no ballot asking one vote
+					-- was ever refused, and no ballot asking more than one was
+					-- ever recorded above one. It does not depend on the moment
+					-- (one-vote ballots register from the `stage1` trigger and
+					-- from the `popup` trigger alike), on the option (both
+					-- register and flip as asked), or on affordability -- run
+					-- `civvis-20260818T175125Z` t162 asked thirteen votes at a
+					-- charged 312 Favor holding 352, inside `MaxVotes = 13`, and
+					-- the host recorded one.
+					--
+					-- Every explanation the mod controls is now eliminated:
+					-- parameters match the shipped `OnAccept` exactly, both
+					-- triggers fire, the option registers, the budget is not the
+					-- difference (#2039: `favor_entering_congress` equals
+					-- `GetFavor` on every row), and the ask is affordable and
+					-- within the cap. What is left is the count parameter
+					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
+					-- through this path.
+					--
+					-- So stop sending it. One vote per operation, repeated: if
+					-- the core accumulates them the seat can finally buy votes,
+					-- and if it does not, the host records one -- which is what
+					-- it records today, so this cannot cost a vote the seat is
+					-- already not getting. `votes_sent` and the verdict's
+					-- `recorded` say which happened, on the first session past
+					-- the floor.
+					local sent, submitted = false, 0;
+					for _ = 1, math.max(1, votes) do
+						local one = {};
+						for key, value in pairs(params) do one[key] = value; end
+						one[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1;
+						local ok = pcall(function()
+							UI.RequestPlayerOperation(pid,
+								PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, one);
+						end);
+						if ok then submitted = submitted + 1; sent = true; end
+					end
 					if sent then cast = cast + 1; end
+					envoyTally.ballot_sent = envoyTally.ballot_sent or {};
+					envoyTally.ballot_sent[rtype] = submitted;
 					-- What this ballot ASKED for, per resolution, so the next
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
