@@ -16046,7 +16046,7 @@ impl AdvancedAi {
             let current = &g.cities[&city];
             let threatened = plan.threatened_city == Some(city)
                 || (current.last_attacked > 0 && g.turn.saturating_sub(current.last_attacked) <= 4);
-            if current.queue.first().is_some() || threatened {
+            if !current.queue.is_empty() || threatened {
                 continue;
             }
             let Some(unit) = self.base.best_recon(g, pid, city) else {
