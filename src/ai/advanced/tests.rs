@@ -10568,6 +10568,116 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
     assert!(!AdvancedAi::legacy().culture_building_debt);
 }
 
+/// The old non-Culture veto used a Great Work slot as a proxy for the Culture
+/// district. That refuses National History Museum in the Government Plaza and
+/// lets slotless Marae through, neither of which is the actual policy boundary.
+/// `advanced_great_work_veto_by_district` is the isolated, Science-targeted
+/// evaluator treatment; production remains slot-keyed until it is priced.
+#[test]
+fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
+    let (game, capital, _home) = empire_with_a_capital(71_114);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let marae = Item::Building {
+        building: crate::name!("marae"),
+    };
+    let national_history_museum = Item::Building {
+        building: crate::name!("national_history_museum"),
+    };
+
+    let mut slot_keyed = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut district_keyed = AdvancedAi::targeting(VictoryTarget::Science);
+    district_keyed.enable_great_work_veto_by_district();
+    slot_keyed.refresh_research_weight(&game);
+    district_keyed.refresh_research_weight(&game);
+
+    assert_eq!(
+        slot_keyed.victory_target(),
+        Some(VictoryTarget::Science),
+        "the control is the deployment launcher’s Science-targeted seat"
+    );
+    assert!(
+        game.rules.buildings[&crate::name!("marae")]
+            .great_work_slots
+            .is_empty(),
+        "Marae is the Theater Square boundary case without a Great Work slot"
+    );
+    assert!(
+        !game.rules.buildings[&crate::name!("national_history_museum")]
+            .great_work_slots
+            .is_empty(),
+        "National History Museum is the Government Plaza boundary case with slots"
+    );
+
+    let value =
+        |ai: &AdvancedAi, item: &Item| ai.production_value(&game, 0, capital, item, &plan, &counts);
+
+    assert_eq!(value(&slot_keyed, &amphitheater), -10_000.0);
+    assert_eq!(value(&district_keyed, &amphitheater), -10_000.0);
+    assert!(
+        value(&slot_keyed, &marae) > -10_000.0,
+        "the historical slot key lets a slotless Theater Square building through"
+    );
+    assert_eq!(value(&district_keyed, &marae), -10_000.0);
+    assert_eq!(value(&slot_keyed, &national_history_museum), -10_000.0);
+    assert!(
+        value(&district_keyed, &national_history_museum) > -10_000.0,
+        "the district key lets an unrelated Government Plaza building be valued"
+    );
+    assert!(!AdvancedAi::new().great_work_veto_by_district);
+    assert!(!AdvancedAi::legacy().great_work_veto_by_district);
+}
+
+/// The debt was previously checked only on an untargeted controller, even
+/// though the hard veto means it can act in targeted deployment only in the
+/// Culture lane. Keep the target equal, enabling just the debt, so the second
+/// pre-registered comparison has a reachable mechanism.
+#[test]
+fn a_culture_target_reaches_the_theater_building_debt() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_115);
+    game.players[0].civics.insert(crate::name!("drama_poetry"));
+    install_ai_test_district(&mut game, capital, "theater_square");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let counts = EmpireCounts::default();
+    let mut treated = AdvancedAi::targeting(VictoryTarget::Culture);
+    treated.enable_culture_building_debt();
+    let mut withheld = AdvancedAi::targeting(VictoryTarget::Culture);
+    treated.refresh_research_weight(&game);
+    withheld.refresh_research_weight(&game);
+
+    assert_eq!(treated.victory_target(), Some(VictoryTarget::Culture));
+    assert!(treated.culture_building_debt);
+    assert!(!withheld.culture_building_debt);
+    let owed = treated.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    let unowed = withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    assert!(
+        owed > unowed,
+        "a Culture-targeted seat reaches the debt instead of the non-Culture veto: {owed} vs {unowed}"
+    );
+}
+
 /// ★★★★ `tally_culture` fixed the PRICE of culture and left the COVERAGE
 /// alone, and over 204 cities in 25 live games the coverage is the gap:
 /// Campus 82% of cities, Theater Square 27%; Library 72%, Amphitheater 21%;

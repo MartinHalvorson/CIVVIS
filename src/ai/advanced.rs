@@ -2628,6 +2628,15 @@ pub struct AdvancedAi {
     /// prices the Settler seat's tally. Off for ordinary and frozen
     /// controllers.
     pub culture_building_debt: bool,
+    /// Classify the non-Culture great-work-building veto by the building's
+    /// district rather than by the presence of a Great Work slot.
+    ///
+    /// This evaluator-only treatment keeps Theater Square buildings out of a
+    /// non-Culture lane (including a slotless Marae), while allowing unrelated
+    /// Government Plaza buildings such as National History Museum to be valued
+    /// on their own merits. Production retains the historical slot-keyed veto
+    /// until the controlled deployment comparison has a result.
+    pub great_work_veto_by_district: bool,
     /// A city with no Theater Square is a culture hole, the way a city with no
     /// Campus is a research hole.
     ///
@@ -3827,6 +3836,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             tally_culture: false,
             culture_building_debt: false,
+            great_work_veto_by_district: false,
             culture_coverage: false,
             bank_envoys: false,
             frontier_loyalty: false,
@@ -5325,6 +5335,13 @@ impl AdvancedAi {
 
     pub fn disable_culture_building_debt(&mut self) {
         self.culture_building_debt = false;
+    }
+
+    /// Treat a Theater Square, rather than any Great Work slot, as the
+    /// non-Culture lane's veto boundary. Evaluator-only until the targeted
+    /// deployment comparison prices this distinction.
+    pub fn enable_great_work_veto_by_district(&mut self) {
+        self.great_work_veto_by_district = true;
     }
 
     /// Pay for the Theater Square the empire has not got. See
@@ -18723,9 +18740,16 @@ impl AdvancedAi {
             }
             Item::Building { building } => {
                 let spec = &g.rules.buildings[building];
+                let great_work_vetoed = if self.great_work_veto_by_district {
+                    spec.district
+                        .map(|district| g.district_family(district))
+                        .is_some_and(|family| family == crate::name!("theater_square"))
+                } else {
+                    !spec.great_work_slots.is_empty()
+                };
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
-                    && !spec.great_work_slots.is_empty()
+                    && great_work_vetoed
                 {
                     return -10_000.0;
                 }

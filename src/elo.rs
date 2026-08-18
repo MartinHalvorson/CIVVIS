@@ -183,7 +183,13 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     // finishes none. Which lane is STRONGEST is a different question from which
     // completes, and these are the arms that can answer it.
     "advanced_target_science",
+    // Hold the target fixed and price whether the non-Culture building veto is
+    // keyed to a Great Work slot or the Theater Square district itself.
+    "advanced_great_work_veto_by_district",
     "advanced_target_culture",
+    // The Culture lane is the only targeted lane where its Theater-building
+    // debt can pass the non-Culture Great Work veto and actually be reached.
+    "advanced_target_culture_with_culture_building_debt",
     "advanced_target_religious",
     "advanced_target_diplomatic",
     "advanced_measured_dedication",
@@ -765,7 +771,9 @@ define_arm_kinds! {
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedTargetScience => "advanced_target_science",
+    AdvancedGreatWorkVetoByDistrict => "advanced_great_work_veto_by_district",
     AdvancedTargetCulture => "advanced_target_culture",
+    AdvancedTargetCultureWithCultureBuildingDebt => "advanced_target_culture_with_culture_building_debt",
     AdvancedTargetReligious => "advanced_target_religious",
     AdvancedTargetDiplomatic => "advanced_target_diplomatic",
     AdvancedV1 => "advanced_v1",
@@ -3231,8 +3239,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_target_science" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Science))
         }
+        // Preserve the Science target and move only the classifier, so the
+        // pre-registered pair has exactly one semantic axis.
+        "advanced_great_work_veto_by_district" => {
+            let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Science);
+            ai.enable_great_work_veto_by_district();
+            Box::new(ai)
+        }
         "advanced_target_culture" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Culture))
+        }
+        // The targeted Culture control has this treatment off. Its paired arm
+        // proves the Theater-building debt is reachable without changing the
+        // target or importing the rest of the live bridge.
+        "advanced_target_culture_with_culture_building_debt" => {
+            let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Culture);
+            ai.enable_culture_building_debt();
+            Box::new(ai)
         }
         "advanced_target_religious" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Religion))
@@ -3999,7 +4022,13 @@ impl ArmKind {
             Self::AdvancedTargetDomination => &["victory-lane-domination"],
             Self::AdvancedTargetScore => &["victory-lane-score"],
             Self::AdvancedTargetScience => &["victory-lane-science"],
+            Self::AdvancedGreatWorkVetoByDistrict => {
+                &["victory-lane-science", "great-work-veto-by-district"]
+            }
             Self::AdvancedTargetCulture => &["victory-lane-culture"],
+            Self::AdvancedTargetCultureWithCultureBuildingDebt => {
+                &["victory-lane-culture", "culture-building-debt"]
+            }
             Self::AdvancedTargetReligious => &["victory-lane-religious"],
             Self::AdvancedTargetDiplomatic => &["victory-lane-diplomatic"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
@@ -4609,7 +4638,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
         "advanced_target_science" => (Vec::new(), "advanced_target_science"),
+        "advanced_great_work_veto_by_district" => {
+            (Vec::new(), "advanced_great_work_veto_by_district")
+        }
         "advanced_target_culture" => (Vec::new(), "advanced_target_culture"),
+        "advanced_target_culture_with_culture_building_debt" => (
+            Vec::new(),
+            "advanced_target_culture_with_culture_building_debt",
+        ),
         "advanced_target_religious" => (Vec::new(), "advanced_target_religious"),
         "advanced_target_diplomatic" => (Vec::new(), "advanced_target_diplomatic"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -5615,6 +5651,24 @@ mod tests {
             "the champion comparison is a one-axis control"
         );
 
+        let science = builtin_arm("advanced_target_science").expect("control is selectable");
+        let district_veto = builtin_arm("advanced_great_work_veto_by_district")
+            .expect("district-keyed treatment is selectable");
+        assert_eq!(
+            district_veto.spec.differing_axes(&science.spec),
+            vec!["great-work-veto-by-district"],
+            "the veto-key comparison must hold the Science target fixed"
+        );
+
+        let culture = builtin_arm("advanced_target_culture").expect("control is selectable");
+        let culture_debt = builtin_arm("advanced_target_culture_with_culture_building_debt")
+            .expect("Culture debt treatment is selectable");
+        assert_eq!(
+            culture_debt.spec.differing_axes(&culture.spec),
+            vec!["culture-building-debt"],
+            "the Culture debt comparison must hold the victory target fixed"
+        );
+
         let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
         assert_eq!(
             economy.spec.differing_axes(&stock.spec),
@@ -5856,7 +5910,9 @@ mod tests {
                 "advanced_target_domination",
                 "advanced_target_score",
                 "advanced_target_science",
+                "advanced_great_work_veto_by_district",
                 "advanced_target_culture",
+                "advanced_target_culture_with_culture_building_debt",
                 "advanced_target_religious",
                 "advanced_target_diplomatic",
                 "advanced_v1",
