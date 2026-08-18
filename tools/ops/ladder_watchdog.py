@@ -84,6 +84,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import civ6_ladder  # noqa: E402
+from civ6_control import gamelock  # noqa: E402
 
 SUPERVISOR_LABEL = "com.civvis.ladder"
 STATE_DEFAULT = Path.home() / ".cache" / "civvis" / "ladder-watchdog.json"
@@ -256,6 +257,26 @@ def main(argv: list[str] | None = None) -> int:
             # throw away the hours between now and the staleness limit.
             return start_the_loop(args, now, "no supervisor is running")
         return 0
+
+    # ⚠⚠ A RESTART IS THIS TOOL'S ONLY REMEDY, SO IT MUST FIRST ASK WHETHER THE
+    # CAUSE IS ONE A RESTART CAN REACH. A standing hold on the game — an
+    # operator halt is the ordinary case, and takes the lock and sleeps — makes
+    # the ledger go stale exactly like a wedge does, and no supervisor started
+    # against it can ever play a turn. Left unasked, the keeper starts a loop
+    # every `--start-cooldown-minutes` for as long as the halt stands, each one
+    # refused at the lock, and the log fills with restarts that could not have
+    # worked. Observed on this host: a halt taken 2026-08-02 was still in force
+    # fifteen days later.
+    #
+    # This does NOT clear the hold. A halt anything can override is not a halt;
+    # the keeper's job here is to name the cause and stand down, so the silence
+    # is a reported decision rather than an outage nobody attributed.
+    standing = gamelock.standing_hold()
+    if standing is not None:
+        log(args.log, f"HELD {problem} — {standing}. A restart cannot play "
+                      f"against a held game; not starting or stopping "
+                      f"anything. Release the hold to resume.")
+        return 2
 
     if alive is None:
         return start_the_loop(args, now, problem)

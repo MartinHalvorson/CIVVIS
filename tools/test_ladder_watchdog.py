@@ -412,3 +412,86 @@ class StalenessHasOneDefinition(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
+    """A restart is this keeper's only remedy, so a cause no restart can reach
+    has to stop it acting.
+
+    An operator halt takes the game lock and sleeps. The ledger then goes stale
+    exactly as a wedge does, and every supervisor started against it is refused
+    at the lock having played nothing. Observed on `mbp-m5-pro-64`: a halt taken
+    2026-08-02 was still in force on 2026-08-18, fifteen days of `blocked` rows
+    that nobody attributed.
+    """
+
+    def held(self):
+        return mock.patch.object(
+            ladder_watchdog.gamelock, "standing_hold",
+            lambda: "the game is held by pid 4242 under tag 'operator-halt', "
+                    "and no harness is driving that tag")
+
+    def test_a_held_game_is_not_answered_with_a_restart(self):
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [],
+                             "started a loop that cannot take the game")
+
+    def test_a_held_game_does_not_get_the_live_supervisor_killed_either(self):
+        """The other arm: alive, not playing. Stopping it is disruptive and
+        cannot help while the hold stands."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.stopped, [])
+            self.assertEqual(self.starts, [])
+
+    def test_the_hold_is_named_in_the_log_not_swallowed(self):
+        """Standing down silently would reproduce the outage this tool ends."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            written = log.read_text()
+            self.assertIn("operator-halt", written)
+            self.assertIn("Release the hold", written)
+
+    def test_a_healthy_ledger_is_still_left_alone_while_held(self):
+        """A hold is not a problem to report; it only explains a stale ledger."""
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.2])
+            log = tmp / "log"
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(self.live_lock(tmp)),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertEqual(code, 0)
+            self.assertFalse(log.exists() and log.read_text().strip())
+
+    def test_an_unreadable_process_table_does_not_invent_a_hold(self):
+        """`standing_hold` leans on `_tag_has_live_owner`, which fails CLOSED:
+        with no readable `ps` it says a tag IS owned, so no hold is reported and
+        the keeper behaves exactly as it did before this arm existed."""
+        with mock.patch.object(ladder_watchdog.gamelock, "_processes",
+                               lambda: []), \
+             mock.patch.object(ladder_watchdog.gamelock, "_holder",
+                               lambda: {"pid": os.getpid(), "tag": "whatever",
+                                        "since": "2026-08-02T20:03:01Z"}):
+            self.assertIsNone(ladder_watchdog.gamelock.standing_hold())
