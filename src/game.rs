@@ -10146,7 +10146,13 @@ impl Game {
         }) * spy_level.max(0) as f64
     }
 
-    const SPY_PROMOTIONS: [&'static str; 17] = [
+    /// Every promotion a spy can take, in the order the offer generator walks.
+    ///
+    /// Public because the live bridge translates these to Civilization VI's own
+    /// identifiers and must not keep a second copy: a spy promotion is spelled
+    /// `PROMOTION_SPY_<NAME>` on the host, and `civ6_unit_promotion_name` reads
+    /// this list to decide which names take that prefix.
+    pub const SPY_PROMOTIONS: [&'static str; 17] = [
         "ace_driver",
         "cat_burglar",
         "con_artist",
