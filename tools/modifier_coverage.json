@@ -66,6 +66,16 @@
       "verified": true,
       "note": "Verified: Fertility Rites +10%, Hanging Gardens +15%, Colonial Offices +15%. CIVVIS keeps them on three distinct keys because their scopes differ -- the belief is per-city, the wonder is empire-wide, and the card applies only off the Capital's continent."
     },
+    "ADJUST_CITY_HAPPINESS_GREAT_PERSON": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified all four active rows. Scottish Enlightenment grants one Great Scientist point per Campus and one Great Engineer point per Industrial Zone while Happy, then two of each while Ecstatic; CIVVIS applies them only to the exact active district types in the matching city before city, government, policy, and Patronage multipliers."
+    },
+    "ADJUST_CITY_HAPPINESS_YIELD": {
+      "status": "partial",
+      "verified": true,
+      "note": "Verified all 14 active rows. Scotland's four are exact: Happy adds 5% Science and 5% Production, Ecstatic adds 10% to each, alongside the ordinary Happiness band. The remaining ten are Ibn Khaldun's Babylon DLC Great Scientist action (2% to each non-Food yield when Happy and 4% when Ecstatic); CIVVIS does not model that named person, so they are content scope rather than silently treated as Scottish rows."
+    },
     "ADJUST_CITY_IDENTITY_PER_TURN": {
       "status": "implemented",
       "verified": true,

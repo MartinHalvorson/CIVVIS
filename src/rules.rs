@@ -1105,6 +1105,9 @@ pub struct CivSpec {
     /// `encampment_district_production_pct`, `holy_site_district_production_pct`,
     /// `theater_square_district_production_pct`, `dam_district_production_pct`
     /// and `wonder_production_pct` speed what a city is building;
+    /// `happy_science_pct`, `happy_production_pct`,
+    /// `happy_campus_scientist_gpp`, and `happy_industrial_engineer_gpp` are
+    /// Scotland's Happy-city effects, which double in Ecstatic cities;
     /// `combat_strength` and `unit_xp_pct` belong to its units;
     /// `free_trading_posts` and `own_trading_post_route_gold` are Rome's
     /// All Roads Lead to Rome — every city holds a Trading Post from founding
@@ -3298,9 +3301,18 @@ mod tests {
         // the model, for its last twenty turns — three Wonders under Divine
         // Inspiration. A real change for every simulated seat: the Prophet
         // has four more beliefs to choose from.
+        // Moved by Scottish Enlightenment's eight active Gathering Storm rows.
+        // CIVVIS had invented +1 Science and Production in every Scottish city;
+        // the shipped modifier data instead gives Happy cities +5% of each,
+        // doubling to +10% when Ecstatic, plus one Great Scientist point per
+        // active Campus and one Great Engineer point per active Industrial Zone
+        // (again doubled when Ecstatic). The named Ibn Khaldun Great Scientist
+        // action uses the same happiness-yield effect but remains deliberately
+        // outside the modeled-person roster, rather than being conflated with
+        // Scotland's civilization trait.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:54c03cef66aa12fd"
+            "fnv1a64:585ff2655ffd3a6d"
         );
     }
 
