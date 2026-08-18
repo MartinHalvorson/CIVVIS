@@ -33,10 +33,10 @@ mechanical. So the middle number over-counts coverage and the last one
 under-counts the debt — act on the last one, which cannot be flattered.
 
 `docs/ROADMAP.md` objective 3 asks for this bundle to be priced by
-withholding. The inventory above counts the arms that exist; this counts
-the ones that have been used. The gap is what stayed invisible: the
-bundle applied natively measures −76/−108 Elo with the cause still open,
-and `city_target_floor` once measured −41 while hidden in a composite.
+withholding, *before the next effect hides inside a composite the way
+`city_target_floor` did*. The inventory above counts the arms that
+exist; this counts the ones that have been used, and the gap between
+them is what stayed invisible.
 
 Never named:
 

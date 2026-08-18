@@ -140,9 +140,8 @@ def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[s
     see it. `docs/ROADMAP.md` objective 3 asks for exactly this bundle to be
     priced by withholding, and the inventory above counted the arms that
     *exist* rather than the ones that have been *used*. The repository has
-    already paid for that blind spot once: `city_target_floor` measured −41 Elo
-    while hidden inside a composite, and the shipped bundle applied natively
-    measures −76/−108 with the cause still open.
+    already paid for that blind spot once, in `city_target_floor`: retained on
+    a composite result, and removed from production once it was priced alone.
 
     ⚠ ALL THREE SPELLINGS, and the third was found by checking the instrument
     against a treatment already known to be priced. The registry tag is
@@ -241,10 +240,10 @@ def render_status(manifest: dict[str, Any]) -> str:
         "under-counts the debt — act on the last one, which cannot be flattered.",
         "",
         "`docs/ROADMAP.md` objective 3 asks for this bundle to be priced by",
-        "withholding. The inventory above counts the arms that exist; this counts",
-        "the ones that have been used. The gap is what stayed invisible: the",
-        "bundle applied natively measures −76/−108 Elo with the cause still open,",
-        "and `city_target_floor` once measured −41 while hidden in a composite.",
+        "withholding, *before the next effect hides inside a composite the way",
+        "`city_target_floor` did*. The inventory above counts the arms that",
+        "exist; this counts the ones that have been used, and the gap between",
+        "them is what stayed invisible.",
         "",
         "Never named:",
         "",
