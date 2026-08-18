@@ -3893,6 +3893,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.precise_evacuation = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
