@@ -3067,8 +3067,14 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_congress_counter`.
     pub congress_counter_leader: bool,
 
-    /// Whether a ballot cast *against* the empire closest to a victory is
-    /// backed with bought votes.
+    /// Whether the ballot the counter actually cast is backed with bought
+    /// votes.
+    ///
+    /// ⚠ *The ballot the counter cast* — not "the ballot against the empire
+    /// closest to a victory", which is what this said until 2026-08-18 and
+    /// which was the bug rather than the design. Where the counter points is
+    /// [`Self::congress_counter_leader`]'s job; this flag only changes how hard
+    /// it pushes on whatever that is. See [`Self::congress_counter_target`].
     ///
     /// `take_turn` weights every ballot by the voter's *own* plan — three votes
     /// on the Diplomacy plan holding 30 Favor, otherwise one — and never by
@@ -10188,6 +10194,56 @@ impl AdvancedAi {
         }
     }
 
+    /// The empire the denial layer would point a targeted congress penalty at,
+    /// or `None` when it is not pointing anywhere.
+    fn congress_denial_target(&self, g: &Game, pid: usize) -> Option<usize> {
+        self.congress_counter_leader
+            .then(|| self.victory_denial(g, pid).map(|(rival, _)| rival))
+            .flatten()
+    }
+
+    /// The empire a targeted congress penalty is actually pointed at.
+    ///
+    /// ★★★★★ ONE DEFINITION, BECAUSE TWO DISAGREED AND A TREATMENT COULD NOT
+    /// FIRE. `congress_choice` aimed the penalty here, while `take_turn` decided
+    /// whether to buy votes behind it by asking [`Self::victory_denial`]
+    /// directly. Those are the same empire only when
+    /// [`Self::congress_counter_leader`] is on; with it off the ballot aims at
+    /// the diplomatic leader and the weight test looked for whoever was closest
+    /// to *any* victory — a different empire nearly always, because the
+    /// evaluator's board is decided by religion about three quarters of the
+    /// time.
+    ///
+    /// Measured on the contested profile at 60 pairs, before this was one
+    /// function (`docs/eval/`, seed 33000000): `advanced_congress_counter`
+    /// (target only) broke 3 maps, `advanced_congress_counter_hard` (both
+    /// flags) broke 7, and `advanced_congress_votes` (votes only) broke
+    /// **zero** — it never changed a decision in 120 games. A treatment cannot
+    /// be superadditive with a flag that does nothing, which is how the
+    /// mismatch was found.
+    ///
+    /// ⚠ The two flags were split so a combined arm could not hide which half
+    /// did the work, which is the right instinct and has saved this repository
+    /// four retracted mechanism stories. Splitting them this way made one half
+    /// unmeasurable *alone*, which is the same failure from the other side.
+    fn congress_counter_target(&self, g: &Game, pid: usize) -> Option<usize> {
+        self.congress_denial_target(g, pid)
+            .or_else(|| Self::congress_diplomatic_leader(g))
+    }
+
+    /// The living major holding the most Diplomatic Victory Points.
+    ///
+    /// Its own concept, not a fallback: the `world_leader` ballot aims here
+    /// whatever the denial layer thinks, because that resolution's ±2 moves
+    /// Diplomatic Victory Points and nothing else.
+    fn congress_diplomatic_leader(g: &Game) -> Option<usize> {
+        g.players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .max_by_key(|player| (player.dvp, std::cmp::Reverse(player.id)))
+            .map(|player| player.id)
+    }
+
     fn congress_choice(
         &self,
         g: &Game,
@@ -10265,22 +10321,16 @@ impl AdvancedAi {
             };
         }
 
-        let diplomatic_leader = g
-            .players
-            .iter()
-            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
-            .max_by_key(|player| (player.dvp, std::cmp::Reverse(player.id)))
-            .map(|player| player.id);
         // Who a targeted penalty is pointed at. `world_leader` keeps aiming at
         // the diplomatic leader because its +/-2 moves Diplomatic Victory
         // Points and nothing else; the resolutions that cost an empire real
         // yields aim at whoever is actually about to win. See
-        // [`Self::congress_counter_leader`] for what the census measured.
-        let denied = self
-            .congress_counter_leader
-            .then(|| self.victory_denial(g, pid).map(|(rival, _)| rival))
-            .flatten();
-        let counter_target = denied.or(diplomatic_leader);
+        // [`Self::congress_counter_leader`] for what the census measured, and
+        // [`Self::congress_counter_target`] for why this is a shared function
+        // and not two.
+        let diplomatic_leader = Self::congress_diplomatic_leader(g);
+        let denied = self.congress_denial_target(g, pid);
+        let counter_target = self.congress_counter_target(g, pid);
         let preferred_district = match strategy {
             GrandStrategy::Science => "campus",
             GrandStrategy::Culture => "theater_square",
@@ -11771,19 +11821,27 @@ impl AdvancedAi {
                     // wrong-target one at half -- an opposition that fails
                     // costs nothing. Shipped, weight keys off the voter's own
                     // plan and never off the stakes.
+                    // ⚠ The same function `congress_choice` aimed the ballot
+                    // with. Asking `victory_denial` again here was the defect:
+                    // it is a different empire whenever
+                    // `congress_counter_leader` is off, so the weight never
+                    // matched the ballot and this flag could not fire alone.
+                    // See [`Self::congress_counter_target`].
                     let counters_the_leader = self.congress_counter_votes
-                        && self.victory_denial(g, pid).is_some_and(|(rival, _)| {
-                            let (outcome, target) = Game::congress_choice_parts(&choice);
-                            // Naming the rival is not opposing it: outcome A on
-                            // most of these table entries is the ballot that
-                            // *helps* its target. Only the shapes that carry a
-                            // penalty are worth paying for.
-                            target == rival.to_string()
-                                && match resolution.id.as_str() {
-                                    "public_relations" => outcome == "A",
-                                    _ => outcome == "B",
-                                }
-                        });
+                        && self
+                            .congress_counter_target(g, pid)
+                            .is_some_and(|opposed| {
+                                let (outcome, target) = Game::congress_choice_parts(&choice);
+                                // Naming the empire is not opposing it: outcome
+                                // A on most of these table entries is the ballot
+                                // that *helps* its target. Only the shapes that
+                                // carry a penalty are worth paying for.
+                                target == opposed.to_string()
+                                    && match resolution.id.as_str() {
+                                        "public_relations" => outcome == "A",
+                                        _ => outcome == "B",
+                                    }
+                            });
                     let votes = if (plan.strategy == GrandStrategy::Diplomacy
                         || counters_the_leader)
                         && g.players[pid].diplomatic_favor >= 30.0
