@@ -5406,7 +5406,10 @@ mod tests {
         state.cities[0].production_progress = 32.0;
         state.cities[0].production_turns = 1.0;
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
-        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
         let mut planned = mirror.game.clone();
         let mut ours = std::collections::BTreeMap::from([(
             7_i64,
