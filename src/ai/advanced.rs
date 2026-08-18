@@ -5145,6 +5145,26 @@ impl AdvancedAi {
         self.base.fortify_idle_units = true;
     }
 
+    /// ★★★★★ BUILD HULLS ONLY WHERE THEY HAVE OPEN WATER TO SAIL INTO.
+    ///
+    /// `BasicAi::best_naval_unit` — the path that actually enqueues warships,
+    /// not `production_value` — gated on `city_is_coastal`, and a **lake is
+    /// water**. A lakeside city therefore built Galleys that spent the whole
+    /// game on the lake. Measured over three 150-turn six-player games at the
+    /// deployment shape, with the flag off: majors built 53 naval hulls,
+    /// **20 of which never moved once**, and only 17.2% of major naval
+    /// unit-turns involved any movement.
+    ///
+    /// With the flag on, on the same three seeds: 26 hulls, **3** that never
+    /// moved, Galley movement up from 13.0% to 43.7% of its turns, and the
+    /// `audit` major idle-field share down from 21.19% to 17.13%.
+    ///
+    /// Evaluator arm `advanced_open_water_navy`; off in production pending its
+    /// strength screen.
+    pub fn enable_open_water_navy(&mut self) {
+        self.base.open_water_navy = true;
+    }
+
     /// Reach for the naval-production discount while hulls are wanted. See
     /// `naval_production_policy`; entrant `advanced_maritime_splice`.
     pub fn enable_naval_production_policy(&mut self) {

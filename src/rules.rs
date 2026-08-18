@@ -417,6 +417,11 @@ pub struct ImprovementSpec {
     pub requires_hills: bool,
     #[serde(default)]
     pub hills_or_resource: bool,
+    /// The plot may be Hills, or qualify through a valid resource or feature.
+    /// Gathering Storm's Mine permits its normal resource route and Volcanic
+    /// Soil as independent alternatives.
+    #[serde(default)]
+    pub hills_or_resource_or_feature: bool,
     /// The plot must be Hills unless it qualifies through a valid feature.
     /// Ethiopia's Rock-Hewn Church uses this for its Volcanic Soil route.
     #[serde(default)]
@@ -3182,30 +3187,18 @@ mod tests {
         // DOUBLED — a ratio checked across all 16 housing improvements before either
         // was touched, since matching the raw column would have doubled every one.
         //
-        // Moved again by the ELEVEN remaining `civ6_fidelity` divergences, nine of
-        // which are corrected here and each confirmed by querying the shipped
-        // database directly: `pike_and_shot` maintenance 3 -> 4;
-        // `eyjafjallajokull` adjacent food 2 -> 1; `chemamull`, `mission` and
-        // `stepwell` had feature lists the host does not give them at all;
-        // `chateau` carried an extra `volcanic_soil`; `colossal_head` and
-        // `terrace_farm` were MISSING the `volcanic_soil` the host does give
-        // them; `ice_hockey_rink` claimed a culture yield the host prices at
-        // zero.
+        // Moved again by the installed Gathering Storm load order: Pike and
+        // Shot maintenance is 3, Tagma costs 180 with 3 maintenance and upgrades
+        // directly to Tank, Prasat is Faith 4 with two Relic slots, Sukiennice
+        // is Gold 3, Tlachtli is Culture 1, Eyjafjallajökull gives adjacent Food
+        // 2, and Armagh's Monastery permits Hills. Mine accepts Hills, a valid
+        // resource, or Volcanic Soil; Terrace Farm and Rock-Hewn Church accept
+        // Hills or Volcanic Soil. The historical XML snippets that suggested
+        // the opposite values are not the effective ruleset.
         //
-        // ⚠ `rock_hewn_church` is deliberately NOT corrected, and the suite is
-        // why. The audit wants `requires_hills`, since every host TERRAIN for it
-        // is a `*_HILLS` variant — but the host ALSO gives it the valid FEATURE
-        // `VOLCANIC_SOIL`, so it is buildable on flat volcanic soil. Setting the
-        // flag broke `rock_hewn_church_matches_firaxis_placement_yields_appeal_
-        // and_tourism`, which asserts exactly that placement. The audit's
-        // `requires_hills` expectation is a simplification that is wrong
-        // wherever a feature also qualifies.
-        //
-        // ⚠ `vampire_castle` is deliberately NOT corrected. The audit wants a
-        // terrain list on it, but CIVVIS marks it `unbuildable` and
-        // `scenario_only`, so a terrain list would be noise on an improvement
-        // that can never be built. The audit therefore stands at 2, not 0, on
-        // purpose.
+        // Rock-Hewn Church's Hills and Volcanic Soil alternatives are carried
+        // as one semantic field (`hills_or_feature`) in both the ruleset and
+        // the audit; it is neither a false Hills-only rule nor an audit waiver.
         //
         // `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
         // 31337 --jobs 1 --deployment-comparison` was BYTE-IDENTICAL with the
@@ -3305,7 +3298,7 @@ mod tests {
         // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:0b61ec54b9646c96"
+            "fnv1a64:3ea4ed6c30d86aa6"
         );
     }
 
@@ -3872,7 +3865,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "cuirassier"),
+            ("tagma", "tank"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),

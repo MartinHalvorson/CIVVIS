@@ -223,6 +223,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_open_water_navy",
     "advanced_maritime_splice",
     "advanced_sea_answers",
     "advanced_without_barbarian_scouts_are_scouts",
@@ -830,6 +831,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedOpenWaterNavy => "advanced_open_water_navy",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
@@ -928,6 +930,20 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v11 (2026-08-18) — the remaining Gathering Storm rule rows use the
+/// installed source values and placement semantics.** Pike-and-Shot, Tagma,
+/// Prasat, Sukiennice, Tlachtli, and Eyjafjallajökull now carry their effective
+/// Gathering Storm values; Monastery, Mine, Terrace Farm, and Rock-Hewn Church
+/// also distinguish Hills, resources, and Volcanic Soil as the source does.
+///
+/// These are shared native-world rules, not live-adapter treatments. They can
+/// change openings, economics, military upgrades, and legal Builder actions
+/// before or during any controller's turn. The frozen anchor therefore changes
+/// from 18,502 actions and `0x1645_2073_bb4b_2b2b` to 18,503 and
+/// `0x70c7_8503_3e29_380f` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v10 and v11 rows are not
+/// comparable.
+///
 /// **v10 (2026-08-18) — map resources use the shipped placement weights.**
 /// Civilization VI's `Resources.Frequency` and `SeaFrequency` make, for
 /// example, Fish (23) far more common than Whales (1), and Stone (10) more
@@ -1003,7 +1019,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// Rows before and after v9 are not comparable wherever an improvement was ever
 /// pillaged, which on any map with barbarians is most of them.
-pub const ELO_PROTOCOL_VERSION: u32 = 10;
+pub const ELO_PROTOCOL_VERSION: u32 = 11;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -3157,6 +3173,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // Build hulls only where they have open water to sail into. The
+        // enqueue path gated on `city_is_coastal`, and a lake is water, so a
+        // lakeside city built Galleys that never left the lake: 20 of 53 major
+        // hulls never moved once in a three-game audit.
+        "advanced_open_water_navy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_open_water_navy();
+            Box::new(ai)
+        }
         // Reach for the +100% naval-production card while hulls are wanted:
         // the family is invisible to the deck scorer until a sea unit heads a
         // queue and appears in no portfolio, so the Galley-era discount was
@@ -4250,6 +4275,7 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedOpenWaterNavy => &["open-water-navy"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
@@ -4749,6 +4775,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_open_water_navy" => (Vec::new(), "advanced_open_water_navy"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_without_barbarian_scouts_are_scouts" => {
@@ -6061,6 +6088,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_open_water_navy",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
                 "advanced_without_barbarian_scouts_are_scouts",
