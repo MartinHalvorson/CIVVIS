@@ -94,6 +94,44 @@ def discover_treatments(binary: Path, mirror: Path) -> list[str]:
     return [name for name in names if name]
 
 
+def played_as(mirror: Path) -> dict[str, str]:
+    """The seat identity this run was actually played with.
+
+    ★★★ A CENSUS THAT REPLAYS A DIFFERENT AGENT THAN THE ONE THAT PLAYED
+    MEASURES A DIFFERENT AGENT. The first version of this tool defaulted to
+    `--victory civvis --strategy auto --civ Rome` whatever the run held, and the
+    two censuses recorded in #2018 were run that way against games played on
+    `strategy=WildCard9` with `victory_target=diplomatic`. Control and arm still
+    shared those flags, so the comparison was internally sound -- but a
+    treatment that only fires under the plan the run was played on would read
+    inert, and the report claimed to replay "the decider the seat actually
+    runs".
+
+    The run records both. `brain.log` prints the decider's own line
+    (`strategy=… civ=…`) and `summary.json` carries `victory_target`. Read them,
+    say which were found, and let a flag override. `--civ` takes the host's
+    `CIVILIZATION_ROME` unchanged: `civvis_orders` maps it through CIVVIS's own
+    roster rather than by string surgery.
+    """
+    found: dict[str, str] = {}
+    brain = mirror / "brain.log"
+    if brain.exists():
+        text = brain.read_text(errors="ignore")
+        for key, pattern in (("strategy", r"strategy=(\S+)"), ("civ", r"civ=(\S+?)[,\s]")):
+            match = re.search(pattern, text)
+            if match:
+                found[key] = match.group(1).rstrip(",")
+    summary = mirror / "summary.json"
+    if summary.exists():
+        try:
+            row = json.loads(summary.read_text())
+        except json.JSONDecodeError:
+            row = {}
+        if isinstance(row.get("victory_target"), str):
+            found["victory"] = row["victory_target"]
+    return found
+
+
 def replay(
     binary: Path,
     mirror: Path,
@@ -220,9 +258,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="comma-separated subset; default is every treatment the binary lists",
     )
     parser.add_argument("--bin", default=str(DEFAULT_BIN))
-    parser.add_argument("--civ", default="Rome")
-    parser.add_argument("--victory", default="civvis")
-    parser.add_argument("--strategy", default="auto")
+    # Default `None`, not a value: the run's own record is the default, and a
+    # flag exists to override it rather than to restate it.
+    parser.add_argument("--civ", help="override the civilization the run recorded")
+    parser.add_argument("--victory", help="override the victory target the run recorded")
+    parser.add_argument("--strategy", help="override the strategy the run recorded")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 4) // 2))
     parser.add_argument("--timeout", type=float, default=1800.0)
     parser.add_argument("--json", help="write the full result to this path")
@@ -241,6 +281,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     mirror = Path(args.mirror).expanduser()
     turns = turn_window(mirror, args.turns, args.max_turns)
+    # The run's own identity wins over the defaults; an explicit flag wins over
+    # both. What was found and what was assumed is printed, because a census run
+    # against the wrong seat identity is not distinguishable from a right one in
+    # the table it prints.
+    played = played_as(mirror)
+    seat = {
+        "victory": args.victory or played.get("victory") or "civvis",
+        "strategy": args.strategy or played.get("strategy") or "auto",
+        "civ": args.civ or played.get("civ") or "Rome",
+    }
+    assumed = [key for key in seat if key not in played and not getattr(args, key)]
+    print(
+        "seat: " + " ".join(f"{k}={v}" for k, v in sorted(seat.items()))
+        + (f"  (not recorded in the run, assumed: {', '.join(sorted(assumed))})" if assumed else "")
+        + "  [read from the run]",
+        file=sys.stderr,
+    )
     print(
         f"census over {len(turns)} recorded turns "
         f"({turns[0]}..{turns[-1]}) of {mirror.name}",
@@ -253,9 +310,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             mirror,
             turns,
             without=without,
-            civ=args.civ,
-            victory=args.victory,
-            strategy=args.strategy,
+            civ=seat["civ"],
+            victory=seat["victory"],
+            strategy=seat["strategy"],
             timeout=args.timeout,
         )
 
@@ -318,6 +375,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "mirror": str(mirror),
+                    "seat": seat,
                     "turns": turns,
                     "results": results,
                 },
