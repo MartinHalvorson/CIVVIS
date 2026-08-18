@@ -11,7 +11,7 @@ import json
 import sys
 from collections import defaultdict
 
-DIR = "/Users/martin/civvis-spectator-src/league"
+DIR = "$HOME/civvis-spectator-src/league"
 since = int(sys.argv[1]) if len(sys.argv) > 1 else 0
 
 league = json.load(open(f"{DIR}/league.json"))

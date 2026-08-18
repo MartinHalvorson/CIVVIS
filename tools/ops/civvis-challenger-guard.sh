@@ -23,7 +23,7 @@
 # Called from the keeper's 15s loop as well as ad hoc, so throttle here rather
 # than at every call site: the per-civ bar moves on the timescale of games, not
 # seconds. Touch-then-check, so a crash cannot wedge it off.
-STAMP=/Users/martin/.civvis-guard-last
+STAMP=$HOME/.civvis-guard-last
 if [[ -f $STAMP ]]; then
   age=$(( $(date +%s) - $(cat $STAMP 2>/dev/null || echo 0) ))
   (( age < 240 )) && exit 0
@@ -33,7 +33,7 @@ date +%s > $STAMP
 exec /usr/bin/python3 - <<'PY'
 import json, os, statistics, tempfile
 
-LEAGUE = "/Users/martin/civvis-spectator-src/league/league.json"
+LEAGUE = "$HOME/civvis-spectator-src/league/league.json"
 # 40, not 12. Releasing at 12 was too early to be a test: a challenger that
 # starts badly drops below the seat bar and is frozen out at once, so its
 # sample stops at whatever it happened to have. Observed -- religious-elite

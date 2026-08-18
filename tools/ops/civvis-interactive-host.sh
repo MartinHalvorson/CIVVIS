@@ -7,10 +7,10 @@
 # necessary App Management and Accessibility responsibility.
 set -u
 
-SUPERVISOR=/Users/martin/civvis-game-supervisor.sh
-POPUP_KEEPER=/Users/martin/civvis-popup-keeper.sh
-MIRROR_KEEPER=/Users/martin/civvis-mirror-keeper.sh
-LOG=/Users/martin/civvis-civ6-runs/interactive_host.log
+SUPERVISOR=$HOME/civvis-game-supervisor.sh
+POPUP_KEEPER=$HOME/civvis-popup-keeper.sh
+MIRROR_KEEPER=$HOME/civvis-mirror-keeper.sh
+LOG=$HOME/civvis-civ6-runs/interactive_host.log
 LOCK=${CIVVIS_INTERACTIVE_HOST_LOCK:-$HOME/.civvis-interactive-host.lock}
 PID_FILE=$LOCK/pid
 supervisor_pid=""
@@ -49,13 +49,13 @@ trap 'stop_children; release_lock' EXIT
 trap 'exit 0' HUP INT TERM
 
 start_supervisor() {
-  /usr/bin/caffeinate -dims /bin/zsh "$SUPERVISOR" >>/Users/martin/civvis-game-supervisor.interactive.log 2>&1 &
+  /usr/bin/caffeinate -dims /bin/zsh "$SUPERVISOR" >>$HOME/civvis-game-supervisor.interactive.log 2>&1 &
   supervisor_pid=$!
   say "started game supervisor pid $supervisor_pid"
 }
 
 start_popup_keeper() {
-  /bin/zsh "$POPUP_KEEPER" >>/Users/martin/civvis-civ6-runs/popup_clear.keeper.launch.log 2>&1 &
+  /bin/zsh "$POPUP_KEEPER" >>$HOME/civvis-civ6-runs/popup_clear.keeper.launch.log 2>&1 &
   popup_keeper_pid=$!
   say "started popup keeper pid $popup_keeper_pid"
 }
@@ -68,7 +68,7 @@ start_mirror_keeper() {
     say "adopted mirror keeper pid $mirror_keeper_pid"
     return
   fi
-  /bin/zsh "$MIRROR_KEEPER" >>/Users/martin/civvis-civ6-mirror/mirror-keeper.launch.log 2>&1 &
+  /bin/zsh "$MIRROR_KEEPER" >>$HOME/civvis-civ6-mirror/mirror-keeper.launch.log 2>&1 &
   mirror_keeper_pid=$!
   say "started mirror keeper pid $mirror_keeper_pid"
 }
