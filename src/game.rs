@@ -33686,7 +33686,10 @@ impl Game {
     /// As with ordinary movement, a unit that has all of its Movement may
     /// always perform one attack even when the terrain costs more than its
     /// maximum Movement.
-    fn can_pay_melee_entry(&self, uid: u32, target: Pos) -> bool {
+    /// This is also the exact movement preflight for an `AdvancedAi` melee
+    /// candidate, so its tactical evaluator does not price a strike the game
+    /// will reject for an expensive terrain or river entry.
+    pub(crate) fn can_pay_melee_entry(&self, uid: u32, target: Pos) -> bool {
         let u = &self.units[&uid];
         if !self.map.tiles.contains_key(&target) {
             return false;
