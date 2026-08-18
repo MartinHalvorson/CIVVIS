@@ -368,16 +368,59 @@ discarding it.
 context: `PopupDialogInGame` sends every generic dialog through
 `LuaEvents.OnRaisePopupInGame` to the `InGamePopup` context, which calls
 `UIManager:PushModal` and whose input handler eats all input ("popups are
-blocking!"). That context renders both **UNIT CAPTURED**, which has one button
-and asks nothing, and **raze or keep this city**, which has two and asks
-everything. So `InGamePopup` alone arms per *dialog* rather than per context:
-the open is wrapped, the buttons are counted, and the stopwatch runs only when
-there is exactly one. The wrapper has to be re-registered with `LuaEvents`
-rather than merely assigned, because the shipped `Initialize` already handed
-the event its own function; if that swap cannot be made, the dialog is never
-armed and the screen behaves exactly as it ships. Closing goes through the
-shipped Escape handler rather than a bare close, so the one button's own
-callback runs.
+blocking!"). One context renders every generic dialog in the game, so
+`InGamePopup` alone arms per *dialog* rather than per context: the open is
+wrapped, the options are read, and the stopwatch runs only for a dialog that
+may be ended. The wrapper has to be re-registered with `LuaEvents` rather than
+merely assigned, because the shipped `Initialize` already handed the event its
+own function; if that swap cannot be made, the dialog is never armed and the
+screen behaves exactly as it ships. Closing goes through the shipped Escape
+handler rather than a bare close, so the button's own callback runs.
+
+**Which dialogs may be ended, and how that is known.** Two shapes, and the
+answer is read off the data the dialog carries rather than guessed:
+
+- **One button.** An acknowledgement — **UNIT CAPTURED**. Nothing is asked, so
+  nothing is answered by ending it.
+- **Any button tagged `_CMD_CANCEL`.** `PopupDialogInGame:AddCancelButton`
+  writes `PopupDialog.COMMAND_CANCEL` into its option, and the shipped
+  `InGamePopup.InputHandler` maps Escape to
+  `ActivateCommand(COMMAND_CANCEL)` first and `COMMAND_DEFAULT` second. A
+  dialog carrying a CANCEL has an explicit decline path written by its own
+  author, and Escape runs that author's cancel callback — `nil` in every
+  shipped caller, which is what dismissing without consequence means.
+
+A dialog with two buttons and no CANCEL is a forced choice and is left exactly
+as it ships. `tools/civ6_control/mod/dialog_escape_test.lua` pins all three
+cases against option lists in the shape the shipped callers build.
+
+⚠⚠ **The rule used to be the button count alone, and the reason it gave named a
+screen that lives somewhere else.** It cited **raze or keep this city** as the
+two-button danger. Raze/keep is `RazeCity.lua` with its own `RazeCity.xml`,
+queued through `UIManager:QueuePopup` and holding its own input handler; it
+never reaches `PopupDialogInGame`, so nothing here could touch it either way.
+Meanwhile every shipped Ok/Cancel and Yes/No dialog — the ones written to be
+declined — was refused by the count and sat over the map until the desktop
+backstop or the 900-second watchdog. Every `PopupDialogInGame:new` caller with
+a CANCEL is a confirmation of an action a person just took in a panel
+(`UnitPanel`'s delete, `WorldInput`'s WMD launch, `GovernmentScreen`'s anarchy
+switch, `GovernorAssignmentChooser`'s replacement,
+`StrategicView_MapPlacement`'s pin), and this controller takes none of them
+through a panel — it issues the operations directly. A confirmation reaching an
+unattended seat is a dialog nothing was waiting on.
+
+⚠ **And Escape is not a universal exit.** A leader conversation that asks a
+question ignores every in-Lua rung and ignores Escape too — measured,
+`cliclick kp:esc` left Gorgo's embassy request exactly where it was. A question
+needs an answer, and there is nothing for a dismiss to do; that is what
+`popup_clear.py`'s held click on the dialogue button is for. The rule above is
+about generic dialogs, not about every screen.
+
+⚠ **`screen:"InGamePopup"` names nothing on its own**, because one context
+renders them all. The `autoclose` event carries a `buttons` field with the
+dialog's command strings joined by `+`, so which generic dialogs actually reach
+an unattended run is a census rather than an argument from shipped source —
+which is how the old rule came to protect against a screen in another file.
 
 A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
 per screen as the game loads) and every screen it has since closed

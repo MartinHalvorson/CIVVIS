@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+import subprocess
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -189,6 +190,107 @@ class LayoutReportTest(unittest.TestCase):
             report = cc.layout()
         self.assertEqual(len(report), 1)
         self.assertIn("error", report[0])
+
+    def test_a_title_spec_cannot_claim_a_window_a_process_spec_owns(self) -> None:
+        """The upper-left slot must not be given the terminal.
+
+        `CIVVIS|127\\.0\\.0\\.1` is deliberately loose and it matched a *Terminal*
+        window on this host, because a shell session had been named "CIVVIS gaps
+        and priorities". Terminal is placed by its own process spec, so the live
+        mirror would have lost the slot to a window that already had one.
+
+        Drives `place_window` for real; only `_osascript` is faked.
+        """
+        listing = ("Terminal\tmartbot \u2014 CIVVIS gaps and priorities\n"
+                   "Google Chrome\tCIVVIS \u00b7 Civ VI Simulator\n")
+        scripts = []
+
+        def fake(script, timeout=30.0):
+            scripts.append(script)
+            out = listing if "every window of proc" in script else ""
+            return subprocess.CompletedProcess([], 0, out, "")
+
+        with mock.patch.object(cc, "_osascript", side_effect=fake):
+            error = cc.place_window((0, 0, 10, 10), title=r"CIVVIS|127\.0\.0\.1",
+                                    skip_owners=frozenset({"Terminal"}))
+        self.assertIsNone(error)
+        placed = scripts[-1]
+        self.assertIn("Google Chrome", placed)
+        self.assertNotIn("gaps and priorities", placed)
+
+
+class WindowListingRetryTest(unittest.TestCase):
+    """A racing enumeration is not "no window matches"."""
+
+    def _listing(self, rc: int, out: str = "", err: str = ""):
+        return subprocess.CompletedProcess([], rc, out, err)
+
+    def test_a_transient_failure_is_retried_and_then_succeeds(self) -> None:
+        """`-1719` while Civilization VI launches, which is when layout is wanted.
+
+        Walking every visible process's windows fails when the process list
+        changes under it. Observed twice on 2026-08-18: `layout` reported the
+        mirror as `placed: false`, and the identical call succeeded seconds later
+        with nothing else changed — so the operator was sent looking for a
+        mapping bug that did not exist.
+        """
+        found = "Google Chrome\tCIVVIS \u00b7 Civ VI Simulator\n"
+        calls = [
+            self._listing(1, err="System Events got an error: Invalid index. (-1719)"),
+            self._listing(0, found),
+            self._listing(0, ""),   # the placement call
+        ]
+        with mock.patch.object(cc, "_osascript", side_effect=calls), \
+             mock.patch.object(cc.time, "sleep"):
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIsNone(error)
+
+    def test_a_persistent_failure_still_reports_its_own_message(self) -> None:
+        """A retry loop must not swallow a real failure into a generic one."""
+        calls = [self._listing(1, err="System Events got an error: boom")] * 3
+        with mock.patch.object(cc, "_osascript", side_effect=calls), \
+             mock.patch.object(cc.time, "sleep"):
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIn("boom", error)
+
+    def test_a_window_that_is_really_absent_is_not_retried_into_existence(self) -> None:
+        """An empty listing is an answer, not a failure — one call, one verdict."""
+        with mock.patch.object(cc, "_osascript",
+                               side_effect=[self._listing(0, "Finder\tDesktop\n")]) as spy:
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIn("no visible window matches", error)
+        self.assertEqual(spy.call_count, 1)
+
+
+class AppleScriptStringTest(unittest.TestCase):
+    """A window title is data, and AppleScript has to be handed it as data."""
+
+    def test_the_script_place_window_builds_carries_no_backslash_u(self) -> None:
+        """`json.dumps` emits `\\uXXXX`, which AppleScript cannot parse.
+
+        Chrome titles the live viewer `CIVVIS \u00b7 Civ VI Simulator`, so the one
+        window the standard layout places by title carried a character JSON would
+        escape and osascript rejected with error -2741 — `placed: false`, every
+        time, on the slot the operator watches the game beside.
+
+        Asserted on the script `place_window` actually builds, not on the helper
+        in isolation: the defect was at the call site.
+        """
+        listing = "Google Chrome\tCIVVIS \u00b7 Civ VI Simulator\n"
+
+        def fake(script, timeout=30.0):
+            out = listing if "every window of proc" in script else ""
+            return subprocess.CompletedProcess([], 0, out, "")
+
+        with mock.patch.object(cc, "_osascript", side_effect=fake) as spy:
+            cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        built = spy.call_args_list[-1].args[0]
+        self.assertNotIn("\\u", built)
+        self.assertIn("\u00b7", built)
+
+    def test_the_two_characters_that_end_a_literal_are_escaped(self) -> None:
+        self.assertEqual(cc._as('a"b'), '"a\\"b"')
+        self.assertEqual(cc._as("a\\b"), '"a\\\\b"')
 
 
 if __name__ == "__main__":

@@ -233,6 +233,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_sea_answers",
     "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
+    "advanced_without_adjacent_camp_clear",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
@@ -876,6 +877,7 @@ define_arm_kinds! {
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
+    AdvancedWithoutAdjacentCampClear => "advanced_without_adjacent_camp_clear",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
@@ -3341,6 +3343,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_barbarian_scouts_are_scouts();
             Box::new(ai)
         }
+        // Withhold the adjacent camp clear so its promotion is priced: the
+        // current controller ships it ON, and only the frozen anchor lacks it.
+        "advanced_without_adjacent_camp_clear" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_adjacent_camp_clear();
+            Box::new(ai)
+        }
         // Read the Faith price from the engine rather than the Standard-speed
         // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
         // speed -- that literal asks for twice what the engine charges, and it
@@ -4420,6 +4429,7 @@ impl ArmKind {
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
+            Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
@@ -4930,6 +4940,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
         "advanced_without_barbarian_scouts_are_scouts" => {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
+        }
+        "advanced_without_adjacent_camp_clear" => {
+            (Vec::new(), "advanced_without_adjacent_camp_clear")
         }
         "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
@@ -6372,6 +6385,7 @@ mod tests {
                 "advanced_sea_answers",
                 "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
+                "advanced_without_adjacent_camp_clear",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",

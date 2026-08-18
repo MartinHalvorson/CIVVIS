@@ -1014,12 +1014,27 @@ struct TacticalAttackCandidate {
     score: f64,
     target: Pos,
     action: Action,
+    /// A simulated direct kill with a positive immediate exchange.  It outranks
+    /// a nonlethal option even when the slower reply search is pessimistic:
+    /// a unit that can be removed now does not get another turn to heal,
+    /// retreat, pillage, or join a focus fire sequence.
+    lethal_kill: bool,
     /// Exact attack value, required threshold, local-odds caution, priced
     /// forcing reply, and any cooperative-volley setup credit.
     parts: [f64; 5],
     /// Preserve the generator's deterministic order when scores and targets
     /// tie (for example, a hybrid unit's ranged and melee actions).
     order: usize,
+}
+
+/// The exact immediate result of a ground tactical attack.  The score remains
+/// available to callers that price a normal exchange; the kill bit is kept
+/// separate so a later reply estimate cannot erase an enemy that is already
+/// gone from the board.
+#[derive(Clone, Copy)]
+struct ExactAttackResult {
+    value: f64,
+    eliminates_enemy_unit: bool,
 }
 
 #[derive(Clone)]
@@ -3893,6 +3908,11 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        // The adjacent camp clear is default-ON everywhere current, but this
+        // gate keeps that controller treatment outside the frozen anchor (see
+        // `advanced_v1_plays_the_same_game_it_always_did`). A shared world
+        // rule may still own a protocol bump separately.
+        ai.base.adjacent_camp_clear = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
@@ -4167,6 +4187,12 @@ impl AdvancedAi {
     /// Whether the wider camp reach is on. See `BasicAi::camp_reach`.
     pub fn camp_reach(&self) -> bool {
         self.base.camp_reach
+    }
+
+    /// Whether the adjacent camp clear is on. See
+    /// `BasicAi::adjacent_camp_clear`.
+    pub fn adjacent_camp_clear(&self) -> bool {
+        self.base.adjacent_camp_clear
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on
@@ -20756,34 +20782,72 @@ impl AdvancedAi {
             return false;
         }
         let visible = self.battlefront_visibility(g, pid);
-        let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
-            let Some(tile) = g.map.get(*target) else {
-                return false;
+        // The checks in dropping order, each with a name. Run 212725Z spent
+        // t224-t248 with FOUR settlers orbiting one site — "sets (22, 21)
+        // aside" every hysteresis period, per settler, staggered — and the
+        // journal could not say WHICH check flickered, so the lane's next
+        // measurement had nothing to bite on (the promotion-block class:
+        // no clean discriminator). Same conditions, same order, same
+        // short-circuit as the closure this replaces; only the first
+        // failure's name escapes.
+        let target_drop_reason = |target: Pos| -> Option<&'static str> {
+            let Some(tile) = g.map.get(target) else {
+                return Some("the tile left the map");
             };
-            !g.rules.is_water(tile)
-                && g.rules.is_passable(tile)
-                && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
-                && tile
-                    .owner_city
-                    .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && Some(*target) != avoid
-                // A site the host or the mirror has since blocked is not a
-                // target, however it was chosen: `best_settler_target`
-                // refuses `blocked_city_sites` when it PICKS a site, but a
-                // site can join that set after the pick (see the standing
-                // case at the top of this function for the measured cost).
-                && !g.blocked_city_sites.contains(target)
-                && !self.settler_site_is_dead(uid, *target)
-                // A momentarily unavailable route is not a bad site. Under
-                // `settler_commit` the stall counter decides when to give up,
-                // not a single blocked turn.
-                && (*target == current
-                    || g.route_step(uid, *target, 0).is_some()
-                    || self.settler_commit)
-                && (!self.settlement_safety
-                    || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
-                        <= SETTLER_STEP_RISK_LIMIT)
-        });
+            if g.rules.is_water(tile) {
+                return Some("water");
+            }
+            if !g.rules.is_passable(tile) {
+                return Some("impassable");
+            }
+            if g.cities.values().any(|c| g.wdist(c.pos, target) < 4) {
+                return Some("a city within three tiles");
+            }
+            if !tile
+                .owner_city
+                .is_none_or(|cid| g.cities[&cid].owner == pid)
+            {
+                return Some("another empire's ground");
+            }
+            if Some(target) == avoid {
+                return Some("the site it is avoiding");
+            }
+            // A site the host or the mirror has since blocked is not a
+            // target, however it was chosen: `best_settler_target`
+            // refuses `blocked_city_sites` when it PICKS a site, but a
+            // site can join that set after the pick (see the standing
+            // case at the top of this function for the measured cost).
+            if g.blocked_city_sites.contains(&target) {
+                return Some("the host blocked the plot");
+            }
+            if self.settler_site_is_dead(uid, target) {
+                return Some("marked dead for this settler");
+            }
+            // A momentarily unavailable route is not a bad site. Under
+            // `settler_commit` the stall counter decides when to give up,
+            // not a single blocked turn.
+            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
+            {
+                return Some("no route this turn");
+            }
+            if self.settlement_safety
+                && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            {
+                return Some("step risk above the limit");
+            }
+            None
+        };
+        let cached_drop = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .and_then(target_drop_reason);
+        let valid_target = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .filter(|_| cached_drop.is_none());
         // The target forecast is a live-bridge repair, not a production or
         // tournament policy. `settler_commit` is on in the normal promoted
         // controller, whereas both default constructors leave
@@ -20802,11 +20866,12 @@ impl AdvancedAi {
                         uid,
                         (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
                     );
+                    let why = cached_drop.unwrap_or("no cached site");
                     think!(self.journal(), Expansion, Detail,
                            "Settler sets {dropped:?} aside";
-                           "the cached site stopped passing its checks; it stays out of the next \
-                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
-                            flickering at the edge of sight cannot flip the march every frame";
+                           "the cached site stopped passing its checks ({why}); it stays out of the \
+                            next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
+                            threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
                 }
             }
@@ -23607,13 +23672,13 @@ impl AdvancedAi {
     /// cheap move ordering, while the final decision sees the seeded damage
     /// roll, kills, attacker survival, wall damage, district pillage, and an
     /// actual city transfer.
-    fn tactical_attack_value_owned(
+    fn tactical_attack_result_owned(
         mut after: Game,
         pid: usize,
         uid: u32,
         action: &Action,
         plan: &StrategicPlan,
-    ) -> f64 {
+    ) -> ExactAttackResult {
         let target = match action {
             Action::Attack { unit, target }
             | Action::Ranged { unit, target }
@@ -23622,7 +23687,12 @@ impl AdvancedAi {
             {
                 *target
             }
-            _ => return f64::NEG_INFINITY,
+            _ => {
+                return ExactAttackResult {
+                    value: f64::NEG_INFINITY,
+                    eliminates_enemy_unit: false,
+                }
+            }
         };
         let priority_target = matches!(action, Action::PriorityTarget { .. });
         let attacker_hp = after.units[&uid].hp;
@@ -23682,7 +23752,10 @@ impl AdvancedAi {
             )
         });
         if after.apply(pid, action).is_err() {
-            return f64::NEG_INFINITY;
+            return ExactAttackResult {
+                value: f64::NEG_INFINITY,
+                eliminates_enemy_unit: false,
+            };
         }
 
         let attacker_loss = match after.units.get(&uid) {
@@ -23692,9 +23765,11 @@ impl AdvancedAi {
             None => 230.0 + attacker_cost * 0.65,
         };
         let mut value = -attacker_loss;
+        let mut eliminates_enemy_unit = false;
         for (unit, hp, strength, cost, siege, captures) in defenders {
             value += match after.units.get(&unit) {
                 None => {
+                    eliminates_enemy_unit = true;
                     190.0
                         + cost * 0.45
                         + strength * 1.8
@@ -23717,7 +23792,10 @@ impl AdvancedAi {
                 .is_some_and(|city| city.owner == pid);
             if captured {
                 if defer_capture {
-                    return f64::NEG_INFINITY;
+                    return ExactAttackResult {
+                        value: f64::NEG_INFINITY,
+                        eliminates_enemy_unit: false,
+                    };
                 }
                 value += 520.0
                     + pop.max(1) as f64 * 14.0
@@ -23750,9 +23828,23 @@ impl AdvancedAi {
                 value += 180.0;
             }
         }
-        value
+        ExactAttackResult {
+            value,
+            eliminates_enemy_unit,
+        }
     }
 
+    fn tactical_attack_value_owned(
+        after: Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        Self::tactical_attack_result_owned(after, pid, uid, action, plan).value
+    }
+
+    #[cfg(test)]
     fn tactical_attack_value(
         &self,
         g: &Game,
@@ -23762,6 +23854,122 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> f64 {
         Self::tactical_attack_value_owned(g.speculative_clone(), pid, uid, action, plan)
+    }
+
+    /// The combat actions this controller can use to remove a unit now.  City
+    /// and Encampment strikes have their own always-fire command phase; this
+    /// is the unit-order seam where an exchange threshold or reply estimate
+    /// used to let a kill sit on the board.
+    fn unit_strike_actor_and_target(action: &Action) -> Option<(u32, Pos)> {
+        match action {
+            Action::Attack { unit, target }
+            | Action::Ranged { unit, target }
+            | Action::AirStrike { unit, target }
+            | Action::PriorityTarget { unit, target } => Some((*unit, *target)),
+            _ => None,
+        }
+    }
+
+    /// Return the positive immediate exchange value and number of hostile
+    /// units removed by `action`.  The cloned forward model is intentional:
+    /// combat rolls are seeded, so an advertised finishing blow is only a
+    /// finish when the exact action actually removes the defender.
+    ///
+    /// A kill must still pay for itself *immediately*.  That is the
+    /// "typically" in the policy: a damaged GDR is not ordered to die for a
+    /// cheap Warrior merely because that Warrior happens to be at one health.
+    /// Once the direct exchange clears this gate, however, a reply estimate
+    /// cannot resurrect the removed unit, so the action is allowed to outrank
+    /// a nonlethal alternative.
+    fn immediate_kill_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        action: &Action,
+        plan: &StrategicPlan,
+    ) -> Option<(f64, usize)> {
+        let (uid, target) = Self::unit_strike_actor_and_target(action)?;
+        let threatened: Vec<u32> = g
+            .units_at(target)
+            .into_iter()
+            .filter(|other| {
+                let other = &g.units[other];
+                other.owner != pid && g.is_at_war(pid, other.owner)
+            })
+            .collect();
+        if threatened.is_empty() {
+            return None;
+        }
+        let mut after = g.speculative_clone();
+        if after.apply(pid, action).is_err() {
+            return None;
+        }
+        let eliminated = threatened
+            .iter()
+            .filter(|other| !after.units.contains_key(other))
+            .count();
+        if eliminated == 0 {
+            return None;
+        }
+        let value = match action {
+            Action::Attack { .. } | Action::Ranged { .. } | Action::PriorityTarget { .. } => {
+                Self::tactical_attack_result_owned(g.speculative_clone(), pid, uid, action, plan)
+                    .value
+            }
+            Action::AirStrike { .. } => self.air_strike_value(g, pid, uid, target, plan),
+            _ => return None,
+        };
+        (value.is_finite() && value > 0.0).then_some((value, eliminated))
+    }
+
+    /// Spend one immediate, positive kill per unit before either tactical
+    /// planner can decline it.  This deliberately enumerates engine-legal
+    /// actions rather than reproducing visibility, terrain, embarkation, and
+    /// formation gates locally.  Barbarian seats satisfy `is_at_war`, so this
+    /// stays a one-hex opportunistic finish instead of widening the normal
+    /// campaign's bounded barbarian target list.
+    fn prioritize_immediate_kills(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> usize {
+        let actions = g.legal_actions_within(pid, ActionFamilies::UNITS);
+        let mut spent = BTreeSet::new();
+        let mut kills = 0usize;
+        loop {
+            let best = actions
+                .iter()
+                .enumerate()
+                .filter_map(|(order, action)| {
+                    let (uid, target) = Self::unit_strike_actor_and_target(action)?;
+                    (!spent.contains(&uid))
+                        .then(|| self.immediate_kill_value(g, pid, action, plan))
+                        .flatten()
+                        .map(|(value, eliminated)| (value, eliminated, target, uid, order, action))
+                })
+                .max_by(|left, right| {
+                    left.0
+                        .total_cmp(&right.0)
+                        .then_with(|| left.1.cmp(&right.1))
+                        .then_with(|| right.2.cmp(&left.2))
+                        .then_with(|| right.3.cmp(&left.3))
+                        .then_with(|| right.4.cmp(&left.4))
+                });
+            let Some((_, eliminated, _, uid, _, action)) = best else {
+                break;
+            };
+            // Every candidate above landed on an exact clone.  A prior kill
+            // can still invalidate a later choice from this turn's static
+            // action list, so mark its unit spent and continue rather than
+            // letting one stale line abort other independent finishes.
+            spent.insert(uid);
+            if g.apply(pid, action).is_ok() {
+                kills += eliminated;
+                self.force_groups_dirty = true;
+            }
+        }
+        kills
     }
 
     /// Bounded quiescence-style reply search for a proposed attack. The
@@ -24932,6 +25140,15 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // Camps are captured by entering their tile rather than attacking,
+            // so an adjacent empty one must be claimed before this field unit
+            // is sent to a longer village, escort, or pre-war staging order.
+            // The helper asks current player vision and engine movement first.
+            if !unwanted_settler_adjacent
+                && self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid)
+            {
+                return true;
+            }
             // A newly charted village is an expiring reward, so resolve it
             // before this otherwise idle unit is assigned to a pre-war staging
             // ring or an incidental camp errand. The shared selector gives
@@ -25176,8 +25393,11 @@ impl AdvancedAi {
                 let plan = plan.clone();
                 let nested_pool = Arc::clone(pool);
                 pool.map_owned(inputs, move |(attack, reply, action)| {
+                    let attack =
+                        Self::tactical_attack_result_owned(attack, pid, uid, &action, &plan);
                     (
-                        Self::tactical_attack_value_owned(attack, pid, uid, &action, &plan),
+                        attack.value,
+                        attack.eliminates_enemy_unit,
                         Self::forcing_reply_penalty_owned(
                             Some(Arc::clone(&nested_pool)),
                             reply,
@@ -25191,8 +25411,16 @@ impl AdvancedAi {
             _ => candidates
                 .iter()
                 .map(|(_, action)| {
+                    let attack = Self::tactical_attack_result_owned(
+                        g.speculative_clone(),
+                        pid,
+                        uid,
+                        action,
+                        plan,
+                    );
                     (
-                        self.tactical_attack_value(g, pid, uid, action, plan),
+                        attack.value,
+                        attack.eliminates_enemy_unit,
                         self.forcing_reply_penalty(g, pid, uid, action),
                     )
                 })
@@ -25200,13 +25428,13 @@ impl AdvancedAi {
         };
 
         let mut scored = Vec::with_capacity(candidates.len());
-        for (order, ((pos, action), (attack_value, reply_penalty))) in
+        for (order, ((pos, action), (attack_value, eliminates_enemy_unit, reply_penalty))) in
             candidates.into_iter().zip(evaluations).enumerate()
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
-            let mut score = attack_value - threshold
-                + self.base.tactical_action_bonus(g, uid, pos, ranged);
+            let mut score =
+                attack_value - threshold + self.base.tactical_action_bonus(g, uid, pos, ranged);
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -25233,6 +25461,10 @@ impl AdvancedAi {
                 score,
                 target: pos,
                 action,
+                // `advanced_v1` is a frozen evaluator anchor.  This is a
+                // production policy, so leave that controller's historical
+                // candidate ordering untouched.
+                lethal_kill: self.victory_planning && eliminates_enemy_unit && attack_value > 0.0,
                 parts: [attack_value, threshold, caution, reply, 0.0],
                 order,
             });
@@ -25296,21 +25528,24 @@ impl AdvancedAi {
             }
         }
         let best = scored.into_iter().max_by(|left, right| {
-            left.score
-                .total_cmp(&right.score)
-                .then_with(|| right.target.cmp(&left.target))
-                .then_with(|| right.order.cmp(&left.order))
+            left.lethal_kill.cmp(&right.lethal_kill).then_with(|| {
+                left.score
+                    .total_cmp(&right.score)
+                    .then_with(|| right.target.cmp(&left.target))
+                    .then_with(|| right.order.cmp(&left.order))
+            })
         });
         if let Some(TacticalAttackCandidate {
             score,
             target: at,
             action,
+            lethal_kill,
             parts,
             ..
         }) = best
         {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
-            if score > required_margin {
+            if lethal_kill || score > required_margin {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
                     let verb = match &action {
                         Action::Ranged { .. } => "shells",
@@ -25330,14 +25565,18 @@ impl AdvancedAi {
                     let orders = group
                         .as_ref()
                         .map(|orders| {
-                            format!("{} group at {:.2} local strength",
-                                    orders.posture.as_str(), orders.local_strength_ratio)
+                            format!(
+                                "{} group at {:.2} local strength",
+                                orders.posture.as_str(),
+                                orders.local_strength_ratio
+                            )
                         })
                         .unwrap_or_else(|| "unattached".to_string());
                     think!(self.journal(), Military, Detail,
                            "{} {verb} {defender}", plain(&unit.kind);
                            "worth {score:.0} over a margin of {required_margin:.0}, \
-                            on {} health, {orders}", unit.hp; at);
+                            on {} health, {orders}{}", unit.hp,
+                           if lethal_kill { "; finishing it now" } else { "" }; at);
                 }
                 if g.apply(pid, &action).is_ok() {
                     self.force_groups_dirty = true;
@@ -25436,6 +25675,12 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
+            // Recon flight keeps its safety-first escape above, but once it
+            // stands its ground an empty camp beside it is a completed reward,
+            // not fog to scout past.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             if self.base.explore_step(g, pid, uid) {
                 return true;
             }
@@ -25480,6 +25725,13 @@ impl AdvancedAi {
             if garrisoned {
                 return true;
             }
+            // `tactical_step` keeps a melee unit at attack range from its
+            // target, but an empty camp has no defender to attack. Once an
+            // actual city garrison has had first claim, enter this free camp
+            // rather than ending the turn beside it.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             let threat = if self.base.home_defense {
                 self.base.home_defense_objective(g, pid, uid, &barb_only)
             } else {
@@ -25493,6 +25745,12 @@ impl AdvancedAi {
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
             }
+        }
+        // A camp outside the local barbarian-response radius may still be a
+        // one-step clear beside this unit. Immediate combat, civilian capture,
+        // recovery, escorts, and any local defense above keep their priority.
+        if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
         }
         // The defender's claim above is deliberately bounded to the nearest
         // half-army. Let the unclaimed remainder keep assembling on its
@@ -26487,6 +26745,16 @@ impl AdvancedAi {
         // of what to attack is taken out of the greedy per-unit path.
         self.tactics_resolved.clear();
         self.tactics_withdrawn.clear();
+        // A direct kill is a local opportunity, not a new campaign objective.
+        // Resolve those exact, positive exchanges before the joint search can
+        // reserve a unit for a withdrawal and before its reply-risk term can
+        // make a barbarian or wartime defender survive another turn.  Rebuild
+        // once if the board changed so the remaining engagement sees the
+        // actual force picture rather than a dead defender in its old group.
+        if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
+            self.rebuild_force_groups(g, pid, plan);
+            self.force_groups_dirty = false;
+        }
         if self.joint_tactics {
             self.plan_engagement(g, pid);
         }
