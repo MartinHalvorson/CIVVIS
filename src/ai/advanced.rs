@@ -2236,6 +2236,14 @@ pub struct AdvancedAi {
     /// freezing. Off for ordinary and frozen controllers; on for the live
     /// bridge and the native repair bundle (a CIVVIS scout dies the same way).
     pub recon_flight: bool,
+    /// Splice the +100% naval-production card family (Maritime Industries
+    /// and its era successors) into the policy portfolio while a coastal
+    /// empire wants hulls it does not have. The cards are invisible to the
+    /// counterfactual deck scorer until a sea unit already heads a queue and
+    /// appear in no grand-strategy portfolio, so the discount was never
+    /// slotted in the era where a Galley matters. Evaluator entrant
+    /// `advanced_maritime_splice`; off in production pending its screen.
+    pub naval_production_policy: bool,
     /// Do not build a space race, or a bomb, that cannot finish before the
     /// turn limit.
     ///
@@ -3785,6 +3793,7 @@ impl AdvancedAi {
             expansion_before_prophet: false,
             no_elective_war: false,
             recon_flight: false,
+            naval_production_policy: false,
             score_horizon: false,
             one_launch_pad: false,
             wide_map_capacity: false,
@@ -5048,6 +5057,12 @@ impl AdvancedAi {
     /// `advanced_fortify_idle_units`; off in production.
     pub fn enable_fortify_idle_units(&mut self) {
         self.base.fortify_idle_units = true;
+    }
+
+    /// Reach for the naval-production discount while hulls are wanted. See
+    /// `naval_production_policy`; entrant `advanced_maritime_splice`.
+    pub fn enable_naval_production_policy(&mut self) {
+        self.naval_production_policy = true;
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on
@@ -10455,6 +10470,37 @@ impl AdvancedAi {
         if maintenance_emergency {
             desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
             desired.splice(0..0, ["levee_en_masse", "conscription"]);
+        }
+        // A hull the empire is actively short of should not pay full price.
+        // The +100% naval-production cards (Maritime Industries and its era
+        // successors) are invisible to the counterfactual scorer until a sea
+        // unit already heads a queue — the card is worth nothing until the
+        // ship is queued, and the ship stays expensive because the card is
+        // not slotted — and none of the portfolios above lists them. Splice
+        // them in exactly while the empire wants hulls it does not have: a
+        // coastal empire whose naval reconnaissance arm is missing or whose
+        // navy is below its own `desired_navy` target. The successor is
+        // listed first so the loop below takes the strongest available
+        // version, matching the maintenance pair above.
+        if self.naval_production_policy {
+            // `desired_navy > 0` already requires a coastal city and Sailing,
+            // so the card is never spliced while no hull can be laid down.
+            let navy_target = BasicAi::desired_navy(g, pid);
+            let wants_hulls = navy_target > 0
+                && (BasicAi::naval_counts(g, pid).0 < navy_target
+                    || self.base.naval_recon_is_the_missing_arm(g, pid));
+            if wants_hulls {
+                desired.retain(|card| {
+                    !matches!(
+                        *card,
+                        "maritime_industries" | "press_gangs" | "international_waters"
+                    )
+                });
+                desired.splice(
+                    0..0,
+                    ["international_waters", "press_gangs", "maritime_industries"],
+                );
+            }
         }
         if self.victory_planning
             && objective == GrandStrategy::Conquest

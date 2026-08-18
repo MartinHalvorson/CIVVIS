@@ -14442,6 +14442,59 @@ fn the_garrison_loyalty_arm_actually_slots_limitanei() {
 }
 
 #[test]
+fn a_coastal_empire_short_of_hulls_slots_the_naval_production_card() {
+    let build = |spliced: bool, with_sailing: bool| {
+        let mut game = Game::new(2, 24, 16, 79_133, 200, 0);
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].civics.insert(crate::name!("foreign_trade"));
+        if with_sailing {
+            game.players[0].techs.insert(crate::name!("sailing"));
+        }
+        // A capital on the shoreline: the fixture's whole point is a coastal
+        // empire whose navy target is one and whose navy is zero.
+        let shore = game
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game
+                        .nbrs(**pos)
+                        .into_iter()
+                        .any(|near| game.map.get(near).is_some_and(|t| game.rules.is_water(t)))
+                    && game.units_at(**pos).is_empty()
+                    && game.city_at(**pos).is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("the fixture map has a shoreline");
+        game.found_city_for(0, shore, None);
+        // An incumbent military card: without one the empty-slot floor
+        // filler reaches Maritime Industries by priority order, hiding the
+        // defect this test pins — the card never DISPLACES anything.
+        game.players[0]
+            .policies
+            .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+
+        let mut ai = AdvancedAi::new();
+        if spliced {
+            ai.enable_naval_production_policy();
+        }
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Expansion);
+        game.players[0].policies.clone()
+    };
+
+    // Off (production today), or coastal without Sailing (no navy target):
+    // the incumbent keeps the military slot and the discount never lands.
+    assert!(!build(false, true).contains(&crate::name!("maritime_industries")));
+    assert!(!build(true, false).contains(&crate::name!("maritime_industries")));
+
+    // On, coastal, Sailing in, zero hulls against a target of one: the
+    // discount takes a military slot before the first Galley is priced.
+    assert!(build(true, true).contains(&crate::name!("maritime_industries")));
+}
+
+#[test]
 fn live_wartime_bankruptcy_slots_the_available_maintenance_discount() {
     let build = |live_war_economy: bool, treasury: f64, successor_unlocked: bool| {
         let mut game = Game::new(2, 24, 16, 79_098, 200, 0);
