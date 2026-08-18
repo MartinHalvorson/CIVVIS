@@ -10,8 +10,9 @@ ledger, and the supervisor passes that target into the harness explicitly.
 The policy is conservative by design.  A rung is not advanced merely because
 it has one historical win.  The trailing comparable window must contain the
 configured rung, at least ``min_attempts`` valid outcomes, and
-``repeat_wins`` wins.  A settings mismatch, blocked start, or unconfigured game
-is not evidence for repeatability.
+``repeat_wins`` wins.  A game the harness could not confirm was the game it
+asked for -- ``configured`` read back from inside the running session -- is not
+evidence for repeatability.
 
 Usage::
 
@@ -57,13 +58,35 @@ def policy_defaults() -> tuple[int, int, int]:
 
 
 def comparable_attempt(attempt: dict[str, Any], difficulty: str) -> bool:
-    """Whether one ledger row is safe to compare with this rung's batch."""
+    """Whether one ledger row is safe to compare with this rung's batch.
+
+    ⚠⚠ EVERY KEY READ HERE MUST BE A KEY `civ6_ladder.entry_from` WRITES.
+    This predicate used to add `and not attempt.get("settings_mismatch")` and
+    `and not attempt.get("blocked")`, and `entry_from` writes neither: measured
+    across the 325 rows of the live ledger, **0 carried either key**. They read
+    as two extra safety conditions and were two guards that could not fire —
+    this repository's own "a claim is not a check" defect, in the file that
+    decides when a difficulty rung has been beaten. Both were removed rather
+    than populated, because on this file neither can ever have a value:
+
+    * `blocked` is `civ6_civvis_climb.py`'s field on its own `civvis_ladder.jsonl`
+      row, and a start that produced no game produces no `summary.json` either —
+      `civ6_play._play` returns before writing one — so a blocked start never
+      becomes a ledger row at all;
+    * `settings_mismatch` is the same file's asked-versus-dealt comparison of
+      the launcher's own echo. The ledger's equivalent is `configured`, which
+      `civ6_play.py` reads back from INSIDE the running game (difficulty, size,
+      speed, map script, leader, modes, ruleset) and which this predicate
+      already requires — strictly stronger evidence than comparing a request
+      with the harness's memory of it.
+
+    `tools/test_civ6_ladder_policy.py` now fails if a key appears here that no
+    ledger row carries, so the deletion cannot quietly come back.
+    """
     return (
         attempt.get("configured") is True
         and attempt.get("difficulty") == difficulty
         and isinstance(attempt.get("won"), bool)
-        and not attempt.get("settings_mismatch")
-        and not attempt.get("blocked")
     )
 
 
