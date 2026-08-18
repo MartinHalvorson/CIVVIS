@@ -132,18 +132,74 @@ def idle_branches(now: datetime.datetime) -> list[str]:
     return rows
 
 
+def branch_of(ref: str) -> str:
+    """The agent branch a snapshot was taken from."""
+    return ref.removeprefix("refs/civvis/wip/")
+
+
+def merged_branches() -> set[str]:
+    """Branches whose pull request merged, so their snapshot is history.
+
+    One paged listing rather than a call per snapshot: at 151 snapshots the
+    per-branch form is 151 requests, which is both slow and the kind of thing
+    that quietly eats a rate limit on a scheduled job.
+    """
+    merged: set[str] = set()
+    page = 1
+    while page <= 10:
+        pulls = api(f"/repos/{REPOSITORY}/pulls?state=closed&sort=updated"
+                    f"&direction=desc&per_page=100&page={page}")
+        if not pulls:
+            break
+        for pull in pulls:
+            if pull.get("merged_at"):
+                merged.add((pull.get("head") or {}).get("ref") or "")
+        page += 1
+    merged.discard("")
+    return merged
+
+
 def rescue_refs() -> list[str]:
-    """Everything the worktree audit preserved that still only it remembers."""
+    """Snapshots whose work never landed, and a count of the ones that did.
+
+    ⚠ A LIST OF 151 IS NOT A TO-DO LIST. This reported every snapshot the audit
+    had ever preserved, in one undifferentiated wall, and the wall is why the
+    section was never drained: the overwhelming majority are the preserved
+    history of work that DID land, and nothing distinguished them from the few
+    that hold something nobody ever merged.
+
+    A snapshot whose branch merged is finished business. What is left after
+    removing those is the actual queue, and it is short enough to read.
+
+    Note a snapshot is NOT judged by diffing it against `main`. The fleet
+    squash-merges, so a snapshot of work that landed still shows its whole diff
+    against main forever — measured 2026-08-18, 150 of 151 did. That test would
+    call almost everything stranded, which is exactly as useless as calling
+    nothing stranded.
+    """
     git("fetch", "origin", "+refs/civvis/wip/*:refs/civvis/wip/*")
-    rows = []
+    try:
+        merged = merged_branches()
+    except Exception:  # noqa: BLE001 - a report that cannot reach GitHub still reports
+        merged = set()
+
+    rows, landed = [], 0
     for line in git(
         "for-each-ref", "refs/civvis/wip/",
         "--format=%(refname)\t%(committerdate:iso-strict)\t%(contents:subject)",
     ).splitlines():
         ref, date, subject = line.split("\t", 2)
+        branch = branch_of(ref)
+        if branch in merged:
+            landed += 1
+            continue
         stat = git("diff", "--shortstat", f"{ref}^", ref).strip()
-        rows.append(f"- `{ref.removeprefix('refs/civvis/wip/')}` ({date[:16]}, "
-                    f"{stat or 'empty'}) — {subject[:70]}")
+        rows.append(f"- `{branch}` ({date[:16]}, {stat or 'empty'}) — {subject[:70]}")
+    if landed:
+        rows.append(
+            f"\n_{landed} further snapshot(s) belong to branches whose pull "
+            f"request merged. That work is in `main`; the snapshots are "
+            f"preserved history and are not listed._")
     return rows
 
 
