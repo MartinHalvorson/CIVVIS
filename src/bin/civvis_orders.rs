@@ -8164,7 +8164,11 @@ mod civ6_name_audit {
         // test noticed. Both sources are driven here: the ruleset's own table
         // and `Game::SPY_PROMOTIONS`, which is not in it.
         for name in rules.promotions.keys() {
-            check("promotion", name.as_str(), civ6_unit_promotion_name(name.as_str()));
+            check(
+                "promotion",
+                name.as_str(),
+                civ6_unit_promotion_name(name.as_str()),
+            );
         }
         for name in civvis::game::Game::SPY_PROMOTIONS {
             check("spy-promotion", name, civ6_unit_promotion_name(name));
