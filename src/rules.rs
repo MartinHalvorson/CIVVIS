@@ -1101,8 +1101,10 @@ pub struct CivSpec {
     /// `city_production`, `city_gold`, `city_science`, `city_culture` and
     /// `city_faith` are flat yields every city of this civilization earns;
     /// `unit_production_pct`, `settler_production_pct`,
-    /// `building_production_pct`, `district_production_pct` and
-    /// `wonder_production_pct` speed what a city is building;
+    /// `building_production_pct`, `district_production_pct`,
+    /// `encampment_district_production_pct`, `holy_site_district_production_pct`,
+    /// `theater_square_district_production_pct`, `dam_district_production_pct`
+    /// and `wonder_production_pct` speed what a city is building;
     /// `combat_strength` and `unit_xp_pct` belong to its units;
     /// `free_trading_posts` and `own_trading_post_route_gold` are Rome's
     /// All Roads Lead to Rome — every city holds a Trading Post from founding

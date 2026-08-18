@@ -101,6 +101,11 @@
       "verified": true,
       "note": "Verified including the requirement sets, which is where the granularity lives. Prasat 0.5 Culture is unconditional, but Theocracy 0.5 Faith and Communism 0.6 Production are both gated on CITY_HAS_GOVERNOR -- and CIVVIS names those two keys governor_faith_per_pop and governor_production_per_pop while leaving Prasat's plain, so the gate survived the translation."
     },
+    "ADJUST_DISTRICT_PRODUCTION": {
+      "status": "implemented",
+      "verified": true,
+      "note": "Verified all 13 active Gathering Storm rows. The six typed city-state traits (Scientific Campus, Cultural Theater Square, Religious Holy Site, Militaristic Encampment, Industrial Industrial Zone, and Trade Commercial Hub) and the default city-state Harbor row each add 500% only to the city-state that owns the city. Hojo's three Divine Wind rows add 100% to Encampment, Holy Site, and Theater Square districts; Grote Rivieren adds 50% to Netherlands Dams; and Veterans' Encampment and Harbor rows already shared the card's military_port_production_pct path. Germany's separate generic district bonus remains additive through district_production_pct."
+    },
     "ADJUST_DISTRICT_GREAT_PERSON_POINTS": {
       "status": "implemented",
       "verified": true,

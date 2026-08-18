@@ -14264,6 +14264,33 @@ impl Game {
             .map_or("trade", |seat| seat.kind.as_str())
     }
 
+    /// The seven `ADJUST_DISTRICT_PRODUCTION` rows every city-state carries:
+    /// all of them construct Harbors 500% faster, and each type constructs
+    /// its specialty district 500% faster.  These are city-state-owned
+    /// modifiers, not Envoy bonuses a major civilization receives.
+    fn city_state_district_production_pct(&self, pid: usize, family: &str) -> f64 {
+        let Some(player) = self
+            .players
+            .get(pid)
+            .filter(|player| player.is_minor && !player.is_barbarian)
+        else {
+            return 0.0;
+        };
+        if family == "harbor" {
+            return 500.0;
+        }
+        let specialty = match self.cs_type(&player.civ) {
+            "scientific" => "campus",
+            "cultural" => "theater_square",
+            "religious" => "holy_site",
+            "militaristic" => "encampment",
+            "industrial" => "industrial_zone",
+            "trade" => "commercial_hub",
+            _ => return 0.0,
+        };
+        if family == specialty { 500.0 } else { 0.0 }
+    }
+
     /// The bespoke Suzerain bonus key a city-state carries, if the engine
     /// implements one. A declared-but-unimplemented bonus reads as `None` so
     /// no code path can act on a bonus that does not exist yet.
@@ -15286,11 +15313,14 @@ impl Game {
                 ) / 100.0;
             }
             Some(Item::District { district, .. }) => {
+                let family = self.district_family(*district);
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
-                if matches!(self.district_family(*district).as_str(), "encampment" | "harbor") {
+                if matches!(family.as_str(), "encampment" | "harbor") {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
+                bonus += self.civ_effect(pid, &format!("{family}_district_production_pct")) / 100.0;
+                bonus += self.city_state_district_production_pct(pid, family.as_str()) / 100.0;
             }
             Some(Item::Wonder { wonder, pos }) => {
                 bonus += self.policy_effect(pid, "wonder_production_pct") / 100.0;

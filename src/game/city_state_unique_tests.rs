@@ -85,6 +85,62 @@ fn assert_close(actual: f64, expected: f64) {
     );
 }
 
+#[test]
+fn gathering_storm_district_production_rows_apply_to_every_owner() {
+    let (mut game, cities) = game_with_capitals(1, 89_094);
+    let city = cities[0];
+    let pos = owned_non_center_site(&game, city);
+    let district = |family: &str| Item::District {
+        district: Name::new(family),
+        pos,
+    };
+
+    // MINOR_CIV_PRODUCTION_HARBORS applies to every type, and each of the
+    // six type traits pays the matching specialty-district row.
+    for (city_state, specialty) in [
+        ("Geneva", "campus"),
+        ("Mohenjo-Daro", "theater_square"),
+        ("Yerevan", "holy_site"),
+        ("Kabul", "encampment"),
+        ("Auckland", "industrial_zone"),
+        ("Zanzibar", "commercial_hub"),
+    ] {
+        game.players[0].is_minor = true;
+        game.players[0].civ = city_state.to_string();
+        assert_close(game.item_prod_mult(0, city, Some(&district("harbor"))), 6.0);
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            6.0,
+        );
+        assert_close(game.item_prod_mult(0, city, Some(&district("dam"))), 1.0);
+    }
+
+    game.players[0].is_minor = false;
+    game.players[0].civ = "Japan".to_string();
+    for specialty in ["encampment", "holy_site", "theater_square"] {
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            2.0,
+        );
+    }
+    assert_close(game.item_prod_mult(0, city, Some(&district("campus"))), 1.0);
+
+    game.players[0].civ = "Netherlands".to_string();
+    assert_close(game.item_prod_mult(0, city, Some(&district("dam"))), 1.5);
+    assert_close(game.item_prod_mult(0, city, Some(&district("campus"))), 1.0);
+
+    // Veterans' two rows were already represented by the shared policy key;
+    // keep that behavior pinned while adding the remaining eleven rows.
+    game.players[0].civ = "Rome".to_string();
+    game.players[0].policies.insert(crate::name!("veterancy"));
+    for specialty in ["encampment", "harbor"] {
+        assert_close(
+            game.item_prod_mult(0, city, Some(&district(specialty))),
+            1.3,
+        );
+    }
+}
+
 fn owned_non_center_site(game: &Game, city: u32) -> Pos {
     let center = game.cities[&city].pos;
     game.cities[&city]
