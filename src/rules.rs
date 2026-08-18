@@ -1220,6 +1220,174 @@ pub struct PromotionSpec {
     pub note: String,
 }
 
+/// The collection a modifier targets when it is attached to a player.
+///
+/// Civ VI names many more collection types than CIVVIS can execute today.
+/// These three cover the player-wide, city-wide, and unit-wide paths that the
+/// engine already has a stable consumer for. Keeping the scope in the data
+/// means a newly imported modifier row cannot silently become an empire-wide
+/// effect just because it happened to use the same numeric key.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModifierCollection {
+    #[default]
+    Player,
+    PlayerCities,
+    PlayerUnits,
+}
+
+/// One atomic predicate in a modifier requirement set.
+///
+/// Civ VI's requirement tables are much larger than this deliberately small
+/// first slice. These predicates are the high-frequency player facts needed by
+/// the existing consumers: government, identity, religion, age, and completed
+/// research/cards. A row may combine fields with AND semantics; requirement
+/// sets provide `all`, `any`, and `none` groups around them.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ModifierRequirement {
+    #[serde(alias = "player_type")]
+    pub player_type: Option<String>,
+    #[serde(alias = "civ")]
+    pub civilization: Option<String>,
+    pub government: Option<String>,
+    pub religion: Option<String>,
+    pub pantheon: Option<String>,
+    pub secret_society: Option<String>,
+    pub age: Option<String>,
+    pub policy: Option<String>,
+    #[serde(alias = "tech")]
+    pub technology: Option<String>,
+    pub civic: Option<String>,
+}
+
+impl ModifierRequirement {
+    fn is_empty(&self) -> bool {
+        self.player_type.is_none()
+            && self.civilization.is_none()
+            && self.government.is_none()
+            && self.religion.is_none()
+            && self.pantheon.is_none()
+            && self.secret_society.is_none()
+            && self.age.is_none()
+            && self.policy.is_none()
+            && self.technology.is_none()
+            && self.civic.is_none()
+    }
+
+    fn validate(&self, modifier: &str, group: &str, index: usize) -> Result<(), String> {
+        if self.is_empty() {
+            return Err(format!(
+                "modifier {modifier} has an empty {group} requirement at index {index}"
+            ));
+        }
+        for (field, value) in [
+            ("player_type", self.player_type.as_deref()),
+            ("civilization", self.civilization.as_deref()),
+            ("government", self.government.as_deref()),
+            ("religion", self.religion.as_deref()),
+            ("pantheon", self.pantheon.as_deref()),
+            ("secret_society", self.secret_society.as_deref()),
+            ("age", self.age.as_deref()),
+            ("policy", self.policy.as_deref()),
+            ("technology", self.technology.as_deref()),
+            ("civic", self.civic.as_deref()),
+        ] {
+            if value.is_some_and(str::is_empty) {
+                return Err(format!(
+                    "modifier {modifier} has an empty {field} value in {group} requirement {index}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn matches(&self, context: &ModifierContext<'_>) -> bool {
+        fn same(expected: Option<&String>, actual: Option<&str>) -> bool {
+            expected.is_none_or(|expected| {
+                actual.is_some_and(|actual| expected.eq_ignore_ascii_case(actual))
+            })
+        }
+        fn contains(expected: Option<&String>, actual: Option<&BTreeSet<Name>>) -> bool {
+            expected.is_none_or(|expected| {
+                actual.is_some_and(|actual| actual.contains(&Name::new(expected)))
+            })
+        }
+
+        same(self.player_type.as_ref(), context.player_type)
+            && same(self.civilization.as_ref(), context.civilization)
+            && same(self.government.as_ref(), context.government)
+            && same(self.religion.as_ref(), context.religion)
+            && same(self.pantheon.as_ref(), context.pantheon)
+            && same(self.secret_society.as_ref(), context.secret_society)
+            && same(self.age.as_ref(), context.age)
+            && contains(self.policy.as_ref(), context.policies)
+            && contains(self.technology.as_ref(), context.technologies)
+            && contains(self.civic.as_ref(), context.civics)
+    }
+}
+
+/// Facts supplied by the game state when a modifier is collected.
+///
+/// This is intentionally a borrowed view: checking a modifier must not clone
+/// a player's policy or research sets on every yield query.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ModifierContext<'a> {
+    pub player_type: Option<&'a str>,
+    pub civilization: Option<&'a str>,
+    pub government: Option<&'a str>,
+    pub religion: Option<&'a str>,
+    pub pantheon: Option<&'a str>,
+    pub secret_society: Option<&'a str>,
+    pub age: Option<&'a str>,
+    pub policies: Option<&'a BTreeSet<Name>>,
+    pub technologies: Option<&'a BTreeSet<Name>>,
+    pub civics: Option<&'a BTreeSet<Name>>,
+}
+
+/// A Civ VI-style requirement set with explicit Boolean grouping.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ModifierRequirements {
+    #[serde(default)]
+    pub all: Vec<ModifierRequirement>,
+    #[serde(default)]
+    pub any: Vec<ModifierRequirement>,
+    #[serde(default)]
+    pub none: Vec<ModifierRequirement>,
+}
+
+impl ModifierRequirements {
+    pub fn is_empty(&self) -> bool {
+        self.all.is_empty() && self.any.is_empty() && self.none.is_empty()
+    }
+
+    fn validate(&self, modifier: &str) -> Result<(), String> {
+        for (group, requirements) in [("all", &self.all), ("any", &self.any), ("none", &self.none)]
+        {
+            for (index, requirement) in requirements.iter().enumerate() {
+                requirement.validate(modifier, group, index)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn matches(&self, context: &ModifierContext<'_>) -> bool {
+        self.all
+            .iter()
+            .all(|requirement| requirement.matches(context))
+            && (self.any.is_empty()
+                || self
+                    .any
+                    .iter()
+                    .any(|requirement| requirement.matches(context)))
+            && self
+                .none
+                .iter()
+                .all(|requirement| !requirement.matches(context))
+    }
+}
+
 /// A reusable bundle of numeric engine effects.
 ///
 /// Civ VI's `ATTACH_MODIFIER` effect composes named modifiers rather than
@@ -1228,6 +1396,7 @@ pub struct PromotionSpec {
 /// graph once, adds the resulting values to that object's ordinary `effects`
 /// map, and rejects dangling references or cycles before a game can start.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct ModifierSpec {
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
@@ -1250,6 +1419,13 @@ pub struct ModifierSpec {
     /// Other named bundles this modifier attaches, in application order.
     #[serde(default)]
     pub modifiers: Vec<String>,
+    /// Collection targeted by this bundle when it is attached at runtime.
+    #[serde(default)]
+    pub collection: ModifierCollection,
+    /// Optional player-state predicates. Requirements are evaluated when a
+    /// live attachment is collected, not when the ruleset is loaded.
+    #[serde(default)]
+    pub requirements: ModifierRequirements,
 }
 
 const BUILDING_YIELD_EFFECT_PREFIX: &str = "building_yield:";
@@ -2201,6 +2377,7 @@ fn resolve_modifiers(
             let owner = stack.last().map(|name| name.as_str()).unwrap_or("ruleset");
             return Err(format!("modifier {owner} attaches missing modifier {name}"));
         };
+        spec.requirements.validate(name)?;
         if let Some(start) = stack.iter().position(|entry| entry == name) {
             let mut cycle = stack[start..].to_vec();
             cycle.push(name.to_string());
@@ -2212,6 +2389,9 @@ fn resolve_modifiers(
         compile_modifier_selectors(name, spec, &mut effects)?;
         for attached in &spec.modifiers {
             let nested = resolve_one(attached, source, resolved, stack)?;
+            if nested.collection != spec.collection || !nested.requirements.is_empty() {
+                return Err(format!("modifier {name} cannot flatten contextual attachment {attached}; nested modifiers must use the parent collection and no requirements"));
+            }
             add_effects(&mut effects, &nested.effects);
         }
         stack.pop();
@@ -2222,6 +2402,8 @@ fn resolve_modifiers(
             unit_purchase_discount_pct: BTreeMap::new(),
             abilities: BTreeSet::new(),
             modifiers: Vec::new(),
+            collection: spec.collection,
+            requirements: spec.requirements.clone(),
         };
         resolved.insert(name.to_string(), flat.clone());
         Ok(flat)
@@ -2278,6 +2460,11 @@ fn expand_modifier_attachments(
                     let Some(modifier) = modifiers.get(name) else {
                         return Err(format!("{path} attaches missing modifier {name}"));
                     };
+                    if modifier.collection != ModifierCollection::Player
+                        || !modifier.requirements.is_empty()
+                    {
+                        return Err(format!("{path} attaches contextual modifier {name}; use a runtime player attachment instead"));
+                    }
                     for (effect, value) in &modifier.effects {
                         let previous = effects
                             .get(effect)
@@ -3241,6 +3428,95 @@ mod tests {
             .unit_purchase_discount_pct
             .is_empty());
         assert!(rules.modifiers["production_bundle"].abilities.is_empty());
+    }
+
+    #[test]
+    fn modifier_requirements_support_all_any_none_and_player_collections() {
+        let requirements: ModifierRequirements = serde_json::from_value(json!({
+            "all": [
+                {"government": "democracy"},
+                {"policy": "urban_planning"}
+            ],
+            "any": [
+                {"religion": "catholicism"},
+                {"pantheon": "religious_settlements"}
+            ],
+            "none": [{"age": "dark"}]
+        }))
+        .unwrap();
+        let policies = BTreeSet::from([Name::new("urban_planning")]);
+        let technologies = BTreeSet::new();
+        let civics = BTreeSet::new();
+        let context = ModifierContext {
+            player_type: Some("major"),
+            civilization: Some("Rome"),
+            government: Some("democracy"),
+            religion: Some("catholicism"),
+            pantheon: None,
+            secret_society: None,
+            age: Some("normal"),
+            policies: Some(&policies),
+            technologies: Some(&technologies),
+            civics: Some(&civics),
+        };
+        assert!(requirements.matches(&context));
+
+        let dark = ModifierContext {
+            age: Some("dark"),
+            ..context
+        };
+        assert!(!requirements.matches(&dark));
+
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "city_bundle": {
+                    "collection": "player_cities",
+                    "requirements": {"all": [{"government": "democracy"}]},
+                    "effects": {"city_production": 4}
+                }
+            }),
+        );
+        let rules = Rules::from_values(files).unwrap();
+        assert_eq!(
+            rules.modifiers["city_bundle"].collection,
+            ModifierCollection::PlayerCities
+        );
+        assert_eq!(
+            rules.modifiers["city_bundle"].requirements.all[0]
+                .government
+                .as_deref(),
+            Some("democracy")
+        );
+    }
+
+    #[test]
+    fn contextual_modifier_attachments_are_not_flattened_into_static_rules() {
+        let mut files = Rules::shipped_values();
+        files.insert(
+            "modifiers".to_string(),
+            json!({
+                "conditional": {
+                    "requirements": {"all": [{"government": "democracy"}]},
+                    "effects": {"city_production": 4}
+                }
+            }),
+        );
+        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["conditional"]);
+        let error = Rules::from_values(files).err().unwrap();
+        assert!(
+            error.contains("attaches contextual modifier conditional"),
+            "{error}"
+        );
+
+        let mut invalid = Rules::shipped_values();
+        invalid.insert(
+            "modifiers".to_string(),
+            json!({"bad": {"requirements": {"all": [{}]}}}),
+        );
+        let error = Rules::from_values(invalid).err().unwrap();
+        assert!(error.contains("empty all requirement"), "{error}");
     }
 
     #[test]

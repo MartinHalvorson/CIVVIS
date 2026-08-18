@@ -169,6 +169,19 @@ expressed without building the interpreter.
    collections, effects, requirement sets, and a loader that reads the shipped
    `Modifiers` rows rather than transcribing them.
 
+The first interpreter slice is now in the engine. A named bundle may declare a
+`collection` of `player`, `player_cities`, or `player_units`, plus a borrowed
+requirement set with `all`, `any`, and `none` groups. The live collector evaluates
+those predicates against the player's current government, civilization,
+religion, pantheon, Secret Society, age, policies, technologies, and civics;
+changing one of those facts changes the effect without reattaching the bundle.
+Static rules-object attachments reject contextual bundles instead of applying
+them unconditionally, and nested bundles must be unconditional and stay in the
+parent collection. This keeps the existing flattening fast while making the
+new conditional path safe to extend. The shipped `modifiers.json` remains
+empty until a database import supplies real rows — no synthetic effects are
+being counted as fidelity.
+
 Content scope — the civilizations, units and buildings CIVVIS does not model
 at all — is measured separately by the "Only in Civ VI" columns of
 `tools/civ6_fidelity.py`. The two backlogs are independent: implementing an
