@@ -110,6 +110,13 @@ collect_mirror() {
   fi
 }
 
+mirror_needs_settle() {
+  # The backup keeper is deliberately absent while the primary follower is
+  # serving a healthy, painted mirror.  Wait only for a missing follower or an
+  # unhealthy mirror that may still be settling.
+  [[ -z "$follower_pid" ]] || (( ! mirror_healthy ))
+}
+
 display_page=0
 collect_display_page() {
   local pages
@@ -221,7 +228,7 @@ fi
 
 collect_mirror
 if (( live_events && tiles_exported )) \
-    && { [[ -z "$mirror_keeper_pid" || -z "$follower_pid" ]] || (( ! mirror_healthy )); }; then
+    && mirror_needs_settle; then
   sleep "$MIRROR_SETTLE_S"
   mirror_keeper_pid=$(first_pid '[c]ivvis-mirror-keeper\.sh')
   follower_pid=$(first_pid '[t]ools/follow\.py')
