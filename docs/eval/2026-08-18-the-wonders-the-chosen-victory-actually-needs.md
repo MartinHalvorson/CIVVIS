@@ -90,7 +90,33 @@ This inverts the premise the change started from. The binding constraint on
 "build the wonders the victory needs" is the **prerequisite chain**, not the
 valuation, and it is a different piece of work.
 
-### 3. Two arms cut on evidence before the screen ran
+### 3. Where it does reach, it picks the right wonder every time
+
+The Culture lane is where the arm can act — its wonders need no district the
+lane does not already build — and the census shows it acting, cleanly. Six
+250-turn six-player culture games, seeds 24000000–05, arm against `--without`:
+
+| seed | with the arm | without it |
+|---|---|---|
+| 00 | machu_picchu · pyramids · **cristo_redentor** | machu_picchu · pyramids |
+| 01 | **cristo_redentor** · forbidden_city · colosseum | forbidden_city · colosseum |
+| 02 | **cristo_redentor** · forbidden_city · temple_artemis | forbidden_city · temple_artemis |
+| 03 | forbidden_city · great_library · petra · **cristo_redentor** | forbidden_city · great_library · petra · temple_artemis |
+| 04 | **cristo_redentor** · great_bath · apadana | apadana |
+| 05 | **st_basils_cathedral** · **cristo_redentor** · … | hanging_gardens · … |
+
+**Cristo Redentor in six of six with the arm and none of six without it.** It is
+`seaside_resort_tourism_pct: 100` plus `religious_tourism_unreduced` — the
+densest tourism in the table, and a culture victory is tourists. The control
+builds the Hanging Gardens and Temple of Artemis instead, which are food and
+Amenities. St Basil's Cathedral (`city_religious_tourism_pct: 100`) arrives the
+same way.
+
+So the mechanism is not merely firing, it is firing in the intended direction
+and choosing the intended wonder. What it does not do is move the win rate
+(§4) — which is a statement about effect size, not about correctness.
+
+### 4. Two arms cut on evidence before the screen ran
 
 *Conquest, removed.* Pricing the Statue of Zeus, Terracotta Army and Venetian
 Arsenal for a Domination lane cost it two games in eight (`--start-seed
@@ -116,7 +142,7 @@ wonder the bars had just refused was boosted wherever some other gate had opened
 a lane — the live seat's race, or a Culture plan. One qualification now serves
 both.
 
-### 4. Lane completion, paired on identical seeds
+### 5. Lane completion, paired on identical seeds
 
 | lane | 24000000 (24 a lane) | 27000000 (32 a lane) |
 |---|---|---|
