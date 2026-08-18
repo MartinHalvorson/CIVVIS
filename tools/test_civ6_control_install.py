@@ -647,6 +647,31 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("GetTouristsTo()", source)
         self.assertIn("GetStaycationers()", source)
 
+    def test_the_spy_missions_reach_the_host(self) -> None:
+        # The engine models twelve missions and the AI aims them at the denial
+        # target; none could be sent, and `Game::spies` was empty besides.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        for op in ("UNITOPERATION_SPY_TRAVEL_NEW_CITY",
+                   "UNITOPERATION_SPY_GREAT_WORK_HEIST",
+                   "UNITOPERATION_SPY_DISRUPT_ROCKETRY",
+                   "UNITOPERATION_SPY_STEAL_TECH_BOOST"):
+            self.assertIn(op, source)
+        block = source.split('if verb:sub(1, 4) == "SPY_" then', 1)[1]
+        block = block.split("Anything else is a named operation", 1)[0]
+        # Aimed at a plot, the way Firaxis' own EspionagePopup aims it.
+        self.assertIn("UnitOperationTypes.PARAM_X", block)
+        self.assertIn("UnitOperationTypes.PARAM_Y", block)
+        self.assertIn("operate(unit, hash, params)", block)
+        # A mission with no destination is named, never sent empty-handed.
+        self.assertIn('"no_spy_target:"', block)
+
+    def test_the_export_carries_spy_capacity(self) -> None:
+        # Without it the mirror must block Spy production unconditionally,
+        # which is why the seat has never held one.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("spy_capacity = try(function()", source)
+        self.assertIn("player:GetDiplomacy():GetSpyCapacity()", source)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory

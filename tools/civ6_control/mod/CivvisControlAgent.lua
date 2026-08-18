@@ -190,6 +190,20 @@ local function resolveActions()
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
+		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
+		-- NOT SEND. `Game::spies` -- the only structure `advanced_spies` and
+		-- `BasicAi::spies` iterate -- is empty for an entire live game, so a
+		-- tuned, victory-aimed disruption layer (great_work_heist 340 against a
+		-- Culture leader, disrupt_rocketry 290 against a Science one) was a
+		-- guaranteed no-op. These are the thirteen the live build exposes; a
+		-- survey of `UnitOperationTypes` dumped every one.
+		"UNITOPERATION_SPY_TRAVEL_NEW_CITY", "UNITOPERATION_SPY_COUNTERSPY",
+		"UNITOPERATION_SPY_LISTENING_POST", "UNITOPERATION_SPY_GAIN_SOURCES",
+		"UNITOPERATION_SPY_STEAL_TECH_BOOST", "UNITOPERATION_SPY_SIPHON_FUNDS",
+		"UNITOPERATION_SPY_GREAT_WORK_HEIST", "UNITOPERATION_SPY_SABOTAGE_PRODUCTION",
+		"UNITOPERATION_SPY_DISRUPT_ROCKETRY", "UNITOPERATION_SPY_NEUTRALIZE_GOVERNOR",
+		"UNITOPERATION_SPY_RECRUIT_PARTISANS", "UNITOPERATION_SPY_FOMENT_UNREST",
+		"UNITOPERATION_SPY_FABRICATE_SCANDAL",
 	}) do
 		OP[name] = opHash(name);
 	end
@@ -6836,6 +6850,12 @@ local function exportState(player, pid, turn)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- How many Spies this empire may field, from the same accessor the
+		-- shipped Espionage Overview prints. The mirror blocks Spy production
+		-- outright without it, which is why the seat has never held one.
+		spy_capacity = try(function()
+			return player:GetDiplomacy():GetSpyCapacity();
+		end, nil),
 		-- Our own two culture-victory counters, same accessors as each
 		-- rival's (WorldRankings.lua:1674-1675): OUR staycationers are the
 		-- bar every rival's visiting tourists must clear, so the victory
@@ -10261,6 +10281,21 @@ local function applyOrder(player, pid, row, turn)
 				UnitManager.RequestCommand(unit, hash, params);
 			end);
 			return ok, ok and verb or "throw";
+		end
+		-- A spy mission is an operation aimed at a CITY PLOT, exactly as
+		-- Firaxis' own EspionagePopup issues it: PARAM_X/PARAM_Y then
+		-- `RequestOperation`. Travelling to a new city uses the same shape,
+		-- which is why one branch serves both. Without the plot the host has
+		-- nothing to aim at, so a missing destination is named rather than
+		-- sent as an empty-parameter operation that would silently do nothing.
+		if verb:sub(1, 4) == "SPY_" then
+			local hash = OP["UNITOPERATION_" .. verb];
+			if hash == nil then return false, "unknown_op_" .. verb; end
+			if x == nil or y == nil then return false, "no_spy_target:" .. verb; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			return operate(unit, hash, params), verb;
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
