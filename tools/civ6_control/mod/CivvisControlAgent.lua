@@ -6898,6 +6898,14 @@ local function exportState(player, pid, turn)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- The World Congress standing as of the last session, recorded where
+		-- the review is read. Every alive major appears, including ones this
+		-- seat has not met -- the congress seats them all and shows the seat
+		-- their points, and the ballot the host hands us for
+		-- `WC_RES_DIPLOVICTORY` already names them as targets, which is why
+		-- `voteWorldCongress` may pick a leader from the same set. Carrying it
+		-- no further than the ballot is what left the victory tracker blind.
+		congress_dvp = envoyTally.congress_dvp,
 		-- How many Spies this empire may field, from the same accessor the
 		-- shipped Espionage Overview prints. The mirror blocks Spy production
 		-- outright without it, which is why the seat has never held one.
@@ -11188,6 +11196,23 @@ local function beginTurn(player, pid, turn)
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
 			favor = tonumber(try(function() return player:GetFavor(); end, 0)) or 0,
 		});
+		-- ★★★★★ AND THE SAME TABLE, KEPT FOR THE STATE EXPORT.
+		--
+		-- `wc_outcome` is a log event: nothing on the CIVVIS side has ever read
+		-- it. Meanwhile the per-turn rival export is met-gated, so the victory
+		-- tracker's diplomatic lane only ever saw the civilizations this seat
+		-- had already contacted. Measured over the 50 runs carrying a congress
+		-- table, 40 of them (80%) had a congress DVP standing HIGHER than any
+		-- rival the decider could see, and in five the gap crossed the denial
+		-- alarm: `civvis-20260818T103630Z` lost a diplomatic victory to a
+		-- player sitting at 22 DVP while the tracker's best visible rival read
+		-- 14, so `urgent_victory_threat` never fired once all game.
+		--
+		-- This is the congress standing and nothing more: the table the seat is
+		-- shown when it votes, stamped with the turn it was shown. It is not a
+		-- live per-turn read of an uncontacted empire — between sessions it
+		-- goes stale exactly the way a human's memory of the last session does.
+		envoyTally.congress_dvp = { turn = turn, points = dvp };
 	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--

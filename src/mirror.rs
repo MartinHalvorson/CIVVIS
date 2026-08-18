@@ -2208,6 +2208,112 @@ mod tests {
         assert_eq!(mirror.game.players[1].dvp, 19);
     }
 
+    /// 🔴🔴🔴 The congress standing seats the majors this seat never met.
+    ///
+    /// Replays `civvis-20260818T103630Z`, which lost a diplomatic victory at
+    /// turn 222 while leading on score by 213. Six majors, and the seat had met
+    /// exactly one of them: the per-turn rival export therefore topped out at
+    /// LAUTARO's 14 points (70% of the 20 needed), comfortably under the denial
+    /// alarm, while the congress table the seat votes from showed player 4
+    /// holding 22. `urgent_victory_threat` never fired once in 222 turns.
+    #[test]
+    fn congress_standing_seats_the_majors_this_seat_never_met() {
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":221,
+            "dvp":2, "favor":847.0,
+            "congress_dvp":{"turn":221, "points":[
+                {"player":0, "points":2}, {"player":1, "points":10},
+                {"player":3, "points":14}, {"player":4, "points":22},
+                {"player":5, "points":16}]},
+            "rivals":[{"player":3, "dvp":14}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the congress standing wire parses");
+        assert!(
+            state.schema_gaps.is_empty(),
+            "congress_dvp must be schema-recognized: {:?}",
+            state.schema_gaps
+        );
+        // The seat arrives as its own event rather than inside `state`.
+        state.seat.local_player = 0;
+        state.seat.players = 6;
+        let congress = state.congress_dvp.as_ref().expect("the table parses");
+        assert_eq!(congress.turn, Some(221));
+        assert_eq!(congress.points.len(), 5);
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 221,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        // Seat 0 is ours and seat 1 is the one met rival, whose own per-turn
+        // export is the fresher number. The three we never met take the free
+        // seats in ascending host order: 1, 4, 5.
+        assert_eq!(rebuilt.game.players[0].dvp, 2);
+        assert_eq!(rebuilt.game.players[1].dvp, 14);
+        assert_eq!(rebuilt.game.players[2].dvp, 10);
+        assert_eq!(rebuilt.game.players[3].dvp, 22);
+        assert_eq!(rebuilt.game.players[4].dvp, 16);
+        assert_eq!(
+            rebuilt
+                .game
+                .players
+                .iter()
+                .map(|player| player.dvp)
+                .max()
+                .unwrap_or(0),
+            22,
+            "the empire actually about to win must be visible somewhere on the board"
+        );
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        assert_eq!(mirror.game.players[3].dvp, 22);
+        // The met rival's live export stays authoritative even when it falls,
+        // because `WC_RES_DIPLOVICTORY` option B takes two points away.
+        state.turn = 222;
+        state.rivals[0].dvp = Some(12);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[1].dvp, 12,
+            "a met rival's per-turn read outranks a congress table refreshed once a session"
+        );
+        assert_eq!(mirror.game.players[3].dvp, 22);
+
+        // An older control mod omits the table entirely; that must not erase
+        // what a persistent mirror already seated.
+        state.turn = 223;
+        state.congress_dvp = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[3].dvp, 22);
+    }
+
+    /// A met rival whose `dvp` the mod could not read still gets the congress
+    /// number rather than a silent zero.
+    #[test]
+    fn congress_standing_backfills_a_met_rival_with_no_live_reading() {
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":180,
+            "congress_dvp":{"turn":180, "points":[
+                {"player":0, "points":5}, {"player":2, "points":17}]},
+            "rivals":[{"player":2}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the congress standing wire parses");
+        state.seat.local_player = 0;
+        state.seat.players = 4;
+        assert_eq!(state.rivals[0].dvp, None);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 180,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(rebuilt.game.players[1].dvp, 17);
+    }
+
     /// Rival victory progress crosses the bridge. Five of the twelve runs the
     /// seat was leading on 2026-08-16/17 ended at t229-245 on a rival's
     /// culture, technology or diplomatic victory: rival space programs and
@@ -8830,6 +8936,28 @@ pub struct StatePublicEmpireStats {
     pub thermonuclear_devices: Option<i64>,
 }
 
+/// The World Congress diplomatic standing as of the last session, and the turn
+/// that session was held. See [`StateSnapshot::congress_dvp`] for why a
+/// met-gated rival list cannot answer "who is about to win diplomatically".
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCongressDvp {
+    /// The game turn the seat was shown this standing.
+    #[serde(default)]
+    pub turn: Option<i64>,
+    /// One entry per alive major, the seat included.
+    #[serde(default)]
+    pub points: Vec<StateCongressDvpEntry>,
+}
+
+/// One civilization's diplomatic-victory points as the congress reported them.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCongressDvpEntry {
+    #[serde(default)]
+    pub player: usize,
+    #[serde(default)]
+    pub points: i64,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
@@ -9312,6 +9440,27 @@ pub struct StateSnapshot {
     /// `None` means unavailable rather than an authoritative zero.
     #[serde(default)]
     pub favor: Option<f64>,
+    /// 🔴🔴🔴 THE DIPLOMATIC STANDING THE SEAT IS SHOWN AND THE TRACKER NEVER SAW.
+    ///
+    /// [`StateRival`] is met-gated, so `players[*].dvp` only ever carried the
+    /// civilizations this seat had contacted. The World Congress seats every
+    /// alive major and shows the seat all of their points, and the host's own
+    /// `WC_RES_DIPLOVICTORY` ballot names them as targets — which is why
+    /// `voteWorldCongress` has always been free to pick its leader from the
+    /// full set. That knowledge stopped at the ballot box.
+    ///
+    /// Measured over the 50 live runs carrying a congress table, **40 (80%)
+    /// showed a DVP standing higher than any rival the decider could see**, and
+    /// in five the difference crossed the denial alarm. In
+    /// `civvis-20260818T103630Z` the eventual winner sat at 22 points while the
+    /// best visible rival read 14, so `urgent_victory_threat` never fired once
+    /// in 222 turns and the seat lost a game it led by 213.
+    ///
+    /// This is a congress-time snapshot, not a live read: it is what the last
+    /// session showed, stamped with the turn it showed it, and it goes stale
+    /// between sessions the same way a human's memory of the last vote does.
+    #[serde(default)]
+    pub congress_dvp: Option<StateCongressDvp>,
     /// How many Spies Civilization VI will let this empire field, from the
     /// accessor the shipped Espionage Overview prints
     /// (`GetDiplomacy():GetSpyCapacity()`).
@@ -10893,7 +11042,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "taken_religion_beliefs", "religions", "prophet_pending",
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "faith_sources", "science",
-        "culture", "public_stats", "score", "dvp", "favor",
+        "culture", "public_stats", "score", "dvp", "favor", "congress_dvp",
         "spy_capacity",
         "foreign_tourists", "domestic_tourists",
         "military",
@@ -14134,6 +14283,69 @@ fn apply_observed_host_metrics(
     }
 }
 
+/// Seat the World Congress diplomatic standing, including the majors this seat
+/// has not met.
+///
+/// The rival loops assign seats `1..n` in export order and that list is
+/// met-gated, so before this ran `players[*].dvp` could only ever describe
+/// contacted empires. `state.seat.players` sizes the board to every major in
+/// the game, so the seats past the met rivals already exist as the
+/// reconstruction's stand-ins for the ones we have not found — attaching the
+/// congress standing to them is the one public fact we hold about them.
+///
+/// Deliberately conservative in three ways:
+///
+/// - a met rival keeps its own per-turn export, which is sampled every turn
+///   against a congress table refreshed once a session. Only a rival whose
+///   `dvp` the mod could not read falls back to the congress value. DVP can
+///   go *down* (`WC_RES_DIPLOVICTORY` option B is −2), so preferring the
+///   larger of the two would latch a stale high standing.
+/// - the seat's own entry is ignored; `state.dvp` is the live read.
+/// - unmet entries are seated in ascending host-player order, so the same
+///   congress table always lands the same way.
+fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let Some(congress) = &state.congress_dvp else {
+        return;
+    };
+    // Host player id -> mirror seat, exactly as the rival loops assign them.
+    let seat_of: std::collections::BTreeMap<usize, usize> = state
+        .rivals
+        .iter()
+        .enumerate()
+        .map(|(index, rival)| (rival.player, index + 1))
+        .collect();
+    let ours = state.seat.local_player.max(0) as usize;
+    let mut unmet: Vec<&StateCongressDvpEntry> = Vec::new();
+    for entry in &congress.points {
+        if entry.player == ours {
+            continue;
+        }
+        match seat_of.get(&entry.player) {
+            // A met rival the mod could not read a live `dvp` for. Everyone
+            // else keeps the fresher per-turn number.
+            Some(&seat) => {
+                let stale = state
+                    .rivals
+                    .get(seat - 1)
+                    .is_none_or(|rival| rival.dvp.is_none());
+                if stale && seat < game.players.len() {
+                    game.players[seat].dvp = entry.points;
+                }
+            }
+            None => unmet.push(entry),
+        }
+    }
+    unmet.sort_by_key(|entry| entry.player);
+    let mut seat = state.rivals.len() + 1;
+    for entry in unmet {
+        if seat >= game.players.len() {
+            break;
+        }
+        game.players[seat].dvp = entry.points;
+        seat += 1;
+    }
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -14314,6 +14526,7 @@ pub fn rebuild_from_state(
     if let Some(dvp) = state.dvp {
         game.players[0].dvp = dvp;
     }
+    apply_congress_dvp(&mut game, state);
     if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
         game.players[0].diplomatic_favor = favor;
     }
@@ -15783,6 +15996,7 @@ impl LiveMirror {
         if let Some(dvp) = state.dvp {
             self.game.players[0].dvp = dvp;
         }
+        apply_congress_dvp(&mut self.game, state);
         if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
             self.game.players[0].diplomatic_favor = favor;
         }
