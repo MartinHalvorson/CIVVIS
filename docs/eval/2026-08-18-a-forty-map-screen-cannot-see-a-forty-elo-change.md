@@ -35,7 +35,10 @@ to that on 200 random score vectors.
 
 ## What it measured
 
-At the 28% break rate these deployment screens actually produce:
+At the 28% break rate these deployment screens actually produce. The following
+thresholds are **DISCOVERY ESTIMATES** from synthetic power searches (not
+observed treatment effects): the first is for **40 maps**, and the second for
+**200 maps**.
 
 | maps | smallest edge promoted at 80% power |
 |---:|---:|
