@@ -333,6 +333,63 @@ def find_cache_database(explicit: str | None = None) -> Path | None:
     return None
 
 
+# Rows that exist only once Gathering Storm is in the load order. CIVVIS models
+# the Gathering Storm ruleset, so a reference without these is a DIFFERENT GAME
+# and every number it disagrees about is a false divergence.
+#
+# ⚠⚠ THIS IS NOT HYPOTHETICAL AND THE FAILURE IS SILENT AND EXPENSIVE. The
+# compiled cache under `Cache/DebugGameplay.sqlite` is whatever ruleset the game
+# last ran, and a session launched without the expansion leaves a vanilla
+# database sitting exactly where `--cache` looks for it. Audited against one of
+# those, this tool reported **210 divergent fields across 27 tables** — and
+# printed "(Gathering Storm load order)" at the top of the report while doing
+# it, because that line was a hard-coded claim rather than something checked.
+#
+# Acting on that report means editing correct Gathering Storm values to match
+# vanilla ones: `astronomy` from 730 to 660, `banking` from 600 to 540, and so
+# on down forty-two technologies. The audit would then read clean, and the rules
+# data would be wrong.
+#
+# Sentinels are spread across three tables so a partial or corrupt reference
+# cannot pass by carrying one of them.
+GATHERING_STORM_SENTINELS: tuple[tuple[str, str, str], ...] = (
+    ("Technologies", "TechnologyType", "TECH_BUTTRESS"),
+    ("Technologies", "TechnologyType", "TECH_REFINING"),
+    ("Technologies", "TechnologyType", "TECH_SEASTEADS"),
+    ("Civics", "CivicType", "CIVIC_ENVIRONMENTALISM"),
+    ("Units", "UnitType", "UNIT_SUPPLY_CONVOY"),
+)
+
+
+def missing_gathering_storm_rows(database: "Database") -> list[str]:
+    """Which Gathering Storm sentinels the reference does not carry."""
+    missing = []
+    for table, column, value in GATHERING_STORM_SENTINELS:
+        rows = database.tables.get(table) or {}
+        if not any(row.get(column) == value for row in rows.values()):
+            missing.append(f"{table}.{value}")
+    return missing
+
+
+def refuse_a_reference_from_another_ruleset(database: "Database", where: Path) -> int:
+    """0 when the reference is Gathering Storm; 2 with an explanation when not."""
+    missing = missing_gathering_storm_rows(database)
+    if not missing:
+        return 0
+    print(
+        f"{where} is not a Gathering Storm database: it is missing "
+        f"{', '.join(missing)}.\n"
+        "CIVVIS models the Gathering Storm ruleset, so every difference against "
+        "this reference would be a false divergence, and 'fixing' them would "
+        "replace correct expansion values with vanilla ones.\n"
+        "The compiled cache is whatever ruleset the game last ran. Launch "
+        "Civilization VI once with Gathering Storm enabled to rewrite it, or "
+        "audit against an install with `--civ6 <path>`.",
+        file=sys.stderr,
+    )
+    return 2
+
+
 def load_cache_database(path: Path) -> Database:
     database = Database()
     uri = f"file:{urllib.parse.quote(str(path))}?mode=ro&immutable=1"
@@ -2294,7 +2351,13 @@ def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
 
 def report(results: list[dict], install: Path) -> str:
     lines = ["# Rules-data fidelity audit", ""]
-    lines.append(f"Reference: `{install}` (Gathering Storm load order).")
+    # Verified rather than asserted: `refuse_a_reference_from_another_ruleset`
+    # has already rejected anything that is not Gathering Storm, so by the time
+    # a report exists this line is a statement about the reference in hand.
+    lines.append(
+        f"Reference: `{install}` (Gathering Storm load order, checked against "
+        f"{len(GATHERING_STORM_SENTINELS)} expansion sentinels)."
+    )
     lines.append("")
     lines.append("| Table | Compared | Divergent | Waived | Only in CIVVIS | Only in Civ VI |")
     lines.append("|---|---:|---:|---:|---:|---:|")
@@ -2363,9 +2426,15 @@ def main() -> int:
             return 2
         install = cache
         database = load_cache_database(cache)
+        if (code := refuse_a_reference_from_another_ruleset(database, install)) != 0:
+            return code
     else:
         install = find_install(args.civ6)
         database = load_database(install)
+        # An install can be missing the expansion too — the DLC directories are
+        # separate, and the load order simply has less to resolve.
+        if (code := refuse_a_reference_from_another_ruleset(database, install)) != 0:
+            return code
 
     audits = [
         ("Units", ours_units(), project_units(database)),
