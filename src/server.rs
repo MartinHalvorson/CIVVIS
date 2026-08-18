@@ -20,20 +20,15 @@ use serde_json::{json, Value};
 
 use crate::ai::{AdvancedAi, Ai, BasicAi};
 use crate::civ6;
-use crate::game::{
-    Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
-};
+use crate::game::{Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions};
 use crate::leader_roster;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    battlefield_map_scripts, battlefield_sizes, future_era_from_id, future_era_id, scenario_map_scripts,
-    start_era_from_id, start_era_id,
-    turn_structure_id, world_map_scripts, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure, BASE_RULESETS,
-    CIV6_GAME_SPEEDS,
-    CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
+    battlefield_sizes, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
+    turn_structure_id, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
+    MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure,
 };
 use crate::Pos;
 
@@ -1616,7 +1611,7 @@ fn spectator_step_completes_frame(
 }
 
 /// The result countdown can only use the four values the viewer can select.
-fn valid_between_game_countdown_ms(value: u64) -> Option<u64> {
+pub(crate) fn valid_between_game_countdown_ms(value: u64) -> Option<u64> {
     BETWEEN_GAME_COUNTDOWN_OPTIONS_MS
         .contains(&value)
         .then_some(value)
@@ -1933,7 +1928,8 @@ impl Shared {
     /// Queue setup controls for the next world without changing this one.
     fn stage_next_game_settings(&self, request: &Value) {
         let base = self.live_params.lock().unwrap().clone();
-        *self.next_game_params.lock().unwrap() = Some(staged_next_game_params(&base, request));
+        let (params, _) = crate::routes::next_game_settings(&base, request);
+        *self.next_game_params.lock().unwrap() = Some(params);
     }
 
     /// What the next world will be started from, as the setup panel reads it.
@@ -2472,9 +2468,16 @@ impl Session {
         Ok(())
     }
 
+    /// Update the pause bit carried by spectator responses. The native and
+    /// browser transports mirror this value in their own atomics/cells, but
+    /// the session-side state transition is one protocol rule.
+    pub(crate) fn set_spectator_paused(&mut self, paused: bool) {
+        self.spectator_paused = paused;
+    }
+
     /// Start a requested world, rejecting a delayed result-countdown request
     /// after the supervisor has already replaced the finished server.
-    fn start_new_game(&mut self, request: &Value) -> Result<(), String> {
+    pub(crate) fn start_new_game(&mut self, request: &Value) -> Result<(), String> {
         // The supervisor owns the exhibition: every AI-only world is a fresh
         // process on freshly built code, so this process may not replace one
         // in place. A game somebody sits down to play is not part of that
@@ -3167,6 +3170,40 @@ impl Session {
         steps
     }
 
+    /// Build the protocol response for a spectator step in one place. The
+    /// native socket and the browser module differ only in what they do with
+    /// the completed-frame signal after this method returns.
+    pub(crate) fn spectator_step_response(&mut self, count: usize) -> (Value, bool) {
+        let steps = self.step_many(count);
+        let advanced = !steps.is_empty();
+        let mut out = self.state();
+        let visible_steps: Vec<_> = steps
+            .iter()
+            .filter(|step| self.view_player.is_none_or(|viewer| step.player == viewer))
+            .collect();
+        if let Some(step) = visible_steps.last() {
+            out["stepped"] = json!(step.player);
+            out["actions_taken"] = serde_json::to_value(&step.actions).unwrap_or(Value::Null);
+        }
+        out["step_batches"] = Value::Array(
+            visible_steps
+                .iter()
+                .map(|step| {
+                    json!({
+                        "stepped": step.player,
+                        "actions_taken": step.actions,
+                        "world_events": if self.view_player.is_none() {
+                            step.world_events.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    })
+                })
+                .collect(),
+        );
+        (out, advanced)
+    }
+
     /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
     /// than whichever one the fleet happened to build for the seat.
     ///
@@ -3235,6 +3272,20 @@ impl Session {
         // agent is "advanced" — the cheaper baseline for minors.
         let player = self.game.players.get(seat)?;
         Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
+    }
+
+    /// Read the idempotency receipt for a completed auto-play batch.
+    pub(crate) fn completed_autoplay(&self, request_id: &str) -> Option<usize> {
+        self.last_autoplay_request
+            .as_ref()
+            .filter(|(completed, _)| completed == request_id)
+            .map(|(_, played)| *played)
+    }
+
+    /// Remember the last auto-play batch so a retried request cannot simulate
+    /// the same turns twice after a dropped response.
+    pub(crate) fn remember_autoplay(&mut self, request_id: String, played: usize) {
+        self.last_autoplay_request = Some((request_id, played));
     }
 
     /// Hand the player's own seat to the AI for `turns` turns.
@@ -3752,7 +3803,7 @@ fn stock_opening_params(seed: u64) -> Params {
 /// [`stock_opening_params`] as the setup panel reads it. The seed is
 /// removed: the stock world is a description, not a particular roll of it,
 /// and a published seed would end up prefilled in the lobby's seed input.
-fn default_setup_json() -> Value {
+pub(crate) fn default_setup_json() -> Value {
     let mut setup = simulation_settings(&stock_opening_params(0));
     setup
         .as_object_mut()
@@ -3761,7 +3812,7 @@ fn default_setup_json() -> Value {
     setup
 }
 
-fn simulation_settings(params: &Params) -> Value {
+pub(crate) fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
         (params.victory_conditions.culture, "culture"),
@@ -3807,7 +3858,7 @@ fn simulation_settings(params: &Params) -> Value {
 /// rather than shown as an authoritative 1500. Without a roster the list falls
 /// back to the built-in agents, because a control with nothing in it is worse
 /// than one with four honest entries.
-fn strategy_roster(session: &Session) -> Value {
+pub(crate) fn strategy_roster(session: &Session) -> Value {
     let mut rows: Vec<Value> = Vec::new();
     if let Some(roster) = session.roster.as_ref() {
         // Agents only. A person registered in this roster is a player in it,
@@ -3848,7 +3899,7 @@ fn strategy_roster(session: &Session) -> Value {
 /// that leader and civilization. Keep the strategy identity beside each
 /// number so a later custom-seat protocol can bind the choice to the exact
 /// entrant instead of treating equal-looking ratings as interchangeable.
-fn leader_elo_options(session: &Session) -> Value {
+pub(crate) fn leader_elo_options(session: &Session) -> Value {
     let mut combinations: BTreeMap<(String, String), BTreeMap<i64, BTreeSet<String>>> =
         BTreeMap::new();
     let Some(roster) = session.roster.as_ref() else {
@@ -4470,7 +4521,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
 ///
 /// A free function because the queue has two homes: `Shared` on a server, and
 /// a thread local in the wasm build, which has no threads to share between.
-fn staged_next_game_params(base: &Params, request: &Value) -> Params {
+pub(crate) fn staged_next_game_params(base: &Params, request: &Value) -> Params {
     let mut params = new_game_params(base, request);
     params.spectate = base.spectate;
     params
@@ -4807,54 +4858,30 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
             }
-            let countdown_error = parsed["between_game_countdown_ms"]
+            if let Some(value) = parsed["between_game_countdown_ms"]
                 .as_u64()
-                .and_then(|value| match valid_between_game_countdown_ms(value) {
-                    Some(value) => {
-                        let before = sh
-                            .between_game_countdown_ms
-                            .swap(value, Ordering::Relaxed);
-                        // Changed while a result is being held: the new
-                        // length is counted from now. The stepper reads the
-                        // flag on its next pass and moves the hold's start.
-                        if before != value
-                            && sh.restart_in.load(Ordering::Relaxed) != u64::MAX
-                        {
-                            sh.finale_rearm.store(true, Ordering::Relaxed);
-                        }
-                        None
-                    }
-                    None => Some(
-                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
-                    ),
-                });
+                .filter(|value| valid_between_game_countdown_ms(*value).is_some())
+            {
+                let before = sh.between_game_countdown_ms.swap(value, Ordering::Relaxed);
+                // Changed while a result is being held: the new length is
+                // counted from now. The stepper reads the flag on its next
+                // pass and moves the hold's start.
+                if before != value && sh.restart_in.load(Ordering::Relaxed) != u64::MAX {
+                    sh.finale_rearm.store(true, Ordering::Relaxed);
+                }
+            }
             if let Some(v) = parsed["paused"].as_bool() {
                 sh.paused.store(v, Ordering::Relaxed);
             }
             let mut session = sh.session.lock().unwrap();
-            if let Some(v) = parsed["paused"].as_bool() {
-                session.spectator_paused = v;
-            }
-            // The arena's fog is a live rule: the vision stamp reads it on
-            // every sight computation, so flipping it takes effect at the
-            // next reckoning and invalidates the cached frames by itself.
-            // The params move with it so the automatic successor — and a
-            // same-settings restart — carries the rule the battle ended on.
-            if let Some(on) = parsed["tactics_fog"].as_bool() {
-                session.game.tactics.fog = on;
-                session.params.tactics.fog = on;
-            }
-            let mut o = session.state();
+            let mut o = crate::routes::pace(&mut session, &parsed);
             drop(session);
             decorate(&mut o, sh);
-            if let Some(error) = countdown_error {
-                o["error"] = json!(error);
-            }
             respond_json(stream, &o);
         }
         ("GET", "/save") => {
             let session = sh.session.lock().unwrap();
-            let save = crate::protocol::save_value(&session.game).unwrap();
+            let save = crate::routes::save(&session);
             respond_json(stream, &save);
         }
         // The district adjacency calculator over the live game: every
@@ -4905,12 +4932,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // there decides: how far it could move this turn, and what it sees.
         ("POST", "/intel") => {
             let session = sh.session.lock().unwrap();
-            let answer = match parsed["unit"].as_u64() {
-                Some(unit) => {
-                    crate::obs::unit_intel(&session.game, session.viewing_seat(), unit as u32)
-                }
-                None => json!({"error": "intel needs a unit"}),
-            };
+            let answer = crate::routes::intel(&session, &parsed);
             drop(session);
             respond_json(stream, &answer);
         }
@@ -4942,25 +4964,30 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // The AIs' transient plans are rebuilt; the serialized game keeps the
         // authoritative RNG and world state.
         ("POST", "/load") => {
-            let loaded: Result<Game, String> = if let Some(name) = parsed["name"].as_str() {
-                save_path(name)
-                    .ok_or_else(|| "a save name is letters, digits, - and _".to_string())
-                    .and_then(|path| {
-                        std::fs::read(&path).map_err(|error| format!("cannot read {name}: {error}"))
-                    })
-                    .and_then(|raw| {
-                        serde_json::from_slice::<Value>(&raw)
-                            .map_err(|error| format!("{name} is not JSON: {error}"))
-                    })
-                    .and_then(crate::protocol::game_from_save)
-                    .map_err(|error| format!("{name} is not a save: {error}"))
-            } else if !parsed["game"].is_null() {
-                crate::protocol::game_from_save(parsed["game"].clone())
-            } else if parsed.get("save_format_version").is_some() {
-                crate::protocol::game_from_save(parsed.clone())
-            } else {
-                Err("load needs a save name or a game".to_string())
+            let Some(name) = parsed["name"].as_str() else {
+                let mut session = sh.session.lock().unwrap();
+                let result = crate::routes::load_uploaded(&mut session, &parsed);
+                let mut out = session.state();
+                out["error"] = match result {
+                    Ok(()) => Value::Null,
+                    Err(error) => json!(error),
+                };
+                drop(session);
+                decorate(&mut out, sh);
+                respond_json(stream, &out);
+                return;
             };
+            let loaded: Result<Game, String> = save_path(name)
+                .ok_or_else(|| "a save name is letters, digits, - and _".to_string())
+                .and_then(|path| {
+                    std::fs::read(&path).map_err(|error| format!("cannot read {name}: {error}"))
+                })
+                .and_then(|raw| {
+                    serde_json::from_slice::<Value>(&raw)
+                        .map_err(|error| format!("{name} is not JSON: {error}"))
+                })
+                .and_then(crate::protocol::game_from_save)
+                .map_err(|error| format!("{name} is not a save: {error}"));
             let mut out = match loaded {
                 Ok(game) => {
                     // A save records the mods it was played under. Loading it
@@ -5006,123 +5033,29 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/rules") => {
             let session = sh.session.lock().unwrap();
-            let r = &session.game.rules;
-            respond_json(
-                stream,
-                &json!({
-                    "techs": r.techs, "civics": r.civics,
-                    "terrains": r.terrains, "features": r.features,
-                    "resources": r.resources, "improvements": r.improvements,
-                    "governments": r.governments, "units": r.units,
-                    "promotions": r.promotions,
-                    "buildings": r.buildings, "districts": r.districts,
-                    "wonders": r.wonders,
-                    "projects": r.projects,
-                    "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
-                    "city_state_limit": r.city_states.roster.len(),
-                    "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
-                    "leader_pools": leader_roster::browser_pools(),
-                    "great_people": r.great_people, "governors": r.governors,
-                    "map_sizes": CIV6_MAP_SIZES,
-                    "difficulties": r.difficulties, "speeds": r.speeds,
-                    "base_rulesets": BASE_RULESETS,
-                    "start_eras": START_ERAS,
-                    "future_eras": FUTURE_ERAS,
-                    // The Civ mode's worlds and the Tactics mode's arenas are
-                    // separate menus cut from the one authoritative roster:
-                    // a battlefield is not a world a Civ game should offer.
-                    "map_scripts": world_map_scripts(),
-                    "battlefield_scripts": battlefield_map_scripts(),
-                    "battlefield_sizes": battlefield_sizes(),
-                    // The same catalogue drives the folded browser picker,
-                    // the scenario map roster, and the opening order of
-                    // battle. Publishing it here keeps the client from
-                    // maintaining a second historical truth.
-                    "historical_scenarios": crate::historical_scenarios::all(),
-                    // Which of those Tactics maps are scripted battles rather
-                    // than arenas. The arena economy is the player's to set;
-                    // a scenario's is its battle's, so the lobby has to know
-                    // which controls it is still allowed to offer. Published
-                    // as its own list rather than a flag on every script row,
-                    // so the roster keeps the shape older clients read.
-                    "scenario_scripts": scenario_map_scripts(),
-                    "map_topologies": MAP_TOPOLOGIES,
-                    "map_poles": MAP_POLES,
-                    "game_speeds": CIV6_GAME_SPEEDS,
-                    // The stock opening setup, so the lobby's defaults are
-                    // read from the engine rather than repeated in markup.
-                    "default_setup": default_setup_json(),
-                    // The other game's vocabulary, for the mode that plays it.
-                    // It never changes while a server runs, unlike the host
-                    // report at `/civ6`, which is a different question asked of
-                    // a different machine's installation.
-                    "civ6": civ6::vocabulary(),
-                    "strategies": strategy_roster(&session),
-                    "leader_elo_options": leader_elo_options(&session),
-                    "seat_strategy": session.seated_strategy_name(0),
-                }),
-            );
+            let answer = crate::routes::rules(&session, true);
+            respond_json(stream, &answer);
         }
         // Hand your seat to one of our agents for a stretch of turns. `turns`
         // is a count or the string "all"; `strategy` names who plays, and is
         // remembered on the seat so a run continued in chunks stays one agent.
         ("POST", "/autoplay") => {
             let mut session = sh.session.lock().unwrap();
-            if session.params.spectate {
-                drop(session);
-                respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
-                return;
-            }
-            // A stale page must never hand a seat in the successor world to an
-            // agent. The identifiers are optional for old clients, but every
-            // current browser sends both with each retryable batch.
-            if parsed["seed"]
-                .as_u64()
-                .is_some_and(|seed| seed != session.game.seed)
-                || parsed["server_instance"]
-                    .as_u64()
-                    .is_some_and(|instance| instance != process_identity() as u64)
-            {
-                drop(session);
-                respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
-                return;
-            }
-            let request_id = parsed["request_id"]
-                .as_str()
-                .filter(|id| !id.is_empty() && id.len() <= 128);
-            if let Some((_, played)) = request_id.and_then(|id| {
-                session
-                    .last_autoplay_request
-                    .as_ref()
-                    .filter(|(completed, _)| completed == id)
-            }) {
-                let played = *played;
-                let mut out = session.state();
-                out["autoplayed"] = json!(played);
-                out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
-                drop(session);
-                decorate(&mut out, sh);
-                respond_json(stream, &out);
-                return;
-            }
-            if let Some(name) = parsed["strategy"].as_str() {
-                if let Err(error) = session.seat_strategy_at(0, name) {
-                    drop(session);
-                    respond_json(stream, &json!({"error": error}));
-                    return;
-                }
-            }
-            let turns = match parsed["turns"].as_str() {
-                Some("all") => u32::MAX,
-                _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
-            };
-            let played = session.autoplay(turns);
-            if let Some(request_id) = request_id {
-                session.last_autoplay_request = Some((request_id.to_string(), played));
-            }
-            let mut out = session.state();
-            out["autoplayed"] = json!(played);
-            out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
+            let outcome =
+                match crate::routes::autoplay(&mut session, &parsed, Some(process_identity())) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        drop(session);
+                        respond_json(stream, &error);
+                        return;
+                    }
+                };
+            let crate::routes::AutoplayOutcome {
+                out,
+                played,
+                replayed,
+            } = outcome;
+            let mut out = out;
             drop(session);
             // One response carries one state, so every turn in this batch past
             // the first was played where nobody could see it. Recorded after
@@ -5130,10 +5063,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // simulated: the retry arm above answers from
             // `last_autoplay_request` without playing anything, and counting
             // there would charge a dropped response twice.
-            sh.frame_delivery
-                .lock()
-                .unwrap()
-                .turns_simulated_without_a_frame(played);
+            if !replayed {
+                sh.frame_delivery
+                    .lock()
+                    .unwrap()
+                    .turns_simulated_without_a_frame(played);
+            }
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -5141,9 +5076,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // Generated from the ruleset in play, mods included, so the GUI
             // reference never disagrees with the game it is attached to.
             let session = sh.session.lock().unwrap();
-            let entries = crate::pedia::entries(&session.game.rules);
+            let answer = crate::routes::pedia(&session);
             drop(session);
-            respond_json(stream, &json!({ "entries": entries }));
+            respond_json(stream, &answer);
         }
         ("POST", "/action") => {
             let mut session = sh.session.lock().unwrap();
@@ -5168,54 +5103,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/step") => {
             let mut session = sh.session.lock().unwrap();
-            let mut out;
-            let mut completed_frame = None;
-            if session.params.spectate {
-                let count = parsed["count"].as_u64().unwrap_or(1) as usize;
-                let steps = session.step_many(count);
-                if !steps.is_empty() {
-                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
-                    completed_frame = Some(spectator_frame(&session.game, sequence));
-                }
-                out = session.state();
-                // An omniscient observer can narrate every AI decision. A
-                // civilization view only receives that civilization's own
-                // traces; otherwise hidden movement and combat would bypass
-                // the map fog through the event chronicle.
-                let visible_steps: Vec<_> = steps
-                    .iter()
-                    .filter(|step| {
-                        session
-                            .view_player
-                            .is_none_or(|viewer| step.player == viewer)
-                    })
-                    .collect();
-                if let Some(step) = visible_steps.last() {
-                    // Preserve the original single-step response fields for
-                    // existing clients and supervisor recovery nudges.
-                    out["stepped"] = json!(step.player);
-                    out["actions_taken"] = serde_json::to_value(&step.actions).unwrap();
-                }
-                out["step_batches"] = Value::Array(
-                    visible_steps
-                        .iter()
-                        .map(|step| {
-                            json!({
-                                "stepped": step.player,
-                                "actions_taken": step.actions,
-                                "world_events": if session.view_player.is_none() {
-                                    step.world_events.clone()
-                                } else {
-                                    Vec::new()
-                                },
-                            })
-                        })
-                        .collect(),
-                );
-            } else {
-                out = session.state();
-                out["error"] = json!("not in spectate mode");
-            }
+            let outcome = crate::routes::step(&mut session, &parsed);
+            let mut out = outcome.out;
+            let completed_frame = outcome.advanced.then(|| {
+                let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                spectator_frame(&session.game, sequence)
+            });
             drop(session);
             if let Some(frame) = completed_frame {
                 sh.note_turn_ready(frame);
@@ -5228,33 +5121,26 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // winner and stop the stepper atomically, rather than racing a second
         // request to /pace against the first continued turn.
         ("POST", "/play-on") => {
-            let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
-            let Some(mode) = PlayOnMode::parse(mode_name) else {
-                respond_json(
-                    stream,
-                    &json!({"error": format!("unknown play-on mode {mode_name:?}")}),
-                );
-                return;
-            };
-            let requested_pause = parsed.get("paused").and_then(Value::as_bool);
             let simulation_frame_gate = sh.simulation_frame_gate.lock().unwrap();
             let mut session = sh.session.lock().unwrap();
-            let played_on = session.play_on(mode);
-            if played_on {
-                if let Some(paused) = requested_pause {
+            let outcome = match crate::routes::play_on(&mut session, &parsed) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    drop(session);
+                    drop(simulation_frame_gate);
+                    respond_json(stream, &error);
+                    return;
+                }
+            };
+            if outcome.played_on {
+                if let Some(paused) = outcome.requested_pause {
                     sh.paused.store(paused, Ordering::Relaxed);
-                    session.spectator_paused = paused;
                 }
                 // Clear this before taking the response snapshot, so it can
                 // never promise both a paused continuation and a new world.
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
             }
-            let mut out = session.state();
-            out["error"] = if played_on {
-                Value::Null
-            } else {
-                json!("this game has no result to play on past")
-            };
+            let mut out = outcome.out;
             drop(session);
             drop(simulation_frame_gate);
             decorate(&mut out, sh);
@@ -5268,14 +5154,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/spectator-status") => {
             let mut session = sh.session.lock().unwrap();
-            if session.params.spectate {
-                if let Some(paused) = parsed["paused"].as_bool() {
-                    session.spectator_paused = paused;
-                }
-                respond_json(stream, &json!({"ok": true}));
-            } else {
-                respond_json(stream, &json!({"error": "not in spectate mode"}));
-            }
+            let answer = crate::routes::spectator_status(&mut session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
         }
         ("POST", "/next-game-settings") => {
             // No session lock, for the same reason `/supervisor-new` has none:
@@ -5289,7 +5170,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("POST", "/new") => {
             let mut session = sh.session.lock().unwrap();
-            let result = session.start_new_game(&parsed);
+            let result = crate::routes::new_game(&mut session, &parsed);
             if result.is_ok() {
                 sh.current_seed
                     .store(session.game.seed, Ordering::Relaxed);
@@ -5298,7 +5179,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     .as_bool()
                     .unwrap_or_else(|| sh.paused.load(Ordering::Relaxed));
                 sh.paused.store(paused, Ordering::Relaxed);
-                session.spectator_paused = paused;
+                session.set_spectator_paused(paused);
             }
             let mut o = session.state();
             o["error"] = match result {

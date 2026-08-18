@@ -389,92 +389,32 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             })
         }),
 
-        ("GET", "/rules") => with_session(|session| {
-            let r = &session.game.rules;
-            json!({
-                "techs": r.techs, "civics": r.civics,
-                "terrains": r.terrains, "features": r.features,
-                "resources": r.resources, "improvements": r.improvements,
-                "governments": r.governments, "units": r.units,
-                "promotions": r.promotions,
-                "buildings": r.buildings, "districts": r.districts,
-                "wonders": r.wonders,
-                "projects": r.projects,
-                "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
-                "city_state_limit": r.city_states.roster.len(),
-                "civ6_leaders": crate::game::CIV6_LEADER_POOL.as_slice(),
-                "leader_pools": crate::leader_roster::browser_pools(),
-                "great_people": r.great_people, "governors": r.governors,
-                "map_sizes": CIV6_MAP_SIZES,
-                "difficulties": r.difficulties, "speeds": r.speeds,
-                "base_rulesets": BASE_RULESETS,
-                "start_eras": START_ERAS,
-                "future_eras": FUTURE_ERAS,
-                // The same two menus the native server cuts from the one
-                // roster: worlds for the Civ mode, arenas for Tactics.
-                "map_scripts": world_map_scripts(),
-                "battlefield_scripts": battlefield_map_scripts(),
-                "battlefield_sizes": crate::setup::battlefield_sizes(),
-                "historical_scenarios": crate::historical_scenarios::all(),
-                "scenario_scripts": crate::setup::scenario_map_scripts(),
-                "map_topologies": MAP_TOPOLOGIES,
-                "map_poles": MAP_POLES,
-                "game_speeds": CIV6_GAME_SPEEDS,
-                // The stock opening setup, so the lobby's defaults are read
-                // from the engine rather than repeated in markup.
-                "default_setup": default_setup_json(),
-                "strategies": strategy_roster(session),
-                "leader_elo_options": leader_elo_options(session),
-                "seat_strategy": session.seated_strategy_name(0),
-            })
-        }),
+        ("GET", "/rules") => with_session(|session| crate::routes::rules(session, false)),
 
-        ("GET", "/pedia") => with_session(|session| {
-            json!({ "entries": crate::pedia::entries(&session.game.rules) })
-        }),
+        ("GET", "/pedia") => with_session(|session| crate::routes::pedia(session)),
 
         // A save is handed straight to the page, which owns the storage this
         // build has: there is no disk here, so `/saves` and the named half of
         // `/save` live in the shim's `localStorage` and only ever reach the
         // engine as an uploaded game on `/load`.
-        ("GET", "/save") => with_session(|session| {
-            crate::protocol::save_value(&session.game).unwrap_or(Value::Null)
-        }),
+        ("GET", "/save") => with_session(|session| crate::routes::save(session)),
 
         ("POST", "/pace") => {
             if let Some(ms) = parsed["ms"].as_u64() {
                 PACE.with(|pace| pace.set(ms));
             }
-            let countdown_error = parsed["between_game_countdown_ms"]
+            if let Some(value) = parsed["between_game_countdown_ms"]
                 .as_u64()
-                .and_then(|value| match valid_between_game_countdown_ms(value) {
-                    Some(value) => {
-                        BETWEEN_GAME_COUNTDOWN_MS.with(|countdown| countdown.set(value));
-                        None
-                    }
-                    None => Some(
-                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
-                    ),
-                });
+                .filter(|value| valid_between_game_countdown_ms(*value).is_some())
+            {
+                BETWEEN_GAME_COUNTDOWN_MS.with(|countdown| countdown.set(value));
+            }
             if let Some(paused) = parsed["paused"].as_bool() {
                 PAUSED.with(|held| held.set(paused));
             }
             with_session(|session| {
-                if let Some(paused) = parsed["paused"].as_bool() {
-                    session.spectator_paused = paused;
-                }
-                // The arena's live fog rule, exactly as the native server
-                // takes it: the game for the battle on screen, the params
-                // for whatever game follows it.
-                if let Some(on) = parsed["tactics_fog"].as_bool() {
-                    session.game.tactics.fog = on;
-                    session.params.tactics.fog = on;
-                }
-                let mut out = session.state();
+                let mut out = crate::routes::pace(session, &parsed);
                 decorate_browser(&mut out);
-                if let Some(error) = countdown_error {
-                    out["error"] = json!(error);
-                }
                 out
             })
         }
@@ -496,95 +436,39 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         }),
 
         ("POST", "/step") => with_session(|session| {
-            let mut out;
-            if session.params.spectate {
-                let count = parsed["count"].as_u64().unwrap_or(1) as usize;
-                let steps = session.step_many(count);
-                if !steps.is_empty() {
-                    FRAME_SEQUENCE.with(|sequence| {
-                        sequence.set(sequence.get().wrapping_add(1))
-                    });
-                }
-                out = session.state();
-                let visible_steps: Vec<_> = steps
-                    .iter()
-                    .filter(|step| session.view_player.is_none_or(|viewer| step.player == viewer))
-                    .collect();
-                if let Some(step) = visible_steps.last() {
-                    out["stepped"] = json!(step.player);
-                    out["actions_taken"] = serde_json::to_value(&step.actions).unwrap_or(Value::Null);
-                }
-                out["step_batches"] = Value::Array(
-                    visible_steps
-                        .iter()
-                        .map(|step| {
-                            json!({
-                                "stepped": step.player,
-                                "actions_taken": step.actions,
-                                "world_events": if session.view_player.is_none() {
-                                    step.world_events.clone()
-                                } else {
-                                    Vec::new()
-                                },
-                            })
-                        })
-                        .collect(),
-                );
-            } else {
-                out = session.state();
-                out["error"] = json!("not in spectate mode");
+            let outcome = crate::routes::step(session, &parsed);
+            if outcome.advanced {
+                FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
             }
+            let mut out = outcome.out;
             decorate_browser(&mut out);
             out
         }),
 
         ("POST", "/autoplay") => with_session(|session| {
-            if session.params.spectate {
-                return json!({"error": "a spectated game is already playing itself"});
-            }
-            if parsed["seed"].as_u64().is_some_and(|seed| seed != session.game.seed) {
-                return json!({"error": "the game changed before auto-play began"});
-            }
-            if let Some(name) = parsed["strategy"].as_str() {
-                if let Err(error) = session.seat_strategy_at(0, name) {
-                    return json!({"error": error});
-                }
-            }
-            let turns = match parsed["turns"].as_str() {
-                Some("all") => u32::MAX,
-                _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
+            let outcome = match crate::routes::autoplay(session, &parsed, None) {
+                Ok(outcome) => outcome,
+                Err(error) => return error,
             };
-            let played = session.autoplay(turns);
-            let mut out = session.state();
-            out["autoplayed"] = json!(played);
-            out["autoplay_strategy"] = json!(session.seated_strategy_name(0));
+            let mut out = outcome.out;
             decorate_browser(&mut out);
             out
         }),
 
-        ("POST", "/play-on") => {
-            let mode_name = parsed["mode"].as_str().unwrap_or("until_next_victory");
-            let Some(mode) = PlayOnMode::parse(mode_name) else {
-                return json!({"error": format!("unknown play-on mode {mode_name:?}")});
+        ("POST", "/play-on") => with_session(|session| {
+            let outcome = match crate::routes::play_on(session, &parsed) {
+                Ok(outcome) => outcome,
+                Err(error) => return error,
             };
-            with_session(|session| {
-                let played_on = session.play_on(mode);
-                if played_on {
-                    if let Some(paused) = parsed.get("paused").and_then(Value::as_bool) {
-                        PAUSED.with(|held| held.set(paused));
-                        session.spectator_paused = paused;
-                    }
+            if outcome.played_on {
+                if let Some(paused) = outcome.requested_pause {
+                    PAUSED.with(|held| held.set(paused));
                 }
-                let mut out = session.state();
-                out["error"] = if played_on {
-                    Value::Null
-                } else {
-                    json!("this game has no result to play on past")
-                };
-                decorate_browser(&mut out);
-                out
-            })
-        }
+            }
+            let mut out = outcome.out;
+            decorate_browser(&mut out);
+            out
+        }),
 
         ("POST", "/route") => {
             with_session(|session| crate::routes::route_step(session, &parsed))
@@ -594,12 +478,7 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         // be answered here too: this router is the whole server on the
         // published build, and a route missing from it is a feature that works
         // everywhere except the site people actually watch.
-        ("POST", "/intel") => with_session(|session| match parsed["unit"].as_u64() {
-            Some(unit) => {
-                crate::obs::unit_intel(&session.game, session.viewing_seat(), unit as u32)
-            }
-            None => json!({"error": "intel needs a unit"}),
-        }),
+        ("POST", "/intel") => with_session(|session| crate::routes::intel(session, &parsed)),
 
         ("POST", "/view") => with_session(|session| {
             let mut out = crate::routes::view(session, &parsed);
@@ -608,20 +487,17 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         }),
 
         ("POST", "/spectator-status") => with_session(|session| {
-            if session.params.spectate {
+            let out = crate::routes::spectator_status(session, &parsed);
+            if out["ok"] == json!(true) {
                 if let Some(paused) = parsed["paused"].as_bool() {
-                    session.spectator_paused = paused;
                     PAUSED.with(|held| held.set(paused));
                 }
-                json!({"ok": true})
-            } else {
-                json!({"error": "not in spectate mode"})
             }
+            out
         }),
 
         ("POST", "/next-game-settings") => with_session(|session| {
-            let staged = staged_next_game_params(&session.params, &parsed);
-            let settings = simulation_settings(&staged);
+            let (staged, settings) = crate::routes::next_game_settings(&session.params, &parsed);
             NEXT_GAME_PARAMS.with(|cell| *cell.borrow_mut() = Some(staged));
             json!({"ok": true, "next_game_settings": settings})
         }),
@@ -630,14 +506,14 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         // process to hand a new world to: the supervised route and the plain
         // one are the same act.
         ("POST", "/new") | ("POST", "/supervisor-new") => with_session(|session| {
-            let result = session.start_new_game(&parsed);
+            let result = crate::routes::new_game(session, &parsed);
             if result.is_ok() {
                 reseat_browser_session_from_host(session);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| PAUSED.with(Cell::get));
                 PAUSED.with(|held| held.set(paused));
-                session.spectator_paused = paused;
+                session.set_spectator_paused(paused);
             }
             let mut o = session.state();
             o["error"] = match result {
@@ -651,36 +527,11 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         // Only the uploaded-game half of the native route: the shim resolves a
         // named save out of `localStorage` and posts the game itself.
         ("POST", "/load") => with_session(|session| {
-            let loaded: Result<Game, String> = if !parsed["game"].is_null() {
-                crate::protocol::game_from_save(parsed["game"].clone())
-            } else if parsed.get("save_format_version").is_some() {
-                crate::protocol::game_from_save(parsed.clone())
-            } else {
-                Err("load needs a game".to_string())
-            };
-            let mut out = match loaded {
-                Ok(game) => {
-                    let active = crate::mods::active_names();
-                    if game.mods != active {
-                        let mut out = session.state();
-                        out["error"] = json!(format!(
-                            "that save was played with mods {:?}, this build has {:?}",
-                            game.mods, active
-                        ));
-                        decorate_browser(&mut out);
-                        return out;
-                    }
-                    let params = session.params.clone();
-                    *session = Session::from_game(params, game);
-                    let mut out = session.state();
-                    out["error"] = Value::Null;
-                    out
-                }
-                Err(error) => {
-                    let mut out = session.state();
-                    out["error"] = json!(error);
-                    out
-                }
+            let result = crate::routes::load_uploaded(session, &parsed);
+            let mut out = session.state();
+            out["error"] = match result {
+                Ok(()) => Value::Null,
+                Err(error) => json!(error),
             };
             decorate_browser(&mut out);
             out

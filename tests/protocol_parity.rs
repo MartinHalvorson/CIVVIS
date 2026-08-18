@@ -98,7 +98,11 @@ fn every_route_is_served_by_both_builds_or_explained() {
         .into_iter()
         .filter(|path| is_protocol_route(path))
         .collect();
-    assert!(native.len() > 15, "only {} native routes parsed", native.len());
+    assert!(
+        native.len() > 15,
+        "only {} native routes parsed",
+        native.len()
+    );
     assert!(wasm.len() > 15, "only {} wasm routes parsed", wasm.len());
 
     let unexplained_wasm: Vec<_> = wasm
@@ -169,7 +173,23 @@ fn the_shared_handlers_are_called_by_both_front_ends() {
     // side uses is a handler that has been quietly re-duplicated in the other.
     let native = source("server.rs");
     let wasm = source("wasm.rs");
-    for handler in ["route_step", "view", "action"] {
+    for handler in [
+        "route_step",
+        "view",
+        "action",
+        "rules",
+        "pedia",
+        "save",
+        "intel",
+        "pace",
+        "step",
+        "autoplay",
+        "play_on",
+        "spectator_status",
+        "next_game_settings",
+        "new_game",
+        "load_uploaded",
+    ] {
         let call = format!("crate::routes::{handler}(");
         assert!(
             native.contains(&call),
