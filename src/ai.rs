@@ -3170,9 +3170,7 @@ impl BasicAi {
     }
 
     fn barbarian_target_allowed_for_controller(&self, g: &Game, uid: u32, target: Pos) -> bool {
-        !self.barb
-            || !self.barbarian_tactics
-            || Self::barbarian_target_allowed(g, uid, target)
+        !self.barb || !self.barbarian_tactics || Self::barbarian_target_allowed(g, uid, target)
     }
 
     /// Pressure is intentionally a small integer rather than a combat score:
@@ -3214,16 +3212,12 @@ impl BasicAi {
         if g.barb_pid.is_none() {
             return false;
         }
-        g.units
-            .values()
-            .any(|unit| {
-                Self::is_barbarian_raider(g, unit)
-                    && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
-            })
-            || g
-                .barb_camps
-                .keys()
-                .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
+        g.units.values().any(|unit| {
+            Self::is_barbarian_raider(g, unit) && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+        }) || g
+            .barb_camps
+            .keys()
+            .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
     }
 
     /// A Trader is safe to start once the local barbarian ring is quiet. Native
@@ -7360,9 +7354,7 @@ impl BasicAi {
         let barbarian_cities: Vec<u32> = city_ids
             .iter()
             .copied()
-            .filter(|cid| {
-                self.barbarian_tactics && Self::barbarian_defense_gap(g, pid, *cid) > 0
-            })
+            .filter(|cid| self.barbarian_tactics && Self::barbarian_defense_gap(g, pid, *cid) > 0)
             .collect();
         if !self.minor
             && !self.barb
@@ -7836,12 +7828,7 @@ impl BasicAi {
     /// melee-capable land defender, then walls once a compact local garrison
     /// exists. This branch is independent of the optional major-war defense
     /// experiment because barbarian pressure is a routine early-game hazard.
-    pub(crate) fn barbarian_defense_item(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-    ) -> Option<Item> {
+    pub(crate) fn barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         if self.minor
             || self.barb
             || !self.barbarian_tactics
@@ -9803,7 +9790,8 @@ impl BasicAi {
         // tile, native route creation is immediate and safe to attempt.
         if self.barbarian_tactics
             && Self::barbarian_trade_risk(g, pid)
-            && g.city_at(upos).is_none_or(|cid| g.cities[&cid].owner != pid)
+            && g.city_at(upos)
+                .is_none_or(|cid| g.cities[&cid].owner != pid)
         {
             let target = g
                 .cities
@@ -10533,12 +10521,7 @@ impl BasicAi {
     /// spoken for without the two mechanisms fighting over the same units.
     #[cfg(test)]
     #[allow(dead_code)]
-    fn garrison_assignments(
-        &self,
-        g: &Game,
-        pid: usize,
-        enemy_ids: &[usize],
-    ) -> Vec<(u32, Pos)> {
+    fn garrison_assignments(&self, g: &Game, pid: usize, enemy_ids: &[usize]) -> Vec<(u32, Pos)> {
         self.garrison_assignments_inner(g, pid, enemy_ids, false)
     }
 
@@ -10714,8 +10697,7 @@ impl BasicAi {
         let near_home =
             |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
         g.units.values().any(|unit| {
-            Self::is_barbarian_raider(g, unit)
-                && near_home(unit.pos, HOME_THREAT_RADIUS)
+            Self::is_barbarian_raider(g, unit) && near_home(unit.pos, HOME_THREAT_RADIUS)
         }) || g
             .barb_camps
             .keys()
@@ -10851,12 +10833,7 @@ impl BasicAi {
         // Units already holding a city tile are spoken for. Excluding them here
         // is what keeps the two mechanisms from tugging the same unit between a
         // city and a field raider on alternate turns.
-        let garrisoned = self.garrison_assignments_inner(
-            g,
-            pid,
-            enemy_ids,
-            barbarian_response,
-        );
+        let garrisoned = self.garrison_assignments_inner(g, pid, enemy_ids, barbarian_response);
         let responders: Vec<u32> = {
             let mut ids: Vec<u32> = g
                 .units
@@ -10878,9 +10855,7 @@ impl BasicAi {
                 .filter(|unit| !garrisoned.iter().any(|(held, _)| *held == unit.id))
                 // The peacetime party is the field ARMY: a scout is not sent
                 // to clear a camp. See `camp_party`.
-                .filter(|unit| {
-                    !(peacetime && g.rules.units[unit.kind].promotion_class == "recon")
-                })
+                .filter(|unit| !(peacetime && g.rules.units[unit.kind].promotion_class == "recon"))
                 .map(|unit| unit.id)
                 .collect();
             ids.sort_unstable();
@@ -11062,11 +11037,10 @@ impl BasicAi {
                     g.cities
                         .values()
                         .any(|city| city.owner == *enemy && city.pos == target)
-                        || g.units_at(target).iter().any(|other| {
-                            enemy_ids.contains(&g.units[other].owner)
-                        })
-                })
-                {
+                        || g.units_at(target)
+                            .iter()
+                            .any(|other| enemy_ids.contains(&g.units[other].owner))
+                }) {
                     return Some(target);
                 }
             }
@@ -11151,7 +11125,7 @@ impl BasicAi {
         g.units
             .values()
             .filter(|enemy| {
-                    enemy_ids.contains(&enemy.owner)
+                enemy_ids.contains(&enemy.owner)
                     && Self::waterborne(g, enemy.id)
                     && (!self.minor
                         || (self.barb && self.barbarian_tactics)
@@ -11991,11 +11965,7 @@ impl BasicAi {
         if !self.minor && !self.barb {
             if let Some(barb) = g.barb_pid {
                 if self.barbarian_tactics
-                    && Self::barbarian_presence_at_home_with_camp_radius(
-                        g,
-                        pid,
-                        HOME_CAMP_RADIUS,
-                    )
+                    && Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
                     && !enemy_ids.contains(&barb)
                 {
                     enemy_ids.push(barb);
@@ -12093,9 +12063,7 @@ impl BasicAi {
                     return true;
                 }
             }
-            if !self.barb
-                && self.barbarian_tactics
-                && self.barbarian_home_defense_step(g, pid, uid)
+            if !self.barb && self.barbarian_tactics && self.barbarian_home_defense_step(g, pid, uid)
             {
                 return true;
             }
@@ -16186,11 +16154,14 @@ mod tests {
         let item = ai
             .pick_item(&g, 0, city, 1, 0, 4, 0, 0, 8, 8, 0)
             .expect("a city under a barbarian raid must choose a production item");
-        assert!(matches!(
-            &item,
-            Item::Unit { unit } if g.rules.units[unit].class == "military"
-                && g.rules.units[unit].is_melee_capable()
-        ), "the local emergency should want a melee defender, got {item:?}");
+        assert!(
+            matches!(
+                &item,
+                Item::Unit { unit } if g.rules.units[unit].class == "military"
+                    && g.rules.units[unit].is_melee_capable()
+            ),
+            "the local emergency should want a melee defender, got {item:?}"
+        );
     }
 
     #[test]
@@ -16228,7 +16199,11 @@ mod tests {
             unit: crate::name!("trader"),
         };
         let choice = BasicAi::new().pick_item(&g, 0, city, 2, 1, 4, 0, 0, 6, 3, 3);
-        assert_ne!(choice, Some(trader), "a nearby raider must displace the Trader");
+        assert_ne!(
+            choice,
+            Some(trader),
+            "a nearby raider must displace the Trader"
+        );
     }
 
     #[test]
