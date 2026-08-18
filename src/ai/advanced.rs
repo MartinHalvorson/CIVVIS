@@ -10231,6 +10231,40 @@ impl AdvancedAi {
             .or_else(|| Self::congress_diplomatic_leader(g))
     }
 
+    /// Whether `choice` is the penalty ballot this empire's counter would cast
+    /// against [`Self::congress_counter_target`].
+    ///
+    /// ★★★★★ EXTRACTED BECAUSE BEING INLINE IS WHY IT WAS WRONG FOR SO LONG.
+    /// This predicate lived in the middle of `take_turn`, asked
+    /// [`Self::victory_denial`] instead of the function that aimed the ballot,
+    /// and no test could reach it. `congress_counter_votes` consequently never
+    /// fired with [`Self::congress_counter_leader`] off, and every reading of
+    /// `advanced_congress_votes` — including the standing "no headroom on the
+    /// `world_leader` veto" — measured nothing.
+    ///
+    /// ⚠ Naming the empire is not opposing it. Outcome A on most entries of the
+    /// scoring table is the ballot that *helps* its target, so only the shapes
+    /// carrying a penalty are worth paying for; `public_relations` is the one
+    /// resolution whose penalty is outcome A.
+    fn congress_ballot_opposes_the_counter_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        resolution: &str,
+        choice: &str,
+    ) -> bool {
+        let Some(opposed) = self.congress_counter_target(g, pid) else {
+            return false;
+        };
+        let (outcome, target) = Game::congress_choice_parts(choice);
+        target == opposed.to_string()
+            && target != pid.to_string()
+            && match resolution {
+                "public_relations" => outcome == "A",
+                _ => outcome == "B",
+            }
+    }
+
     /// The living major holding the most Diplomatic Victory Points.
     ///
     /// Its own concept, not a fallback: the `world_leader` ballot aims here
@@ -11821,27 +11855,13 @@ impl AdvancedAi {
                     // wrong-target one at half -- an opposition that fails
                     // costs nothing. Shipped, weight keys off the voter's own
                     // plan and never off the stakes.
-                    // ⚠ The same function `congress_choice` aimed the ballot
-                    // with. Asking `victory_denial` again here was the defect:
-                    // it is a different empire whenever
-                    // `congress_counter_leader` is off, so the weight never
-                    // matched the ballot and this flag could not fire alone.
-                    // See [`Self::congress_counter_target`].
                     let counters_the_leader = self.congress_counter_votes
-                        && self
-                            .congress_counter_target(g, pid)
-                            .is_some_and(|opposed| {
-                                let (outcome, target) = Game::congress_choice_parts(&choice);
-                                // Naming the empire is not opposing it: outcome
-                                // A on most of these table entries is the ballot
-                                // that *helps* its target. Only the shapes that
-                                // carry a penalty are worth paying for.
-                                target == opposed.to_string()
-                                    && match resolution.id.as_str() {
-                                        "public_relations" => outcome == "A",
-                                        _ => outcome == "B",
-                                    }
-                            });
+                        && self.congress_ballot_opposes_the_counter_target(
+                            g,
+                            pid,
+                            &resolution.id,
+                            &choice,
+                        );
                     let votes = if (plan.strategy == GrandStrategy::Diplomacy
                         || counters_the_leader)
                         && g.players[pid].diplomatic_favor >= 30.0
