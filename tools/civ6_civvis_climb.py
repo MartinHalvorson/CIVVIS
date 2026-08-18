@@ -287,8 +287,34 @@ def teardown(expected_tag: str | None = None) -> bool:
         gamelock.release()
 
 
+#: What a *running* game and its harness look like on the command line.
+#:
+#: ★★★ ANCHORED ON A PATH SEPARATOR, BECAUSE `pgrep -f` MATCHES MENTIONS. The
+#: pattern was `Civ6_Exe|civ6_play.py|civ6_brain.py`, which matches any process
+#: whose command line merely contains those words — and two things on this host
+#: routinely do:
+#:
+#:   * the harness's own window probe,
+#:     `osascript -e 'tell ... process "Civ6_Exe_Child" to get position of window 1'`,
+#:     which the mirror keeper runs while the lane is idle; and
+#:   * any shell command an operator or agent types that names them, including
+#:     the `pgrep` that checks whether a game is running.
+#:
+#: Either one makes `busy()` report a game that does not exist, `start` refuses
+#: with "something already holds the game; refusing to stop an unowned run", the
+#: batch records PLAYED NO TURNS, and after four of those the supervisor sleeps
+#: ten minutes. Measured 2026-08-18: four consecutive failed starts, no game
+#: running, nothing wrong but the check.
+#:
+#: A real game is the binary inside the app bundle and a real harness process is
+#: a script invoked by path, so both carry a `/` immediately before the name. A
+#: mention in prose, an AppleScript process reference and a `pgrep` pattern do
+#: not.
+RUNNING_GAME_PATTERN = r"MacOS/Civ6_Exe|/civ6_play\.py|/civ6_brain\.py"
+
+
 def busy() -> str | None:
-    out = run(["pgrep", "-f", "Civ6_Exe|civ6_play.py|civ6_brain.py"])
+    out = run(["pgrep", "-f", RUNNING_GAME_PATTERN])
     return out.strip() or None
 
 

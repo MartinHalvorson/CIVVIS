@@ -103,7 +103,8 @@ if END_SCREENS[NAME] then SECONDS = END_SECONDS; end
 -- cards. When one refuses its first exit path we need to reach the later response
 -- rungs promptly; twenty one-second probes left a real leader screen up for twenty
 -- seconds before the desktop fallback even began.
-if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
+if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
+		or NAME == "EspionagePopup" or NAME == "EspionageEscape" then
 	SECONDS = math.min(SECONDS, tonumber(cfg.DialogueSeconds) or 0.25);
 	DESKTOP_AFTER = 4;
 end
@@ -162,11 +163,13 @@ local CHAINED = {
 local function haveScreen()
 	return type(OnClose) == "function"
 		or type(Close) == "function"
+		or type(OnCancel) == "function"           -- EspionagePopup
 		or type(OnContinue) == "function"
 		or type(OnPass) == "function"             -- WorldCongressPopup emergency proposal
 		or type(OnClosePopup) == "function"
 		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
 		or type(OnButton1) == "function"           -- ChooseArtifact
+		or type(OnButton4) == "function"           -- EspionageEscape city-center route
 		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
 		or type(OnAccept) == "function"            -- WorldCongressPopup
 		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
@@ -232,6 +235,22 @@ local function endScreen(attempt)
 		end
 		if type(OnClosePopup) == "function" then OnClosePopup(); return true; end
 		return false;
+	end
+	-- Espionage's briefing/result card is informational after the controller has
+	-- already requested the operation. Its Cancel callback just dequeues the
+	-- popup and returns to the map: it neither starts a new mission nor aborts an
+	-- active one. Use that real UI path rather than calling Close indirectly.
+	if NAME == "EspionagePopup" and type(OnCancel) == "function" then
+		OnCancel();
+		return true;
+	end
+	-- A spy that must escape is different: its plain OnClose only hides the
+	-- panel, leaving the end-turn blocker unanswered so the screen comes back.
+	-- The shipped fourth button routes through the city center, which is the one
+	-- route it always enables, and submits SET_ESCAPE_ROUTE before hiding.
+	if NAME == "EspionageEscape" and type(OnButton4) == "function" then
+		OnButton4();
+		return true;
 	end
 	-- A military-emergency proposal is raised by WorldCongressPopup itself,
 	-- not WorldCongressIntro or WorldCongressBetweenTurns.  Its shipped Pass
