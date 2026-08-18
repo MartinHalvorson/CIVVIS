@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 19,
-    "never_named": 35,
+    "named": 20,
+    "never_named": 34,
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
@@ -14,7 +14,6 @@
       "escort-unstick",
       "garrison-under-fire",
       "garrison-walls",
-      "governor-every-lane",
       "housing-buildings",
       "housing-cards",
       "housing-districts",
