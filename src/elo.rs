@@ -225,6 +225,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_fortify_idle_units",
     "advanced_maritime_splice",
     "advanced_sea_answers",
+    "advanced_legal_tactical_candidates",
+    "advanced_engine_faith_price",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
@@ -832,6 +834,8 @@ define_arm_kinds! {
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
+    AdvancedLegalTacticalCandidates => "advanced_legal_tactical_candidates",
+    AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
@@ -3157,6 +3161,24 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_sea_answers();
             Box::new(ai)
         }
+        // Score only the attacks the engine would allow. The greedy tactical
+        // picker proposes on enemy-tile and range alone and pays two
+        // speculative clones plus a nested reply search per candidate, so a
+        // refused candidate is computed and then discarded.
+        "advanced_legal_tactical_candidates" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_legal_tactical_candidates();
+            Box::new(ai)
+        }
+        // Read the Faith price from the engine rather than the Standard-speed
+        // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
+        // speed -- that literal asks for twice what the engine charges, and it
+        // ignores every belief, government and district discount.
+        "advanced_engine_faith_price" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_faith_price();
+            Box::new(ai)
+        }
         // Let the deck counterfactual see the unit-maintenance bill, so
         // Conscription and Levee en Masse stop scoring exactly 0.0. Every
         // other card's bill cancels in the with/without difference.
@@ -4716,6 +4738,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
+        "advanced_legal_tactical_candidates" => (Vec::new(), "advanced_legal_tactical_candidates"),
+        "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
@@ -6024,6 +6048,8 @@ mod tests {
                 "advanced_fortify_idle_units",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
+                "advanced_legal_tactical_candidates",
+                "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",
