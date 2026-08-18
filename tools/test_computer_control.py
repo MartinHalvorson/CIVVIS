@@ -219,6 +219,49 @@ class LayoutReportTest(unittest.TestCase):
         self.assertNotIn("gaps and priorities", placed)
 
 
+class WindowListingRetryTest(unittest.TestCase):
+    """A racing enumeration is not "no window matches"."""
+
+    def _listing(self, rc: int, out: str = "", err: str = ""):
+        return subprocess.CompletedProcess([], rc, out, err)
+
+    def test_a_transient_failure_is_retried_and_then_succeeds(self) -> None:
+        """`-1719` while Civilization VI launches, which is when layout is wanted.
+
+        Walking every visible process's windows fails when the process list
+        changes under it. Observed twice on 2026-08-18: `layout` reported the
+        mirror as `placed: false`, and the identical call succeeded seconds later
+        with nothing else changed — so the operator was sent looking for a
+        mapping bug that did not exist.
+        """
+        found = "Google Chrome\tCIVVIS \u00b7 Civ VI Simulator\n"
+        calls = [
+            self._listing(1, err="System Events got an error: Invalid index. (-1719)"),
+            self._listing(0, found),
+            self._listing(0, ""),   # the placement call
+        ]
+        with mock.patch.object(cc, "_osascript", side_effect=calls), \
+             mock.patch.object(cc.time, "sleep"):
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIsNone(error)
+
+    def test_a_persistent_failure_still_reports_its_own_message(self) -> None:
+        """A retry loop must not swallow a real failure into a generic one."""
+        calls = [self._listing(1, err="System Events got an error: boom")] * 3
+        with mock.patch.object(cc, "_osascript", side_effect=calls), \
+             mock.patch.object(cc.time, "sleep"):
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIn("boom", error)
+
+    def test_a_window_that_is_really_absent_is_not_retried_into_existence(self) -> None:
+        """An empty listing is an answer, not a failure — one call, one verdict."""
+        with mock.patch.object(cc, "_osascript",
+                               side_effect=[self._listing(0, "Finder\tDesktop\n")]) as spy:
+            error = cc.place_window((0, 0, 10, 10), title="CIVVIS")
+        self.assertIn("no visible window matches", error)
+        self.assertEqual(spy.call_count, 1)
+
+
 class AppleScriptStringTest(unittest.TestCase):
     """A window title is data, and AppleScript has to be handed it as data."""
 
