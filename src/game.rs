@@ -12,7 +12,8 @@ use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
     volcanic_soil_valid_terrain, AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec,
-    FutureTreeLayout, ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
+    FutureTreeLayout, ModifierCollection, ModifierContext, ResourceIndustryEffects, Rules,
+    SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -11191,12 +11192,53 @@ impl Game {
             .is_none_or(|player| player.attached_modifiers.is_empty())
     }
 
+    fn modifier_player_type(player: &Player) -> &'static str {
+        if player.is_free_city {
+            "free_cities"
+        } else if player.is_barbarian {
+            "barbarian"
+        } else if player.is_minor {
+            "minor"
+        } else {
+            "major"
+        }
+    }
+
+    fn modifier_context(&self, pid: usize) -> ModifierContext<'_> {
+        let player = &self.players[pid];
+        ModifierContext {
+            player_type: Some(Self::modifier_player_type(player)),
+            civilization: Some(player.civ.as_str()),
+            government: player.government.as_deref(),
+            religion: player.religion.as_deref(),
+            pantheon: player.pantheon.as_deref(),
+            secret_society: player.secret_society.as_deref(),
+            age: Some(player.age.as_str()),
+            policies: Some(&player.policies),
+            technologies: Some(&player.techs),
+            civics: Some(&player.civics),
+        }
+    }
+
     pub fn player_modifier_effect(&self, pid: usize, effect: &str) -> f64 {
+        self.player_modifier_effect_in_collections(pid, effect, &[ModifierCollection::Player])
+    }
+
+    fn player_modifier_effect_in_collections(
+        &self,
+        pid: usize,
+        effect: &str,
+        collections: &[ModifierCollection],
+    ) -> f64 {
+        let context = self.modifier_context(pid);
         self.players
             .get(pid)
             .into_iter()
             .flat_map(|player| player.attached_modifiers.iter())
-            .filter_map(|modifier| self.rules.modifiers.get(modifier)?.effects.get(effect))
+            .filter_map(|modifier| self.rules.modifiers.get(modifier))
+            .filter(|modifier| collections.contains(&modifier.collection))
+            .filter(|modifier| modifier.requirements.matches(&context))
+            .filter_map(|modifier| modifier.effects.get(effect))
             .sum()
     }
 
@@ -11307,7 +11349,14 @@ impl Game {
         if !self.rules.effect_index.policies(effect) && self.has_no_attachments(pid) {
             return 0.0;
         }
-        let attached = self.player_modifier_effect(pid, effect);
+        // The generic empire/city path collects player-wide and city-wide
+        // bundles together. Unit-wide bundles are collected by
+        // `policy_effect_for_unit`, where the subject is known.
+        let attached = self.player_modifier_effect_in_collections(
+            pid,
+            effect,
+            &[ModifierCollection::Player, ModifierCollection::PlayerCities],
+        );
         if self.in_anarchy(pid) {
             return attached; // the cards come out; external modifiers remain
         }
@@ -11405,8 +11454,11 @@ impl Game {
             return false;
         }
         let effect = grant_ability_effect_key(ability);
-        let religion = self.players.get(pid).and_then(|player| player.religion.as_deref());
-        self.policy_effect(pid, &effect)
+        let religion = self
+            .players
+            .get(pid)
+            .and_then(|player| player.religion.as_deref());
+        self.player_modifier_effect(pid, &effect)
             + self.tree_effect(pid, &effect)
             + self.civ_effect(pid, &effect)
             + self.empire_wonder_effect(pid, &effect)
@@ -11433,7 +11485,11 @@ impl Game {
 
     /// Sums a policy effect over the cards whose era window admits `era`.
     fn policy_effect_for_unit(&self, pid: usize, effect: &str, unit: &str) -> f64 {
-        let attached = self.player_modifier_effect(pid, effect);
+        let attached = self.player_modifier_effect_in_collections(
+            pid,
+            effect,
+            &[ModifierCollection::Player, ModifierCollection::PlayerUnits],
+        );
         if self.in_anarchy(pid) {
             return attached;
         }
