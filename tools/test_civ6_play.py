@@ -47,8 +47,12 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
-    def test_supervised_defaults_are_stock_science(self) -> None:
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
+    def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
+        """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
+        which also holds the evidence that moved it off `science`. This asserts
+        only that the supervised worker takes the chain's one default and stock
+        weights, so a second copy cannot appear here."""
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
 
     def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
@@ -1439,16 +1443,16 @@ class VictoryLaneListTests(unittest.TestCase):
         self.assertIsNotNone(match, "civvis_orders.rs no longer names its lanes")
         self.assertEqual(match.group(1).split("|"), civ6_play.VICTORY_LANES)
 
-    def test_every_direct_or_high_level_default_chooses_science(self):
-        """A bare `civvis_orders` launch must not revive Domination while
-        every high-level launcher forwards Science. The direct fallback is
-        reachable from manual and recovery paths, so it is part of the live
-        controller contract rather than merely a CLI convenience."""
+    def test_every_direct_or_high_level_default_uses_one_launcher_value(self):
+        """A bare `civvis_orders` launch must use the launch chain's current
+        central default. The direct fallback is reachable from manual and
+        recovery paths, so it is part of the live controller contract rather
+        than merely a CLI convenience."""
         binary = self._rust_source("src/bin/civvis_orders.rs")
         match = re.search(r'const DEFAULT_VICTORY: &str = "([^"]+)";', binary)
         self.assertIsNotNone(match, "civvis_orders.rs has no named default")
         self.assertEqual(match.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
-        self.assertEqual(match.group(1), "science")
+        self.assertEqual(match.group(1), "diplomatic")
         self.assertIn(
             "unwrap_or_else(|| DEFAULT_VICTORY.to_string())",
             binary,
@@ -1459,12 +1463,16 @@ class VictoryLaneListTests(unittest.TestCase):
         for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
             with self.subTest(launcher=launcher):
                 source = (here / launcher).read_text(encoding="utf-8")
-                launcher_default = re.search(
-                    r'^DEFAULT_VICTORY = "([^"]+)"$', source, re.MULTILINE)
-                self.assertIsNotNone(
-                    launcher_default, f"{launcher} has no named default")
-                self.assertEqual(
-                    launcher_default.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
+                self.assertRegex(
+                    source,
+                    r"from civ6_play import [^\n]*DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY",
+                    f"{launcher} must import the central default",
+                )
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^DEFAULT_VICTORY\s*=\s*['\"]", re.MULTILINE),
+                    f"{launcher} declared a second default",
+                )
 
     def test_the_launcher_list_matches_the_engine_enum(self):
         """Every `VictoryTarget` variant, spelled the way the enum prints it."""
@@ -1489,8 +1497,30 @@ class VictoryLaneListTests(unittest.TestCase):
         for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
             with self.subTest(launcher=launcher):
                 source = (here / launcher).read_text(encoding="utf-8")
-                self.assertIn("from civ6_play import VICTORY_LANES", source)
+                # The fact, not one spelling of it: the name has to arrive from
+                # `civ6_play`, and the launcher must not declare a list itself.
+                self.assertRegex(
+                    source,
+                    r"from civ6_play import [^\n]*\bVICTORY_LANES\b",
+                    f"{launcher} no longer imports the lane list",
+                )
                 self.assertIn("choices=VICTORY_LANES", source)
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^VICTORY_LANES\s*=", re.MULTILINE),
+                    f"{launcher} declared its own copy of the lane list",
+                )
+                # ⚠ THE SAME CLASS, ONE LEVEL DOWN. The list was collapsed here
+                # in #1871 and the DEFAULT was not: all three launchers declared
+                # `science` while `tools/ops/` held a fourth value that disagreed.
+                # `test_ops_ladder_objective.py` owns that fact; this only stops a
+                # launcher growing a literal of its own again.
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^DEFAULT_(CIVVIS_)?VICTORY\s*=\s*[\"']",
+                               re.MULTILINE),
+                    f"{launcher} declared its own default objective",
+                )
 
 
 if __name__ == "__main__":

@@ -7,8 +7,8 @@ _2026-08-18 · `2bc57db4`_
 Can the evaluator construct every explicit `civvis_orders --victory` mode with
 the same live bridge that the binary deploys, rather than modeling either an
 adaptive bridge (`live`) or an untargeted lane (`advanced_target_*`) alone?
-Does a bare binary invocation choose the same safe lane as the high-level
-launchers?
+Does a bare binary invocation follow the high-level launch chain's centralized
+default rather than retaining a stale local fallback?
 
 ## How it was measured
 
@@ -21,8 +21,8 @@ list. It also checked that the arm differs from adaptive `live` by that lane
 axis alone.
 
 The Rust binary and the three Python launchers were statically compared for
-their named defaults. This was a registry/configuration check: no games, map
-seeds, Elo calculation, or win-rate gate ran.
+their named defaults and imports. This was a registry/configuration check: no
+games, map seeds, Elo calculation, or win-rate gate ran in this round.
 
 ## What it measured
 
@@ -33,14 +33,19 @@ Each carries one `victory-lane-*` tag plus all 74 live-bridge treatments.
 Adaptive `live` remains the `--victory civvis` configuration and has not been
 redefined.
 
-`civvis_orders` now defaults to Science, matching `civ6_play.py`,
-`civ6_civvis_climb.py`, and `civ6_brain.py`. Explicit choices, including the
-automated batch's explicit `civvis`, are unchanged. There are no outcome
-numbers or intervals because this round measured coverage, not performance.
+The initial structural check at `2bc57db4` aligned the direct fallback to the
+then-central Science default. Before this PR merged, #1960 moved that central
+default to Diplomacy on its own deployment-shaped evidence; the final
+integration updates `civvis_orders` to follow that current value. The two
+intermediate launchers import it rather than declaring copies. Explicit
+choices, including the automated batch's explicit `civvis`, are unchanged.
+There are no outcome numbers or intervals from this round because it measured
+coverage, not performance.
 
 ## What was decided
 
-Ship the evaluator/default contract. No victory lane is promoted by this
-structural result. A future deployment-shaped run must compare the relevant
-`live_target_<lane>` arm with adaptive `live` (or another declared control),
-using actual maps and seeds, before changing a launcher or deployment profile.
+Ship the evaluator/default contract. This structural result does not promote a
+victory lane; #1960 owns the evidence and decision that selected Diplomacy. A
+future deployment-shaped run must compare the relevant `live_target_<lane>`
+arm with adaptive `live` (or another declared control), using actual maps and
+seeds, before changing a launcher or deployment profile.
