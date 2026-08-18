@@ -25,6 +25,36 @@ const MINOR_DEPENDENT_ARMS: [&str; 6] = [
     "advanced_policy_envoy_priority",
 ];
 
+/// Arms measured to complete so rarely at the deployment profile that a margin
+/// against them measures THEIR floor rather than the other arm's strength.
+///
+/// ⚠⚠ THIS IS A CONTROL PROBLEM, AND IT HAS ALREADY PRODUCED A NUMBER NOBODY
+/// SHOULD QUOTE. `victory_eval --players 6 --turns 250 --speed online`, 96
+/// games on two disjoint seed streams, completes:
+///
+///   diplomatic 14/16 · culture 12/16 · religious 8/16 · domination 2/16 ·
+///   **science 0/16**
+///
+/// Every named lane was then compared against `advanced_target_science` and all
+/// four beat it — diplomatic by +669 Elo, "CONFIRMED", 23-0-1. Promoted effects
+/// on this ledger run +30..+40, so a +669 is a broken incumbent rather than a
+/// discovery, and the demonstration is in the ledger too: diplomatic against
+/// religious, the fair fight between two lanes that BOTH finish, is 47.9%,
+/// −14 Elo, p=1.0000, inconclusive. If Diplomacy were strong it would beat
+/// Religion. It does not.
+///
+/// `EVAL_INTEGRITY.md` R1 names this family — "controls are not matched" — and
+/// the repository has repaired the genome-matching instance of it already. This
+/// is the same defect one level up: the control is the arm carrying less.
+///
+/// Listed rather than derived because "can this arm finish" is a measurement,
+/// not something the binary can compute at startup. Add an arm here when a
+/// screen shows it cannot complete at this shape, and cite the screen.
+const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
+    "advanced_target_science",
+    "completes 0/16 at the deployment profile (victory_eval, 96 games, two disjoint streams)",
+)];
+
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
@@ -1619,6 +1649,22 @@ here and any null is uninformative"
     // checked that one transfers to the other. This flag is what makes that
     // check possible; it defaults to the previous behaviour.
     let speed = text(&args, "--speed", &civvis::game::default_speed());
+    // ⚠ A CONTROL THAT CANNOT FINISH TURNS EVERY MARGIN AGAINST IT INTO A
+    // READING OF ITSELF. Warned at the profile where the screen was run —
+    // Online is the shape the deployment evaluator and the live ladder both
+    // play, and `victory_eval` read the opposite answer at Standard/250, which
+    // is a Standard game stopped halfway rather than the Online game it looks
+    // like. A warning that fired at every speed would be quoting a number
+    // outside the profile it was measured on, which is the same mistake.
+    if speed.eq_ignore_ascii_case("online") {
+        for arm in [a, b] {
+            if let Some((_, why)) = DEGENERATE_CONTROLS.iter().find(|(name, _)| *name == arm) {
+                println!(
+                    "warning: {arm} {why}, so a margin against it measures ITS floor and not the other arm's strength; compare against an arm that finishes, and read a large number here as a broken control rather than a discovery"
+                );
+            }
+        }
+    }
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
@@ -2452,6 +2498,44 @@ mod tests {
         assert!(line.contains("77200000"), "{line}");
         assert!(line.contains("4000"), "{line}");
         assert!(line.contains("quotable"), "{line}");
+    }
+
+    /// A control that cannot finish makes every margin against it a reading of
+    /// itself, and this evaluator produced exactly that: all four named lanes
+    /// "beat" `advanced_target_science` — diplomatic by +669, 23-0-1 — while
+    /// diplomatic against religious, both of which finish, is 47.9%, p=1.0000.
+    #[test]
+    fn a_degenerate_control_is_named_and_says_why() {
+        assert!(
+            DEGENERATE_CONTROLS
+                .iter()
+                .any(|(name, _)| *name == "advanced_target_science"),
+            "the lane that completes 0/16 is not listed as a degenerate control"
+        );
+        for (name, why) in DEGENERATE_CONTROLS {
+            // A bare list would be a claim; the screen behind each entry is the
+            // only thing that makes it checkable by a reader.
+            assert!(
+                why.contains("victory_eval") || why.contains("games"),
+                "{name} is listed without citing the screen that measured it: {why}"
+            );
+            assert!(
+                civvis::elo::builtin_arm(name).is_some(),
+                "{name} is listed but is not a selectable arm"
+            );
+        }
+    }
+
+    /// Every entry has to be an arm somebody would reach for as a control,
+    /// which in practice means the incumbent of a lane comparison.
+    #[test]
+    fn a_degenerate_control_is_not_also_the_thing_it_warns_about_measuring() {
+        for (name, _) in DEGENERATE_CONTROLS {
+            assert!(
+                name.starts_with("advanced_"),
+                "{name} is not a scripted arm"
+            );
+        }
     }
 
     /// The two halves of R3 have to agree, or this tool prints numbers the
