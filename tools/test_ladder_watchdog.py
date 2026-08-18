@@ -525,6 +525,12 @@ class OvernightAuditRecovery(unittest.TestCase):
         self.assertIn('supervisor_pid=$(live_supervisor_pid || true)', source)
         self.assertIn('host_state=supervisor-only', source)
         self.assertIn('/usr/bin/open -g -j -a Terminal "$HOST_LAUNCHER"', source)
+        self.assertIn('/usr/bin/open -g -j -a Terminal "$MIRROR_KEEPER"', source)
+        self.assertNotIn('/usr/bin/nohup /bin/zsh "$MIRROR_KEEPER"', source)
+        self.assertIn(
+            'if (( live_events && tiles_exported && ! mirror_healthy ))', source)
+        self.assertLess(source.index('collect_mirror\nmirror_keeper_pid'),
+                        source.index('if (( live_events && tiles_exported && ! mirror_healthy ))'))
         self.assertNotIn('tell application "Terminal" to do script', source)
 
 
