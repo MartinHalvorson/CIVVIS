@@ -24924,6 +24924,20 @@ impl AdvancedAi {
         rows
     }
 
+    /// The tactical scan starts from an enemy tile, not `Game::legal_actions`,
+    /// so it must retain the engine's melee preflight before it clones and
+    /// scores a proposed strike.  In particular, entering a forest across a
+    /// river can cost more movement than a unit has left.
+    fn tactical_melee_candidate_is_legal(g: &Game, uid: u32, target: Pos) -> bool {
+        let unit = &g.units[&uid];
+        unit.moves_left > 0.0
+            && unit.attacks_left > 0
+            && g.rules.units[unit.kind].is_melee_capable()
+            && g.wdist(unit.pos, target) == 1
+            && g.unit_can_melee_target_domain(uid, target)
+            && g.can_pay_melee_entry(uid, target)
+    }
+
     fn forcing_reply_penalty_owned(
         work_pool: Option<Arc<WorkPool>>,
         mut after: Game,
@@ -26216,7 +26230,7 @@ impl AdvancedAi {
             // `line_of_sight_from`: the tile version cannot know about the
             // firing unit's `see_through_woods`, so gating with it would
             // withhold a shot the engine would have allowed. Re-deriving any
-            // of the three here would be the same bug in a new place.
+            // of the four here would be the same bug in a new place.
             //
             // ⚠ This is a CORRECTNESS change and nothing else. Measured on
             // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
@@ -26253,8 +26267,7 @@ impl AdvancedAi {
                     target: pos,
                 });
             }
-            if spec.is_melee_capable() && distance == 1 && g.unit_can_melee_target_domain(uid, pos)
-            {
+            if Self::tactical_melee_candidate_is_legal(g, uid, pos) {
                 actions.push(Action::Attack {
                     unit: uid,
                     target: pos,
