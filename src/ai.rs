@@ -229,6 +229,17 @@ const RECON_CITY_STATE_SWEEP_UNMET_MIN: usize = 3;
 /// launch tile plus its three movement points. Anything smaller is commonly
 /// a lake where the only available order is to turn straight back, which
 /// spends production without opening another contact or frontier.
+/// How much one place on the shipped pantheon order is worth, in the same
+/// yield-per-turn units the board score is measured in.
+///
+/// ⚠ One yield a turn per place, so an eleven-name roster spans eleven — which
+/// means the board only overrules the order when it is paying more than the
+/// whole spread of the order itself. That is deliberately a high bar: the
+/// order encodes real judgement about the pantheons whose value is not per
+/// tile, and this treatment exists to be measured against it, not to assume it
+/// is wrong.
+const PANTHEON_PRIOR_STEP: f64 = 1.0;
+
 const NAVAL_RECON_MIN_WATERWAY_TILES: usize = 4;
 /// A major war fought on the water needs one hull for the battle and one to
 /// keep charting the world. This is an exploration arm, not a fleet target:
@@ -1955,6 +1966,22 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
+    /// Choose the pantheon from the land this empire actually holds, instead of
+    /// from a fixed order.
+    ///
+    /// ★★★ THE SHIPPED CHOICE CARRIES NO INFORMATION. The order is a constant,
+    /// a pantheon is exclusive, and the deployment profile seats six majors
+    /// against a roster of eleven — so every rated game assigns the same six
+    /// pantheons to the same six seats, whatever the map looks like. In
+    /// Civilization VI the pantheon is a read of the start: Goddess of the Hunt
+    /// on a board of Deer and Furs, God of the Open Sky where the pastures are.
+    /// Here it is a lookup table.
+    ///
+    /// With this on, each candidate is priced at what it would pay on the tiles
+    /// the empire already owns, and the shipped order becomes a prior that
+    /// still decides when the land says nothing. Reachable as
+    /// `advanced_pantheon_board`.
+    pub(crate) pantheon_reads_the_board: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -3776,6 +3803,7 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            pantheon_reads_the_board: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -4015,6 +4043,7 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            pantheon_reads_the_board: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -4961,6 +4990,86 @@ impl BasicAi {
         self.research_with_government(g, pid, false, pool);
     }
 
+    /// What a pantheon would pay this empire per turn, on the land it already
+    /// owns.
+    ///
+    /// ⚠ Owned tiles rather than built improvements. A pantheon is founded on
+    /// about turn twenty with one city and almost nothing improved, so counting
+    /// what is *built* would score every candidate at zero and value nothing.
+    /// What the choice is actually a read of is the land: how many Deer and
+    /// Furs are in the borders, how many Quarry resources, how much Strategic.
+    ///
+    /// ⚠ Only the per-tile effects are priced. `district_gpp`, `growth_pct`,
+    /// `free_builder` and their kind are worth a great deal and are worth the
+    /// same everywhere, so pricing them would be inventing weights rather than
+    /// reading a board; the shipped order already ranks them against each
+    /// other and continues to.
+    fn pantheon_board_value(&self, g: &Game, pid: usize, belief: &str) -> f64 {
+        let Some(spec) = g.rules.beliefs.pantheon.get(belief) else {
+            return 0.0;
+        };
+        spec.effects
+            .iter()
+            .map(|(effect, amount)| amount * self.pantheon_effect_reach(g, pid, effect))
+            .sum()
+    }
+
+    /// How many tiles of this empire a per-tile pantheon effect would be paid
+    /// on. Zero for an effect that is not paid per tile.
+    fn pantheon_effect_reach(&self, g: &Game, pid: usize, effect: &str) -> f64 {
+        let worked_by = |improvement: &str, classes: &[&str]| -> f64 {
+            g.player_city_ids(pid)
+                .into_iter()
+                .flat_map(|cid| g.cities[&cid].owned_tiles.clone())
+                .filter(|position| {
+                    g.map.get(*position).is_some_and(|tile| {
+                        !tile.pillaged
+                            && tile.resource.as_deref().is_some_and(|resource| {
+                                g.rules.resources.get(resource).is_some_and(|spec| {
+                                    spec.improvement == improvement
+                                        && (classes.is_empty()
+                                            || classes.contains(&spec.class.as_str()))
+                                })
+                            })
+                    })
+                })
+                .count() as f64
+        };
+        let any_improved = |classes: &[&str]| -> f64 {
+            g.player_city_ids(pid)
+                .into_iter()
+                .flat_map(|cid| g.cities[&cid].owned_tiles.clone())
+                .filter(|position| {
+                    g.map.get(*position).is_some_and(|tile| {
+                        !tile.pillaged
+                            && tile.resource.as_deref().is_some_and(|resource| {
+                                g.rules.resources.get(resource).is_some_and(|spec| {
+                                    !spec.improvement.is_empty()
+                                        && classes.contains(&spec.class.as_str())
+                                })
+                            })
+                    })
+                })
+                .count() as f64
+        };
+        match effect {
+            "camp_food" | "camp_production" | "camp_gold" => worked_by("camp", &[]),
+            "quarry_faith" | "quarry_production" => worked_by("quarry", &[]),
+            "pasture_culture" | "pasture_food" | "pasture_production" => worked_by("pasture", &[]),
+            "plantation_culture" | "plantation_food" | "plantation_gold" => {
+                worked_by("plantation", &[])
+            }
+            "fishing_boats_production" | "fishing_boats_food" | "fishing_boats_gold" => {
+                worked_by("fishing_boats", &[])
+            }
+            "resource_mine_faith" => worked_by("mine", &["bonus", "luxury"]),
+            "strategic_improved_production" | "strategic_improved_faith" => {
+                any_improved(&["strategic"])
+            }
+            _ => 0.0,
+        }
+    }
+
     fn research_with_government(
         &self,
         g: &mut Game,
@@ -5117,7 +5226,33 @@ impl BasicAi {
                     pantheons.push(belief.clone());
                 }
             }
-            for (rank, b) in pantheons.iter().map(String::as_str).enumerate() {
+            // The shipped order is a prior, not an answer: it still decides
+            // between candidates the land is silent about, so an empire with
+            // nothing to work chooses exactly what it chose before. See
+            // `pantheon_reads_the_board`.
+            let mut ranked: Vec<(usize, String, f64)> = pantheons
+                .iter()
+                .enumerate()
+                .map(|(rank, belief)| {
+                    let prior = (pantheons.len() - rank) as f64 * PANTHEON_PRIOR_STEP;
+                    let board = if self.pantheon_reads_the_board {
+                        self.pantheon_board_value(g, pid, belief)
+                    } else {
+                        0.0
+                    };
+                    (rank, belief.clone(), prior + board)
+                })
+                .collect();
+            // Descending score, and the shipped order breaks every tie, so the
+            // result is a total order and does not depend on map iteration.
+            ranked.sort_by(|left, right| {
+                right
+                    .2
+                    .partial_cmp(&left.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(left.0.cmp(&right.0))
+            });
+            for (rank, b, score) in &ranked {
                 if g.apply(
                     pid,
                     &Action::ChoosePantheon {
@@ -5127,7 +5262,7 @@ impl BasicAi {
                 .is_ok()
                 {
                     think!(self.journal, Faith, Decision, "Founding the pantheon {}", plain(b);
-                           "the {} choice on the standing list still unclaimed",
+                           "worth {score:.1} on this land, and the {} choice on the standing list",
                            match rank { 0 => "first".to_string(), _ => format!("{}th", rank + 1) });
                     break;
                 }
@@ -12421,6 +12556,88 @@ mod tests {
     use super::*;
     use crate::ai::advanced::AdvancedAi;
     use crate::parallel::WorkPool;
+
+    /// ⚠⚠ THE SHIPPED PANTHEON CHOICE IS A CONSTANT, AND THIS IS THE PROOF.
+    ///
+    /// A pantheon is exclusive and the shipped order is fixed, so on the
+    /// deployment profile's six seats the same six pantheons are handed out in
+    /// the same order every game, on every map. The first half of this test
+    /// asserts that: the same board, salted with six Deer, still produces the
+    /// same choice, because nothing in the chooser reads a tile.
+    ///
+    /// The second half is the treatment. `advanced_pantheon_board` prices each
+    /// candidate on the land the empire holds, so a board of Deer and Furs buys
+    /// Goddess of the Hunt — which pays two yields on every one of them —
+    /// instead of the first name on a list.
+    #[test]
+    fn the_pantheon_is_a_constant_until_it_is_priced_against_the_land() {
+        let camp_board = |seed: u64| {
+            let mut game = Game::new_full(2, 30, 18, seed, 200, 0, false);
+            game.current = 0;
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].faith = 200.0;
+            game
+        };
+        let salt_with_camps = |game: &mut Game, count: usize| {
+            let city = game.player_city_ids(0)[0];
+            let centre = game.cities[&city].pos;
+            let tiles: Vec<_> = game.cities[&city]
+                .owned_tiles
+                .iter()
+                .copied()
+                .filter(|position| *position != centre)
+                .take(count)
+                .collect();
+            assert_eq!(
+                tiles.len(),
+                count,
+                "the capital must own enough tiles to salt"
+            );
+            for position in tiles {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.resource = Some(crate::name!("deer"));
+                tile.pillaged = false;
+            }
+        };
+
+        // Shipped: the land is irrelevant. Bare board and Deer board agree.
+        let mut shipped = BasicAi::new();
+        shipped.pursue_religion = true;
+        let mut bare = camp_board(6_101);
+        shipped.research_with_government(&mut bare, 0, false, None);
+        let mut salted = camp_board(6_101);
+        salt_with_camps(&mut salted, 6);
+        shipped.research_with_government(&mut salted, 0, false, None);
+        assert_eq!(bare.players[0].pantheon, salted.players[0].pantheon);
+        assert_eq!(bare.players[0].pantheon.as_deref(), Some("divine_spark"));
+
+        // Treated: the same Deer board buys the pantheon that pays on it.
+        let mut treated_ai = BasicAi::new();
+        treated_ai.pursue_religion = true;
+        treated_ai.pantheon_reads_the_board = true;
+        let mut treated = camp_board(6_101);
+        salt_with_camps(&mut treated, 6);
+        treated_ai.research_with_government(&mut treated, 0, false, None);
+        assert_eq!(
+            treated.players[0].pantheon.as_deref(),
+            Some("goddess_of_the_hunt"),
+            "six Deer pay two yields each; the prior spans eleven"
+        );
+
+        // And on a board with nothing to work it still chooses what it always
+        // chose, so the treatment adds a read rather than replacing a policy.
+        let mut treated_bare = camp_board(6_101);
+        treated_ai.research_with_government(&mut treated_bare, 0, false, None);
+        assert_eq!(
+            treated_bare.players[0].pantheon.as_deref(),
+            Some("divine_spark")
+        );
+    }
 
     /// ⚠⚠ AN EIGHT-PLAYER GAME LEFT TWO EMPIRES WITH NO PANTHEON AT ALL.
     ///
