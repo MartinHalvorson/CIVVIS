@@ -472,8 +472,7 @@ mod tests {
 
     #[test]
     fn every_catalogued_battle_has_a_field_drawn_for_it() {
-        let drawn: std::collections::BTreeSet<&str> =
-            PLANS.iter().map(|plan| plan.id).collect();
+        let drawn: std::collections::BTreeSet<&str> = PLANS.iter().map(|plan| plan.id).collect();
         let undrawn: Vec<&str> = crate::historical_scenarios::all()
             .iter()
             .map(|scenario| scenario.id)
@@ -496,7 +495,10 @@ mod tests {
             .map(|plan| plan.id)
             .filter(|id| !listed.contains(id))
             .collect();
-        assert!(orphans.is_empty(), "charts for battles nobody can play: {orphans:?}");
+        assert!(
+            orphans.is_empty(),
+            "charts for battles nobody can play: {orphans:?}"
+        );
     }
 
     #[test]
