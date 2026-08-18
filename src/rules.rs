@@ -270,6 +270,16 @@ pub struct FeatureSpec {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ResourceSpec {
     pub class: String,
+    /// The shipped `Resources.Frequency` land-placement weight. A zero means
+    /// this resource does not participate in the ordinary land lottery; some
+    /// resources are placed by a dedicated quota pass instead.
+    #[serde(default)]
+    pub frequency: u32,
+    /// The shipped `Resources.SeaFrequency` water-placement weight. Firaxis
+    /// keeps this separate from the land value: Fish (23) and Crabs (17) are
+    /// intentionally much more common than Pearls and Whales (1 each).
+    #[serde(default)]
+    pub sea_frequency: u32,
     /// Strategic and archaeological resources remain hidden until this node.
     #[serde(default)]
     pub tech: Option<Name>,

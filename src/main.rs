@@ -79,7 +79,7 @@ const ANCHOR_BEHAVIOUR_FNV: u64 = 0x87f1_ed28_5af9_e065;
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 20_464;
+const ANCHOR_DECISIONS: usize = 18_502;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
