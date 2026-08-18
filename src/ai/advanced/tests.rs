@@ -21525,6 +21525,223 @@ fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
     );
 }
 
+/// A kill that is already legal this turn is not a campaign order.  In
+/// particular, a barbarian need not be inside the bounded home-defense list:
+/// leaving a one-health raider alive beside an available Warrior is never the
+/// staging discipline this controller is trying to preserve.
+#[test]
+fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
+    let mut game = Game::new_full(2, 30, 20, 90_079, 60, 0, true);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("each major starts with a Settler");
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .expect("fixture capitals must be founded");
+    }
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+    game.current = 0;
+    game.at_war.insert((0, 1));
+
+    let mut open: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(**pos).is_none()
+                && game.units_at(**pos).is_empty()
+        })
+        .map(|(pos, _)| *pos)
+        .collect();
+    open.sort_unstable();
+    let (civ_target, civ_attacker_at) = open
+        .iter()
+        .copied()
+        .find_map(|target| {
+            game.nbrs(target)
+                .into_iter()
+                .find(|attacker| open.contains(attacker))
+                .map(|attacker| (target, attacker))
+        })
+        .expect("fixture needs an adjacent open civ duel");
+    let (barb_target, barb_attacker_at) = open
+        .iter()
+        .copied()
+        .filter(|target| {
+            game.wdist(*target, civ_target) > 4 && game.wdist(*target, civ_attacker_at) > 4
+        })
+        .find_map(|target| {
+            game.nbrs(target)
+                .into_iter()
+                .find(|attacker| {
+                    open.contains(attacker)
+                        && game.wdist(*attacker, civ_target) > 4
+                        && game.wdist(*attacker, civ_attacker_at) > 4
+                })
+                .map(|attacker| (target, attacker))
+        })
+        .expect("fixture needs a separate adjacent barbarian duel");
+    let enemy_reserve_at = open
+        .iter()
+        .copied()
+        .find(|position| {
+            [civ_target, civ_attacker_at, barb_target, barb_attacker_at]
+                .iter()
+                .all(|other| game.wdist(*position, *other) > 6)
+        })
+        .expect("fixture needs a distant enemy survivor");
+
+    let civ_attacker = game.spawn_test_unit("warrior", 0, civ_attacker_at);
+    let barb_attacker = game.spawn_test_unit("warrior", 0, barb_attacker_at);
+    let wartime_target = game.spawn_test_unit("warrior", 1, civ_target);
+    let barbarian_target = game.spawn_test_unit("warrior", barb, barb_target);
+    game.spawn_test_unit("warrior", 1, enemy_reserve_at);
+    game.units.get_mut(&wartime_target).unwrap().hp = 1;
+    game.units.get_mut(&barbarian_target).unwrap().hp = 1;
+    assert!(
+        game.is_at_war(0, 1),
+        "the civilization target is a war enemy"
+    );
+    assert!(
+        game.is_at_war(0, barb),
+        "barbarians are hostile without a declaration"
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    let legal = game.legal_actions_within(0, ActionFamilies::UNITS);
+    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan);
+    assert_eq!(
+        finished, 2,
+        "each available positive exchange must finish its removable target; \
+         legal={legal:?}, log={:?}",
+        game.log
+    );
+    assert!(!game.units.contains_key(&wartime_target));
+    assert!(!game.units.contains_key(&barbarian_target));
+    let finishers = [civ_attacker, barb_attacker];
+    assert!(
+        game.log
+            .iter()
+            .filter(|(_, action)| {
+                matches!(action, Action::Attack { unit, target }
+                if finishers.contains(unit) && [civ_target, barb_target].contains(target))
+            })
+            .count()
+            >= 2,
+        "the kills must be combat strikes, not a movement side effect: {:?}",
+        game.log
+    );
+}
+
+/// The full unit-turn pipeline must take the same finish before its normal
+/// barbarian campaign filter runs.  A distant raider is deliberately not a
+/// home-defense objective, but an adjacent one-hit kill is still immediate
+/// combat rather than a request to start chasing camps across the map.
+#[test]
+fn advanced_turn_finishes_a_distant_barbarian_before_campaign_filtering() {
+    let mut game = Game::new_full(2, 30, 20, 90_080, 60, 0, true);
+    for pid in 0..2 {
+        game.current = pid;
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("each major starts with a Settler");
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .expect("fixture capitals must be founded");
+    }
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    game.current = 0;
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+    let target =
+        game.map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) > crate::ai::HOME_THREAT_RADIUS + 1
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(**position).is_none()
+                    && game.units_at(**position).is_empty()
+            })
+            .map(|(position, _)| *position)
+            .find(|target| {
+                game.nbrs(*target).into_iter().any(|attacker| {
+                    game.map.get(attacker).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.city_at(attacker).is_none()
+                })
+            })
+            .expect("fixture needs a distant open barbarian duel");
+    let attacker_at = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.city_at(*position).is_none()
+        })
+        .expect("target needs a passable melee tile");
+    let attacker = game.spawn_test_unit("warrior", 0, attacker_at);
+    let raider = game.spawn_test_unit("warrior", barb, target);
+    game.units.get_mut(&raider).unwrap().hp = 1;
+    assert!(
+        !BasicAi::barbarian_presence_at_home_with_camp_radius(
+            &game,
+            0,
+            crate::ai::HOME_THREAT_RADIUS
+        ),
+        "the raider must stay outside the normal bounded barbarian target list"
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.advanced_units(&mut game, 0, &plan);
+
+    assert!(!game.units.contains_key(&raider));
+    assert!(
+        game.log.iter().any(|(_, action)| {
+            matches!(action, Action::Attack { unit, target: struck }
+                if *unit == attacker && *struck == target)
+        }),
+        "the full Advanced turn must issue the distant finishing strike: {:?}",
+        game.log
+    );
+}
+
 /// ★★★★★ A HOME RAIDER MUST NOT FREEZE THE REST OF A PRE-WAR ARMY.
 ///
 /// The live bridge intentionally puts the barbarian seat in `enemies`
