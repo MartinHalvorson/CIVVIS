@@ -15086,15 +15086,16 @@ impl AdvancedAi {
                         return None;
                     }
                     let worship = spec.worship_belief.is_some() as i32;
-                    let defensive_value = match strategy {
-                        GrandStrategy::Conquest | GrandStrategy::Recovery => spec.outer_defense * 2,
-                        _ => spec.outer_defense,
-                    };
+                    // No defensive term: `building_faith_purchase_cost` refuses
+                    // every building with `outer_defense > 0`, because
+                    // Civilization VI ships no `PurchaseYield` for a city
+                    // defence and sells it for no currency. A weight that can
+                    // only ever apply to a candidate this filter has already
+                    // dropped is a weight that reads as a policy and is not one.
                     let score = (self.yield_value(spec.yields, strategy) * 25.0) as i32
                         + (spec.housing * 35.0 + spec.amenity * 50.0) as i32
                         + spec.great_work_slots.values().sum::<i32>() * 60
                         + spec.trade_route_capacity * 100
-                        + defensive_value
                         + worship * 220
                         - (cost * 0.05) as i32;
                     Some((score, std::cmp::Reverse((*city, *building)), action))

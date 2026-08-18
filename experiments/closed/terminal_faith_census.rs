@@ -3,9 +3,9 @@
 //! This command changes no saved file and runs no controller. For each living
 //! major it clones the terminal position, removes only the game-over guard,
 //! makes that seat current, and enumerates already-legal purchase and empire
-//! actions. `docs/TERMINAL_FAITH_OPPORTUNITIES.md` freezes the interpretation:
-//! an offer is an opportunity for a future causal study, not evidence that the
-//! action should have been taken.
+//! actions. `docs/closed/TERMINAL_FAITH_OPPORTUNITIES.md` freezes the
+//! interpretation: an offer is an opportunity for a future causal study, not
+//! evidence that the action should have been taken.
 use civvis::game::{Action, ActionFamilies, Game};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

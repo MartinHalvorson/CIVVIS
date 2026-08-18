@@ -14164,8 +14164,16 @@ fn nonreligious_strategy_buys_defense_only_when_its_home_is_pressured() {
         .any(|unit| unit.owner == 0 && unit.kind == "missionary"));
 }
 
+/// A Valletta suzerain's Faith buys city-centre buildings, and never the walls.
+///
+/// This asserted the opposite: that the spender bought `walls` for 80 Faith. The
+/// shipped ruleset gives no wall tier a `PurchaseYield`, so Civilization VI
+/// sells them for no currency at all, and the live seat had 99 such purchases
+/// refused across the two runs where it held Valletta. The half of this test
+/// that was always about the spender -- that it never reaches for Gold -- is
+/// unchanged.
 #[test]
-fn faith_spending_uses_valletta_wall_price_and_ignores_gold_actions() {
+fn faith_spending_never_buys_walls_and_ignores_gold_actions() {
     let mut game = Game::new_full(1, 30, 18, 7_107, 160, 1, false);
     let settler = game
         .player_unit_ids(0)
@@ -14192,11 +14200,12 @@ fn faith_spending_uses_valletta_wall_price_and_ignores_gold_actions() {
         GrandStrategy::Conquest,
     );
 
-    assert!(game.cities[&city]
-        .buildings
-        .contains(&crate::name!("walls")));
-    assert_eq!(game.players[0].faith, 120.0);
-    assert_eq!(game.players[0].gold, 10_000.0);
+    assert!(
+        !game.cities[&city].buildings.contains(&crate::name!("walls")),
+        "the Faith spender must not buy a city defence the host will not sell"
+    );
+    assert_eq!(game.players[0].faith, 200.0, "no Faith spent on a refused item");
+    assert_eq!(game.players[0].gold, 10_000.0, "and the Gold reserve is untouched");
 }
 
 #[test]
