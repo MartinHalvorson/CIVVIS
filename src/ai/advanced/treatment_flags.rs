@@ -510,6 +510,15 @@ impl AdvancedAi {
         self.spy_mission_patience = false;
     }
 
+    /// See [`Self::settler_site_agreement`].
+    pub fn enable_settler_site_agreement(&mut self) {
+        self.settler_site_agreement = true;
+    }
+
+    pub fn disable_settler_site_agreement(&mut self) {
+        self.settler_site_agreement = false;
+    }
+
     /// See [`Self::siege_is_progress`].
     pub fn enable_siege_is_progress(&mut self) {
         self.siege_is_progress = true;
@@ -991,6 +1000,10 @@ impl AdvancedAi {
         // first run with a working spy chain (civvis-20260818T155500Z)
         // re-ordered SPY_GAIN_SOURCES 35 times. See `spy_mission_patience`.
         self.enable_spy_mission_patience();
+        // And never paying for a Settler the march will refuse to land —
+        // 19 starts became 8 foundings on the first hostile map after the
+        // land-grab pipeline. See `settler_site_agreement`.
+        self.enable_settler_site_agreement();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -1123,6 +1136,9 @@ impl AdvancedAi {
         self.enable_stacked_escort();
         self.enable_settler_stack_discipline();
         self.enable_wonder_ring_settle_value();
+        // And never paying for a Settler the march will refuse to land. See
+        // `settler_site_agreement`.
+        self.enable_settler_site_agreement();
         // The cheap half of a research city before the race in it. See
         // `buildings_before_projects`.
         self.enable_buildings_before_projects();
