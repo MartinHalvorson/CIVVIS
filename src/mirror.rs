@@ -14363,13 +14363,11 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
         }
     }
     unmet.sort_by_key(|entry| entry.player);
-    let mut seat = state.rivals.len() + 1;
-    for entry in unmet {
+    for (seat, entry) in (state.rivals.len() + 1..).zip(unmet) {
         if seat >= game.players.len() {
             break;
         }
         game.players[seat].dvp = entry.points;
-        seat += 1;
     }
 }
 
