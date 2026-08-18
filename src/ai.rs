@@ -6537,8 +6537,21 @@ impl BasicAi {
         // discounted price otherwise, so it answers legality and
         // affordability in one question. The weight still gates: it is the
         // reserve the empire keeps back, above whatever the purchase costs.
+        // ⚠⚠ THE THIRD SPELLING OF THE SAME RULE, AND THE ONE THAT DID NOT ASK.
+        // `has_builder_work` gates the production path and the gold-purchase
+        // path; this one counted cities and nothing else, so an empire with
+        // every workable tile already improved went on buying Builders with
+        // Faith. `advanced.rs`'s `PRODUCTION_BUILDERS_PER_CITY` states in prose
+        // that "the existing `has_builder_work` gate stops production once
+        // there is no yield to add" — true of two paths out of three until now.
+        //
+        // Measured over three 250-turn six-player games before this: builders
+        // reached a decision 4,887 times and found no improvable tile anywhere
+        // in the empire on 4,377 of them, flat across the whole game rather
+        // than concentrated late. Blocked-by-terrain was 43.
         if g.players[pid].faith >= self.w.faith_builder
             && builders < n_cities
+            && Self::has_builder_work(g, pid)
             && !city_ids.is_empty()
             && g.unit_purchase_cost(pid, city_ids[0], "builder", "faith")
                 .is_some_and(|cost| g.players[pid].faith + f64::EPSILON >= cost)
