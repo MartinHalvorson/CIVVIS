@@ -1,6 +1,7 @@
 from pathlib import Path
 import concurrent.futures
 import ast
+import re
 import json
 import os
 import shutil
@@ -618,6 +619,22 @@ class EffectSizeEvidenceTests(unittest.TestCase):
         self.assertTrue(any("no evidence beside it" in error for error in errors), errors)
 
 
+
+def green_rows_for_unmentioned_required(rows):
+    """Top up a fixture with a green row for every required check it omits.
+
+    ⚠ Fixtures used to spell the required set out by hand, so adding a third
+    required check broke six tests that were not about that check at all. The
+    set is derived here for the same reason the production code has one tuple:
+    a copy of a fact is a place for it to go stale.
+    """
+    named = {row.get("name") for row in rows}
+    return list(rows) + [
+        {"name": name, "startedAt": "2026-07-23T23:59:00Z",
+         "status": "COMPLETED", "conclusion": "SUCCESS"}
+        for name in collab.REQUIRED_CHECKS if name not in named
+    ]
+
 class PolicyTests(unittest.TestCase):
     branch = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
 
@@ -896,6 +913,15 @@ class PolicyTests(unittest.TestCase):
                 "completed_at": "2026-07-23T22:37:19Z",
                 "conclusion": "failure",
             },
+        ] + [
+            {
+                "name": name,
+                "started_at": "2026-07-23T22:32:11Z",
+                "completed_at": "2026-07-23T22:37:02Z",
+                "conclusion": "success",
+            }
+            for name in collab.REQUIRED_CHECKS
+            if name not in ("cargo-test", "collaboration-policy")
         ]
         self.assertEqual(
             collab.required_check_gate_errors(runs, merged_at),
@@ -910,7 +936,7 @@ class PolicyTests(unittest.TestCase):
                 "completed_at": "2026-07-23T22:35:00Z",
                 "conclusion": "success",
             }
-            for name in ("cargo-test", "collaboration-policy")
+            for name in collab.REQUIRED_CHECKS
         ]
         self.assertEqual(
             collab.required_check_gate_errors(runs, "2026-07-23T22:36:00Z"), []
@@ -1137,7 +1163,9 @@ Added the fast shipping path.
                 "conclusion": "SUCCESS",
             },
         ]
-        self.assertEqual(collab.required_check_state(rows), ("success", []))
+        self.assertEqual(
+            collab.required_check_state(
+                green_rows_for_unmentioned_required(rows)), ("success", []))
 
     def test_ready_transition_does_not_reuse_an_old_draft_policy_check(self):
         rows = [
@@ -1156,7 +1184,7 @@ Added the fast shipping path.
         ]
         self.assertEqual(
             collab.required_check_state(
-                rows,
+                green_rows_for_unmentioned_required(rows),
                 minimum_started={"collaboration-policy": "2026-07-23T22:35:00Z"},
             ),
             ("pending", ["collaboration-policy"]),
@@ -1173,7 +1201,7 @@ Added the fast shipping path.
         ]
         self.assertEqual(
             collab.required_check_state(pending),
-            ("pending", ["cargo-test", "collaboration-policy"]),
+            ("pending", sorted(collab.REQUIRED_CHECKS)),
         )
         failed = pending + [
             {
@@ -1184,7 +1212,8 @@ Added the fast shipping path.
             }
         ]
         self.assertEqual(
-            collab.required_check_state(failed),
+            collab.required_check_state(
+                green_rows_for_unmentioned_required(failed)),
             ("failed", ["collaboration-policy"]),
         )
 
@@ -1296,7 +1325,7 @@ Added the fast shipping path.
                 "detailsUrl": "https://github.com/o/r/actions/runs/222/job/2",
             },
             {
-                "name": "rust-quality",
+                "name": "overwrite-guard",
                 "startedAt": "2026-08-18T00:52:20Z",
                 "detailsUrl": "https://github.com/o/r/actions/runs/333/job/3",
             },
@@ -1305,9 +1334,12 @@ Added the fast shipping path.
         collab.gh_api_write = fake_write
         try:
             self.assertTrue(collab.rerun_required_check(rows, "cargo-test"))
-            # Not a required check: `ship` does not gate on it, so it must not
-            # spend CI re-running it either.
-            self.assertFalse(collab.rerun_required_check(rows, "rust-quality"))
+            # An advisory check: `ship` does not gate on it, so it must not
+            # spend CI re-running it either. This case named `rust-quality`
+            # until it became required — and being required is exactly what
+            # earns a check the retry, because a cancelled run reaches no
+            # verdict and GitHub restarts nothing on its own.
+            self.assertFalse(collab.rerun_required_check(rows, "overwrite-guard"))
             self.assertFalse(collab.rerun_required_check([], "cargo-test"))
         finally:
             collab.gh_api_write = original
@@ -1591,3 +1623,76 @@ class EveryManagedServiceIsRepairedOnEveryTask(unittest.TestCase):
         for _name, function, _absent in collab.MANAGED_SERVICES:
             with self.subTest(function=function):
                 self.assertNotIn(f"{function}(root)", boot)
+
+
+class EveryCheckIsRequiredOrSaysWhyNot(unittest.TestCase):
+    """There is no branch protection on this repository, so `REQUIRED_CHECKS`
+    is the only thing that makes a check binding.
+
+    `rust-quality` was in neither list and merged red: five commits on `main`
+    in its forty most recent runs are failures, and #1954 merged with its final
+    `rust-quality` run FAILING while every other check was green. A ratchet
+    nobody has to pass ratchets nothing.
+
+    Discovered, not listed: the check names are read out of the workflows that
+    actually run on a pull request, so a gate added tomorrow is a deliberate
+    decision rather than an omission nobody can tell from an oversight.
+    """
+
+    WORKFLOWS = Path(collab.__file__).resolve().parent.parent / ".github" / "workflows"
+
+    def pull_request_checks(self) -> set:
+        """Every check name a pull request gets: one per job, not per workflow.
+
+        `published-build` and `control-mod` are jobs inside `cargo-test`'s
+        workflow, so keying on workflow names alone would miss two of the six.
+        """
+        names = set()
+        for path in sorted(self.WORKFLOWS.glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            trigger = text.split("jobs:", 1)[0]
+            if "pull_request" not in trigger:
+                continue
+            inside = False
+            for line in text.splitlines():
+                if line.startswith("jobs:"):
+                    inside = True
+                    continue
+                if inside and line and not line[0].isspace():
+                    break
+                if inside and re.match(r"^  [A-Za-z][\w-]*:\s*$", line):
+                    names.add(line.strip().rstrip(":"))
+        return names
+
+    def test_the_workflows_are_read_not_assumed(self):
+        found = self.pull_request_checks()
+        self.assertTrue(found, "no pull-request workflow jobs were found")
+        # The two that live inside another workflow are the reason this reads
+        # jobs rather than workflow names.
+        self.assertIn("published-build", found)
+        self.assertIn("control-mod", found)
+
+    def test_every_one_is_required_or_carries_a_reason(self):
+        unaccounted = sorted(
+            self.pull_request_checks()
+            - set(collab.REQUIRED_CHECKS)
+            - set(collab.ADVISORY_CHECKS))
+        self.assertEqual(unaccounted, [], (
+            "these checks run on every pull request and nothing says whether "
+            "they may block a merge. Add them to REQUIRED_CHECKS, or to "
+            "ADVISORY_CHECKS with the reason they may go red and merge anyway: "
+            f"{unaccounted}"))
+
+    def test_no_check_is_both(self):
+        self.assertEqual(
+            set(collab.REQUIRED_CHECKS) & set(collab.ADVISORY_CHECKS), set())
+
+    def test_an_advisory_reason_is_a_reason(self):
+        for name, reason in collab.ADVISORY_CHECKS.items():
+            with self.subTest(check=name):
+                self.assertGreater(len(reason), 40,
+                                   f"{name} is waved through without a reason")
+
+    def test_rust_quality_is_required(self):
+        """The specific hole this closes; a rename must not silently reopen it."""
+        self.assertIn("rust-quality", collab.REQUIRED_CHECKS)
