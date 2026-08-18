@@ -375,41 +375,21 @@ Verified unchanged in the same pass: the ±20 clamp is exactly
 `STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
 and the `LoyaltyLevels` yield/growth bands.
 
-## Open, and needing a judgement call: resource placement frequency
+## Resolved: resource placement follows the shipped weights
 
-`Resources.Frequency` and `SeaFrequency` weight the shipped placement lottery.
-CIVVIS picks **uniformly** among the resources valid for a tile:
+`Resources.Frequency` and `SeaFrequency` weight Civilization VI's placement
+lottery. CIVVIS now exports both columns from the shipped database and draws
+each valid land or sea resource by its matching weight. That restores important
+ratios such as Stone and Wheat at 10 versus Copper, Deer, Sheep and Bananas at
+4, and Fish at 23 versus Whales and Pearls at 1.
 
-```rust
-let pick = valid[rng.below(valid.len())].clone();
-```
-
-The shipped weights are not close to uniform. On land, Stone and Wheat are 10
-against Copper, Deer, Sheep and Bananas at 4 — two and a half times as likely.
-At sea it is starker: Fish 23, Crabs 17, Turtles 5, and Amber, Pearls and Whales
-1 apiece, so a Whale should be a twenty-third as common as a Fish and CIVVIS
-makes them equally likely. Land luxuries are the one group that really is
-uniform, all at 2, which CIVVIS gets right by accident.
-
-**Why this is not simply fixed.** The lottery runs before start selection and
-feeds it: resources are part of what scores a start, through
-`StartBias::weight(resource_tier)`. Weighting the lottery therefore moves
-starts. Implementing it made two of roughly a hundred sampled (size, seed)
-combinations miss the start-spacing tolerance in
-`stock_map_profiles_produce_spread_and_complete_spawn_sets` and
-`islands_flat_poles_spread_starts_across_the_whole_archipelago` — both
-marginally, 207% against a 200% cap and 64.7% against a 65% floor.
-
-One or two marginal misses in a hundred is consistent with ordinary variance
-around a tight threshold, and it is also consistent with a small real
-degradation. n=1 does not separate them, and even start spacing is a
-tournament-fairness property this project cares about. Loosening the tolerance
-or reseeding until the sample passes would settle the argument in the change's
-favour without evidence, so the code is not in the tree.
-
-What would settle it: run the spacing property over a few hundred seeds with and
-without the weighting and compare failure rates. If they match, the weighting is
-correct and the thresholds simply sit close to the natural spread.
+The normal lottery excludes resources with a zero applicable weight. That is
+intentional: artifacts remain assigned only by their later, dedicated quota
+pass instead of becoming accidental ordinary resources. The fidelity audit
+compares every exported land and sea weight against the installed game data; a
+mapgen test pins the full shipped table and checks the weighted draws, including
+the zero-weight case. Existing stock-map start and spawn properties continue to
+exercise the changed generator without relaxed spacing thresholds.
 
 ## Swept clean: the systematic comparisons already run
 

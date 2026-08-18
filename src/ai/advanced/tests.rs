@@ -1665,8 +1665,8 @@ fn timed_war_chooser_appoints_the_earliest_excellent_unlock() {
     let plan = ai
         .choose_war_plan(&game, 0)
         .expect("the long-horizon fixture has a routeable excellent power spike");
-    assert_eq!(plan.breakthrough_tech, crate::name!("wheel"));
-    assert_eq!(plan.assault_unit, crate::name!("heavy_chariot"));
+    assert_eq!(plan.breakthrough_tech, crate::name!("military_tactics"));
+    assert_eq!(plan.assault_unit, crate::name!("pikeman"));
     assert!(
         game.rules.units[plan.assault_unit].strength
             < game.rules.units["giant_death_robot"].strength,
@@ -10927,7 +10927,21 @@ fn a_regional_amenity_building_counts_the_cities_it_reaches() {
     );
 
     // A second Zoo whose reach is already covered adds nothing regional.
-    let other = cities[1];
+    let other = cities[1..]
+        .iter()
+        .copied()
+        .find(|city| game.wdist(game.cities[&capital].pos, game.cities[city].pos) <= range)
+        .expect("the second Zoo is placed in the first Zoo's range");
+    // The first half prices every reached city. Keep only the pair that
+    // establishes the non-stacking case below, so another city incidentally
+    // in `other`'s range cannot look like a second Zoo benefit.
+    for city in cities
+        .iter()
+        .copied()
+        .filter(|city| *city != capital && *city != other)
+    {
+        game.mirror_remove_city(city);
+    }
     install_ai_test_district(&mut game, other, "entertainment_complex");
     game.cities
         .get_mut(&other)
@@ -17337,7 +17351,12 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let avoided = ai.settler_avoid.get(&settler).map(|(pos, _)| *pos);
         // Frame 2: the site is valid again — the flicker.
         game.blocked_city_sites.remove(&first);
-        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        // Hold the mover at the same point so this frame compares target
+        // hysteresis, not the different distance a fallback move created.
+        let unit = game.units.get_mut(&settler).unwrap();
+        unit.pos = source;
+        unit.moves_left = 2.0;
+        unit.moved = false;
         ai.settler_targets.remove(&settler);
         let _ = ai.advanced_settler_step(&mut game, 0, settler);
         let re_pick = ai.settler_targets.get(&settler).copied();

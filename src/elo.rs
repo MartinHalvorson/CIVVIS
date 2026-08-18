@@ -926,6 +926,21 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v10 (2026-08-18) — map resources use the shipped placement weights.**
+/// Civilization VI's `Resources.Frequency` and `SeaFrequency` make, for
+/// example, Fish (23) far more common than Whales (1), and Stone (10) more
+/// common than Copper (4). CIVVIS instead selected uniformly from all valid
+/// resources for each tile. The map generator now draws by the appropriate
+/// shipped land or sea weight, while zero-weight artifacts remain owned by
+/// their dedicated quota pass.
+///
+/// Resources contribute to start scoring, so this changes every native-world
+/// opening before an agent makes its first decision. The frozen anchor changes
+/// from 20,482 actions and `0xd49c_c225_990c_4e66` to 18,502 and
+/// `0x1645_2073_bb4b_2b2b` across its five profiles. That is an intentional
+/// rules correction, not a compatibility re-pin: v9 and v10 rows are not
+/// comparable.
+///
 /// **v8 (2026-08-11) — first city-state discovery earns an Envoy.** The first
 /// living major civilization to make contact with a city-state now receives one
 /// Envoy already placed there; later discoverers do not. This is a world rule,
@@ -986,7 +1001,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// Rows before and after v9 are not comparable wherever an improvement was ever
 /// pillaged, which on any map with barbarians is most of them.
-pub const ELO_PROTOCOL_VERSION: u32 = 9;
+pub const ELO_PROTOCOL_VERSION: u32 = 10;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
