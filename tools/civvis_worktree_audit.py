@@ -324,6 +324,35 @@ def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
     return findings
 
 
+
+def process_is_running_from(path: str) -> bool:
+    """Whether any live process has this tree as its cwd or names it in argv.
+
+    The branch rule above is the principled refusal; this is the one that holds
+    when somebody starts a service by hand from a tree that does look like a
+    task. Both are cheap and neither is sufficient alone: a service that is
+    momentarily DOWN has no process to find, which is precisely the state
+    `civvis-spectator-src` was in when it was deleted.
+    """
+    real = os.path.realpath(path)
+    try:
+        listing = subprocess.run(
+            ["ps", "-axo", "command="], capture_output=True, text=True, timeout=30
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True  # cannot tell -> do not remove
+    if any(real in line for line in listing.splitlines()):
+        return True
+    try:
+        cwds = subprocess.run(
+            ["lsof", "-a", "-d", "cwd", "-Fn", "--", real],
+            capture_output=True, text=True, timeout=60,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return bool(cwds.strip())
+
+
 def reap(repo: str, findings: list[dict], idle_minutes: int,
          apply: bool) -> list[dict]:
     """Remove worktrees whose work is already safe on GitHub.
@@ -345,13 +374,27 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
     content at `refs/pull/N/head` forever, so "closed" does not mean lost
     either.
 
-    Four refusals, each because it has cost something somewhere:
+    Six refusals, each because it has cost something somewhere:
 
       * anything the audit flagged — DIRTY, COMMIT-NOT-ON-GITHUB or MISSING —
         is never a candidate. The rescue path exists for those and this must
         not race it;
       * the `main` management worktree and the repository root are never
         touched;
+      * ⚠⚠ A WORKTREE THAT IS NOT ON AN `agent/*` BRANCH IS NOT TASK
+        SCAFFOLDING AND IS NOT THIS TOOL'S BUSINESS. This tool's whole premise
+        is finished task work whose content GitHub already has, and a task
+        worktree is one `civvis_collab.py start` created, on an
+        `agent/<machine>/<agent>/<task>` branch. A DETACHED worktree pinned to
+        `origin/main` looks perfect to every other test here — clean, idle,
+        HEAD plainly on GitHub — and on 2026-08-18 that is exactly how this
+        reaper deleted `civvis-spectator-src`, the tree the live civvis.ai
+        exhibition runs its supervisor from, and took the exhibition down. It
+        was never a task. `docs/SPECTATOR_DEPLOY.md` prescribes creating it
+        `--detach`, so the shape that saved it was already written down;
+      * a worktree some live process is running from is never removed, whatever
+        its branch says. That is the belt to the rule above's braces: a service
+        started by hand from a task-shaped tree is still a running service;
       * a worktree edited within `idle_minutes` is left alone, because an agent
         may be mid-task in a tree whose HEAD happens to be landed;
       * `--reap` reports; `--reap --apply` removes. A destructive default is
@@ -388,6 +431,13 @@ def reap(repo: str, findings: list[dict], idle_minutes: int,
         if not os.path.isdir(path):
             continue
         branch = git("rev-parse", "--abbrev-ref", "HEAD", repo=path) or "HEAD"
+        # Only trees `civvis_collab.py start` created. See the docstring: a
+        # detached or otherwise-named worktree is somebody's deploy checkout,
+        # and this tool has no business inferring that it is finished.
+        if not branch.startswith("agent/"):
+            continue
+        if process_is_running_from(path):
+            continue
         head = git("rev-parse", "HEAD", repo=path)
         if not head:
             continue
