@@ -1439,10 +1439,38 @@ impl AdvancedAi {
     /// Run the strategic governor under every lane. See `governor_every_lane`.
     pub fn enable_governor_every_lane(&mut self) {
         self.governor_every_lane = true;
+        self.governor_victory_lanes = true;
+        self.governor_expansion_lane = true;
     }
 
     pub fn disable_governor_every_lane(&mut self) {
         self.governor_every_lane = false;
+        self.governor_victory_lanes = false;
+        self.governor_expansion_lane = false;
+    }
+
+    /// Half the composite: the governor under the four victory lanes only.
+    /// See `governor_victory_lanes`.
+    pub fn enable_governor_victory_lanes(&mut self) {
+        self.governor_victory_lanes = true;
+    }
+
+    /// The other half: the governor under Expansion only. See
+    /// `governor_expansion_lane`.
+    pub fn enable_governor_expansion_lane(&mut self) {
+        self.governor_expansion_lane = true;
+    }
+
+    /// Make the settlement-gap redirect and the Settler ranking honour the same
+    /// city target the cascade settles toward. See `settlement_target`.
+    pub fn enable_settlement_gap_target(&mut self) {
+        self.settlement_gap_reads_city_target = true;
+    }
+
+    /// Withhold the strategic governor from the Recovery lane, so the baseline
+    /// cascade runs those cities too. See `governor_in_recovery`.
+    pub fn disable_governor_in_recovery(&mut self) {
+        self.governor_in_recovery = false;
     }
 
     /// Let a developed live city take the cheapest legal wonder whatever the

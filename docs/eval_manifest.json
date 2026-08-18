@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 19,
-    "never_named": 35,
+    "named": 20,
+    "never_named": 34,
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
@@ -14,7 +14,6 @@
       "escort-unstick",
       "garrison-under-fire",
       "garrison-walls",
-      "governor-every-lane",
       "housing-buildings",
       "housing-cards",
       "housing-districts",
@@ -42,7 +41,7 @@
     "withholdable": 54
   },
   "derived": {
-    "eval_only_count": 213,
+    "eval_only_count": 217,
     "firaxis_only_count": 24,
     "live_bridge_count": 78,
     "native_engine_repair_count": 54,
@@ -209,7 +208,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 213,
+      "declared_count": 217,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -388,6 +387,10 @@
         "advanced_without_unpriced_war",
         "advanced_without_city_defence",
         "advanced_legacy_policy_deck",
+        "advanced_settlement_gap_target",
+        "advanced_governor_victory_lanes",
+        "advanced_governor_expansion_lane",
+        "advanced_without_governor_recovery",
         "advanced_without_builder_floor",
         "advanced_without_settler_deadline",
         "advanced_without_hut_collection",

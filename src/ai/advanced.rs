@@ -2191,6 +2191,52 @@ pub struct AdvancedAi {
     /// the native repair bundle — a CIVVIS-vs-CIVVIS empire in a Science lane
     /// has the same holes. Off for ordinary and frozen controllers.
     pub governor_every_lane: bool,
+
+    /// The victory half of `governor_every_lane`: Science, Culture, Religion,
+    /// Diplomacy. Set by `enable_governor_every_lane` along with its sibling,
+    /// so the composite behaves exactly as before; separable so the −95 can be
+    /// attributed. Evaluator arm `advanced_governor_victory_lanes`, seed
+    /// 29000000.
+    pub governor_victory_lanes: bool,
+
+    /// The Expansion half of `governor_every_lane`. This is the half that
+    /// replaces `BasicAi::cities`'s Settler gate with `production_value`'s,
+    /// and the composite's fingerprint is a city deficit, so it is the prime
+    /// suspect. Evaluator arm `advanced_governor_expansion_lane`, seed
+    /// 30000000.
+    pub governor_expansion_lane: bool,
+
+    /// Let the strategic governor run the cities under an adaptive Recovery
+    /// plan — the one lane where it decides production for the SHIPPED agent.
+    ///
+    /// ⚠⚠⚠ **On in production, and the arm withholds**, because the evidence
+    /// now runs the other way from the comment above. `advanced_every_lane`
+    /// gave the governor the other five lanes natively and measured **−62 Elo
+    /// compact and −95 deployment**, both directions significant
+    /// (`docs/PRODUCTION_VALUE.md`). The census is not a re-prioritisation but
+    /// a uniformly smaller empire — cities 5.11 vs 6.62, pop 55.9 vs 82.2,
+    /// production 258 vs 394, buildings 61 vs 98, trade routes 7.75 vs 11.82,
+    /// with 5× the city-deficit boundary events. Whatever the governor does to
+    /// an empire, it did it to five lanes and cost 95 Elo.
+    ///
+    /// Recovery is the sixth lane, it is 10–21% of player-turns, and the
+    /// governor has never been withheld from it. If the deficit is a property
+    /// of the governor rather than of those five lanes, removing it here is a
+    /// gain rather than a regression — and the repository's own audit lesson is
+    /// that the only gain it ever found came from deleting work. The redirect
+    /// passes that Recovery actually depends on
+    /// (`redirect_threatened_recovery_queue_for_walls`,
+    /// `redirect_repeatable_projects_for_force_gap`) run BEFORE this gate and
+    /// are unaffected, as are gold and faith purchases, which price through
+    /// `production_value` on their own paths.
+    ///
+    /// Evaluator arm `advanced_without_governor_recovery`; reserved matrix seed
+    /// 28000000.
+    pub governor_in_recovery: bool,
+
+    /// Let both settling gates read the same city target the baseline cascade
+    /// is handed. See `settlement_target` for the measured asymmetry.
+    pub settlement_gap_reads_city_target: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -3946,6 +3992,10 @@ impl AdvancedAi {
             amenity_project_preemption: false,
             amenity_district_path: false,
             governor_every_lane: false,
+            governor_victory_lanes: false,
+            governor_expansion_lane: false,
+            governor_in_recovery: true,
+            settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -15512,13 +15562,10 @@ impl AdvancedAi {
 
         let city_count = g.player_city_ids(pid).len();
         let counts = self.counts(g, pid);
-        if city_count + counts.settlers >= plan.desired_cities
+        let desired = self.settlement_target(plan);
+        if city_count + counts.settlers >= desired
             || counts.settlers
-                >= self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                )
+                >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
         {
             return;
         }
@@ -16969,6 +17016,39 @@ impl AdvancedAi {
         closer && !retargeted
     }
 
+    /// How many cities the empire's settling paths should be working toward.
+    ///
+    /// ⚠⚠ **Two halves of this agent disagreed about this number, and the
+    /// narrower one held the Settler.** `delegated_cities` hands the baseline
+    /// cascade `restore_target.max(plan.desired_cities)` under its own rule
+    /// that "the plan may widen a governor, never narrow it", so the cascade
+    /// settles toward `max(city_target, desired_cities)` — 4 on the shipped
+    /// genome. Both settling gates in this file read bare
+    /// `plan.desired_cities` instead, which `assess` starts at
+    /// `city_target_floor` (3) and grows only with the era cadence, so it is
+    /// **3 until roughly turn 60 on Online speed**. For that whole opening the
+    /// project redirect below and the Settler arm of `production_value` refuse
+    /// to produce the fourth Settler the same agent's cascade is trying to
+    /// build.
+    ///
+    /// This is not an ambition change, which is the distinction that matters
+    /// here: `city_target_floor = 6` raised what the empire *wanted* and cost
+    /// 41 Elo, while `settler_commit` (+30) and `settlement_safety` (+31)
+    /// paid for *executing* a settlement already intended. This widens neither
+    /// target — it makes the redirect and the ranking honour the target the
+    /// empire is already settling toward.
+    ///
+    /// Off by default; evaluator arm `advanced_settlement_gap_target`,
+    /// reserved matrix seed 31000000.
+    fn settlement_target(&self, plan: &StrategicPlan) -> usize {
+        if self.settlement_gap_reads_city_target {
+            plan.desired_cities
+                .max(self.base.w.city_target.max(0.0) as usize)
+        } else {
+            plan.desired_cities
+        }
+    }
+
     fn settler_in_flight_allowed(
         &self,
         desired_cities: usize,
@@ -17209,11 +17289,9 @@ impl AdvancedAi {
                 -10_000.0
             }
             Item::Unit { unit } if unit == "settler" => {
-                let in_flight_allowed = self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                );
+                let settlement_target = self.settlement_target(plan);
+                let in_flight_allowed =
+                    self.settler_in_flight_allowed(settlement_target, city_count, counts.settlers);
                 // ★★★★ ASK THE CHEAP QUESTIONS FIRST. The site scan below is
                 // the most expensive question in this arm — a valued sweep of
                 // a radius-11 disk, and once Shipbuilding is in, of the whole
@@ -17225,7 +17303,7 @@ impl AdvancedAi {
                 // window are `&self` reads whose only writes are the
                 // settlement atlas (a value cache that recomputes identically
                 // on a miss), so skipping them changes no score and no order.
-                if city_count + counts.settlers < plan.desired_cities
+                if city_count + counts.settlers < settlement_target
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && self.settler_expansion_window_open(g, pid, cid)
@@ -27286,10 +27364,8 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            let adaptive_expansion_dispatch = self.adaptive_expansion_dispatches(
-                &plan,
-                active_victory_target,
-            );
+            let adaptive_expansion_dispatch =
+                self.adaptive_expansion_dispatches(&plan, active_victory_target);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -27314,16 +27390,23 @@ impl AdvancedAi {
             // ONE wonder all game — every valuation this file carries (the
             // wonder race, the tally price of culture, the amenity path, the
             // district table) absent exactly when the empire was growing.
-            let every_lane = self.governor_every_lane
+            // ⚠ Split into its two halves 2026-08-17 so the composite can be
+            // bisected. `enable_governor_every_lane` sets both, so every
+            // existing arm and the live bridge are unchanged; the halves exist
+            // because the composite measured −95 Elo and a composite bounds
+            // only its net. The city-deficit fingerprint (5× the control's
+            // boundary events, cities 5.11 vs 6.62) points at the Expansion
+            // half, where this route replaces the baseline Settler gate.
+            let every_lane = (self.governor_victory_lanes
                 && matches!(
                     plan.strategy,
                     GrandStrategy::Science
                         | GrandStrategy::Culture
                         | GrandStrategy::Religion
                         | GrandStrategy::Diplomacy
-                        | GrandStrategy::Expansion
-                );
-            if plan.strategy == GrandStrategy::Recovery
+                ))
+                || (self.governor_expansion_lane && plan.strategy == GrandStrategy::Expansion);
+            if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
