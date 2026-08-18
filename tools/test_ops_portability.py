@@ -41,6 +41,7 @@ HARDCODED_HOME = re.compile(r"/Users/(?!\$)[A-Za-z][A-Za-z0-9._-]*/")
 MANAGED = {
     "civvis-game-supervisor.sh",
     "civvis-ladder-terminal-launcher.sh",
+    "civvis-spectator-runner.sh",
     "ladder_watchdog.py",
 }
 
@@ -150,10 +151,12 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
     """
 
     def _plists(self):
+        repo = Path(__file__).resolve().parent.parent
         return {
             "memguard": civvis_collab.macos_memguard_plist(Path("/x/memguard.py")),
             "ladder-watchdog": civvis_collab.macos_ladder_watchdog_plist(
                 Path("/x/ladder_watchdog.py")),
+            "spectator": civvis_collab.macos_spectator_plist(Path("/x/run.sh"), repo),
         }
 
     def test_every_managed_plist_carries_the_marker(self):
@@ -288,3 +291,52 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
 
     def test_the_launcher_derives_its_paths(self):
         self.assertEqual(hardcoded_homes(self.LAUNCHER), [])
+
+
+class TheExhibitionIsKeptAliveToo(unittest.TestCase):
+    """The other shipped product had no keeper at all.
+
+    On 2026-08-18 the spectator supervisor exited and civvis.ai's exhibition
+    stayed down until somebody looked. Its own restart loop could not help,
+    because the worktree it execs its supervisor from had been deleted by the
+    worktree reaper.
+    """
+
+    def test_the_exhibition_job_keeps_itself_alive(self):
+        repo = Path(__file__).resolve().parent.parent
+        plist = civvis_collab.macos_spectator_plist(Path("/x/run.sh"), repo).decode()
+        self.assertIn("<key>KeepAlive</key>", plist)
+        self.assertIn("<key>ThrottleInterval</key>", plist,
+                      "a runner that refuses a missing prerequisite must not spin")
+
+    def test_it_runs_directly_rather_than_through_terminal(self):
+        """Unlike the ladder, and for a stated reason.
+
+        The ladder's supervisor must go through Terminal because installing the
+        Civ 6 control mod writes inside `Civ6.app`. The exhibition drives no GUI
+        — `--no-open`, build, serve, play headless — so it needs no such grant.
+        """
+        repo = Path(__file__).resolve().parent.parent
+        plist = civvis_collab.macos_spectator_plist(Path("/x/run.sh"), repo).decode()
+        self.assertNotIn("Terminal", plist)
+        self.assertIn("civvis-spectator-runner", "civvis-spectator-runner.sh")
+
+    def test_a_host_without_the_source_worktree_gets_no_job(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as raw:
+            self.assertFalse(
+                civvis_collab.host_serves_the_exhibition(Path(raw)),
+                "installing a service that can only log a missing prerequisite "
+                "is worse than an honest absence",
+            )
+
+    def test_the_runner_refuses_a_missing_supervisor_rather_than_looping(self):
+        import subprocess
+        runner = OPS / "civvis-spectator-runner.sh"
+        done = subprocess.run(
+            ["/bin/zsh", str(runner)],
+            env={**os.environ, "CIVVIS_SPECTATOR_SRC": "/tmp/civvis-absent-on-purpose"},
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(done.returncode, 78, done.stderr)
+        self.assertIn("SPECTATOR_DEPLOY.md", done.stderr)

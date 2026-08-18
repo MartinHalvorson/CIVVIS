@@ -35,6 +35,23 @@ step.
 
 Watch any host with:  `tail -f <deploy-checkout>/spectator-supervisor.log`
 
+## Keeping it up
+
+`civvis_collab.py bootstrap` installs `com.civvis.spectator`, a launchd job with
+`KeepAlive` running `tools/ops/civvis-spectator-runner.sh`. It is installed only
+on a host that actually holds the source worktree below, because a service that
+can only log a missing prerequisite is worse than an honest absence.
+
+⚠ Unlike the Civilization VI ladder's supervisor, this one runs **directly**
+under launchd. The ladder has to be started through Terminal, because installing
+the control mod writes inside `Civ6.app` and macOS attributes that permission to
+the responsible process. The exhibition drives no GUI — `--no-open`, build,
+serve HTTP, play headless games — so it needs no such grant.
+
+Before this existed the supervisor was started by hand from one operator's home
+directory, and on 2026-08-18 it exited and the exhibition stayed down until
+somebody looked.
+
 ## Deploy checkout
 
 Run the supervisor from a **dedicated checkout pinned to `origin/main`**, not the
