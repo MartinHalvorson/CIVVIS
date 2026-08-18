@@ -106,6 +106,68 @@ def read_ladder(repo: Path) -> dict[str, Any]:
     }
 
 
+def read_evidence(repo: Path) -> str:
+    """Every word of recorded evaluation evidence, as one blob.
+
+    Two homes since 2026-08-18: `docs/EVAL.md` holds the 168 historical rounds
+    and is frozen, and each new round is its own file under `docs/eval/`. Both
+    are read, and the directory is globbed rather than listed — a round that
+    exists but is not searched would be counted as evidence nobody has.
+    """
+    parts = [(repo / "docs" / "EVAL.md").read_text(encoding="utf-8")]
+    rounds = sorted((repo / "docs" / "eval").glob("*.md"))
+    if not rounds:
+        raise ValueError("docs/eval/ holds no rounds; the glob stopped matching")
+    parts.extend(path.read_text(encoding="utf-8") for path in rounds)
+    return "\n".join(parts)
+
+
+def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[str, Any]:
+    """How much of the shipped live-bridge bundle the ledger has ever discussed.
+
+    ⚠⚠ THE COUNT THIS PUBLISHES IS "NEVER NAMED", AND THAT IS DELIBERATELY THE
+    WEAKER HALF OF THE QUESTION. Whether a treatment was *priced* is a judgement
+    about what a round concluded and no string search can make it. Whether a
+    treatment has ever been *named* in any recorded round is mechanical, and it
+    bounds the answer from one side only: a tag that appears nowhere in the
+    evidence certainly has no recorded result, while a tag that appears may only
+    have been mentioned in passing. So `named` is an over-count of coverage and
+    `never_named` is an under-count of the debt — the number to act on is the
+    one that cannot be flattered.
+
+    Why it is worth publishing at all: on 2026-08-18 fifty of the seventy-four
+    live-bridge treatments had never been named in any round, and nobody could
+    see it. `docs/ROADMAP.md` objective 3 asks for exactly this bundle to be
+    priced by withholding, and the inventory above counted the arms that
+    *exist* rather than the ones that have been *used*. The repository has
+    already paid for that blind spot once: `city_target_floor` measured −41 Elo
+    while hidden inside a composite, and the shipped bundle applied natively
+    measures −76/−108 with the cause still open.
+
+    ⚠ ALL THREE SPELLINGS, and the third was found by checking the instrument
+    against a treatment already known to be priced. The registry tag is
+    hyphenated (`bounded-recovery`), the evaluator arm derived from it is
+    `live_without_bounded_recovery`, and rounds routinely write the flag itself
+    in Rust spelling — `bounded_recovery` — which is how the confirmed-null
+    result that got it deleted from production is recorded. Searching only the
+    first two called it never-named and would have overstated the debt by a
+    fifth on the first run.
+    """
+    withholdable = [item for item in live if item not in firaxis]
+    named, never = [], []
+    for tag in withholdable:
+        flag = tag.replace("-", "_")
+        spellings = (tag, flag, f"live_without_{flag}")
+        found = any(spelling in evidence for spelling in spellings)
+        (named if found else never).append(tag)
+    return {
+        "withholdable": len(withholdable),
+        "named": len(named),
+        "never_named": len(never),
+        "never_named_treatments": sorted(never),
+    }
+
+
 def build_manifest(repo: Path) -> dict[str, Any]:
     registry = read_registry(repo)
     live = registry["LIVE_BRIDGE_TREATMENTS"]["items"]
@@ -128,6 +190,7 @@ def build_manifest(repo: Path) -> dict[str, Any]:
                 [item for item in live if item not in firaxis]
             ),
         },
+        "coverage": bundle_coverage(live, firaxis, read_evidence(repo)),
         "ladder": read_ladder(repo),
     }
 
@@ -159,6 +222,39 @@ def render_status(manifest: dict[str, Any]) -> str:
         "|---|---:|",
     ]
     lines.extend(f"| {label} | {count} |" for label, count in rows)
+    coverage = manifest["coverage"]
+    lines += [
+        "",
+        "## Bundle coverage",
+        "",
+        "How much of the shipped live-bridge bundle the evaluation evidence has",
+        "ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.",
+        "",
+        f"- Withholdable live treatments: **{coverage['withholdable']}**",
+        f"- Named somewhere in the evidence: **{coverage['named']}**",
+        f"- **Never named in any round: {coverage['never_named']}**",
+        "",
+        "⚠ This is deliberately the weaker half of the question. Whether a",
+        "treatment was *priced* is a judgement about what a round concluded and",
+        "no string search can make it; whether it has ever been *named* is",
+        "mechanical. So the middle number over-counts coverage and the last one",
+        "under-counts the debt — act on the last one, which cannot be flattered.",
+        "",
+        "`docs/ROADMAP.md` objective 3 asks for this bundle to be priced by",
+        "withholding. The inventory above counts the arms that exist; this counts",
+        "the ones that have been used. The gap is what stayed invisible: the",
+        "bundle applied natively measures −76/−108 Elo with the cause still open,",
+        "and `city_target_floor` once measured −41 while hidden in a composite.",
+        "",
+        "Never named:",
+        "",
+    ]
+    if coverage["never_named_treatments"]:
+        lines.append("".join(
+            f"`{tag}`, " for tag in coverage["never_named_treatments"]
+        ).rstrip(", "))
+    else:
+        lines.append("_None — every withholdable treatment has been named._")
     lines += [
         "",
         "## Live ladder",
