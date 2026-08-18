@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
+use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, VictoryTarget, Weights};
 use crate::game::{default_speed, Action, Game, GameOptions, VictoryConditions};
 use crate::rng::Rng;
 use crate::rules::Rules;
@@ -52,10 +52,17 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_synergy",
     "advanced_synergy_war",
     "advanced_synergy_economy",
-    // The deployed Civilization VI agent, and one arm per live-bridge flag
-    // held off. Eval-only by construction: they move whenever the bridge
-    // moves, which is exactly what a rating anchor must not do.
+    // The deployed Civilization VI agent, its six explicit victory-lane
+    // configurations, and one arm per live-bridge flag held off. Eval-only by
+    // construction: they move whenever the bridge moves, which is exactly
+    // what a rating anchor must not do.
     "live",
+    "live_target_science",
+    "live_target_culture",
+    "live_target_religious",
+    "live_target_diplomatic",
+    "live_target_domination",
+    "live_target_score",
     "live_without_amenity_project_preemption",
     "live_without_amenity_district_path",
     "live_without_governor_every_lane",
@@ -367,6 +374,67 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "bank-envoys",
 ];
 
+/// Every explicit `civvis_orders --victory` configuration which is both
+/// target-pinned and carries the deployed bridge. `live` deliberately stays
+/// adaptive (`--victory civvis`); these arms model the other six command-line
+/// choices without making a second, hand-maintained target or tag table.
+const LIVE_TARGET_LANES: &[(&str, VictoryTarget, &str)] = &[
+    ("science", VictoryTarget::Science, "victory-lane-science"),
+    ("culture", VictoryTarget::Culture, "victory-lane-culture"),
+    (
+        "religious",
+        VictoryTarget::Religion,
+        "victory-lane-religious",
+    ),
+    (
+        "diplomatic",
+        VictoryTarget::Diplomacy,
+        "victory-lane-diplomatic",
+    ),
+    (
+        "domination",
+        VictoryTarget::Domination,
+        "victory-lane-domination",
+    ),
+    ("score", VictoryTarget::Score, "victory-lane-score"),
+];
+
+/// Each target-pinned live arm adds exactly its victory-lane tag ahead of the
+/// deployed bridge's tags. Deriving the lists makes a bridge repair appear in
+/// every target configuration at once rather than silently changing only
+/// adaptive `live`.
+static LIVE_TARGET_TREATMENTS: std::sync::LazyLock<BTreeMap<&'static str, Vec<&'static str>>> =
+    std::sync::LazyLock::new(|| {
+        LIVE_TARGET_LANES
+            .iter()
+            .map(|(lane, _, axis)| {
+                (
+                    *lane,
+                    std::iter::once(*axis)
+                        .chain(LIVE_BRIDGE_TREATMENTS.iter().copied())
+                        .collect(),
+                )
+            })
+            .collect()
+    });
+
+fn live_targeted(lane: &'static str) -> AdvancedAi {
+    let target = LIVE_TARGET_LANES
+        .iter()
+        .find(|(known, _, _)| *known == lane)
+        .map(|(_, target, _)| *target)
+        .unwrap_or_else(|| panic!("{lane} is not an explicit live victory lane"));
+    let mut ai = AdvancedAi::targeting(target);
+    ai.enable_live_bridge();
+    ai
+}
+
+fn live_target_treatments(lane: &'static str) -> &'static [&'static str] {
+    LIVE_TARGET_TREATMENTS
+        .get(lane)
+        .unwrap_or_else(|| panic!("{lane} is not an explicit live victory lane"))
+}
+
 /// Every `live_without_*` control's tag list: the bridge list minus the one
 /// withheld tag, in bridge order — exactly the lists the arms carried when
 /// they were written out by hand, now derived so a new bridge treatment
@@ -609,9 +677,16 @@ macro_rules! define_arm_kinds {
 }
 
 define_arm_kinds! {
-    // The deployed Civilization VI agent and one arm per live-bridge flag
-    // held off, so each repair can be priced in cities and score.
+    // The deployed Civilization VI agent, its explicit target configurations,
+    // and one arm per live-bridge flag held off, so each can be priced in
+    // cities and score.
     Live => "live",
+    LiveTargetScience => "live_target_science",
+    LiveTargetCulture => "live_target_culture",
+    LiveTargetReligious => "live_target_religious",
+    LiveTargetDiplomatic => "live_target_diplomatic",
+    LiveTargetDomination => "live_target_domination",
+    LiveTargetScore => "live_target_score",
     LiveWithoutAmenityProjectPreemption => "live_without_amenity_project_preemption",
     LiveWithoutAmenityDistrictPath => "live_without_amenity_district_path",
     LiveWithoutGovernorEveryLane => "live_without_governor_every_lane",
@@ -3302,9 +3377,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // Eight flags separate the frozen controller from the deployed one, and
         // until now they were set inside a binary, so no arm could construct the
         // deployed agent and none of them had ever been priced on an outcome.
-        // `live` is that agent; each `live_without_*` holds ONE flag off, so
-        // `civvis tournament --ais live,live_without_home_defense` measures that
-        // flag in cities and score rather than in order counts.
+        // `live` is that adaptive agent; `live_target_*` carries the same
+        // bridge with one explicit `--victory` lane; and each `live_without_*`
+        // holds ONE flag off. So `civvis tournament --ais
+        // live,live_without_home_defense` measures that flag in cities and
+        // score rather than in order counts.
         //
         // ⚠ These are NOT rating anchors. They move whenever the bridge moves,
         // which is exactly what an anchor must not do.
@@ -3313,6 +3390,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_live_bridge();
             Box::new(ai)
         }
+        "live_target_science" => Box::new(live_targeted("science")),
+        "live_target_culture" => Box::new(live_targeted("culture")),
+        "live_target_religious" => Box::new(live_targeted("religious")),
+        "live_target_diplomatic" => Box::new(live_targeted("diplomatic")),
+        "live_target_domination" => Box::new(live_targeted("domination")),
+        "live_target_score" => Box::new(live_targeted("score")),
         "random" => Box::new(RandomAi::new(seed)),
         // Named so provenance collapse checks compare controller *and*
         // weights instead of dropping the genome. (Historically also the
@@ -3911,6 +3994,16 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
+            // Pinning an explicit target adds exactly its semantic lane tag;
+            // the rest remains the deployed bridge. The table is shared with
+            // the constructor above so an evaluator cannot label a different
+            // target configuration than it builds.
+            Self::LiveTargetScience => live_target_treatments("science"),
+            Self::LiveTargetCulture => live_target_treatments("culture"),
+            Self::LiveTargetReligious => live_target_treatments("religious"),
+            Self::LiveTargetDiplomatic => live_target_treatments("diplomatic"),
+            Self::LiveTargetDomination => live_target_treatments("domination"),
+            Self::LiveTargetScore => live_target_treatments("score"),
             // Every `live_without_*` arm derives its list from the shared
             // bridge table below, so adding a bridge treatment cannot
             // silently miss a control's tag list. The invariant tests pin
@@ -4527,6 +4620,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // catch-all and the evaluator reports them as plain `basic`, which would
         // silently compare two identical agents.
         "live" => (Vec::new(), "live"),
+        "live_target_science" => (Vec::new(), "live_target_science"),
+        "live_target_culture" => (Vec::new(), "live_target_culture"),
+        "live_target_religious" => (Vec::new(), "live_target_religious"),
+        "live_target_diplomatic" => (Vec::new(), "live_target_diplomatic"),
+        "live_target_domination" => (Vec::new(), "live_target_domination"),
+        "live_target_score" => (Vec::new(), "live_target_score"),
         "live_without_amenity_project_preemption" => {
             (Vec::new(), "live_without_amenity_project_preemption")
         }
@@ -5329,17 +5428,15 @@ mod tests {
     use super::{
         builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
-        performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
-        player_ratings, ratings_path_for, win_shares, ArmKind, BuiltinAiBuildError, EloPool,
-        RatedPlayer, Rating, RatingKey, TournamentProfile,
+        live_targeted, performance_elo, player_ratings, ratings_path_for, scheduled_seats,
+        seat_schedule, strict_builtin_arm_in, wilson_interval, win_shares, ArmKind,
+        BuiltinAiBuildError, EloPool, RatedPlayer, Rating, RatingKey, TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
-        HISTORICAL_V1_RATINGS_PATH,
-        LIVE_BRIDGE_TREATMENTS,
-        ENGINE_REPAIR_TREATMENTS, ENGINE_REPAIR_WAR_TREATMENTS,
-        ENGINE_REPAIR_ECONOMY_TREATMENTS, FIRAXIS_ONLY_TREATMENTS,
-        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
-        VALUENET_FILE,
+        ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION,
+        ENGINE_REPAIR_ECONOMY_TREATMENTS, ENGINE_REPAIR_TREATMENTS, ENGINE_REPAIR_WAR_TREATMENTS,
+        EVAL_ONLY_AIS, FIRAXIS_ONLY_TREATMENTS, HISTORICAL_V1_RATINGS_PATH,
+        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH, LIVE_BRIDGE_TREATMENTS,
+        LIVE_TARGET_LANES, VALUENET_FILE,
     };
     use std::collections::BTreeSet;
     use std::path::Path;
@@ -5941,6 +6038,12 @@ mod tests {
                 // Scripted composites of bridge flags: built from code, no
                 // weights artifact and no value net.
                 "live",
+                "live_target_science",
+                "live_target_culture",
+                "live_target_religious",
+                "live_target_diplomatic",
+                "live_target_domination",
+                "live_target_score",
                 "random",
             ];
             const SCRIPTED_ALIASES: &[&str] = &[
@@ -5990,6 +6093,40 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// The direct `civvis_orders` binary can combine every explicit victory
+    /// target with the deployed bridge. Until this contract, the evaluator
+    /// could model either side of that composition (`advanced_target_*` or
+    /// adaptive `live`) but not the actual six target-pinned live seats.
+    #[test]
+    fn live_targeted_arms_cover_every_explicit_victory_lane() {
+        let targets: Vec<_> = LIVE_TARGET_LANES
+            .iter()
+            .map(|(_, target, _)| *target)
+            .collect();
+        assert_eq!(targets, crate::ai::VictoryTarget::ALL.to_vec());
+
+        let live = builtin_arm("live").expect("adaptive live arm is registered");
+        for &(lane, target, axis) in LIVE_TARGET_LANES {
+            assert_eq!(lane, target.as_str(), "{lane} must name its target");
+
+            let ai = live_targeted(lane);
+            assert_eq!(ai.victory_target(), Some(target), "{lane}");
+            assert!(ai.parallel_settlers, "{lane} lost a live-bridge repair");
+            assert!(ai.bank_envoys, "{lane} lost a live-bridge repair");
+
+            let name = format!("live_target_{lane}");
+            assert!(EVAL_ONLY_AIS.contains(&name.as_str()), "{name}");
+            let arm = builtin_arm(&name).unwrap_or_else(|| panic!("{name} is registered"));
+            assert_eq!(arm.spec.treatments.first().copied(), Some(axis), "{name}");
+            assert_eq!(&arm.spec.treatments[1..], LIVE_BRIDGE_TREATMENTS, "{name}");
+            assert_eq!(
+                arm.spec.differing_axes(&live.spec),
+                vec![axis],
+                "{name} must differ from adaptive live only by its target"
+            );
+        }
     }
 
     /// `AdvancedAi::enable_live_bridge` is the single place the Civilization VI
