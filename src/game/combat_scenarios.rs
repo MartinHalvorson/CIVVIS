@@ -666,7 +666,10 @@ fn the_ledger_counts_what_the_barbarians_take() {
     .unwrap();
     assert!(!g.units.contains_key(&victim));
     assert_eq!(g.players[1].counters.get("lost_to_barbarians"), Some(&1));
-    assert_eq!(g.players[1].counters.get("civilians_lost_to_barbarians"), None);
+    assert_eq!(
+        g.players[1].counters.get("civilians_lost_to_barbarians"),
+        None
+    );
 
     // Walking onto an undefended Builder is a capture, and it counts too.
     g.begin_turn(0);
