@@ -17,7 +17,7 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | supervised exhibition | rank-weighted sample from the current table size's top three conservative outright winners; leader/civilization placement rating breaks equal win bounds |
 | city-state or barbarian | `BasicAi` |
 | human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
-| explicit fair-play arm | `AdvancedAi::fog_honest()` (opt-in; not yet strength-promoted) |
+| explicit fair-play arm | `AdvancedAi::fog_honest()` (opt-in; screened, not strength-promoted) |
 | `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
 | `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
 
@@ -75,8 +75,10 @@ the deterministic lightweight agent used by city-states and barbarians. Stock
 `AdvancedAi::fog_honest()` is the explicit fair-play arm: it plans the whole
 turn against one fog-redacted, turn-start view, carries stale City Center
 combat memory, and replays only the resulting actions against the
-authoritative game. It is opt-in and has no strength claim until a paired
-screen promotes it.
+authoritative game. It is opt-in and has a first-class `ai_eval` arm named
+`fog_honest`. The pre-registered deployment-shaped screen (20 paired maps,
+seed prefix `920000..920019`) retained `advanced`: fog-honest scored 15.0%
+(95% Wilson CI 5.2%..36.0%). It is therefore not promoted into the incumbent.
 
 ### Policy and envoy production default (2026-08-17)
 

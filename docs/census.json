@@ -1,0 +1,454 @@
+{
+  "belief_pressure_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 20595,
+    "note": "factual mechanism census; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "belief-pressure census: 338/22680 city-turns with memory, 92/22680 memory-only, 9 recovery changes"
+    ],
+    "test": "belief_pressure_census"
+  },
+  "blind_defense_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21189,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== blind-defense census: 2903 city-turns over 8 maps ===",
+      "  locally competitive hostile force present on 105 city-turns (3.6%)",
+      "  of those, 76 were INVISIBLE to `threatened` (72.4%)",
+      "  t1-39       0 pressed,    0 blind (  0.0%)",
+      "  t40-79     21 pressed,   20 blind ( 95.2%)",
+      "  t80-139    53 pressed,   29 blind ( 54.7%)",
+      "  t140+      31 pressed,   27 blind ( 87.1%)"
+    ],
+    "test": "blind_defense_census"
+  },
+  "city_decision_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21270,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== city decision census: 2235 city-turns over 8 maps ===",
+      "  idle queue              26  (  1.2%)",
+      "  queue head changed     252  ( 11.3% of city-turns)",
+      "  mean production stranded off the queue head: 1.5 per city-turn",
+      "  food claimed 84.3% of the city's own food ceiling (10.7 of 12.7 per city-turn)",
+      "  production claimed 98.4% of its ceiling (10.7 of 10.9 per city-turn)",
+      "  what the queue head is:",
+      "    building      371  ( 16.6%)",
+      "    district      541  ( 24.2%)",
+      "    project       146  (  6.5%)",
+      "    repair          5  (  0.2%)",
+      "    unit          980  ( 43.8%)",
+      "    wonder        166  (  7.4%)",
+      "  cities that ever built walls: 7 of 32 (21.9%)",
+      "  median turn walls appeared: 121"
+    ],
+    "test": "city_decision_census"
+  },
+  "city_loss_autopsy": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 20862,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "garrison_step reached 12068 times across the whole census",
+      "cities lost: 13  (mean army alive at the moment of loss: 7.5)",
+      "  besieged (hp < max) .......   3   23.1%",
+      "  lost at FULL hp ...........  10   76.9%  <- not a siege",
+      "  an enemy stood ADJACENT ...   3   23.1%",
+      "  had a GARRISON ............   3   23.1%",
+      "  our military within 3 .....   8   61.5%",
+      "  our military within 6 .....  10   76.9%",
+      "  NO military within 6 ......   3   23.1%",
+      "NEAREST ENEMY on the last turn we held it:",
+      "    distance 1   ..................   3   23.1%",
+      "    distance 7+  ..................  10   76.9%",
+      "  BEYOND GARRISON_ALERT_RADIUS (3) ..  10   76.9%",
+      "  an enemy could MOVE+STRIKE it that turn   3   23.1%",
+      "WHO HOLDS IT NOW (ground truth the live export cannot give):",
+      "  REVOLTED to Free Cities (loyalty 0) ...  11   84.6%",
+      "  taken by an enemy we are at war with ..   1    7.7%",
+      "  taken by a city-state/minor ...........   0    0.0%",
+      "  owner changed with NO war (revolt) ....   0    0.0%",
+      "  razed / gone ..........................   1    7.7%"
+    ],
+    "test": "city_loss_autopsy"
+  },
+  "city_target_floor_fires": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22364,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "[eval 4p 24x16] floor=3  cities 3.83 / target 4.00   score 280",
+      "  [eval 4p 24x16] floor=6  cities 3.50 / target 4.00   score 270",
+      "  [large 6p 74x46] floor=3  cities 4.00 / target 4.67   score 281",
+      "  [large 6p 74x46] floor=6  cities 6.17 / target 8.00   score 339"
+    ],
+    "test": "city_target_floor_fires"
+  },
+  "come_ashore_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21110,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "come_ashore=false unit_turns=23508  embarked=  8.1%  transitions/1000 unit-turns=  56.2  embarked-with-attack=1908  CITIES_LOST=11  city-damage-turns=9",
+      "come_ashore=true  unit_turns=24661  embarked=  5.2%  transitions/1000 unit-turns=  72.6  embarked-with-attack=1292  CITIES_LOST=13  city-damage-turns=22"
+    ],
+    "test": "come_ashore_census"
+  },
+  "envoy_allocation_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22869,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== envoy allocation [eval 4p 24x16 / stock]: 719 seat-turns ===",
+      "  \u2605 envoys UNSPENT in the pool   mean 0.00   (a pool near zero means resource-bound)",
+      "  envoys placed on the board     mean 2.4",
+      "  city-states met 3.2, suzerain of 0.2  (8% held)",
+      "  envoys per met city-state: 0 -> 50%, 1 -> 37%, 2 -> 5%, 3+ -> 8%",
+      "  \u2605 envoys parked BELOW the floor of 3   mean 1.51 per seat-turn (67% of everything placed)",
+      "  \u2605 city-states with NO suzerain at all  mean 2.69, of which within 2 envoys for us: 1.23",
+      "  when NOT suzerain, envoys short: median 3  p90 3  max 9",
+      "  \u2605 total shortfall 8.1 envoys per seat-turn against a pool of 0.00",
+      "=== envoy allocation [deployment 6p 74x46 / stock]: 986 seat-turns ===",
+      "  \u2605 envoys UNSPENT in the pool   mean 0.01   (a pool near zero means resource-bound)",
+      "  envoys placed on the board     mean 5.9",
+      "  city-states met 5.7, suzerain of 0.4  (8% held)",
+      "  envoys per met city-state: 0 -> 45%, 1 -> 33%, 2 -> 10%, 3+ -> 12%",
+      "  \u2605 envoys parked BELOW the floor of 3   mean 2.99 per seat-turn (58% of everything placed)",
+      "  \u2605 city-states with NO suzerain at all  mean 3.95, of which within 2 envoys for us: 1.93",
+      "  when NOT suzerain, envoys short: median 3  p90 4  max 9",
+      "  \u2605 total shortfall 15.5 envoys per seat-turn against a pool of 0.01",
+      "=== envoy allocation [eval 4p 24x16 / suzerainty priced]: 726 seat-turns ===",
+      "  \u2605 envoys UNSPENT in the pool   mean 0.00   (a pool near zero means resource-bound)",
+      "  envoys placed on the board     mean 2.5",
+      "  city-states met 3.2, suzerain of 0.3  (8% held)",
+      "  envoys per met city-state: 0 -> 51%, 1 -> 34%, 2 -> 6%, 3+ -> 10%",
+      "  \u2605 envoys parked BELOW the floor of 3   mean 1.46 per seat-turn (61% of everything placed)",
+      "  \u2605 city-states with NO suzerain at all  mean 2.63, of which within 2 envoys for us: 1.18",
+      "  when NOT suzerain, envoys short: median 3  p90 3  max 9",
+      "  \u2605 total shortfall 8.0 envoys per seat-turn against a pool of 0.00",
+      "=== envoy allocation [deployment 6p 74x46 / suzerainty priced]: 977 seat-turns ===",
+      "  \u2605 envoys UNSPENT in the pool   mean 0.01   (a pool near zero means resource-bound)",
+      "  envoys placed on the board     mean 5.8",
+      "  city-states met 5.5, suzerain of 0.8  (14% held)",
+      "  envoys per met city-state: 0 -> 57%, 1 -> 16%, 2 -> 8%, 3+ -> 19%",
+      "  \u2605 envoys parked BELOW the floor of 3   mean 1.78 per seat-turn (36% of everything placed)",
+      "  \u2605 city-states with NO suzerain at all  mean 3.62, of which within 2 envoys for us: 1.10",
+      "  when NOT suzerain, envoys short: median 3  p90 5  max 13",
+      "  \u2605 total shortfall 15.2 envoys per seat-turn against a pool of 0.01"
+    ],
+    "test": "envoy_allocation_census"
+  },
+  "envoy_income_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 23098,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== envoy income [eval 4p 24x16]: 747 seat-turns over 6 maps ===",
+      "  \u2605 envoys_per_threshold held   mean 1.06   (1 = earliest tier, 4 = modern)",
+      "  government influence/turn     mean 2.10",
+      "  governments held (top 4):",
+      "    chiefdom                  48.9% of turns",
+      "    classical_republic        19.9% of turns",
+      "    oligarchy                 14.2% of turns",
+      "    monarchy                   9.5% of turns",
+      "  \u2605 influence policy cards slotted:",
+      "    charismatic_leader      30.7% of turns",
+      "    gunboat_diplomacy        0.0% of turns",
+      "  availability \u2014 was it ever even possible?",
+      "    political_philosophy held   45.8% of turns",
+      "    ideology held                0.0% of turns",
+      "    a diplomatic slot open      31.6% of turns",
+      "    diplomatic_quarter built   in 0 of 6 games",
+      "  \u2605 influence buildings ever built:",
+      "    consulate              in 0 of 6 games",
+      "    chancery               in 0 of 6 games",
+      "=== envoy income [large 6p 74x46]: 1051 seat-turns over 6 maps ===",
+      "  \u2605 envoys_per_threshold held   mean 1.18   (1 = earliest tier, 4 = modern)",
+      "  government influence/turn     mean 2.58",
+      "  governments held (top 4):",
+      "    chiefdom                  37.0% of turns",
+      "    classical_republic        31.0% of turns",
+      "    monarchy                  10.2% of turns",
+      "    theocracy                  8.7% of turns",
+      "  \u2605 influence policy cards slotted:",
+      "    charismatic_leader      49.9% of turns",
+      "    gunboat_diplomacy        0.0% of turns",
+      "  availability \u2014 was it ever even possible?",
+      "    political_philosophy held   58.6% of turns",
+      "    ideology held                0.0% of turns",
+      "    a diplomatic slot open      53.6% of turns",
+      "    diplomatic_quarter built   in 4 of 6 games",
+      "  \u2605 influence buildings ever built:",
+      "    consulate              in 4 of 6 games",
+      "    chancery               in 1 of 6 games"
+    ],
+    "test": "envoy_income_census"
+  },
+  "expansion_funnel_blocker_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22016,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== expansion funnel [eval 4p 24x16]: 1313 city-turns while SHORT of target ===",
+      "  a settler already walking (serialization)     273  ( 20.8%)",
+      "  city below pop 2                              136  ( 10.4%)",
+      "  expansion window shut                         235  ( 17.9%)",
+      "  no settle site in reach                       883  ( 67.3%)",
+      "  NOTHING blocking \u2014 the settler was allowed    245  ( 18.7%)",
+      "  turns where EXACTLY ONE conjunct failed (a single fix would unblock these):",
+      "    serialization 59   pop<2 121   window 0   no site 522",
+      "  when allowed, a settler costs a median 7.5 turns of this city's production (p90 17.5)",
+      "=== expansion funnel [large 6p 74x46]: 904 city-turns while SHORT of target ===",
+      "  a settler already walking (serialization)      91  ( 10.1%)",
+      "  city below pop 2                              118  ( 13.1%)",
+      "  expansion window shut                         428  ( 47.3%)",
+      "  no settle site in reach                         0  (  0.0%)",
+      "  NOTHING blocking \u2014 the settler was allowed    271  ( 30.0%)",
+      "  turns where EXACTLY ONE conjunct failed (a single fix would unblock these):",
+      "    serialization 87   pop<2 114   window 428   no site 0",
+      "  when allowed, a settler costs a median 8.0 turns of this city's production (p90 15.3)"
+    ],
+    "test": "expansion_funnel_blocker_census"
+  },
+  "expansion_payback_fires": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22170,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== expansion payback vs flat reserve [eval 4p 24x16]: 2655 city-turns ===",
+      "  agree                       2446  ( 92.1%)",
+      "  payback OPENS what the flat reserve shut      201  (  7.6%)",
+      "  payback SHUTS what the flat reserve opened      8  (  0.3%)",
+      "=== expansion payback vs flat reserve [large 6p 74x46]: 3237 city-turns ===",
+      "  agree                       2878  ( 88.9%)",
+      "  payback OPENS what the flat reserve shut      352  ( 10.9%)",
+      "  payback SHUTS what the flat reserve opened      7  (  0.2%)"
+    ],
+    "test": "expansion_payback_fires"
+  },
+  "faith_spending_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22738,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== faith spending [deployment 250t online / ALL victories]: 6 games ===",
+      "  faith earned 6467, spent 3961  (61% of income spent)",
+      "  \u2605 balance at the end 2506, peak 3282",
+      "  \u2605 turns the balance FELL (a purchase) 32.3 per game",
+      "  -- availability -- founded a religion 3/6, holds a Holy Site 6/6",
+      "=== faith spending [deployment 250t online / GATE victories]: 6 games ===",
+      "  faith earned 13420, spent 3797  (28% of income spent)",
+      "  \u2605 balance at the end 9691, peak 9726",
+      "  \u2605 turns the balance FELL (a purchase) 17.5 per game",
+      "  -- availability -- founded a religion 4/6, holds a Holy Site 6/6"
+    ],
+    "test": "faith_spending_census"
+  },
+  "idle_treasury_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22596,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== idle treasury [eval 4p 24x16]: 931 seat-turns ===",
+      "  Gold held      mean 277   median 237   peak 1103",
+      "  Gold income    mean 18.1/turn",
+      "  \u2605 Gold held as TURNS OF INCOME   mean 20.2   median 16.3",
+      "  Faith held     mean 127   median 75",
+      "    seat-turns holding more than   10 turns of income:  72.4%",
+      "    seat-turns holding more than   30 turns of income:  19.0%",
+      "    seat-turns holding more than   60 turns of income:   3.0%",
+      "=== idle treasury [large 6p 74x46]: 1070 seat-turns ===",
+      "  Gold held      mean 215   median 202   peak 795",
+      "  Gold income    mean 26.7/turn",
+      "  \u2605 Gold held as TURNS OF INCOME   mean 12.4   median 8.8",
+      "  Faith held     mean 248   median 112",
+      "    seat-turns holding more than   10 turns of income:  44.6%",
+      "    seat-turns holding more than   30 turns of income:   8.2%",
+      "    seat-turns holding more than   60 turns of income:   0.0%"
+    ],
+    "test": "idle_treasury_census"
+  },
+  "influence_visible_fires": {
+    "file": "src/ai.rs",
+    "line": 18403,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "pol_influence=0     charismatic_leader slotted  41.7% of turns   envoys placed mean 6.13",
+      "  pol_influence=1     charismatic_leader slotted  41.0% of turns   envoys placed mean 6.39",
+      "  pol_influence=4     charismatic_leader slotted  50.0% of turns   envoys placed mean 6.47"
+    ],
+    "test": "influence_visible_fires"
+  },
+  "parallel_planner_quality_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 18897,
+    "note": "quality census; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "parallel planner: 5 wins; serial control: 11; terminal score share 0.470"
+    ],
+    "test": "parallel_planner_quality_census"
+  },
+  "plan_city_target_fires": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22528,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "[eval 4p 24x16] plan_city_target=false  cities 2.17 / plan target 3.67   score 112   gene 4.000",
+      "  [eval 4p 24x16] plan_city_target=true  cities 2.33 / plan target 3.67   score 114   gene 4.000",
+      "  [deployment 6p 74x46] plan_city_target=false  cities 4.00 / plan target 4.50   score 306   gene 4.000",
+      "  [deployment 6p 74x46] plan_city_target=true  cities 4.00 / plan target 4.67   score 333   gene 4.000"
+    ],
+    "test": "plan_city_target_fires"
+  },
+  "production_allocation_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 22255,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== production allocation [eval 4p 24x16]: 37132 production over 6 maps ===",
+      "  building             9984  ( 26.9%)",
+      "  wonder               7870  ( 21.2%)",
+      "  district             6704  ( 18.1%)",
+      "  project              3728  ( 10.0%)",
+      "  military unit        3598  (  9.7%)",
+      "  civilian unit        3585  (  9.7%)",
+      "  settler              1305  (  3.5%)",
+      "  repair                256  (  0.7%)",
+      "  idle                  102  (  0.3%)",
+      "  cities held 3.83 against a target of 4.00",
+      "  the missing cities would have cost 178 production \u2014 2.9% of everything the empire made",
+      "=== production allocation [large 6p 74x46]: 52506 production over 6 maps ===",
+      "  building            15750  ( 30.0%)",
+      "  district            10384  ( 19.8%)",
+      "  civilian unit        7518  ( 14.3%)",
+      "  project              5832  ( 11.1%)",
+      "  military unit        5543  ( 10.6%)",
+      "  wonder               5531  ( 10.5%)",
+      "  settler              1706  (  3.2%)",
+      "  idle                  242  (  0.5%)",
+      "  cities held 4.00 against a target of 4.67",
+      "  the missing cities would have cost 133 production \u2014 1.5% of everything the empire made"
+    ],
+    "test": "production_allocation_census"
+  },
+  "research_economy_ab_at_deployment_scale": {
+    "file": "src/ai/advanced/research_probe.rs",
+    "line": 20,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "seed 9200: treated cities=8 campus=6 techs=57 sci=198.4 score=722 | control cities=4 campus=4 techs=36 sci=105.0 score=483",
+      "seed 9201: treated cities=6 campus=4 techs=44 sci=127.1 score=475 | control cities=5 campus=4 techs=42 sci=132.7 score=426",
+      "seed 9202: treated cities=7 campus=6 techs=72 sci=359.6 score=842 | control cities=7 campus=6 techs=70 sci=315.2 score=846",
+      "seed 9203: treated cities=5 campus=4 techs=32 sci=76.7 score=304 | control cities=5 campus=3 techs=38 sci=76.2 score=411",
+      "seed 9204: treated cities=4 campus=4 techs=27 sci=123.0 score=327 | control cities=3 campus=3 techs=25 sci=74.0 score=284",
+      "seed 9205: treated cities=6 campus=4 techs=60 sci=186.5 score=616 | control cities=8 campus=5 techs=48 sci=123.5 score=535",
+      "seed 9206: treated cities=3 campus=3 techs=43 sci=97.2 score=386 | control cities=5 campus=4 techs=44 sci=128.3 score=457",
+      "seed 9207: treated cities=4 campus=2 techs=38 sci=57.9 score=276 | control cities=2 campus=0 techs=34 sci=6.4 score=179",
+      "TOTALS n=8 science 1226.4 vs 961.2 | techs 373 vs 337 | campuses 33 vs 29 | score 3948 vs 3621"
+    ],
+    "test": "research_economy_ab_at_deployment_scale"
+  },
+  "role_ladder_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 20664,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== grand strategy in force, 920 seat-turns ===",
+      "  conquest         45  (  4.9%)",
+      "  expansion       258  ( 28.0%)",
+      "  recovery         49  (  5.3%)",
+      "  religion        568  ( 61.7%)",
+      "=== role ladder census: 2197 city-turns over 8 maps ===",
+      "  balanced       1422  ( 64.7%)",
+      "  bastion         146  (  6.6%)",
+      "  breadbasket     261  ( 11.9%)",
+      "  forge           339  ( 15.4%)",
+      "  specialist       29  (  1.3%)",
+      "  pressure > 0 on 328 of 2197 city-turns (14.9%), mean 0.71 when it fires",
+      "  mean production weight added by pressure across ALL city-turns: +0.072 (shipped weight is 1.55)",
+      "  t1-39    bastion on   34 of   415 city-turns (  8.2%)",
+      "  t40-79   bastion on   27 of   903 city-turns (  3.0%)",
+      "  t80-139  bastion on   85 of   816 city-turns ( 10.4%)",
+      "  t140+    bastion on    0 of    63 city-turns (  0.0%)",
+      "  of 146 bastion stamps, 47 were BARBARIAN-ONLY (32.2%)",
+      "  population under a growth halt: 650 citizen-turns (6.6% of all city-turns were halted)"
+    ],
+    "test": "role_ladder_census"
+  },
+  "settle_search_reach_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21722,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== settle search reach census: 145 settler-turns over 8 maps ===",
+      "  the search returned NOTHING on 6 of them",
+      "  candidates the generator offered above what the search returned: 11",
+      "  of those, INDIVIDUALLY reachable by the same route query: 0 (0.0%)",
+      "  settler-turns where a strictly better REACHABLE site was skipped: 0 (0.0%)"
+    ],
+    "test": "settle_search_reach_census"
+  },
+  "settle_siting_census": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21467,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== settle siting census: 20 cities founded over 8 maps ===",
+      "  against RAW settle_value  -- within 3 tiles: 97.1%   within 8 tiles: 95.3%",
+      "  against the AGENT'S OWN objective (settle_value - 0.9/tile): 95.6%",
+      "  against what its OWN `settle_sites` generator offers here: 95.7%",
+      "  percentiles  p10 73.0%   median 100.0%   p90 100.0%   worst 66.5%",
+      "  the chosen site WAS the best available on 16 of 20 foundings (80.0%)",
+      "  when a better site existed within 3 tiles it was a median 1 tile(s) away (3 cases)",
+      "  capitals alone: 87.2% (5 sampled)"
+    ],
+    "test": "settle_siting_census"
+  },
+  "settle_value_before_and_after_founding": {
+    "file": "src/ai/advanced/tests.rs",
+    "line": 21925,
+    "note": "census, not an assertion; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "=== settle_value before and after founding: 20 sites ===",
+      "  mean settle_value the turn BEFORE the city existed: 141.4",
+      "  mean settle_value once the city owns its ring one:  -15.4",
+      "  founding the city destroys 110.9% of its own site's measured value"
+    ],
+    "test": "settle_value_before_and_after_founding"
+  },
+  "sphere_distance_cache_order_benchmark": {
+    "file": "src/sphere.rs",
+    "line": 1147,
+    "note": "preregistered microbenchmark; run explicitly with --nocapture",
+    "ok": true,
+    "output": [
+      "cold_local: median_elapsed_ns=26225791 calls=2000000 ns_per_call=13.112896",
+      "admitted_local: median_elapsed_ns=6880375 calls=2000000 ns_per_call=3.440187",
+      "admitted_long: median_elapsed_ns=5779791 calls=2000000 ns_per_call=2.889896"
+    ],
+    "test": "sphere_distance_cache_order_benchmark"
+  }
+}

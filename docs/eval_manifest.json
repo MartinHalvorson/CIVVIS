@@ -1,6 +1,6 @@
 {
   "derived": {
-    "eval_only_count": 203,
+    "eval_only_count": 204,
     "firaxis_only_count": 23,
     "live_bridge_count": 74,
     "native_engine_repair_count": 51,
@@ -145,8 +145,9 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 203,
+      "declared_count": 204,
       "items": [
+        "fog_honest",
         "advanced_build_first",
         "advanced_synergy",
         "advanced_synergy_war",

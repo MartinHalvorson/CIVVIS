@@ -155,6 +155,67 @@ fn fog_honest_planning_view_redacts_hidden_units_and_terrain() {
 }
 
 #[test]
+fn fog_honest_planning_drops_dangling_hidden_city_territory_refs() {
+    let mut game = Game::new_full(2, 40, 20, 84_205, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("each seat starts with a settler");
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .expect("fixture capitals must be founded");
+    }
+    game.current = 0;
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    let visible = game.player_vision_now(0);
+    let far = game
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            game.wdist(home, tile.pos) > 12
+                && !game.sees(&visible, tile.pos)
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(tile.pos).is_none()
+        })
+        .map(|tile| tile.pos)
+        .expect("fixture needs an unexplored settlement site");
+    let settler = game.spawn_test_unit("settler", 1, far);
+    game.current = 1;
+    game.apply(1, &Action::FoundCity { unit: settler })
+        .expect("the hidden settlement must be founded");
+    let hidden_city = game
+        .city_at(far)
+        .expect("the fixture settlement must create a city");
+
+    // A visible border tile can retain the hidden city's ownership ID after
+    // the City Center is removed from the private planning world. This is the
+    // shape that used to make a normal settlement scan index a missing city.
+    let border = game
+        .map
+        .tiles
+        .values()
+        .find(|tile| game.sees(&visible, tile.pos) && tile.pos != home)
+        .map(|tile| tile.pos)
+        .expect("fixture needs a visible border tile");
+    game.map
+        .tiles
+        .get_mut(&border)
+        .expect("visible border tile remains on the map")
+        .owner_city = Some(hidden_city);
+
+    let private = game.fogged_clone(0, &BTreeMap::new());
+    assert!(!private.cities.contains_key(&hidden_city));
+    assert!(private.map.tiles.values().all(|tile| {
+        tile.owner_city
+            .is_none_or(|city_id| private.cities.contains_key(&city_id))
+    }));
+}
+
+#[test]
 fn fog_honest_planning_keeps_only_stale_hidden_city_combat_memory() {
     let mut game = Game::new_full(2, 40, 20, 84_204, 200, 0, false);
     for pid in 0..2 {

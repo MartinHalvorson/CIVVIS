@@ -37,6 +37,9 @@ pub const BUILTIN_AIS: &[&str] = &[
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: &[&str] = &[
+    // Complete fair-play major controller; paired screening owns the
+    // promotion decision before the default controller changes.
+    "fog_honest",
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -758,6 +761,7 @@ define_arm_kinds! {
     LiveWithoutExploreCommit => "live_without_explore_commit",
     LiveWithoutBankEnvoys => "live_without_bank_envoys",
     Advanced => "advanced",
+    FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBuildFirst => "advanced_build_first",
     AdvancedSynergy => "advanced_synergy",
@@ -3357,6 +3361,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
+        "fog_honest" => Box::new(AdvancedAi::fog_honest()),
         // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
         //
         // Eight flags separate the frozen controller from the deployed one, and
@@ -3973,6 +3978,7 @@ impl ArmKind {
 
     fn treatments(self) -> &'static [&'static str] {
         match self {
+            Self::FogHonest => &["fog-honest"],
             // The live bridge is a COMPOSITE, and each flag is tagged so a
             // `live` vs `live_without_*` comparison reports exactly the one
             // mechanism that differs instead of the catch-all
@@ -4622,6 +4628,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "live_without_loyalty_policy_defence")
         }
         "advanced" => (Vec::new(), "advanced"),
+        "fog_honest" => (Vec::new(), "fog_honest"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
         "advanced_synergy_war" => (Vec::new(), "advanced_synergy_war"),
@@ -5924,6 +5931,7 @@ mod tests {
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
                 "advanced",
+                "fog_honest",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
                 "advanced_policy_envoy_priority",
