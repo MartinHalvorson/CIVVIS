@@ -20862,34 +20862,72 @@ impl AdvancedAi {
             return false;
         }
         let visible = self.battlefront_visibility(g, pid);
-        let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
-            let Some(tile) = g.map.get(*target) else {
-                return false;
+        // The checks in dropping order, each with a name. Run 212725Z spent
+        // t224-t248 with FOUR settlers orbiting one site — "sets (22, 21)
+        // aside" every hysteresis period, per settler, staggered — and the
+        // journal could not say WHICH check flickered, so the lane's next
+        // measurement had nothing to bite on (the promotion-block class:
+        // no clean discriminator). Same conditions, same order, same
+        // short-circuit as the closure this replaces; only the first
+        // failure's name escapes.
+        let target_drop_reason = |target: Pos| -> Option<&'static str> {
+            let Some(tile) = g.map.get(target) else {
+                return Some("the tile left the map");
             };
-            !g.rules.is_water(tile)
-                && g.rules.is_passable(tile)
-                && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
-                && tile
-                    .owner_city
-                    .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && Some(*target) != avoid
-                // A site the host or the mirror has since blocked is not a
-                // target, however it was chosen: `best_settler_target`
-                // refuses `blocked_city_sites` when it PICKS a site, but a
-                // site can join that set after the pick (see the standing
-                // case at the top of this function for the measured cost).
-                && !g.blocked_city_sites.contains(target)
-                && !self.settler_site_is_dead(uid, *target)
-                // A momentarily unavailable route is not a bad site. Under
-                // `settler_commit` the stall counter decides when to give up,
-                // not a single blocked turn.
-                && (*target == current
-                    || g.route_step(uid, *target, 0).is_some()
-                    || self.settler_commit)
-                && (!self.settlement_safety
-                    || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
-                        <= SETTLER_STEP_RISK_LIMIT)
-        });
+            if g.rules.is_water(tile) {
+                return Some("water");
+            }
+            if !g.rules.is_passable(tile) {
+                return Some("impassable");
+            }
+            if g.cities.values().any(|c| g.wdist(c.pos, target) < 4) {
+                return Some("a city within three tiles");
+            }
+            if !tile
+                .owner_city
+                .is_none_or(|cid| g.cities[&cid].owner == pid)
+            {
+                return Some("another empire's ground");
+            }
+            if Some(target) == avoid {
+                return Some("the site it is avoiding");
+            }
+            // A site the host or the mirror has since blocked is not a
+            // target, however it was chosen: `best_settler_target`
+            // refuses `blocked_city_sites` when it PICKS a site, but a
+            // site can join that set after the pick (see the standing
+            // case at the top of this function for the measured cost).
+            if g.blocked_city_sites.contains(&target) {
+                return Some("the host blocked the plot");
+            }
+            if self.settler_site_is_dead(uid, target) {
+                return Some("marked dead for this settler");
+            }
+            // A momentarily unavailable route is not a bad site. Under
+            // `settler_commit` the stall counter decides when to give up,
+            // not a single blocked turn.
+            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
+            {
+                return Some("no route this turn");
+            }
+            if self.settlement_safety
+                && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            {
+                return Some("step risk above the limit");
+            }
+            None
+        };
+        let cached_drop = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .and_then(target_drop_reason);
+        let valid_target = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .filter(|_| cached_drop.is_none());
         // The target forecast is a live-bridge repair, not a production or
         // tournament policy. `settler_commit` is on in the normal promoted
         // controller, whereas both default constructors leave
@@ -20908,11 +20946,12 @@ impl AdvancedAi {
                         uid,
                         (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
                     );
+                    let why = cached_drop.unwrap_or("no cached site");
                     think!(self.journal(), Expansion, Detail,
                            "Settler sets {dropped:?} aside";
-                           "the cached site stopped passing its checks; it stays out of the next \
-                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
-                            flickering at the edge of sight cannot flip the march every frame";
+                           "the cached site stopped passing its checks ({why}); it stays out of the \
+                            next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
+                            threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
                 }
             }
