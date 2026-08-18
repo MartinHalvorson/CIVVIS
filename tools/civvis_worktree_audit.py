@@ -487,9 +487,9 @@ def selftest() -> int:
         subprocess.run(["git", "-C", work, "push", "-q", "-u", "origin", "main"], check=True)
 
         wt = os.path.join(tmp, "wt")
-        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "-b", "feat", wt],
+        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "-b", "agent/selftest/one/feat", wt],
                        check=True)
-        subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", "feat"], check=True)
+        subprocess.run(["git", "-C", wt, "push", "-q", "-u", "origin", "agent/selftest/one/feat"], check=True)
 
         clean = audit(work, idle_minutes=30, rescue=False)
         assert not clean, f"a clean fleet must report nothing, got {clean}"
@@ -508,7 +508,7 @@ def selftest() -> int:
         assert git("status", "--porcelain", repo=wt) == before_status, \
             "the agent's working tree must be untouched"
         saved = subprocess.run(
-            ["git", "-C", remote, "show", "refs/civvis/wip/feat:a.txt"],
+            ["git", "-C", remote, "show", "refs/civvis/wip/agent/selftest/one/feat:a.txt"],
             capture_output=True, text=True).stdout
         assert "two" in saved, f"the snapshot must carry the unstaged bytes, got {saved!r}"
         # ⚠ The production remote's pre-push hook refuses any refs/heads/ name
@@ -524,7 +524,7 @@ def selftest() -> int:
         open(os.path.join(wt, "a.txt"), "w").write("one\ntwo\nthree\n")
         audit(work, idle_minutes=30, rescue=True)
         again = subprocess.run(
-            ["git", "-C", remote, "show", "refs/civvis/wip/feat:a.txt"],
+            ["git", "-C", remote, "show", "refs/civvis/wip/agent/selftest/one/feat:a.txt"],
             capture_output=True, text=True).stdout
         assert "three" in again, f"a repeat rescue must overwrite, got {again!r}"
 
@@ -542,7 +542,7 @@ def selftest() -> int:
         local_only = git("rev-parse", "HEAD", repo=wt)
         audit(work, idle_minutes=30, rescue=True)
         preserved = subprocess.run(
-            ["git", "-C", remote, "rev-parse", "refs/civvis/wip/feat"],
+            ["git", "-C", remote, "rev-parse", "refs/civvis/wip/agent/selftest/one/feat"],
             capture_output=True, text=True).stdout.strip()
         assert preserved == local_only, (
             "a clean worktree's local-only HEAD must be pushed verbatim, "
@@ -589,7 +589,7 @@ def selftest() -> int:
         # 4. It refuses a tree an agent touched recently, even when everything
         #    else is safe: HEAD being landed says nothing about whether somebody
         #    is working in the directory right now.
-        subprocess.run(["git", "-C", wt, "push", "-q", "origin", "feat"], check=True)
+        subprocess.run(["git", "-C", wt, "push", "-q", "origin", "agent/selftest/one/feat"], check=True)
         subprocess.run(["git", "-C", work, "fetch", "-q", "origin"], check=True)
         os.utime(os.path.join(wt, "a.txt"), None)     # touched just now
         assert reap(work, audit(work, 30, False), idle_minutes=30, apply=True) == [], \
@@ -603,10 +603,10 @@ def selftest() -> int:
         assert not os.path.isdir(wt), "the reaped worktree must be gone from disk"
         heads_left = git("for-each-ref", "--format=%(refname:short)", "refs/heads",
                          repo=work)
-        assert "feat" not in heads_left.split(), \
+        assert "agent/selftest/one/feat" not in heads_left.split(), \
             f"the reaped branch must be gone too, heads are {heads_left!r}"
         # ⚠ And the work must still be reachable — that is the whole premise.
-        assert subprocess.run(["git", "-C", remote, "rev-parse", "refs/heads/feat"],
+        assert subprocess.run(["git", "-C", remote, "rev-parse", "refs/heads/agent/selftest/one/feat"],
                               capture_output=True).returncode == 0, \
             "reaping must never be the last copy: the remote still has the branch"
 
@@ -617,9 +617,9 @@ def selftest() -> int:
         import unittest.mock as _mock
 
         wt2 = os.path.join(tmp, "wt2")
-        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "-b", "feat2", wt2],
+        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "-b", "agent/selftest/two/feat2", wt2],
                        check=True)
-        subprocess.run(["git", "-C", wt2, "push", "-q", "-u", "origin", "feat2"], check=True)
+        subprocess.run(["git", "-C", wt2, "push", "-q", "-u", "origin", "agent/selftest/two/feat2"], check=True)
         # A commit that exists only here — exactly what `ship`'s merge leaves.
         open(os.path.join(wt2, "a.txt"), "w").write("scaffold\n")
         subprocess.run(["git", "-C", wt2, "add", "-A"], check=True)
@@ -661,6 +661,18 @@ def selftest() -> int:
         assert not branch_pr_is_merged("main"), "main is never a task branch"
         assert not branch_pr_is_merged("no-such-branch-anywhere"), \
             "an unknown branch must not read as merged"
+
+        # ⚠ AND THE REFUSAL THAT COST AN OUTAGE. A detached worktree pinned
+        # to a remote branch is a deploy checkout, not task scaffolding, and it
+        # passes every other check here: clean, idle, HEAD plainly on the
+        # remote. Removing one took civvis.ai's exhibition down on 2026-08-18.
+        deploy = os.path.join(tmp, "deploy")
+        subprocess.run(["git", "-C", work, "worktree", "add", "-q", "--detach",
+                        deploy, "origin/main"], check=True)
+        planned_deploy = reap(work, audit(work, 30, False),
+                              idle_minutes=0, apply=False)
+        assert all(os.path.basename(r["path"]) != "deploy" for r in planned_deploy), \
+            f"a detached deploy checkout must never be a reap candidate: {planned_deploy}"
 
         print("selftest: ok")
         return 0
