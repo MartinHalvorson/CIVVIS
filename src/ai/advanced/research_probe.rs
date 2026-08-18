@@ -786,7 +786,7 @@ fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
     let ours = game.player_city_ids(0)[0];
     let theirs = game.player_city_ids(1)[0];
     let home = game.cities[&ours].pos;
-    let rival = game.cities[&theirs].pos;
+    let distant_rival = game.cities[&theirs].pos;
     let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
     for position in positions {
         let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -800,15 +800,30 @@ fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
         game.players[0].explored.insert(position);
     }
     game.cities.get_mut(&ours).unwrap().pop = 6;
-    let mut beside_rival: Vec<Pos> = game
+    // Build a rival outpost eight tiles from our capital and found at the
+    // midpoint. The original rival capital remains outside the target's
+    // pressure radius, so changing this outpost's population is the only
+    // reason the forecast changes between selection and arrival.
+    let (near_rival_pos, target) = game
         .map
         .tiles
         .keys()
         .copied()
-        .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
-        .collect();
-    beside_rival.sort_unstable();
-    let target = beside_rival[0];
+        .filter(|rival| game.wdist(home, *rival) == 8 && game.wdist(distant_rival, *rival) >= 4)
+        .find_map(|rival| {
+            game.map
+                .tiles
+                .keys()
+                .copied()
+                .find(|target| {
+                    game.wdist(home, *target) == 4
+                        && game.wdist(rival, *target) == 4
+                        && game.wdist(distant_rival, *target) > 9
+                })
+                .map(|target| (rival, target))
+        })
+        .expect("fixture needs a midpoint outside the distant capital's pressure radius");
+    let near_rival = game.found_city_for(1, near_rival_pos, None);
     let settler = game.spawn_test_unit("settler", 0, target);
     game.units.get_mut(&settler).unwrap().moves_left = 2.0;
     assert!(game.can_found_city(settler));
@@ -816,6 +831,7 @@ fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
     // This is the board that created the cache. The rival is not yet large
     // enough to make the target untenable.
     game.cities.get_mut(&theirs).unwrap().pop = 1;
+    game.cities.get_mut(&near_rival).unwrap().pop = 1;
     assert!(
         !AdvancedAi::new()
             .settle_site_loyalty_verdict(&game, 0, target)
@@ -825,7 +841,7 @@ fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
 
     // A five-turn march is enough for a nearby city to grow or appear in
     // the mirror. At arrival the same target is now a clear loss.
-    game.cities.get_mut(&theirs).unwrap().pop = 12;
+    game.cities.get_mut(&near_rival).unwrap().pop = 20;
     assert!(
         AdvancedAi::new()
             .settle_site_loyalty_verdict(&game, 0, target)
