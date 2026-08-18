@@ -3296,7 +3296,10 @@ mod tests {
 
     #[test]
     fn a_run_under_the_map_floor_reports_no_resolution() {
-        assert_eq!(resolvable_edge(PROMOTION_MIN_MAPS - 1, 0.3, RESOLUTION_SEED), None);
+        assert_eq!(
+            resolvable_edge(PROMOTION_MIN_MAPS - 1, 0.3, RESOLUTION_SEED),
+            None
+        );
         assert!(resolution_note(10, 3, RESOLUTION_SEED).contains("too few"));
     }
 
