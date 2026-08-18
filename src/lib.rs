@@ -668,8 +668,7 @@ mod tests {
         for p in &g.players {
             if p.alive && !p.is_barbarian {
                 assert!(
-                    p.techs.len() > 1
-                        || (p.research.is_some() && p.research_progress > 0.0),
+                    p.techs.len() > 1 || (p.research.is_some() && p.research_progress > 0.0),
                     "player {} ({}) alive={} cities={} ended with {:?}, research {:?} at {:.1}",
                     p.id,
                     p.civ,
