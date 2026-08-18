@@ -163,6 +163,27 @@ class QualityHelpersTests(unittest.TestCase):
             self.assertEqual(len(skipped), 1)
             self.assertIn("too large", skipped[0])
 
+    def test_rustfmt_scopes_an_out_of_line_module_to_its_own_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / "src/ai").mkdir(parents=True)
+            completed = quality.subprocess.CompletedProcess([], 0, "", "")
+            with patch.object(quality, "run", return_value=completed) as run:
+                failures, skipped = quality.rustfmt(repo, [Path("src/ai.rs")], {})
+            self.assertEqual((failures, skipped), ([], []))
+            self.assertEqual(
+                run.call_args.args[1],
+                [
+                    "rustfmt",
+                    "--check",
+                    "--edition",
+                    "2021",
+                    "--config",
+                    "skip_children=true",
+                    "src/ai.rs",
+                ],
+            )
+
     def test_rustfmt_reports_only_chunks_overlapping_the_change(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
