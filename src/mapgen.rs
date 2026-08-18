@@ -1819,11 +1819,11 @@ fn tennis_ball_gap_tiles(wm: &WorldMap) -> usize {
 }
 
 fn tennis_ball_seam_point(longitude: f64) -> [f64; 3] {
-    let latitude = TENNIS_BALL_SEAM_AMPLITUDE * (2.0 * longitude).sin();
+    let latitude = TENNIS_BALL_SEAM_AMPLITUDE * trig::sin(2.0 * longitude);
     [
-        latitude.cos() * longitude.cos(),
-        latitude.cos() * longitude.sin(),
-        latitude.sin(),
+        trig::cos(latitude) * trig::cos(longitude),
+        trig::cos(latitude) * trig::sin(longitude),
+        trig::sin(latitude),
     ]
 }
 
@@ -1847,7 +1847,7 @@ fn tennis_ball_seam_proximity(point: [f64; 3], samples: usize) -> f64 {
 fn tennis_ball_seam_water(wm: &WorldMap) -> BTreeSet<Pos> {
     let arc = tile_arc(wm);
     let half_width = tennis_ball_gap_tiles(wm) as f64 * arc / 2.0;
-    let seam_cutoff = half_width.cos();
+    let seam_cutoff = trig::cos(half_width);
     let samples = (std::f64::consts::PI / arc)
         .ceil()
         .clamp(TENNIS_BALL_SEAM_MIN_SAMPLES as f64, TENNIS_BALL_SEAM_MAX_SAMPLES as f64)
@@ -1930,9 +1930,9 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
         // either side of the equator, depending on how big a tile is here.
         let latitude = side * (coast_stand_off - TENNIS_BALL_SEAM_AMPLITUDE);
         let target = [
-            latitude.cos() * longitude.cos(),
-            latitude.cos() * longitude.sin(),
-            latitude.sin(),
+            trig::cos(latitude) * trig::cos(longitude),
+            trig::cos(latitude) * trig::sin(longitude),
+            trig::sin(latitude),
         ];
         let pick = pool
             .iter()
@@ -1940,8 +1940,8 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
             .filter(|position| {
                 let direction = wm.direction(*position);
                 let seam = TENNIS_BALL_SEAM_AMPLITUDE
-                    * (2.0 * direction[1].atan2(direction[0])).sin();
-                side * (direction[2].asin() - seam) > 0.0
+                    * trig::sin(2.0 * trig::atan2(direction[1], direction[0]));
+                side * (trig::asin(direction[2]) - seam) > 0.0
             })
             .max_by(|first, second| {
                 dot(wm.direction(*first), target)
@@ -7732,17 +7732,33 @@ mod river_tests {
     #[test]
     fn the_same_seed_generates_the_same_world_on_every_platform() {
         let rules = Rules::embedded();
-        let cases: [(u64, MapTopology, u64); 6] = [
-            (1013, GLOBE, 0x5882_57c1_2847_3376),
-            (1037, GLOBE, 0xea88_b67e_6785_f742),
-            (4242, GLOBE, 0xaffb_235c_3df8_79fe),
-            (31337, GLOBE, 0x1dec_b624_0de4_3098),
-            (777, FLAT, 0x8c54_302a_be4c_7bab),
-            (4242, FLAT, 0xf08d_d844_42a1_ec99),
+        // ⚠ THIS PINNED CONTINENTS AND NOTHING ELSE, AND THE DEFAULT SCRIPT IS
+        // `tennis_ball`. `MapScript::Continents` is one script out of several,
+        // so the gate that exists to stop a platform-trig call reaching mapgen
+        // could not see the one map most games are actually played on — and
+        // `tennis_ball_seam_point` was calling `f64::sin`/`cos`/`asin`/`atan2`
+        // directly. Two of six tennis-ball globe seeds changed when those were
+        // routed through `trig`, which is the same signature #1061 had: the
+        // native build and the wasm bundle were generating different worlds
+        // from the same seed, on the default script.
+        let cases: [(u64, MapTopology, MapScript, u64); 10] = [
+            (1013, GLOBE, MapScript::Continents, 0x5882_57c1_2847_3376),
+            (1037, GLOBE, MapScript::Continents, 0xea88_b67e_6785_f742),
+            (4242, GLOBE, MapScript::Continents, 0xaffb_235c_3df8_79fe),
+            (31337, GLOBE, MapScript::Continents, 0x1dec_b624_0de4_3098),
+            (777, FLAT, MapScript::Continents, 0x8c54_302a_be4c_7bab),
+            (4242, FLAT, MapScript::Continents, 0xf08d_d844_42a1_ec99),
+            // The default script, on the topology the CLI also defaults to.
+            // Seeds 1013 and 31337 are the two that demonstrably moved when the
+            // seam geometry stopped calling the platform's trig.
+            (1013, GLOBE, MapScript::TeninsBall, 0xfc1c_53e0_61d6_9a04),
+            (31337, GLOBE, MapScript::TeninsBall, 0xc06a_38d8_3899_8dbc),
+            (4242, GLOBE, MapScript::TeninsBall, 0xb82c_10ba_bd7f_e244),
+            (777, FLAT, MapScript::TeninsBall, 0x9ab4_f57b_a4d8_cd5e),
         ];
         let actual: Vec<String> = cases
             .iter()
-            .map(|(seed, topology, _)| {
+            .map(|(seed, topology, script, _)| {
                 let mut rng = Rng::new(*seed);
                 let (world, spawns) = generate_with_script(
                     &rules,
@@ -7752,7 +7768,7 @@ mod river_tests {
                     9,
                     4,
                     3,
-                    MapScript::Continents,
+                    *script,
                     *topology,
                     POLED,
                     &mut rng,
@@ -7762,14 +7778,14 @@ mod river_tests {
             .collect();
         let expected: Vec<String> = cases
             .iter()
-            .map(|(_, _, digest)| format!("{digest:016x}"))
+            .map(|(_, _, _, digest)| format!("{digest:016x}"))
             .collect();
         assert_eq!(
             actual, expected,
             "a seed no longer generates the world every platform agreed on \
              (seeds {:?}); if mapgen changed deliberately, pin the left column \
              — computed on one platform, verified by the rest",
-            cases.map(|(seed, ..)| seed)
+            cases.map(|(seed, _, script, _)| (seed, script))
         );
     }
 
