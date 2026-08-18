@@ -14288,7 +14288,11 @@ impl Game {
             "trade" => "commercial_hub",
             _ => return 0.0,
         };
-        if family == specialty { 500.0 } else { 0.0 }
+        if family == specialty {
+            500.0
+        } else {
+            0.0
+        }
     }
 
     /// The bespoke Suzerain bonus key a city-state carries, if the engine
