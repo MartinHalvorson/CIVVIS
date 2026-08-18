@@ -390,7 +390,25 @@ def refuse_a_reference_from_another_ruleset(database: "Database", where: Path) -
     return 2
 
 
-def load_cache_database(path: Path) -> Database:
+def load_cache_database(path: Path, *, require_gathering_storm: bool = True) -> Database:
+    """The compiled cache, refused unless it is the ruleset CIVVIS models.
+
+    ★★★★★ THE CHECK IS IN THE DOOR AND NOT BESIDE IT, BECAUSE BESIDE IT WAS
+    WALKED PAST. `main` called `refuse_a_reference_from_another_ruleset` right
+    after loading and that was the whole protection: any other caller — a tool,
+    a test, an agent opening the same file with `sqlite3` in three lines —
+    inherited none of it. On 2026-08-18 that is exactly what happened. #2049
+    read the Founder-belief modifiers straight out of this cache, found the
+    domestic/foreign distinction the base game draws, and shipped it as a
+    fidelity fix. The cache held Vanilla. `Expansion2_RemoveData.xml` deletes
+    all four of those modifiers and Gathering Storm replaces them with the
+    per-city and per-follower forms `beliefs.json` already had, so the "fix"
+    replaced correct expansion values with base-game ones, moved the frozen
+    rating anchor and burned a ledger version. #2050 reverted it.
+
+    `require_gathering_storm=False` is for a caller that deliberately wants a
+    foreign ruleset — the tests do — and is the only way past this.
+    """
     database = Database()
     uri = f"file:{urllib.parse.quote(str(path))}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
@@ -421,6 +439,10 @@ def load_cache_database(path: Path) -> Database:
                 rows[key] = row
     finally:
         connection.close()
+    if require_gathering_storm:
+        code = refuse_a_reference_from_another_ruleset(database, path)
+        if code != 0:
+            raise SystemExit(code)
     return database
 
 
@@ -2468,9 +2490,10 @@ def main() -> int:
             )
             return 2
         install = cache
+        # The refusal is inside `load_cache_database` now, so this path gets it
+        # for free and so does every other caller. `SystemExit` carries the
+        # same exit code the explicit call used to return.
         database = load_cache_database(cache)
-        if (code := refuse_a_reference_from_another_ruleset(database, install)) != 0:
-            return code
     else:
         install = find_install(args.civ6)
         database = load_database(install)

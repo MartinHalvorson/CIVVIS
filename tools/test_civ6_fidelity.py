@@ -58,6 +58,31 @@ class TheReferenceIsChecked(unittest.TestCase):
         self.assertEqual(
             civ6_fidelity.refuse_a_reference_from_another_ruleset(vanilla, Path("x")), 2)
 
+    def test_the_loader_itself_refuses_a_foreign_ruleset(self):
+        """⚠⚠ THE CHECK HAS TO BE IN THE DOOR, NOT BESIDE IT.
+
+        `main` called the refusal after loading, so every other caller got
+        nothing — and on 2026-08-18 an agent read the Founder-belief modifiers
+        straight out of a cache that happened to hold the base game and shipped
+        them as a Gathering Storm fidelity fix (#2049, reverted by #2050). The
+        loader refuses now, so opening the cache at all is enough.
+        """
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            empty = Path(directory) / "DebugGameplay.sqlite"
+            sqlite3.connect(empty).close()
+            with self.assertRaises(SystemExit) as refused:
+                civ6_fidelity.load_cache_database(empty)
+            self.assertEqual(refused.exception.code, 2)
+            # And the deliberate escape hatch still works, so a caller that
+            # genuinely wants a foreign ruleset has one clearly-named way in.
+            allowed = civ6_fidelity.load_cache_database(
+                empty, require_gathering_storm=False
+            )
+            self.assertEqual(allowed.tables, {})
+
     def test_one_sentinel_is_not_enough_to_pass(self):
         """Sentinels are spread across three tables so a partial or corrupt
         reference cannot pass by carrying one of them."""

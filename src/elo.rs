@@ -1052,29 +1052,30 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Rows before and after v9 are not comparable wherever an improvement was ever
 /// pillaged, which on any map with barbarians is most of them.
 ///
-/// **v13 (2026-08-18) — three Founder beliefs pay for the religion abroad.**
-/// `beliefs.json` wired Tithe, World Church and Pilgrimage to the *domestic*
-/// form of a key the shipped Civilization VI database defines on what is
-/// foreign, and the engine's correct arms — `gold_per_followers`,
-/// `culture_per_foreign_followers`, `faith_per_foreign_city` — were reachable
-/// from no belief at all. Read directly from the installed gameplay database:
-/// `TITHE_GOLD_FOLLOWER` (+1 Gold per 4 followers), `WORLD_CHURCH_CULTURE_
-/// FOREIGN_FOLLOWER` (+1 Culture per 5 foreign followers),
-/// `PILGRIMAGE_FAITH_FOREIGN_CITY` (+2 Faith per foreign following city), and
-/// `CHURCH_PROPERTY_GOLD_CITY` (+2 Gold per following city) — the belief whose
-/// key Tithe had been using, and which `beliefs.json` did not carry at all.
+/// **v13 (2026-08-18) — WITHDRAWN. Four Founder beliefs were changed to the
+/// base game's forms.** #2049 read `TITHE_GOLD_FOLLOWER`,
+/// `WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER`, `PILGRIMAGE_FAITH_FOREIGN_CITY`
+/// and `CHURCH_PROPERTY_GOLD_CITY` out of the compiled gameplay cache and
+/// rewrote `beliefs.json` to match. The cache held **Vanilla**.
+/// `Expansion2_RemoveData.xml` deletes all four of those modifiers, and
+/// Gathering Storm — the ruleset CIVVIS models — replaces them with
+/// `TITHE_GOLD_CITY` (+3 Gold per following city),
+/// `WORLD_CHURCH_CULTURE_FOLLOWER` (+1 Culture per 4 followers) and
+/// `PILGRIMAGE_FAITH_CITY` (+2 Faith per following city), and deletes
+/// `BELIEF_CHURCH_PROPERTY` outright. `beliefs.json` already had exactly
+/// those. The "fix" replaced correct expansion values with base-game ones.
 ///
-/// ⚠ This inverts an incentive rather than moving a number. Civilization VI
-/// pays a founder for converting its *rivals*, which is the entire reason to
-/// build Missionaries and Apostles; the domestic form paid for converting
-/// nobody. Religion decides about three quarters of the games on this
-/// evaluator's own board, so every rated row before v13 was played under a
-/// religion economy that rewarded the wrong thing.
+/// **v14 (2026-08-18) — v13 reverted; v14 plays the v12 ruleset.** #2050 put
+/// the data back, and the frozen anchor returned to 18,572 decisions and
+/// `0x3bda_c2f2_b84d_30fc` and the ruleset fingerprint to
+/// `fnv1a64:585ff2655ffd3a6d`, all three unchanged from before v13 — which is
+/// the proof the revert is exact rather than approximate.
 ///
-/// The frozen anchor moved with it: 18,572 decisions became 18,466 across the
-/// five anchor profiles. Rows before and after v13 are not comparable in any
-/// game where a religion was founded.
-pub const ELO_PROTOCOL_VERSION: u32 = 13;
+/// ⚠ The version still advances rather than returning to 12, because rows
+/// written under v13 were played on the base game's beliefs and must stay
+/// identifiable. **v14 rows are comparable to v12 rows; v13 rows are
+/// comparable to neither.**
+pub const ELO_PROTOCOL_VERSION: u32 = 14;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

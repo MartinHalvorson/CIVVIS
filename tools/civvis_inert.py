@@ -16,11 +16,17 @@ Usage::
 
 Both directions, because only one of them was ever checked. The audit above
 asks "which data key does the engine ignore"; ``founder_belief_yields`` asks the
-mirror question, "which key does the engine price that no data supplies", and
-that direction had four dead arms in the belief economy on 2026-08-18. Three of
-them were dead because a belief was wired to the *domestic* form of a key that
-Civilization VI defines on foreign followers, so the engine's correct arm sat
-unreachable while the belief paid the wrong thing. See ``docs/FIDELITY.md``.
+mirror question, "which key does the engine price that no data supplies".
+
+⚠ An unsupplied arm is not automatically a defect here, and #2049 is the
+expensive proof. Three of them are the **base-game** forms of Founder beliefs
+that Gathering Storm replaces outright — Vanilla pays Tithe per follower and
+World Church and Pilgrimage on what is foreign, and
+``Expansion2_RemoveData.xml`` deletes all three modifiers. CIVVIS models
+Gathering Storm, so the data supplies the per-city and per-follower forms and
+the base-game arms stay unreachable **on purpose**. They are waived by name in
+``BELIEF_YIELD_WAIVERS`` with that reason, so a genuinely new arm with no belief
+behind it still fails. See ``docs/FIDELITY.md``.
 
 A key counts as consumed when the engine contains it as a string literal, or
 when a ``format!`` template could build it. The template check is deliberately
@@ -86,6 +92,30 @@ def engine_source() -> str:
 # times. Renaming the function fails loudly below rather than silently checking
 # nothing.
 BELIEF_YIELD_FN = "fn founder_belief_yields"
+
+# Belief-yield arms with no belief behind them, and why that is correct.
+#
+# ⚠⚠ EVERY ENTRY MUST NAME THE RULESET REASON. This list is the one place a
+# reader can check that an unreachable arm is deliberate, and #2049 shipped the
+# base game's belief values into a Gathering Storm ruleset precisely because
+# nothing wrote that distinction down.
+BELIEF_YIELD_WAIVERS = {
+    "gold_per_followers": (
+        "Vanilla Tithe (TITHE_GOLD_FOLLOWER, +1 Gold per 4 followers). "
+        "Expansion2_RemoveData.xml deletes it; Gathering Storm's Tithe is "
+        "TITHE_GOLD_CITY, +3 Gold per following city, which `tithe` supplies."
+    ),
+    "culture_per_foreign_followers": (
+        "Vanilla World Church (WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER, +1 "
+        "Culture per 5 foreign followers). Deleted by Expansion2; Gathering "
+        "Storm's is WORLD_CHURCH_CULTURE_FOLLOWER, +1 per 4 followers."
+    ),
+    "faith_per_foreign_city": (
+        "Vanilla Pilgrimage (PILGRIMAGE_FAITH_FOREIGN_CITY, +2 Faith per "
+        "foreign following city). Deleted by Expansion2; Gathering Storm's is "
+        "PILGRIMAGE_FAITH_CITY, +2 Faith per following city."
+    ),
+}
 
 
 def belief_yield_keys(source: str) -> set[str]:
@@ -153,11 +183,16 @@ def main() -> int:
     # arm that cannot fire — the same defect from the other side, and until
     # 2026-08-18 nothing asked it.
     priced = belief_yield_keys(source)
-    unsupplied = sorted(key for key in priced if key not in keys)
+    unsupplied = sorted(
+        key for key in priced if key not in keys and key not in BELIEF_YIELD_WAIVERS
+    )
+    waived_arms = sorted(key for key in priced if key in BELIEF_YIELD_WAIVERS)
     print(
         f"{len(priced)} belief-yield keys priced by the engine, "
-        f"{len(unsupplied)} supplied by no belief"
+        f"{len(unsupplied)} supplied by no belief, {len(waived_arms)} waived"
     )
+    for key in waived_arms:
+        print(f"  waived {key:37} {BELIEF_YIELD_WAIVERS[key]}")
     for key in unsupplied:
         print(f"  {key:44} no belief sets this")
     if args.max is not None and len(unsupplied) > args.max:

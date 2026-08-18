@@ -8,11 +8,10 @@
     "divine_spark": {"note":"+1 Great Scientist point from Campuses with a Library, +1 Great Prophet point from Holy Sites, and +1 Great Writer point from Theater Squares with an Amphitheater","effects":{"district_gpp":1}}
   },
   "founder": {
-    "tithe": {"note":"+1 Gold for every 4 followers of this religion","effects":{"gold_per_followers":0.25}},
-    "church_property": {"note":"+2 Gold for each city following this religion","effects":{"gold_per_city":2}},
-    "world_church": {"note":"+1 Culture for every 5 followers of this religion in other civilizations' cities","effects":{"culture_per_foreign_followers":0.2}},
-    "cross_cultural_dialogue": {"note":"+1 Science for every 5 followers of this religion in other civilizations' cities","effects":{"science_per_foreign_followers":0.2}},
-    "pilgrimage": {"note":"+2 Faith for each foreign city following this religion","effects":{"faith_per_foreign_city":2}},
+    "tithe": {"note":"+3 Gold for each city following this religion","effects":{"gold_per_city":3}},
+    "world_church": {"note":"+1 Culture per 4 followers","effects":{"culture_per_followers":0.25}},
+    "cross_cultural_dialogue": {"note":"+1 Science per 4 followers of this religion in other civilizations","effects":{"science_per_foreign_followers":0.25}},
+    "pilgrimage": {"note":"+2 Faith for each city following this religion","effects":{"faith_per_city":2}},
     "religious_unity": {"note":"first conversion of a city-state grants an Envoy","effects":{"envoy_first_city_state_conversion":1}},
     "lay_ministry": {"note":"+1 Faith for each Holy Site and +1 Culture for each Theater Square in cities following this religion","effects":{"faith_per_holy_site":1,"culture_per_theater_square":1}},
     "sacred_places": {"note":"+2 Science, Culture, Gold and Faith for each city following this religion that has a Wonder","effects":{"yield_per_wonder_city":2}}
