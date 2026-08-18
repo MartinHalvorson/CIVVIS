@@ -213,15 +213,17 @@ def is_defeat(summary: dict) -> bool:
     own elimination therefore landed as `{"reason": "stopped", "victory": null,
     "won": false}` — byte-identical to a run that hung. Measured on three live
     rows: `civvis-20260815T160346Z` (eliminated at t233, score 272),
-    `195951Z` (t102, score 153) and `210845Z` (t226, score 313), all three
-    filed as `stopped` beside seventeen genuine stalls.
+    `195951Z` (t102, score 153) and `210845Z` (t226, score 313). All three
+    carry `reason: "stopped"` — the same answer 259 of the ledger's 325 rows
+    give, including all 30 of its stalls.
 
     ⚠ `ours` IS LOAD-BEARING. Civilization VI emits a `defeat` every time ANY
-    player is eliminated, including a city-state, and 39 of the 325 recorded
-    runs carry at least one rival's. `civ6_play.finished()` already refuses to
-    stop on those — a run was once cut sixteen turns short of a score victory
-    because player 7 died — and reading the flag off the event here is the same
-    distinction on the recording side.
+    player is eliminated, including a city-state, and 39 of the 111 runs whose
+    event streams are still on this machine carry at least one rival's.
+    `civ6_play.finished()` already refuses to stop on those — a run was once
+    cut sixteen turns short of a score victory because player 7 died — and
+    reading the flag off the event here is the same distinction on the
+    recording side.
     """
     outcome = summary.get("outcome") or {}
     return bool(outcome.get("kind") == "defeat" and outcome.get("ours"))

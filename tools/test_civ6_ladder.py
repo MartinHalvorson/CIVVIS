@@ -816,7 +816,8 @@ class ADefeatIsNotAStall(LedgerCase):
 
     def test_a_rivals_elimination_is_not_ours(self):
         """⚠ Civilization VI emits a `defeat` when ANY player is eliminated,
-        including a city-state; 39 of the 325 recorded runs carry at least one.
+        including a city-state; 39 of the 111 run event streams still on
+        this machine carry at least one.
         `civ6_play.finished()` already refuses to stop on those — a run was cut
         sixteen turns short of a score victory because player 7 died — and the
         recording side needs the same distinction."""
