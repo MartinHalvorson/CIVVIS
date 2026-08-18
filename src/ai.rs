@@ -12302,7 +12302,11 @@ impl BasicAi {
         // own settler walking home to a camp), so it must neither be refused
         // by the duplicate/unusable guard below nor trip its freeze.
         // `barb_pid`, not `is_barbarian` — Free Cities carry the flag too.
-        let barb_rescue: Option<usize> = if self.civilian_rescue { g.barb_pid } else { None };
+        let barb_rescue: Option<usize> = if self.civilian_rescue {
+            g.barb_pid
+        } else {
+            None
+        };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.units_at(position).into_iter().any(|other| {
                 g.units[&other].owner != pid
@@ -12654,7 +12658,11 @@ impl BasicAi {
                 if guarded {
                     return None;
                 }
-                Some((value, std::cmp::Reverse(distance), std::cmp::Reverse(other.pos)))
+                Some((
+                    value,
+                    std::cmp::Reverse(distance),
+                    std::cmp::Reverse(other.pos),
+                ))
             })
             .max()
             .map(|(_, _, std::cmp::Reverse(position))| position);
@@ -19185,14 +19193,12 @@ mod tests {
 
         // The unit loop's shape: step until the unit declines or runs dry.
         for _ in 0..8 {
-            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior)
-            {
+            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior) {
                 break;
             }
         }
         assert_eq!(
-            game.units[&captured].owner,
-            0,
+            game.units[&captured].owner, 0,
             "two tiles and two movement points are a capture, not a vigil"
         );
     }
