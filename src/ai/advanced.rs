@@ -18373,8 +18373,7 @@ impl AdvancedAi {
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
         let barbarian_trade_safe = !barbarian_tactics
             || (!BasicAi::barbarian_trade_risk(g, pid)
-                && g
-                    .player_city_ids(pid)
+                && g.player_city_ids(pid)
                     .into_iter()
                     .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
         // A Conquest label is also used while the planner is merely strong
@@ -22926,13 +22925,11 @@ impl AdvancedAi {
         // still allowed because route creation is immediate there.
         let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
             || (!BasicAi::barbarian_trade_risk(g, pid)
-                && g
-                    .player_city_ids(pid)
+                && g.player_city_ids(pid)
                     .into_iter()
                     .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
         if !barbarian_trade_safe
-            && g
-                .city_at(current)
+            && g.city_at(current)
                 .is_none_or(|city| g.cities[&city].owner != pid)
         {
             let target = g
@@ -26631,8 +26628,7 @@ impl AdvancedAi {
                     .barbarian_home_defense_objective(g, pid, uid, &barb_only)
             };
             if let Some(threat) = threat {
-                if g.wdist(unit.pos, threat) > radius
-                    && self.base.step_toward(g, pid, uid, threat)
+                if g.wdist(unit.pos, threat) > radius && self.base.step_toward(g, pid, uid, threat)
                 {
                     return true;
                 }
