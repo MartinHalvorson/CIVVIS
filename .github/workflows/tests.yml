@@ -148,14 +148,15 @@ jobs:
       # every gate green. That is exactly the failure its own docstring
       # describes: the Sphinx kept two dead effects through fourteen iterations.
       #
-      # ⚠ The ratchet is 1, not 0, and the one is a REAL defect rather than an
-      # accepted one: `force_retreat` is Poland's Winged Hussar ability, present
-      # in `data/units.json` and read by nothing, so the unit is a plain
-      # Cuirassier replacement. Genuinely descriptive keys are waived by name in
-      # `tools/inert_waivers.json` with the reason; this one is not waived
-      # because it should be fixed. Lower the number when it is.
+      # ⚠ The ratchet is ZERO. It was briefly 1, naming `force_retreat` —
+      # Poland's Winged Hussar ability, present in `data/units.json` and read by
+      # nothing, so the unit was a plain Cuirassier replacement. That is fixed,
+      # so the number came down with it. Genuinely descriptive keys are waived
+      # by name in `tools/inert_waivers.json` with the reason they are not
+      # defects; a new key with no consumer now fails here rather than sitting
+      # in the data doing nothing.
       - name: Rules data has no effect key the engine ignores
-        run: python3 tools/civvis_inert.py --max 1
+        run: python3 tools/civvis_inert.py --max 0
 
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
