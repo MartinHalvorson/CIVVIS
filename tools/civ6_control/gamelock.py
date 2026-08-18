@@ -33,6 +33,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 LOCK = Path.home() / ".civvis-civ6-game.lock"
+# A live lock holder protects a single active game.  An explicit halt is a
+# different thing: it is the operator saying that *no* new game may start until
+# they resume it.  Keeping that intent in a small durable marker avoids making
+# a Terminal/launchd process immortal just to preserve a user decision.
+OPERATOR_HALT = Path(os.environ.get(
+    "CIVVIS_OPERATOR_HALT_FILE",
+    str(Path.home() / ".civvis-operator-halt.json"),
+))
 
 
 def _holder() -> dict | None:
@@ -43,6 +51,65 @@ def _holder() -> dict | None:
         return json.loads(info.read_text())
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def operator_halt() -> dict | None:
+    """The durable operator halt request, if one exists.
+
+    A malformed or unreadable marker is deliberately still a halt.  Starting
+    a live game after an operator asked it to stay down is worse than requiring
+    an explicit ``--resume`` to clear a damaged marker.
+    """
+    try:
+        value = json.loads(OPERATOR_HALT.read_text())
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, OSError):
+        return {"invalid": True}
+    if not isinstance(value, dict):
+        return {"invalid": True}
+    return value
+
+
+def operator_halt_description() -> str | None:
+    """A human-readable explicit halt, or ``None`` when play is allowed."""
+    requested = operator_halt()
+    if requested is None:
+        return None
+    if requested.get("invalid"):
+        return ("an unreadable explicit operator halt marker is present; "
+                "refusing to start until it is cleared with --resume")
+    since = requested.get("since") or "an unknown time"
+    reason = str(requested.get("reason") or "").strip()
+    suffix = f" (reason: {reason})" if reason else ""
+    return (f"the game is explicitly halted since {since}{suffix}; "
+            "run gamelock.py --resume before starting another game")
+
+
+def request_operator_halt(reason: str = "") -> dict:
+    """Persist an operator halt atomically and return the recorded request."""
+    requested = {
+        "pid": os.getpid(),
+        "since": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "reason": reason.strip(),
+    }
+    OPERATOR_HALT.parent.mkdir(parents=True, exist_ok=True)
+    temporary = OPERATOR_HALT.with_name(f".{OPERATOR_HALT.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(requested, indent=2) + "\n")
+        os.replace(temporary, OPERATOR_HALT)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return requested
+
+
+def clear_operator_halt() -> bool:
+    """Clear the explicit halt only when an operator asks to resume."""
+    try:
+        OPERATOR_HALT.unlink()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def _alive(pid: int) -> bool:
@@ -179,6 +246,11 @@ def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
     """Take the lock, optionally waiting. False when someone else holds it."""
     deadline = time.monotonic() + wait_s
     while True:
+        # This check belongs here as well as in the supervisors.  It prevents a
+        # manual or legacy launcher from bypassing the operator's explicit
+        # halt simply because it did not use the current host script.
+        if operator_halt() is not None:
+            return False
         foreign = foreign_run(tag)
         if foreign is not None:
             if time.monotonic() >= deadline:
@@ -207,7 +279,7 @@ def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
 
 
 def standing_hold() -> str | None:
-    """A description of a live holder that is driving no run, or None.
+    """A deliberate persistent halt or live holder that drives no run, or None.
 
     ⚠⚠ THE HOLDER CHECK AND THE FOREIGN-RUN CHECK ASK DIFFERENT QUESTIONS, AND
     THE WEAKER ONE GUARDS THE LOCK. `acquire` treats a holder as real when its
@@ -229,6 +301,10 @@ def standing_hold() -> str | None:
     from "nothing is playing because the loop is wedged", which are the same
     symptom and opposite remedies.
     """
+    explicit = operator_halt_description()
+    if explicit is not None:
+        return explicit
+
     held = _holder()
     if held is None:
         return None
@@ -263,10 +339,35 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    actions = ap.add_mutually_exclusive_group()
+    actions.add_argument("--halt", action="store_true",
+                         help="persist an explicit operator halt")
+    actions.add_argument("--resume", action="store_true",
+                         help="clear the explicit operator halt")
+    actions.add_argument("--hold-status", action="store_true",
+                         help="print an explicit or standing hold and exit 0, else exit 1")
+    ap.add_argument("--reason", default="",
+                    help="optional note recorded with --halt")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--break-stale", action="store_true",
                     help="clear a lock whose holder is no longer running")
     args = ap.parse_args()
+
+    if args.halt:
+        request_operator_halt(args.reason)
+        print(operator_halt_description())
+        sys.exit(0)
+    if args.resume:
+        cleared = clear_operator_halt()
+        print("cleared explicit operator halt" if cleared
+              else "no explicit operator halt was present")
+        sys.exit(0)
+    if args.hold_status:
+        standing = standing_hold()
+        if standing is None:
+            sys.exit(1)
+        print(standing)
+        sys.exit(0)
 
     print(describe())
     standing = standing_hold()

@@ -11,9 +11,11 @@ Run: python3 -m unittest tools/civ6_control/test_gamelock.py
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -125,6 +127,68 @@ class ForeignRun(unittest.TestCase):
             self.install(Path(td), "civvis-DEAD")
             self.env.game_pids = lambda: []
             self.assertIsNone(gamelock.foreign_run("civvis-NEW"))
+
+
+class ExplicitOperatorHalt(unittest.TestCase):
+    """A halt must survive the process that asked for it.
+
+    The old live-lock-only design lost a halt as soon as its helper process was
+    reaped, allowing an interactive host to race straight into another game.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self._lock = gamelock.LOCK
+        self._halt = gamelock.OPERATOR_HALT
+        self._foreign = gamelock.foreign_run
+        gamelock.LOCK = root / "game.lock"
+        gamelock.OPERATOR_HALT = root / "operator-halt.json"
+        gamelock.foreign_run = lambda tag: None
+        self.addCleanup(self._restore)
+
+    def _restore(self) -> None:
+        gamelock.release(force=True)
+        gamelock.LOCK = self._lock
+        gamelock.OPERATOR_HALT = self._halt
+        gamelock.foreign_run = self._foreign
+        self.tmp.cleanup()
+
+    def test_halt_blocks_acquisition_and_names_the_operator_reason(self) -> None:
+        gamelock.request_operator_halt("close the game windows")
+
+        self.assertFalse(gamelock.acquire("civvis-new"))
+        description = gamelock.standing_hold()
+        self.assertIsNotNone(description)
+        self.assertIn("explicitly halted", description)
+        self.assertIn("close the game windows", description)
+
+    def test_resume_is_explicit_and_reopens_the_lock(self) -> None:
+        gamelock.request_operator_halt()
+        self.assertFalse(gamelock.acquire("civvis-new"))
+
+        self.assertTrue(gamelock.clear_operator_halt())
+        self.assertTrue(gamelock.acquire("civvis-new"))
+
+    def test_a_malformed_marker_fails_closed(self) -> None:
+        gamelock.OPERATOR_HALT.write_text("not json\n")
+
+        self.assertFalse(gamelock.acquire("civvis-new"))
+        description = gamelock.standing_hold()
+        self.assertIsNotNone(description)
+        self.assertIn("unreadable explicit operator halt marker", description)
+
+    def test_hold_status_cli_has_a_machine_readable_exit_code(self) -> None:
+        gamelock.request_operator_halt("maintenance")
+        result = subprocess.run(
+            [sys.executable, str(Path(gamelock.__file__)), "--hold-status"],
+            env={**os.environ,
+                 "CIVVIS_OPERATOR_HALT_FILE": str(gamelock.OPERATOR_HALT)},
+            capture_output=True, text=True, timeout=5,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("explicitly halted", result.stdout)
 
 
 if __name__ == "__main__":
