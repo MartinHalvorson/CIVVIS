@@ -3310,14 +3310,30 @@ mod tests {
         // action uses the same happiness-yield effect but remains deliberately
         // outside the modeled-person roster, rather than being conflated with
         // Scotland's civilization trait.
-        // ⚠ Nothing moved it on 2026-08-18. #2049 changed four Founder
+        // ⚠ Nothing moved it on 2026-08-18 morning. #2049 changed four Founder
         // beliefs to the base game's forms and re-pinned this to
         // `fnv1a64:2effccaa9b3512e3`; #2050 reverted the data and this went
-        // back to the value below unchanged, which is how the revert was
-        // verified rather than trusted. See `docs/FIDELITY.md`.
+        // back to `fnv1a64:585ff2655ffd3a6d` unchanged, which is how the revert
+        // was verified rather than trusted. See `docs/FIDELITY.md`.
+        //
+        // Moved by five pantheons the Gathering Storm install has and
+        // `beliefs.json` did not: Goddess of the Hunt (+1 Food and +1
+        // Production from Camps), Stone Circles (+2 Faith from Quarries),
+        // Goddess of Festivals (+1 Culture from Plantations — the expansion
+        // deletes the base game's Food row), Religious Idols (+2 Faith from
+        // Mines over Bonus and Luxury resources) and God of Craftsmen (+1
+        // Production and +1 Faith from any improved Strategic resource — the
+        // expansion deletes the base game's Mine-only row). The roster goes
+        // from 6 of the game's 23 pantheons to 11, and the pantheon is the
+        // earliest religious choice every civilization makes.
+        //
+        // ⚠ Read from the **install**'s `Expansion*/Data/*.xml` with
+        // `Expansion2_RemoveData.xml` checked for every id, not from the
+        // compiled cache. Two of the five are cases where the cache on a
+        // base-game machine states the opposite of the shipped rule.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:585ff2655ffd3a6d"
+            "fnv1a64:9539e12040db0e7d"
         );
     }
 

@@ -28559,10 +28559,59 @@ impl Game {
                 })
                 .count() as f64
         };
+        // Pantheons that pay per improved tile. Every amount and predicate here
+        // is read from the Gathering Storm install's own modifier rows
+        // (`Expansion*/Data/*.xml`, checked against `Expansion2_RemoveData.xml`
+        // so a base-game row the expansion deletes is never modelled) rather
+        // than from the compiled cache, which holds whatever ruleset the game
+        // last ran — see `docs/FIDELITY.md`.
+        let improved_resource_tiles = |improvement: Option<&str>, classes: &[&str]| -> f64 {
+            city.owned_tiles
+                .iter()
+                .filter(|position| {
+                    let tile = &self.map.tiles[position];
+                    if tile.pillaged {
+                        return false;
+                    }
+                    match improvement {
+                        Some(wanted) => tile.improvement.as_deref() == Some(wanted),
+                        // God of Craftsmen asks only that the resource be
+                        // worked, whichever improvement works it.
+                        None => tile.improvement.is_some(),
+                    }
+                    .then(|| tile.resource.as_deref())
+                    .flatten()
+                    .and_then(|resource| self.rules.resources.get(resource))
+                    .is_some_and(|spec| classes.contains(&spec.class.as_str()))
+                })
+                .count() as f64
+        };
         ys.culture +=
             self.pantheon_effect(city.owner, "pasture_culture") * active_improvements("pasture");
         ys.production += self.pantheon_effect(city.owner, "fishing_boats_production")
             * active_improvements("fishing_boats");
+        // Goddess of the Hunt: GODDESS_OF_THE_HUNT_CAMP_{FOOD,PRODUCTION}_MODIFIER,
+        // +1 each on PLOT_HAS_CAMP_REQUIREMENTS.
+        ys.food += self.pantheon_effect(city.owner, "camp_food") * active_improvements("camp");
+        ys.production +=
+            self.pantheon_effect(city.owner, "camp_production") * active_improvements("camp");
+        // Stone Circles: STONE_CIRCLES_QUARRY_FAITH_MODIFIER, +2 on a Quarry.
+        ys.faith += self.pantheon_effect(city.owner, "quarry_faith") * active_improvements("quarry");
+        // Goddess of Festivals: the expansion deletes the base game's
+        // PLANTATION_TAG_FOOD row and grants Culture instead.
+        ys.culture += self.pantheon_effect(city.owner, "plantation_culture")
+            * active_improvements("plantation");
+        // Religious Idols: two modifiers, BONUS_MINE and LUXURY_MINE, +2 Faith
+        // each — one effect here because a plot carries one resource.
+        ys.faith += self.pantheon_effect(city.owner, "resource_mine_faith")
+            * improved_resource_tiles(Some("mine"), &["bonus", "luxury"]);
+        // God of Craftsmen: the expansion deletes STRATEGIC_MINE_PRODUCTION and
+        // pays on any improved Strategic resource, Production and Faith alike.
+        let improved_strategics = improved_resource_tiles(None, &["strategic"]);
+        ys.production +=
+            self.pantheon_effect(city.owner, "strategic_improved_production") * improved_strategics;
+        ys.faith +=
+            self.pantheon_effect(city.owner, "strategic_improved_faith") * improved_strategics;
         if self.dedication_active(city.owner, "pen_brush_and_voice") {
             ys.culture += city
                 .districts
