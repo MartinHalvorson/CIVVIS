@@ -67,7 +67,7 @@ expected_repo() {
   local pin="head"
   [[ -f "$PINFILE" ]] && pin=$(<"$PINFILE")
   if [[ -z "$pin" || "$pin" == "head" ]]; then
-    print -r -- /Users/martin/CIVVIS
+    print -r -- $HOME/CIVVIS
   else
     print -r -- "$pin"
   fi

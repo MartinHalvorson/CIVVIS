@@ -1,0 +1,76 @@
+# census — take the readings the crate's `#[ignore]`d censuses produce, and
+# fail when one has drifted from the committed baseline.
+#
+# Twenty-two tests carry a reason like "census, not an assertion; run
+# explicitly with --nocapture". That reasoning is right — a census is a
+# reading, and asserting an exact number would fail on every legitimate change
+# — but it left the project's best diagnostic surface invisible unless somebody
+# remembered to look, and this fleet has now paid for that twice: a tactics
+# baseline went stale because nothing re-read it, and the Civilization VI ladder
+# loop stopped for 14.3 hours with a correct detector wired to nothing.
+#
+# Why a schedule and not a pull-request gate: the full set takes about fourteen
+# minutes and one census plays 24 games to a result. Putting that in front of
+# every pull request would tax the whole fleet to re-measure something that only
+# moves when the engine does. The `#[ignore]` is a correct call about where this
+# work belongs, not laziness — so this is where it belongs.
+#
+# ⚠ THE CHECK IS ALSO A CROSS-PLATFORM DETERMINISM CHECK, AND THAT IS FREE.
+# The baseline in `docs/census.json` was recorded on macOS; this runs on Linux.
+# `docs/FLOAT_DETERMINISM.md` states the engine's rule outright — "the same seed
+# must generate the same world in every build of this engine — the desktop
+# binary, the Linux CI runner, and the wasm32 module" — so identical readings
+# are the contract, and a difference here is a determinism break rather than a
+# census that moved. Either way it is worth a red X.
+#
+# When a reading legitimately changes: read the diff, and if the new number is
+# the intended one, run `tools/census_report.py --write` and commit it with the
+# reason. That is the point — the number stays free to move and cannot move
+# silently.
+#
+# 04:23 UTC, an odd minute for the same reason the rest of this directory uses
+# one: on-the-hour crons get delayed or dropped under GitHub's load.
+
+name: census
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: census
+  cancel-in-progress: false
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The conflict-hotspot reading below counts merges, so it needs the
+          # history to count. The rust censuses do not care.
+          fetch-depth: 0
+      # Cheap, and first: it needs no toolchain and no build, so a roadmap that
+      # points at a file nobody edits is reported in seconds rather than after
+      # the ninety-minute census budget.
+      - name: The split targets are files that are really contended
+        run: python3 tools/conflict_hotspots.py --check
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-census-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-census-${{ runner.os }}-
+      # Build once so the per-census runs below are test time rather than
+      # twenty-two compilations.
+      - run: cargo build --profile ci --locked --tests
+      - name: Take the readings and compare them with the committed baseline
+        run: python3 tools/census_report.py --check

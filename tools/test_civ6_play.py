@@ -1414,6 +1414,17 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
         self.assertIn("GameConfiguration.GetRuleSet()", lua)
         self.assertIn("row.RulesetType", lua, "typeName must resolve a Ruleset row")
 
+    def test_string_ruleset_readback_is_not_treated_as_a_hash(self):
+        """GetRuleSet returns a type name, not the numeric hash used by other axes.
+
+        The old generic lookup indexed ``GameInfo.Rulesets`` with that string.
+        The Lua error was swallowed by ``try``, so a valid live game reported
+        ``?`` and was rejected as an unconfigured ruleset.
+        """
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text(encoding="utf-8")
+        self.assertIn('if type(hash) == "string" then return hash; end', lua)
+
     def test_a_wrong_ruleset_run_is_a_refusal_not_a_result(self):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")

@@ -203,12 +203,13 @@ def rustfmt(
     skipped: list[str] = []
     for path in paths:
         # Formatting an out-of-line module declaration recursively formats all
-        # of its children. `src/lib.rs` is the root of this crate, so that
-        # would make an otherwise local declaration inherit unrelated legacy
-        # formatting diffs. Keep the root invocation scoped to the root and
-        # check changed child files independently.
+        # of its children. `src/lib.rs` is the root of this crate, and
+        # `src/foo.rs` owns children in `src/foo/`; either would make an
+        # otherwise local parent edit inherit unrelated legacy formatting
+        # diffs. Keep parent invocations scoped to themselves and check
+        # changed child files independently.
         fmt_args = ["rustfmt", "--check", "--edition", "2021"]
-        if path == Path("src/lib.rs"):
+        if path == Path("src/lib.rs") or (repo / path).with_suffix("").is_dir():
             fmt_args.extend(["--config", "skip_children=true"])
         result = run(repo, [*fmt_args, str(path)])
         if not result.returncode:

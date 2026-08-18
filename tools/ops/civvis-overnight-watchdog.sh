@@ -7,9 +7,9 @@
 
 set -u
 
-AUDIT=/Users/martin/civvis-overnight-audit.sh
-WATCH_LOG=/Users/martin/civvis-civ6-runs/overnight_watchdog.log
-LOCK=/Users/martin/.civvis-overnight-watchdog.lock
+AUDIT=$HOME/civvis-overnight-audit.sh
+WATCH_LOG=$HOME/civvis-civ6-runs/overnight_watchdog.log
+LOCK=$HOME/.civvis-overnight-watchdog.lock
 PID_FILE=$LOCK/pid
 STOP_AT=${CIVVIS_OVERNIGHT_STOP_AT:-2026-08-12T05:12:01Z}
 INTERVAL_S=${CIVVIS_OVERNIGHT_AUDIT_INTERVAL_S:-300}
