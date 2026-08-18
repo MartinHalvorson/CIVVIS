@@ -47,12 +47,14 @@ naming that is more useful than the profile pretending otherwise. Two
 diplomacy seats also yielded **more** culture (20% against 8%), so the
 even split is what shipped.
 
-**And two of the three arms did not fire at all, on the board built for them.**
+**★★★★★ AND THE DECOMPOSITION IS NOT A DECOMPOSITION.** All three arms, 60
+pairs each, same seed stream, on the board built for them:
 
-| arm | paired-map score | Elo (CI) | maps that broke |
-|---|---:|---:|---|
-| `advanced_congress_counter` | 50.0% (CI 44.4%..55.6%) | +0 (−39..+39) | 0 on wins, 3 on terminal score |
-| `advanced_congress_votes` | 50.0% (CI 44.4%..55.6%) | +0 (−39..+39) | **0 on wins, 0 on terminal score** |
+| arm | flags | paired-map score | Elo (CI) | wins broke | score broke |
+|---|---|---:|---:|---:|---:|
+| `advanced_congress_counter` | target | 50.0% (44.4..55.6) | +0 (−39..+39) | 0 | 3 |
+| `advanced_congress_votes` | votes | 50.0% (44.4..55.6) | +0 (−39..+39) | **0** | **0** |
+| `advanced_congress_counter_hard` | both | 49.6% (43.9..55.2) | −3 (−43..+36) | **1** | **7** |
 
 `advanced_congress_votes` earned the harness's own non-measurement warning
 (#2003) at 60 maps:
@@ -66,16 +68,28 @@ games.** A tighter interval around exactly 50.0% is a better-measured
 non-measurement, and reading it as evidence about vote-buying would be the
 mistake this repository keeps paying for.
 
-⚠ **A hypothesis, not a finding.** Reading the code, `take_turn` buys the extra
+**Both flags together break 7 maps where the parts break 3 and 0.** That is
+superadditive, and a treatment cannot be superadditive with a flag that does
+nothing — so the second flag is not independent of the first, it is
+*conditional* on it. The mechanism is in the code: `take_turn` buys the extra
 votes only when the ballot's target equals the rival `victory_denial` names,
 while with `congress_counter_leader` off the ballot is aimed at the *diplomatic
-leader* instead — two different empires most of the time, since `victory_denial`
-picks whoever is closest to any victory and this board is decided by religion 75%
-of the time. If that is right, the decomposition into "where the counter points"
-and "how hard it pushes" made the second flag unmeasurable **alone**, which is
-the inverse of the trap its own doc comment was written to avoid. That belongs to
-the next round: it predicts `advanced_congress_counter_hard` (both flags) *does*
-break maps, and it is falsifiable by running it.
+leader* instead. Those are different empires most of the time, because
+`victory_denial` picks whoever is closest to any victory and this board is
+decided by religion three quarters of the time.
+
+The two flags were split so a combined arm could not hide which half did the
+work — the right instinct, and this repository has retracted four mechanism
+stories told off combined arms. **Splitting them made one half unable to fire at
+all**, which is the same failure from the other side: `advanced_congress_votes`
+has never measured anything, and neither has any conclusion drawn from it. That
+includes the standing "there is no headroom there to take" on the `world_leader`
+veto, which was taken on a fieldless board **and** through a flag that could not
+fire.
+
+⚠ Repairing that is a change to `src/ai/advanced.rs`, not to this binary, and it
+belongs in its own PR with its own claim on the most contended file in the
+repository. Recorded here as the next round.
 
 ## What was decided
 
@@ -102,7 +116,9 @@ none starved, a heavier profile never given less than a lighter one — rather t
 a table of exact splits. The table is what broke when the third profile arrived,
 and a table is the part nobody reads before adding one.
 
-**What this does not settle.** Whether any diplomatic-denial treatment pays is
-still unmeasured, because the arms that exist for it did not fire. The next round
-is the reachability question above, not a longer run: the harness has already
-said, twice, that a longer run of a treatment which never fires buys nothing.
+**What this does not settle.** Whether vote-buying pays is still unmeasured,
+because the arm that exists to measure it cannot fire alone. The next round is
+that repair — one definition of who the counter points at, shared by the ballot
+and the weight — and *then* the measurement. Not a longer run: the harness has
+now said twice that a longer run of a treatment which never fires buys nothing,
+and the 60-pair reading above is exactly what buying it looks like.
