@@ -17780,7 +17780,13 @@ impl Game {
             }
     }
 
-    fn unit_can_fortify(&self, u: &Unit) -> bool {
+    /// Whether `Action::Fortify` will be accepted for `u`. `pub(crate)` so the
+    /// controllers can ask the engine instead of guessing: `fortify_or_stop`
+    /// is the fleet's universal "nothing better to do" ending and used to
+    /// issue the order for embarked units, Settlers, Builders and ships,
+    /// which the engine refuses — 1,549 refused orders in one 150-turn
+    /// six-player game, the largest single refusal category measured.
+    pub(crate) fn unit_can_fortify(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         spec.class == "military" && spec.domain.as_deref() != Some("sea") && !self.is_embarked(u)
     }
