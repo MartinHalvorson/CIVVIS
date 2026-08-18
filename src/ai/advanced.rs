@@ -336,6 +336,14 @@ const BELIEF_PRESSURE_HORIZON: u32 = 4;
 /// were judged, and a settler moves two.
 const SETTLE_LAG: u32 = 3;
 
+/// How long a Spy order, once sent to the host, is trusted to be running
+/// before that Spy may be ordered again (`spy_mission_patience`). Standard
+/// turns; missions run 8–16 (`Game::spy_mission_spec`), so 10 lets every
+/// 8-turn mission finish untouched and re-asks a 16-turn Counterspy once
+/// mid-run instead of every turn. Travel completes in a few turns.
+const SPY_MISSION_ORDER_PATIENCE: u32 = 10;
+const SPY_TRAVEL_ORDER_PATIENCE: u32 = 5;
+
 /// Turns a founded city must then stand to be worth its settler. A new city
 /// starts at one population working its centre tile, so this is deliberately
 /// not ambitious: it is the point where the city has returned the production
@@ -2495,6 +2503,24 @@ pub struct AdvancedAi {
     /// wrong.
     pub deny_leaders: bool,
 
+    /// ★★★ A MISSION IN FLIGHT IS NOT RE-ORDERED. The live mirror is rebuilt
+    /// from the host export every decision, and the export does not carry a
+    /// Spy's running operation — so the seated Spy always reads `mission:
+    /// None`, the same mission is legal again, and the seat re-sent it every
+    /// turn: run civvis-20260818T155500Z ordered `SPY_GAIN_SOURCES` 35 times
+    /// over t107–t141 (the first run on which spy orders crossed at all,
+    /// #2030). Native games are immune — `do_spy_mission` sets `spy.mission`
+    /// and `legal_spy_actions` returns nothing while one is set — so this is
+    /// bridge semantics, not an engine repair. With `spy_mission_patience`,
+    /// an ordered Spy is left alone for the order's own duration
+    /// (`SPY_MISSION_ORDER_PATIENCE` / `SPY_TRAVEL_ORDER_PATIENCE`); at
+    /// worst a long Counterspy is re-asked once mid-run, which the host
+    /// refuses once instead of every turn.
+    pub spy_mission_patience: bool,
+    /// Spy id → the turn its standing order is trusted through. Pruned at
+    /// the top of `advanced_spies`.
+    spy_orders_until: BTreeMap<u32, u32>,
+
     /// Whether a seat playing under an assigned victory target may still
     /// mount a denial against a rival at MATCH POINT. `victory_denial` has
     /// always stood down entirely whenever `victory_target` is set — right
@@ -3893,6 +3919,8 @@ impl AdvancedAi {
             reactor_marginal: false,
             civ_blind: false,
             deny_leaders: true,
+            spy_mission_patience: false,
+            spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
             early_rush: false,
@@ -14448,7 +14476,8 @@ impl AdvancedAi {
         }
     }
 
-    fn advanced_spies(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.spy_orders_until.retain(|_, until| *until > g.turn);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -14483,6 +14512,13 @@ impl AdvancedAi {
             })
             .min();
         for spy_id in ids {
+            // A Spy whose last order is still running is left alone; the
+            // rebuilt mirror cannot see the running operation, so without
+            // this the same order goes out every turn. See
+            // `spy_mission_patience`.
+            if self.spy_mission_patience && self.spy_orders_until.contains_key(&spy_id) {
+                continue;
+            }
             let legal = g.legal_spy_actions(pid, spy_id);
             if legal.is_empty() {
                 continue;
@@ -14569,6 +14605,10 @@ impl AdvancedAi {
                     })
                 {
                     let _ = g.apply(pid, action);
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
                     continue;
                 }
             }
@@ -14581,6 +14621,10 @@ impl AdvancedAi {
                         matches!(action, Action::SpyMission { mission, .. } if mission == "gain_sources")
                     }) {
                         let _ = g.apply(pid, action);
+                        self.spy_orders_until.insert(
+                            spy_id,
+                            g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                        );
                         continue;
                     }
                 }
@@ -14646,6 +14690,10 @@ impl AdvancedAi {
                     .map(|(_, _, action)| action);
                 if let Some(action) = operation {
                     let _ = g.apply(pid, action);
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
                     continue;
                 }
             }
@@ -14691,6 +14739,10 @@ impl AdvancedAi {
                 .map(|(_, _, action)| action);
             if let Some(action) = assignment {
                 let _ = g.apply(pid, action);
+                self.spy_orders_until.insert(
+                    spy_id,
+                    g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
+                );
             }
         }
     }

@@ -501,6 +501,15 @@ impl AdvancedAi {
         self.deny_while_targeted = false;
     }
 
+    /// See [`Self::spy_mission_patience`].
+    pub fn enable_spy_mission_patience(&mut self) {
+        self.spy_mission_patience = true;
+    }
+
+    pub fn disable_spy_mission_patience(&mut self) {
+        self.spy_mission_patience = false;
+    }
+
     /// See [`Self::siege_is_progress`].
     pub fn enable_siege_is_progress(&mut self) {
         self.siege_is_progress = true;
@@ -977,6 +986,11 @@ impl AdvancedAi {
         self.enable_explore_dead_targets();
         self.enable_explore_commit();
         self.enable_bank_envoys();
+        // And a Spy order the host is still running is not re-sent every
+        // turn: the rebuilt mirror cannot see a running operation, so the
+        // first run with a working spy chain (civvis-20260818T155500Z)
+        // re-ordered SPY_GAIN_SOURCES 35 times. See `spy_mission_patience`.
+        self.enable_spy_mission_patience();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,

@@ -139,6 +139,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_bank_envoys",
     "live_without_land_grab",
     "live_without_siege_is_progress",
+    "live_without_spy_mission_patience",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -380,6 +381,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "bank-envoys",
     "land-grab",
     "siege-is-progress",
+    "spy-mission-patience",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -537,6 +539,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // out-settle the seat late; the league cadence was bred against CIVVIS
     // rivals who contest the ground.
     "land-grab",
+    // Reacts to the host export's blindness to a running Spy operation;
+    // native `do_spy_mission` sets `spy.mission` and legality already
+    // debounces, so the repair cannot fire there.
+    "spy-mission-patience",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -775,6 +781,7 @@ define_arm_kinds! {
     LiveWithoutBankEnvoys => "live_without_bank_envoys",
     LiveWithoutLandGrab => "live_without_land_grab",
     LiveWithoutSiegeIsProgress => "live_without_siege_is_progress",
+    LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4199,6 +4206,7 @@ impl ArmKind {
             Self::LiveWithoutBankEnvoys => live_without("bank-envoys"),
             Self::LiveWithoutLandGrab => live_without("land-grab"),
             Self::LiveWithoutSiegeIsProgress => live_without("siege-is-progress"),
+            Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
