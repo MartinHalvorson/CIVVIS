@@ -12402,6 +12402,98 @@ fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
         .is_none());
 }
 
+/// A city need not be in the mirror's immediate -8-per-turn emergency to be
+/// a bad settlement. A young city caught between equal-distance capitals can
+/// look merely "Wavering" on its founding turn yet still flip before it has
+/// grown into the investment the Settler was meant to make. The advanced
+/// settlement forecast must reject that middle band as well, while the
+/// ordinary controller keeps its historical selection path.
+#[test]
+fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
+    let (mut game, capital, home) = empire_with_a_capital(71_122);
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+
+    // Put the rival capital eight tiles out and choose the midpoint. The
+    // founding minimum is three tiles, so both four-tile distances are legal.
+    let (rival_pos, target) = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|rival| game.wdist(home, *rival) == 8)
+        .find_map(|rival| {
+            game.map
+                .tiles
+                .keys()
+                .copied()
+                .find(|target| game.wdist(home, *target) == 4 && game.wdist(rival, *target) == 4)
+                .map(|target| (rival, target))
+        })
+        .expect("fixture needs a four-tile midpoint between the capitals");
+    let rival = game.found_city_for(1, rival_pos, None);
+    game.cities.get_mut(&capital).unwrap().pop = 6;
+    game.cities.get_mut(&rival).unwrap().pop = 10;
+
+    let loyalty_per_turn = {
+        let mut forecast = game.speculative_clone();
+        let city = forecast.found_city_for(0, target, None);
+        forecast.city_loyalty_per_turn(&forecast.cities[&city])
+    };
+    assert!(
+        loyalty_per_turn < -100.0 / SETTLE_TARGET_LOYALTY_RISK_TURNS
+            && loyalty_per_turn > -8.0,
+        "fixture needs the overlooked middle band, not the old immediate emergency: {loyalty_per_turn}"
+    );
+
+    // Ensure the test exercises a real choice rather than the score floor.
+    for position in game.wdisk(target, 2) {
+        if let Some(tile) = game.map.tiles.get_mut(&position) {
+            tile.resource = Some(crate::name!("rice"));
+        }
+    }
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        if position != target {
+            game.blocked_city_sites.insert(position);
+        }
+    }
+    let settler = game.spawn_test_unit("settler", 0, target);
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    assert!(game.can_found_city(settler));
+
+    let mut ordinary_board = game.clone();
+    let mut ordinary = AdvancedAi::new();
+    assert!(
+        ordinary.advanced_settler_step(&mut ordinary_board, 0, settler),
+        "the ordinary controller retains its established non-forecast path"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let why = live
+        .settle_site_loyalty_verdict(&game, 0, target)
+        .expect("the advanced forecast rejects a city that will flip before it grows");
+    assert!(why.contains("revolt in about"), "{why}");
+    assert!(
+        !live.advanced_settler_step(&mut game, 0, settler),
+        "the advanced controller must retire the risky founding rather than spend the Settler"
+    );
+    assert!(live.settler_site_is_dead(settler, target));
+    assert_eq!(game.player_city_ids(0).len(), 1);
+}
+
 /// ★★★★ A border with no city behind it is a city in the fog. Run
 /// civvis-20260818T155552Z: Setia, founded t55 two tiles from Vietnam's border
 /// with none of Vietnam's four cities on the board, read −13.3 Loyalty a turn
