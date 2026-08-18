@@ -13070,6 +13070,7 @@ impl Game {
         }
         for c in self.cities.values().filter(|c| c.owner == pid) {
             let mut city_earn: BTreeMap<String, f64> = BTreeMap::new();
+            let scottish_happiness = self.scottish_enlightenment_happiness_scale(c);
             for position in &c.owned_tiles {
                 let tile = &self.map.tiles[position];
                 if !tile.pillaged && tile.improvement.as_deref() == Some("industry") {
@@ -13107,6 +13108,28 @@ impl Game {
                             .get("city_district_gpp")
                             .copied()
                             .unwrap_or(0.0);
+                    }
+                }
+                // Scottish Enlightenment's four live modifiers require the
+                // exact active district type, not a district family: Happy
+                // contributes one Scientist point per Campus and one Engineer
+                // point per Industrial Zone; Ecstatic doubles both amounts.
+                // They enter the city ledger here so Pingala, governments,
+                // policies, and Patronage multiply them with every other city
+                // source exactly once.
+                if scottish_happiness != 0.0 {
+                    match d.as_str() {
+                        "campus" => {
+                            *city_earn.entry("scientist".to_string()).or_insert(0.0) +=
+                                scottish_happiness
+                                    * self.civ_effect(pid, "happy_campus_scientist_gpp");
+                        }
+                        "industrial_zone" => {
+                            *city_earn.entry("engineer".to_string()).or_insert(0.0) +=
+                                scottish_happiness
+                                    * self.civ_effect(pid, "happy_industrial_engineer_gpp");
+                        }
+                        _ => {}
                     }
                 }
                 // The building scan stays INSIDE the condition. It walks the
@@ -18587,6 +18610,20 @@ impl Game {
             -4..=-3 => "unhappy",
             -6..=-5 => "unrest",
             _ => "revolt",
+        }
+    }
+
+    /// Scottish Enlightenment has four city-local happiness modifiers. Its
+    /// Happy values apply at a +3 surplus and its Ecstatic values are exactly
+    /// double at +5; Content and lower bands receive none of the trait.
+    fn scottish_enlightenment_happiness_scale(&self, city: &City) -> f64 {
+        if !self.owns_civ_unique(city.owner, "Scotland") {
+            return 0.0;
+        }
+        match self.city_happiness(city) {
+            "ecstatic" => 2.0,
+            "happy" => 1.0,
+            _ => 0.0,
         }
     }
 
@@ -28744,6 +28781,14 @@ impl Game {
         // Aerodrome/Spaceport cities (`COMMEMORATION_AERONAUTICAL_GA_*` grants
         // tech boosts, air-unit XP and Aluminum, no yield), were CIVVIS's own.
         let band = (self.amenity_yield_mult(city) - 1.0) * 100.0;
+        // Scottish Enlightenment is separate from the ordinary amenity band:
+        // its four live modifiers add +5% Science and Production at Happy,
+        // then +10% at Ecstatic. Like every other city-yield modifier, these
+        // are terms in Civ VI's one additive percentage sum, not a chained
+        // multiplier over the ordinary +10% / +20% Happiness bonus.
+        let scottish_happiness = self.scottish_enlightenment_happiness_scale(city);
+        pct.science += scottish_happiness * self.civ_effect(city.owner, "happy_science_pct");
+        pct.production += scottish_happiness * self.civ_effect(city.owner, "happy_production_pct");
         // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
         // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
         // (0.75 / 0.25 / 0) is what a disloyal city pays, and
