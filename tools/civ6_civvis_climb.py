@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import collections
 import json
 import math
 import os
@@ -1075,6 +1076,38 @@ def resolvable_win_rate(attempts: int, baseline: float = 0.25,
     return None
 
 
+def batch_composition_line(reasons) -> str:
+    """What the batch actually measured, by how each attempt ended.
+
+    ⚠⚠ A GAME KILLED BY OUR OWN CLOCK IS NOT A LOSS, AND NOTHING SAID SO.
+    An attempt that hits the wall-clock ceiling is written to the ledger with
+    `reason` set and `outcome.won` left **None** — so every win-rate that
+    counts `won == True` over the rows silently scores it as a non-win. Game
+    1 of the first pinned batch (2026-08-17) hit the ceiling at turn 203
+    while LEADING by 46, under a machine load of ~55 from un-niced eval
+    sweeps: a four-times pace collapse, not a stall and not a defeat.
+
+    A batch that does not say how many of its attempts ended that way reads
+    exactly like a batch that completed them all, which is the same silent
+    truncation `batch_power_line` exists to prevent. Composition is the other
+    half of "what did this batch buy".
+    """
+    total = sum(reasons.values())
+    if total == 0:
+        return "no attempts were played, so the batch measured nothing"
+    completed = reasons.get("stopped", 0)
+    parts = ", ".join(
+        f"{reason}={count}" for reason, count in sorted(reasons.items())
+    )
+    line = f"batch composition: {completed}/{total} played to a finish ({parts})"
+    if completed < total:
+        line += (
+            " — an attempt that did not finish is NOT a loss and NOT a "
+            "measurement; count wins over the finished ones"
+        )
+    return line
+
+
 def batch_power_line(attempts: int, baseline: float = 0.25) -> str:
     """One line naming what this batch can and cannot settle."""
     if attempts <= 1:
@@ -1540,6 +1573,7 @@ def main() -> int:
         print("decider frozen for the batch (--civvis-refresh-seconds 0): "
               "a pinned batch must measure one program", flush=True)
 
+    outcomes = collections.Counter()   # how each played attempt ended
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
     blocked_streak = 0
@@ -1770,6 +1804,7 @@ def main() -> int:
 
         played += 1
         blocked_streak = 0
+        outcomes[str(record.get("reason") or "unknown")] += 1
         record["attempt"] = played
         with LEDGER.open("a") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
@@ -1779,10 +1814,12 @@ def main() -> int:
               flush=True)
         if won(record):
             print(f"*** WON on attempt {played} ({tag}) ***", flush=True)
+            print(batch_composition_line(outcomes), flush=True)
             return 0
 
     print(f"no win in {played} attempts played "
           f"({started - played} starts produced no game)", flush=True)
+    print(batch_composition_line(outcomes), flush=True)
     return 1
 
 
