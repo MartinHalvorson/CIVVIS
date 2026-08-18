@@ -12,8 +12,12 @@
 //! every edit near the top of that file, which at a hundred merged pull
 //! requests a day is a cost paid by other people.
 //!
-//! A verbatim move — same bytes, same order — with only the `fn` line gaining
-//! `pub(super)` so `game` can still call it.
+//! The move itself was verbatim — same bytes, same order — with only the `fn`
+//! line gaining `pub(super)` so `game` can still call it. rustfmt then repacked
+//! the lists, because `rust-quality` requires a new file to be formatted and a
+//! moved file is a new file to it. What matters survived that intact and was
+//! checked rather than assumed: 1,785 string literals before, 1,785 after, the
+//! same names in the same order.
 
 pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
     match civ {
@@ -396,22 +400,8 @@ pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
             "Santos",
         ],
         "France" => &[
-            "Paris",
-            "Orleans",
-            "Lyon",
-            "Reims",
-            "Tours",
-            "Bordeaux",
-            "Rouen",
-            "Dijon",
-            "Toulouse",
-            "Poitiers",
-            "Nantes",
-            "Amiens",
-            "Grenoble",
-            "Limoges",
-            "Angers",
-            "Besancon",
+            "Paris", "Orleans", "Lyon", "Reims", "Tours", "Bordeaux", "Rouen", "Dijon", "Toulouse",
+            "Poitiers", "Nantes", "Amiens", "Grenoble", "Limoges", "Angers", "Besancon",
         ],
         "Spain" => &[
             "Madrid",
@@ -900,22 +890,8 @@ pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
             "Uriakku",
         ],
         "Manchuria" => &[
-            "Hetu Ala",
-            "Mukden",
-            "Jilin",
-            "Ningguta",
-            "Aigun",
-            "Qiqihar",
-            "Yarkand",
-            "Hulun",
-            "Sanxing",
-            "Fuzhou",
-            "Liaoyang",
-            "Kaiyuan",
-            "Tieling",
-            "Yingkou",
-            "Dandong",
-            "Hunchun",
+            "Hetu Ala", "Mukden", "Jilin", "Ningguta", "Aigun", "Qiqihar", "Yarkand", "Hulun",
+            "Sanxing", "Fuzhou", "Liaoyang", "Kaiyuan", "Tieling", "Yingkou", "Dandong", "Hunchun",
         ],
         "Lydia" => &[
             "Sardis",
@@ -990,22 +966,8 @@ pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
             "Urfa",
         ],
         "Arabia" => &[
-            "Baghdad",
-            "Damascus",
-            "Mecca",
-            "Medina",
-            "Kufa",
-            "Basra",
-            "Aleppo",
-            "Riyadh",
-            "Najran",
-            "Taif",
-            "Hail",
-            "Buraydah",
-            "Tabuk",
-            "Yanbu",
-            "Khaybar",
-            "Jeddah",
+            "Baghdad", "Damascus", "Mecca", "Medina", "Kufa", "Basra", "Aleppo", "Riyadh",
+            "Najran", "Taif", "Hail", "Buraydah", "Tabuk", "Yanbu", "Khaybar", "Jeddah",
         ],
         "Israel" => &[
             "Hebron",
@@ -1314,22 +1276,8 @@ pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
             "Buvuma",
         ],
         "Oyo" => &[
-            "Oyo-Ile",
-            "Ibadan",
-            "Ogbomoso",
-            "Iseyin",
-            "Saki",
-            "Ede",
-            "Ilorin",
-            "Osogbo",
-            "Iwo",
-            "Ikirun",
-            "Ejigbo",
-            "Igboho",
-            "Kishi",
-            "Igbeti",
-            "Fiditi",
-            "Awe",
+            "Oyo-Ile", "Ibadan", "Ogbomoso", "Iseyin", "Saki", "Ede", "Ilorin", "Osogbo", "Iwo",
+            "Ikirun", "Ejigbo", "Igboho", "Kishi", "Igbeti", "Fiditi", "Awe",
         ],
         "Tuareg" => &[
             "Agadez",
@@ -1422,22 +1370,8 @@ pub(super) fn city_names(civ: &str) -> &'static [&'static str] {
             "Sainshand",
         ],
         "Tibet" => &[
-            "Lhasa",
-            "Shigatse",
-            "Gyantse",
-            "Yarlung",
-            "Samye",
-            "Chamdo",
-            "Nagchu",
-            "Nyingchi",
-            "Sakya",
-            "Tsetang",
-            "Zhongba",
-            "Purang",
-            "Gartok",
-            "Rutog",
-            "Dingri",
-            "Lhatse",
+            "Lhasa", "Shigatse", "Gyantse", "Yarlung", "Samye", "Chamdo", "Nagchu", "Nyingchi",
+            "Sakya", "Tsetang", "Zhongba", "Purang", "Gartok", "Rutog", "Dingri", "Lhatse",
         ],
         "Nepal" => &[
             "Kathmandu",
