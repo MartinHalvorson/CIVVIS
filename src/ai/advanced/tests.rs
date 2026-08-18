@@ -10620,9 +10620,8 @@ fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
         "National History Museum is the Government Plaza boundary case with slots"
     );
 
-    let value = |ai: &AdvancedAi, item: &Item| {
-        ai.production_value(&game, 0, capital, item, &plan, &counts)
-    };
+    let value =
+        |ai: &AdvancedAi, item: &Item| ai.production_value(&game, 0, capital, item, &plan, &counts);
 
     assert_eq!(value(&slot_keyed, &amphitheater), -10_000.0);
     assert_eq!(value(&district_keyed, &amphitheater), -10_000.0);

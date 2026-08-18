@@ -4630,9 +4630,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "advanced_great_work_veto_by_district")
         }
         "advanced_target_culture" => (Vec::new(), "advanced_target_culture"),
-        "advanced_target_culture_with_culture_building_debt" => {
-            (Vec::new(), "advanced_target_culture_with_culture_building_debt")
-        }
+        "advanced_target_culture_with_culture_building_debt" => (
+            Vec::new(),
+            "advanced_target_culture_with_culture_building_debt",
+        ),
         "advanced_target_religious" => (Vec::new(), "advanced_target_religious"),
         "advanced_target_diplomatic" => (Vec::new(), "advanced_target_diplomatic"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
