@@ -11,20 +11,20 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Evaluator-only agents | 210 |
-| Live-bridge treatments | 75 |
+| Evaluator-only agents | 211 |
+| Live-bridge treatments | 76 |
 | Firaxis-only treatments | 23 |
-| Native engine-repair treatments | 52 |
-| Withholdable live treatments | 52 |
+| Native engine-repair treatments | 53 |
+| Withholdable live treatments | 53 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **52**
+- Withholdable live treatments: **53**
 - Named somewhere in the evidence: **18**
-- **Never named in any round: 34**
+- **Never named in any round: 35**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -40,7 +40,7 @@ them is what stayed invisible.
 
 Never named:
 
-`amenity-district-path`, `amenity-project-preemption`, `army-target-weighs-enemy`, `blind-objective-strength`, `blind-objective-units`, `campus-every-city`, `district-coverage`, `endgame-war-runway`, `escort-unstick`, `garrison-under-fire`, `garrison-walls`, `governor-every-lane`, `housing-buildings`, `housing-cards`, `housing-districts`, `housing-research`, `loyalty-rate-alarm`, `muster-at-command-radius`, `ranged-line-of-sight`, `relief-targets-the-siege`, `religion-sues-peace`, `score-horizon`, `siege-commitment`, `siege-role`, `siege-tracks-wall`, `slot-kind-tiebreak`, `stacked-escort`, `stranded-settler-discount`, `suzerain-cards`, `war-economy`, `war-patience`, `war-reinforcement`, `wide-map-capacity`, `wonder-ring-settle-value`
+`amenity-district-path`, `amenity-project-preemption`, `army-target-weighs-enemy`, `blind-objective-strength`, `blind-objective-units`, `campus-every-city`, `district-coverage`, `endgame-war-runway`, `escort-unstick`, `garrison-under-fire`, `garrison-walls`, `governor-every-lane`, `housing-buildings`, `housing-cards`, `housing-districts`, `housing-research`, `loyalty-rate-alarm`, `muster-at-command-radius`, `ranged-line-of-sight`, `relief-targets-the-siege`, `religion-sues-peace`, `score-horizon`, `siege-commitment`, `siege-is-progress`, `siege-role`, `siege-tracks-wall`, `slot-kind-tiebreak`, `stacked-escort`, `stranded-settler-discount`, `suzerain-cards`, `war-economy`, `war-patience`, `war-reinforcement`, `wide-map-capacity`, `wonder-ring-settle-value`
 
 ## Live ladder
 
