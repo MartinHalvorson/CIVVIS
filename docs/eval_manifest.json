@@ -1,6 +1,6 @@
 {
   "coverage": {
-    "named": 17,
+    "named": 18,
     "never_named": 34,
     "never_named_treatments": [
       "amenity-district-path",
@@ -38,14 +38,14 @@
       "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 51
+    "withholdable": 52
   },
   "derived": {
-    "eval_only_count": 208,
-    "firaxis_only_count": 23,
+    "eval_only_count": 209,
+    "firaxis_only_count": 22,
     "live_bridge_count": 74,
-    "native_engine_repair_count": 51,
-    "withholdable_live_count": 51
+    "native_engine_repair_count": 52,
+    "withholdable_live_count": 52
   },
   "ladder": {
     "attempts": 317,
@@ -97,7 +97,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 51,
+      "declared_count": 52,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -123,6 +123,7 @@
         "ranged-line-of-sight",
         "recon-replacement",
         "recon-flight",
+        "barbarian-scouts-are-scouts",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -153,7 +154,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 28,
+      "declared_count": 29,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -179,6 +180,7 @@
         "ranged-line-of-sight",
         "recon-replacement",
         "recon-flight",
+        "barbarian-scouts-are-scouts",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -186,7 +188,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 208,
+      "declared_count": 209,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -349,6 +351,7 @@
         "advanced_maritime_splice",
         "advanced_sea_answers",
         "advanced_camp_bounty",
+        "advanced_without_barbarian_scouts_are_scouts",
         "advanced_engine_faith_price",
         "advanced_maintenance_deck",
         "advanced_recon_fleet",
@@ -399,7 +402,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 23,
+      "declared_count": 22,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -416,7 +419,6 @@
         "culture-coverage",
         "frontier-loyalty",
         "tally-great-people",
-        "barbarian-scouts-are-scouts",
         "deny-while-targeted",
         "stock-denial-lead-time",
         "parallel-settlers",

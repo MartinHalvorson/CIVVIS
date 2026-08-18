@@ -227,6 +227,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_maritime_splice",
     "advanced_sea_answers",
     "advanced_camp_bounty",
+    "advanced_without_barbarian_scouts_are_scouts",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
@@ -509,10 +510,6 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // Prices the Settler seat's tally (five a Great Person); the native lanes
     // keep the bred closeness limit.
     "tally-great-people",
-    // Encodes a rule of Firaxis' barbarians (their scouts neither attack nor
-    // capture); CIVVIS's own barbarian scouts do, so the native model keeps
-    // pricing them.
-    "barbarian-scouts-are-scouts",
     // Only a seat playing under an assigned lane (`--victory science`, the
     // Settler seat's standing order) has a target gate to override; the
     // native gate agents are adaptive, so the flag cannot fire there.
@@ -561,6 +558,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
+    "barbarian-scouts-are-scouts",
     "naval-recon",
     "camp-reach",
     "camp-party",
@@ -623,6 +621,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
+    "barbarian-scouts-are-scouts",
     "naval-recon",
     "camp-reach",
     "camp-party",
@@ -837,6 +836,7 @@ define_arm_kinds! {
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedCampBounty => "advanced_camp_bounty",
+    AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
@@ -3210,6 +3210,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_camp_bounty();
             Box::new(ai)
         }
+        // Withhold the native barbarian-scout exemption so its promotion is
+        // priced: the stock controller ships it ON.
+        "advanced_without_barbarian_scouts_are_scouts" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_barbarian_scouts_are_scouts();
+            Box::new(ai)
+        }
         // Read the Faith price from the engine rather than the Standard-speed
         // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
         // speed -- that literal asks for twice what the engine charges, and it
@@ -4283,6 +4290,7 @@ impl ArmKind {
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
+            Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
@@ -4783,6 +4791,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
+        "advanced_without_barbarian_scouts_are_scouts" => {
+            (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
+        }
         "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
@@ -6094,6 +6105,7 @@ mod tests {
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
                 "advanced_camp_bounty",
+                "advanced_without_barbarian_scouts_are_scouts",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",
@@ -6385,8 +6397,6 @@ mod tests {
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
             "tally_great_people",
-            // Firaxis' barbarian scouts do not capture; CIVVIS's do.
-            "barbarian_scouts_are_scouts",
             // Only a seat playing under an assigned lane (`--victory
             // science`, the Settler seat's standing order) has a target gate
             // to override; the native gate agents are adaptive, so the flag

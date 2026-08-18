@@ -2822,10 +2822,16 @@ pub struct AdvancedAi {
     /// settler's retreat, the guard wait, the site risk and `recon_flight` —
     /// skips a unit that is barbarian-owned AND of the recon promotion class.
     /// Barbarian warriors, archers, horsemen and galleys count exactly as
-    /// before, as does every unit of a rival at war. Firaxis-only: CIVVIS's
-    /// own barbarian scouts DO capture (`capture_adjacent_civilian` runs for
-    /// them), so the native model keeps pricing them. Off for ordinary and
-    /// frozen controllers.
+    /// before, as does every unit of a rival at war. True in BOTH regimes:
+    /// Firaxis' barbarian scouts neither attack nor capture, and neither can
+    /// CIVVIS's — the barbarian seat's military units never reach
+    /// `capture_adjacent_civilian` (the minor-seat gate returns them to
+    /// fortify first), and the engine's own scout phase moves its recon by
+    /// `relocate`, which has no capture hook. The old Firaxis-only scoping
+    /// rested on the claim that native barbarian scouts capture; reading the
+    /// path shows they cannot, so production Advanced now carries the
+    /// exemption natively (`advanced_without_barbarian_scouts_are_scouts`
+    /// prices the withhold). Off for the frozen controllers.
     pub barbarian_scouts_are_scouts: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
@@ -3565,6 +3571,15 @@ impl AdvancedAi {
         ai.enable_recon_flight();
         ai.enable_naval_recon();
         ai.enable_come_ashore();
+        // A barbarian scout is a scout in both regimes: Firaxis' neither
+        // attack nor capture, and the native seat's provably cannot (the
+        // minor-seat gate freezes its military units and the engine scout
+        // phase moves by `relocate`, which has no capture hook). Pricing one
+        // like a Warrior pinned a whole live opening for twenty turns
+        // (civvis-20260816T151716Z) and natively makes settlers retreat from
+        // a unit that cannot act. `advanced_without_barbarian_scouts_are_scouts`
+        // prices the withhold.
+        ai.enable_barbarian_scouts_are_scouts();
         ai
     }
 
@@ -4990,6 +5005,10 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And a barbarian scout is a scout in both regimes — it can neither
+        // attack nor capture, so nothing retreats from one. See
+        // `barbarian_scouts_are_scouts`.
+        self.enable_barbarian_scouts_are_scouts();
         // And a settler target dropped for danger stays dropped for a while.
         // See `settler_target_hysteresis`.
         self.enable_settler_target_hysteresis();
