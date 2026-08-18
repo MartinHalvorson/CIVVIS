@@ -12445,7 +12445,8 @@ mod tests {
                 .into_iter()
                 .find(|unit| game.units[unit].kind == "settler")
                 .unwrap();
-            game.apply(*pid, &Action::FoundCity { unit: settler }).unwrap();
+            game.apply(*pid, &Action::FoundCity { unit: settler })
+                .unwrap();
             game.players[*pid].faith = 200.0;
         }
         game.current = 0;
@@ -12463,9 +12464,12 @@ mod tests {
             founded.iter().all(Option::is_some),
             "an empire with the faith and no pantheon: {founded:?}"
         );
-        let distinct: std::collections::BTreeSet<&String> =
-            founded.iter().flatten().collect();
-        assert_eq!(distinct.len(), majors.len(), "a pantheon was taken twice: {founded:?}");
+        let distinct: std::collections::BTreeSet<&String> = founded.iter().flatten().collect();
+        assert_eq!(
+            distinct.len(),
+            majors.len(),
+            "a pantheon was taken twice: {founded:?}"
+        );
         // Non-vacuous: more majors than the six the old list could name, so at
         // least two of these come from the discovered part of the roster.
         assert!(majors.len() > 6);

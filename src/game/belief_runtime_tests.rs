@@ -1133,8 +1133,10 @@ fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
         position
     };
 
-    for (seed, belief, improvement, resource, read, amount) in [
-        (91_770_u64, "goddess_of_the_hunt", "camp", None, "food", 1.0_f64),
+    // (seed, belief, improvement, resource on the tile, yield read, amount paid)
+    type Case = (u64, &'static str, &'static str, Option<&'static str>, &'static str, f64);
+    let cases: [Case; 9] = [
+        (91_770, "goddess_of_the_hunt", "camp", None, "food", 1.0),
         (91_771, "goddess_of_the_hunt", "camp", None, "production", 1.0),
         (91_772, "stone_circles", "quarry", None, "faith", 2.0),
         (91_773, "goddess_of_festivals", "plantation", None, "culture", 1.0),
@@ -1145,7 +1147,8 @@ fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
         (91_776, "god_of_craftsmen", "mine", Some("iron"), "production", 1.0),
         (91_777, "god_of_craftsmen", "mine", Some("iron"), "faith", 1.0),
         (91_778, "god_of_craftsmen", "mine", Some("copper"), "faith", 0.0),
-    ] {
+    ];
+    for (seed, belief, improvement, resource, read, amount) in cases {
         let (mut game, cities) = game_with_capitals(seed);
         let city = cities[0];
         improved(&mut game, city, improvement, resource);

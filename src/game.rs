@@ -28596,7 +28596,8 @@ impl Game {
         ys.production +=
             self.pantheon_effect(city.owner, "camp_production") * active_improvements("camp");
         // Stone Circles: STONE_CIRCLES_QUARRY_FAITH_MODIFIER, +2 on a Quarry.
-        ys.faith += self.pantheon_effect(city.owner, "quarry_faith") * active_improvements("quarry");
+        ys.faith +=
+            self.pantheon_effect(city.owner, "quarry_faith") * active_improvements("quarry");
         // Goddess of Festivals: the expansion deletes the base game's
         // PLANTATION_TAG_FOOD row and grants Culture instead.
         ys.culture += self.pantheon_effect(city.owner, "plantation_culture")
