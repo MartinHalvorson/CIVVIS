@@ -7,11 +7,11 @@
     "withholdable_live_count": 51
   },
   "ladder": {
-    "attempts": 307,
-    "configured": 303,
-    "latest_utc": "2026-08-17T05:43:41Z",
-    "terminal": 199,
-    "wins": 2
+    "attempts": 313,
+    "configured": 309,
+    "latest_utc": "2026-08-18T03:16:49Z",
+    "terminal": 205,
+    "wins": 3
   },
   "registry": {
     "BUILTIN_AIS": {
