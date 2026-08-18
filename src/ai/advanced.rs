@@ -8157,9 +8157,7 @@ impl AdvancedAi {
             {
                 return None;
             }
-        } else if pressure.progress < 78
-            || (!urgent && pressure.progress < own_progress + 15)
-        {
+        } else if pressure.progress < 78 || (!urgent && pressure.progress < own_progress + 15) {
             return None;
         }
         // Four of the seven races answer themselves — a culture threat is met
