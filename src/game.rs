@@ -29076,6 +29076,10 @@ impl Game {
                 || t.improvement.as_deref() == Some(name)
                 || (spec.requires_hills && !t.hills)
                 || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
+                || (spec.hills_or_resource_or_feature
+                    && !t.hills
+                    && visible_resource.is_none()
+                    && !feature_route)
                 || (spec.hills_or_feature && !t.hills && !feature_route)
                 || (spec.requires_flat
                     && t.hills

@@ -930,6 +930,20 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v11 (2026-08-18) — the remaining Gathering Storm rule rows use the
+/// installed source values and placement semantics.** Pike-and-Shot, Tagma,
+/// Prasat, Sukiennice, Tlachtli, and Eyjafjallajökull now carry their effective
+/// Gathering Storm values; Monastery, Mine, Terrace Farm, and Rock-Hewn Church
+/// also distinguish Hills, resources, and Volcanic Soil as the source does.
+///
+/// These are shared native-world rules, not live-adapter treatments. They can
+/// change openings, economics, military upgrades, and legal Builder actions
+/// before or during any controller's turn. The frozen anchor therefore changes
+/// from 18,502 actions and `0x1645_2073_bb4b_2b2b` to 18,503 and
+/// `0x70c7_8503_3e29_380f` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v10 and v11 rows are not
+/// comparable.
+///
 /// **v10 (2026-08-18) — map resources use the shipped placement weights.**
 /// Civilization VI's `Resources.Frequency` and `SeaFrequency` make, for
 /// example, Fish (23) far more common than Whales (1), and Stone (10) more
@@ -1005,7 +1019,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// Rows before and after v9 are not comparable wherever an improvement was ever
 /// pillaged, which on any map with barbarians is most of them.
-pub const ELO_PROTOCOL_VERSION: u32 = 10;
+pub const ELO_PROTOCOL_VERSION: u32 = 11;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

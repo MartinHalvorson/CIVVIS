@@ -1025,18 +1025,31 @@ def project_improvements(database: Database) -> dict[str, dict]:
     for row in database.rows("Improvements"):
         name = slug(row["ImprovementType"], "IMPROVEMENT_")
         bases, flat_land, hills, mountain = collapse_terrains(terrains.get(name, []))
+        valid_features = features.get(name, set()) & civvis_features
+        hills_only = hills and not flat_land
+        has_resources = bool(resources.get(name))
+        has_features = bool(valid_features)
+        hills_or_resource_or_feature = (
+            hills_only and has_resources and has_features
+        )
+        hills_or_resource = hills_only and has_resources and not has_features
+        hills_or_feature = hills_only and has_features and not has_resources
         entry = {
             "yields": yields.get(name, {}),
             # The game column counts half-Housing steps: Farms carry 1 for
             # their +0.5, Seasteads 4 for their +2.
             "housing": number(row.get("Housing")),
             "terrain": bases,
-            "feature": features.get(name, set()) & civvis_features,
+            "feature": valid_features,
             "resources": resources.get(name, set()),
             "builder_buildable": name in builder_built,
             "requires_flat": flat_land and not hills and not mountain,
-            "requires_hills": hills and not flat_land and not resources.get(name),
-            "hills_or_resource": hills and not flat_land and bool(resources.get(name)),
+            "requires_hills": hills_only and not has_resources and not has_features,
+            "hills_or_resource": hills_or_resource,
+            # Valid resources and features are independent alternative hosts.
+            # Mine accepts Hills, its resource rows, or Volcanic Soil.
+            "hills_or_resource_or_feature": hills_or_resource_or_feature,
+            "hills_or_feature": hills_or_feature,
         }
         if row.get("PrereqTech"):
             entry["tech"] = slug(row["PrereqTech"], "TECH_")
@@ -2105,6 +2118,10 @@ def ours_improvements() -> dict[str, dict]:
             "requires_flat": entry.get("requires_flat", False),
             "requires_hills": entry.get("requires_hills", False),
             "hills_or_resource": entry.get("hills_or_resource", False),
+            "hills_or_resource_or_feature": entry.get(
+                "hills_or_resource_or_feature", False
+            ),
+            "hills_or_feature": entry.get("hills_or_feature", False),
         }
         for key in ("tech", "civic"):
             if entry.get(key):
