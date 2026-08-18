@@ -5,7 +5,12 @@
     "religious_settlements": {"note":"receive a free Settler in the capital; border expansion 15% faster","effects":{"border_growth_pct":15,"free_settler":1}},
     "god_of_the_open_sky": {"note":"+1 culture per pasture","effects":{"pasture_culture":1}},
     "god_of_the_sea": {"note":"+1 production per fishing boats","effects":{"fishing_boats_production":1}},
-    "divine_spark": {"note":"+1 Great Scientist point from Campuses with a Library, +1 Great Prophet point from Holy Sites, and +1 Great Writer point from Theater Squares with an Amphitheater","effects":{"district_gpp":1}}
+    "divine_spark": {"note":"+1 Great Scientist point from Campuses with a Library, +1 Great Prophet point from Holy Sites, and +1 Great Writer point from Theater Squares with an Amphitheater","effects":{"district_gpp":1}},
+    "goddess_of_the_hunt": {"note":"+1 Food and +1 Production from Camps","effects":{"camp_food":1,"camp_production":1}},
+    "stone_circles": {"note":"+2 Faith from Quarries","effects":{"quarry_faith":2}},
+    "goddess_of_festivals": {"note":"+1 Culture from Plantations","effects":{"plantation_culture":1}},
+    "religious_idols": {"note":"+2 Faith from Mines over Bonus and Luxury resources","effects":{"resource_mine_faith":2}},
+    "god_of_craftsmen": {"note":"+1 Production and +1 Faith from improved Strategic resources","effects":{"strategic_improved_production":1,"strategic_improved_faith":1}}
   },
   "founder": {
     "tithe": {"note":"+3 Gold for each city following this religion","effects":{"gold_per_city":3}},

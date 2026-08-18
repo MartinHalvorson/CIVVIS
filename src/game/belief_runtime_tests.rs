@@ -1107,6 +1107,81 @@ fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
     );
 }
 
+/// The five pantheons added on 2026-08-18 pay what the install says they pay.
+///
+/// ⚠ Read from the Gathering Storm **install** (`Expansion*/Data/*.xml`), not
+/// the compiled cache. Two of these five are cases where the expansion deletes
+/// the base game's row and grants something else — Goddess of Festivals pays
+/// Culture where the base game paid Food, and God of Craftsmen pays on any
+/// improved Strategic resource where the base game paid only on a Mine. The
+/// cache on a machine that last ran the base game states the opposite of both,
+/// which is how #2049 shipped four Vanilla belief values as Gathering Storm.
+#[test]
+fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
+    let improved = |game: &mut Game, city: u32, improvement: &str, resource: Option<&str>| {
+        // The first owned tile that is not the city centre, given an
+        // improvement and optionally the resource the pantheon asks for.
+        let position = *game.cities[&city]
+            .owned_tiles
+            .iter()
+            .find(|position| **position != game.cities[&city].pos)
+            .expect("a capital owns more than its centre");
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.improvement = Some(crate::name::Name::new(improvement));
+        tile.pillaged = false;
+        tile.resource = resource.map(crate::name::Name::new);
+        position
+    };
+
+    // (belief, improvement, resource on the tile, yield read, amount paid).
+    // The seed is the index, so each case gets its own map.
+    type Case = (
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        &'static str,
+        f64,
+    );
+    let cases: [Case; 9] = [
+        ("goddess_of_the_hunt", "camp", None, "food", 1.0),
+        ("goddess_of_the_hunt", "camp", None, "production", 1.0),
+        ("stone_circles", "quarry", None, "faith", 2.0),
+        ("goddess_of_festivals", "plantation", None, "culture", 1.0),
+        // Religious Idols asks for a Mine over a Bonus or Luxury resource.
+        ("religious_idols", "mine", Some("iron"), "faith", 0.0),
+        ("religious_idols", "mine", Some("copper"), "faith", 2.0),
+        // God of Craftsmen asks only that a Strategic resource be worked.
+        ("god_of_craftsmen", "mine", Some("iron"), "production", 1.0),
+        ("god_of_craftsmen", "mine", Some("iron"), "faith", 1.0),
+        ("god_of_craftsmen", "mine", Some("copper"), "faith", 0.0),
+    ];
+    for (index, (belief, improvement, resource, read, amount)) in cases.into_iter().enumerate() {
+        let seed = 91_770_u64 + index as u64;
+
+        let (mut game, cities) = game_with_capitals(seed);
+        let city = cities[0];
+        improved(&mut game, city, improvement, resource);
+        let read_yield = |game: &Game| {
+            let ys = game.city_yields(city);
+            match read {
+                "food" => ys.food,
+                "production" => ys.production,
+                "faith" => ys.faith,
+                _ => ys.culture,
+            }
+        };
+        let bare = read_yield(&game);
+        game.players[0].pantheon = Some(belief.to_string());
+        // `city_yields` memoizes per read-only scope; these reads are separate
+        // scopes, so nothing is cached across the pantheon being adopted.
+        let paid = read_yield(&game) - bare;
+        assert_eq!(
+            paid, amount,
+            "{belief} on a {improvement} with resource {resource:?}: {read} moved by {paid}"
+        );
+    }
+}
+
 #[test]
 fn pantheons_spend_faith_grant_units_and_apply_exact_production_gates() {
     for (seed, belief, unit) in [

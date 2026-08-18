@@ -5087,7 +5087,20 @@ impl BasicAi {
             && g.players[pid].pantheon.is_none()
             && g.players[pid].faith >= g.pantheon_faith_cost()
         {
-            for (rank, b) in [
+            // ⚠⚠ THIS LIST USED TO BE THE WHOLE ROSTER, AND THAT IS WHY IT IS
+            // NO LONGER JUST A LIST. It named exactly the six pantheons
+            // `beliefs.json` happened to carry, so a pantheon added to the data
+            // was unreachable: the loop only ever tried these six and stopped at
+            // the first that took. `AGENTS.md` calls this out by name —
+            // "discover, never list" — and the follower and founder rosters
+            // twenty lines below already do it properly. Pantheons were the one
+            // class that did not.
+            //
+            // The named order is kept as a preference prefix, so nothing changes
+            // while only those six exist or while one of them is still free.
+            // What changes is the case that used to have no answer at all: every
+            // named pantheon taken, and the empire founding none.
+            let mut pantheons: Vec<String> = [
                 "divine_spark",
                 "fertility_rites",
                 "god_of_the_forge",
@@ -5096,8 +5109,15 @@ impl BasicAi {
                 "god_of_the_sea",
             ]
             .into_iter()
-            .enumerate()
-            {
+            .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
+            .map(str::to_string)
+            .collect();
+            for belief in g.rules.beliefs.pantheon.keys() {
+                if !pantheons.contains(belief) {
+                    pantheons.push(belief.clone());
+                }
+            }
+            for (rank, b) in pantheons.iter().map(String::as_str).enumerate() {
                 if g.apply(
                     pid,
                     &Action::ChoosePantheon {
@@ -12401,6 +12421,60 @@ mod tests {
     use super::*;
     use crate::ai::advanced::AdvancedAi;
     use crate::parallel::WorkPool;
+
+    /// ⚠⚠ AN EIGHT-PLAYER GAME LEFT TWO EMPIRES WITH NO PANTHEON AT ALL.
+    ///
+    /// The chooser tried a hand-written list of exactly the six pantheons
+    /// `beliefs.json` carried, in order, and stopped at the first that took. A
+    /// pantheon is exclusive, so once six empires had founded one the seventh
+    /// and eighth ran the loop, found every name taken, and founded nothing —
+    /// while holding the faith to pay for it, for the rest of the game. The
+    /// `audit` and `soak` defaults are eight players.
+    ///
+    /// The list is now a preference *prefix* over a roster read from the rules,
+    /// which is what the follower and founder choosers twenty lines below it
+    /// have always done. `AGENTS.md`: discover, never list.
+    #[test]
+    fn every_major_can_found_a_pantheon_when_there_are_more_majors_than_favourites() {
+        let mut game = Game::new_full(8, 40, 26, 5_811, 200, 0, false);
+        let majors: Vec<usize> = (0..8).collect();
+        for pid in &majors {
+            game.current = *pid;
+            let settler = game
+                .player_unit_ids(*pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(*pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+            game.players[*pid].faith = 200.0;
+        }
+        game.current = 0;
+        let mut ai = BasicAi::new();
+        ai.pursue_religion = true;
+        for pid in &majors {
+            game.current = *pid;
+            ai.research_with_government(&mut game, *pid, false, None);
+        }
+        let founded: Vec<Option<String>> = majors
+            .iter()
+            .map(|pid| game.players[*pid].pantheon.clone())
+            .collect();
+        assert!(
+            founded.iter().all(Option::is_some),
+            "an empire with the faith and no pantheon: {founded:?}"
+        );
+        let distinct: std::collections::BTreeSet<&String> = founded.iter().flatten().collect();
+        assert_eq!(
+            distinct.len(),
+            majors.len(),
+            "a pantheon was taken twice: {founded:?}"
+        );
+        // Non-vacuous: more majors than the six the old list could name, so at
+        // least two of these come from the discovered part of the roster.
+        assert!(majors.len() > 6);
+        assert!(game.rules.beliefs.pantheon.len() >= majors.len());
+    }
 
     #[test]
     fn live_policy_counterfactuals_replay_serially_on_workers() {
