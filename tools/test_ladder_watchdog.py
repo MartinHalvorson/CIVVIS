@@ -614,6 +614,22 @@ class OvernightAuditRecovery(unittest.TestCase):
                         source.index('if (( live_events && tiles_exported && ! mirror_healthy ))'))
         self.assertNotIn('tell application "Terminal" to do script', source)
 
+    def test_a_healthy_primary_mirror_does_not_wait_for_an_absent_backup_keeper(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-audit.sh").read_text()
+        self.assertIn('&& mirror_needs_settle; then', source)
+        start = source.index('mirror_needs_settle() {')
+        end = source.index('\n}', start) + 2
+        predicate = source[start:end]
+        cases = (("primary", 1, 1), ("", 1, 0), ("primary", 0, 0))
+        for follower, healthy, expected in cases:
+            result = subprocess.run(
+                ["/bin/zsh", "-c",
+                 f"{predicate}\nfollower_pid={follower!r}\n"
+                 f"mirror_healthy={healthy}\nmirror_needs_settle"],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, expected, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
