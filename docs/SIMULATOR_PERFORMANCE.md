@@ -590,3 +590,93 @@ in this file — interned effect maps, route scratch reuse, traversal profiles �
 all tried to make frequent cheap work cheaper, and all measured null or worse.
 That asymmetry is now eight nulls against four wins, and it has never gone the
 other way.
+
+## 2026-08-17 the profile after the settlement work, and three rejections
+
+#1911 and #1917 both cut the settlement scan. This is what the profile looks
+like afterwards, and three further changes that were built, measured and
+**rejected**. All four measurements used the same harness: byte-identical
+game reports between arms (so the agent made every same decision and any time
+difference is pure overhead), then interleaved runs taking the best of two per
+arm per seed. Baseline against itself reads ±0.2%, which is the noise floor
+every claim below is judged against.
+
+⚠ **A second session was running CIVVIS games on the same host for part of this
+work.** One seed read +26.7% purely from CPU contention. Where a result mattered
+it was re-measured with the host quiet, or established with a deterministic
+counter instead of a clock.
+
+### The profile is now flat
+
+| leaf | % of working samples |
+| --- | ---: |
+| `memmove` / `memcmp` / `free` / `malloc` together | **~18%** |
+| `vision_input_stamp_with_suzerains` | 2.3% |
+| `Sphere::disk` + `Sphere::distance` | 3.8% |
+| `settlement_growth_forecast_from_positions` | 2.1% |
+| `district_adjacency_assuming_with_family…` | 1.9% |
+| `Name::new` | 1.9% |
+| `build_reverse_flow_field` | 1.8% |
+
+Nothing named is over 2.5%. The settlement scan no longer dominates, and the
+largest remaining block is not a function but the allocator.
+
+### Rejected: hoisting the interned family name out of the neighbour filter
+
+The `district_family` adjacency arm called `Name::new(district_family)` inside
+its per-neighbour filter, in both branches — an obvious hoist.
+
+**It is a 10× pessimization, and only a counter shows it.** The intern sat
+behind `t.district.is_some_and(…)`, which short-circuits on the common case of
+a neighbour with no district. Instrumented over one 150-turn game: the arm is
+entered **11,053,403** times while the intern inside the filter ran **1,025,006**
+times. Hoisting moves 1.03M interns to 11.05M. Wall-clock could not resolve it;
+the counter is unambiguous.
+
+(#1917 later restructured this arm so the family is resolved once and compared
+as a family rather than re-derived per neighbour, which is the shape that
+actually pays.)
+
+### Rejected: a plot-scoped memo of neighbouring district families
+
+Which families sit beside a plot does not depend on which district is being
+priced, and the scan prices about 4.4 districts per plot, so a plot-scoped memo
+should remove repeated six-neighbour scans. It does: instrumented at
+**11,053,403 arm entries → 7,381,112 scans**, 3.67M scans removed per game.
+
+Measured **−4.1% wall on six seeds** against the pre-#1917 baseline, with
+identical play. Then #1917 landed, and re-measured on top of it the same change
+is **−1.2% on four seeds and −0.1% on four more** — inside the noise floor.
+#1917 removed the same work more directly by not valuing candidates the scan
+discards, so the repeats were largely already gone. Closed unmerged: an extra
+parameter, a scratch buffer and a branch in the hottest adjacency arm are not
+worth 0.1%.
+
+**The lesson is about overlap, not about the idea.** Two sessions optimizing one
+subsystem in parallel will each measure a real win against a baseline that the
+other is about to remove. Re-measure against current `main` immediately before
+shipping a performance change, not against the tree you started from.
+
+### Rejected: reserving the sphere disk and ring result size
+
+`hex::disk` reserves its exact `1 + 3r(r + 1)` size, and the July pass records
+that as one of four changes worth keeping. `Sphere::disk` and `Sphere::ring`
+were never given the same treatment: both `collect` a filtered iterator, which
+has no size hint, so a nineteen-tile radius-2 disk grows 1→2→4→8→16→32. The
+globe is what `--shape` defaults to, so this is the path the shipped
+configuration takes.
+
+Reserved both. **−0.2% over six seeds — exactly the noise floor.** The
+allocations are small and short-lived and this platform's allocator handles them
+cheaply; the growth copies are a `memmove` of at most 152 bytes. Reverted rather
+than shipped, because a correct-looking change that buys nothing is still a
+change to read.
+
+### What this says about the ~18% in the allocator
+
+Three separate attempts to remove allocation and copying from named hot spots
+bought nothing measurable, which agrees with the July finding that a wholesale
+borrowed API also showed no win. The allocator cost is real but it is **spread
+thin** — no single call site owns enough of it to repay a targeted fix. Anything
+that moves this number will have to be structural (arena or reuse across a whole
+turn), and that is a correctness and determinism risk rather than a local edit.

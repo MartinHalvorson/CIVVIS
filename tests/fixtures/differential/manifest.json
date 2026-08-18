@@ -1,0 +1,39 @@
+{
+  "records": 6,
+  "turns": [
+    0,
+    1
+  ],
+  "frames": [
+    {
+      "key": [0, "setup", 0],
+      "kind": "state",
+      "sha256": "49962e82a8db3016ac2f7f01fb99c22ebba6e26a96f648fb81cb1123baa6f9c4"
+    },
+    {
+      "key": [0, "orders", 0],
+      "kind": "orders",
+      "sha256": "f848604f4d88d637d4037397e4edc05432105424aeccb64dc77c9bdcd5c6d227"
+    },
+    {
+      "key": [0, "end", 0],
+      "kind": "turn",
+      "sha256": "ae765ff5dd5c8f88c40d7722c99ef3dff1492336d194a2a78354d68d1f5f75e2"
+    },
+    {
+      "key": [1, "setup", 0],
+      "kind": "state",
+      "sha256": "9a7a7425437d9ae2f2b48696fe810c391cceedcf9890b570aba2bddcb4a55dd7"
+    },
+    {
+      "key": [1, "orders", 0],
+      "kind": "orders",
+      "sha256": "ccdabe9f350074c60fe1544393a14cd9860401219e63555e76b9a5f629bde7f1"
+    },
+    {
+      "key": [1, "end", 0],
+      "kind": "turn",
+      "sha256": "98325512097b9d53eef31155ac14d421b4bb9c223dff9e1862f1a1d7a134eb3f"
+    }
+  ]
+}
