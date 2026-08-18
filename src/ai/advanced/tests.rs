@@ -1526,22 +1526,58 @@ fn the_land_grab_wants_the_land_not_a_rung() {
 #[test]
 fn the_land_grab_pipeline_widens_with_the_empire() {
     let mut ai = AdvancedAi::new();
-    assert_eq!(ai.settler_in_flight_allowed(16, 1, 0), 1, "off unless the bridge asks");
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 1, 0),
+        1,
+        "off unless the bridge asks"
+    );
     ai.enable_land_grab();
-    assert_eq!(ai.settler_in_flight_allowed(16, 1, 0), 2, "one city: two walkers");
-    assert_eq!(ai.settler_in_flight_allowed(16, 1, 1), 2, "the second may start while the first walks");
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 1, 0),
+        2,
+        "one city: two walkers"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 1, 1),
+        2,
+        "the second may start while the first walks"
+    );
     assert_eq!(ai.settler_in_flight_allowed(16, 2, 1), 2);
-    assert_eq!(ai.settler_in_flight_allowed(16, 3, 0), 3, "three cities: three walkers");
-    assert_eq!(ai.settler_in_flight_allowed(16, 6, 2), 4, "six cities: four");
-    assert_eq!(ai.settler_in_flight_allowed(16, 9, 0), 5, "nine cities: five");
-    assert_eq!(ai.settler_in_flight_allowed(16, 14, 0), 2, "two seats short: two walkers");
-    assert_eq!(ai.settler_in_flight_allowed(16, 15, 0), 1, "one seat short: one walker");
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 3, 0),
+        3,
+        "three cities: three walkers"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 6, 2),
+        4,
+        "six cities: four"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 9, 0),
+        5,
+        "nine cities: five"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 14, 0),
+        2,
+        "two seats short: two walkers"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 15, 0),
+        1,
+        "one seat short: one walker"
+    );
     assert_eq!(
         ai.settler_in_flight_allowed(16, 15, 1),
         1,
         "the walker covers the last seat; the target stays the hard cap"
     );
-    assert_eq!(ai.settler_in_flight_allowed(16, 16, 0), 1, "at the target the arm's own gate refuses");
+    assert_eq!(
+        ai.settler_in_flight_allowed(16, 16, 0),
+        1,
+        "at the target the arm's own gate refuses"
+    );
     assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(16, 3, 0), 1);
 }
 

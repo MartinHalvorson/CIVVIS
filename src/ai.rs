@@ -269,11 +269,10 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
-    LIVE_TREATMENTS,
-    LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY,
+    AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GrandStrategy,
+    StrategicPlan, StrategyCensus, VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR,
+    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS,
     PRODUCTION_CITY_TARGET_FLOOR,
-    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    ExpansionCensus, StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -8494,7 +8493,8 @@ impl BasicAi {
             // cities, never more than the seats still short. See `land_grab`
             // and `AdvancedAi::settler_in_flight_allowed`, which opens the
             // same width for the strategic governor.
-            let seats_short = (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+            let seats_short =
+                (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
             let pipeline = if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
             } else if self.parallel_settlers
@@ -14567,7 +14567,13 @@ mod tests {
     #[test]
     fn the_land_grab_widens_the_pipeline_and_outlives_the_genomes_stop_turn() {
         let mut game = Game::new_full(
-            1, 24, 16, crate::rng::fixture_seed("LANDGRAB", 91_779), 250, 0, false,
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("LANDGRAB", 91_779),
+            250,
+            0,
+            false,
         );
         let first = game
             .player_unit_ids(0)
@@ -14584,9 +14590,8 @@ mod tests {
         let ask = |game: &Game, ai: &BasicAi, cities: usize, settlers: usize| {
             ai.pick_item(game, 0, capital, cities, settlers, 6, 2, 1, 20, 10, 10)
         };
-        let is_settler = |item: Option<Item>| {
-            matches!(item, Some(Item::Unit { unit }) if unit == "settler")
-        };
+        let is_settler =
+            |item: Option<Item>| matches!(item, Some(Item::Unit { unit }) if unit == "settler");
 
         // The wide target the bridge threads through `delegated_cities`.
         let mut treated = BasicAi::new();
