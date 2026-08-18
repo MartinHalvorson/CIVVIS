@@ -1133,9 +1133,9 @@ fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
         position
     };
 
-    // (seed, belief, improvement, resource on the tile, yield read, amount paid)
+    // (belief, improvement, resource on the tile, yield read, amount paid).
+    // The seed is the index, so each case gets its own map.
     type Case = (
-        u64,
         &'static str,
         &'static str,
         Option<&'static str>,
@@ -1143,19 +1143,21 @@ fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
         f64,
     );
     let cases: [Case; 9] = [
-        (91_770, "goddess_of_the_hunt", "camp", None, "food", 1.0),
-        (91_771, "goddess_of_the_hunt", "camp", None, "production", 1.0),
-        (91_772, "stone_circles", "quarry", None, "faith", 2.0),
-        (91_773, "goddess_of_festivals", "plantation", None, "culture", 1.0),
+        ("goddess_of_the_hunt", "camp", None, "food", 1.0),
+        ("goddess_of_the_hunt", "camp", None, "production", 1.0),
+        ("stone_circles", "quarry", None, "faith", 2.0),
+        ("goddess_of_festivals", "plantation", None, "culture", 1.0),
         // Religious Idols asks for a Mine over a Bonus or Luxury resource.
-        (91_774, "religious_idols", "mine", Some("iron"), "faith", 0.0),
-        (91_775, "religious_idols", "mine", Some("copper"), "faith", 2.0),
+        ("religious_idols", "mine", Some("iron"), "faith", 0.0),
+        ("religious_idols", "mine", Some("copper"), "faith", 2.0),
         // God of Craftsmen asks only that a Strategic resource be worked.
-        (91_776, "god_of_craftsmen", "mine", Some("iron"), "production", 1.0),
-        (91_777, "god_of_craftsmen", "mine", Some("iron"), "faith", 1.0),
-        (91_778, "god_of_craftsmen", "mine", Some("copper"), "faith", 0.0),
+        ("god_of_craftsmen", "mine", Some("iron"), "production", 1.0),
+        ("god_of_craftsmen", "mine", Some("iron"), "faith", 1.0),
+        ("god_of_craftsmen", "mine", Some("copper"), "faith", 0.0),
     ];
-    for (seed, belief, improvement, resource, read, amount) in cases {
+    for (index, (belief, improvement, resource, read, amount)) in cases.into_iter().enumerate() {
+        let seed = 91_770_u64 + index as u64;
+
         let (mut game, cities) = game_with_capitals(seed);
         let city = cities[0];
         improved(&mut game, city, improvement, resource);
