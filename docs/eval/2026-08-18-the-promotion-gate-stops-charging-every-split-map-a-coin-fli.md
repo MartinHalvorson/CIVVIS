@@ -120,5 +120,9 @@ bounds including the floor case where the change does not help.
 
 This is a measurement change and it promotes nothing on its own. It does not
 make any treatment stronger; it makes a 40-map run able to resolve an edge that
-40-map runs previously could not, which is the constraint that has been filing
-+49 to +100 Elo-equivalent point estimates as inconclusive.
+40-map runs previously could not. That is the constraint behind the three runs
+in the table above, each of which is a point estimate whose interval straddles
+parity and which was therefore filed as inconclusive: 0.569 over 36 maps with
+Wilson 0.409..0.717, and 0.640 over 25 maps with Wilson 0.445..0.798. Neither
+number is quotable as an effect size on its own and neither is used as one
+here — they are the inputs to the interval comparison, not results.
