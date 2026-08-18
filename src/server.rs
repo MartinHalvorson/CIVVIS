@@ -415,6 +415,7 @@ fn host_memory_percent() -> Option<f64> {
 }
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
+const EMBEDDED_APP_PALETTE_JS: &str = include_str!("../web/assets/app_palette.js");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
 /// The whole page source — the document plus its one external script — as a
 /// single searchable string. Only the source-contract tests read it: they
@@ -425,8 +426,16 @@ const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
 /// the repository's largest history payer at ~1 MB of pack growth per edit.)
 #[cfg(test)]
 static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
+    // ⚠ EVERY SCRIPT THE PAGE LOADS. A test that reads "the client" and gets
+    // only some of its scripts asserts about a program the browser never runs.
+    // Carving the palette out of app.js broke six of these at once for exactly
+    // that reason — the assertions were about terrain colours and tile art that
+    // had simply moved to the script beside it.
+    let mut page = String::with_capacity(
+        EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_PALETTE_JS.len() + EMBEDDED_APP_JS.len(),
+    );
     page.push_str(EMBEDDED_INDEX_HTML);
+    page.push_str(EMBEDDED_APP_PALETTE_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page
@@ -3384,6 +3393,7 @@ impl Session {
     }
 }
 
+const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 
@@ -3394,9 +3404,12 @@ const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#
 /// reload enough, but an instance-specific script URL means that even a tab
 /// with an older cache entry cannot keep executing the former server's UI.
 fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
+    let palette_tag =
+        format!(r#"<script src="/assets/app_palette.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
-    page.replacen(APP_JS_TAG, &app_tag, 1)
+    page.replacen(APP_PALETTE_JS_TAG, &palette_tag, 1)
+        .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .into_bytes()
 }
@@ -3417,6 +3430,15 @@ fn app_js() -> Vec<u8> {
         }
     }
     EMBEDDED_APP_JS.as_bytes().to_vec()
+}
+
+fn app_palette_js() -> Vec<u8> {
+    for p in ["web/assets/app_palette.js"] {
+        if let Ok(b) = std::fs::read(p) {
+            return b;
+        }
+    }
+    EMBEDDED_APP_PALETTE_JS.as_bytes().to_vec()
 }
 
 fn app_setup_js() -> Vec<u8> {
@@ -4597,6 +4619,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     match (method.as_str(), path.as_str()) {
         ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
+        }
+        ("GET", "/assets/app_palette.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_palette_js(),
+            );
         }
         ("GET", "/assets/app.js") => {
             respond(
