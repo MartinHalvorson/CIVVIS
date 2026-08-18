@@ -48,9 +48,25 @@
     "withholdable_live_count": 52
   },
   "ladder": {
+    "ahead": 6,
     "attempts": 317,
     "configured": 310,
+    "full_length": 133,
+    "graded": 17,
     "latest_utc": "2026-08-18T06:17:27Z",
+    "lead_best": 409,
+    "lead_median": -83,
+    "rival_bar_median": 1035,
+    "score_best": 1191,
+    "score_median": 449,
+    "stolen": {
+      "conquest": 1,
+      "culture": 24,
+      "diplomatic": 41,
+      "religious": 5,
+      "technology": 3
+    },
+    "stolen_while_ahead": 3,
     "terminal": 209,
     "wins": 3
   },

@@ -60,6 +60,11 @@ def _rust_string(value: str) -> str:
     return json.loads('"' + value + '"')
 
 
+# A game that reached this turn is one the ladder actually finished, so its
+# score is a result rather than the state it was in when something stopped it.
+LADDER_TERMINAL_TURNS = 248
+
+
 def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     source = (repo / "src" / "elo.rs").read_text(encoding="utf-8")
     found: dict[str, dict[str, Any]] = {}
@@ -103,6 +108,114 @@ def read_ladder(repo: Path) -> dict[str, Any]:
         "terminal": len(terminal),
         "wins": len(wins),
         "latest_utc": latest,
+        **ladder_distance(attempts),
+    }
+
+
+def ladder_distance(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    """How far the ladder is from a win, not only whether it got one.
+
+    ★★★★★ THE WIN COUNT IS THE LEAST INFORMATIVE STATISTIC THIS LEDGER HOLDS.
+    Three wins in 313 attempts is a number that moves about twice a month, so
+    it cannot show whether the bridge is improving between wins -- and it has
+    been improving. The terminal score is recorded on every attempt and says
+    so immediately: over the games that reached the turn limit, the daily
+    median ran 200-520 through 2026-08-15 and then 716, 977, 946 on the three
+    days after the actuation-gap work landed. None of that was visible here.
+
+    `rival_best` is the number that turns a score into a distance, and it has
+    only been recorded since 2026-08-16, so most terminal games are ungraded.
+    That is reported rather than hidden: a lead computed from six games is
+    worth having and worth labelling.
+    """
+    scored = sorted(
+        attempt["score"]
+        for attempt in attempts
+        if attempt.get("configured")
+        and isinstance(attempt.get("turns"), int)
+        and attempt["turns"] >= LADDER_TERMINAL_TURNS
+        and isinstance(attempt.get("score"), (int, float))
+        and attempt["score"] > 0
+    )
+    graded = [
+        (attempt["score"], attempt["rival_best"])
+        for attempt in attempts
+        if attempt.get("configured")
+        and isinstance(attempt.get("score"), (int, float))
+        and isinstance(attempt.get("rival_best"), (int, float))
+        and attempt["rival_best"] > 0
+    ]
+    out: dict[str, Any] = {
+        "full_length": len(scored),
+        "graded": len(graded),
+    }
+    if scored:
+        out["score_median"] = scored[len(scored) // 2]
+        out["score_best"] = scored[-1]
+    if graded:
+        leads = sorted(score - rival for score, rival in graded)
+        out["lead_median"] = leads[len(leads) // 2]
+        out["lead_best"] = leads[-1]
+        out["rival_bar_median"] = sorted(rival for _, rival in graded)[len(graded) // 2]
+        out["ahead"] = sum(1 for lead in leads if lead > 0)
+    out.update(ladder_endings(attempts))
+    return out
+
+
+# `victory_types` in the ledger, by index. Kept here rather than read from the
+# file so a ledger written by an older harness still renders.
+LADDER_VICTORY_NAMES = {
+    0: "score",
+    1: "default",
+    2: "conquest",
+    3: "culture",
+    4: "religious",
+    5: "technology",
+    6: "diplomatic",
+}
+
+
+def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    """What actually ends these games, and whether we were ahead when it did.
+
+    ★★★★★ THE LADDER IS NOT MOSTLY LOSING ON THE CLOCK. Of the graded attempts
+    on record, most end **before** turn 250 because a rival completed a culture
+    or diplomatic victory, and in several of those our own score was the
+    highest on the board -- once by 409. A seat that is ahead on score and
+    loses to somebody else's victory condition has a denial problem, not a
+    development problem, and the win count cannot tell those apart because both
+    read as `won=False`.
+
+    `AdvancedAi::new` already carries `deny_while_targeted` and
+    `stock_denial_lead_time` for exactly this, added on the same observation.
+    Reporting it here is how anyone will notice whether they worked.
+    """
+    stolen: dict[str, int] = {}
+    stolen_while_ahead = 0
+    for attempt in attempts:
+        if not attempt.get("configured") or attempt.get("won"):
+            continue
+        victory = attempt.get("victory")
+        turns = attempt.get("turns")
+        if not isinstance(victory, int) or not isinstance(turns, int):
+            continue
+        # A game that ran the clock out ends on score by construction; only an
+        # early finish is somebody else completing a condition.
+        if turns >= LADDER_TERMINAL_TURNS or victory == 0:
+            continue
+        name = LADDER_VICTORY_NAMES.get(victory, f"type {victory}")
+        stolen[name] = stolen.get(name, 0) + 1
+        rival = attempt.get("rival_best")
+        score = attempt.get("score")
+        if (
+            isinstance(rival, (int, float))
+            and isinstance(score, (int, float))
+            and score > rival
+        ):
+            stolen_while_ahead += 1
+    return {
+        "stolen": dict(sorted(stolen.items(), key=lambda item: (-item[1], item[0]))),
+        "stolen_while_ahead": stolen_while_ahead,
     }
 
 
@@ -194,6 +307,40 @@ def build_manifest(repo: Path) -> dict[str, Any]:
     }
 
 
+def _ladder_distance_lines(ladder: dict[str, Any]) -> list[str]:
+    """The distance block. Absent numbers are said to be absent."""
+    lines = [""]
+    if not ladder.get("full_length"):
+        return lines + ["- Distance to a win: **no finished attempt on record**"]
+    lines.append(
+        f"- Attempts that ran the full clock: **{ladder['full_length']}**, "
+        f"median score **{ladder['score_median']:.0f}**, best **{ladder['score_best']:.0f}**"
+    )
+    if not ladder.get("graded"):
+        lines.append(
+            "- Distance to a win: **unknown** — no attempt records `rival_best`, "
+            "so a near miss and a rout are the same row here"
+        )
+        return lines
+    lines.append(
+        f"- Graded against the best rival: **{ladder['graded']}** of "
+        f"{ladder['full_length']} finished attempts; rival bar median "
+        f"**{ladder['rival_bar_median']:.0f}**, our lead median "
+        f"**{ladder['lead_median']:+.0f}**, best **{ladder['lead_best']:+.0f}**, "
+        f"ahead in **{ladder['ahead']}**"
+    )
+    stolen = ladder.get("stolen") or {}
+    if stolen:
+        detail = ", ".join(f"{name} {count}" for name, count in stolen.items())
+        total = sum(stolen.values())
+        lines.append(
+            f"- Lost to a rival's victory before the clock: **{total}** "
+            f"({detail}), of which **{ladder['stolen_while_ahead']}** while our "
+            "own score was the highest on the board"
+        )
+    return lines
+
+
 def render_status(manifest: dict[str, Any]) -> str:
     derived = manifest["derived"]
     ladder = manifest["ladder"]
@@ -263,6 +410,9 @@ def render_status(manifest: dict[str, Any]) -> str:
         f"- Terminal outcomes: **{ladder['terminal']}**",
         f"- Configured wins: **{ladder['wins']}**",
         f"- Latest ledger entry: **{ladder['latest_utc'] or '—'}**",
+    ]
+    lines += _ladder_distance_lines(ladder)
+    lines += [
         "",
         "Regenerate with `python3 tools/eval_manifest.py --write`; CI runs",
         "`--check` so registry or ledger changes cannot silently leave this",
