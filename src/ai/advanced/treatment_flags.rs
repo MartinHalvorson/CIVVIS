@@ -1770,6 +1770,13 @@ impl AdvancedAi {
             self.joint_tactics = true;
         }
     }
+    /// Choose the pantheon from the land the empire holds rather than from a
+    /// fixed order. Reachable as `advanced_pantheon_board`; see
+    /// `BasicAi::pantheon_reads_the_board`.
+    pub fn enable_pantheon_board(&mut self) {
+        self.base.pantheon_reads_the_board = true;
+    }
+
 }
 
 #[cfg(test)]
