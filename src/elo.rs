@@ -3179,6 +3179,8 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_barbarian_scouts_are_scouts" => {
             let mut ai = AdvancedAi::new();
             ai.disable_barbarian_scouts_are_scouts();
+            Box::new(ai)
+        }
         // Read the Faith price from the engine rather than the Standard-speed
         // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
         // speed -- that literal asks for twice what the engine charges, and it
