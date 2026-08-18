@@ -21258,6 +21258,103 @@ fn the_camp_errand_stands_down_for_war_recon_and_bad_trades() {
     assert!(!AdvancedAi::legacy().base.camp_bounty);
 }
 
+#[test]
+fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
+    let mut game = Game::new_full(2, 30, 20, 90_081, 120, 0, false);
+    game.map.clear_rivers();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+    }
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+
+    let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    land.sort();
+    let (home, objective_site) = land
+        .iter()
+        .flat_map(|home| land.iter().map(move |objective| (*home, *objective)))
+        .find(|(home, objective)| {
+            game.wdist(*home, *objective) >= 16
+                && game.wdisk(*home, 5).len() >= 24
+                && game.wdisk(*objective, 5).len() >= 24
+        })
+        .expect("the map has two separated interior city sites");
+    for (player, site) in [(0, home), (1, objective_site)] {
+        game.current = player;
+        let settler = game.spawn_test_unit("settler", player, site);
+        game.apply(player, &Action::FoundCity { unit: settler })
+            .expect("each site can found a city");
+    }
+    game.current = 0;
+    game.record_contact(0, 1);
+    let target_city = game.player_city_ids(1)[0];
+    let objective = game.cities[&target_city].pos;
+    let open = |g: &Game, pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            && g.city_at(pos).is_none()
+            && g.units_at(pos).is_empty()
+    };
+    let (assault_at, village) = game
+        .wdisk(home, 4)
+        .into_iter()
+        .filter(|pos| open(&game, *pos) && game.wdist(*pos, home) == 4)
+        .find_map(|assault_at| {
+            game.wdisk(assault_at, crate::ai::VILLAGE_MILITARY_SEEK_RADIUS)
+                .into_iter()
+                .filter(|pos| {
+                    open(&game, *pos)
+                        && game.wdist(assault_at, *pos) == crate::ai::VILLAGE_MILITARY_SEEK_RADIUS
+                        && game.wdist(*pos, objective) > game.wdist(assault_at, objective)
+                })
+                .max()
+                .map(|village| (assault_at, village))
+        })
+        .expect("an open field unit can reach a village away from the campaign objective");
+    game.map.tiles.get_mut(&village).unwrap().improvement = Some(crate::name!("goody_hut"));
+    let assault = game.spawn_test_unit("warrior", 0, assault_at);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(target_city),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.battlefront_observation = false;
+    assert!(ai.base.village_seeking);
+
+    let before = game.wdist(assault_at, village);
+    let mut historic = game.clone();
+    let mut historic_ai = ai.clone();
+    assert_eq!(
+        historic_ai.campaign_staging_step(&mut historic, 0, assault, &plan),
+        Some(true),
+        "precondition: without the village priority this Warrior would stage for war"
+    );
+    assert!(
+        historic.wdist(historic.units[&assault].pos, village) >= before,
+        "the staging route must not accidentally make progress toward the village"
+    );
+
+    assert!(ai.advanced_military_step(&mut game, 0, assault, &plan));
+    assert!(
+        game.wdist(game.units[&assault].pos, village) < before,
+        "the nearby Warrior should collect the charted village before staging for war"
+    );
+}
+
 /// `home_defense_objective` before the campaign march, mirroring the
 /// Basic step's precedence.
 #[test]
