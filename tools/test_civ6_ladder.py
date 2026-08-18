@@ -853,3 +853,138 @@ class LatestCodeGuarantee(LedgerCase):
         beat = {"utc": "2026-08-17T11:59:00Z",
                 "last_error": "cargo build failed (101): expected `;`"}
         self.assertIn("cargo build failed", self.heartbeat_problem(beat))
+
+
+class TheHealthFloorStaysFalsifiable(LedgerCase):
+    """A gap in measurement is not a gap in attempts.
+
+    `--min-applied` reads only attempts that carry a rate, so an instrument
+    that goes dark makes it silently unfalsifiable — while `--stale-hours`
+    stays quiet, because attempts are still arriving. Measured on the live
+    ledger 2026-08-18: attempts 266 to 306 — forty-one consecutive games, all
+    played to the 250-turn clock, **including both Settler wins** — recorded no
+    rate at all, and `check` was green the whole way. The bridge health of the
+    project's only two external results is unknown as a result.
+    """
+
+    def _attempts(self, rates: list) -> None:
+        for index, rate in enumerate(rates):
+            kwargs = {}
+            if rate is not None:
+                kwargs = {"orders_seen": 1000,
+                          "orders_applied": int(round(rate * 10))}
+            civ6_ladder.record_summary(write_run(
+                self.runs, summary(f"run-{index:03d}", **kwargs)))
+
+    def test_a_single_unmeasured_run_is_still_not_a_problem(self):
+        """The original reasoning holds for one: a run that died before its
+        first turn has no rate and is the staleness check's business."""
+        self._attempts([97.0, None])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                              min_applied=95.0), 0)
+
+    def test_a_run_of_unmeasured_attempts_is_reported(self):
+        self._attempts([97.0] + [None] * 6)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                     min_applied=95.0)
+        self.assertEqual(code, 1)
+        self.assertIn("unmeasured on the last 6 attempt(s)", out.getvalue())
+
+    def test_the_limit_is_configurable(self):
+        self._attempts([97.0] + [None] * 6)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                  min_applied=95.0, unmeasured_limit=99), 0)
+
+    def test_the_instrument_coming_back_clears_it(self):
+        self._attempts([97.0] + [None] * 6 + [96.0])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                                  min_applied=95.0), 0)
+
+    def test_it_is_silent_without_the_floor_it_protects(self):
+        """This exists to keep `--min-applied` honest. Asking for no floor is
+        asking for no bridge-health opinion at all."""
+        self._attempts([None] * 20)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            civ6_ladder.check(self.runs, self.ledger, None, self.snapshot), 0)
+
+    def test_old_rows_from_before_the_rate_existed_are_not_counted_forever(self):
+        """Counted from the END, not totalled: the ledger legitimately holds
+        hundreds of rows from before the rate was recorded at all."""
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": None}] * 300 + [{"applied_pct": 97.0}]), 0)
+        self.assertEqual(civ6_ladder.trailing_unmeasured(
+            [{"applied_pct": 97.0}] + [{"applied_pct": None}] * 3), 3)
+
+
+class TheBackfillRecoversBridgeHealth(LedgerCase):
+    """The self-healing path could not heal the one number it was built for.
+
+    `civ6_play.py` sums `events.jsonl` into the summary when a run ends, and
+    `sync` exists precisely because that write is best-effort and may not
+    happen. But `sync` recorded whatever the summary contained, so a run whose
+    bookkeeping failed lost its bridge health permanently — while its own
+    events file sat beside it on disk. Rows 266 to 306 of the live ledger, the
+    same 41 summaries `heal_the_ladder` was written to rescue, carry no rate at
+    all, and both Settler wins are among them.
+    """
+
+    def _run_missing_totals(self, tag: str, seen: int, applied: int):
+        """A summary written without totals, beside events that hold them."""
+        path = write_run(self.runs, summary(tag))
+        (path.parent / "events.jsonl").write_text("\n".join(
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": turn,
+                        "orders_seen": seen, "orders_applied": applied})
+            for turn in (1,)))
+        return path
+
+    def test_sync_reads_the_events_the_summary_forgot(self):
+        self._run_missing_totals("backfilled", 200, 194)
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.sync(self.runs, self.ledger)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 97.0)
+
+    def test_the_automatic_path_recovers_it_too(self):
+        path = self._run_missing_totals("live-but-unwritten", 100, 88)
+        civ6_ladder.record_summary(path)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 88.0)
+
+    def test_a_summary_that_already_measured_itself_is_not_second_guessed(self):
+        """The summary is the run's own reading; this only fills an absence."""
+        path = write_run(self.runs, summary(
+            "measured", orders_seen=200, orders_applied=194))
+        (path.parent / "events.jsonl").write_text(json.dumps(
+            {"kind": "turn", "ctx": "agent", "turn": 1,
+             "orders_seen": 10, "orders_applied": 1}))
+        civ6_ladder.record_summary(path)
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 97.0)
+
+    def test_no_events_file_still_records_the_attempt(self):
+        """Recording is best-effort by design: a finished game must never be
+        lost to a bookkeeping error, and that outranks the number."""
+        civ6_ladder.record_summary(write_run(self.runs, summary("no-events")))
+        self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
+        self.assertEqual(len(self.state()["attempts"]), 1)
+
+    def test_an_unreadable_events_file_is_not_fatal(self):
+        path = write_run(self.runs, summary("torn"))
+        (path.parent / "events.jsonl").write_text('{"kind": "turn", "ctx": "ag')
+        civ6_ladder.record_summary(path)
+        self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
+        self.assertEqual(len(self.state()["attempts"]), 1)

@@ -648,6 +648,77 @@ fn barbarians_do_not_heal_passively_but_healing_plunder_still_works() {
 }
 
 #[test]
+fn the_ledger_counts_what_the_barbarians_take() {
+    let (mut g, target, ring) = controlled_game(3105);
+    g.players[0].is_barbarian = true;
+
+    // A kill dealt by the barbarian seat lands on the victim's ledger.
+    let raider = g.spawn_unit("warrior", 0, ring[0]);
+    let victim = g.spawn_unit("warrior", 1, target);
+    g.units.get_mut(&victim).unwrap().hp = 1;
+    g.apply(
+        0,
+        &Action::Attack {
+            unit: raider,
+            target,
+        },
+    )
+    .unwrap();
+    assert!(!g.units.contains_key(&victim));
+    assert_eq!(g.players[1].counters.get("lost_to_barbarians"), Some(&1));
+    assert_eq!(
+        g.players[1].counters.get("civilians_lost_to_barbarians"),
+        None
+    );
+
+    // Walking onto an undefended Builder is a capture, and it counts too.
+    g.begin_turn(0);
+    let at = g.units[&raider].pos;
+    let builder_home = g
+        .nbrs(at)
+        .into_iter()
+        .find(|p| g.units_at(*p).is_empty())
+        .unwrap();
+    let builder = g.spawn_unit("builder", 1, builder_home);
+    g.apply(
+        0,
+        &Action::Move {
+            unit: raider,
+            to: builder_home,
+        },
+    )
+    .unwrap();
+    assert_eq!(g.units[&builder].owner, 0);
+    assert_eq!(
+        g.players[1].counters.get("civilians_lost_to_barbarians"),
+        Some(&1)
+    );
+
+    // The Free Cities seat also carries `is_barbarian`; a revolt's garrison
+    // is not a raider, so its takings stay off the barbarian ledger.
+    g.players[0].is_free_city = true;
+    g.begin_turn(0);
+    let at = g.units[&raider].pos;
+    let second_home = g
+        .nbrs(at)
+        .into_iter()
+        .find(|p| g.units_at(*p).is_empty())
+        .unwrap();
+    let second = g.spawn_unit("warrior", 1, second_home);
+    g.units.get_mut(&second).unwrap().hp = 1;
+    g.apply(
+        0,
+        &Action::Attack {
+            unit: raider,
+            target: second_home,
+        },
+    )
+    .unwrap();
+    assert!(!g.units.contains_key(&second));
+    assert_eq!(g.players[1].counters.get("lost_to_barbarians"), Some(&1));
+}
+
+#[test]
 fn pillage_rewards_scale_and_stack_with_norway_raid_and_the_chapel() {
     let (mut game, center, _) = controlled_game(2992);
     game.players[0].civ = "Norway".to_string();

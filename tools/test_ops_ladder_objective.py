@@ -122,3 +122,86 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
+    """`docs/CIV6_LADDER.md` records wins per (victory type, difficulty), so a
+    loop that cannot vary those two cannot move the ladder at all.
+
+    Both axes have now been silently fixed at a launcher default by a loop that
+    produces ladder rows. The objective was, until #1960 — 307 attempts aimed at
+    the one lane `victory_eval` completes 0/16. The rung was, until #1969 gave
+    the installed supervisor a policy — and `civvis-batch-loop.sh` still could
+    not express it afterwards, so the two production loops would have been
+    climbing on two different rules with only one of them able to reach
+    Chieftain.
+
+    Discovered, not listed: a script counts as a ladder loop when it invokes
+    `civ6_civvis_climb.py`, so a new one is held to this the day it is written.
+    """
+
+    #: A script that RUNS the climb, not one that merely names it.
+    #: `civvis-supervisor-safe-reload.sh` matches the name in a `ps` pattern and
+    #: `civvis-tcc-probe.sh` in prose; neither starts an attempt, and holding
+    #: them to this would be a guard that has to be argued with.
+    INVOKES = re.compile(r"^\s*[^#\n]*python3[^\n#]*civ6_civvis_climb\.py",
+                         re.MULTILINE)
+
+    def ladder_loops(self) -> list:
+        return [path for path in sorted(OPS.glob("*.sh"))
+                if self.INVOKES.search(path.read_text(encoding="utf-8"))]
+
+    def test_at_least_one_ladder_loop_is_found(self):
+        """If this ever empties, the discovery rule stopped matching rather than
+        the loops going away."""
+        self.assertTrue(self.ladder_loops(),
+                        "no ops script invokes civ6_civvis_climb.py")
+
+    @staticmethod
+    def _invocation(source: str) -> str:
+        """The climb command itself, following backslash continuations.
+
+        ⚠ NOT "the flag appears somewhere in the file". `civvis-batch-loop.sh`
+        also PRINTS its command into a provenance file, by hand, beside the
+        command it claims to describe — and that line's own comment records it
+        saying `--war-from-plan` for hours after the flag was removed below. A
+        guard satisfied by the description rather than the invocation would
+        certify exactly that.
+        """
+        lines = source.splitlines()
+        start = next(i for i, line in enumerate(lines)
+                     if "civ6_civvis_climb.py" in line
+                     and "python3" in line
+                     and not line.lstrip().startswith("#"))
+        command = []
+        for line in lines[start:]:
+            command.append(line)
+            if not line.rstrip().endswith("\\"):
+                break
+        return "\n".join(command)
+
+    def test_each_one_passes_both_axes(self):
+        missing = []
+        for script in self.ladder_loops():
+            command = self._invocation(script.read_text(encoding="utf-8"))
+            for flag in ("--victory", "--difficulty"):
+                if flag not in command:
+                    missing.append(f"{script.name}: never passes {flag}")
+        self.assertEqual(missing, [], "\n".join(
+            ["a loop that writes ladder rows cannot ask for an axis the ladder "
+             "records, so no row can ever carry a different value:"] + missing))
+
+    def test_neither_axis_is_written_as_a_literal(self):
+        """A pinned rung is the same defect as a pinned lane, one axis over."""
+        literal = re.compile(
+            r"--difficulty[=\s]+(?![\"']?[$])(DIFFICULTY_[A-Z]+)")
+        offenders = []
+        for script in self.ladder_loops():
+            for number, line in enumerate(script.read_text().splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for match in literal.finditer(line):
+                    offenders.append(f"{script.name}:{number}: {match.group(1)}")
+        self.assertEqual(offenders, [], "\n".join(
+            ["an ops script pins the rung by hand; take it from the ladder "
+             "policy or from CIVVIS_DIFFICULTY:"] + offenders))
