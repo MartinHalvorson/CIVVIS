@@ -1174,9 +1174,7 @@ fn sale_verb(offer: &civvis::game::DealItems) -> Option<String> {
         .resources
         .iter()
         .filter(|(_, amount)| **amount > 0)
-        .map(|(resource, amount)| {
-            format!("RESOURCE_{}={amount}", resource.to_ascii_uppercase())
-        })
+        .map(|(resource, amount)| format!("RESOURCE_{}={amount}", resource.to_ascii_uppercase()))
         .collect();
     let favor = offer.diplomatic_favor.floor() as i64;
     if favor > 0 {
@@ -1259,7 +1257,11 @@ fn append_favor_sale_order(
     // The planner may already be selling favor this turn through its own
     // quote; one block per turn keeps the two from bidding the same bank.
     if orders.iter().any(|order| {
-        order.kind == "sell" && order.verb.as_deref().is_some_and(|verb| verb.contains("FAVOR="))
+        order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR="))
     }) {
         return Some("favor_hold:planner_sale");
     }
@@ -2463,7 +2465,8 @@ fn decide(
 
     let plan = ai.plan_report();
     match append_favor_sale_order(
-        plan.as_ref().map(|report| (report.strategy, report.victory_target)),
+        plan.as_ref()
+            .map(|report| (report.strategy, report.victory_target)),
         state,
         &mut orders,
     ) {
@@ -7231,8 +7234,10 @@ mod tests {
 
         // An unmapped seat still crosses for the ledger, subject-less, like
         // the delegation arm: the Lua side names it `sell_target_unmapped`.
-        let mut favor = DealItems::default();
-        favor.diplomatic_favor = 10.0;
+        let favor = DealItems {
+            diplomatic_favor: 10.0,
+            ..DealItems::default()
+        };
         let unmapped = translate(
             &Action::Trade {
                 player: 3,
@@ -7390,11 +7395,7 @@ mod tests {
             Some("favor_hold:diplomacy_plan")
         );
         assert_eq!(
-            append_favor_sale_order(
-                Some(("expansion", Some("diplomatic"))),
-                &state,
-                &mut held
-            ),
+            append_favor_sale_order(Some(("expansion", Some("diplomatic"))), &state, &mut held),
             Some("favor_hold:diplomacy_plan")
         );
         assert_eq!(
@@ -7420,7 +7421,10 @@ mod tests {
         let mut tail = state.clone();
         tail.favor = Some(140.0);
         assert_eq!(append_favor_sale_order(science, &tail, &mut held), None);
-        assert_eq!(held.pop().and_then(|order| order.verb), Some("FAVOR=20".to_string()));
+        assert_eq!(
+            held.pop().and_then(|order| order.verb),
+            Some("FAVOR=20".to_string())
+        );
 
         // The planner's own favor quote this turn takes precedence.
         let mut planned = vec![Order {
