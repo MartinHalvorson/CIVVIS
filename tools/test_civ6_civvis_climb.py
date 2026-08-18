@@ -967,7 +967,10 @@ class OneDeciderTests(_Harness, unittest.TestCase):
         self.assertNotIn("--civvis-war-from-plan", words)
         self.assertIn("--civvis-victory", words)
         self.assertIn("--civvis-strategy", words)
-        self.assertEqual(words[words.index("--civvis-victory") + 1], "science")
+        # The chain's one default, not a copy of it — the climb declared its own
+        # `science` until 2026-08-18 and `civ6_play` declared another beside it.
+        self.assertEqual(words[words.index("--civvis-victory") + 1],
+                         climb.DEFAULT_VICTORY)
         self.assertEqual(words[words.index("--civvis-strategy") + 1], "")
         # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
         # fell back to its repo-relative default and a worktree without a build died
