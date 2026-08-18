@@ -77,10 +77,11 @@ unit that the engine does not otherwise model.
 - **Dark Age card era windows**, from `Policies_XP1.MinimumGameEra` /
   `MaximumGameEra`: Isolationism Classical–Industrial (was Classical–Renaissance),
   Monasticism Classical–Medieval (was Classical–Renaissance), Inquisition
-  Classical–Renaissance (was Medieval–Industrial), Letters of Marque
-  Renaissance–Modern (was Medieval–Industrial), Elite Forces
-  Classical–Renaissance (was Renaissance–Modern). Twilight Valor and Robber
-  Barons were already right.
+  Classical–Renaissance (was Medieval–Industrial), and Elite Forces
+  Classical–Renaissance (was Renaissance–Modern). Twilight Valor and Letters
+  of Marque appeared in the earlier expansion rows, but Byzantium & Gaul's
+  full-Gathering-Storm removal data retires both; they therefore have no active
+  era window in CIVVIS. Robber Barons was already right.
 - **Sky and Stars** opens in the Information era, not the Atomic
   (`COMMEMORATION_AERONAUTICAL.MinimumGameEra`).
 
@@ -169,11 +170,10 @@ causal claim is withdrawn pending a new pre-registered large run.
 
 ### Remaining scope boundaries
 
-- Ten Gathering Storm Dark Age policy cards remain outside this Era Score
-  repair: Decentralization, Samoderzhaviye, Soft Targets, Despotic Paternalism,
-  Collectivism, Rogue State, Flower Power, Cyber Warfare, Automated Workforce
-  and Disinformation Campaign. They require unrelated engine effects, not Era
-  Score hooks.
+- Twilight Valor and Letters of Marque are not scope boundaries: the complete
+  Gathering Storm load order retires them. Other Dark Age cards remain scoped
+  according to the engine effects they need, rather than as part of this Era
+  Score repair.
 
 ## What the AI does
 

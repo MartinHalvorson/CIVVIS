@@ -1077,8 +1077,7 @@ fn finest_hour_and_the_pillage_cards_pay_what_they_ship_with() {
     assert_eq!(air(&game, "bomber"), bomber + 0.5);
     assert_eq!(air(&game, "jet_bomber"), jet);
 
-    // Gathering Storm reduced Raid and Total War to +50%. Letters of
-    // Marque doubles trade-route plunder, not improvements or districts.
+    // Gathering Storm reduced Raid and Total War to +50%.
     for card in ["raid", "total_war"] {
         assert_eq!(
             game.rules.policies[card].effects["pillage_yield_pct"],
@@ -1086,9 +1085,6 @@ fn finest_hour_and_the_pillage_cards_pay_what_they_ship_with() {
             "{card} adds half to pillage yields"
         );
     }
-    assert!(!game.rules.policies["letters_of_marque"]
-        .effects
-        .contains_key("pillage_yield_pct"));
 }
 
 #[test]
