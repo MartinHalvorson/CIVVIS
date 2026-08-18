@@ -9123,22 +9123,6 @@ impl Game {
         if self.fallout_at(unit.pos) {
             return 0;
         }
-        // Twilight Valor: the army that fights harder cannot patch itself up
-        // on somebody else's ground.
-        if self.policy_effect(unit.owner, "no_healing_abroad") > 0.0
-            && self.healing_location(unit.owner, unit.pos) != HealingLocation::FriendlyTerritory
-            && !self
-                .city_at(unit.pos)
-                .is_some_and(|city| self.cities[&city].owner == unit.owner)
-            && self
-                .map
-                .get(unit.pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|city_id| self.cities.get(&city_id))
-                .is_none_or(|city| city.owner != unit.owner)
-        {
-            return 0;
-        }
         if spec.domain.as_deref() == Some("air") && self.air_capacity_at(unit.owner, unit.pos) <= 0
         {
             return 0;
@@ -15188,9 +15172,6 @@ impl Game {
                         .city_building_effect(&self.cities[&cid], "naval_unit_production_pct")
                         / 100.0;
                 }
-                if spec.promotion_class == "naval_raider" {
-                    bonus += self.policy_effect(pid, "naval_raider_production_pct") / 100.0;
-                }
                 if spec.promotion_class == "naval_ranged" {
                     bonus += self.players[pid]
                         .counters
@@ -15741,7 +15722,10 @@ impl Game {
         }
     }
 
-    fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
+    /// Whether this unit's domain lets it melee that tile at all -- the check
+    /// `do_attack` applies before anything else about the fight. A land unit
+    /// proposing a shot at a ship never gets past here.
+    pub(crate) fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -15793,12 +15777,6 @@ impl Game {
         } else {
             0.0
         }
-    }
-
-    /// Twilight Valor's half: strength that applies only while a unit is the
-    /// one making a melee attack, so it never shows up on defense.
-    fn melee_attack_bonus(&self, u: &Unit) -> f64 {
-        self.policy_effect(u.owner, "melee_attack_combat")
     }
 
     fn unit_unembarked_strength(&self, u: &Unit) -> f64 {
@@ -20853,7 +20831,12 @@ impl Game {
         self.has_line_of_sight(from, to, true)
     }
 
-    fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
+    /// The line-of-sight test `do_ranged` applies, asked of a unit that
+    /// already exists. This is *not* `line_of_sight_from`: that one asks about
+    /// a tile a unit is only considering standing on, and cannot know about
+    /// the firing unit's own `see_through_woods`. Gating a candidate shot with
+    /// the tile version would refuse a Ranger the engine would have allowed.
+    pub(crate) fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
             let attacker_height = self.see_from_level(unit.pos);
@@ -20895,9 +20878,6 @@ impl Game {
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
             moves += self.empire_wonder_effect(u.owner, "naval_movement");
-        }
-        if spec.promotion_class == "naval_raider" {
-            moves += self.policy_effect(u.owner, "naval_raider_movement");
         }
         if spec.class == "religious"
             && self.wdisk(u.pos, 1).into_iter().any(|position| {
@@ -28339,10 +28319,6 @@ impl Game {
                     rys.production +=
                         self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
-                // Letters of Marque: -50% of what this seat's routes earn at
-                // their origin (twelve `ADJUST_TRADE_ROUTE_YIELD_MODIFIER`
-                // rows, `Origin=1`); the `Destination=1` half is below.
-                rys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
                 // Where the host has said what THIS route pays its origin
                 // (`observed_route_yields`, from `CalculateOriginYields…` the
                 // way the shipped Trade Overview sums them), that figure stands
@@ -28362,8 +28338,7 @@ impl Game {
             .iter()
             .filter(|route| route.dest == cid && route.owner != city.owner)
             .count() as f64;
-        // What this city earns as a DESTINATION, gathered so Letters of
-        // Marque's `Destination=1` half can dock it as one figure.
+        // What this city earns as a destination from incoming routes.
         let mut iys = Yields::default();
         for route in self.routes.iter().filter(|route| route.dest == cid) {
             let government = self.gov_effects(route.owner);
@@ -28405,7 +28380,6 @@ impl Game {
         {
             iys.gold += 4.0 * incoming_foreign_routes;
         }
-        iys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
         ys.add(iys);
         if incoming_routes > 0.0 && city.wonders
 .contains_key(&crate::name!("university_of_sankore")) {
@@ -32707,7 +32681,13 @@ impl Game {
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
     /// still requires a friendly spotter exactly as in Civ VI.
-    fn combat_target_visible_at(
+    /// Whether `pid` may legally fire at `pos` at all, against visibility
+    /// frames the caller already holds. `do_ranged`, `do_attack` and
+    /// `do_city_strike` each apply exactly this before a shot, so a controller
+    /// that proposes a target without asking is proposing an order the engine
+    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// unit and pass them in; the frames cannot move while no action is applied.
+    pub(crate) fn combat_target_visible_at(
         &self,
         pid: usize,
         pos: Pos,
@@ -32736,6 +32716,11 @@ impl Game {
             })
     }
 
+    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
+    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
+    /// disk of candidate tiles must hoist the two frames and use
+    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
+    /// candidate tile cost +6.4% of simulator CPU.
     fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
         let visible = self.player_vision_now(pid);
         let viewers = self.visibility_viewers(pid);
@@ -33924,8 +33909,7 @@ impl Game {
             let mut att_base = self.unit_unembarked_strength(&attacker)
                 + self.matchup_bonus(uid, &d, true)
                 + self.flanking_bonus(uid, target)
-                + self.vs_bonus(pid, d.owner)
-                + self.melee_attack_bonus(&attacker);
+                + self.vs_bonus(pid, d.owner);
             if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
                 att_base -= 10.0;
             }
@@ -34036,8 +34020,7 @@ impl Game {
                 self.record_war_unit_participation(&attacker, defender);
                 self.record_war_city_garrison_participation(cid, attacker.owner);
                 let mut att_base = self.unit_unembarked_strength(&attacker)
-                    + self.vs_bonus(pid, self.cities[&cid].owner)
-                    + self.melee_attack_bonus(&attacker);
+                    + self.vs_bonus(pid, self.cities[&cid].owner);
                 if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
                     att_base -= 10.0;
                 }

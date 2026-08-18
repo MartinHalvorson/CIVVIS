@@ -226,6 +226,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_maritime_splice",
     "advanced_sea_answers",
     "advanced_without_barbarian_scouts_are_scouts",
+    "advanced_engine_faith_price",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
@@ -832,6 +833,7 @@ define_arm_kinds! {
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
+    AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
@@ -3177,6 +3179,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_barbarian_scouts_are_scouts" => {
             let mut ai = AdvancedAi::new();
             ai.disable_barbarian_scouts_are_scouts();
+        // Read the Faith price from the engine rather than the Standard-speed
+        // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
+        // speed -- that literal asks for twice what the engine charges, and it
+        // ignores every belief, government and district discount.
+        "advanced_engine_faith_price" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_faith_price();
             Box::new(ai)
         }
         // Let the deck counterfactual see the unit-maintenance bill, so
@@ -4242,6 +4251,7 @@ impl ArmKind {
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
+            Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
                 "recon-replacement",
@@ -4740,6 +4750,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_without_barbarian_scouts_are_scouts" => (Vec::new(), "advanced_without_barbarian_scouts_are_scouts"),
+        "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
@@ -6049,6 +6060,7 @@ mod tests {
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
                 "advanced_without_barbarian_scouts_are_scouts",
+                "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",

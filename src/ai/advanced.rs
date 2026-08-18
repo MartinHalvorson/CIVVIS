@@ -1270,6 +1270,10 @@ pub struct AdvancedAi {
     /// **Off by default, live-bridge only.** See
     /// [`AdvancedAi::ranged_tile_is_blind`] for the refusal census behind it.
     pub ranged_needs_line_of_sight: bool,
+    /// Read the Faith price from the engine instead of the Standard-speed
+    /// literal. Off in production pending its screen; see
+    /// `advanced_engine_faith_price`.
+    pub engine_faith_price: bool,
     /// Raise the wartime army target when the enemy outweighs us, instead of
     /// keeping a headcount that only ever looks at our own city count.
     ///
@@ -3763,6 +3767,7 @@ impl AdvancedAi {
             promote_when_wounded: false,
             strike_opening: false,
             ranged_needs_line_of_sight: false,
+            engine_faith_price: false,
             army_target_weighs_the_enemy: false,
             peacetime_deterrence: false,
             suzerain_cards_need_a_suzerainty: false,
@@ -4277,6 +4282,25 @@ impl AdvancedAi {
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_ranged_needs_line_of_sight(&mut self) {
         self.ranged_needs_line_of_sight = false;
+    }
+
+    /// ★★★★★ THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE.
+    ///
+    /// `spec.cost * 2.0` is the Faith rate at Standard speed, and `item_cost`
+    /// scales every price by `game_speed`. Online — the speed the deployment
+    /// profile and the live bridge both play — is 50%, so that literal asks
+    /// for **twice** the Faith the engine would take, and the reserve is then
+    /// applied on top of a doubled price. Marathon is 300% and it underquotes
+    /// by a third, issuing purchases the engine refuses. It also ignores every
+    /// discount that moves the number: the founder's belief, Theocracy, the
+    /// Holy Site's own purchase discount, a Guru's wonder discount. The same
+    /// defect priced Rock Bands, which additionally climb 100 per band already
+    /// bought. `unit_purchase_cost` knows all of it and returns None when the
+    /// purchase is illegal here, rather than leaving that to a refused order.
+    ///
+    /// Off by default: it changes play and has not been screened.
+    pub fn enable_engine_faith_price(&mut self) {
+        self.engine_faith_price = true;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -10753,7 +10777,6 @@ impl AdvancedAi {
                 temporary.push("inquisition");
             }
             GrandStrategy::Conquest if at_war => {
-                temporary.push("twilight_valor");
                 if elite_affordable {
                     temporary.push("elite_forces");
                 }
@@ -14814,9 +14837,7 @@ impl AdvancedAi {
         } else {
             0
         };
-        let priorities: &[&str] = if home_under_pressure
-            && inquisition_launched
-            && inquisitors < 2
+        let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if !offensive {
@@ -14846,10 +14867,6 @@ impl AdvancedAi {
             if current >= cap {
                 continue;
             }
-            let Some(spec) = g.rules.units.get(unit) else {
-                continue;
-            };
-            let price = spec.cost * 2.0;
             // The ordinary buffer is useful while safely building toward a
             // victory, but it must not block the last affordable defender at
             // match point or when one of our cities is already losing its
@@ -14859,15 +14876,39 @@ impl AdvancedAi {
             } else {
                 ordinary_reserve
             };
-            if g.players[pid].faith + f64::EPSILON < price + reserve {
-                continue;
-            }
             let cities = g.player_city_ids(pid);
             for cid in cities {
                 // Religious units inherit the purchase city's majority.  A
                 // converted Holy Site must never make the defender spend its
                 // Faith strengthening the runaway rival religion.
                 if g.city_religion(&g.cities[&cid]) != Some(religion.as_str()) {
+                    continue;
+                }
+                // ⚠ Ask the engine what this costs; do not price it here.
+                // The old `spec.cost * 2.0` was the *Standard-speed* rate, and
+                // `item_cost` scales every price by `game_speed`. Online — the
+                // speed the deployment profile and the live bridge both play —
+                // is 50%, so that literal demanded twice the Faith the engine
+                // would have taken and the reserve was applied on top of a
+                // doubled price. Marathon is 300% and it underquoted by a
+                // third, issuing purchases the engine then refused. It also
+                // ignored every discount that moves this number: the founder's
+                // belief, Theocracy, the Holy Site's own purchase discount, and
+                // a Guru's wonder discount. `unit_purchase_cost` is the one
+                // that knows all of them, and it returns None when the purchase
+                // is illegal here rather than leaving that to a refused order.
+                let price = if self.engine_faith_price {
+                    let Some(price) = g.unit_purchase_cost(pid, cid, unit, "faith") else {
+                        continue;
+                    };
+                    price
+                } else {
+                    let Some(spec) = g.rules.units.get(unit) else {
+                        continue;
+                    };
+                    spec.cost * 2.0
+                };
+                if g.players[pid].faith + f64::EPSILON < price + reserve {
                     continue;
                 }
                 if g.apply(
@@ -14918,13 +14959,26 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == pid && unit.kind == "rock_band")
             .count();
-        if active_bands >= 2
-            || !g.players[pid].civics.contains(&crate::name!("cold_war"))
-            || g.players[pid].faith + f64::EPSILON < g.rules.units["rock_band"].cost
-        {
+        if active_bands >= 2 || !g.players[pid].civics.contains(&crate::name!("cold_war")) {
             return;
         }
         for city in g.player_city_ids(pid) {
+            // Same correction as the religious units above: the shipped rules
+            // cost is the Standard-speed rate, and a Rock Band's price also
+            // climbs 100 per band this player has already bought. Reading the
+            // raw spec was two errors that changed sign — too strict on the
+            // first band at Online, too loose once a few had been bought.
+            let price = if self.engine_faith_price {
+                let Some(price) = g.unit_purchase_cost(pid, city, "rock_band", "faith") else {
+                    continue;
+                };
+                price
+            } else {
+                g.rules.units["rock_band"].cost
+            };
+            if g.players[pid].faith + f64::EPSILON < price {
+                continue;
+            }
             if g.apply(
                 pid,
                 &Action::Buy {
@@ -25960,8 +26014,7 @@ impl AdvancedAi {
                 return acted;
             }
             if special_improver {
-                if let Some(acted) =
-                    self.advanced_special_improver_step(g, pid, uid, plan.strategy)
+                if let Some(acted) = self.advanced_special_improver_step(g, pid, uid, plan.strategy)
                 {
                     return acted;
                 }
@@ -25997,6 +26050,11 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        // Hoisted out of the tile loop below: `player_vision_now` clones a
+        // whole `TileBits` and `visibility_viewers` walks the alliance graph,
+        // and neither can move while this loop applies nothing. Built lazily,
+        // because most units reach no enemy tile at all.
+        let mut vision_frames = None;
         // The joint search already decided this unit's fight, weighing it
         // against what the rest of the army is doing. Re-running the greedy
         // picker here would let a unit take a trade the plan declined on
@@ -26018,7 +26076,44 @@ impl AdvancedAi {
             }
             let distance = g.wdist(unit.pos, pos);
             let mut actions = Vec::with_capacity(2);
-            if spec.has_ranged_attack() && distance <= g.unit_attack_range(uid) {
+            // ★★★★★ EVERY CANDIDATE BELOW COSTS TWO SPECULATIVE CLONES AND A
+            // NESTED REPLY SEARCH, so a candidate the engine will refuse is an
+            // expensive derivation computed and then discarded -- the exact
+            // shape `docs/SIMULATOR_PERFORMANCE.md` names as the thing worth
+            // removing. This loop used to propose on enemy-tile and range
+            // alone: a census of one 150-turn six-player game counted 340
+            // refused Ranged orders (159 "target is not visible", 112 "line of
+            // sight blocked") and 163 refused Attack orders (124 "unit cannot
+            // attack into that domain"), all of them scored in full first.
+            //
+            // ⚠ These are the engine's own predicates, not re-derivations of
+            // them. `unit_has_line_of_sight` is deliberately not the public
+            // `line_of_sight_from`: the tile version cannot know about the
+            // firing unit's `see_through_woods`, so gating with it would
+            // withhold a shot the engine would have allowed. Re-deriving any
+            // of the three here would be the same bug in a new place.
+            //
+            // ⚠ This is a CORRECTNESS change and nothing else. Measured on
+            // `tools/speed_ab.py`, 8 paired games at the deployment shape, it
+            // is **-0.18%: inside the +/-0.2% noise floor**, so it buys no
+            // CPU. It buys no strength either -- the arm returned 24 neutral
+            // splits on 24 maps against stock. A refused candidate never wins
+            // the argmax anyway, because scoring it applies it to a clone that
+            // refuses it too. What it buys is that the candidate set is
+            // truthful, which matters to anything that trusts it.
+            //
+            // ⚠⚠ The first version of this gate was a **+6.43% pessimization**
+            // because it called `combat_target_visible`, which recomputes
+            // `player_vision_now` -- a whole `TileBits` clone -- per call. The
+            // frames are hoisted below for that reason. Do not inline them
+            // back.
+            let frames = vision_frames
+                .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
+            if spec.has_ranged_attack()
+                && distance <= g.unit_attack_range(uid)
+                && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
+                && g.unit_has_line_of_sight(uid, pos)
+            {
                 actions.push(Action::Ranged {
                     unit: uid,
                     target: pos,
@@ -26033,7 +26128,8 @@ impl AdvancedAi {
                     target: pos,
                 });
             }
-            if spec.is_melee_capable() && distance == 1 {
+            if spec.is_melee_capable() && distance == 1 && g.unit_can_melee_target_domain(uid, pos)
+            {
                 actions.push(Action::Attack {
                     unit: uid,
                     target: pos,

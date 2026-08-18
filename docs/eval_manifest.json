@@ -41,7 +41,7 @@
     "withholdable": 52
   },
   "derived": {
-    "eval_only_count": 206,
+    "eval_only_count": 207,
     "firaxis_only_count": 22,
     "live_bridge_count": 74,
     "native_engine_repair_count": 52,
@@ -188,7 +188,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 206,
+      "declared_count": 207,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -350,6 +350,7 @@
         "advanced_maritime_splice",
         "advanced_sea_answers",
         "advanced_without_barbarian_scouts_are_scouts",
+        "advanced_engine_faith_price",
         "advanced_maintenance_deck",
         "advanced_recon_fleet",
         "advanced_without_recon_fleet",

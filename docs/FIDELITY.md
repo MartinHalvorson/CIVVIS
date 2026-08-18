@@ -819,10 +819,11 @@ matched; only the Dark Age set did not:
   which exists nowhere in the Expansion data). **Isolationism** +2 Food and
   +2 Production on domestic routes that stay on one continent
   (`Intercontinental=0`) — no route capacity, no Gold, which were both
-  invented. **Letters of Marque** +100% plunder from every unit and −50% Trade
-  Route yields at the origin AND the destination (twelve rows) — no capacity
-  penalty. **Elite Forces** +2 maintenance (was 1) and Industrial–Future (was
-  Classical–Renaissance).
+  invented. **Letters of Marque** initially appeared to supply +100% plunder
+  from every unit and −50% Trade Route yields at both ends, but the later
+  resolved Byzantium & Gaul removal data retires that policy entirely in the
+  target ruleset. **Elite Forces** +2 maintenance (was 1) and
+  Industrial–Future (was Classical–Renaissance).
 - **Six cards CIVVIS never carried**, now on the roster with the shipped
   amounts: Collectivism (Modern–Atomic: +2 Housing, +1 Food per worked
   Farm, +100% Industrial Zone adjacency, −50% Great Person points), Rogue
@@ -1084,8 +1085,9 @@ wonder.** Fixed together with the roster:
   retire content: Byzantium & Gaul deletes the Biosphere's `+8 Science` when
   Gathering Storm is active, so the audit reported CIVVIS as missing a yield it
   is correct not to have. Loading them also retires Twilight Valor and Letters
-  of Marque, which the same pack deletes and CIVVIS still carries — those two
-  now show in "Only in CIVVIS" as genuine backlog.
+  of Marque. CIVVIS now removes both cards and treats any policy that exists
+  only on its side as a fidelity divergence, so that a future retired card
+  cannot hide behind the report's informational "Only in CIVVIS" count.
 
 With both fixed, **Wonders and Features compare 53 and 50 entries with zero
 divergences and nothing missing on either side.**
@@ -1252,26 +1254,19 @@ era spans are exact where the Civilopedia states them (Exodus of the
 Evangelists through the Renaissance, Automaton Warfare and Wish You Were
 Here in the last two eras) and era-appropriate where it does not.
 
-**Dark Age policy cards.** A Dark Age also opens a Wildcard slot to cards
-no civic unlocks: strong effects bought with a real drawback. The seven
-with published effects are implemented and execute both halves — Twilight
-Valor (+5 melee attack Strength, no healing outside your own territory),
-Isolationism (+1 Trade Route capacity and +2 Food/+2 Production at home,
-but no Settlers trained, bought or settled), Monasticism (Science doubled
-in Holy Site cities, -25% Culture), Inquisition (+15 Religious Combat
-Strength at home, -25% Science), Letters of Marque (+100% naval-raider
-Production, +2 Movement, doubled plunder, -2 Trade Route capacity), Elite
-Forces (+100% unit experience, +2 Gold per military unit) and Robber
-Barons (+50% Gold with a Stock Exchange, +25% Production with a Factory,
--2 Amenities everywhere). They are offered only while the civilization is
-actually in a Dark Age and inside the card's own eras, and an age change
-takes them back out of their slot.
-
-The ten cards Gathering Storm added (Collectivism, Cyber Warfare,
-Decentralization, Despotic Paternalism, Disinformation Campaign, Flower
-Power, Rogue State, Samoderzhaviye, Soft Targets, Automated Workforce) are
-not modelled: their effects are not published in a form worth copying, and
-guessing at a card's numbers is worse than not shipping it.
+**Dark Age policy cards.** A Dark Age also opens a Wildcard slot to
+era-appropriate cards with no civic unlock: strong effects bought with a real
+drawback. The five early cards detailed here are Isolationism (+2 Food/+2
+Production on qualifying domestic routes, but no Settlers trained, bought or
+settled), Monasticism (+75% Science in Holy Site cities, -25% Culture),
+Inquisition (+15 Religious Combat Strength at home, -25% Science), Elite
+Forces (+100% unit experience, +2 Gold per military unit) and Robber Barons
+(+50% Gold with a Stock Exchange, +25% Production with a Factory, -2 Amenities
+everywhere). They are offered only while the civilization is actually in a Dark
+Age and inside the card's own eras, and an age change takes them back out of
+their slot. Twilight Valor and Letters of Marque appear in the older expansion
+rows but are deleted by Byzantium & Gaul's all-content Gathering Storm removal
+data, so CIVVIS neither offers nor executes them.
 
 ### Next inside phase 1
 

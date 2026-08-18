@@ -309,7 +309,7 @@ fn dark_age_policy_cards_are_offered_only_inside_a_dark_age() {
     game.players[0].age = "normal".to_string();
     let normal = game.available_policies(0);
     assert!(
-        !normal.contains(&crate::name!("twilight_valor")),
+        !normal.contains(&crate::name!("monasticism")),
         "a Normal Age never sees a Dark Age card"
     );
     assert!(
@@ -319,7 +319,7 @@ fn dark_age_policy_cards_are_offered_only_inside_a_dark_age() {
 
     game.players[0].age = "dark".to_string();
     let dark = game.available_policies(0);
-    assert!(dark.contains(&crate::name!("twilight_valor")));
+    assert!(dark.contains(&crate::name!("monasticism")));
     assert!(dark.contains(&crate::name!("inquisition")));
     assert!(
         !dark.contains(&crate::name!("robber_barons")),
@@ -332,6 +332,25 @@ fn dark_age_policy_cards_are_offered_only_inside_a_dark_age() {
 }
 
 #[test]
+fn gathering_storm_retired_dark_age_cards_are_never_available() {
+    let mut game = two_player_game();
+    game.world_era = 2;
+    game.players[0].age = "dark".to_string();
+
+    let available = game.available_policies(0);
+    for card in ["twilight_valor", "letters_of_marque"] {
+        assert!(
+            !game.rules.policies.contains_key(card),
+            "{card} is deleted by Byzantium & Gaul's Gathering Storm removal data"
+        );
+        assert!(
+            !available.contains(&Name::new(card)),
+            "{card} must not be offered after its source row was removed"
+        );
+    }
+}
+
+#[test]
 fn every_dark_age_card_is_a_wildcard_with_a_cost() {
     let rules = crate::rules::Rules::embedded();
     let dark: Vec<_> = rules
@@ -339,8 +358,9 @@ fn every_dark_age_card_is_a_wildcard_with_a_cost() {
         .iter()
         .filter(|(_, spec)| spec.dark_age)
         .collect();
-    // The thirteen `Policies_XP1` rows with RequiresDarkAge = 1.
-    assert_eq!(dark.len(), 13);
+    // The eleven Gathering Storm cards that remain after Byzantium & Gaul
+    // removes Twilight Valor and Letters of Marque.
+    assert_eq!(dark.len(), 11);
     for (name, spec) in dark {
         assert_eq!(spec.slot, "wildcard", "{name} must take a Wildcard slot");
         assert!(
@@ -364,9 +384,7 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     let mut game = two_player_game();
     game.world_era = 1;
     game.players[0].age = "dark".to_string();
-    game.players[0]
-        .policies
-        .insert(crate::name!("twilight_valor"));
+    game.players[0].policies.insert(crate::name!("monasticism"));
     game.players[0].policies.insert(crate::name!("discipline"));
     // Cross into the Classical era with enough Era Score for a Heroic Age.
     game.players[0].era_score = game.players[0].golden_age_threshold;
@@ -385,7 +403,7 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
     assert!(
         !game.players[0]
             .policies
-            .contains(&crate::name!("twilight_valor")),
+            .contains(&crate::name!("monasticism")),
         "the Dark Age card goes back when the Dark Age does"
     );
     assert!(
@@ -393,48 +411,6 @@ fn leaving_a_dark_age_takes_the_card_back_out_of_its_slot() {
             .policies
             .contains(&crate::name!("discipline")),
         "ordinary cards stay slotted"
-    );
-}
-
-#[test]
-fn twilight_valor_pays_on_the_attack_and_charges_for_it() {
-    let mut game = two_player_game();
-    game.players[0].age = "dark".to_string();
-    let position = game
-        .units
-        .values()
-        .find(|unit| unit.owner == 0)
-        .map(|unit| unit.pos)
-        .unwrap();
-    let warrior = game.spawn_unit("warrior", 0, position);
-    // A tile nobody owns: the unit is abroad.
-    let away = game
-        .wdisk(position, 3)
-        .into_iter()
-        .find(|pos| {
-            game.map.tiles[pos].owner_city.is_none()
-                && !game.rules.is_water(&game.map.tiles[pos])
-                && *pos != position
-        })
-        .unwrap();
-    game.units.get_mut(&warrior).unwrap().pos = away;
-    game.units.get_mut(&warrior).unwrap().hp = 50;
-
-    let heal_before = game.unit_heal_rate(warrior);
-    assert!(heal_before > 0, "a wounded unit normally heals somewhere");
-
-    game.players[0]
-        .policies
-        .insert(crate::name!("twilight_valor"));
-    assert_eq!(
-        game.unit_heal_rate(warrior),
-        0,
-        "Twilight Valor stops a unit healing outside your own territory"
-    );
-    assert_eq!(
-        game.policy_effect(0, "melee_attack_combat"),
-        5.0,
-        "and pays +5 Combat Strength on a melee attack for it"
     );
 }
 
@@ -483,32 +459,52 @@ fn the_dark_age_cards_carry_the_shipped_modifier_amounts() {
     assert_eq!(effect("inquisition", "city_science_pct"), Some(-25.0));
     // Monasticism: the Culture penalty has no requirement set.
     assert_eq!(effect("monasticism", "city_culture_pct"), Some(-25.0));
-    assert_eq!(effect("monasticism", "holy_site_city_science_pct"), Some(75.0));
+    assert_eq!(
+        effect("monasticism", "holy_site_city_science_pct"),
+        Some(75.0)
+    );
     assert_eq!(effect("monasticism", "no_holy_site_city_culture_pct"), None);
     // Robber Barons: Stock Exchange for the Gold, Factory for the Production.
-    assert_eq!(effect("robber_barons", "stock_exchange_city_gold_pct"), Some(50.0));
-    assert_eq!(effect("robber_barons", "factory_city_production_pct"), Some(25.0));
+    assert_eq!(
+        effect("robber_barons", "stock_exchange_city_gold_pct"),
+        Some(50.0)
+    );
+    assert_eq!(
+        effect("robber_barons", "factory_city_production_pct"),
+        Some(25.0)
+    );
     assert_eq!(effect("robber_barons", "city_amenities"), Some(-2.0));
-    // Letters of Marque: trade-route plunder doubled (ADJUST_PLUNDER_YIELDS,
-    // not the improvement/district pillage rows), route yields halved, no
-    // capacity change.
-    assert_eq!(effect("letters_of_marque", "trade_route_plunder_pct"), Some(100.0));
-    assert_eq!(effect("letters_of_marque", "pillage_yield_pct"), None);
-    assert_eq!(effect("letters_of_marque", "trade_route_yield_pct"), Some(-50.0));
-    assert_eq!(effect("letters_of_marque", "policy_trade_route_capacity"), None);
     // Elite Forces: ELITEFORCES_EXTRA_MAINTENANCE Amount=-2.
-    assert_eq!(effect("elite_forces", "unit_maintenance_surcharge"), Some(2.0));
-    // The six late cards CIVVIS never carried.
-    assert_eq!(effect("disinformation_campaign", "city_science_pct"), Some(-10.0));
-    assert_eq!(effect("disinformation_campaign", "city_culture_pct"), Some(-10.0));
+    assert_eq!(
+        effect("elite_forces", "unit_maintenance_surcharge"),
+        Some(2.0)
+    );
+    // The six late cards CIVVIS now carries.
+    assert_eq!(
+        effect("disinformation_campaign", "city_science_pct"),
+        Some(-10.0)
+    );
+    assert_eq!(
+        effect("disinformation_campaign", "city_culture_pct"),
+        Some(-10.0)
+    );
     assert_eq!(effect("automated_workforce", "city_amenities"), Some(-1.0));
     assert_eq!(effect("automated_workforce", "city_loyalty"), Some(-5.0));
-    assert_eq!(effect("automated_workforce", "project_production_pct"), Some(20.0));
+    assert_eq!(
+        effect("automated_workforce", "project_production_pct"),
+        Some(20.0)
+    );
     assert_eq!(effect("collectivism", "city_housing"), Some(2.0));
     assert_eq!(effect("collectivism", "great_people_pct"), Some(-50.0));
-    assert_eq!(effect("rogue_state", "nuclear_project_production_pct"), Some(50.0));
+    assert_eq!(
+        effect("rogue_state", "nuclear_project_production_pct"),
+        Some(50.0)
+    );
     assert_eq!(effect("flower_power", "unit_production_pct"), Some(-100.0));
-    assert_eq!(effect("cyber_warfare", "combat_vs_information_era"), Some(10.0));
+    assert_eq!(
+        effect("cyber_warfare", "combat_vs_information_era"),
+        Some(10.0)
+    );
 }
 
 #[test]
@@ -616,69 +612,6 @@ fn monasticism_docks_culture_in_every_city_and_robber_barons_reads_its_own_build
         "+25% Production with a Factory: {} vs {}",
         with_factory.city_yields(city).production,
         expected
-    );
-}
-
-#[test]
-fn letters_of_marque_halves_what_a_route_earns_at_both_ends() {
-    let mut game = two_player_game();
-    game.players[0].age = "dark".to_string();
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
-    }
-    let origin = game.player_city_ids(0)[0];
-    let dest = game.player_city_ids(1)[0];
-    game.cities.get_mut(&origin).unwrap().pop = 3;
-    let before = game.city_yields(origin);
-    game.routes.push(crate::game::TradeRoute {
-        origin,
-        dest,
-        owner: 0,
-        ends: game.turn + 30,
-    });
-    let with_route = game.city_yields(origin);
-    let route_gold = with_route.gold - before.gold;
-    assert!(route_gold > 0.0, "an international route pays its origin Gold");
-    game.players[0]
-        .policies
-        .insert(crate::name!("letters_of_marque"));
-    let halved = game.city_yields(origin);
-    // The card touches nothing but the route (no band change: no Amenity
-    // term on the card), so the origin's Gold drops by exactly half the
-    // route's share.
-    assert!(
-        (halved.gold - (before.gold + route_gold / 2.0)).abs() < 1e-9,
-        "-50% at the origin: {} vs {}",
-        halved.gold,
-        before.gold + route_gold / 2.0
-    );
-    // And the destination half: Trade Policy A on the destination's seat
-    // pays +4 per incoming foreign route, halved when the destination's
-    // owner holds the card.
-    game.players[0].policies.clear();
-    game.players[1]
-        .policies
-        .insert(crate::name!("letters_of_marque"));
-    game.players[1].age = "dark".to_string();
-    let dest_before = game.city_yields(dest).gold;
-    game.active_congress_effects.push(crate::game::CongressEffect {
-        resolution: "trade_policy".to_string(),
-        outcome: "A".to_string(),
-        target: "1".to_string(),
-        expires: game.turn + 30,
-    });
-    let dest_after = game.city_yields(dest).gold;
-    assert!(
-        (dest_after - dest_before - 2.0).abs() < 1e-9,
-        "+4 from Incoming Trade Routes, halved at the destination: {} -> {}",
-        dest_before,
-        dest_after
     );
 }
 
@@ -1399,10 +1332,8 @@ fn every_dark_age_card_spans_the_eras_the_shipped_game_offers_it_in() {
     let rules = crate::rules::Rules::embedded();
     for (name, first, last) in [
         ("monasticism", 1, 2),
-        ("twilight_valor", 1, 3),
         ("inquisition", 1, 3),
         ("isolationism", 1, 4),
-        ("letters_of_marque", 3, 5),
         ("robber_barons", 4, 6),
         ("elite_forces", 4, 8),
         ("collectivism", 5, 6),

@@ -15159,7 +15159,7 @@ fn policy_reassessment_only_executes_swaps_that_can_fit() {
 }
 
 #[test]
-fn dark_age_policies_follow_strategy_and_never_close_live_expansion() {
+fn dark_age_policies_follow_strategy_without_retired_cards() {
     let mut game = Game::new(2, 24, 16, 79_101, 250, 0);
     let settler = game
         .player_unit_ids(0)
@@ -15195,7 +15195,11 @@ fn dark_age_policies_follow_strategy_and_never_close_live_expansion() {
     game.players[0].policies.clear();
     game.at_war.insert((0, 1));
     AdvancedAi::new().strategic_policies(&mut game, 0, GrandStrategy::Conquest);
-    assert!(game.players[0]
+    assert!(
+        !game.rules.policies.contains_key("twilight_valor"),
+        "Gathering Storm retires Twilight Valor"
+    );
+    assert!(!game.players[0]
         .policies
         .contains(&crate::name!("twilight_valor")));
 

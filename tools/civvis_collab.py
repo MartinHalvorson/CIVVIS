@@ -2410,6 +2410,8 @@ def macos_memguard_plist(guard: Path) -> bytes:
 MANAGED_KEY = (f"\t<key>CivvisManagedBy</key>\n\t<string>{FRESHNESS_MARKER}"
                "</string>\n")
 
+SPECTATOR_LABEL = "com.civvis.spectator"
+
 LADDER_LABEL = "com.civvis.ladder"
 LADDER_WATCHDOG_LABEL = "com.civvis.ladder-watchdog"
 LADDER_STALE_HOURS = "3"
@@ -2482,14 +2484,50 @@ def macos_ladder_watchdog_plist(watchdog: Path) -> bytes:
     ).encode("utf-8")
 
 
-def load_managed_job(label: str, path: Path) -> None:
-    """Write-then-(re)load a managed LaunchAgent, idempotently."""
+def managed_job_is_loaded(label: str) -> bool:
     domain = f"gui/{os.getuid()}"
-    loaded = not run(("launchctl", "print", f"{domain}/{label}"),
-                     check=False).returncode
-    if loaded:
+    return not run(("launchctl", "print", f"{domain}/{label}"),
+                   check=False).returncode
+
+
+def load_managed_job(label: str, path: Path, attempts: int = 10) -> None:
+    """Write-then-(re)load a managed LaunchAgent, and confirm it is there.
+
+    ⚠⚠ `launchctl bootout` IS ASYNCHRONOUS, AND `bootstrap` RIGHT BEHIND IT
+    FAILS. The service is still tearing down when the next command arrives, so
+    the bootstrap is refused — and because every call here passes `check=False`,
+    nothing said a word. The plist was written, the job was gone, and the only
+    symptom was a service that had simply stopped existing.
+
+    Measured on this host 2026-08-18: `bootstrap` reported "installed CIVVIS
+    spectator service" while `launchctl print` could not find the job at all.
+    Running the identical `bootstrap` by hand a moment later loaded it first
+    try, which is the signature of a race rather than a bad plist.
+
+    So: wait for the bootout to actually take effect, retry the bootstrap while
+    launchd is still busy, and RAISE if the job is not there at the end. A
+    service reported as installed and absent is the failure mode this whole
+    registry exists to prevent.
+    """
+    domain = f"gui/{os.getuid()}"
+    if managed_job_is_loaded(label):
         run(("launchctl", "bootout", f"{domain}/{label}"), check=False)
-    run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        for _ in range(attempts):
+            if not managed_job_is_loaded(label):
+                break
+            time.sleep(0.5)
+
+    for attempt in range(attempts):
+        run(("launchctl", "bootstrap", domain, str(path)), check=False)
+        if managed_job_is_loaded(label):
+            break
+        time.sleep(0.5)
+    else:
+        raise CommandError(
+            f"launchd would not load {label} from {path}. The plist is written "
+            f"but the service is absent, which is the one outcome this must "
+            f"never report as success; try `launchctl bootstrap {domain} {path}`"
+        )
     run(("launchctl", "kickstart", f"{domain}/{label}"), check=False)
 
 
@@ -2538,6 +2576,84 @@ def install_ladder_supervisor(repo: Path) -> List[Path]:
     if changed or not loaded:
         load_managed_job(LADDER_WATCHDOG_LABEL, path)
     return [path]
+
+
+def spectator_runner_source(repo: Path) -> Path:
+    return repo_root(repo) / "tools" / "ops" / "civvis-spectator-runner.sh"
+
+
+def host_serves_the_exhibition(source: Optional[Path] = None) -> bool:
+    """Whether this host holds the spectator's canonical source worktree.
+
+    `docs/SPECTATOR_DEPLOY.md` has the operator create it explicitly, so its
+    presence is the host saying "I serve the exhibition". Installing the job
+    without it would give the machine a service that can only log a missing
+    prerequisite forever.
+    """
+    source = source if source is not None else Path.home() / "civvis-spectator-src"
+    return (source / "tools" / "spectator_supervisor.py").is_file()
+
+
+def macos_spectator_plist(runner: Path, repo: Path) -> bytes:
+    """launchd job for the exhibition supervisor: keep it alive.
+
+    ⚠ UNLIKE THE LADDER, THIS ONE CAN RUN DIRECTLY UNDER launchd. The ladder's
+    supervisor has to be started through Terminal because installing the
+    Civilization VI control mod writes inside `Civ6.app` and macOS attributes
+    that permission to the responsible process. The exhibition drives no GUI —
+    `--no-open`, build, serve HTTP, play headless games — so it needs no such
+    grant, and it is already running under launchd today.
+
+    `KeepAlive` is the point. On 2026-08-18 the supervisor exited and the
+    exhibition stayed down until somebody looked; its own restart loop could not
+    help, because the worktree it execs its supervisor from had been deleted.
+    `ThrottleInterval` bounds the other direction: a runner that refuses for a
+    missing prerequisite (exit 78) retries once a minute instead of spinning.
+    """
+    logs = Path.home() / "Library" / "Logs" / "civvis-spectator.log"
+    arguments = "".join(
+        f"\n\t\t<string>{value}</string>" for value in ("/bin/zsh", str(runner))
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f"\t<key>Label</key>\n\t<string>{SPECTATOR_LABEL}</string>\n"
+        f"\t<key>ProgramArguments</key>\n\t<array>{arguments}\n\t</array>\n"
+        f"\t<key>WorkingDirectory</key>\n\t<string>{repo_root(repo)}</string>\n"
+        "\t<key>EnvironmentVariables</key>\n\t<dict>\n"
+        f"\t\t<key>HOME</key>\n\t\t<string>{Path.home()}</string>\n"
+        f"\t\t<key>CIVVIS_DEPLOY_ROOT</key>\n\t\t<string>{repo_root(repo)}</string>\n"
+        "\t\t<key>PATH</key>\n\t\t<string>"
+        f"{Path.home() / '.cargo' / 'bin'}:/usr/local/bin:/opt/homebrew/bin"
+        ":/usr/bin:/bin:/usr/sbin:/sbin</string>\n"
+        "\t</dict>\n"
+        "\t<key>KeepAlive</key>\n\t<true/>\n"
+        "\t<key>RunAtLoad</key>\n\t<true/>\n"
+        "\t<key>ThrottleInterval</key>\n\t<integer>60</integer>\n"
+        f"\t<key>StandardOutPath</key>\n\t<string>{logs}</string>\n"
+        f"\t<key>StandardErrorPath</key>\n\t<string>{logs}</string>\n"
+        f"{MANAGED_KEY}"
+        "</dict>\n</plist>\n"
+    ).encode("utf-8")
+
+
+def install_spectator_service(repo: Path) -> Optional[Path]:
+    """Keep the exhibition supervisor alive. `None` where it does not apply."""
+    if sys.platform != "darwin" or not host_serves_the_exhibition():
+        return None
+    runner = spectator_runner_source(repo)
+    if not runner.is_file():
+        raise CommandError(f"versioned spectator runner is missing: {runner}")
+    path = Path.home() / "Library" / "LaunchAgents" / f"{SPECTATOR_LABEL}.plist"
+    changed = write_managed_service(path, macos_spectator_plist(runner, repo))
+    domain = f"gui/{os.getuid()}"
+    loaded = not run(("launchctl", "print", f"{domain}/{SPECTATOR_LABEL}"),
+                     check=False).returncode
+    if changed or not loaded:
+        load_managed_job(SPECTATOR_LABEL, path)
+    return path
 
 
 def install_memory_guard(repo: Path) -> Optional[Path]:
@@ -2595,6 +2711,8 @@ MANAGED_SERVICES: Tuple[Tuple[str, str, str], ...] = (
      "macOS only, not installed on this platform"),
     ("ladder service", "install_ladder_supervisor",
      "this host is not a Civilization VI seat, not installed"),
+    ("spectator service", "install_spectator_service",
+     "this host does not hold the exhibition's source worktree, not installed"),
 )
 
 
