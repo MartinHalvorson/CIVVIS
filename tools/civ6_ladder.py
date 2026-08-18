@@ -322,6 +322,53 @@ def applied_pct(summary: dict) -> float | None:
     return round(100.0 * (applied or 0) / seen, 1)
 
 
+def with_bridge_health(summary: dict, summary_path: Path) -> dict:
+    """Fill a summary's order totals from the run's own events, if it lacks them.
+
+    ⚠⚠ THE BACKFILL RECORDED FORTY-ONE ATTEMPTS WITH NO BRIDGE HEALTH WHILE THE
+    EVIDENCE SAT BESIDE THEM ON DISK. `civ6_play.py` sums `events.jsonl` into
+    the summary at the end of a run, and `sync` — the self-healing path that
+    exists precisely because that write is best-effort and may not happen —
+    recorded whatever the summary happened to contain. So the one path built
+    for runs whose bookkeeping failed was the path that could not repair the
+    number, and it lost it permanently: rows 266 to 306 of the live ledger, the
+    same 41 summaries `civ6_civvis_climb.heal_the_ladder` was written to
+    rescue, carry no `applied_pct` at all. **Both Settler wins are among them**,
+    so the bridge health of the project's only external results is unknown.
+
+    A run's `events.jsonl` is the evidence and it outlives the summary write.
+    Reading it here means a backfilled row is as complete as a live one, and
+    the derivation stays in one place rather than two that can disagree.
+
+    Non-destructive: a summary that already carries totals is returned
+    unchanged, and an unreadable or absent events file leaves it as it was.
+    """
+    if summary.get("orders_seen"):
+        return summary
+    totals = orders_totals(Path(summary_path).parent / "events.jsonl")
+    if not totals:
+        return summary
+    enriched = dict(summary)
+    enriched["orders_seen"], enriched["orders_applied"] = totals
+    return enriched
+
+
+def trailing_unmeasured(attempts: list) -> int:
+    """How many of the newest attempts carry no bridge-health rate.
+
+    Counted from the end in recorded order rather than filtered, because the
+    question is "has the instrument gone dark", not "how many rows lack it" —
+    the ledger legitimately holds hundreds of older rows from before the rate
+    was recorded at all, and a total would report those forever.
+    """
+    dark = 0
+    for attempt in reversed(attempts):
+        if attempt.get("applied_pct") is not None:
+            break
+        dark += 1
+    return dark
+
+
 def victory_type(summary: dict) -> str | None:
     """The name of the victory this run ended on, from the HOST'S OWN table.
 
@@ -492,7 +539,8 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     if ledger is None:
         # <runs>/<tag>/summary.json -> the ledger beside <runs>.
         ledger = live_ledger_for(summary_path.parent.parent)
-    summary = json.loads(summary_path.read_text())
+    summary = with_bridge_health(json.loads(summary_path.read_text()),
+                                 summary_path)
     # Load INSIDE the lock. Reading first and locking second would reintroduce
     # exactly the lost update the lock exists to prevent.
     with ledger_lock(ledger):
@@ -542,6 +590,7 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
             if summary.get("tag") in seen:
                 skipped += 1
                 continue
+            summary = with_bridge_health(summary, path)
             if apply(state, summary):
                 seen.add(summary.get("tag"))
                 recorded += 1
@@ -661,7 +710,8 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
           min_applied: float | None = None,
           heartbeat_minutes: float | None = None,
           heartbeat: Path | None = None,
-          max_city_two_turn: float | None = None) -> int:
+          max_city_two_turn: float | None = None,
+          unmeasured_limit: int = 5) -> int:
     """Exit nonzero when the record is behind the truth on disk.
 
     Three separate failures, reported together, because they have three
@@ -714,6 +764,24 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                     f"orders applied on {latest.get('tag')} (floor "
                     f"{min_applied:g}%) — read the refusal ledger, "
                     f"docs/CIV6_COMPUTER_CONTROL.md")
+        # ⚠⚠ A GAP IN MEASUREMENT IS NOT A GAP IN ATTEMPTS, AND NOTHING WAS
+        # WATCHING FOR IT. The reasoning above is right for ONE unmeasured run
+        # and wrong for a run of them: this floor only ever reads attempts that
+        # carry a rate, so an instrument that goes dark makes it silently
+        # unfalsifiable, while `--stale-hours` stays quiet because attempts are
+        # still arriving. Measured on the live ledger 2026-08-18: attempts 266
+        # to 306 — forty-one consecutive games, every one of them played to the
+        # 250-turn clock, INCLUDING BOTH SETTLER WINS — recorded no rate at all,
+        # and `check` was green throughout. The bridge health of the project's
+        # only two external results is therefore unknown.
+        dark = trailing_unmeasured(state["attempts"])
+        if dark >= unmeasured_limit:
+            problems.append(
+                f"bridge health is unmeasured on the last {dark} attempt(s) "
+                f"(limit {unmeasured_limit}): no `applied_pct` reached the "
+                f"ledger, so the {min_applied:g}% floor cannot fire on them. "
+                f"An unmeasured bridge is not a healthy one — check that the "
+                f"run summaries carry `orders_seen`")
 
     if max_city_two_turn is not None:
         problem = opening_tempo_problem(state["attempts"], max_city_two_turn)
@@ -1020,6 +1088,11 @@ def main(argv: list[str] | None = None) -> int:
         "watch",
         help="only the origin/main watcher probe, for loops that poll it")
     wat.add_argument("--minutes", type=float, default=10.0)
+    chk.add_argument("--max-unmeasured", type=int, default=5,
+                     help="consecutive newest attempts allowed to record no "
+                          "bridge-health rate before that is itself a problem "
+                          "(default 5); only read when --min-applied is set, "
+                          "because it is that floor this keeps falsifiable")
     chk.add_argument("--max-city-two-turn", type=float, default=None,
                      help="fail when the MEDIAN second-city founding turn over "
                           "the last ten recorded runs exceeds this — the "
@@ -1049,6 +1122,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return check(args.runs, ledger, args.stale_hours,
                      min_applied=args.min_applied,
+                     unmeasured_limit=args.max_unmeasured,
                      heartbeat_minutes=args.heartbeat_minutes,
                      max_city_two_turn=args.max_city_two_turn)
     if args.command == "watch":
