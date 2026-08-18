@@ -462,9 +462,9 @@
     "agenda": "billboard",
     "effects": {
       "city_gold": 1,
-      "city_production": 1
+      "dam_district_production_pct": 50
     },
-    "note": "Grootscheepsvaart: +1 gold and +1 production in every city",
+    "note": "Grootscheepsvaart: +1 gold in every city and +50% production toward Dams",
     "traits": [
       "pursue_diplomatic_victory"
     ]
@@ -1128,10 +1128,12 @@
     "ability": "divine_wind",
     "agenda": "bushido",
     "effects": {
-      "city_production": 1,
+      "encampment_district_production_pct": 100,
+      "holy_site_district_production_pct": 100,
+      "theater_square_district_production_pct": 100,
       "combat_strength": 2
     },
-    "note": "Divine Wind: +1 production and +2 combat strength",
+    "note": "Divine Wind: +100% production toward Encampment, Holy Site, and Theater Square districts; +2 combat strength",
     "traits": [
       "aggressive_military"
     ]
