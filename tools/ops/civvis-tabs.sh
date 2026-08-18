@@ -12,7 +12,7 @@
 # the lowest-numbered window wins, so the exhibition stays put in one window
 # instead of hopping as games restart.
 PORT=${1:-8766}
-KEEPLOG=/Users/martin/civvis-keeper.log
+KEEPLOG=$HOME/civvis-keeper.log
 
 closed=$(osascript <<OSA 2>/dev/null
 set thePort to "$PORT"

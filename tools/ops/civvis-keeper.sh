@@ -18,7 +18,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # six-worker background fleet league burning 490% CPU. Nothing in the Python
 # does this and no launchd key fixes it; it is the shell. Turn it off.
 unsetopt BG_NICE
-REPO=/Users/martin/CIVVIS
+REPO=$HOME/CIVVIS
 # Start the supervisor from the CANONICAL source worktree, never from $REPO.
 # $REPO is a shared checkout that other agents edit live: on 2026-07-25 its
 # tools/spectator_supervisor.py was 293 lines lighter than origin/main, a
@@ -26,9 +26,9 @@ REPO=/Users/martin/CIVVIS
 # canonical worktree anyway, so launching there just skips running a stranger's
 # WIP for the first few seconds. CIVVIS_DEPLOY_ROOT keeps the deploy root
 # ($REPO/target/spectator: binary, checkpoints, results) exactly where it was.
-SRC=/Users/martin/civvis-spectator-src
+SRC=$HOME/civvis-spectator-src
 LOG=$REPO/spectator.log
-KEEPLOG=/Users/martin/civvis-keeper.log
+KEEPLOG=$HOME/civvis-keeper.log
 PORT=8766
 URL="http://127.0.0.1:$PORT/"
 
@@ -161,12 +161,12 @@ while true; do
     # Prune stale CIVVIS tabs so the machine renders one map, not eight. Every
     # restarted game and every other agent's test server leaves a tab behind,
     # and each one drives a full canvas. Only 127.0.0.1:87xx is touched.
-    [[ -x /Users/martin/civvis-tabs.sh ]] && /Users/martin/civvis-tabs.sh "$PORT" > /dev/null 2>&1
+    [[ -x $HOME/civvis-tabs.sh ]] && $HOME/civvis-tabs.sh "$PORT" > /dev/null 2>&1
 
     # A tab that points at the exhibition is not necessarily a tab that is
     # SHOWING it -- see civvis-refresh.sh. Everything above this line was green
     # on 2026-07-25 while the visible page was frozen a full game behind.
-    [[ -x /Users/martin/civvis-refresh.sh ]] && /Users/martin/civvis-refresh.sh "$PORT" > /dev/null 2>&1
+    [[ -x $HOME/civvis-refresh.sh ]] && $HOME/civvis-refresh.sh "$PORT" > /dev/null 2>&1
 
     # Keep provisional challengers seatable. A new entrant competes with one
     # flat global rating against the third-best per-civ rating of a 15-way
@@ -174,7 +174,7 @@ while true; do
     # rate it -- see civvis-challenger-guard.sh. Self-limiting: it touches only
     # named challengers and stops at 12 games each, after which it is a no-op
     # forever. Throttles itself; safe to call every pass.
-    [[ -x /Users/martin/civvis-challenger-guard.sh ]] && /Users/martin/civvis-challenger-guard.sh >> $KEEPLOG 2>&1
+    [[ -x $HOME/civvis-challenger-guard.sh ]] && $HOME/civvis-challenger-guard.sh >> $KEEPLOG 2>&1
   fi
 
   sleep 15

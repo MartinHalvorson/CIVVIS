@@ -19,13 +19,13 @@
 #   zsh ~/civvis-chain-status.sh
 
 set -u
-export PATH=/Users/martin/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-REPO=/Users/martin/CIVVIS
-RUNNER=/Users/martin/civvis-batch-runner
-SPECTATOR=/Users/martin/civvis-spectator-src
-STATE=/Users/martin/.civvis-batch-loop.state
-LADDER=/Users/martin/civvis-civ6-runs/civvis_ladder.jsonl
+REPO=$HOME/CIVVIS
+RUNNER=$HOME/civvis-batch-runner
+SPECTATOR=$HOME/civvis-spectator-src
+STATE=$HOME/.civvis-batch-loop.state
+LADDER=$HOME/civvis-civ6-runs/civvis_ladder.jsonl
 
 bad=0
 ok()   { print -r -- "  PASS  $*" }
@@ -47,7 +47,7 @@ print "checkouts"
 # that landed since its last tick SHOULD still be missing. What is a fault is being
 # behind a commit the sync agent has already had a chance at — that means the agent
 # is dead, wedged, or skipping the checkout, and only then does a person need to look.
-last_sync=$(date -r /Users/martin/civvis-sync.log +%s 2>/dev/null || print 0)
+last_sync=$(date -r $HOME/civvis-sync.log +%s 2>/dev/null || print 0)
 tip_time=$(git -C $REPO log --format=%ct -1 $tip 2>/dev/null || print 0)
 for dir in $REPO $SPECTATOR; do
   [[ -d $dir ]] || { err "$dir is missing"; continue }
@@ -141,7 +141,7 @@ fi
 # re-installed every attempt), so the loop normally runs nohup'd from an interactive
 # context that holds the App Management grant. What matters is that SOMETHING holds
 # the lock and is alive — how it was started is an implementation detail.
-loop_pid=$(cat /Users/martin/.civvis-batch-loop.pid 2>/dev/null)
+loop_pid=$(cat $HOME/.civvis-batch-loop.pid 2>/dev/null)
 if [[ -n $loop_pid ]] && kill -0 $loop_pid 2>/dev/null; then
   if launchctl list 2>/dev/null | grep -q "	com.civvis.batchloop\$"; then
     ok "batch loop alive as pid $loop_pid (com.civvis.batchloop)"
