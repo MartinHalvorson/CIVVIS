@@ -4581,7 +4581,17 @@ impl BasicAi {
             }
         }
         revise_policy_deck(g, pid, &self.w, pool);
-        if g.players[pid].secret_society.is_none() {
+        // The engine's own gate, restated here rather than guessed at. This
+        // asked once per player per turn for the whole game and was refused
+        // every time in any game without the Secret Societies mode — 894
+        // refused orders in one 150-turn six-player game, second only to
+        // `Fortify`. The Advanced controller's own
+        // `advanced_secret_society` already carried these three conditions;
+        // the Basic path it composes over did not.
+        if g.game_mode("secret_societies")
+            && g.players[pid].secret_society.is_none()
+            && g.players[pid].civics.contains(&crate::name!("code_of_laws"))
+        {
             let society = if self.pursue_religion {
                 "voidsingers"
             } else {
