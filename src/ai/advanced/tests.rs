@@ -21307,6 +21307,25 @@ fn an_adjacent_empty_camp_is_cleared_instead_of_being_held_or_explored_past() {
     }
 }
 
+/// The adjacent camp clear ships default-ON, and this gate is the reason the
+/// v14 rating ledger survives it: `AdvancedAi::legacy()` — the frozen anchor
+/// whose fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins —
+/// must never see the treatment, exactly like `naval_recon`. The withhold arm
+/// `advanced_without_adjacent_camp_clear` prices it from the current
+/// controller instead.
+#[test]
+fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
+    assert!(
+        !AdvancedAi::legacy().adjacent_camp_clear(),
+        "the frozen anchor must keep playing the game it always played; \
+         re-pinning it starts a new ledger and is not this treatment's call"
+    );
+    assert!(AdvancedAi::new().adjacent_camp_clear());
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_adjacent_camp_clear();
+    assert!(!withheld.adjacent_camp_clear());
+}
+
 #[test]
 fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
     let mut game = Game::new_full(2, 30, 20, 90_081, 120, 0, false);

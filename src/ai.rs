@@ -2279,6 +2279,15 @@ pub struct BasicAi {
     /// same exchange gate as every other attack, recon excluded. Entrant
     /// `advanced_camp_bounty`; off in production pending its screen.
     pub(crate) camp_bounty: bool,
+    /// Walk onto a visible, undefended barbarian camp one legal step away —
+    /// the clear IS the move, so no attack scan ever offers it, and without
+    /// this a unit ends its turn beside a free 50-gold clear until the camp
+    /// spawns the archer that kills it. Unlike `camp_bounty` there is no
+    /// claim, no march, and no exchange gate: it fires only when the clear
+    /// is immediate. Default-ON; OFF on the frozen anchor
+    /// (`AdvancedAi::legacy`) so the rating ledger stands; withheld for
+    /// pricing by `advanced_without_adjacent_camp_clear`.
+    pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
     /// bounty never becomes an army diversion.
@@ -3844,6 +3853,7 @@ impl BasicAi {
             village_seeking: false,
             sea_answers: false,
             camp_bounty: false,
+            adjacent_camp_clear: true,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4049,6 +4059,14 @@ impl BasicAi {
         pid: usize,
         uid: u32,
     ) -> bool {
+        // Gated so the frozen rating anchor keeps the game it always played:
+        // `AdvancedAi::legacy()` ships this OFF, everything current ships it
+        // ON, and `advanced_without_adjacent_camp_clear` withholds it for
+        // pricing. Minors keep their own defense behaviour, as with the
+        // errand.
+        if !self.adjacent_camp_clear || self.minor {
+            return false;
+        }
         let Some(unit) = g.units.get(&uid) else {
             return false;
         };
@@ -4119,6 +4137,7 @@ impl BasicAi {
             village_seeking: false,
             sea_answers: false,
             camp_bounty: false,
+            adjacent_camp_clear: true,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),

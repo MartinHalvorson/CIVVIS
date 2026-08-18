@@ -3893,6 +3893,11 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        // The frozen rating anchor must keep playing the game it always
+        // played: the adjacent camp clear is default-ON everywhere current,
+        // and this line is the gate that keeps it away from the anchor so
+        // the ledger stands (see `advanced_v1_plays_the_same_game_it_always_did`).
+        ai.base.adjacent_camp_clear = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
