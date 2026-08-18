@@ -285,6 +285,7 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
         self.assertEqual(hardcoded_homes(self.LAUNCHER), [])
 
 
+@unittest.skipUnless(HAS_ZSH, "the launcher is zsh; this runner has no /bin/zsh")
 class TheExhibitionIsKeptAliveToo(unittest.TestCase):
     """The other shipped product had no keeper at all.
 
