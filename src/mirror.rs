@@ -2347,6 +2347,107 @@ mod tests {
         assert_eq!(rebuilt.game.domestic_tourists(0), 31);
     }
 
+    /// ★★★ `Game::spies` was empty for the whole of a live game, so the AI's
+    /// entire espionage layer — twelve missions, per-lane promotion
+    /// priorities, a +90 weight on the denial target — iterated an empty map
+    /// and could not choose anything. And the blanket production block is why
+    /// the seat never held a Spy to seat: over twelve completed live games it
+    /// finished holding the Diplomatic Service civic in 12 of 12 and fielded
+    /// zero Spies.
+    #[test]
+    fn live_spies_are_seated_and_the_block_follows_capacity() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 120,
+            spy_capacity: Some(2),
+            ..StateSnapshot::default()
+        };
+        // A city, or `player_city_ids` is empty and the block is vacuous in
+        // both directions — which is how the first draft of this test passed
+        // its "unblocked" assertion while proving nothing.
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 77,
+            kind: "UNIT_SPY".to_string(),
+            x: 3,
+            y: 3,
+            ..StateUnit::default()
+        });
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let seated: Vec<_> = rebuilt
+            .game
+            .spies
+            .values()
+            .filter(|spy| spy.owner == 0)
+            .collect();
+        assert_eq!(
+            seated.len(),
+            1,
+            "the live Spy reaches the AI's own structure"
+        );
+        assert_eq!(
+            rebuilt.unit_ids.get(&seated[0].id),
+            Some(&77),
+            "the spy id is its unit id, so an order translates straight back"
+        );
+
+        // One of two: there is room, so the production block lifts.
+        let spy_item = crate::game::Item::Unit {
+            unit: crate::name!("spy"),
+        };
+        let key = crate::game::Game::production_block_key(&spy_item);
+        let blocked_somewhere = rebuilt
+            .game
+            .blocked_production
+            .values()
+            .any(|keys| keys.contains(&key));
+        assert!(
+            !blocked_somewhere,
+            "under capacity the empire must be allowed to train the Spy it can field"
+        );
+
+        // At capacity it is blocked again — the refusals the blanket block was
+        // written for are exactly ordering past the limit.
+        let mut full = state.clone();
+        full.spy_capacity = Some(1);
+        let at_cap = rebuild_from_state(&snapshot, &full, 2, 1, 250, 0);
+        assert!(
+            at_cap
+                .game
+                .blocked_production
+                .values()
+                .any(|keys| keys.contains(&key)),
+            "at capacity the order is unplayable and must stay blocked"
+        );
+
+        // An older mod cannot report capacity: keep the old unconditional
+        // block rather than loosening a bridge that cannot measure itself.
+        let mut silent = state.clone();
+        silent.spy_capacity = None;
+        let unknown = rebuild_from_state(&snapshot, &silent, 2, 1, 250, 0);
+        assert!(
+            unknown
+                .game
+                .blocked_production
+                .values()
+                .any(|keys| keys.contains(&key)),
+            "unknown capacity must fail closed"
+        );
+    }
+
     /// The host's victory checkboxes have crossed the wire in the seat event
     /// all along and were dropped: a live board always played the all-six
     /// default, so `victory_strategy_enabled` could authorise a lane the
@@ -4033,7 +4134,12 @@ mod tests {
         let city = mirror.cid_of[&1];
         assert!(
             !mirror.game.can_produce(0, city, &spy),
-            "the host never accepts a city-built Spy"
+            // ⚠ This state reports no `spy_capacity`, which is now what the
+            // block keys on: an export that cannot say how many Spies the
+            // empire may field fails CLOSED, exactly as before. A build that
+            // DOES report capacity is allowed to train one while under it —
+            // see `live_spies_are_seated_and_the_block_follows_capacity`.
+            "an unknown Spy capacity keeps the unconditional block"
         );
         assert_eq!(
             mirror.game.blocked_production[&city],
@@ -9206,6 +9312,17 @@ pub struct StateSnapshot {
     /// `None` means unavailable rather than an authoritative zero.
     #[serde(default)]
     pub favor: Option<f64>,
+    /// How many Spies Civilization VI will let this empire field, from the
+    /// accessor the shipped Espionage Overview prints
+    /// (`GetDiplomacy():GetSpyCapacity()`).
+    ///
+    /// Without it `block_live_spy_production` had to refuse Spy production
+    /// unconditionally, and the seat has therefore never held one: measured
+    /// over twelve completed live games it finished holding the Diplomatic
+    /// Service civic in **12 of 12** and fielded **zero** Spies. `None` means
+    /// an older control mod could not say, which keeps the old blanket block.
+    #[serde(default)]
+    pub spy_capacity: Option<i64>,
     /// Our own culture-victory counters, same accessors as each rival's
     /// (`GetTouristsTo`/`GetStaycationers`): OUR staycationers are the bar
     /// every rival's visiting tourists must clear. `-1` when the host could
@@ -10777,6 +10894,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "faith_sources", "science",
         "culture", "public_stats", "score", "dvp", "favor",
+        "spy_capacity",
         "foreign_tourists", "domestic_tourists",
         "military",
         "trade_capacity",
@@ -11845,17 +11963,102 @@ fn blocked_production_from(
 ///
 /// CIVVIS models Spies as ordinary units for standalone simulations, so keep that model
 /// intact and block the host-only mismatch only on reconstructed live boards.
-fn block_live_spy_production(game: &mut crate::game::Game) {
+fn block_live_spy_production(game: &mut crate::game::Game, capacity: Option<i64>) {
+    // ★★★★ THE BLANKET BLOCK IS WHY THE SEAT HAS NEVER HELD A SPY, AND WITH
+    // IT THE WHOLE ESPIONAGE LAYER WAS DEAD.
+    //
+    // The block was a fair response to a real number — `UNIT_SPY` was the
+    // second most-requested production item in the fleet, 550 of 5,618 orders
+    // (9.8%), 84% refused as unplayable — but it treats "cannot right now" as
+    // "cannot ever". Civilization VI trains Spies in cities like any other
+    // unit (`Units.xml` gives `UNIT_SPY` a Cost of 225 and no purchase-only
+    // flag); what gates them is CAPACITY, and the refusals are what ordering
+    // past a full or unearned capacity looks like. Measured over twelve
+    // completed live games the seat finished holding the Diplomatic Service
+    // civic in **12 of 12** and fielded **zero** Spies, because this function
+    // refused every order before the host ever saw it.
+    //
+    // With `spy_capacity` on the wire the block becomes what it should always
+    // have been: refuse only when the empire is already at its limit. An older
+    // mod that cannot report capacity keeps the old unconditional behaviour,
+    // so this cannot loosen a bridge that has not been taught to measure it.
+    let held = game
+        .spies
+        .values()
+        .filter(|spy| spy.owner == 0 && spy.captured_by.is_none())
+        .count() as i64;
+    let room = capacity.is_some_and(|capacity| held < capacity);
     let spy = crate::game::Item::Unit {
         unit: crate::name!("spy"),
     };
     let key = crate::game::Game::production_block_key(&spy);
     let mut blocked = std::mem::take(&mut game.blocked_production);
     for city in game.player_city_ids(0) {
-        blocked.entry(city).or_default().insert(key.clone());
+        let entry = blocked.entry(city).or_default();
+        if room {
+            entry.remove(&key);
+        } else {
+            entry.insert(key.clone());
+        }
     }
     // Replacing rather than mutating directly also invalidates a previously cached menu.
     game.replace_blocked_production(blocked);
+}
+
+/// Seat the empire's live Spies in `Game::spies`, which is otherwise empty for
+/// the whole of a live game.
+///
+/// ⚠⚠ TWO REPRESENTATIONS, AND ONLY ONE OF THEM DRIVES THE AI. A native CIVVIS
+/// Spy is a `Game::spies` entry and nothing on the map; Civilization VI's is an
+/// ordinary `UNIT_SPY` this mirror imports as a unit. `AdvancedAi::advanced_spies`
+/// and `BasicAi::spies` both iterate `Game::spies`, so until it is filled the
+/// entire espionage layer — twelve missions, promotion priorities per grand
+/// strategy, and a +90 weight on the denial target — cannot see a single agent
+/// and is a guaranteed no-op.
+///
+/// The unit id is reused as the spy id so an order can be translated straight
+/// back onto the unit it came from. `city` is the city the agent is standing
+/// in, which is what the host's own missions are aimed from.
+fn seat_live_spies(game: &mut crate::game::Game) {
+    game.spies.retain(|_, spy| spy.owner != 0);
+    let live: Vec<(u32, i64, std::collections::BTreeSet<String>, Option<u32>)> = game
+        .units
+        .values()
+        .filter(|unit| unit.owner == 0 && unit.kind == "spy")
+        .map(|unit| {
+            let city = game
+                .cities
+                .iter()
+                .find(|(_, city)| city.owner == 0 && city.pos == unit.pos)
+                .map(|(id, _)| *id);
+            (
+                unit.id,
+                unit.level.max(1) as i64,
+                unit.promotions
+                    .iter()
+                    .map(|name| name.to_string())
+                    .collect(),
+                city,
+            )
+        })
+        .collect();
+    for (id, level, promotions, city) in live {
+        let spy = game.spies.entry(id).or_insert_with(|| crate::game::Spy {
+            id,
+            owner: 0,
+            level,
+            promotions: Default::default(),
+            city: None,
+            ready_turn: 0,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        });
+        spy.level = level;
+        spy.promotions = promotions;
+        spy.city = city;
+    }
 }
 
 /// Districts the host refused to place, per Civilization VI city id.
@@ -14778,7 +14981,8 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
-    block_live_spy_production(&mut game);
+    seat_live_spies(&mut game);
+    block_live_spy_production(&mut game, state.spy_capacity);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
     if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
@@ -15985,7 +16189,8 @@ impl LiveMirror {
 
         // This host rule is permanent, unlike a recent refusal cooldown. Apply it after
         // each replacement and after newly observed cities have been placed.
-        block_live_spy_production(&mut self.game);
+        seat_live_spies(&mut self.game);
+        block_live_spy_production(&mut self.game, state.spy_capacity);
 
         // --- rivals ----------------------------------------------------------
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
