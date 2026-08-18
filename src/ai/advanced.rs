@@ -16769,7 +16769,8 @@ impl AdvancedAi {
         let counts = self.counts(g, pid);
         let desired = self.settlement_target(plan);
         if city_count + counts.settlers >= desired
-            || counts.settlers >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
+            || counts.settlers
+                >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
         {
             return;
         }
@@ -28306,8 +28307,7 @@ impl AdvancedAi {
                         | GrandStrategy::Religion
                         | GrandStrategy::Diplomacy
                 ))
-                || (self.governor_expansion_lane
-                    && plan.strategy == GrandStrategy::Expansion);
+                || (self.governor_expansion_lane && plan.strategy == GrandStrategy::Expansion);
             if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch

@@ -1457,10 +1457,12 @@ fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
         block.contains("|| every_lane"),
         "the every-lane arm reaches the same production call"
     );
+    // The arm is two flags since the bisect: the composite still covers the
+    // same five lanes, but each half can be measured on its own.
     let arm = src
-        .split("let every_lane = self.governor_every_lane")
+        .split("let every_lane = (self.governor_victory_lanes")
         .nth(1)
-        .expect("the arm is gated by the flag")
+        .expect("the arm is gated by the flags")
         .split(';')
         .next()
         .expect("the arm ends");
@@ -1470,6 +1472,10 @@ fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
             "the {lane} lane is covered"
         );
     }
+    assert!(
+        arm.contains("self.governor_expansion_lane"),
+        "the Expansion lane hangs off its own half"
+    );
     assert!(
         !arm.contains("GrandStrategy::Conquest") && !arm.contains("GrandStrategy::Recovery"),
         "war lanes keep their own routing"
