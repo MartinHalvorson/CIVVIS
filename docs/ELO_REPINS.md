@@ -1373,3 +1373,30 @@ unchanged. Compatibility re-pin; the Elo protocol does not move.
 The 2026-08-17 measured-null production cleanup changes the shared source
 file but leaves `AdvancedAi::legacy()` gated away from both retired arms;
 compatibility re-pin, not a new rating protocol.
+
+---
+
+## v13 (2026-08-18) — the Founder beliefs, and the first entry here that is not free
+
+Every entry above argues that a change to the shared AI files did **not** move
+what `advanced_v1` plays. This one is the opposite and is recorded for that
+reason: it did not touch `src/ai.rs` or `src/ai/advanced.rs` at all, and it
+moved the anchor anyway, because it changed the **game** rather than an agent.
+
+`data/beliefs.json` wired Tithe, World Church and Pilgrimage to the domestic
+form of a key the shipped Civilization VI database defines on what is foreign
+(`TITHE_GOLD_FOLLOWER`, `WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER`,
+`PILGRIMAGE_FAITH_FOREIGN_CITY`), and had no Church Property at all because
+Tithe was standing on its key. Correcting them changes every game in which a
+religion is founded, so it changes what every agent decides, the frozen anchor
+included: **18,572 decisions became 18,466** across the five anchor profiles.
+
+The anchor test names the two available responses — bump the ledger version, or
+find the gate that should have kept the change away from the anchor. There is
+no such gate here and there should not be: a rules correction is meant to reach
+every seat. So the ledger version went to 13, which is what v9 did a few hours
+earlier for the same class of change (a pillaged improvement granting Housing).
+
+⚠ Rows before and after v13 are not comparable in any game where a religion was
+founded, which on the evaluator's own board is about three quarters of them.
+

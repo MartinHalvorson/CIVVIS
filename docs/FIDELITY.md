@@ -906,6 +906,44 @@ Prophet class exhausted every one of those points is Faith. Now in
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
 
+### The Founder beliefs paid for followers at home, and Civilization VI pays for them abroad (2026-08-18)
+
+Found by asking the mirror of a question `tools/civvis_inert.py` has always
+asked. That tool reports rules-data keys the engine never reads; nothing asked
+which keys the **engine prices that no data supplies**, and `founder_belief_yields`
+had four such arms. Three of them were dead because a belief was wired to the
+domestic form of a key the game defines on what is foreign, so the correct arm
+sat unreachable while the belief paid the wrong thing.
+
+Read from the installed gameplay database — the belief-yield census is one
+query and the modifier ids name the distinction themselves:
+
+| belief | `beliefs.json` before | the shipped database |
+|---|---|---|
+| Tithe | `gold_per_city: 3` | `TITHE_GOLD_FOLLOWER` — +1 Gold per **4 followers** |
+| Church Property | *absent* | `CHURCH_PROPERTY_GOLD_CITY` — +2 Gold per following city |
+| World Church | `culture_per_followers: 0.25` | `WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER` — +1 Culture per **5 foreign** followers |
+| Pilgrimage | `faith_per_city: 2` | `PILGRIMAGE_FAITH_FOREIGN_CITY` — +2 Faith per **foreign** following city |
+| Cross-Cultural Dialogue | 1 per 4 foreign followers | `PerXItems` is **5** |
+
+Tithe was not merely mis-valued: it was standing on Church Property's key,
+which is why the absent belief was never noticed.
+
+**This inverts an incentive rather than moving a number.** Civilization VI pays
+a founder for converting its *rivals* — the entire reason Missionaries and
+Apostles are worth building — and the domestic form paid for converting nobody.
+Religion decides about three quarters of the games on the evaluator's own
+board, so every religion treatment measured before this was measured against
+the wrong gradient. The frozen rating anchor moved with it (18,572 decisions to
+18,466) and `ELO_PROTOCOL_VERSION` went to 13; see `docs/ELO_REPINS.md`.
+
+Three engine arms had **no row of their shape anywhere in the game's belief
+census** — Culture per domestic follower, Faith per domestic city, Gold per
+foreign city — and are removed rather than waived. `civvis_inert.py` now fails
+when `founder_belief_yields` prices a key no belief supplies, at a ratchet of
+zero, so the next arm added without a belief behind it is a red gate rather
+than a quiet nothing.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the
