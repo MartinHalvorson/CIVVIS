@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 18,
-    "never_named": 35,
+    "named": 19,
+    "never_named": 34,
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
@@ -26,7 +26,6 @@
       "religion-sues-peace",
       "score-horizon",
       "siege-commitment",
-      "siege-is-progress",
       "siege-role",
       "siege-tracks-wall",
       "slot-kind-tiebreak",
