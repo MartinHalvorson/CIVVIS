@@ -337,6 +337,36 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("DESKTOP_AFTER = 4", closer)
         self.assertIn('report("autoclose_desktop"', closer)
 
+    def test_spy_popups_clear_through_their_shipped_paths(self) -> None:
+        """Spy overlays must disappear without leaving an end-turn decision behind."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        for context in ("EspionagePopup", "EspionageEscape"):
+            self.assertIn(f"<LuaContext>{context}</LuaContext>", modinfo)
+
+        briefing = closer.split('if NAME == "EspionagePopup"', 1)[1].split(
+            "return true;", 1
+        )[0]
+        self.assertIn('type(OnCancel) == "function"', briefing)
+        self.assertIn("OnCancel();", briefing)
+
+        escape = closer.split('if NAME == "EspionageEscape"', 1)[1].split(
+            "return true;", 1
+        )[0]
+        self.assertIn('type(OnButton4) == "function"', escape)
+        self.assertIn("OnButton4();", escape)
+        self.assertIn('or type(OnButton4) == "function"', closer)
+
+        # Treat these full-screen choices like dialogue: on a normal run they
+        # close within 0.25s, while the ladder's 0.05s announcement setting
+        # remains even faster.
+        quick_clock = closer.split('if NAME == "DiplomacyActionView"', 1)[1].split(
+            "end\nif SECONDS < 0", 1
+        )[0]
+        self.assertIn('NAME == "EspionagePopup"', quick_clock)
+        self.assertIn('NAME == "EspionageEscape"', quick_clock)
+
     def test_governors_export_exact_state_and_use_stock_operation_indices(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("-- Governor Titles", 1)[1].split('emit("state"', 1)[0]
