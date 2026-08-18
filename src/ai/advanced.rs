@@ -4189,6 +4189,12 @@ impl AdvancedAi {
         self.base.camp_reach
     }
 
+    /// Whether the adjacent camp clear is on. See
+    /// `BasicAi::adjacent_camp_clear`.
+    pub fn adjacent_camp_clear(&self) -> bool {
+        self.base.adjacent_camp_clear
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {

@@ -1301,10 +1301,6 @@ impl AdvancedAi {
         self.base.adjacent_camp_clear = false;
     }
 
-    pub fn adjacent_camp_clear(&self) -> bool {
-        self.base.adjacent_camp_clear
-    }
-
     /// Let the deck counterfactual see the unit-maintenance bill. See
     /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
     pub fn enable_maintenance_aware_deck(&mut self) {
