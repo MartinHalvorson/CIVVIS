@@ -34166,6 +34166,10 @@ impl Game {
                 .get(pos)
                 .map(|tile| self.rules.is_water(tile))
                 .unwrap_or(false);
+        // Free Cities also carry `is_barbarian`; only the true barbarian
+        // seat's takings belong on the raid ledger.
+        let mover_is_barbarian =
+            self.players[owner].is_barbarian && !self.players[owner].is_free_city;
         let mut affected_owners = BTreeSet::new();
         for oid in self.units_at(pos) {
             if oid == uid || self.units[&oid].owner == owner {
@@ -34174,10 +34178,18 @@ impl Game {
             let kind = self.units[&oid].kind;
             let class = self.rules.units[kind].class.as_str();
             if can_capture && matches!(kind.as_str(), "builder" | "settler") {
-                affected_owners.insert(self.units[&oid].owner);
+                let old = self.units[&oid].owner;
+                affected_owners.insert(old);
+                if mover_is_barbarian {
+                    bump(&mut self.players[old], "civilians_lost_to_barbarians");
+                }
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
-                affected_owners.insert(self.units[&oid].owner);
+                let old = self.units[&oid].owner;
+                affected_owners.insert(old);
+                if mover_is_barbarian {
+                    bump(&mut self.players[old], "civilians_lost_to_barbarians");
+                }
                 self.remove_unit(oid);
             }
         }
@@ -45754,6 +45766,14 @@ impl Game {
             .counters
             .entry(format!("kill_kind:{}", victim.kind))
             .or_insert(0) += 1;
+        // The loss side of the same ledger. Only `kills` and `barbs_killed`
+        // existed, so a game could say what an empire took from the
+        // barbarians but never what the barbarians took from it. Free Cities
+        // also carry `is_barbarian`; a revolt's garrison is not a raider, so
+        // it is excluded here.
+        if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
+            bump(&mut self.players[victim.owner], "lost_to_barbarians");
+        }
         if self.players[victim.owner].is_barbarian {
             bump(&mut self.players[pid], "barbs_killed");
         } else {

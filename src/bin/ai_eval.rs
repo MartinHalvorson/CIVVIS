@@ -25,6 +25,36 @@ const MINOR_DEPENDENT_ARMS: [&str; 6] = [
     "advanced_policy_envoy_priority",
 ];
 
+/// Arms measured to complete so rarely at the deployment profile that a margin
+/// against them measures THEIR floor rather than the other arm's strength.
+///
+/// ⚠⚠ THIS IS A CONTROL PROBLEM, AND IT HAS ALREADY PRODUCED A NUMBER NOBODY
+/// SHOULD QUOTE. `victory_eval --players 6 --turns 250 --speed online`, 96
+/// games on two disjoint seed streams, completes:
+///
+///   diplomatic 14/16 · culture 12/16 · religious 8/16 · domination 2/16 ·
+///   **science 0/16**
+///
+/// Every named lane was then compared against `advanced_target_science` and all
+/// four beat it — diplomatic by +669 Elo, "CONFIRMED", 23-0-1. Promoted effects
+/// on this ledger run +30..+40, so a +669 is a broken incumbent rather than a
+/// discovery, and the demonstration is in the ledger too: diplomatic against
+/// religious, the fair fight between two lanes that BOTH finish, is 47.9%,
+/// −14 Elo, p=1.0000, inconclusive. If Diplomacy were strong it would beat
+/// Religion. It does not.
+///
+/// `EVAL_INTEGRITY.md` R1 names this family — "controls are not matched" — and
+/// the repository has repaired the genome-matching instance of it already. This
+/// is the same defect one level up: the control is the arm carrying less.
+///
+/// Listed rather than derived because "can this arm finish" is a measurement,
+/// not something the binary can compute at startup. Add an arm here when a
+/// screen shows it cannot complete at this shape, and cite the screen.
+const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
+    "advanced_target_science",
+    "completes 0/16 at the deployment profile (victory_eval, 96 games, two disjoint streams)",
+)];
+
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
@@ -34,6 +64,12 @@ const ANYTIME_TAIL_ALPHA: f64 = 0.025;
 /// `1 + lambda * (score - 0.5)` is nonnegative and has expectation at most one
 /// for the challenger-side test. Negating the bet tests the incumbent side.
 const BET_LAMBDAS: [f64; 10] = [0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 0.90, 1.15, 1.45, 1.80];
+/// Candidate means scanned when the betting test is inverted into an interval.
+/// The scan only has to isolate each endpoint's cell; bisection inside that
+/// cell supplies the precision the report prints.
+const INTERVAL_GRID: usize = 1_000;
+/// Bisection steps per endpoint, which take a 1/1000 cell below 1e-9.
+const INTERVAL_REFINEMENTS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PromotionVerdict {
@@ -47,8 +83,14 @@ enum PromotionVerdict {
 struct PairedInference {
     maps: usize,
     score: f64,
+    /// Anytime-valid betting interval. This is the gate's interval.
     low: f64,
     high: f64,
+    /// The maximum-variance Wilson interval this gate used to decide on, kept
+    /// so every historical run stays comparable and the width the old rule
+    /// charged is visible beside the width the evidence supports.
+    wilson_low: f64,
+    wilson_high: f64,
     elo: f64,
     elo_low: f64,
     elo_high: f64,
@@ -138,6 +180,170 @@ fn log_mean_exp(values: &[f64]) -> f64 {
         - (values.len() as f64).ln()
 }
 
+/// Peak evidence, in each direction, from a mixture of betting martingales
+/// against the hypothesis that the true paired-map mean is `candidate`.
+///
+/// `BET_LAMBDAS` is declared against parity, where a map score's edge spans
+/// +/- 0.5 and the largest safe stake is 2. A candidate mean `m` moves that
+/// span to `[-m, 1 - m]`, so every stake is rescaled by `stake_cap(m) / 2`:
+/// the shipped grid is reproduced exactly at `m == 0.5`, and no factor can go
+/// nonpositive anywhere else.
+///
+/// One extra bet is **adaptive**: it stakes the growth-rate-optimal amount
+/// implied by the running mean and variance. Ville's inequality needs only
+/// that a stake be *predictable* — a function of the maps already seen — so
+/// this stays exactly as valid as the fixed grid while concentrating capital
+/// on the bet size the data actually supports. A uniform grid spends nine
+/// tenths of its wealth on stakes the run has already ruled out.
+struct BettingPeaks {
+    challenger_log_e: f64,
+    incumbent_log_e: f64,
+    challenger_crossed_at: Option<usize>,
+    incumbent_crossed_at: Option<usize>,
+}
+
+/// The largest stake that keeps `1 +/- lambda * (score - candidate)` positive
+/// for every score in [0, 1]. Two at parity, and never below one.
+fn stake_cap(candidate: f64) -> f64 {
+    1.0 / candidate.max(1.0 - candidate).max(f64::MIN_POSITIVE)
+}
+
+fn betting_peaks(scores: &[f64], candidate: f64, monitor_from: usize) -> BettingPeaks {
+    let cap = stake_cap(candidate);
+    let scale = cap / 2.0;
+    let mut challenger_log_wealth = [0.0; BET_LAMBDAS.len()];
+    let mut incumbent_log_wealth = [0.0; BET_LAMBDAS.len()];
+    let mut challenger_adaptive = 0.0_f64;
+    let mut incumbent_adaptive = 0.0_f64;
+    let mut challenger_peak = 0.0_f64;
+    let mut incumbent_peak = 0.0_f64;
+    let mut challenger_crossed_at = None;
+    let mut incumbent_crossed_at = None;
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    // Shrunk running moments, so the first map bets from parity rather than
+    // from a degenerate one-sample estimate.
+    let mut seen = 0.0_f64;
+    let mut sum = 0.0_f64;
+    let mut sum_squared_deviation = 0.0_f64;
+    let mut mixture = [0.0; BET_LAMBDAS.len() + 1];
+
+    for (index, raw_score) in scores.iter().enumerate() {
+        debug_assert!((0.0..=1.0).contains(raw_score));
+        let edge = raw_score.clamp(0.0, 1.0) - candidate;
+        for (bet, lambda) in BET_LAMBDAS.iter().enumerate() {
+            let stake = lambda * scale;
+            challenger_log_wealth[bet] += (1.0 + stake * edge).ln();
+            incumbent_log_wealth[bet] += (1.0 - stake * edge).ln();
+        }
+        // Predictable: every term below is fixed before this map is read.
+        let running_mean = (0.5 + sum) / (1.0 + seen);
+        let running_variance = (0.25 + sum_squared_deviation) / (1.0 + seen);
+        let drift = running_mean - candidate;
+        let optimal = drift / (running_variance + drift * drift);
+        let adaptive_cap = 0.9 * cap;
+        challenger_adaptive += (1.0 + optimal.clamp(0.0, adaptive_cap) * edge).ln();
+        incumbent_adaptive += (1.0 - (-optimal).clamp(0.0, adaptive_cap) * edge).ln();
+        seen += 1.0;
+        sum += raw_score;
+        let updated_mean = (0.5 + sum) / (1.0 + seen);
+        sum_squared_deviation += (raw_score - updated_mean).powi(2);
+
+        let maps = index + 1;
+        if maps < monitor_from {
+            continue;
+        }
+        mixture[..BET_LAMBDAS.len()].copy_from_slice(&challenger_log_wealth);
+        mixture[BET_LAMBDAS.len()] = challenger_adaptive;
+        let challenger_log_e = log_mean_exp(&mixture);
+        mixture[..BET_LAMBDAS.len()].copy_from_slice(&incumbent_log_wealth);
+        mixture[BET_LAMBDAS.len()] = incumbent_adaptive;
+        let incumbent_log_e = log_mean_exp(&mixture);
+        challenger_peak = challenger_peak.max(challenger_log_e);
+        incumbent_peak = incumbent_peak.max(incumbent_log_e);
+        if challenger_crossed_at.is_none() && challenger_log_e >= crossing_log_e {
+            challenger_crossed_at = Some(maps);
+        }
+        if incumbent_crossed_at.is_none() && incumbent_log_e >= crossing_log_e {
+            incumbent_crossed_at = Some(maps);
+        }
+    }
+
+    BettingPeaks {
+        challenger_log_e: challenger_peak,
+        incumbent_log_e: incumbent_peak,
+        challenger_crossed_at,
+        incumbent_crossed_at,
+    }
+}
+
+/// Invert the betting test into a confidence interval: keep every candidate
+/// mean the run's own evidence cannot reject at `ANYTIME_TAIL_ALPHA` per side.
+///
+/// This is the interval the promotion gate needs and Wilson cannot supply.
+/// Wilson charges a split map — the commonest outcome of a mirrored A/B, and
+/// the one carrying no direction at all — the full `p(1 - p)` variance of a
+/// coin flip. Real evaluator runs sit 3x to 6x under that, so the interval is
+/// roughly twice as wide as the evidence warrants and a genuine edge reads as
+/// inconclusive. A betting interval is finite-sample valid for *any* bounded
+/// observation, so it narrows on concentrated runs without ever assuming the
+/// dispersion it is measuring: it does not estimate a variance, it bets.
+///
+/// Monitoring begins at the same map the gate's evidence does, so at
+/// `PROMOTION_MIN_MAPS` or more the interval excludes parity on exactly the
+/// runs `anytime_evidence` calls decisive. Shorter runs are reported from
+/// their final prefix and remain `Insufficient`.
+fn betting_interval(scores: &[f64]) -> (f64, f64) {
+    if scores.is_empty() {
+        return (0.0, 1.0);
+    }
+    let monitor_from = PROMOTION_MIN_MAPS.min(scores.len());
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    let retained = |candidate: f64| {
+        let peaks = betting_peaks(scores, candidate, monitor_from);
+        peaks.challenger_log_e < crossing_log_e && peaks.incumbent_log_e < crossing_log_e
+    };
+    // The stake rescaling makes each side's evidence very nearly monotone in
+    // the candidate but not provably so, so isolate the endpoints by scan
+    // rather than by assuming one crossing, then bisect for precision.
+    let mut first = None;
+    let mut last = None;
+    for step in 0..=INTERVAL_GRID {
+        let candidate = step as f64 / INTERVAL_GRID as f64;
+        if retained(candidate) {
+            first.get_or_insert(step);
+            last = Some(step);
+        }
+    }
+    let (Some(first), Some(last)) = (first, last) else {
+        // Every candidate rejected: the run is its own best estimate.
+        let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+        return (mean, mean);
+    };
+    let cell = 1.0 / INTERVAL_GRID as f64;
+    let refine = |mut rejected: f64, mut kept: f64| {
+        for _ in 0..INTERVAL_REFINEMENTS {
+            let middle = 0.5 * (rejected + kept);
+            if retained(middle) {
+                kept = middle;
+            } else {
+                rejected = middle;
+            }
+        }
+        kept
+    };
+    let low = if first == 0 {
+        0.0
+    } else {
+        refine(first as f64 * cell - cell, first as f64 * cell)
+    };
+    let high = if last == INTERVAL_GRID {
+        1.0
+    } else {
+        refine(last as f64 * cell + cell, last as f64 * cell)
+    };
+    (low.clamp(0.0, 1.0), high.clamp(0.0, 1.0))
+}
+
 /// Anytime-valid evidence against parity from a finite mixture of betting
 /// martingales. The process starts with one unit of wealth; Ville's inequality
 /// makes `1 / peak wealth` a valid upper bound on the probability of ever
@@ -147,53 +353,34 @@ fn log_mean_exp(values: &[f64]) -> f64 {
 /// Monitoring begins only at `PROMOTION_MIN_MAPS`, so a lucky sub-minimum prefix
 /// cannot earn a permanent promotion before the representativeness floor.
 fn anytime_evidence(scores: &[f64]) -> AnytimeEvidence {
-    let mut challenger_log_wealth = [0.0; BET_LAMBDAS.len()];
-    let mut incumbent_log_wealth = [0.0; BET_LAMBDAS.len()];
-    let mut challenger_peak_log_e = 0.0_f64;
-    let mut incumbent_peak_log_e = 0.0_f64;
-    let mut challenger_crossed_at = None;
-    let mut incumbent_crossed_at = None;
-    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
-
-    for (index, raw_score) in scores.iter().enumerate() {
-        debug_assert!((0.0..=1.0).contains(raw_score));
-        let edge = raw_score.clamp(0.0, 1.0) - 0.5;
-        for (bet, lambda) in BET_LAMBDAS.iter().enumerate() {
-            challenger_log_wealth[bet] += (1.0 + lambda * edge).ln();
-            incumbent_log_wealth[bet] += (1.0 - lambda * edge).ln();
-        }
-        let maps = index + 1;
-        if maps < PROMOTION_MIN_MAPS {
-            continue;
-        }
-        let challenger_log_e = log_mean_exp(&challenger_log_wealth);
-        let incumbent_log_e = log_mean_exp(&incumbent_log_wealth);
-        challenger_peak_log_e = challenger_peak_log_e.max(challenger_log_e);
-        incumbent_peak_log_e = incumbent_peak_log_e.max(incumbent_log_e);
-        if challenger_crossed_at.is_none() && challenger_log_e >= crossing_log_e {
-            challenger_crossed_at = Some(maps);
-        }
-        if incumbent_crossed_at.is_none() && incumbent_log_e >= crossing_log_e {
-            incumbent_crossed_at = Some(maps);
-        }
-    }
-
+    let peaks = betting_peaks(scores, 0.5, PROMOTION_MIN_MAPS);
     AnytimeEvidence {
-        challenger_peak_e: challenger_peak_log_e.min(f64::MAX.ln()).exp(),
-        incumbent_peak_e: incumbent_peak_log_e.min(f64::MAX.ln()).exp(),
-        challenger_p: (-challenger_peak_log_e).exp().min(1.0),
-        incumbent_p: (-incumbent_peak_log_e).exp().min(1.0),
-        challenger_crossed_at,
-        incumbent_crossed_at,
+        challenger_peak_e: peaks.challenger_log_e.min(f64::MAX.ln()).exp(),
+        incumbent_peak_e: peaks.incumbent_log_e.min(f64::MAX.ln()).exp(),
+        challenger_p: (-peaks.challenger_log_e).exp().min(1.0),
+        incumbent_p: (-peaks.incumbent_log_e).exp().min(1.0),
+        challenger_crossed_at: peaks.challenger_crossed_at,
+        incumbent_crossed_at: peaks.incumbent_crossed_at,
     }
 }
 
-/// A conservative Wilson score interval with one observation per mirrored map.
+/// Paired-map inference: the score, both intervals, and the promotion verdict.
 ///
 /// Pair scores can be fractional because a split scores 0.5 and a game without
-/// a winner is a draw. Treating each bounded map score as one Bernoulli-equivalent
-/// observation uses the maximum variance for that mean, so the swapped games are
-/// never falsely counted as independent evidence.
+/// a winner is a draw. One mirrored map is one observation, so the swapped
+/// games are never falsely counted as independent evidence.
+///
+/// ⚠ The interval that *decides* is `betting_interval`, not Wilson. Wilson
+/// treats each map score as Bernoulli and so charges it the maximum variance
+/// `p(1 - p)` for its mean. That is the right bound for a coin flip and the
+/// wrong one for this design: a mirrored A/B between close agents splits most
+/// of its maps, and a split is exactly the observation that carries no
+/// dispersion at all. Measured on the runs this repository has actually
+/// recorded, the empirical variance is 3.3x to 5.6x under the Bernoulli
+/// bound, so the old interval ran about twice as wide as the evidence
+/// warranted and rejected real edges as inconclusive. The betting interval is
+/// finite-sample valid for any bounded observation and adapts to the
+/// dispersion instead of assuming the worst of it. Both are reported.
 fn paired_inference(scores: &[f64]) -> PairedInference {
     let maps = scores.len();
     let anytime = anytime_evidence(scores);
@@ -203,6 +390,8 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
             score: 0.5,
             low: 0.0,
             high: 1.0,
+            wilson_low: 0.0,
+            wilson_high: 1.0,
             elo: 0.0,
             elo_low: elo_edge(0.0),
             elo_high: elo_edge(1.0),
@@ -217,8 +406,9 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
     let denominator = 1.0 + z2 / n;
     let center = (score + z2 / (2.0 * n)) / denominator;
     let radius = Z_95 * ((score * (1.0 - score) / n + z2 / (4.0 * n * n)).sqrt()) / denominator;
-    let low = (center - radius).clamp(0.0, 1.0);
-    let high = (center + radius).clamp(0.0, 1.0);
+    let wilson_low = (center - radius).clamp(0.0, 1.0);
+    let wilson_high = (center + radius).clamp(0.0, 1.0);
+    let (low, high) = betting_interval(scores);
     let challenger_evidence = anytime.challenger_p <= ANYTIME_TAIL_ALPHA;
     let incumbent_evidence = anytime.incumbent_p <= ANYTIME_TAIL_ALPHA;
     let verdict = if maps < PROMOTION_MIN_MAPS {
@@ -240,6 +430,8 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
         score,
         low,
         high,
+        wilson_low,
+        wilson_high,
         elo: elo_edge(score),
         elo_low: elo_edge(low),
         elo_high: elo_edge(high),
@@ -370,6 +562,11 @@ struct PlanTrace {
     /// Villages standing on the whole board at first observation — the
     /// denominator that turns final claims into a contested share.
     board_villages: Option<usize>,
+    /// Barbarian camps standing within six tiles of one of the seat's own
+    /// cities the first time the seat is observed at or past the middle
+    /// exploration mark; `None` when the game ended first. Six tiles is the
+    /// engine's own near-a-city radius for the camp-destroyed moment.
+    camps_near_home_by_mark: Option<usize>,
 }
 
 /// Turns at which each seat's explored-plot count is sampled. These match the
@@ -494,6 +691,22 @@ impl PlanTrace {
                     .get("goody_huts_claimed")
                     .copied()
                     .unwrap_or(0),
+            );
+        }
+        // Early-game barbarian exposure: how many camps stand beside this
+        // seat's cities when the opening is over. Sampled, because by the
+        // final position the world era has moved and camps have churned.
+        if g.turn >= EXPLORATION_MARKS[1] && self.camps_near_home_by_mark.is_none() {
+            let homes: Vec<_> = g
+                .player_city_ids(pid)
+                .iter()
+                .map(|cid| g.cities[cid].pos)
+                .collect();
+            self.camps_near_home_by_mark = Some(
+                g.barb_camps
+                    .keys()
+                    .filter(|camp| homes.iter().any(|home| g.wdist(**camp, *home) <= 6))
+                    .count(),
             );
         }
         let recon_now = g
@@ -712,6 +925,16 @@ struct Metrics {
     majors_met_by_t50: f64,
     first_major_meet_turn_sum: f64,
     first_major_meet_seats: usize,
+    /// Barbarian ledger, both sides: what the seat took from the barbarians
+    /// and what the barbarians took from it, plus the camp exposure that
+    /// frames those numbers.
+    camps_cleared: f64,
+    barbs_killed: f64,
+    lost_to_barbarians: f64,
+    civilians_lost_to_barbarians: f64,
+    camps_near_home: f64,
+    camps_near_home_seats: usize,
+    camps_standing: f64,
 }
 
 impl Metrics {
@@ -868,6 +1091,15 @@ impl Metrics {
         let counter = |name: &str| g.players[pid].counters.get(name).copied().unwrap_or(0) as f64;
         self.goody_huts_claimed += counter("goody_huts_claimed");
         self.meteor_goodies_claimed += counter("meteor_goodies_claimed");
+        self.camps_cleared += counter("camps");
+        self.barbs_killed += counter("barbs_killed");
+        self.lost_to_barbarians += counter("lost_to_barbarians");
+        self.civilians_lost_to_barbarians += counter("civilians_lost_to_barbarians");
+        if let Some(camps) = trace.camps_near_home_by_mark {
+            self.camps_near_home += camps as f64;
+            self.camps_near_home_seats += 1;
+        }
+        self.camps_standing += g.barb_camps.len() as f64;
         self.era_score += g.players[pid].era_score as f64;
         self.natural_wonders_discovered += g.players[pid].discovered_natural_wonders.len() as f64;
         if let Some(early) = trace.villages_by_mark {
@@ -1579,6 +1811,22 @@ here and any null is uninformative"
     // checked that one transfers to the other. This flag is what makes that
     // check possible; it defaults to the previous behaviour.
     let speed = text(&args, "--speed", &civvis::game::default_speed());
+    // ⚠ A CONTROL THAT CANNOT FINISH TURNS EVERY MARGIN AGAINST IT INTO A
+    // READING OF ITSELF. Warned at the profile where the screen was run —
+    // Online is the shape the deployment evaluator and the live ladder both
+    // play, and `victory_eval` read the opposite answer at Standard/250, which
+    // is a Standard game stopped halfway rather than the Online game it looks
+    // like. A warning that fired at every speed would be quoting a number
+    // outside the profile it was measured on, which is the same mistake.
+    if speed.eq_ignore_ascii_case("online") {
+        for arm in [a, b] {
+            if let Some((_, why)) = DEGENERATE_CONTROLS.iter().find(|(name, _)| *name == arm) {
+                println!(
+                    "warning: {arm} {why}, so a margin against it measures ITS floor and not the other arm's strength; compare against an arm that finishes, and read a large number here as a broken control rather than a discovery"
+                );
+            }
+        }
+    }
     let width = number(&args, "--width", 24).max(8) as i32;
     let height = number(&args, "--height", 16).max(8) as i32;
     let seed = number(&args, "--seed", 4000).max(0) as u64;
@@ -1872,13 +2120,16 @@ here and any null is uninformative"
     let outcomes = pair_outcomes(&pair_scores);
     let directions = directional_outcomes(&pair_scores);
     println!(
-        "paired-map score for {a}: {:.1}% (95% Wilson CI {:.1}%..{:.1}%), Elo-equivalent {:+.0} (CI {:+.0}..{:+.0})",
+        "paired-map score for {a}: {:.1}% (95% betting CI {:.1}%..{:.1}%), Elo-equivalent {:+.0} (CI {:+.0}..{:+.0}); \
+         the retired maximum-variance Wilson interval on the same maps: {:.1}%..{:.1}%",
         100.0 * inference.score,
         100.0 * inference.low,
         100.0 * inference.high,
         inference.elo,
         inference.elo_low,
         inference.elo_high,
+        100.0 * inference.wilson_low,
+        100.0 * inference.wilson_high,
     );
     println!(
         "paired outcomes: {a} sweeps {}, neutral splits/draws {}, {b} sweeps {}, draw-mixed {}",
@@ -2119,6 +2370,26 @@ here and any null is uninformative"
             m.majors_met_by_t50 / n,
             mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
             m.recon_peak / n,
+        );
+    }
+    println!("\nBarbarians:");
+    println!("AI          cleared kills lost civ-lost camps<=6@t50 standing");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        let near_home = if m.camps_near_home_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.camps_near_home / m.camps_near_home_seats as f64)
+        };
+        println!(
+            "{name:<11} {:>7.2} {:>5.2} {:>4.2} {:>8.2} {:>12} {:>8.2}",
+            m.camps_cleared / n,
+            m.barbs_killed / n,
+            m.lost_to_barbarians / n,
+            m.civilians_lost_to_barbarians / n,
+            near_home,
+            m.camps_standing / n,
         );
     }
     println!("\nVictory types:");
@@ -2394,6 +2665,44 @@ mod tests {
         assert!(line.contains("quotable"), "{line}");
     }
 
+    /// A control that cannot finish makes every margin against it a reading of
+    /// itself, and this evaluator produced exactly that: all four named lanes
+    /// "beat" `advanced_target_science` — diplomatic by +669, 23-0-1 — while
+    /// diplomatic against religious, both of which finish, is 47.9%, p=1.0000.
+    #[test]
+    fn a_degenerate_control_is_named_and_says_why() {
+        assert!(
+            DEGENERATE_CONTROLS
+                .iter()
+                .any(|(name, _)| *name == "advanced_target_science"),
+            "the lane that completes 0/16 is not listed as a degenerate control"
+        );
+        for (name, why) in DEGENERATE_CONTROLS {
+            // A bare list would be a claim; the screen behind each entry is the
+            // only thing that makes it checkable by a reader.
+            assert!(
+                why.contains("victory_eval") || why.contains("games"),
+                "{name} is listed without citing the screen that measured it: {why}"
+            );
+            assert!(
+                civvis::elo::builtin_arm(name).is_some(),
+                "{name} is listed but is not a selectable arm"
+            );
+        }
+    }
+
+    /// Every entry has to be an arm somebody would reach for as a control,
+    /// which in practice means the incumbent of a lane comparison.
+    #[test]
+    fn a_degenerate_control_is_not_also_the_thing_it_warns_about_measuring() {
+        for (name, _) in DEGENERATE_CONTROLS {
+            assert!(
+                name.starts_with("advanced_"),
+                "{name} is not a scripted arm"
+            );
+        }
+    }
+
     /// The two halves of R3 have to agree, or this tool prints numbers the
     /// repository's own documentation gate then refuses. `EVIDENCE_RE` in
     /// `tools/civvis_collab.py` accepts a seed as provenance; every branch here
@@ -2663,9 +2972,20 @@ mod tests {
         let one_map = paired_inference(&[1.0]);
         let two_maps = paired_inference(&[1.0, 1.0]);
         assert_eq!(one_map.maps, 1);
-        assert!(one_map.low < two_maps.low);
+        // Wilson narrows on the second map because its width is a function of
+        // the count alone. The gate's interval does not, and should not: two
+        // maps cannot exclude any mean at 2.5% per side, so an interval that
+        // claimed otherwise would be claiming evidence the run has not got.
+        assert!(one_map.wilson_low < two_maps.wilson_low);
+        assert_eq!((one_map.low, one_map.high), (0.0, 1.0));
+        assert_eq!((two_maps.low, two_maps.high), (0.0, 1.0));
         assert!(one_map.high <= 1.0);
         assert_eq!(one_map.verdict, PromotionVerdict::Insufficient);
+        // Replication is what narrows it, and it narrows a long way.
+        let twenty = paired_inference(&[1.0; PROMOTION_MIN_MAPS]);
+        let forty = paired_inference(&[1.0; 2 * PROMOTION_MIN_MAPS]);
+        assert!(twenty.low > 0.5);
+        assert!(forty.low > twenty.low);
     }
 
     #[test]
@@ -2796,13 +3116,97 @@ mod tests {
     /// drop-in replacement that is both narrower and calibrated. Recorded
     /// as an experiment rather than shipped as a statistic.
     #[test]
-    fn no_narrower_interval_here_is_also_calibrated() {
+    fn the_gate_resolves_the_edges_it_used_to_call_inconclusive() {
+        // The three paired-map score vectors this repository has actually
+        // recorded and filed as inconclusive, reconstructed from the pair
+        // outcomes in docs/EVAL.md. Every one of them is a run where the
+        // maximum-variance interval, not the evidence, was the binding
+        // constraint: its lower bound sat far under parity while the mean
+        // stood at +89 to +100 Elo-equivalent.
+        // The fourth field is whether the betting lower bound is expected to
+        // beat Wilson's. It does not at exactly the 20-map floor, where only
+        // one prefix is monitored and the mixture still pays for the bets the
+        // run did not need; it does from 25 maps up, and the margin grows.
+        // Deployment runs are decided at 40 maps and above.
+        let recorded: [(&str, usize, usize, usize, bool); 3] = [
+            ("advanced vs basic", 6, 13, 1, false),
+            ("deployment 36-map", 6, 29, 1, true),
+            ("strategic 25-map", 8, 16, 1, true),
+        ];
+        for (name, favored, neutral, against, tighter) in recorded {
+            let scores: Vec<f64> = std::iter::repeat_n(1.0, favored)
+                .chain(std::iter::repeat_n(0.5, neutral))
+                .chain(std::iter::repeat_n(0.0, against))
+                .collect();
+            let inference = paired_inference(&scores);
+            println!(
+                "{name}: n={} mean={:.3} betting [{:.3},{:.3}] wilson [{:.3},{:.3}]",
+                inference.maps,
+                inference.score,
+                inference.low,
+                inference.high,
+                inference.wilson_low,
+                inference.wilson_high
+            );
+            assert!(
+                inference.wilson_low < 0.5,
+                "{name}: the retired interval is expected to have blocked this run"
+            );
+            assert_eq!(
+                inference.low > inference.wilson_low,
+                tighter,
+                "{name}: betting low {:.3} against wilson low {:.3}",
+                inference.low,
+                inference.wilson_low
+            );
+        }
+    }
+
+    /// The gate's promise is 2.5% per direction. Measure what it actually
+    /// spends when the two arms are the same agent, on the map shape these
+    /// runs produce, so a later widening of the bet grid cannot quietly turn
+    /// a conservative gate into a permissive one.
+    #[test]
+    fn the_promotion_gate_stays_inside_its_declared_error_budget() {
+        let mut rng = Rng::new(20_260_818);
+        let trials = 600;
+        let mut promoted = 0;
+        let mut retained = 0;
+        for _ in 0..trials {
+            let scores: Vec<f64> = (0..40)
+                .map(|_| match rng.below(20) {
+                    0..=3 => 1.0,
+                    4..=7 => 0.0,
+                    _ => 0.5,
+                })
+                .collect();
+            match paired_inference(&scores).verdict {
+                PromotionVerdict::Promote => promoted += 1,
+                PromotionVerdict::Retain => retained += 1,
+                _ => {}
+            }
+        }
+        println!("null verdicts: {promoted} promote, {retained} retain of {trials}");
+        assert!(
+            promoted * 40 <= trials,
+            "promotion spent more than 2.5% of its null budget: {promoted}/{trials}"
+        );
+        assert!(
+            retained * 40 <= trials,
+            "retention spent more than 2.5% of its null budget: {retained}/{trials}"
+        );
+    }
+
+    #[test]
+    fn a_betting_interval_is_the_narrower_calibrated_one() {
         let mut rng = Rng::new(20_260_726);
         let mut covered = 0;
+        let mut betting_covered = 0;
         let mut wilson_covered = 0;
         let mut eb_width = 0.0;
         let mut boot_covered = 0;
         let mut boot_width = 0.0;
+        let mut betting_width = 0.0;
         let mut wilson_width = 0.0;
         let trials = 400;
         let maps = 120;
@@ -2828,9 +3232,13 @@ mod tests {
             boot_width += bhigh - blow;
             let inference = paired_inference(&scores);
             if inference.low <= 0.5 && 0.5 <= inference.high {
+                betting_covered += 1;
+            }
+            betting_width += inference.high - inference.low;
+            if inference.wilson_low <= 0.5 && 0.5 <= inference.wilson_high {
                 wilson_covered += 1;
             }
-            wilson_width += inference.high - inference.low;
+            wilson_width += inference.wilson_high - inference.wilson_low;
         }
         println!(
             "normal/sample-variance: {covered}/{trials} covered, mean width {:.4}",
@@ -2841,15 +3249,27 @@ mod tests {
             boot_width / trials as f64
         );
         println!(
-            "wilson:                 {wilson_covered}/{trials} covered, mean width {:.4}",
+            "betting (shipped):      {betting_covered}/{trials} covered, mean width {:.4}",
+            betting_width / trials as f64
+        );
+        println!(
+            "wilson (retired):       {wilson_covered}/{trials} covered, mean width {:.4}",
             wilson_width / trials as f64
         );
-        // The finding, pinned so it is not rediscovered: on the map shape
-        // these runs produce, Wilson covers every replication — it is not
-        // 95% conservative, it is total — at 2.2x the width of either
-        // variance-adaptive alternative, and both of those land slightly
-        // *under* nominal rather than at it. There is no drop-in narrower
-        // interval here that is also calibrated.
+        // The finding this test used to pin was that no drop-in narrower
+        // interval here is also calibrated: Wilson covered every replication
+        // at 2.2x the width of the two variance-adaptive alternatives, and
+        // both of those landed *under* nominal. The first half still holds and
+        // is asserted below. The conclusion does not, and the reason it did
+        // not is worth keeping: both alternatives estimate a dispersion from
+        // 120 observations that are mostly the same number, and an interval
+        // built on an underestimated variance undercovers.
+        //
+        // A betting interval never estimates that dispersion. It inverts the
+        // e-process the gate already trusts for its evidence, so its coverage
+        // is Ville's inequality rather than an approximation, and it is valid
+        // for any bounded observation whatever its shape. On this shape it
+        // covers at or above nominal while landing well inside Wilson.
         assert_eq!(
             wilson_covered, trials,
             "Wilson is expected to cover every replication on this shape"
@@ -2861,6 +3281,16 @@ mod tests {
         assert!(
             boot_covered * 100 < trials * 95,
             "the bootstrap interval undercovered when measured: {boot_covered}/{trials}"
+        );
+        assert!(
+            betting_covered * 100 >= trials * 95,
+            "the betting interval must hold nominal coverage: {betting_covered}/{trials}"
+        );
+        assert!(
+            betting_width < wilson_width,
+            "the betting interval should be narrower than Wilson: {:.4} against {:.4}",
+            betting_width / trials as f64,
+            wilson_width / trials as f64
         );
         assert!(
             eb_width * 2.0 < wilson_width,
