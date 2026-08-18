@@ -10333,3 +10333,30 @@ direction is significant on both and its interval crosses parity on both. If it
 is worth resolving further, keep extending the same prefix; on this evidence the
 effect is small enough that certifying it would cost far more maps than the two
 lanes that already cleared.
+
+## The reconnaissance quartet passes the promotion matrix and ships (2026-08-17)
+
+`advanced_recon_fleet` — `recon_replacement` + `recon_flight` + `naval_recon`
++ `come_ashore` on stock production — was the scouting axis's round-2 lead:
+natively `recon_is_the_missing_arm` was dead code (the `recon_replacement`
+guard returns false), so the league never rebuilt a scout and never launched
+an exploration hull, while the live bridge has carried all four since its
+repair era. Screens read 55.0% (20 pairs, seed 100000000; terminal direction
+15/5, p=0.041) and 60.8% (60 pairs, seed 110000000; Elo +76, CI −13..+166).
+
+Corrected-gate matrix, 400 pairs per profile, seed stream 120000000
+(`--deployment-comparison`; raw log
+`scratchpad/recon-matrix-400.txt`, machine-local):
+
+| profile | paired | Elo (CI) | verdict |
+|---|---|---|---|
+| deployment-online (Strength) | **55.0%** (Wilson CI 50.1%..59.8%) | **+35 (CI +1..+69)** | **PASS** |
+| compact-standard (NoRegression) | 48.4% (CI 43.5%..53.3%) | −11 (−45..+23) | Inconclusive — ACCEPT |
+| **multi-profile gate** | | | **PASS** |
+
+Mechanism at the matrix itself: recon peak 3.41 vs 1.47 (compact 2.61 vs
+1.47), revealed plots +54-79%, villages 5.60 vs 2.44 (share 20% vs 9%;
+compact 27% vs 14%), minors met by t50 2.89 vs 2.19, first natural wonder
+t40 vs t58. The quartet ships in `promoted_policy_envoy`;
+`advanced_recon_fleet` is a declared alias of `advanced` from this revision,
+and `advanced_without_recon_fleet` asks the inverse question.

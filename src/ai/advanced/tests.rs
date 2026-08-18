@@ -2314,7 +2314,9 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     withheld.enable_live_bridge();
     withheld.disable_naval_recon();
     assert!(withheld.naval_explorer(&game, 0).is_empty());
-    assert!(!AdvancedAi::new().naval_recon());
+    // Production carries the fleet since the 2026-08-17 promotion; the
+    // frozen anchor still sails nothing.
+    assert!(AdvancedAi::new().naval_recon());
     assert!(!AdvancedAi::legacy().naval_recon());
 }
 
@@ -2386,11 +2388,13 @@ fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
         "a naval scout cannot bypass the live war-economy recovery path"
     );
 
-    let mut stock_game = game.clone();
-    let stock = AdvancedAi::new();
-    stock.reserve_idle_naval_recon(&mut stock_game, 0, &plan);
+    // Production reserves the hull too since the 2026-08-17 promotion;
+    // only the frozen anchor keeps the historical empty queue.
+    let mut frozen_game = game.clone();
+    let frozen = AdvancedAi::legacy();
+    frozen.reserve_idle_naval_recon(&mut frozen_game, 0, &plan);
     assert!(
-        stock_game.cities[&city].queue.is_empty(),
+        frozen_game.cities[&city].queue.is_empty(),
         "the frozen controller does not reserve a naval scout"
     );
 
@@ -2637,6 +2641,22 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
             "village_seeking",
             frozen.base.village_seeking,
             production.base.village_seeking,
+        ),
+        (
+            "recon_replacement",
+            frozen.base.recon_replacement,
+            production.base.recon_replacement,
+        ),
+        ("recon_flight", frozen.recon_flight, production.recon_flight),
+        (
+            "naval_recon",
+            frozen.base.naval_recon,
+            production.base.naval_recon,
+        ),
+        (
+            "come_ashore",
+            frozen.base.come_ashore,
+            production.base.come_ashore,
         ),
     ] {
         assert!(
@@ -16955,8 +16975,9 @@ fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores()
         "the withheld arm keeps the historical explore step"
     );
 
-    // Defaults: off for the stock and frozen controllers.
-    assert!(!AdvancedAi::new().recon_flight);
+    // Production flees since the 2026-08-17 promotion; the frozen
+    // controller stands its ground as it always did.
+    assert!(AdvancedAi::new().recon_flight);
     assert!(!AdvancedAi::legacy().recon_flight);
 }
 
@@ -22406,10 +22427,14 @@ fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
     let mut ai = AdvancedAi::new();
     ai.base.book_pos = 4;
     // Prove the delegated plan, not the production constructor's own
-    // defaults, opens both the target and the speed-aware time window.
+    // defaults, opens both the target and the speed-aware time window —
+    // and keep the promoted recon fleet out of the queue this fixture
+    // reads, since a missing scout would otherwise outrank the Settler.
     ai.base.w.city_target = 1.0;
     ai.base.w.settler_stop_turn = 100.0;
     ai.base.w.builder_per_city = 0.25;
+    ai.disable_recon_replacement();
+    ai.disable_naval_recon();
     ai.delegated_cities(&mut game, 0, &plan);
 
     let defensive_item = game.cities[&city].queue.first().unwrap();
