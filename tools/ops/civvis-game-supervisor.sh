@@ -126,10 +126,11 @@ trap 'exit 0' HUP INT TERM
 consecutive_failures=0
 
 # The harness publishes its exact PID before it starts interacting with Civ VI.
-# Never infer ownership from a global `pgrep`: other CIVVIS worktrees (or an
-# operator's separate run) can legitimately contain a civ6_play.py process.
-# An invalid or stale holder is deliberately *not* a reason to signal another
-# process; the outer loop waits for an unowned run to finish instead.
+# Never accept an untyped global `pgrep` result as ownership: other CIVVIS
+# worktrees (or an operator's separate run) can legitimately contain a
+# civ6_play.py process.  An invalid or stale holder is deliberately *not* a
+# reason to signal another process; the outer loop waits for an unowned run to
+# finish instead.
 owned_harness_pid() {
   local holder="$HOME/.civvis-civ6-game.lock/holder.json"
   local pid="" command=""
@@ -143,6 +144,30 @@ owned_harness_pid() {
   command=$(ps -p "$pid" -o command= 2>/dev/null)
   [[ "$command" == *"civ6_play.py"* ]] || return 1
   print -r -- "$pid"
+}
+
+# A `pgrep` candidate alone is not a harness.  In particular, a diagnostic
+# shell whose command text happens to mention civ6_play.py used to make the
+# supervisor wait an extra minute at a clean batch boundary.  `ps -o comm` is
+# truncated on macOS, so inspect lsof's first txt mapping instead: it is the
+# actual executable path and lets us distinguish a Python harness from a shell
+# that merely carries the filename as an argument.  We still leave a verified
+# unowned harness completely alone.
+unowned_harness_pid() {
+  local pid="" command="" executable=""
+  for pid in ${(f)"$(pgrep -f '[c]iv6_play.py' 2>/dev/null)"}; do
+    kill -0 "$pid" 2>/dev/null || continue
+    command=$(ps -p "$pid" -o command= 2>/dev/null)
+    [[ "$command" == *"civ6_play.py"* ]] || continue
+    executable=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+    case "$executable" in
+      */Python|*/python|*/python[0-9]*) ;;
+      *) continue ;;
+    esac
+    print -r -- "$pid"
+    return 0
+  done
+  return 1
 }
 
 # The live display is a shared machine-level resource, so its owner must be
@@ -183,8 +208,9 @@ while true; do
   while true; do
     OWNED_PID=$(owned_harness_pid || true)
     if [[ -z "$OWNED_PID" ]]; then
-      if pgrep -f '[c]iv6_play.py' >/dev/null 2>&1; then
-        say "an unowned civ6_play.py is present; leaving it alone and retrying in 60s"
+      UNOWNED_PID=$(unowned_harness_pid || true)
+      if [[ -n "$UNOWNED_PID" ]]; then
+        say "an unowned Civ VI harness is present (pid $UNOWNED_PID); leaving it alone and retrying in 60s"
         sleep 60
         continue
       fi
