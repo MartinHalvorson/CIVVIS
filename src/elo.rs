@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 188] = [
+pub const EVAL_ONLY_AIS: [&str; 189] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -202,6 +202,7 @@ pub const EVAL_ONLY_AIS: [&str; 188] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_maritime_splice",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
@@ -717,6 +718,7 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
@@ -3004,6 +3006,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // Reach for the +100% naval-production card while hulls are wanted:
+        // the family is invisible to the deck scorer until a sea unit heads a
+        // queue and appears in no portfolio, so the Galley-era discount was
+        // never slotted. See `AdvancedAi::naval_production_policy`.
+        "advanced_maritime_splice" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_naval_production_policy();
+            Box::new(ai)
+        }
         // The reconnaissance quartet was PROMOTED into `promoted_policy_envoy`
         // after the corrected-gate matrix PASSED at 400 pairs (deployment
         // 55.0%, Elo +35, CI +1..+69; compact no-regression ACCEPT; seed
@@ -4010,6 +4021,7 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedReconFleet => &[
                 "recon-replacement",
                 "recon-flight",
@@ -4497,6 +4509,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
@@ -5711,7 +5724,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 92] = [
+            const SCRIPTED: [&str; 93] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5778,6 +5791,7 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_maritime_splice",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",
                 "advanced_every_lane",

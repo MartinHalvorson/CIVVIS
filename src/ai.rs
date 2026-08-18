@@ -2892,7 +2892,7 @@ impl BasicAi {
                 .is_some_and(|tile| g.rules.is_water(tile))
     }
 
-    fn naval_counts(g: &Game, pid: usize) -> (usize, usize, usize, usize, usize) {
+    pub(crate) fn naval_counts(g: &Game, pid: usize) -> (usize, usize, usize, usize, usize) {
         let mut counts = (0, 0, 0, 0, 0);
         let mut add = |kind: &str| {
             let spec = &g.rules.units[kind];
