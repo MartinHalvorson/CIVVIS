@@ -506,6 +506,33 @@ class InteractiveHostOwnership(unittest.TestCase):
                     external.wait(timeout=5)
 
 
+class SupervisorUnownedHarnessDetection(unittest.TestCase):
+    """A filename in an operator shell must not impersonate a live harness."""
+
+    SUPERVISOR = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-game-supervisor.sh")
+
+    def test_a_global_candidate_is_typed_before_it_delays_a_batch(self):
+        """macOS `ps -o comm` truncates Python, so use the executable mapping.
+
+        This guards the exact restart failure where a harmless diagnostic
+        command containing the harness filename looked like an unowned game
+        and made the supervisor sleep for a retry interval.
+        """
+        source = self.SUPERVISOR.read_text()
+        start = source.index("unowned_harness_pid() {")
+        end = source.index("\n# The live display", start)
+        detector = source[start:end]
+
+        self.assertIn("pgrep -f '[c]iv6_play.py'", detector)
+        self.assertIn('lsof -a -p "$pid" -d txt -Fn', detector)
+        self.assertIn('*/Python|*/python|*/python[0-9]*', detector)
+        self.assertLess(detector.index('lsof -a -p "$pid" -d txt -Fn'),
+                        detector.index('print -r -- "$pid"'))
+        self.assertIn('UNOWNED_PID=$(unowned_harness_pid || true)', source)
+        self.assertNotIn("if pgrep -f '[c]iv6_play.py'", source)
+
+
 class OvernightWatchdogHasNoImplicitDeadline(unittest.TestCase):
     def test_the_default_watchdog_is_unbounded_but_accepts_an_operator_deadline(self):
         source = (Path(__file__).resolve().parent / "ops" /
