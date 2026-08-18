@@ -506,6 +506,87 @@ class InteractiveHostOwnership(unittest.TestCase):
                     external.wait(timeout=5)
 
 
+@unittest.skipUnless(Path("/bin/zsh").exists(),
+                     "the supervisor ownership check is a zsh function")
+class SupervisorUnownedHarnessDetection(unittest.TestCase):
+    """A filename in an operator shell must not impersonate a live harness."""
+
+    SUPERVISOR = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-game-supervisor.sh")
+
+    def test_a_global_candidate_is_typed_before_it_delays_a_batch(self):
+        """macOS `ps -o comm` truncates Python, so use the executable mapping.
+
+        This guards the exact restart failure where a harmless diagnostic
+        command containing the harness filename looked like an unowned game
+        and made the supervisor sleep for a retry interval.
+        """
+        source = self.SUPERVISOR.read_text()
+        start = source.index("unowned_harness_pid() {")
+        end = source.index("\n# The live display", start)
+        detector = source[start:end]
+
+        self.assertIn("pgrep -f '[c]iv6_play.py'", detector)
+        self.assertIn('lsof -a -p "$pid" -d txt -Fn', detector)
+        self.assertIn('*/Python|*/python|*/python[0-9]*', detector)
+        self.assertLess(detector.index('lsof -a -p "$pid" -d txt -Fn'),
+                        detector.index('print -r -- "$pid"'))
+        self.assertIn('UNOWNED_PID=$(unowned_harness_pid || true)', source)
+        self.assertNotIn("if pgrep -f '[c]iv6_play.py'", source)
+
+    def test_a_shell_argument_cannot_delay_the_next_batch(self):
+        """Only the candidate whose executable is Python is reported.
+
+        Use real sleeping PIDs because the function deliberately performs
+        `kill -0` before trusting any process-table answer.  The command and
+        executable readers are tiny stand-ins for the macOS tools, letting the
+        test model the original shell diagnostic and a real Python harness
+        without starting a game.
+        """
+        source = self.SUPERVISOR.read_text()
+        start = source.index("unowned_harness_pid() {")
+        end = source.index("\n# The live display", start)
+        detector = source[start:end]
+        shell_candidate = subprocess.Popen(["/bin/zsh", "-c", "exec sleep 30"])
+        harness_candidate = subprocess.Popen(["/bin/zsh", "-c", "exec sleep 30"])
+        try:
+            with TemporaryDirectory() as raw:
+                tmp = Path(raw)
+                bin_dir = tmp / "bin"
+                bin_dir.mkdir()
+
+                def fake(name: str, body: str) -> None:
+                    path = bin_dir / name
+                    path.write_text("#!/bin/zsh\n" + body)
+                    path.chmod(0o755)
+
+                fake("pgrep", f"print -r -- {shell_candidate.pid}\n"
+                              f"print -r -- {harness_candidate.pid}\n")
+                fake("ps", "if [[ \"$2\" == \"%s\" ]]; then\n"
+                           "  print -r -- '/bin/zsh -c inspect civ6_play.py'\n"
+                           "else\n"
+                           "  print -r -- '/usr/local/bin/python3 -u /tmp/civ6_play.py'\n"
+                           "fi\n" % shell_candidate.pid)
+                fake("lsof", "if [[ \"$3\" == \"%s\" ]]; then\n"
+                             "  print -r -- 'n/bin/zsh'\n"
+                             "else\n"
+                             "  print -r -- 'n/usr/local/bin/python3'\n"
+                             "fi\n" % shell_candidate.pid)
+
+                result = subprocess.run(
+                    ["/bin/zsh", "-c", detector + "\nunowned_harness_pid\n"],
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                    capture_output=True, text=True, timeout=5)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(harness_candidate.pid))
+        finally:
+            for process in (shell_candidate, harness_candidate):
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
+
+
 class OvernightWatchdogHasNoImplicitDeadline(unittest.TestCase):
     def test_the_default_watchdog_is_unbounded_but_accepts_an_operator_deadline(self):
         source = (Path(__file__).resolve().parent / "ops" /

@@ -2646,6 +2646,14 @@ impl BasicAi {
     /// terrain is deliberately not treated as water here: it may be a useful
     /// frontier to probe, but cannot turn a visible two-hex lake into an open
     /// sea by assumption.
+    ///
+    /// ⚠ **This is the reference definition, and production does not call it.**
+    /// Nothing ever needed the component itself — both callers immediately
+    /// reduced it to one boolean — while building it walked every tile of the
+    /// ocean. `naval_recon_can_chart_from` decides the same boolean without
+    /// materializing the set; this stays as the thing that check is tested
+    /// against, so "they agree" is an assertion rather than a claim.
+    #[cfg(test)]
     fn naval_recon_waterway<I>(g: &Game, pid: usize, starts: I) -> BTreeSet<Pos>
     where
         I: IntoIterator<Item = Pos>,
@@ -2675,6 +2683,77 @@ impl BasicAi {
         waterway
     }
 
+    /// `naval_recon_waterway_can_chart` over the component reached from
+    /// `starts`, decided while the walk runs and stopped the moment the answer
+    /// is fixed.
+    ///
+    /// ★★★★★ THE COMPONENT WAS NEVER THE QUESTION, AND BUILDING IT WAS 13% OF
+    /// THE SIMULATOR. The predicate is `size >= 4` — monotone — and two
+    /// existential quantifiers over the same set. All three are settled by a
+    /// prefix of the walk, so a coastal city on an unexplored sea is answered
+    /// from about four tiles instead of the ocean's several thousand. The
+    /// worst case is unchanged: a fully-charted body with no frontier still
+    /// has to be exhausted to say "no".
+    ///
+    /// ⚠ The early exit is exact, not a heuristic, and this is the argument.
+    /// Every tile counted here is a tile the reference set contains, so a
+    /// `true` from a prefix is a `true` from the whole; and a walk that runs
+    /// to exhaustion has dequeued exactly the reference set, so a `false` is
+    /// the reference's `false`. `naval_recon_early_exit_agrees_with_the_full_walk`
+    /// asserts the agreement over generated maps rather than trusting this
+    /// paragraph. `city_has_open_water` above already records the rule this
+    /// restores: "`production_value` cannot afford a flood fill per candidate
+    /// per city per turn" — which is exactly what this arm was doing.
+    fn naval_recon_can_chart_from<I>(g: &Game, pid: usize, starts: I) -> bool
+    where
+        I: IntoIterator<Item = Pos>,
+    {
+        let can_cross_ocean = Self::naval_recon_can_cross_ocean(g, pid);
+        let navigable_water = |pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| {
+                g.rules.is_passable(tile)
+                    && g.rules.is_water(tile)
+                    && (tile.terrain != "ocean" || can_cross_ocean)
+            })
+        };
+        let mut seen = BTreeSet::new();
+        let mut frontier = VecDeque::new();
+        for pos in starts {
+            if navigable_water(pos) && seen.insert(pos) {
+                frontier.push_back(pos);
+            }
+        }
+        let mut tiles = 0usize;
+        let mut reaches_open_water = false;
+        let mut charts_something = false;
+        while let Some(pos) = frontier.pop_front() {
+            tiles += 1;
+            if !reaches_open_water {
+                reaches_open_water = g
+                    .map
+                    .get(pos)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"));
+            }
+            if !charts_something {
+                charts_something = !g.players[pid].explored.contains(&pos)
+                    || g.nbrs(pos).into_iter().any(|neighbor| {
+                        g.map.get(neighbor).is_some_and(|tile| {
+                            g.rules.is_unknown(tile) && g.rules.is_passable(tile)
+                        })
+                    });
+            }
+            if tiles >= NAVAL_RECON_MIN_WATERWAY_TILES && reaches_open_water && charts_something {
+                return true;
+            }
+            for neighbor in g.nbrs(pos) {
+                if navigable_water(neighbor) && seen.insert(neighbor) {
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
+        tiles >= NAVAL_RECON_MIN_WATERWAY_TILES && reaches_open_water && charts_something
+    }
+
     /// A waterway pays for a dedicated scout only when it is genuinely roomy,
     /// reaches open water, and has either unseen water or a live-mirror
     /// frontier at its edge.
@@ -2701,6 +2780,7 @@ impl BasicAi {
     /// there is, it is whether the water goes anywhere. Ocean tiles are
     /// already excluded from the flood fill until the civ can cross them, so
     /// a Galley's coastal waterway still qualifies on its `coast` tiles.
+    #[cfg(test)]
     fn naval_recon_waterway_can_chart(g: &Game, pid: usize, waterway: &BTreeSet<Pos>) -> bool {
         waterway.len() >= NAVAL_RECON_MIN_WATERWAY_TILES
             && waterway.iter().any(|pos| {
@@ -2726,8 +2806,7 @@ impl BasicAi {
         let Some(city) = g.cities.get(&cid) else {
             return false;
         };
-        let waterway = Self::naval_recon_waterway(g, pid, g.nbrs(city.pos));
-        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
+        Self::naval_recon_can_chart_from(g, pid, g.nbrs(city.pos))
     }
 
     /// A ship stranded in a small lake is not the empire's naval eye. Keep
@@ -2741,12 +2820,7 @@ impl BasicAi {
         if unit.owner != pid || spec.class != "military" || spec.domain.as_deref() != Some("sea") {
             return false;
         }
-        let waterway = Self::naval_recon_waterway(
-            g,
-            pid,
-            std::iter::once(unit.pos).chain(g.nbrs(unit.pos)),
-        );
-        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
+        Self::naval_recon_can_chart_from(g, pid, std::iter::once(unit.pos).chain(g.nbrs(unit.pos)))
     }
 
     pub(crate) fn empire_is_coastal(g: &Game, pid: usize) -> bool {
@@ -16919,6 +16993,94 @@ mod tests {
         assert!(
             !ai.naval_recon_is_the_missing_arm(&city_state_war, 0),
             "a city-state war keeps the normal one-ship exploration arm"
+        );
+    }
+
+    /// The early exit answers exactly what the full walk answers.
+    ///
+    /// ⚠⚠ THIS IS THE WHOLE SAFETY ARGUMENT FOR THE OPTIMIZATION, AND IT IS AN
+    /// ASSERTION RATHER THAN A PARAGRAPH. `naval_recon_can_chart_from` stops
+    /// the flood fill as soon as `size >= 4`, "reaches open water" and "still
+    /// charts something" are all settled; `naval_recon_waterway` +
+    /// `naval_recon_waterway_can_chart` build the whole component and then
+    /// ask. They must agree on every start, on every map, at every stage of
+    /// exploration — including the cases where the answer is `false`, which
+    /// are the ones the early exit cannot short-circuit.
+    ///
+    /// The counts at the end are the census guard: a comparison that never
+    /// saw a `true`, never saw a `false`, or never ran is a broken test that
+    /// passes, and this repository has shipped that shape before.
+    #[test]
+    fn naval_recon_early_exit_agrees_with_the_full_walk() {
+        let mut compared = 0usize;
+        let mut agreed_true = 0usize;
+        let mut agreed_false = 0usize;
+        for seed in [11_u64, 4_531, 90_210, 7_310_002] {
+            let mut g = Game::new_full(2, 30, 18, seed, 300, 0, false);
+            g.current = 0;
+            // Three exploration stages, because the frontier half of the
+            // predicate is the only one that can flip from more knowledge:
+            // blind, partly charted, and fully charted (where every walk must
+            // run to exhaustion and return `false`).
+            let all: Vec<Pos> = g.map.tiles.keys().copied().collect();
+            for stage in 0..3 {
+                g.players[0].explored.clear();
+                match stage {
+                    1 => {
+                        for (index, pos) in all.iter().enumerate() {
+                            if index % 3 == 0 {
+                                g.players[0].explored.insert(*pos);
+                            }
+                        }
+                    }
+                    2 => {
+                        for pos in &all {
+                            g.players[0].explored.insert(*pos);
+                        }
+                        for tile in g.map.tiles.values_mut() {
+                            if g.rules.is_unknown(tile) {
+                                tile.terrain = crate::name!("grassland");
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                for (index, pos) in all.iter().enumerate() {
+                    // Every ninth tile, so the test covers land starts (which
+                    // seed nothing) and water starts alike without walking a
+                    // 540-tile map three times per seed.
+                    if index % 9 != 0 {
+                        continue;
+                    }
+                    let starts = std::iter::once(*pos).chain(g.nbrs(*pos));
+                    let fused = BasicAi::naval_recon_can_chart_from(&g, 0, starts.clone());
+                    let waterway = BasicAi::naval_recon_waterway(&g, 0, starts);
+                    let full = BasicAi::naval_recon_waterway_can_chart(&g, 0, &waterway);
+                    assert_eq!(
+                        fused, full,
+                        "seed {seed} stage {stage} start {pos:?}: the early exit said \
+                         {fused} and the full walk said {full}"
+                    );
+                    compared += 1;
+                    if fused {
+                        agreed_true += 1;
+                    } else {
+                        agreed_false += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            compared > 500,
+            "only {compared} comparisons ran; the sweep collapsed"
+        );
+        assert!(
+            agreed_true > 0,
+            "no start ever charted; only the false branch was compared"
+        );
+        assert!(
+            agreed_false > 0,
+            "every start charted; the exhausting walk was never compared"
         );
     }
 
