@@ -457,6 +457,80 @@ mod tests {
     use super::*;
     use crate::setup::{MapPoles, MapTopology};
 
+    /// ★★★★★ EVERY CATALOGUED BATTLE IS DRAWN, OR SAYS WHY NOT.
+    ///
+    /// `historical_terrain_plans.rs` is 2,223 lines and had no test of any kind,
+    /// and the join it depends on — one `Plan` per catalogue row — was enforced
+    /// by nothing. A battle added to the catalogue without a chart does not fail
+    /// anything: it quietly renders on whatever the generic script produces, and
+    /// a field nobody drew is exactly the defect this module exists to prevent.
+    ///
+    /// Trafalgar is the one deliberate exception and is named here rather than
+    /// skipped by a rule, so adding a second bespoke module is a decision
+    /// somebody writes down.
+    const BESPOKE_FIELDS: &[&str] = &["trafalgar"];
+
+    #[test]
+    fn every_catalogued_battle_has_a_field_drawn_for_it() {
+        let drawn: std::collections::BTreeSet<&str> =
+            PLANS.iter().map(|plan| plan.id).collect();
+        let undrawn: Vec<&str> = crate::historical_scenarios::all()
+            .iter()
+            .map(|scenario| scenario.id)
+            .filter(|id| !drawn.contains(id) && !BESPOKE_FIELDS.contains(id))
+            .collect();
+        assert!(
+            undrawn.is_empty(),
+            "these battles are in the catalogue with no chart and would render on              generic ground: {undrawn:?}"
+        );
+    }
+
+    #[test]
+    fn every_plan_draws_a_battle_the_catalogue_actually_lists() {
+        let listed: std::collections::BTreeSet<&str> = crate::historical_scenarios::all()
+            .iter()
+            .map(|scenario| scenario.id)
+            .collect();
+        let orphans: Vec<&str> = PLANS
+            .iter()
+            .map(|plan| plan.id)
+            .filter(|id| !listed.contains(id))
+            .collect();
+        assert!(orphans.is_empty(), "charts for battles nobody can play: {orphans:?}");
+    }
+
+    #[test]
+    fn a_bespoke_field_is_not_also_a_plan() {
+        // Two sources for one battle's ground is worse than none: the painter
+        // would run and the module would overwrite it, or the reverse, and which
+        // won would depend on call order.
+        for id in BESPOKE_FIELDS {
+            assert!(
+                !PLANS.iter().any(|plan| plan.id == *id),
+                "{id} has both a bespoke module and a chart"
+            );
+            assert!(
+                crate::historical_scenarios::by_id(id).is_some(),
+                "{id} is exempted from needing a chart but is not in the catalogue"
+            );
+        }
+    }
+
+    #[test]
+    fn no_plan_names_terrain_or_a_feature_the_rules_do_not_ship() {
+        // A misspelled paint is a stroke that does nothing, on a field whose
+        // whole purpose is to be the ground the battle was fought on.
+        let rules = crate::rules::Rules::embedded();
+        for plan in PLANS {
+            assert!(
+                rules.terrains.contains_key(plan.base),
+                "{}: base terrain {:?} is not in the ruleset",
+                plan.id,
+                plan.base
+            );
+        }
+    }
+
     fn chart(id: &str) -> WorldMap {
         let scenario = crate::historical_scenarios::by_id(id).expect("catalogue row");
         let rules = crate::rules::Rules::embedded();
