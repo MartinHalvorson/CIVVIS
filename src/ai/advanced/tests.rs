@@ -19204,6 +19204,138 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
 }
 
 #[test]
+fn friendly_volley_chains_two_finishers_onto_a_three_blow_kill() {
+    let mut base = Game::new_full(2, 24, 16, 81_700, 80, 0, false);
+    for unit in base.units.keys().copied().collect::<Vec<_>>() {
+        base.remove_unit(unit);
+    }
+    for tile in base.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    base.current = 0;
+    base.at_war.insert((0, 1));
+    let target = base
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| base.nbrs(*position).len() == 6)
+        .expect("fixture needs an interior tile");
+    let firing_lines: Vec<Pos> = base
+        .wdisk(target, 2)
+        .into_iter()
+        .filter(|position| base.wdist(*position, target) == 2)
+        .take(3)
+        .collect();
+    assert_eq!(
+        firing_lines.len(),
+        3,
+        "interior tile needs three firing lines"
+    );
+    let opener = base.spawn_test_unit("archer", 0, firing_lines[0]);
+    let second = base.spawn_test_unit("archer", 0, firing_lines[1]);
+    let third = base.spawn_test_unit("archer", 0, firing_lines[2]);
+    let defender = base.spawn_test_unit("warrior", 1, target);
+    let opening = Action::Ranged {
+        unit: opener,
+        target,
+    };
+
+    // Discover an exact seeded-damage window rather than hard-coding a
+    // combat-roll amount: after the opening shot no lone teammate may
+    // remove the defender, while either ordering of the remaining two
+    // shots must — so the single-finisher search comes up empty and only
+    // the chain can see the kill.
+    let survives = |position: &Game, shots: &[u32]| -> Option<bool> {
+        let mut speculative = position.clone();
+        for shooter in shots {
+            let action = Action::Ranged {
+                unit: *shooter,
+                target,
+            };
+            if speculative.apply(0, &action).is_err() {
+                return None;
+            }
+        }
+        Some(speculative.units.contains_key(&defender))
+    };
+    let game = (2..=100)
+        .find_map(|hp| {
+            let mut candidate = base.clone();
+            candidate.units.get_mut(&defender).unwrap().hp = hp;
+            let alive_after = |shots: &[u32]| survives(&candidate, shots);
+            (alive_after(&[opener, second])? && alive_after(&[opener, third])?
+                && !alive_after(&[opener, second, third])?
+                && !alive_after(&[opener, third, second])?)
+            .then_some(candidate)
+        })
+        .expect("three archers must admit a three-blow damage window");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let group = ForceGroup {
+        id: opener,
+        domain: ForceDomain::Land,
+        units: vec![opener, second, third],
+        anchor: game.units[&opener].pos,
+        objective: target,
+        focus_target: Some(target),
+        posture: ForcePosture::Engage,
+        readiness: 1.0,
+        local_strength_ratio: 1.0,
+    };
+    // `coordinated_finish` must open the volley layer on its own — the
+    // war-half bundle that used to carry it stays closed.
+    let mut ai = AdvancedAi::new();
+    ai.coordinated_finish = true;
+    let (bonus, reply) = ai
+        .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+        .expect("two teammates together finish what neither can alone");
+    assert_eq!(
+        bonus,
+        ai.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE
+    );
+    assert!(reply.is_finite());
+    let mut chained = AdvancedAi::new();
+    chained.enable_tactical_strategy();
+    assert!(
+        chained
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_some(),
+        "the chain also reaches the historical tactical_strategy route"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.coordinated_finish = true;
+    withheld.volley_chain = false;
+    assert!(
+        withheld
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "with the chain withheld no lone finisher exists at this window"
+    );
+    assert!(
+        AdvancedAi::new()
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "stock production keeps the volley layer dormant until it is priced"
+    );
+    assert!(
+        AdvancedAi::legacy()
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "the frozen control keeps the production-only tactical extension off"
+    );
+}
+
+#[test]
 fn tactical_melee_preflight_matches_the_engine_entry_cost_rule() {
     let mut game = Game::new_full(2, 24, 16, 81_701, 80, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
