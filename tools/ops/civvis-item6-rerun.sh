@@ -15,8 +15,8 @@
 # a searching seat is ~6.4x a scripted one.
 
 set -u
-cd /Users/martin/civvis-spectator-src || exit 1
-LOG=/Users/martin/item6-rerun.log
+cd $HOME/civvis-spectator-src || exit 1
+LOG=$HOME/item6-rerun.log
 DEPLOY_PID=${1:-26019}
 
 echo "=== item 6 re-runs queued $(date -u +%FT%TZ) ===" >> $LOG

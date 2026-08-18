@@ -8,7 +8,7 @@
 
 set -u
 
-BASE=/Users/martin
+BASE=$HOME
 RUNS=$BASE/civvis-civ6-runs/control
 PLAY_LOGS=$BASE/civvis-climb-logs
 AUDIT_LOG=$BASE/civvis-civ6-runs/overnight_audit.log
@@ -39,15 +39,15 @@ newest_events() {
 }
 
 start_host() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh /Users/martin/civvis-interactive-host.sh"' >/dev/null 2>&1
+  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh '"$HOME"'/civvis-interactive-host.sh"' >/dev/null 2>&1
 }
 
 start_mirror_keeper() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh /Users/martin/civvis-mirror-keeper.sh"' >/dev/null 2>&1
+  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /bin/zsh '"$HOME"'/civvis-mirror-keeper.sh"' >/dev/null 2>&1
 }
 
 start_display_keeper() {
-  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /opt/homebrew/bin/node /Users/martin/civvis-display-keeper.mjs"' >/dev/null 2>&1
+  /usr/bin/osascript -e 'tell application "Terminal" to do script "exec /opt/homebrew/bin/node '"$HOME"'/civvis-display-keeper.mjs"' >/dev/null 2>&1
 }
 
 frontmost_app() {

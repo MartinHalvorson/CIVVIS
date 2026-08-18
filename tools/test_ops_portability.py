@@ -45,26 +45,18 @@ MANAGED = {
     "ladder_watchdog.py",
 }
 
-# Everything else, at the count measured on 2026-08-17. These are hand-run
-# operator scripts, not installed services, so they are ratcheted rather than
-# blocked: lower a number when you fix one, and never raise one.
-LEGACY_DEBT = {
-    "civvis-keeper.sh": 9,
-    "civvis-chain-status.sh": 8,
-    "civvis-batch-loop.sh": 7,
-    "civvis-interactive-host.sh": 7,
-    "civvis-refresh.sh": 5,
-    "civvis-popup-keeper.sh": 4,
-    "civvis-overnight-audit.sh": 3,
-    "civvis-overnight-watchdog.sh": 3,
-    "civvis-challenger-guard.sh": 2,
-    "civvis-item6-rerun.sh": 2,
-    "civvis-goal-report.sh": 1,
-    "civvis-goal-watch.sh": 1,
-    "civvis-mirror-keeper.sh": 1,
-    "civvis-tabs.sh": 1,
-    "civvis-tcc-probe.sh": 1,
-}
+# ⚠ THIS WAS FIFTEEN SCRIPTS AND 55 HARDCODED PATHS, AND IT IS EMPTY NOW.
+# `tools/ops/` was written on one machine and named that machine's home
+# directory outright — every one of them `/Users/martin`, a single mechanical
+# substitution that nobody had made. The ratchet below held the debt from
+# growing while the supervisor was fixed; the debt is paid, and an empty table
+# is what "the class is gone rather than the instance" looks like.
+#
+# It stays as a table rather than being deleted, because
+# `test_a_new_script_is_classified` needs somewhere for a deliberate exception
+# to go, and because an empty one records that the answer is zero rather than
+# that nobody checked.
+LEGACY_DEBT: dict[str, int] = {}
 
 
 def hardcoded_homes(path: Path) -> list[str]:

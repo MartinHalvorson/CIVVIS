@@ -18,12 +18,12 @@
 # Reloads at most once per server instance: after the tab is pointed at
 # instance=N it matches until the supervisor swaps in a new process.
 PORT=${1:-8766}
-KEEPLOG=/Users/martin/civvis-keeper.log
+KEEPLOG=$HOME/civvis-keeper.log
 # Deliberately outside any session scratchpad -- those are deleted when a Claude
 # session ends, and this file has to outlive them.
-STAMP=/Users/martin/.civvis-stale-instance
-DARK=/Users/martin/.civvis-dark-since
-PULLED=/Users/martin/.civvis-last-pull
+STAMP=$HOME/.civvis-stale-instance
+DARK=$HOME/.civvis-dark-since
+PULLED=$HOME/.civvis-last-pull
 
 read -r inst seed pace <<< "$(curl -s --max-time 6 "http://127.0.0.1:$PORT/state" 2>/dev/null \
   | python3 -c 'import json,sys
@@ -44,7 +44,7 @@ except Exception:
 # coming up at 1000ms and crawling. Assert the pace server-side, once per
 # instance, and leave it alone afterwards so a person who deliberately slows it
 # down to watch a turn is not fought every fifteen seconds.
-PACESTAMP=/Users/martin/.civvis-pace-instance
+PACESTAMP=$HOME/.civvis-pace-instance
 if [[ -n "$pace" && "$pace" != "0" && "$(cat $PACESTAMP 2>/dev/null)" != "$inst" ]]; then
   echo "$inst" > $PACESTAMP
   curl -s --max-time 4 -X POST "http://127.0.0.1:$PORT/pace" -d '{"ms":0,"paused":false}' >/dev/null 2>&1

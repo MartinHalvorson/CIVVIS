@@ -7,10 +7,10 @@
 set -u
 
 PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
-CLEARER=/Users/martin/CIVVIS/tools/civ6_control/popup_clear.py
-RUNS=/Users/martin/civvis-civ6-runs/control
-ACTIVITY_LOG=/Users/martin/civvis-civ6-runs/popup_clear.log
-KEEPER_LOG=/Users/martin/civvis-civ6-runs/popup_clear.keeper.log
+CLEARER=$HOME/CIVVIS/tools/civ6_control/popup_clear.py
+RUNS=$HOME/civvis-civ6-runs/control
+ACTIVITY_LOG=$HOME/civvis-civ6-runs/popup_clear.log
+KEEPER_LOG=$HOME/civvis-civ6-runs/popup_clear.keeper.log
 LOCK=${CIVVIS_POPUP_KEEPER_LOCK:-$HOME/.civvis-popup-keeper.lock}
 PID_FILE=$LOCK/pid
 

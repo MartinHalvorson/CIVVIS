@@ -27,7 +27,7 @@
 set -u
 LABEL=com.civvis.tccprobe
 WORK=$(mktemp -d /tmp/civvis-tccprobe.XXXXXX)
-BUNDLE="/Users/martin/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl"
+BUNDLE="$HOME/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl"
 
 cat > $WORK/probe.zsh <<EOF
 #!/bin/zsh
