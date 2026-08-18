@@ -17780,7 +17780,13 @@ impl Game {
             }
     }
 
-    fn unit_can_fortify(&self, u: &Unit) -> bool {
+    /// Whether `Action::Fortify` will be accepted for `u`. `pub(crate)` so the
+    /// controllers can ask the engine instead of guessing: `fortify_or_stop`
+    /// is the fleet's universal "nothing better to do" ending and used to
+    /// issue the order for embarked units, Settlers, Builders and ships,
+    /// which the engine refuses — 1,549 refused orders in one 150-turn
+    /// six-player game, the largest single refusal category measured.
+    pub(crate) fn unit_can_fortify(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         spec.class == "military" && spec.domain.as_deref() != Some("sea") && !self.is_embarked(u)
     }
@@ -27040,24 +27046,24 @@ impl Game {
                 .and_then(|city_id| self.cities.get(&city_id));
             let owner = owner_city.map(|city| city.owner);
             let gaul = owner.is_some_and(|pid| self.players[pid].civ == "Gaul");
-            let count = |key: &str| -> usize {
+            let count_uncached = |key: &str| -> usize {
                 match key {
                     "self" => 1,
                     "river" => usize::from(tile.has_river()),
                     "mountain" => neighbors
                         .iter()
                         .flatten()
-                        .filter(|t| t.terrain == "mountain")
+                        .filter(|t| t.terrain == crate::name!("mountain"))
                         .count(),
                     "forest" | "woods" => neighbors
                         .iter()
                         .flatten()
-                        .filter(|t| t.feature.as_deref() == Some("forest"))
+                        .filter(|t| t.feature == Some(crate::name!("forest")))
                         .count(),
                     "rainforest" | "jungle" => neighbors
                         .iter()
                         .flatten()
-                        .filter(|t| t.feature.as_deref() == Some("jungle"))
+                        .filter(|t| t.feature == Some(crate::name!("jungle")))
                         .count(),
                     "natural_wonder" => neighbors
                         .iter()
@@ -27173,22 +27179,25 @@ impl Game {
                         .filter(|t| t.improvement.as_deref() == Some(key))
                         .count(),
                     district_family if self.rules.districts.contains_key(district_family) => {
+                        // Intern the key once. Inside the filter this cost a
+                        // registry lookup per neighbour per district: the
+                        // shipped ruleset gives fifteen of sixteen districts a
+                        // `government_plaza` key, so one plot paid it about a
+                        // hundred and eighty times over.
+                        let wanted = self.district_family(Name::new(district_family));
                         neighbors
                             .iter()
                             .flatten()
                             .filter(|t| {
                                 (!t.pillaged
                                     && t.district.is_some_and(|district| {
-                                        self.district_is_family(district, Name::new(district_family))
+                                        self.district_family(district) == wanted
                                     }))
                                     || assume.is_some_and(|plan| {
                                     plan.foundations
                                         && t.district_foundation.as_ref().is_some_and(
                                             |foundation| {
-                                                self.district_is_family(
-                                                    foundation.district,
-                                                    Name::new(district_family),
-                                                )
+                                                self.district_family(foundation.district) == wanted
                                             },
                                         )
                                 })
@@ -27198,6 +27207,7 @@ impl Game {
                     _ => 0,
                 }
             };
+            let count = count_uncached;
             for (key, bonus) in &spec.adjacency {
                 let tiles = count(key);
                 let n = tiles as f64;

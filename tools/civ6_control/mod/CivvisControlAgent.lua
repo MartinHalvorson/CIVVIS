@@ -212,6 +212,16 @@ local function resolveActions()
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
 		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
 		"UNITCOMMAND_EXIT_FORMATION",
+		-- ★★★ THE ONLY WAY A SOLDIER TOUCHES A MISSIONARY. Religious units are
+		-- excluded from ordinary combat by design -- they cannot be attacked,
+		-- captured, or run over -- so an enemy Apostle standing in our land was
+		-- untouchable by anything this bridge could send. CIVVIS has decided
+		-- this action all along (`condemn_step`) and it was dropped in
+		-- translation. Measured over the 39 live games of 2026-08-16/17: rival
+		-- missionaries and apostles are visible on 47% of turn-samples, and 41%
+		-- of those sightings already have one of our military units within two
+		-- tiles, against 12,708 rival religious-unit sightings to our 590.
+		"UNITCOMMAND_CONDEMN_HERETIC",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -10296,6 +10306,23 @@ local function applyOrder(player, pid, row, turn)
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
 			return operate(unit, hash, params), verb;
+		end
+		-- Condemning a heretic is a COMMAND, not an operation, and it is
+		-- parameterless: `UnitCommands` gives the row no `InterfaceMode`, so
+		-- Firaxis' own UnitPanel takes its "no mode needed" branch and calls
+		-- `RequestCommand(unit, hash)` with no third argument. The target is
+		-- implied by the unit standing on it -- the engine requires the same
+		-- co-location -- so there is nothing to pass.
+		--
+		-- `loose` for the same reason DELETE uses it: the strict
+		-- `CanStartCommand(unit, hash, false, true)` gate refused 495 of 495
+		-- deletes while the shipped panel gated its button on the loose form
+		-- and requested outright. A refusal is named rather than anonymous.
+		if verb == "CONDEMN_HERETIC" then
+			local hash = CMD["UNITCOMMAND_CONDEMN_HERETIC"];
+			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			local ok, why = commandUnit(unit, hash, true);
+			return ok, ok and verb or (why or "condemn_refused");
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,

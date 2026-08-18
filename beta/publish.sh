@@ -119,17 +119,27 @@ source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 assets = pathlib.Path(sys.argv[3])
 page = source.read_text(encoding="utf-8")
 
-# The viewer's script lives beside the atlases as `assets/app.js` (it was a
+# The viewer's scripts live beside the atlases in `assets/` (the renderer was a
 # 1.35 MB inline block; splitting it out is what stopped `web/index.html`
-# growing the pack by a megabyte per edit). Its copy arrived with the
-# `cp -R web/assets` above, and it holds most of the root-absolute asset
-# references now, so every rewrite below runs over both texts.
-app_js = assets / "app.js"
+# growing the pack by a megabyte per edit). Their copies arrived with the
+# `cp -R web/assets` above, and they hold most of the root-absolute asset
+# references now, so every rewrite below runs over the page and all of them.
+#
+# ⚠⚠ EVERY SCRIPT, NOT `app.js`. This named one file, and the day the renderer
+# was carved further that became a silent deployment break: `app_palette.js`
+# carries `"/assets/feature-atlas.png"` and two more like it, and a script this
+# loop does not visit keeps them ROOT-absolute. Published in a lane served at
+# /test they resolve to /assets/... on the site root, 404, and the terrain
+# atlases simply do not load — "a sprite that silently does not load", exactly
+# as the note below this one warns. `verify.py` would not have caught it
+# either: it checks index.html for surviving `"/assets/` and nothing else.
+#
 # A revision from before the script moved out of the page (#1289) has no
-# assets/app.js — its viewer script is still inline in index.html, so every
-# rewrite below simply runs over the page alone. The stable lane is routinely
-# pinned to such a revision.
-script = app_js.read_text(encoding="utf-8") if app_js.is_file() else ""
+# scripts here at all — its viewer is still inline in index.html — so the map
+# is simply empty and every rewrite runs over the page alone. The stable lane
+# is routinely pinned to such a revision.
+scripts = {path: path.read_text(encoding="utf-8")
+           for path in sorted(assets.glob("*.js"))}
 
 # The page asks for its assets from the site root, which is where a desktop
 # build serves them. Published in a lane they sit beside the page instead —
@@ -145,13 +155,14 @@ edits = [
     ('"/assets/', '"assets/'),
 ]
 for needle, replacement in edits:
-    if needle not in page and needle not in script:
+    if needle not in page and not any(needle in t for t in scripts.values()):
         raise SystemExit(
             f"the viewer no longer contains {needle!r}. web/index.html has changed "
             "shape; beta/publish.sh needs updating before this build can be published."
         )
     page = page.replace(needle, replacement)
-    script = script.replace(needle, replacement)
+    for path in scripts:
+        scripts[path] = scripts[path].replace(needle, replacement)
 
 # Links between the site's pages must stay inside the lane too: a test-lane
 # viewer linking `/home` would silently drop the visitor back into prod.
@@ -159,12 +170,14 @@ for needle, replacement in edits:
 # below is what is enforced.
 for needle, replacement in [('href="/home"', 'href="home/"')]:
     page = page.replace(needle, replacement)
-    script = script.replace(needle, replacement)
+    for path in scripts:
+        scripts[path] = scripts[path].replace(needle, replacement)
 
+all_script_text = "".join(scripts.values())
 for stranded in ('"/assets/',):
-    if stranded in page or stranded in script:
+    if stranded in page or stranded in all_script_text:
         raise SystemExit(f"{stranded!r} survived the rewrite; the published page would 404 on it")
-leaked = sorted(set(re.findall(r'(?:href|src)="(/[^"]*)"', page + script)))
+leaked = sorted(set(re.findall(r'(?:href|src)="(/[^"]*)"', page + all_script_text)))
 if leaked:
     raise SystemExit(
         f"the viewer still links the site root ({', '.join(leaked)}); "
@@ -198,7 +211,9 @@ else:
         after += webp.stat().st_size
         png.unlink()
         page = page.replace(f'"assets/{png.name}"', f'"assets/{webp.name}"')
-        script = script.replace(f'"assets/{png.name}"', f'"assets/{webp.name}"')
+        for path in scripts:
+            scripts[path] = scripts[path].replace(
+                f'"assets/{png.name}"', f'"assets/{webp.name}"')
     if before:
         print(f"   atlases {before:,} -> {after:,} bytes as lossless WebP")
 
@@ -206,9 +221,9 @@ else:
 # is what catches a rewrite that half-happened: a reference the loop above
 # missed still names a `.png` that is no longer on disk. The script's copy is
 # written back only now, after every rewrite above has run over it.
-if app_js.is_file():
-    app_js.write_text(script, encoding="utf-8")
-wanted = set(re.findall(r'"assets/([^"]+)"', page + script))
+for path, text in scripts.items():
+    path.write_text(text, encoding="utf-8")
+wanted = set(re.findall(r'"assets/([^"]+)"', page + "".join(scripts.values())))
 have = {p.name for p in assets.iterdir()} if assets.is_dir() else set()
 missing = sorted(wanted - have)
 if missing:
