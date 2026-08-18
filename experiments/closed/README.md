@@ -27,7 +27,7 @@ cargo test --profile ci --locked --features closed-experiments --bin q_pairwise_
 - `fog_census` — docs/FOG_CENSUS.md; reproducible command lines in the doc.
 - `expansion_investment` — docs/EXPANSION_INVESTMENT.md.
 - `gene_objective_probe` — docs/GENE_OBJECTIVE.md.
-- `terminal_faith_census` — docs/TERMINAL_FAITH_OPPORTUNITIES.md; the
+- `terminal_faith_census` — docs/closed/TERMINAL_FAITH_OPPORTUNITIES.md; the
   religious lane is measured dead in deployment (n=142, median 0 faith buys).
 
 Do not reopen a result by tuning, rerunning, or changing these binaries in

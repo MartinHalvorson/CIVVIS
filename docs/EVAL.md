@@ -6826,7 +6826,7 @@ at seed 63,000,000 (10 pairs, `INSUFFICIENT` by the gate's own 20-map floor):
 empire on every yield column and fewer wins.
 
 ⚠ Ten maps establish nothing, and this does **not** generalise to "league
-genomes do not carry": `docs/LIVE_GENOME_TRANSFER.md` ran that question at
+genomes do not carry": `docs/closed/LIVE_GENOME_TRANSFER.md` ran that question at
 proper power on an 8p 84×54 profile and `g44-41` scored **51.9%** (+13,
 `INCONCLUSIVE`, 11 directions for and 8 against), failing only its own
 pre-declared 52.5% screen term. One league genome reads slightly positive at
@@ -7044,7 +7044,7 @@ would not.
 ### `g44-41` does not carry either, and it is a clean null
 
 The one league genome with a well-powered positive deployment reading
-(`docs/LIVE_GENOME_TRANSFER.md`, 51.9% at 8p 84×54) was measured on this
+(`docs/closed/LIVE_GENOME_TRANSFER.md`, 51.9% at 8p 84×54) was measured on this
 profile at seed 68,000,000, pre-registered to be nominated only if it beat the
 deck-matched baseline:
 

@@ -24,7 +24,7 @@ census asks only which explanations remain possible.
 
 ## Prior causal result that this census cannot reopen
 
-`docs/FAITH_CONVERSION.md` already tested the obvious conversion policy on the
+`docs/closed/FAITH_CONVERSION.md` already tested the obvious conversion policy on the
 same recorded Science/Culture/Domination profile. Removing the Culture-plan
 gate produced 234 legal purchases (14 Naturalists and 220 Rock Bands), cut mean
 terminal Faith from 2,770.7 to 1,029.5, and raised tourists from 29.1 to 39.8.
