@@ -5098,6 +5098,12 @@ impl AdvancedAi {
         self.naval_production_policy = true;
     }
 
+    /// Sea threats get sea answers. See `BasicAi::sea_answers`; entrant
+    /// `advanced_sea_answers`.
+    pub fn enable_sea_answers(&mut self) {
+        self.base.sea_answers = true;
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {

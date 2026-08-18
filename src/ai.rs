@@ -2166,6 +2166,15 @@ pub struct BasicAi {
     /// left it for a rival. Production Advanced turns this on; Basic and the
     /// frozen `advanced_v1` anchor keep the historical rule.
     pub(crate) village_seeking: bool,
+    /// Sea threats get sea answers. Two repairs behind one flag: a barbarian
+    /// raider on water counts toward `major_naval_war` (so the wartime second
+    /// eye arrives during exactly the raid that sinks a lone explorer — the
+    /// `desired_navy` test always counted barbarians, this arm did not), and
+    /// `home_defense_objective` admits ships to the responder pool while
+    /// matching responder domain to the threat's tile, so a galley offshore
+    /// stops recruiting land units that can never engage it. Entrant
+    /// `advanced_sea_answers`; off in production pending its screen.
+    pub(crate) sea_answers: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3444,6 +3453,7 @@ impl BasicAi {
             explore_commit: false,
             hut_collection: false,
             village_seeking: false,
+            sea_answers: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -3583,6 +3593,7 @@ impl BasicAi {
             explore_commit: false,
             hut_collection: false,
             village_seeking: false,
+            sea_answers: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -6530,21 +6541,25 @@ impl BasicAi {
                 )
             })
             .count();
+        // A barbarian raider counts when the flag asks it to: `desired_navy`'s
+        // own `naval_war` test has always included barbarians, but this arm
+        // excluded them — so the second wartime eye never arrived during
+        // exactly the sea raid that sinks a lone explorer. See `sea_answers`.
         let major_naval_war = g.players.iter().any(|enemy| {
             enemy.id != pid
                 && enemy.alive
                 && !enemy.is_minor
-                && !enemy.is_barbarian
+                && (!enemy.is_barbarian || self.sea_answers)
                 && g.is_at_war(pid, enemy.id)
                 && (g.units.values().any(|unit| {
                     unit.owner == enemy.id
                         && g.map
                             .get(unit.pos)
                             .is_some_and(|tile| g.rules.is_water(tile))
-                }) || g
-                    .player_city_ids(enemy.id)
-                    .into_iter()
-                    .any(|cid| Self::city_is_coastal(g, cid)))
+                }) || (!enemy.is_barbarian
+                    && g.player_city_ids(enemy.id)
+                        .into_iter()
+                        .any(|cid| Self::city_is_coastal(g, cid))))
         });
         let arm_target = if major_naval_war {
             NAVAL_RECON_WARTIME_ARM_MAX
@@ -10253,10 +10268,15 @@ impl BasicAi {
                 .filter(|unit| unit.owner == pid)
                 .filter(|unit| g.rules.units[unit.kind].class == "military")
                 .filter(|unit| {
-                    matches!(
-                        g.rules.units[unit.kind].domain.as_deref(),
-                        None | Some("land")
-                    )
+                    // A ship joins the pool only under `sea_answers`: the
+                    // threat list has never had a domain filter, so a
+                    // barbarian galley offshore used to recruit land units
+                    // that could neither reach it nor be reached by it.
+                    match g.rules.units[unit.kind].domain.as_deref() {
+                        None | Some("land") => true,
+                        Some("sea") => self.sea_answers,
+                        _ => false,
+                    }
                 })
                 .filter(|unit| !self.recovering_units.contains(&unit.id))
                 .filter(|unit| !garrisoned.iter().any(|(held, _)| *held == unit.id))
@@ -10309,9 +10329,24 @@ impl BasicAi {
             // A defender that would spend ten turns walking home is not a
             // defender. Past that range this unit keeps its offensive job and a
             // nearer one answers instead.
+            // Sea answers sea and land answers land: a ship cannot chase a
+            // raider inland, and a spearman cannot wade out to a galley. The
+            // flag-off path keeps the historical land-only pool unchanged.
+            let threat_on_water = g
+                .map
+                .get(threat)
+                .is_some_and(|tile| g.rules.is_water(tile));
             let mut nearest: Vec<(i32, u32)> = responders
                 .iter()
                 .filter(|id| !committed.contains(id))
+                .filter(|id| {
+                    if !self.sea_answers {
+                        return true;
+                    }
+                    let sea = g.rules.units[g.units[id].kind].domain.as_deref()
+                        == Some("sea");
+                    sea == threat_on_water
+                })
                 .map(|id| (g.wdist(g.units[id].pos, threat), *id))
                 .filter(|(distance, _)| *distance <= HOME_DEFENSE_RECALL_RANGE)
                 .collect();
@@ -11620,6 +11655,79 @@ mod tests {
                 "worker completion order must not change the authoritative game (threads={threads})"
             );
         }
+    }
+
+    #[test]
+    fn a_galley_offshore_is_answered_by_a_galley_not_a_spearman() {
+        let mut g = Game::new_full(2, 24, 16, 91_484, 60, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        // A shoreline three tiles long beside the capital, with the raider on
+        // it and our own hull one tile along.
+        let home = *g.map.tiles.keys().min().expect("the map has tiles");
+        g.found_city_for(0, home, None);
+        let mut water: Vec<Pos> = g
+            .wdisk(home, 3)
+            .into_iter()
+            .filter(|pos| *pos != home && g.wdist(home, *pos) >= 2)
+            .take(3)
+            .collect();
+        water.sort();
+        for pos in &water {
+            g.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("coast");
+        }
+        // Two tiles out: adjacent land would be claimed as the garrison and
+        // never reach the responder pool at all.
+        let land_spot = g
+            .wdisk(home, 2)
+            .into_iter()
+            .filter(|pos| g.wdist(home, *pos) == 2)
+            .find(|pos| {
+                g.map.get(*pos).is_some_and(|t| !g.rules.is_water(t))
+                    && g.units_at(*pos).is_empty()
+            })
+            .expect("open land two tiles from the capital");
+        let our_galley = g.spawn_test_unit("galley", 0, water[0]);
+        // A warrior already holds the capital, so the garrison mechanism is
+        // satisfied and the spearman genuinely belongs to the field pool.
+        g.spawn_test_unit("warrior", 0, home);
+        let spearman = g.spawn_test_unit("spearman", 0, land_spot);
+        let raider = g.spawn_test_unit("galley", 1, water[2]);
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        let raider_pos = g.units[&raider].pos;
+        let enemies = [1usize];
+
+        // Today: ships are not in the responder pool, and the water threat
+        // recruits the spearman — a defender that can never engage it.
+        let mut blind = BasicAi::new();
+        blind.home_defense = true;
+        assert!(blind.home_defense_objective(&g, 0, our_galley, &enemies).is_none());
+        assert_eq!(
+            blind.home_defense_objective(&g, 0, spearman, &enemies),
+            Some(raider_pos),
+            "the defect under test: a land unit is recalled to a sea threat"
+        );
+
+        // Sea answers sea: the galley takes the raider and the spearman keeps
+        // its own job.
+        let mut aware = BasicAi::new();
+        aware.home_defense = true;
+        aware.sea_answers = true;
+        assert_eq!(
+            aware.home_defense_objective(&g, 0, our_galley, &enemies),
+            Some(raider_pos)
+        );
+        assert!(aware.home_defense_objective(&g, 0, spearman, &enemies).is_none());
     }
 
     #[test]
