@@ -1134,7 +1134,14 @@ fn the_added_pantheons_pay_per_improved_tile_at_the_shipped_amounts() {
     };
 
     // (seed, belief, improvement, resource on the tile, yield read, amount paid)
-    type Case = (u64, &'static str, &'static str, Option<&'static str>, &'static str, f64);
+    type Case = (
+        u64,
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        &'static str,
+        f64,
+    );
     let cases: [Case; 9] = [
         (91_770, "goddess_of_the_hunt", "camp", None, "food", 1.0),
         (91_771, "goddess_of_the_hunt", "camp", None, "production", 1.0),
