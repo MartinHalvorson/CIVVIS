@@ -5114,6 +5114,12 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
+    /// Deliberate camp clearing as a peacetime errand. See
+    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
+    pub fn enable_camp_bounty(&mut self) {
+        self.base.camp_bounty = true;
+    }
+
     /// Let the deck counterfactual see the unit-maintenance bill. See
     /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
     pub fn enable_maintenance_aware_deck(&mut self) {
@@ -26349,6 +26355,41 @@ impl AdvancedAi {
                     return true;
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
+        }
+        // The camp errand: with no war running, a couple of otherwise idle
+        // units convert nearby camps into gold, era score, and boost
+        // progress. This is deliberately NOT the home-defense path — that
+        // recall machinery prices a camp as a threat of strength 0.0 and
+        // lost its native slot for hovering beside raiders — the errand
+        // prices a camp as income, behind the same exchange gate as any
+        // other attack, so an outmatched guard simply keeps its tile.
+        if self.base.camp_bounty && enemies.iter().all(|enemy| Some(*enemy) == g.barb_pid) {
+            if let Some(camp) = self.base.camp_bounty_target(g, pid, uid) {
+                let defended = g
+                    .units_at(camp)
+                    .into_iter()
+                    .any(|oid| Some(g.units[&oid].owner) == g.barb_pid);
+                // Hand a defended camp to the tactical mover as soon as one
+                // march turn can reach the fight, not at attack radius: the
+                // plain walker prices threat-adjacent tiles and hovers two
+                // tiles from the guard it is deliberately hunting (the
+                // errand pin's first trace oscillated there for twelve
+                // turns), and natively no attack scan covers the barbarian
+                // seat to take the adjacent trade for it.
+                let engage = radius.max(3);
+                if !defended {
+                    // Walking onto the empty camp is the clear itself.
+                    if self.base.step_toward(g, pid, uid, camp) {
+                        return true;
+                    }
+                } else if g.wdist(unit.pos, camp) > engage {
+                    if self.base.step_toward(g, pid, uid, camp) {
+                        return true;
+                    }
+                } else if let Some(barb) = g.barb_pid {
+                    return self.base.tactical_step(g, pid, uid, camp, &[barb], radius);
+                }
             }
         }
         // The defender's claim above is deliberately bounded to the nearest

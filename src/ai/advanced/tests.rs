@@ -20096,6 +20096,185 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     assert!(!AdvancedAi::legacy().camp_party());
 }
 
+/// Board for the camp-errand pins: two founded capitals, no stray units,
+/// no camps, `current = 0`. Returns the game, player 0's capital, and a
+/// placer for open ground at an exact distance from it.
+fn camp_bounty_board(seed: u64) -> (Game, Pos) {
+    let mut game = Game::new_full(2, 30, 20, seed, 120, 0, true);
+    for player in 0..2 {
+        let settler = game
+            .player_unit_ids(player)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("each player opens with a settler");
+        game.current = player;
+        game.apply(player, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    for player in 0..2 {
+        for uid in game.player_unit_ids(player) {
+            game.remove_unit(uid);
+        }
+    }
+    let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        if game.units[&uid].owner == barb {
+            game.remove_unit(uid);
+        }
+    }
+    game.barb_camps.clear();
+    game.current = 0;
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    (game, home)
+}
+
+fn open_ground_at(game: &Game, home: Pos, distance: i32) -> Pos {
+    let open = |pos: Pos| {
+        game.map
+            .get(pos)
+            .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            && game.city_at(pos).is_none()
+            && game.units_at(pos).is_empty()
+    };
+    let mut ring: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == distance && open(*pos))
+        .collect();
+    ring.sort_unstable();
+    ring.into_iter()
+        .next()
+        .expect("open ground at the distance")
+}
+
+/// The errand itself: a swordsman with nothing else to do walks out to a
+/// warrior-guarded camp four tiles from the capital, takes the guard, steps
+/// onto the tile, and the empire books the clear and its bounty. Everything
+/// runs through the production military step, so the pin covers the consult
+/// slot, the approach, the exchange, and the engine's reward in one piece.
+#[test]
+fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let camp = open_ground_at(&game, home, 4);
+    // A spawn tick far in the future keeps THIS camp from raising raiders
+    // mid-pin; the world's other spawn rolls land far from the errand.
+    game.barb_camps.insert(camp, game.turn + 1_000);
+    game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+    game.spawn_test_unit("warrior", barb, camp);
+    let hunter = game.spawn_test_unit("swordsman", 0, home);
+    let second = game.spawn_test_unit("swordsman", 0, home);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_camp_bounty();
+    let mut cleared_by = None;
+    // Seat-turns: three seats per world turn, thirty world turns of margin
+    // for four tiles of walking and a fight.
+    for _ in 0..90 {
+        let pid = game.current;
+        if pid == 0 {
+            ai.take_turn(&mut game, 0);
+        }
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+        if !game.barb_camps.contains_key(&camp) {
+            cleared_by = Some(game.turn);
+            break;
+        }
+    }
+    assert!(
+        cleared_by.is_some(),
+        "thirty turns is four of walking and a fight; the camp must fall"
+    );
+    assert!(
+        game.players[0]
+            .counters
+            .get("camps")
+            .is_some_and(|camps| *camps >= 1),
+        "the clear is booked on the counter the boosts read"
+    );
+    assert!(
+        game.players[0]
+            .counters
+            .get("barbs_killed")
+            .is_some_and(|kills| *kills >= 1),
+        "the guard fell on the way in"
+    );
+    let _ = (hunter, second);
+}
+
+/// The errand's own gates, pinned at the function: a major war stands it
+/// down, a scout is never a bounty hunter, an outmatched hunter declines,
+/// and the claim ledger caps the party at two camps with one hunter each.
+#[test]
+fn the_camp_errand_stands_down_for_war_recon_and_bad_trades() {
+    let (mut game, home) = camp_bounty_board(90_080);
+    let barb = game.barb_pid.unwrap();
+    let near = open_ground_at(&game, home, 4);
+    game.barb_camps.insert(near, game.turn + 1_000);
+    game.map.tiles.get_mut(&near).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_camp_bounty();
+    let hunter = game.spawn_test_unit("swordsman", 0, home);
+    assert_eq!(
+        ai.base.camp_bounty_target(&game, 0, hunter),
+        Some(near),
+        "an empty camp four tiles out is the errand"
+    );
+
+    // A scout is never a bounty hunter, even though an empty camp prices
+    // above the recon attack threshold.
+    let scout = game.spawn_test_unit("scout", 0, home);
+    assert_eq!(ai.base.camp_bounty_target(&game, 0, scout), None);
+
+    // An outmatched hunter declines the guarded camp.
+    game.spawn_test_unit("musketman", barb, near);
+    let mut fresh = AdvancedAi::new();
+    fresh.enable_camp_bounty();
+    assert_eq!(
+        fresh.base.camp_bounty_target(&game, 0, hunter),
+        None,
+        "a swordsman does not trade into a fortress-era guard"
+    );
+
+    // A major war stands the whole errand down.
+    let guard = game.units_at(near)[0];
+    game.remove_unit(guard);
+    let mut wartime = AdvancedAi::new();
+    wartime.enable_camp_bounty();
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert_eq!(wartime.base.camp_bounty_target(&game, 0, hunter), None);
+    game.at_war.remove(&(0, 1));
+    game.at_war.remove(&(1, 0));
+
+    // Two camps, three hunters: each camp gets one hunter, the third unit
+    // keeps its ordinary job.
+    let far = open_ground_at(&game, home, 5);
+    game.barb_camps.insert(far, game.turn + 1_000);
+    game.map.tiles.get_mut(&far).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+    let second = game.spawn_test_unit("swordsman", 0, home);
+    let third = game.spawn_test_unit("swordsman", 0, home);
+    let mut party = AdvancedAi::new();
+    party.enable_camp_bounty();
+    let first_claim = party.base.camp_bounty_target(&game, 0, hunter);
+    let second_claim = party.base.camp_bounty_target(&game, 0, second);
+    assert_eq!(first_claim, Some(near));
+    assert_eq!(second_claim, Some(far));
+    assert_eq!(
+        party.base.camp_bounty_target(&game, 0, third),
+        None,
+        "two claims is the whole party"
+    );
+
+    assert!(!AdvancedAi::new().base.camp_bounty);
+    assert!(!AdvancedAi::legacy().base.camp_bounty);
+}
+
 /// `home_defense_objective` before the campaign march, mirroring the
 /// Basic step's precedence.
 #[test]

@@ -225,6 +225,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_fortify_idle_units",
     "advanced_maritime_splice",
     "advanced_sea_answers",
+    "advanced_camp_bounty",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
@@ -832,6 +833,7 @@ define_arm_kinds! {
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
+    AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
@@ -3157,6 +3159,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_sea_answers();
             Box::new(ai)
         }
+        // Deliberate camp clearing as a peacetime errand: the stock native
+        // controller cannot fight barbarians at all, so every camp's gold
+        // bounty, era score, and boost progress goes uncollected. Two
+        // exchange-gated hunters, camps near home only.
+        "advanced_camp_bounty" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_camp_bounty();
+            Box::new(ai)
+        }
         // Let the deck counterfactual see the unit-maintenance bill, so
         // Conscription and Levee en Masse stop scoring exactly 0.0. Every
         // other card's bill cancels in the with/without difference.
@@ -4219,6 +4230,7 @@ impl ArmKind {
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
+            Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
                 "recon-replacement",
@@ -4716,6 +4728,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
+        "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
@@ -6024,6 +6037,7 @@ mod tests {
                 "advanced_fortify_idle_units",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
+                "advanced_camp_bounty",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",
