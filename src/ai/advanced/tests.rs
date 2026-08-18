@@ -20909,6 +20909,24 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(live.barbarian_scouts_are_scouts);
 }
 
+/// The civilian rescue ships natively: a capturable civilian within reach
+/// is walked onto, and a settler in the barbarians' hands is never
+/// declined (run `civvis-20260818T222844Z` t27–t33 lost our own captured
+/// settler to the old duplicate-settler freeze, twice from adjacency).
+/// The frozen controllers keep their history, and the withhold arm prices
+/// the promotion.
+#[test]
+fn the_civilian_rescue_is_native() {
+    assert!(AdvancedAi::new().base.civilian_rescue);
+    assert!(!AdvancedAi::legacy().base.civilian_rescue);
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_civilian_rescue();
+    assert!(!withheld.base.civilian_rescue);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.civilian_rescue);
+}
+
 /// ★★★★ A camp seven tiles from Rome stood for 130 turns WITH the reach
 /// on (civvis-20260816T200454Z): the home guard's recall budget is half
 /// the army with the garrison charged against it — a three-unit
@@ -24954,4 +24972,91 @@ fn envoy_income_census() {
         }
     }
     println!();
+}
+
+/// ★★★★ The live seat built one Scout on turn 2 and owned zero recon units
+/// from t150 to the end of run civvis-20260818T212725Z, while the loyalty
+/// forecast refused its four idle Settlers' candidate sites 115 times with
+/// one reason: unexplored ground. `recon_replacement` was ON the whole time —
+/// its rebuild logic lives in `BasicAi::pick_item`, which the strategic
+/// governor never routes through. `reserve_idle_land_recon` is that
+/// treatment's reach into the governor: one idle, non-threatened queue gets
+/// the fastest recon unit while `recon_is_the_missing_arm` says the empire
+/// is blind, and `--without recon-replacement` still withholds the whole arm.
+#[test]
+fn the_missing_land_eye_claims_one_idle_queue() {
+    let (mut game, capital, home) = empire_with_a_capital(71_127);
+    let second = found_nearby_test_city(&mut game, 0, home);
+    // No recon anywhere, and dark passable land past the city lights: the
+    // arm is missing in exactly the measured shape.
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let known: Vec<Pos> = game.wdisk(home, 3);
+    game.players[0].explored.clear();
+    game.players[0].explored.extend(known);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let is_recon = |game: &Game, cid: u32| {
+        matches!(game.cities[&cid].queue.first(),
+        Some(Item::Unit { unit })
+            if game.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                spec.class == "military" && spec.promotion_class == "recon"
+            }))
+    };
+
+    // The withheld arm reserves nothing.
+    {
+        let mut withheld_board = game.clone();
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_recon_replacement();
+        withheld.reserve_idle_land_recon(&mut withheld_board, 0, &plan);
+        assert!(
+            !is_recon(&withheld_board, capital) && !is_recon(&withheld_board, second),
+            "--without recon-replacement must also withhold the governor's reach"
+        );
+    }
+
+    // The live seat claims exactly one idle queue for the missing eye.
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.reserve_idle_land_recon(&mut game, 0, &plan);
+    let reserved = [capital, second]
+        .iter()
+        .filter(|cid| is_recon(&game, **cid))
+        .count();
+    assert_eq!(reserved, 1, "one idle queue holds the recon unit");
+
+    // The arm's own target governs: with two cities it retains a spare eye
+    // (`RECON_ARM_MAX`), so a second call fills the second queue — and a
+    // third claims nothing, because queued recon counts toward the arm.
+    let mut again = game.clone();
+    live.reserve_idle_land_recon(&mut again, 0, &plan);
+    live.reserve_idle_land_recon(&mut again, 0, &plan);
+    let after = [capital, second]
+        .iter()
+        .filter(|cid| is_recon(&again, **cid))
+        .count();
+    assert_eq!(after, 2, "the arm fills to its own target and stops");
+
+    // A fully charted world needs no land eye at all.
+    let mut charted = game.clone();
+    for cid in [capital, second] {
+        charted.cities.get_mut(&cid).unwrap().queue.clear();
+    }
+    let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+    charted.players[0].explored.extend(all);
+    live.reserve_idle_land_recon(&mut charted, 0, &plan);
+    assert!(
+        !is_recon(&charted, capital) && !is_recon(&charted, second),
+        "a charted world reserves nothing"
+    );
 }

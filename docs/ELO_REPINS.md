@@ -1402,3 +1402,47 @@ identifiable: **v14 rows are comparable to v12 rows, and v13 rows to neither.**
 `civ6_fidelity.py` had refused a non-Gathering-Storm reference since #1946 and
 the refusal sat in `main`, so three lines of `sqlite3` walked past it. It is in
 `load_cache_database` now.
+
+---
+
+## v15 (2026-08-18) — the Builder can reach the pillaged tile
+
+`has_builder_work` decides whether to *train* a Builder and counts a pillaged
+improvement anywhere in the empire. The Builder's own target sweep tested only
+`valid_improvements`, which a pillaged-but-improved tile fails, and handled
+repair for the tile the Builder already stood on and nowhere else.
+
+Two definitions of "work" that disagreed — the wider one spending the
+production, the narrower one choosing the destination. The empire trained
+Builders for work its Builders could not walk to, and a razed farm went on
+earning nothing until one wandered onto it.
+
+Counted over three 250-turn six-player games: Builders reached a decision with
+no target 3,704 times, and `has_builder_work` said there was work on **508** of
+them.
+
+Unlike almost every entry above, this one is *not* an argument that the change
+was free. It reaches every seat: **18,572 decisions became 18,586** across the
+five anchor profiles.
+
+⚠ Its strength effect is **not measured**. The justification is that two
+definitions of the same thing disagreed and one of them was reachable only by
+accident — a defect repair, not a demonstrated gain. Rows before and after v15
+are not comparable in any game where an improvement was pillaged.
+
+---
+
+## v16 (2026-08-18) — a scout's report raises its own finite raid
+
+Barbarian Scouts now report only cities they can actually see. The reported
+camp then raises one finite, difficulty-shaped raiding party; idle and
+unrelated camps cannot consume that party's slots. Each raider retains the
+camp that raised it, and the report expires after the party has formed.
+
+This is a native-world rule, not an Advanced-AI controller treatment: every
+participant can face the party it creates. The v15 anchor was 18,586 decisions
+and `0x2076_c0d8_5213_9238`; with this correction it is **17,494 decisions**
+and `0x6cf9_b1fa_a854_dcd6` across the five anchor profiles.
+
+Rows before and after v16 are not comparable. This is a rules correction, not
+a compatibility re-pin.
