@@ -30,7 +30,37 @@ import urllib.request
 
 REPOSITORY = "MartinHalvorson/CIVVIS"
 DEFAULT_BRANCH = "main"
-REQUIRED_CHECKS = ("cargo-test", "collaboration-policy")
+#: Checks `ship` will not merge without. ⚠ THERE IS NO BRANCH PROTECTION AND NO
+#: RULESET ON THIS REPOSITORY — both API reads come back empty — so this tuple
+#: is the only thing that makes a check binding. A gate absent from here is
+#: advisory no matter how red it goes.
+#:
+#: `rust-quality` was absent, and it was not a theoretical gap: five commits on
+#: `main` in the forty most recent runs are red on it, and #1954 merged with its
+#: final `rust-quality` run FAILING while every other check was green. The
+#: format-and-clippy ratchet is scoped to the lines a change touches precisely
+#: so it is always satisfiable; a ratchet nobody has to pass ratchets nothing,
+#: and it trains a fleet at a hundred merges a day to read red as normal.
+REQUIRED_CHECKS = ("cargo-test", "collaboration-policy", "rust-quality")
+
+#: Every other check a pull request gets, with the reason it is NOT required.
+#: `test_civvis_collab.py` discovers the checks the workflows actually produce
+#: and fails when one is in neither place — so a new gate is a deliberate
+#: decision rather than an omission nobody can tell from an oversight.
+ADVISORY_CHECKS = {
+    "overwrite-guard":
+        "Blocking-worthy, and deliberately queued behind the cancelled-check "
+        "retry: it is cancelled on 15 of its 50 most recent runs (body edits "
+        "and ready-for-review transitions retrigger it), and GitHub does not "
+        "restart a cancelled run on its own. Requiring it before `ship` retries "
+        "a cancellation would strand pull requests on a non-verdict.",
+    "published-build":
+        "A job inside `cargo-test`'s workflow, and skipped by design on a diff "
+        "of zero bytes. Never observed red on a merged pull request; promote it "
+        "when there is evidence it can be, not on the strength of its name.",
+    "control-mod":
+        "Same workflow and same reasoning as `published-build`.",
+}
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or
 # marked stale never reached a verdict — and, critically, GitHub will not start

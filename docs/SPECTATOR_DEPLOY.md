@@ -47,6 +47,16 @@ git -C <shared-checkout> worktree add --detach <...>/civvis-spectator origin/mai
 `ROOT` (where it fetches and stages the runtime) then derives from that path;
 the private build worktree is `<...>/civvis-spectator-spectator-src`.
 
+⚠ **`--detach` is load-bearing, not incidental.** A deploy checkout is clean,
+idle, and has its HEAD plainly on GitHub — which is every property
+`civvis_worktree_audit.py --reap` looks for in finished task scaffolding. On
+2026-08-18 the reaper removed `civvis-spectator-src` on exactly that reasoning
+and took the exhibition down; the supervisor's own restart loop then failed
+because the script it execs had gone with it. The reaper now removes only
+worktrees on an `agent/*` branch — the shape `civvis_collab.py start` creates —
+and never one a live process is running from. Creating a deploy checkout any
+other way puts it back in range.
+
 ## Windows (Task Scheduler)
 
 The fleet is macOS-only today, so the Task Scheduler registrar

@@ -6,6 +6,29 @@ Percentages below are diagnostic signals, not an additive decomposition:
 library routines such as `memcmp` and `memmove` are costs incurred by several
 higher-level systems.
 
+## The harness
+
+⚠⚠ **`tools/speed_ab.py` is the method this file has been describing in prose
+since July, and it was not in the tree until 2026-08-18.** Every session rebuilt
+it from these paragraphs, and this document already records what that cost: a
+real **−11%** change read as **+8%** because the arms ran sequentially instead
+of interleaved; one seed reading **+26.7%** purely from another session's games
+sharing the host; a hoisted allocation that measured as an improvement and was a
+**10x pessimization**.
+
+    tools/speed_ab.py --baseline target/ci/civvis --candidate /tmp/civvis-new
+    tools/speed_ab.py --baseline X --candidate X    # the noise floor, here, today
+
+It pairs the arms seed by seed and flips their order between seeds; strips the
+timing line and hashes each game report, so a timing difference only counts as
+overhead when both arms played the same game; counts other CIVVIS processes
+before and after; and reports anything inside ±0.2% as noise rather than as a
+result. If the reports disagree it refuses a speed claim entirely, whatever the
+timing said — which is the one case where a large clean number is worth least.
+
+Everything below is a reading taken with that method, by hand, before it was a
+file. The traps are described in place because they were found in place.
+
 ## Representative workloads
 
 Measurements used the `ci` Cargo profile and an otherwise idle serial CIVVIS
