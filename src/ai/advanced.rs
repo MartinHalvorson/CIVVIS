@@ -24924,6 +24924,14 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // A newly charted village is an expiring reward, so resolve it
+            // before this otherwise idle unit is assigned to a pre-war staging
+            // ring or an incidental camp errand. The shared selector gives
+            // Scouts the long chase and admits only a nearby military fallback;
+            // Settlers and Builders stay on their own movement paths.
+            if self.base.village_seeking && self.base.village_collection_step(g, pid, uid) {
+                return true;
+            }
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
                     .linked_to
