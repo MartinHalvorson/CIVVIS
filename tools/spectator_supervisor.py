@@ -40,6 +40,11 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+from civ6_control import gamelock  # noqa: E402
+
 if os.name == "nt":
     # ctypes.wintypes only imports on Windows.
     from ctypes import wintypes
@@ -52,6 +57,9 @@ if os.name == "nt":
 # earlier and the countdown is cut off mid-promise, later and it sits at zero.
 # So this is not configurable either — `--cooldown` is accepted and ignored.
 FINAL_COUNTDOWN_SECONDS = 10.0
+# A halt is normally cleared interactively, so a supervised service stays alive
+# and sleeps rather than exiting into a launchd restart loop while it waits.
+OPERATOR_HALT_POLL_SECONDS = 5.0
 
 MAP_TYPES = (
     "land_only",
@@ -171,6 +179,22 @@ def log(message: str) -> None:
         print(line, flush=True)
     except (OSError, ValueError, AttributeError):
         pass
+
+
+def wait_for_operator_resume(poll_seconds: float = OPERATOR_HALT_POLL_SECONDS) -> None:
+    """Stand down until an explicit operator halt has been cleared.
+
+    The marker is intentionally durable rather than tied to a particular
+    terminal or launchd PID.  A supervisor that merely exits would be launched
+    again immediately by its service manager, so keep this process dormant
+    until the same operator action that halted games explicitly resumes them.
+    """
+    reported: str | None = None
+    while (halt := gamelock.operator_halt_description()) is not None:
+        if halt != reported:
+            log(f"operator halt active; no spectator will start: {halt}")
+            reported = halt
+        time.sleep(max(0.1, poll_seconds))
 
 
 def updated_supervisor_command(
@@ -1332,6 +1356,11 @@ def start_server(
     resume: Path | None = None,
     initially_paused: bool = False,
 ) -> subprocess.Popen[str]:
+    if halt := gamelock.operator_halt_description():
+        # The marker may have been written while a cold build was running.  A
+        # startup-only check would leave exactly that window open, so this
+        # last gate is deliberately adjacent to process creation.
+        raise OperatorHaltRequested(halt)
     # The server prefers loose web/ files in its working directory over the
     # page embedded in the executable. Starting in the shared checkout would
     # pair a canonical engine with whichever UI a development session is
@@ -1513,6 +1542,10 @@ class ServerPortOwnershipError(RuntimeError):
             f"server PID {expected_pid} did not own port {port}; "
             f"PID {owner_pid} already listens there"
         )
+
+
+class OperatorHaltRequested(RuntimeError):
+    """An explicit halt reached the server-launch boundary."""
 
 
 def process_alive(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> bool:
@@ -1827,6 +1860,9 @@ def release_single_instance() -> None:
 
 def main() -> int:
     args = parse_args()
+    # Do this before a background build, an instance lock, or a port probe.
+    # An operator halt means no new service-side work should become a game.
+    wait_for_operator_resume()
     if args.cooldown != FINAL_COUNTDOWN_SECONDS:
         log(
             f"--cooldown {args.cooldown:g} ignored; a result is held for "
@@ -2061,6 +2097,11 @@ def main() -> int:
             log("active runtime is behind the worktree; scheduling a safe live refresh")
 
         while True:
+            if halt := gamelock.operator_halt_description():
+                log(f"operator halt active; stopping spectator: {halt}")
+                stop_background_prebuild(prebuild_process)
+                stop_server(process, adopted_pid)
+                return 0
             runtime_staged = None
             # A restart is asked for by the person watching, and the moment it
             # is most needed is the moment a long AI turn holds the simulation
@@ -2456,6 +2497,11 @@ def main() -> int:
             checkpointed_progress = None
     except KeyboardInterrupt:
         log("stopping")
+        stop_background_prebuild(prebuild_process)
+        stop_server(process, adopted_pid)
+        return 0
+    except OperatorHaltRequested as halt:
+        log(f"operator halt active; stopping spectator: {halt}")
         stop_background_prebuild(prebuild_process)
         stop_server(process, adopted_pid)
         return 0
