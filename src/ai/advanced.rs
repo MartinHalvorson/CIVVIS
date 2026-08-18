@@ -8048,12 +8048,10 @@ impl AdvancedAi {
                     + effect("city_improvement_park_tourism_pct")
                     + effect("city_religious_tourism_pct"))
                     / 100.0
-                    + (effect("religious_tourism_unreduced")
-                        + effect("renewable_power_tourism"))
+                    + (effect("religious_tourism_unreduced") + effect("renewable_power_tourism"))
                         * 0.25;
                 if multiplied != 0.0 {
-                    direct +=
-                        multiplied * g.tourism_per_turn(pid) * STRATEGIC_WONDER_TOURISM_RATE;
+                    direct += multiplied * g.tourism_per_turn(pid) * STRATEGIC_WONDER_TOURISM_RATE;
                 }
                 // Appeal is what the seaside resorts and national parks those
                 // multipliers act on are made of, so it is priced through the
@@ -8073,7 +8071,9 @@ impl AdvancedAi {
             // Religion. The win is converted cities; converted cities are
             // Apostles reaching them. Faith is the fuel, charges are the reach.
             GrandStrategy::Religion => {
-                scaled("city_faith_pct", &mut equivalent.faith, &|| city_yields().faith);
+                scaled("city_faith_pct", &mut equivalent.faith, &|| {
+                    city_yields().faith
+                });
                 equivalent.faith += effect("regional_faith");
                 direct += (effect("apostles")
                     + effect("gurus")
@@ -8081,8 +8081,7 @@ impl AdvancedAi {
                     + effect("apostles_gain_martyr"))
                     * STRATEGIC_WONDER_FREE_UNIT;
                 direct += effect("free_warrior_monks") * STRATEGIC_WONDER_FREE_UNIT * 0.5;
-                direct +=
-                    effect("guru_purchase_discount_pct") / 100.0 * STRATEGIC_WONDER_FREE_UNIT;
+                direct += effect("guru_purchase_discount_pct") / 100.0 * STRATEGIC_WONDER_FREE_UNIT;
                 // A religion the agent does not have is a religious victory it
                 // cannot start, so Stonehenge's Prophet is priced in the same
                 // units as a diplomatic point. `spent_religion_founding_site`

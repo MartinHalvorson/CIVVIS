@@ -4924,9 +4924,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         }
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_without_open_water_navy" => (Vec::new(), "advanced_without_open_water_navy"),
-        "advanced_without_strategic_wonders" => {
-            (Vec::new(), "advanced_without_strategic_wonders")
-        }
+        "advanced_without_strategic_wonders" => (Vec::new(), "advanced_without_strategic_wonders"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
