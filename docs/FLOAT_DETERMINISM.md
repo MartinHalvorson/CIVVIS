@@ -45,6 +45,17 @@ centres, latitude, longitude, neighbour winding), `src/mapgen.rs` (climate
 sampling, the Earth scripts, the canal scripts, block frames) and
 `src/world.rs` (`WorldMap::direction`).
 
+⚠ **`src/mapgen.rs` was not actually fully converted, and the exception was the
+default script.** `tennis_ball_seam_point` and the seam-side test around it kept
+calling `f64::sin`/`cos`/`asin`/`atan2` directly — ten call sites building a 3-D
+point on the globe from a longitude, which is precisely the shape of the
+original bug. Routing them through `trig` (2026-08-18) changed **2 of 6**
+tennis-ball globe seeds on macOS, so the native build and the wasm bundle had
+been generating different worlds from the same seed on the map most games are
+played on. The paragraph above had said otherwise since the fix landed.
+
+The gate could not have caught it: see below.
+
 Deliberately **not** converted, so their platform behaviour is a recorded
 decision rather than an accident:
 
@@ -71,7 +82,13 @@ decision rather than an accident:
 
 `the_same_seed_generates_the_same_world_on_every_platform` in `src/mapgen.rs`
 pins the digest of the world several fixed seeds generate — globe seeds that
-demonstrably diverged before the fix, plus flat controls. The values were
+demonstrably diverged before the fix, plus flat controls.
+
+⚠ **It pinned `MapScript::Continents` and nothing else for its first year.** The
+CLI defaults to `tennis_ball`, so the gate that exists to stop a platform-trig
+call reaching mapgen could not see the script most games use, and ten such calls
+sat in it. The cases now cover both scripts; a new script needs a row here or it
+is unguarded in exactly the same way. The values were
 computed once, on one platform; every platform that runs the suite must
 reproduce them bit for bit, so a reintroduced platform-trig call fails CI on
 the first runner that rounds differently. If mapgen changes deliberately, the
@@ -82,7 +99,11 @@ only, so the others keep verifying rather than being pasted over.
 
 Making the trig explicit changed what native builds generate: **every globe
 seed produces a different map than before the fix** (measured 6 of 6 in
-#1061), because native moved off its platform's rounding. Globe seeds from
+#1061), because native moved off its platform's rounding. The 2026-08-18
+tennis-ball conversion cost the same thing again on that script alone: 2 of 6
+globe seeds moved, and a pre-conversion tennis-ball globe seed does not
+reproduce afterwards. Continents digests were unchanged, which is the evidence
+that the conversion was confined to the seam geometry. Globe seeds from
 before the fix do not reproduce afterwards. Saves were never at risk — the
 save format carries the generated map rather than regenerating it, and a
 world written by one build loads bit-identically into another. Flat worlds
