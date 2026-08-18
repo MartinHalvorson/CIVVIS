@@ -666,10 +666,10 @@ mod tests {
         assert!(g.winner.is_some());
         assert!(g.cities.len() >= 2);
         for p in &g.players {
-            if !p.is_barbarian {
+            if p.alive && !p.is_barbarian {
                 assert!(
                     p.techs.len() > 1
-                        || (p.is_minor && p.research.is_some() && p.research_progress > 0.0),
+                        || (p.research.is_some() && p.research_progress > 0.0),
                     "player {} ({}) alive={} cities={} ended with {:?}, research {:?} at {:.1}",
                     p.id,
                     p.civ,

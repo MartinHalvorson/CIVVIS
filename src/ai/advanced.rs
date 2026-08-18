@@ -3669,6 +3669,7 @@ impl AdvancedAi {
     /// first promoted hierarchical agent rather than only against BasicAi.
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
+        ai.base.barbarian_tactics = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
@@ -17351,6 +17352,34 @@ impl AdvancedAi {
                 }
                 continue;
             }
+            // Resolve a live barbarian ring before the general strategic
+            // scorer sees the city's empty queue. This makes the answer
+            // city-local (the frontier city gets the defender) and keeps a
+            // wall/defender emergency from losing to a high-value district or
+            // Settler merely because the empire is otherwise healthy.
+            if committed.is_none() {
+                if let Some(item) = self.base.barbarian_defense_item(g, pid, cid) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Military, Decision,
+                                "{} starts {} for nearby barbarian pressure",
+                                city_name, Self::plain_item(&item);
+                                "the local camp/raider ring takes priority over economic production");
+                        }
+                        counts.add_item(g, &item);
+                        continue;
+                    }
+                }
+            }
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let items = g
@@ -18327,8 +18356,27 @@ impl AdvancedAi {
         let production = g.city_yields(cid).production.max(1.0);
         let turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
-        let threatened = plan.threatened_city == Some(cid)
+        let barbarian_tactics = self.base.barbarian_tactics_enabled();
+        let barbarian_pressure = if barbarian_tactics {
+            BasicAi::barbarian_threat_pressure(g, pid, cid)
+        } else {
+            0
+        };
+        let barbarian_threat = barbarian_tactics && BasicAi::barbarian_local_alarm(g, pid, cid);
+        let barbarian_defense_gap = if barbarian_tactics {
+            BasicAi::barbarian_defense_gap(g, pid, cid)
+        } else {
+            0
+        };
+        let threatened = barbarian_threat
+            || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        let barbarian_trade_safe = !barbarian_tactics
+            || (!BasicAi::barbarian_trade_risk(g, pid)
+                && g
+                    .player_city_ids(pid)
+                    .into_iter()
+                    .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
         // A Conquest label is also used while the planner is merely strong
         // enough to contemplate a neighbour. Until a concrete city exists in
         // the plan, that label must not buy an offensive army: the live
@@ -18363,6 +18411,15 @@ impl AdvancedAi {
             _ => city_count,
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
+        // A camp in the home ring is already a production emergency even
+        // before the next raider steps out. Keep one body per city as the
+        // normal deterrent and add a second local body for a visible party.
+        let barbarian_military_floor = if barbarian_threat {
+            city_count + barbarian_pressure.min(2)
+        } else {
+            0
+        };
+        let desired_military = desired_military.max(barbarian_military_floor);
         // A rush is fought out of one or two cities, so `2 * city_count` asks
         // for two units when the siege needs four and the census measures it
         // fielding 2.5 melee at turn 50 with 1.1 of them anywhere near the
@@ -18513,7 +18570,7 @@ impl AdvancedAi {
                     .saturating_sub(g.active_routes(pid))
                     .max(0) as usize;
                 let usable_capacity = open_capacity.min(self.trade_route_opportunity_count(g, pid));
-                if counts.traders < usable_capacity {
+                if counts.traders < usable_capacity && barbarian_trade_safe {
                     let opportunity = self
                         .best_trade_route_origin(g, pid, city.pos, plan.strategy)
                         .map(|(value, _)| value)
@@ -18781,6 +18838,16 @@ impl AdvancedAi {
                         + role_gap
                         + force_gap * 58.0
                         + if threatened { 210.0 } else { 0.0 }
+                        + if !naval && !aircraft && barbarian_defense_gap > 0 {
+                            700.0 + barbarian_defense_gap as f64 * 260.0
+                        } else {
+                            0.0
+                        }
+                        + if !naval && !aircraft && barbarian_threat {
+                            180.0 + barbarian_pressure as f64 * 55.0
+                        } else {
+                            0.0
+                        }
                         + if offensive_conquest
                             && counts.military < desired_military + 2
                         {
@@ -22852,6 +22919,32 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> bool {
         let current = g.units[&uid].pos;
+        // The native simulation lets a Trader walk to its origin, while the
+        // live bridge may expose that walk as several host turns. A nearby
+        // camp/raider makes the exposed path a bad trade: return to a friendly
+        // city before searching for a route. Starting from the city itself is
+        // still allowed because route creation is immediate there.
+        let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
+            || (!BasicAi::barbarian_trade_risk(g, pid)
+                && g
+                    .player_city_ids(pid)
+                    .into_iter()
+                    .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
+        if !barbarian_trade_safe
+            && g
+                .city_at(current)
+                .is_none_or(|city| g.cities[&city].owner != pid)
+        {
+            let target = g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .min_by_key(|city| (g.wdist(current, city.pos), city.id))
+                .map(|city| city.pos);
+            if let Some(target) = target {
+                return self.base.step_toward(g, pid, uid, target);
+            }
+        }
         if let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) {
             if let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) {
                 return g
@@ -25960,28 +26053,27 @@ impl AdvancedAi {
         // on, `enemies` was empty and each soldier took the peacetime path
         // while barbarians pillaged home districts unanswered (observed on
         // live run `civvis-20260807T172510Z`, turns 40+, six idle military
-        // units). `home_defense` already ships on in production, but it was
-        // being handed a threat list that could not contain the threat.
+        // units). The ordinary `home_defense` flag is not the right switch for
+        // this routine: barbarian defense must remain active during peace.
         //
         // Admit the barbarian seat exactly when it has a presence within
         // `HOME_THREAT_RADIUS` of one of our cities. `nearest_enemy`'s own
-        // near-home and exchange-score gates keep the chase bounded, and the
-        // gate on `home_defense` keeps the frozen Basic and `advanced_v1`
-        // tournament identities exactly where they were.
+        // near-home and exchange-score gates keep the chase bounded. Normal
+        // major-war home defense remains flag-gated; the barbarian response
+        // below is deliberately independent of that arm.
         // No `alive` test on the seat: a barbarian player holds no cities, so
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
-        if self.base.home_defense {
-            if let Some(barb) = g.barb_pid {
-                if !enemies.contains(&barb)
-                    && BasicAi::barbarian_presence_at_home_with_camp_radius(
-                        g,
-                        pid,
-                        self.base.camp_radius(),
-                    )
-                {
-                    enemies.push(barb);
-                }
+        if let Some(barb) = g.barb_pid {
+            if self.base.barbarian_tactics_enabled()
+                && !enemies.contains(&barb)
+                && BasicAi::barbarian_presence_at_home_with_camp_radius(
+                    g,
+                    pid,
+                    crate::ai::HOME_CAMP_RADIUS,
+                )
+            {
+                enemies.push(barb);
             }
         }
         // A home raider supplies a bounded defensive assignment, not a second
@@ -26512,14 +26604,10 @@ impl AdvancedAi {
         // (which routes every military unit through here) watched raiders
         // pillage its home districts while its army staged on a border it was
         // not even at war across. `garrison_step` and `home_defense_objective`
-        // both self-gate on `home_defense` and budget their responders, so
-        // the frozen controllers and the offensive's claim on the rest of the
-        // army are untouched.
-        // Scoped to the barbarian seat on purpose: wartime home defense keeps
-        // its measured shape (these two calls were never on the Advanced path
-        // for major wars, and admitting them there moved the melee bench the
-        // wrong way), while the raider case — which previously had no answer
-        // at all — gets one. A responder the homeland claims marches: the
+        // both self-gate on `home_defense` and budget their responders. Normal
+        // major-war home defense keeps that measured shape, while the dedicated
+        // barbarian response below is independent of the flag. A responder the
+        // homeland claims marches: the
         // wartime mover below holds a unit outside the enemy's
         // move-and-attack reach, right for a front, wrong for a raider, which
         // it hovers two tiles from forever while the districts burn. Close
@@ -26528,10 +26616,21 @@ impl AdvancedAi {
         // against barbarians are worth taking.
         if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
             let barb_only = [barb];
-            if self.base.garrison_step(g, pid, uid, &barb_only) {
+            let garrisoned = if self.base.home_defense {
+                self.base.garrison_step(g, pid, uid, &barb_only)
+            } else {
+                self.base.barbarian_garrison_step(g, pid, uid, &barb_only)
+            };
+            if garrisoned {
                 return true;
             }
-            if let Some(threat) = self.base.home_defense_objective(g, pid, uid, &barb_only) {
+            let threat = if self.base.home_defense {
+                self.base.home_defense_objective(g, pid, uid, &barb_only)
+            } else {
+                self.base
+                    .barbarian_home_defense_objective(g, pid, uid, &barb_only)
+            };
+            if let Some(threat) = threat {
                 if g.wdist(unit.pos, threat) > radius
                     && self.base.step_toward(g, pid, uid, threat)
                 {
