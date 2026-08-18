@@ -975,6 +975,21 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v15 (2026-08-18) — Barbarian Scouts now report a sighted city, and each
+/// reported outpost raises one finite, difficulty-shaped raiding party.** The
+/// old phase let unreported camps add globally capped, unassigned units, so a
+/// distant camp could consume the force a successful Scout had earned. The
+/// corrected world rule keeps the Scout home while its report is active,
+/// retains each raider's source camp, and ends the alert after the party has
+/// formed.
+///
+/// This is a shared native-world rule with no controller gate: it changes what
+/// every participant faces before and during their turns. The frozen anchor
+/// therefore moves from 18,572 decisions and `0x3bda_c2f2_b84d_30fc` to 17,478
+/// and `0xfe2f_5126_46f9_81f1` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v14 and v15 rows are not
+/// comparable.
+///
 /// **v12 (2026-08-18) — Gathering Storm district-production rows now execute
 /// for their actual owners.** All city-states build Harbors 500% faster and
 /// their specialty district 500% faster; Japan builds Encampments, Holy Sites,
@@ -1099,7 +1114,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// written under v13 were played on the base game's beliefs and must stay
 /// identifiable. **v14 rows are comparable to v12 rows; v13 rows are
 /// comparable to neither.**
-pub const ELO_PROTOCOL_VERSION: u32 = 14;
+pub const ELO_PROTOCOL_VERSION: u32 = 15;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

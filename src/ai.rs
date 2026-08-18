@@ -3238,17 +3238,13 @@ impl BasicAi {
     /// completeness, although their movement paths stop before this helper is
     /// used by the raider policy.
     fn barbarian_home(g: &Game, uid: u32) -> Option<Pos> {
-        g.barb_camp_guards
-            .iter()
-            .find_map(|(camp, guard)| (*guard == uid).then_some(*camp))
-            .or_else(|| g.barb_scout_homes.get(&uid).copied())
-            .or_else(|| {
-                let position = g.units.get(&uid)?.pos;
-                g.barb_camps
-                    .keys()
-                    .min_by_key(|camp| (g.wdist(position, **camp), **camp))
-                    .copied()
-            })
+        g.barbarian_unit_home(uid).or_else(|| {
+            let position = g.units.get(&uid)?.pos;
+            g.barb_camps
+                .keys()
+                .min_by_key(|camp| (g.wdist(position, **camp), **camp))
+                .copied()
+        })
     }
 
     fn is_barbarian_scout(g: &Game, uid: u32) -> bool {
@@ -16721,6 +16717,48 @@ mod tests {
             ai.nearest_enemy(&g, barb, raider, &[0]),
             Some(camp),
             "a raider beyond its leash must return to the nearest camp"
+        );
+    }
+
+    #[test]
+    fn barbarian_raider_keeps_the_camp_that_raised_it_when_another_is_nearer() {
+        let (mut g, _city, raider) = barbarian_at_the_gates_game(85);
+        let open: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.city_at(**pos).is_none()
+                    && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        let (raider_at, home, nearer_camp) = open
+            .iter()
+            .find_map(|raider_at| {
+                let home = open
+                    .iter()
+                    .copied()
+                    .find(|camp| g.wdist(*raider_at, *camp) > BARBARIAN_RETURN_RADIUS)?;
+                open.iter()
+                    .copied()
+                    .filter(|camp| *camp != *raider_at && *camp != home)
+                    .min_by_key(|camp| g.wdist(*raider_at, *camp))
+                    .filter(|camp| g.wdist(*raider_at, *camp) < g.wdist(*raider_at, home))
+                    .map(|nearer_camp| (*raider_at, home, nearer_camp))
+            })
+            .expect("the map has one distant and one nearer camp site");
+        g.units.get_mut(&raider).unwrap().pos = raider_at;
+        g.barb_camps.insert(home, g.turn + 1_000);
+        g.barb_camps.insert(nearer_camp, g.turn + 1_000);
+        g.barb_raider_homes.insert(raider, home);
+
+        assert_eq!(
+            BasicAi::barbarian_home(&g, raider),
+            Some(home),
+            "a raider must retain the camp that raised it rather than switch to a closer outpost"
         );
     }
 

@@ -1653,7 +1653,9 @@ fn barbarian_scouts_report_only_cities_they_can_really_see() {
                                 && game.units_at(position).is_empty()
                         })
                     };
-                    (land(origin) && land(target) && !blockers.is_empty()
+                    (land(origin)
+                        && land(target)
+                        && !blockers.is_empty()
                         && blockers.iter().copied().all(land))
                     .then_some((origin, target, blockers))
                 })

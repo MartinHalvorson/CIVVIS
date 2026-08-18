@@ -7816,7 +7816,11 @@ impl Game {
             .copied()
             .filter(|kind| self.rules.units[kind].has_ranged_attack() == want_ranged)
             .collect();
-        self.choose_barbarian_unit(if role_pool.is_empty() { pool } else { &role_pool })
+        self.choose_barbarian_unit(if role_pool.is_empty() {
+            pool
+        } else {
+            &role_pool
+        })
     }
 
     fn spawn_barbarian_camp_recon(&mut self, kind: &str, owner: usize, camp: Pos) -> Option<u32> {
@@ -7884,8 +7888,8 @@ impl Game {
             self.barb_camps.contains_key(camp)
                 && self
                     .units
-                .get(guard)
-                .is_some_and(|unit| unit.owner == bpid && unit.pos == *camp)
+                    .get(guard)
+                    .is_some_and(|unit| unit.owner == bpid && unit.pos == *camp)
         });
         self.barb_raider_homes.retain(|unit, camp| {
             self.barb_camps.contains_key(camp)
@@ -7959,9 +7963,7 @@ impl Game {
                 // BarbarianAttackForces.SpawnRate is 2 up to Emperor and 1
                 // from Immortal, so the top band assembles forces twice as
                 // often as well as fielding bigger ones.
-                let wait = (2.0 * spawn_scale)
-                    .round()
-                    .max(1.0) as u32;
+                let wait = (2.0 * spawn_scale).round().max(1.0) as u32;
                 self.barb_camps.insert(pos, self.turn + wait);
             }
         }
