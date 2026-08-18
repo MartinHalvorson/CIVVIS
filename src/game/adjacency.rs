@@ -341,18 +341,22 @@ impl Game {
         {
             return false;
         }
-        let adjacent_land = neighbors.iter().any(|neighbor| {
-            self.map
-                .get(*neighbor)
-                .is_some_and(|tile| !self.rules.is_water(tile))
-        });
         let adjacent_center = neighbors.contains(&center);
         match spec.placement.as_str() {
+            // `adjacent_land` is asked by this arm alone and costs six map
+            // lookups plus six water tests; every other placement rule threw
+            // it away. A settlement scan asks this question once per district
+            // at every plot of the disk, so computing it here rather than
+            // above is most of the six-neighbour work in the function.
             "coast" | "water_park" => {
                 is_water
                     && matches!(tile.terrain.as_str(), "coast" | "lake")
                     && tile.feature.as_deref() != Some("reef")
-                    && adjacent_land
+                    && neighbors.iter().any(|neighbor| {
+                        self.map
+                            .get(*neighbor)
+                            .is_some_and(|tile| !self.rules.is_water(tile))
+                    })
             }
             "flat_land" => !is_water && !tile.hills,
             "hills" => !is_water && tile.hills,
