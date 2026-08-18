@@ -10360,3 +10360,27 @@ compact 27% vs 14%), minors met by t50 2.89 vs 2.19, first natural wonder
 t40 vs t58. The quartet ships in `promoted_policy_envoy`;
 `advanced_recon_fleet` is a declared alias of `advanced` from this revision,
 and `advanced_without_recon_fleet` asks the inverse question.
+
+## The maritime splice screens null-positive and ships as an entrant (2026-08-18)
+
+`maritime_industries` and its era successors are invisible to the
+counterfactual deck scorer until a sea unit already heads a queue (the
+production term reads `queue.first()` only — chicken-and-egg) and appear in
+no grand-strategy portfolio, so the Galley-era +100% discount was never
+slotted. `advanced_maritime_splice` splices the family in exactly while
+`desired_navy` exceeds the fleet held or the naval recon arm is missing
+(never before Sailing). Pinned by
+`a_coastal_empire_short_of_hulls_slots_the_naval_production_card`.
+
+`ai_eval advanced_maritime_splice advanced` (both arms carry the promoted
+recon quartet), 6p 74×46, 9 CS, online, 250t:
+
+| pairs / seed | paired | Elo (CI) | terminal direction | mil units |
+|---|---|---|---|---|
+| 20 / 130000000 | 55.0% | +35 (−114..+183) | 12/8 | 15.1 vs 13.7 |
+| 60 / 140000000 (disjoint) | 53.3% | +23 (−64..+110) | 27/33 | 14.4 vs 14.4 |
+| **pooled 80** | **53.7%** | ~+26 | 39/41 | |
+
+Wins lean for on both seeds with the interval through zero; the unit-count
+proxy did not replicate. Ships OFF as a priced entrant; a matrix run is the
+next step if the axis is re-opened.
