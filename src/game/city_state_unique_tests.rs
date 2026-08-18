@@ -960,8 +960,17 @@ fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
     }
 }
 
+/// Valletta sells the city centre for Faith. It does not sell the walls.
+///
+/// This test used to assert `walls` cost 80 Faith and then buy them. The
+/// shipped ruleset disagrees: no base or expansion file gives any wall tier a
+/// `PurchaseYield`, so Civilization VI offers them for no currency, and
+/// Valletta's `ENABLE_BUILDING_FAITH_PURCHASE` changes the currency of a
+/// purchasable building rather than making an unpurchasable one buyable. The
+/// live seat issued 99 such purchases across the two Valletta runs and the host
+/// refused every one.
 #[test]
-fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls() {
+fn valletta_purchases_city_center_and_encampment_buildings_but_never_the_walls() {
     let (mut game, cities) = game_with_capitals(2, 89_006);
     let city = cities[0];
     let valletta = add_city_state(&mut game, "Valletta");
@@ -978,21 +987,33 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
         game.building_faith_purchase_cost(0, city, "granary"),
         Some(130.0)
     );
-    assert_eq!(
-        game.building_faith_purchase_cost(0, city, "walls"),
-        Some(80.0)
-    );
     assert_eq!(game.building_faith_purchase_cost(0, city, "library"), None);
+    // A city defence is Production-only in both currencies, which is what
+    // `building_gold_purchase_cost` has always said and what this path used to
+    // contradict.
+    for defence in ["walls", "medieval_walls", "renaissance_walls", "tsikhe"] {
+        assert_eq!(
+            game.building_faith_purchase_cost(0, city, defence),
+            None,
+            "{defence} has no PurchaseYield in the shipped ruleset, so no \
+             currency buys it -- not even a Valletta suzerain's Faith"
+        );
+        assert_eq!(
+            game.building_gold_purchase_cost(0, city, defence),
+            None,
+            "{defence} must stay Production-only for Gold too"
+        );
+    }
     let purchase = Action::BuyBuilding {
         city,
         building: crate::name!("walls"),
         currency: "faith".to_string(),
     };
-    assert!(game.legal_actions(0).contains(&purchase));
-    game.apply(0, &purchase).unwrap();
-    assert_close(game.players[0].faith, 920.0);
-    assert!(game.cities[&city].buildings.contains(&crate::name!("walls")));
-    assert_eq!(game.cities[&city].wall_hp, 100);
+    assert!(
+        !game.legal_actions(0).contains(&purchase),
+        "buying walls with Faith must not be offered as a legal action"
+    );
+    assert!(!game.cities[&city].buildings.contains(&crate::name!("walls")));
 
     install_district(&mut game, city, "encampment");
     assert_eq!(
