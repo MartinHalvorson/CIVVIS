@@ -5108,14 +5108,16 @@ impl AdvancedAi {
         self.naval_production_policy = true;
     }
 
-    /// Let the deck counterfactual see the unit-maintenance bill. See
-    /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
-    pub fn enable_maintenance_aware_deck(&mut self) {
-        self.base.maintenance_aware_deck = true;
     /// Sea threats get sea answers. See `BasicAi::sea_answers`; entrant
     /// `advanced_sea_answers`.
     pub fn enable_sea_answers(&mut self) {
         self.base.sea_answers = true;
+    }
+
+    /// Let the deck counterfactual see the unit-maintenance bill. See
+    /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
+    pub fn enable_maintenance_aware_deck(&mut self) {
+        self.base.maintenance_aware_deck = true;
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on

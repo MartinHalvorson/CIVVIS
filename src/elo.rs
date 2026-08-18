@@ -217,8 +217,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
     "advanced_maritime_splice",
-    "advanced_maintenance_deck",
     "advanced_sea_answers",
+    "advanced_maintenance_deck",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
@@ -756,8 +756,8 @@ define_arm_kinds! {
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
-    AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedSeaAnswers => "advanced_sea_answers",
+    AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
@@ -3056,17 +3056,20 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_naval_production_policy();
             Box::new(ai)
         }
+        // Sea threats get sea answers: a barbarian raider on water counts
+        // toward the wartime second exploration hull, ships join the
+        // home-defense pool, and responder domain matches the threat's tile.
+        "advanced_sea_answers" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_sea_answers();
+            Box::new(ai)
+        }
         // Let the deck counterfactual see the unit-maintenance bill, so
         // Conscription and Levee en Masse stop scoring exactly 0.0. Every
         // other card's bill cancels in the with/without difference.
         "advanced_maintenance_deck" => {
             let mut ai = AdvancedAi::new();
             ai.enable_maintenance_aware_deck();
-        // Sea threats get sea answers: a barbarian raider on water counts
-        // toward the wartime second exploration hull, ships join the
-        // home-defense pool, and responder domain matches the threat's tile.
-        "advanced_sea_answers" => {
-            ai.enable_sea_answers();
             Box::new(ai)
         }
         // The reconnaissance quartet was PROMOTED into `promoted_policy_envoy`
@@ -4104,8 +4107,8 @@ impl ArmKind {
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
-            Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
+            Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
                 "recon-replacement",
                 "recon-flight",
@@ -4595,8 +4598,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
-        "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
+        "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
@@ -5905,8 +5908,8 @@ mod tests {
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
                 "advanced_maritime_splice",
-                "advanced_maintenance_deck",
                 "advanced_sea_answers",
+                "advanced_maintenance_deck",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",
                 "advanced_every_lane",
