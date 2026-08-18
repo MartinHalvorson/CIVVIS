@@ -27046,7 +27046,7 @@ impl Game {
                 .and_then(|city_id| self.cities.get(&city_id));
             let owner = owner_city.map(|city| city.owner);
             let gaul = owner.is_some_and(|pid| self.players[pid].civ == "Gaul");
-            let count_uncached = |key: &str| -> usize {
+            let count_uncached = |key: &str, key_family: Option<Name>| -> usize {
                 match key {
                     "self" => 1,
                     "river" => usize::from(tile.has_river()),
@@ -27179,12 +27179,15 @@ impl Game {
                         .filter(|t| t.improvement.as_deref() == Some(key))
                         .count(),
                     district_family if self.rules.districts.contains_key(district_family) => {
-                        // Intern the key once. Inside the filter this cost a
-                        // registry lookup per neighbour per district: the
-                        // shipped ruleset gives fifteen of sixteen districts a
-                        // `government_plaza` key, so one plot paid it about a
-                        // hundred and eighty times over.
-                        let wanted = self.district_family(Name::new(district_family));
+                        // The family this key counts, resolved when the ruleset
+                        // loaded. Interning it here instead cost an `RwLock`
+                        // read and a hash once per plot per district per key —
+                        // about twenty million times in a six-player game, and
+                        // the largest single leaf in the settlement scorer at
+                        // 2.7% of busy CPU. The fallback keeps the old route
+                        // for any caller reaching this arm without a table.
+                        let wanted = key_family
+                            .unwrap_or_else(|| self.district_family(Name::new(district_family)));
                         neighbors
                             .iter()
                             .flatten()
@@ -27208,8 +27211,16 @@ impl Game {
                 }
             };
             let count = count_uncached;
-            for (key, bonus) in &spec.adjacency {
-                let tiles = count(key);
+            let key_families = self.rules.district_adjacency_families.get_interned(dname);
+            debug_assert!(
+                key_families.is_none_or(|families| families.len() == spec.adjacency.len()),
+                "the adjacency family table is built in `spec.adjacency`'s own key order"
+            );
+            for (index, (key, bonus)) in spec.adjacency.iter().enumerate() {
+                let tiles = count(
+                    key,
+                    key_families.and_then(|families| families.get(index).copied().flatten()),
+                );
                 let n = tiles as f64;
                 // Every source has its own TilesRequired bucket in Civ VI.
                 // Fractions from different sources therefore never combine.
@@ -27248,7 +27259,7 @@ impl Game {
                 }
             }
             if gaul && spec.specialty {
-                let mines = count("mine");
+                let mines = count("mine", None);
                 let minor = (mines as f64 * 0.5).trunc();
                 let mut paid = Yields::default();
                 match family.as_str() {
@@ -27276,7 +27287,7 @@ impl Game {
                 self.empire_wonder_effect(pid, "mountain_commercial_industrial_theater_adjacency")
                     > 0.0
             }) {
-                let mountains = count("mountain");
+                let mountains = count("mountain", None);
                 let mut paid = Yields::default();
                 match family.as_str() {
                     "commercial_hub" => paid.gold = mountains as f64,
@@ -27304,7 +27315,7 @@ impl Game {
                     .and_then(|tile| tile.owner_city)
                     .and_then(|city_id| self.cities.get(&city_id))
                 {
-                    let woods = count("forest");
+                    let woods = count("forest", None);
                     let paid = Yields {
                         faith: woods as f64
                             * self.city_building_effect(city, "holy_site_woods_adjacency"),
