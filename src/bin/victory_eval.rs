@@ -255,6 +255,34 @@ fn main() {
                         )
                     })
                     .collect();
+            // ★★★★★ WHICH WONDERS THE LANE ACTUALLY FINISHED, WHICH IS NOT
+            // WHAT ITS VALUATION SAYS IT WANTS.
+            //
+            // The `Item::Wonder` valuation is a claim about intent; a wonder on
+            // the map is the artifact. Without this line the two are impossible
+            // to tell apart, and they came apart immediately: a
+            // Diplomacy-targeted agent finishes **zero wonders in 250 turns**,
+            // with or without any change to how they are priced, while a
+            // Culture agent finishes three and a Score agent eight. Seven of
+            // the twenty points a diplomatic victory needs are wonders, so that
+            // is not a pricing result — it is a reachability one, and pricing
+            // cannot fix it. The Mahabodhi Temple needs a founded religion, a
+            // Holy Site and a Temple; the Statue of Liberty needs a Harbor and
+            // Civil Engineering. A diplomatic empire builds none of those.
+            //
+            // Owner-tagged, because "somebody built the Great Library" and "the
+            // seat we are measuring built the Great Library" are different
+            // facts and the lane result only follows from the second.
+            let wonders: Vec<String> = game
+                .cities
+                .values()
+                .filter(|city| !game.players[city.owner].is_minor)
+                .flat_map(|city| {
+                    city.wonders
+                        .keys()
+                        .map(move |wonder| format!("{}:{wonder}", city.owner))
+                })
+                .collect();
             let passed = actual == target.as_str();
             failures += usize::from(!passed);
             if passed {
@@ -329,7 +357,7 @@ fn main() {
                 VictoryTarget::Score => format!("score={}", game.score(winner)),
             });
             println!(
-                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} {} [{:.2}s]",
+                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} wonders=[{}] {} [{:.2}s]",
                 if passed { "PASS" } else { "FAIL" },
                 seed,
                 target.as_str(),
@@ -342,6 +370,7 @@ fn main() {
                 game.reported_turn(),
                 game.world_era,
                 major_progress,
+                wonders.join(" "),
                 progress.unwrap_or_default(),
                 game_started.elapsed().as_secs_f64(),
             );

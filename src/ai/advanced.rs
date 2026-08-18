@@ -3809,11 +3809,32 @@ impl AdvancedAi {
         // `hut_collection` above only grabs one inside the current turn's
         // reach. `advanced_without_village_seeking` prices the withhold.
         ai.base.village_seeking = true;
-        // Build the wonders the chosen victory actually needs. See
-        // `strategic_wonder_value` for the derivation and
-        // `advanced_without_strategic_wonders` for the withhold arm.
-        // MEASUREMENT PENDING — this line is not promoted until the table
-        // below is filled in from `victory_eval`.
+        // Build the wonders the chosen victory actually needs — the wonder arm
+        // priced no `spec.effects` at all, which the Building arm beside it has
+        // done since it was written. See `strategic_wonder_value` for the
+        // derivation; `advanced_without_strategic_wonders` prices the withhold.
+        //
+        // ⚠⚠ SHIPPED AS A REPAIR, NOT AS A STRENGTH WIN, AND THE DISTINCTION IS
+        // MEASURED. The 200-pair deployment screen
+        // (`advanced` vs `advanced_without_strategic_wonders`, seed 28000000)
+        // returned **all 200 maps byte-identical** — the arm keys off the lane
+        // the agent plays for and the deployed native agent is untargeted, so
+        // it has no chosen victory to work backwards from. Production is
+        // provably unchanged; the targeted agents the ladder runs are what this
+        // reaches, and there it regresses no lane over ~480 paired
+        // `victory_eval` games on three seed streams.
+        //
+        // ★★★★★ AND THE FINDING THAT OUTRANKS THE CHANGE: a Diplomacy-targeted
+        // agent finishes **zero wonders in 250 turns**, with the arm and
+        // without it, while a Culture agent finishes three and a Score agent
+        // eight. Seven of the twenty points a diplomatic victory needs are
+        // wonders, and they are not being declined on price — the Mahabodhi
+        // Temple needs a founded religion, a Holy Site and a Temple, and the
+        // Statue of Liberty needs a Harbor and Civil Engineering. A diplomatic
+        // empire builds none of those, so `can_produce` never offers the
+        // wonder and this valuation is never consulted. The binding constraint
+        // is the prerequisite chain, and it is a different piece of work.
+        // Recorded in docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md.
         ai.enable_strategic_wonders();
         // The reconnaissance quartet the live bridge has carried since its
         // repair era: rebuild a lost scout (`recon_is_the_missing_arm` was
@@ -18673,8 +18694,24 @@ impl AdvancedAi {
                     .victory_target
                     .map(VictoryTarget::strategy)
                     .unwrap_or(plan.strategy);
+                // ⚠ THE BARS GATE THE VALUE, NOT ONLY THE LANE. An earlier draft
+                // applied them to `strategic_opens` alone and still added the
+                // raw figure to the score, so a wonder the bars had just
+                // refused was boosted anyway wherever some other gate had
+                // already opened a lane — the live seat's race, or a Culture
+                // plan. The Potala Palace is exactly that case: 1 060
+                // production for one of twenty diplomatic points, refused by
+                // the cost bar and then handed +1 220 by the live race. One
+                // qualification, used for both.
                 let strategic_value = if self.strategic_wonders {
-                    self.strategic_wonder_value(g, pid, cid, spec, strategic_lane)
+                    let value = self.strategic_wonder_value(g, pid, cid, spec, strategic_lane);
+                    if value >= STRATEGIC_WONDER_MIN_VALUE
+                        && value >= spec.cost * STRATEGIC_WONDER_VALUE_PER_COST
+                    {
+                        value
+                    } else {
+                        0.0
+                    }
                 } else {
                     0.0
                 };
@@ -18686,8 +18723,7 @@ impl AdvancedAi {
                 let strategic_opens = self.strategic_wonders
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
-                    && strategic_value >= STRATEGIC_WONDER_MIN_VALUE
-                    && strategic_value >= spec.cost * STRATEGIC_WONDER_VALUE_PER_COST
+                    && strategic_value > 0.0
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
