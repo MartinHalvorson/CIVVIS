@@ -96,6 +96,36 @@ class TheRankingIsReal(unittest.TestCase):
         self.assertEqual([p for p in paths if p.endswith(".md")], [])
         self.assertEqual([p for p in paths if p.endswith(".json")], [])
 
+    @needs_history()
+    def test_the_control_mod_is_rankable(self):
+        """The omission that hid the fifth-most-contended file in the repository.
+
+        The suffix filter read `(rs|js|py|sh)`, so
+        `tools/civ6_control/mod/CivvisControlAgent.lua` — 21 of the last 200
+        merges, 10%, ahead of three files the ranking did print — could not
+        appear however contended it became. An absent file and an uncontended
+        one print identically, so nothing about the omission was visible in the
+        output.
+
+        Pinned on the suffix rather than on the file's current rank: the rank
+        moves with every merge, and what must not come back is a filter that
+        cannot see a language the repository writes by hand.
+        """
+        import re as _re
+
+        for hand_written in (
+            "tools/civ6_control/mod/CivvisControlAgent.lua",
+            "web/index.html",
+            "src/game.rs",
+            "tools/civ6_play.py",
+        ):
+            self.assertRegex(hand_written, conflict_hotspots.SOURCE_SUFFIXES)
+        for generated in ("docs/EVAL_STATUS.md", "docs/eval_manifest.json"):
+            self.assertIsNone(
+                _re.search(conflict_hotspots.SOURCE_SUFFIXES, generated),
+                f"{generated} is rewritten wholesale by a tool",
+            )
+
     def test_a_missing_origin_main_falls_back_to_head(self):
         """The exact CI failure: the PR checkout had no `origin/main` ref."""
         real = conflict_hotspots.subprocess.run

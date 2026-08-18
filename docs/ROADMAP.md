@@ -68,11 +68,19 @@ Everything the old roadmap called planned has shipped and then some:
 
    | file | merges touching it | why it is contended |
    |---|---:|---|
-   | `src/ai/advanced.rs` | 26% | size — one 19.8k-line impl block |
-   | `src/main.rs` | 20% | one shared line: the source-contract re-pin |
+   | `src/ai/advanced.rs` | 23% | size — one 24.7k-line impl block |
    | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
-   | `src/bin/civvis_orders.rs` | 17% | one shared list: the `--without` arms |
-   | `src/game.rs` | 16% | size |
+   | `src/game.rs` | 17% | size |
+   | `src/main.rs` | 16% | one shared line: the anchor-behaviour re-pin |
+   | `src/ai.rs` | 10% | size |
+   | `tools/civ6_control/mod/CivvisControlAgent.lua` | 10% | size — 12.2k lines in one chunk, against a 199-local ceiling |
+   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` arms |
+
+   ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
+   `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository
+   could not appear in the ranking however contended it became — and an absent
+   file prints exactly like an uncontended one. The tool now ranks every
+   hand-written source suffix, and a test pins that rather than the rank.
 
    The old list was built from file size, and size is not the tax. `elo.rs` is
    a seventh of `game.rs`'s length and is contended more often. And
