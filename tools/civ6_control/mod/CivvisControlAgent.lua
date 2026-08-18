@@ -11500,6 +11500,8 @@ local function beginTurn(player, pid, turn)
 						favor_at_ballot = envoyTally.ballot_favor_now,
 						favor_entering_congress = envoyTally.ballot_favor_entering,
 						favor_now = favorNow,
+						max_votes = envoyTally.ballot_max_votes,
+						costs = envoyTally.ballot_costs,
 					});
 				end
 			end
@@ -11904,6 +11906,40 @@ local function tick()
 			envoyTally.ballot_favor_now = favorNow;
 			envoyTally.ballot_favor_entering = favorEntering;
 			envoyTally.ballot_ask = {};
+			-- ★★★★★ AND WHAT THE VOTES WERE PRICED AGAINST, BECAUSE THE FIRST
+			-- READBACK RULED OUT THE REASON IT WAS BUILT TO TEST.
+			--
+			-- #2013 priced the ballot against `GetFavorEnteringCongress` on the
+			-- theory that it was the smaller number and that asking past it
+			-- refused the purchase whole. The first decisive session says
+			-- otherwise: run `civvis-20260818T161918Z` turn 162 reports
+			-- `favor_at_ballot 439, favor_entering_congress 439` -- the same
+			-- value -- with `asked 15, recorded 1, registered false`, while the
+			-- one-vote ballot on the SAME resolution one turn later reports
+			-- `asked 1, recorded 1, registered true`. A controlled pair inside
+			-- one session: the free vote lands, the purchase does not, and the
+			-- budget was never the difference.
+			--
+			-- What is left unobserved is the pricing itself. `n` came out at
+			-- FIFTEEN votes for 420 Favor, and this file's own comment says
+			-- twelve votes cost 780 on the shipped ladder -- so either the cost
+			-- table is not the cumulative-per-vote-count array the loop below
+			-- assumes, or `MaxVotes` is not the cap being read. Both are
+			-- answerable, and neither is answerable from the outside: the
+			-- numbers never leave this function.
+			--
+			-- So they leave it now. `GetVotesandFavorCost` is a small array;
+			-- carrying it and the vote count it produced turns the next session
+			-- into the experiment instead of the one after that. This changes
+			-- no decision -- it is the same ballot, reported.
+			envoyTally.ballot_costs = {};
+			for index = 0, 20 do
+				if costs[index] ~= nil then
+					envoyTally.ballot_costs[#envoyTally.ballot_costs + 1] =
+						{ index = index, cost = tonumber(costs[index]) };
+				end
+			end
+			envoyTally.ballot_max_votes = tonumber(costs.MaxVotes);
 			-- The diplomatic-victory leader among the others.  Keep this sampling
 			-- beside the actual vote: it is the host API contract and exposes a
 			-- useful DVP/score snapshot to the pure selector below.
