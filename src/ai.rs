@@ -1801,9 +1801,9 @@ pub struct BasicAi {
     /// Off by default; evaluator arm `advanced_fortify_idle_units`. See
     /// `hold_stood_down_unit` for the measurement that motivates it.
     pub fortify_idle_units: bool,
-    /// Build hulls only where they have open water to sail into. Off by
-    /// default pending its screen; see `city_has_open_water` and the evaluator
-    /// arm `advanced_open_water_navy`.
+    /// Build hulls only where they have open water to sail into. **On in
+    /// production since 2026-08-18**; see `city_has_open_water`, and
+    /// `advanced_without_open_water_navy` for the withhold.
     pub open_water_navy: bool,
     /// Let the baseline governor build the district that repairs an Amenity
     /// deficit.
