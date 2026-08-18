@@ -44,11 +44,11 @@ Never named:
 
 ## Live ladder
 
-- Attempts recorded: **313**
-- Configured attempts: **309**
-- Terminal outcomes: **205**
+- Attempts recorded: **317**
+- Configured attempts: **310**
+- Terminal outcomes: **209**
 - Configured wins: **3**
-- Latest ledger entry: **2026-08-18T03:16:49Z**
+- Latest ledger entry: **2026-08-18T06:17:27Z**
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this
