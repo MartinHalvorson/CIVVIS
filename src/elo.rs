@@ -21,7 +21,7 @@ use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::{GameMode, MapPoles, MapScript, MapSize, MapTopology};
 
-pub const BUILTIN_AIS: [&str; 8] = [
+pub const BUILTIN_AIS: &[&str] = &[
     "advanced",
     "advanced_evolved",
     "advanced_v1",
@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 188] = [
+pub const EVAL_ONLY_AIS: &[&str] = &[
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -273,7 +273,7 @@ pub const EVAL_ONLY_AIS: [&str; 188] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 69] = [
+pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -377,7 +377,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 18] = [
+pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -433,7 +433,7 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 18] = [
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
-pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 28] = [
+pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -465,7 +465,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 28] = [
 ];
 
 /// The economic half: settlement, growth, districts, and the policy deck.
-pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 23] = [
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "escort-unstick",
     "stacked-escort",
     "settler-stack-discipline",
@@ -495,7 +495,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 23] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 51] = [
+pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -5711,7 +5711,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 92] = [
+            const SCRIPTED: &[&str] = &[
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5809,7 +5809,7 @@ mod tests {
                 "live",
                 "random",
             ];
-            const SCRIPTED_ALIASES: [&str; 9] = [
+            const SCRIPTED_ALIASES: &[&str] = &[
                 "advanced_policy_envoy_priority",
                 // Aliases `advanced` since the 2026-08-17 recon-fleet
                 // promotion shipped the quartet it used to apply.
@@ -5897,13 +5897,86 @@ mod tests {
     /// compiles, passes every other test, and quietly makes `advanced_synergy`
     /// a different treatment than the one its documentation — and whatever
     /// eval record it has by then accumulated — describes.
+    /// The two halves of the engine-repair bundle partition the whole.
+    ///
+    /// ⚠ THIS HELD BY MAINTENANCE, NOT BY CONSTRUCTION. `AdvancedSynergyWar`
+    /// and `AdvancedSynergyEconomy` are the two arms that price the repair
+    /// bundle by splitting it, and that pricing only means anything if every
+    /// repair is in exactly one half. Nothing checked it. A repair added to
+    /// `ENGINE_REPAIR_TREATMENTS` and to neither half would be withheld by
+    /// neither arm, so the split would report the same bundle twice under two
+    /// names — and a repair in both halves would be withheld by both, which is
+    /// the opposite error and reads identically in the table.
+    #[test]
+    fn the_war_and_economy_halves_partition_the_repair_bundle() {
+        use std::collections::BTreeSet;
+        let war: BTreeSet<_> = ENGINE_REPAIR_WAR_TREATMENTS.iter().collect();
+        let economy: BTreeSet<_> = ENGINE_REPAIR_ECONOMY_TREATMENTS.iter().collect();
+        let all: BTreeSet<_> = ENGINE_REPAIR_TREATMENTS.iter().collect();
+
+        let both: Vec<_> = war.intersection(&economy).collect();
+        assert!(
+            both.is_empty(),
+            "these repairs are in BOTH halves, so both arms withhold them and \
+             neither arm prices what it claims to: {both:?}"
+        );
+
+        let halves: BTreeSet<_> = war.union(&economy).copied().collect();
+        let unclaimed: Vec<_> = all.difference(&halves).collect();
+        assert!(
+            unclaimed.is_empty(),
+            "these repairs are in the bundle but in NEITHER half, so the split \
+             prices the same bundle twice under two names: {unclaimed:?}"
+        );
+
+        let stray: Vec<_> = halves.difference(&all).collect();
+        assert!(
+            stray.is_empty(),
+            "these repairs are in a half but not in the bundle it splits: {stray:?}"
+        );
+
+        assert_eq!(
+            war.len() + economy.len(),
+            all.len(),
+            "the halves and the whole disagree on size even though the sets match"
+        );
+    }
+
+    /// No list here carries a hand-typed length any more.
+    ///
+    /// ⚠ THIS IS THE DEFECT THAT BROKE `main`. Every one of these was a
+    /// `[&str; N]` whose N was typed by hand — the largest was 188. Adding an
+    /// entry without editing the number is a compile error in a build most
+    /// authors never run locally, and on 2026-08-17 #1865 added an arm, missed
+    /// the count, and left `main` unable to build for wasm until #1869 fixed
+    /// the number. `&[&str]` cannot go stale, so the class is gone rather than
+    /// the instance.
+    #[test]
+    fn no_list_in_this_file_carries_a_hand_typed_length() {
+        let source = include_str!("elo.rs");
+        let offenders: Vec<&str> = source
+            .lines()
+            .filter(|line| {
+                let line = line.trim_start();
+                (line.starts_with("const ") || line.starts_with("pub const "))
+                    && line.contains(": [&str; ")
+            })
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "these declare a length by hand, which goes stale the next time \
+             somebody adds an entry — use `&[&str]`:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
     #[test]
     fn engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics() {
         /// Each of these encodes a rule of Firaxis' game rather than repairing
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 18] = [
+        const EXCLUDED: &[&str] = &[
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
