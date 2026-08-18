@@ -524,7 +524,9 @@ fn live_first_campus_writing_precedes_the_housing_research_detour() {
 /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
 #[test]
 fn only_the_live_bridge_replaces_the_recon_arm() {
-    assert!(!AdvancedAi::new().base.recon_replacement);
+    // On in production since the 2026-08-17 recon-fleet promotion; the
+    // frozen anchor keeps its ladder.
+    assert!(AdvancedAi::new().base.recon_replacement);
     assert!(!AdvancedAi::legacy().base.recon_replacement);
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
@@ -1118,21 +1120,24 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
         tile.district = None;
         tile.wonder = None;
     }
-
-    /// Off by default, set only by the live bridge, holdable off on its own —
-    /// the recon-replacement arm follows the same contract as every other
-    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
-    #[test]
-    fn only_the_live_bridge_replaces_the_recon_arm() {
-        // On in production since the 2026-08-17 recon-fleet promotion; the
-        // frozen anchor keeps its ladder.
-        assert!(AdvancedAi::new().base.recon_replacement);
-        assert!(!AdvancedAi::legacy().base.recon_replacement);
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        assert!(live.base.recon_replacement);
-        live.disable_recon_replacement();
-        assert!(!live.base.recon_replacement);
+    game.map.tiles.get_mut(&stone).unwrap().resource = Some(Name::new("stone"));
+    let mut founded = 0;
+    let mut sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    sites.sort_unstable();
+    for site in sites {
+        if founded == 2 {
+            break;
+        }
+        let distant = game.wdist(site, home) >= 5
+            && game
+                .player_city_ids(0)
+                .iter()
+                .all(|c| game.wdist(site, game.cities[c].pos) >= 5);
+        let tile = &game.map.tiles[&site];
+        if distant && game.rules.is_passable(tile) && !game.rules.is_water(tile) {
+            game.found_city_for(0, site, None);
+            founded += 1;
+        }
     }
     assert_eq!(
         game.player_city_ids(0).len(),

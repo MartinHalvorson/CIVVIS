@@ -2271,102 +2271,9 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
         let mut withheld = AdvancedAi::new();
         withheld.enable_live_bridge();
         withheld.disable_naval_recon();
-        assert!(withheld.naval_explorer(&game, 0).is_empty());
-        // Production carries the fleet since the 2026-08-17 promotion; the
-        // frozen anchor still sails nothing.
-        assert!(AdvancedAi::new().naval_recon());
-        assert!(!AdvancedAi::legacy().naval_recon());
-    }
-
-    #[test]
-    fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
-        let mut game = Game::new_full(2, 30, 18, 71_003, 100, 0, false);
-        game.current = 0;
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|uid| game.units[uid].kind == "settler")
-            .expect("the first major starts with a Settler");
-        game.apply(0, &Action::FoundCity { unit: settler })
-            .expect("the fixture founds a capital");
-        for uid in game.player_unit_ids(0) {
-            game.remove_unit(uid);
-        }
-        let city = game.player_city_ids(0)[0];
-        let city_pos = game.cities[&city].pos;
-        for tile in game.map.tiles.values_mut() {
-            tile.terrain = crate::name!("grassland");
-            tile.feature = None;
-            tile.hills = false;
-            tile.resource = None;
-            tile.improvement = None;
-        }
-        let mut waterway = Vec::new();
-        let mut current = city_pos;
-        for distance in 1..=super::super::NAVAL_RECON_MIN_WATERWAY_TILES {
-            current = game
-                .nbrs(current)
-                .into_iter()
-                .find(|pos| {
-                    game.map.tiles.contains_key(pos)
-                        && game.wdist(city_pos, *pos) == distance as i32
-                })
-                .expect("an interior city has a straight coastal launch route");
-            game.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
-            waterway.push(current);
-        }
-        game.players[0].explored.remove(waterway.last().unwrap());
-        game.players[0].techs.insert(crate::name!("sailing"));
-        game.at_war.insert((0, 1));
-        game.spawn_test_unit("galley", 1, *waterway.last().unwrap());
-        game.spawn_test_unit("galley", 0, waterway[0]);
-
-        let plan = StrategicPlan {
-            strategy: GrandStrategy::Conquest,
-            target_player: Some(1),
-            target_city: None,
-            threatened_city: None,
-            desired_cities: 1,
-            assessed_turn: game.turn,
-            rush: false,
-        };
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        assert!(live.base.naval_recon_is_the_missing_arm(&game, 0));
-
-        // The spare eye must not leapfrog the shared recovery rule. One
-        // existing Galley covers the emergency-garrison exception on this
-        // one-city war, so a bankrupt empire repairs its balance first.
-        let mut bankrupt = game.clone();
-        bankrupt.players[0].gold = 0.0;
-        bankrupt.players[0].gold_per_turn = -1.0;
-        assert!(live.live_war_economy_requires_recovery(
-            &bankrupt,
-            0,
-            &live.counts(&bankrupt, 0)
-        ));
-        live.reserve_idle_naval_recon(&mut bankrupt, 0, &plan);
-        assert!(
-            bankrupt.cities[&city].queue.is_empty(),
-            "a naval scout cannot bypass the live war-economy recovery path"
-        );
-
-        // Production reserves the hull too since the 2026-08-17 promotion;
-        // only the frozen anchor keeps the historical empty queue.
-        let mut frozen_game = game.clone();
-        let frozen = AdvancedAi::legacy();
-        frozen.reserve_idle_naval_recon(&mut frozen_game, 0, &plan);
-        assert!(
-            frozen_game.cities[&city].queue.is_empty(),
-            "the frozen controller does not reserve a naval scout"
-        );
-
-        live.reserve_idle_naval_recon(&mut game, 0, &plan);
-        assert!(matches!(
-            game.cities[&city].queue.first(),
-            Some(Item::Unit { unit }) if unit == "galley"
-        ));
-        live.reserve_idle_naval_recon(&mut game, 0, &plan);
+        let plan = withheld.assess(&idle, 0);
+        let _ =
+            withheld.advanced_military_step_with_decline(&mut idle, 0, idle_galley, &plan, false);
         assert_eq!(
             idle.units[&idle_galley].pos, start,
             "without the treatment the war path does not send the ship exploring"
@@ -2407,7 +2314,9 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     withheld.enable_live_bridge();
     withheld.disable_naval_recon();
     assert!(withheld.naval_explorer(&game, 0).is_empty());
-    assert!(!AdvancedAi::new().naval_recon());
+    // Production carries the fleet since the 2026-08-17 promotion; the
+    // frozen anchor still sails nothing.
+    assert!(AdvancedAi::new().naval_recon());
     assert!(!AdvancedAi::legacy().naval_recon());
 }
 
@@ -2479,11 +2388,13 @@ fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
         "a naval scout cannot bypass the live war-economy recovery path"
     );
 
-    let mut stock_game = game.clone();
-    let stock = AdvancedAi::new();
-    stock.reserve_idle_naval_recon(&mut stock_game, 0, &plan);
+    // Production reserves the hull too since the 2026-08-17 promotion;
+    // only the frozen anchor keeps the historical empty queue.
+    let mut frozen_game = game.clone();
+    let frozen = AdvancedAi::legacy();
+    frozen.reserve_idle_naval_recon(&mut frozen_game, 0, &plan);
     assert!(
-        stock_game.cities[&city].queue.is_empty(),
+        frozen_game.cities[&city].queue.is_empty(),
         "the frozen controller does not reserve a naval scout"
     );
 
@@ -2731,101 +2642,24 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
             frozen.base.village_seeking,
             production.base.village_seeking,
         ),
+        (
+            "recon_replacement",
+            frozen.base.recon_replacement,
+            production.base.recon_replacement,
+        ),
+        ("recon_flight", frozen.recon_flight, production.recon_flight),
+        (
+            "naval_recon",
+            frozen.base.naval_recon,
+            production.base.naval_recon,
+        ),
+        (
+            "come_ashore",
+            frozen.base.come_ashore,
+            production.base.come_ashore,
+        ),
     ] {
         assert!(
-            !live.faith_military_is_affordable(&game, 0, &unit),
-            "precondition: the same board DOES refuse once the gate is enabled"
-        );
-    }
-
-    /// ⚠ **What the production constructor turns on, and what each part cost
-    /// to establish.** The assertions below pin the bundle; this ledger records
-    /// which parts of it have an individual outcome number, because the pin
-    /// alone cannot tell a measured component from an assumed one.
-    ///
-    /// | flag | individual evidence |
-    /// |---|---|
-    /// | `bounded_recovery` | **NULL over 600 maps** on two disjoint seeds; removed from production 2026-08-17. The live bridge and explicit evaluator treatments retain the flag. |
-    /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
-    /// | `envoy_infrastructure` | **NULL at 800 games** (matrix RETAIN, 1/2 profiles); removed from production 2026-08-17. The explicit evaluator arm retains the valuation for future decomposition. |
-    /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
-    ///
-    /// A composite may legitimately pass a gate while a component is null on
-    /// its own, and the 2026-08-01 promotion was such a composite. The two
-    /// confirmed nulls above are now out of the production constructor; what
-    /// remains is that **most of the retained bundle has never been priced
-    /// apart**, and `disable_bounded_recovery`'s own doc already named that as
-    /// the failure mode: *"Every flag in
-    /// `enable_live_bridge` needs one of these or it ships unmeasured — which
-    /// is how five repairs reached deployment without a single outcome
-    /// number."*
-    ///
-    /// ⚠ Adding a flag here without a withhold arm repeats it. And note the
-    /// trap that cost an evaluation on 2026-08-10: because this constructor
-    /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
-    /// byte-identical no-op. Withhold, do not add.
-    /// Every *retained* default this session made withholdable must be OFF on
-    /// the frozen anchor, and ON in production. Measured-null defaults are
-    /// asserted separately below so a retired arm cannot silently return.
-    ///
-    /// The re-pins for those withholds were justified by comments reasoning
-    /// about call paths. A comment claiming a flag cannot reach the anchor is
-    /// worth exactly what the comment claiming native games leave
-    /// `bounded_recovery` disabled was worth — that one was false, and finding
-    /// out cost an evaluation. `the_repair_bundle_cannot_reach_the_frozen_anchor`
-    /// in `main.rs` makes the same argument by assertion for the engine-repair
-    /// bundle; this is its counterpart for the five defaults.
-    ///
-    /// Both halves matter. OFF on `legacy()` is what makes a withhold arm
-    /// unable to move a rating anchor. ON in the relevant production
-    /// constructor is what makes a withhold the *only* way to price a retained
-    /// flag — an arm built as `new()` plus one of these is a byte-identical
-    /// no-op, which is how three arms in `elo.rs` came to measure nothing.
-    #[test]
-    fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
-        let frozen = AdvancedAi::legacy();
-        let production = AdvancedAi::new();
-        for (flag, on_anchor, in_production) in [
-            (
-                "settlement_safety",
-                frozen.settlement_safety,
-                production.settlement_safety,
-            ),
-            (
-                "battlefront_observation",
-                frozen.battlefront_observation,
-                production.battlefront_observation,
-            ),
-            (
-                "amenity_districts",
-                frozen.base.amenity_districts,
-                production.base.amenity_districts,
-            ),
-            (
-                "hut_collection",
-                frozen.base.hut_collection,
-                production.base.hut_collection,
-            ),
-            (
-                "explore_commit",
-                frozen.base.explore_commit,
-                production.base.explore_commit,
-            ),
-            (
-                "village_seeking",
-                frozen.base.village_seeking,
-                production.base.village_seeking,
-            ),
-            (
-                "recon_replacement",
-                frozen.base.recon_replacement,
-                production.base.recon_replacement,
-            ),
-            ("recon_flight", frozen.recon_flight, production.recon_flight),
-            ("naval_recon", frozen.base.naval_recon, production.base.naval_recon),
-            ("come_ashore", frozen.base.come_ashore, production.base.come_ashore),
-        ] {
-            assert!(
                 !on_anchor,
                 "{flag} is on for advanced_v1: a withhold arm for it can move                  the frozen rating anchor, and the source-contract re-pin that                  called itself free is not"
             );
@@ -16691,386 +16525,7 @@ fn a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_ma
             game.remove_unit(settler);
             game.found_city_for(pid, pos, None);
         }
-        let (seed, post, threat) = found.expect("some seed offers open ground with a visible hostile two tiles off");
-
-        let mut game = fresh(seed);
-        game.spawn_test_unit("warrior", 1, threat);
-        let scout = game.spawn_test_unit("scout", 0, post);
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        assert!(live.recon_flight, "the live seat carries the treatment");
-        let plan = live.assess(&game, 0);
-        let journal = crate::reasoning::Journal::recording();
-        live.attach_journal(journal.handle());
-        let visible = game.player_vision_now(0);
-        let here = live.settlement_tile_risk_with_support(&game, 0, None, post, &visible, false);
-        assert!(here >= RECON_FLIGHT_RISK, "fixture precondition: the post is priced as reachable ({here})");
-
-        assert!(
-            live.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false),
-            "the scout acts"
-        );
-        let after = game.units[&scout].pos;
-        assert_ne!(after, post, "it does not hold on the threatened tile");
-        let risk_after = live.settlement_tile_risk_with_support(&game, 0, None, after, &visible, false);
-        assert!(risk_after <= here, "it never steps into more risk ({risk_after} vs {here})");
-        assert!(
-            game.wdist(after, threat) > 2,
-            "it moved away from the warrior, not toward it ({after:?} vs {threat:?})"
-        );
-        assert!(
-            journal
-                .since(0)
-                .thoughts
-                .iter()
-                .any(|thought| thought.headline.contains("slips away from")),
-            "the flight is journaled"
-        );
-
-        // The whole turn: it keeps stepping while a step opens ground, and the
-        // explore step of the same turn does not walk it back into the band.
-        let mut game = fresh(seed);
-        game.spawn_test_unit("warrior", 1, threat);
-        let scout = game.spawn_test_unit("scout", 0, post);
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        let plan = live.assess(&game, 0);
-        live.advance_unit_serial(&mut game, 0, scout, &plan, false, false);
-        let rested = game.units[&scout].pos;
-        assert!(
-            game.wdist(rested, threat) >= 3,
-            "with its whole movement it ends at least three tiles from the warrior ({rested:?})"
-        );
-
-        // Withheld: the same scout explores as before and never journals a flight.
-        let mut game = fresh(seed);
-        game.spawn_test_unit("warrior", 1, threat);
-        let scout = game.spawn_test_unit("scout", 0, post);
-        let mut withheld = AdvancedAi::new();
-        withheld.enable_live_bridge();
-        withheld.disable_recon_flight();
-        let plan = withheld.assess(&game, 0);
-        let journal = crate::reasoning::Journal::recording();
-        withheld.attach_journal(journal.handle());
-        let _ = withheld.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false);
-        assert!(
-            !journal
-                .since(0)
-                .thoughts
-                .iter()
-                .any(|thought| thought.headline.contains("slips away from")),
-            "the withheld arm keeps the historical explore step"
-        );
-
-        // Production flees since the 2026-08-17 promotion; the frozen
-        // controller stands its ground as it always did.
-        assert!(AdvancedAi::new().recon_flight);
-        assert!(!AdvancedAi::legacy().recon_flight);
-    }
-
-    /// In the live win, Scout 60 spent turns 204–251 issuing equal-risk flight
-    /// moves between the same two tiles while six city-states remained unseen.
-    /// The per-turn flight choice was locally safe, but after the motion window
-    /// proves the loop it must yield to the explorer's outward route instead of
-    /// retracing the safe-looking half of the circuit.
-    #[test]
-    fn a_looping_live_scout_does_not_repeat_an_equal_risk_flight_step() {
-        let mut game = Game::new_full(2, 20, 14, 91_483, 80, 0, false);
-        for unit in game.units.keys().copied().collect::<Vec<_>>() {
-            game.remove_unit(unit);
-        }
-        for tile in game.map.tiles.values_mut() {
-            tile.terrain = crate::name!("plains");
-            tile.feature = None;
-            tile.hills = false;
-        }
-        game.at_war.insert((0, 1));
-        game.current = 0;
-
-        let start = game
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .find(|pos| game.wdisk(*pos, 2).len() == 19 && game.city_at(*pos).is_none())
-            .expect("fixture needs an open land tile away from each city");
-        let toward_threat = game.nbrs(start)[0];
-        let threat = game
-            .nbrs(toward_threat)
-            .into_iter()
-            .find(|pos| *pos != start && game.wdist(start, *pos) == 2)
-            .expect("the open tile has a second-ring threat post");
-        let retreat = game
-            .nbrs(start)
-            .into_iter()
-            .find(|pos| game.wdist(*pos, threat) == 3)
-            .expect("the opposite neighbour increases clearance");
-        // The hostile-facing tile stays open so the threat is visible. The
-        // retreat is the only flight candidate that does not enter more risk.
-        for pos in game.nbrs(start) {
-            if pos != toward_threat && pos != retreat {
-                game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
-            }
-        }
-        game.spawn_test_unit("warrior", 1, threat);
-        let scout = game.spawn_test_unit("scout", 0, start);
-
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        for (offset, pos) in [start, retreat, start, retreat, start, retreat, start]
-            .into_iter()
-            .enumerate()
-        {
-            game.turn = 100 + offset as u32;
-            let unit = game.units.get_mut(&scout).unwrap();
-            unit.pos = pos;
-            unit.moves_left = 2.0;
-            unit.moved = false;
-            live.base.begin_movement_turn(&game, 0);
-        }
-        assert!(
-            live.base.live_livelock_route_escape(scout),
-            "the recorded two-tile circuit is a proven live loop"
-        );
-
-        let visible = live.battlefront_visibility(&game, 0);
-        assert!(game.sees(&visible, threat));
-        let here =
-            live.settlement_tile_risk_with_support(&game, 0, None, start, &visible, false);
-        let retreat_risk =
-            live.settlement_tile_risk_with_support(&game, 0, None, retreat, &visible, false);
-        assert!(here >= RECON_FLIGHT_RISK, "the hostile threatens the Scout ({here})");
-        assert!(
-            retreat_risk <= here && game.wdist(retreat, threat) > game.wdist(start, threat),
-            "the looped retreat is exactly the equal-or-lower-risk flight the old chooser repeated"
-        );
-
-        assert_eq!(
-            live.recon_flight_step(&mut game, 0, scout),
-            None,
-            "a proven loop defers to exploration instead of issuing its exhausted flight step"
-        );
-        assert_eq!(game.units[&scout].pos, start, "the forbidden circuit was not replayed");
-    }
-
-    /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,
-    /// settler 4849688: the journal alternated between (42,22) and (41,24)
-    /// t138–t146 as a threat flickered at the edge of sight). See
-    /// `settler_target_hysteresis`. When the cached target stops passing its
-    /// checks the live seat sets it aside for a few turns and commits to the
-    /// runner-up; the withheld arm walks straight back to the first site the
-    /// frame it is valid again.
-    #[test]
-    fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
-        let (game0, source, _) = stacked_escort_fixture();
-        // The site the picker itself prefers, so the withheld arm's return to
-        // it is the picker's own choice and not a planted cache.
-        let first = {
-            let mut probe = game0.clone();
-            let settler = probe.spawn_test_unit("settler", 0, source);
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_frontier_loyalty();
-            ai.best_settler_target(&probe, 0, settler, 8, None)
-                .map(|(pos, _)| pos)
-                .expect("the fixture offers a settle site")
-        };
-        let run = |hysteresis: bool| -> (Option<Pos>, Option<Pos>, Option<Pos>) {
-            let mut game = game0.clone();
-            let settler = game.spawn_test_unit("settler", 0, source);
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            // Isolate the hysteresis: the fogged-frontier rule would retire a
-            // far site on this small board for its own reason.
-            ai.disable_frontier_loyalty();
-            if !hysteresis {
-                ai.disable_settler_target_hysteresis();
-            }
-            ai.settler_targets.insert(settler, first);
-            // Frame 1: the cached site stops passing its checks (blocked by
-            // the host, the same drop a risk flicker produces).
-            game.blocked_city_sites.insert(first);
-            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
-            let _ = ai.advanced_settler_step(&mut game, 0, settler);
-            let after_drop = ai.settler_targets.get(&settler).copied();
-            let avoided = ai.settler_avoid.get(&settler).map(|(pos, _)| *pos);
-            // Frame 2: the site is valid again — the flicker.
-            game.blocked_city_sites.remove(&first);
-            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
-            ai.settler_targets.remove(&settler);
-            let _ = ai.advanced_settler_step(&mut game, 0, settler);
-            let re_pick = ai.settler_targets.get(&settler).copied();
-            (after_drop, avoided, re_pick)
-        };
-
-        let (_after_drop, avoided, re_pick) = run(true);
-        assert_eq!(avoided, Some(first), "the dropped site is set aside");
-        assert_ne!(
-            re_pick,
-            Some(first),
-            "the frame it is valid again, the live seat does not walk back to it"
-        );
-
-        let (_, avoided_withheld, re_pick_withheld) = run(false);
-        assert_eq!(avoided_withheld, None, "the withheld arm sets nothing aside");
-        assert_eq!(
-            re_pick_withheld,
-            Some(first),
-            "and re-picks the first site the frame it is valid again — the flicker"
-        );
-
-        assert!(!AdvancedAi::new().settler_target_hysteresis);
-        assert!(!AdvancedAi::legacy().settler_target_hysteresis);
-    }
-
-    #[test]
-    fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
-        let (mut game, source, target) = stacked_escort_fixture();
-        let settler = game.spawn_test_unit("settler", 0, source);
-        // The guard one tile behind, out of moves this turn.
-        let behind = game
-            .nbrs(source)
-            .into_iter()
-            .find(|position| {
-                game.map
-                    .get(*position)
-                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                    && game.wdist(*position, target) >= game.wdist(source, target)
-            })
-            .expect("fixture has a tile one step behind the settler");
-        let guard = game.spawn_test_unit("warrior", 0, behind);
-        game.units.get_mut(&guard).unwrap().moves_left = 0.0;
-        let mut ai = AdvancedAi::new();
-        ai.enable_stacked_escort();
-        assert!(ai.settlement_safety);
-        ai.settler_targets.insert(settler, target);
-        ai.settler_guards.insert(settler, guard);
-        let visible = ai.battlefront_visibility(&game, 0);
-        assert_eq!(
-            ai.settlement_tile_risk(&game, 0, Some(settler), source, &visible),
-            0.0,
-            "the fixture's ground is quiet"
-        );
-        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
-        let journal = crate::reasoning::Journal::recording();
-        ai.attach_journal(journal.handle());
-        let _ = ai.advanced_settler_step(&mut game, 0, settler);
-        assert_ne!(
-            game.units[&settler].pos, source,
-            "with the guard one step behind and nothing in reach the settler marches"
-        );
-        assert!(
-            !journal
-                .since(0)
-                .thoughts
-                .iter()
-                .any(|thought| thought.headline.starts_with("Settler waits for its guard")),
-            "no wait is journaled"
-        );
-        assert!(!ai.guard_wait.contains_key(&settler));
-    }
-
-    #[test]
-    fn stacked_escort_keeps_advanced_formations_off_land_settlers() {
-        let (mut game, source, target) = stacked_escort_fixture();
-        let settler = game.spawn_test_unit("settler", 0, source);
-        let guard = game.spawn_test_unit("warrior", 0, source);
-        let mut ai = AdvancedAi::new();
-        ai.enable_stacked_escort();
-        ai.settler_targets.insert(settler, target);
-        // The pre-treatment trigger: a blocked settler standing on its escort
-        // would be linked by `advanced_formations`.
-        ai.settler_blocked_turns.insert(settler, 3);
-
-        ai.advanced_formations(&mut game, 0);
-
-        assert_eq!(game.units[&settler].linked_to, None);
-        assert_eq!(game.units[&guard].linked_to, None);
-    }
-
-    #[test]
-    fn a_lost_settler_releases_its_guard_to_the_army() {
-        let (mut game, source, _target) = stacked_escort_fixture();
-        let settler = game.spawn_test_unit("settler", 0, source);
-        let guard = game.spawn_test_unit("warrior", 0, source);
-        let mut ai = AdvancedAi::new();
-        ai.enable_stacked_escort();
-        ai.settler_guards.insert(settler, guard);
-        ai.guard_wait.insert(settler, (game.turn, 1));
-        let plan = stacked_escort_plan(&game);
-
-        // The capture this treatment exists to prevent, having happened
-        // anyway: the guard goes back to the ordinary military planner.
-        game.remove_unit(settler);
-
-        assert_eq!(ai.settler_escort_step(&mut game, 0, guard, &plan), None);
-        assert!(ai.settler_guards.is_empty());
-        assert!(ai.guard_wait.is_empty());
-    }
-
-    #[test]
-    fn stacked_escort_sheds_a_stale_formation_link() {
-        let (mut game, source, target) = stacked_escort_fixture();
-        let settler = game.spawn_test_unit("settler", 0, source);
-        let escort = game.spawn_test_unit("warrior", 0, source);
-        game.apply(
-            0,
-            &Action::LinkUnits {
-                unit: settler,
-                with: escort,
-            },
-        )
-        .unwrap();
-        let mut ai = AdvancedAi::new();
-        ai.enable_stacked_escort();
-        ai.settler_targets.insert(settler, target);
-
-        // A link reconciled from the host (or left by an older controller)
-        // must be shed, not deferred to: the linked branch trusts a channel
-        // that does not walk on the live bridge.
-        assert!(ai.advanced_settler_step(&mut game, 0, settler));
-        assert_eq!(game.units[&settler].linked_to, None);
-        assert_eq!(game.units[&escort].linked_to, None);
-    }
-
-    #[test]
-    fn a_refused_founding_is_not_journaled_as_a_decision() {
-        let (mut game, _source, target) = stacked_escort_fixture();
-        let settler = game.spawn_test_unit("settler", 0, target);
-        // Isolationism passes `can_found_city` but fails `do_found_city`, so
-        // the decision branch is entered and the engine then refuses — the
-        // shape run civvis-20260815T081505Z hit twice (t35, t45) through a
-        // different refusal, printing "Founding a city" for cities that never
-        // existed and poisoning every count taken from the why-log.
-        game.players[0].policies.insert(crate::name!("isolationism"));
-        let journal = crate::reasoning::Journal::recording();
-        let mut ai = AdvancedAi::new();
-        ai.attach_journal(journal.handle());
-        ai.settler_targets.insert(settler, target);
-
-        assert!(
-            !ai.advanced_settler_step(&mut game, 0, settler),
-            "a refused founding is a failed step, not a success"
-        );
-        assert_eq!(game.player_city_ids(0).len(), 1, "no city may appear");
-        let headlines: Vec<String> = journal
-            .since(0)
-            .thoughts
-            .into_iter()
-            .map(|thought| thought.headline)
-            .collect();
-        assert!(
-            !headlines
-                .iter()
-                .any(|headline| headline.starts_with("Founding a city")),
-            "the journal must not claim a founding the engine refused: {headlines:?}"
-        );
-    }
-
-    #[test]
-    fn moving_escort_cannot_keep_a_stalled_settlement_target_forever() {
-        let mut game = Game::new_full(1, 24, 16, 8_120, 120, 0, false);
-        let founding_settler = game
+        for unit in game
             .player_unit_ids(0)
             .into_iter()
             .chain(game.player_unit_ids(1))
@@ -17520,8 +16975,9 @@ fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores()
         "the withheld arm keeps the historical explore step"
     );
 
-    // Defaults: off for the stock and frozen controllers.
-    assert!(!AdvancedAi::new().recon_flight);
+    // Production flees since the 2026-08-17 promotion; the frozen
+    // controller stands its ground as it always did.
+    assert!(AdvancedAi::new().recon_flight);
     assert!(!AdvancedAi::legacy().recon_flight);
 }
 
@@ -22971,10 +22427,14 @@ fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
     let mut ai = AdvancedAi::new();
     ai.base.book_pos = 4;
     // Prove the delegated plan, not the production constructor's own
-    // defaults, opens both the target and the speed-aware time window.
+    // defaults, opens both the target and the speed-aware time window —
+    // and keep the promoted recon fleet out of the queue this fixture
+    // reads, since a missing scout would otherwise outrank the Settler.
     ai.base.w.city_target = 1.0;
     ai.base.w.settler_stop_turn = 100.0;
     ai.base.w.builder_per_city = 0.25;
+    ai.disable_recon_replacement();
+    ai.disable_naval_recon();
     ai.delegated_cities(&mut game, 0, &plan);
 
     let defensive_item = game.cities[&city].queue.first().unwrap();
@@ -23104,128 +22564,6 @@ fn idle_treasury_census() {
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &crate::game::Action::EndTurn);
                 }
-            }
-        }
-    }
-
-    #[test]
-    fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
-        let mut game = Game::new_full(2, 30, 18, 4_810_002, 500, 0, false);
-        for tile in game.map.tiles.values_mut() {
-            tile.terrain = crate::name!("grassland");
-            tile.feature = None;
-        }
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let city = game.player_city_ids(0)[0];
-        game.cities.get_mut(&city).unwrap().pop = 6;
-        game.turn = 200;
-
-        let own_military: Vec<u32> = game
-            .player_unit_ids(0)
-            .into_iter()
-            .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
-            .collect();
-        for unit in own_military {
-            game.remove_unit(unit);
-        }
-        game.at_war.insert((0, 1));
-
-        let plan = StrategicPlan {
-            strategy: GrandStrategy::Expansion,
-            target_player: None,
-            target_city: None,
-            threatened_city: None,
-            desired_cities: 9,
-            assessed_turn: game.turn,
-            rush: false,
-        };
-        let mut ai = AdvancedAi::new();
-        ai.base.book_pos = 4;
-        // Prove the delegated plan, not the production constructor's own
-        // defaults, opens both the target and the speed-aware time window —
-        // and keep the promoted recon fleet out of the queue this fixture
-        // reads, since a missing scout would otherwise outrank the Settler.
-        ai.base.w.city_target = 1.0;
-        ai.base.w.settler_stop_turn = 100.0;
-        ai.base.w.builder_per_city = 0.25;
-        ai.disable_recon_replacement();
-        ai.disable_naval_recon();
-        ai.delegated_cities(&mut game, 0, &plan);
-
-        let defensive_item = game.cities[&city].queue.first().unwrap();
-        assert!(matches!(
-            defensive_item,
-            Item::Unit { unit } if game.rules.units[unit].class == "military"
-        ));
-        assert_eq!(ai.base.w.city_target, 1.0);
-        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
-        assert_eq!(ai.base.w.builder_per_city, 0.25);
-
-        // Once the one-unit-per-city floor is restored, the same wide plan may
-        // produce the Settler even though both historical genes would refuse it.
-        game.at_war.clear();
-        game.cities.get_mut(&city).unwrap().queue.clear();
-        game.spawn_test_unit("warrior", 0, game.cities[&city].pos);
-        ai.delegated_cities(&mut game, 0, &plan);
-        assert!(matches!(
-            game.cities[&city].queue.first(),
-            Some(Item::Unit { unit }) if unit == "settler"
-        ));
-        assert_eq!(ai.base.w.city_target, 1.0);
-        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
-        assert_eq!(ai.base.w.builder_per_city, 0.25);
-    }
-
-    /// Fires-check for `plan_city_target`, at both map scales.
-    ///
-    /// The criterion is the **outcome** — cities at end — for the same reason
-    /// `city_target_floor_fires` gives: a mechanism bucket the treatment
-    /// cannot move is not falsifiable in the helpful direction. It prints the
-    /// plan's own target beside the cities held, because the whole claim is
-    /// that those two numbers currently disagree.
-    ///
-    /// Run with
-    /// `cargo test --profile ci plan_city_target_fires -- --ignored --nocapture`.
-    #[test]
-    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
-    fn plan_city_target_fires() {
-        for (label, players, width, height) in [
-            ("eval 4p 24x16", 4usize, 24i32, 16i32),
-            ("deployment 6p 74x46", 6, 74, 46),
-        ] {
-            for flag in [false, true] {
-                let (mut cities, mut target, mut score) = (0.0f64, 0.0f64, 0.0f64);
-                let maps = 6u64;
-                for map in 0..maps {
-                    let mut game =
-                        Game::new_full(players, width, height, 482_000 + map, 200, 1, false);
-                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
-                        .map(|_| {
-                            let mut ai = AdvancedAi::new();
-                            ai.plan_city_target = flag;
-                            ai
-                        })
-                        .collect();
-                    game.set_fog_memory(false);
-                    while game.winner.is_none() && game.turn <= game.max_turns {
-                        let pid = game.current;
-                        ais[pid].take_turn(&mut game, pid);
-                        if game.winner.is_none() && game.current == pid {
-                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
-                        }
-                    }
-                    cities += game.player_city_ids(0).len() as f64;
-                    score += game.score(0) as f64;
-                    target += ais[0]
-                        .plan
-                        .as_ref()
-                        .map(|p| p.desired_cities as f64)
-                        .unwrap_or(0.0);
                 if pid != 0 {
                     continue;
                 }
