@@ -51,6 +51,15 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The conflict-hotspot reading below counts merges, so it needs the
+          # history to count. The rust censuses do not care.
+          fetch-depth: 0
+      # Cheap, and first: it needs no toolchain and no build, so a roadmap that
+      # points at a file nobody edits is reported in seconds rather than after
+      # the ninety-minute census budget.
+      - name: The split targets are files that are really contended
+        run: python3 tools/conflict_hotspots.py --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
         with:
