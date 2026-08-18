@@ -387,7 +387,32 @@ fn civ6_civic_name(civvis: &str) -> String {
 /// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
 /// few deliberate vocabulary contractions explicit in both directions rather than
 /// asking Lua to guess from localized display names.
+///
+/// ★★★ A SPY PROMOTION IS NOT SPELLED LIKE A SOLDIER'S. Civilization VI puts the
+/// promotion class in the identifier — `PROMOTION_SPY_SMEAR_CAMPAIGN`, not
+/// `PROMOTION_SMEAR_CAMPAIGN` — and the uppercase fallthrough below produced the
+/// second one for all seventeen. Nothing failed loudly: the mod answered
+/// `unknown_promotion_PROMOTION_SMEAR_CAMPAIGN`, the order was counted refused,
+/// and the spy kept its level.
+///
+/// It arrived with espionage (#1929) and is measurable in the ledger's own
+/// bridge-health column: `orders_applied / orders_seen` ran 95–98.4% for every
+/// run through `civvis-20260818T003523Z` and 84.0–90.6% for every run after it,
+/// with 259–341 `unknown_promotion_PROMOTION_*` refusals per game — the largest
+/// single refusal category on the seat.
+///
+/// `Game::SPY_PROMOTIONS` is the engine's own list, read here rather than copied,
+/// so a promotion added there cannot go out under the wrong spelling. Sixteen of
+/// the seventeen take the prefix unchanged; Firaxis spells the last one
+/// `GUERILLA_LEADER`, with one `r`.
 fn civ6_unit_promotion_name(civvis: &str) -> String {
+    if civvis == "guerrilla_leader" {
+        // Firaxis' own spelling, in `Expansion1_UnitPromotions.xml`.
+        return "PROMOTION_SPY_GUERILLA_LEADER".to_string();
+    }
+    if civvis::game::Game::SPY_PROMOTIONS.contains(&civvis) {
+        return format!("PROMOTION_SPY_{}", civvis.to_ascii_uppercase());
+    }
     let suffix = match civvis {
         "cobra_strike" | "dancing_crane" | "disciples" | "exploding_palms" | "shadow_strike"
         | "sweeping_wind" | "twilight_veil" => {
@@ -8523,6 +8548,23 @@ mod civ6_name_audit {
     /// cannot see. `civ6_build_name` records why it is left untranslated and
     /// where the repair belongs. Listing it keeps that decision declared instead
     /// of indistinguishable from a name nobody has checked.
+    /// Promotions that belong to a unit Civilization VI does not have.
+    ///
+    /// The Nihang is CIVVIS content: `data/promotions.json` gives it its own
+    /// promotion class and the shipped ruleset has no row for any of them. They
+    /// can never reach the wire on a live seat — the mirror cannot build a unit
+    /// the host never fielded — so this is an absence, not an unfixed mapping.
+    /// Naming them keeps that judgement declared and re-checked on every run.
+    const CIVVIS_ONLY_PROMOTIONS: [&str; 7] = [
+        "PROMOTION_CHAKRAM",
+        "PROMOTION_DUMALLA",
+        "PROMOTION_JANGI_KARA",
+        "PROMOTION_JANGI_MOJEH",
+        "PROMOTION_SANJO",
+        "PROMOTION_TEGH",
+        "PROMOTION_TREHSOOL_MUKH",
+    ];
+
     const NO_CIV6_EQUIVALENT: [&str; 5] = [
         "IMPROVEMENT_NATIONAL_PARK",
         "IMPROVEMENT_ARCHAEOLOGICAL_DIG",
@@ -8599,6 +8641,7 @@ mod civ6_name_audit {
         let mut check = |kind: &'static str, name: &str, emitted: String| {
             if !shipped.contains(&emitted)
                 && !NO_CIV6_EQUIVALENT.contains(&emitted.as_str())
+                && !CIVVIS_ONLY_PROMOTIONS.contains(&emitted.as_str())
             {
                 missing.push((kind, name.to_string(), emitted));
             }
@@ -8658,6 +8701,26 @@ mod civ6_name_audit {
             if let Some(emitted) = civ6_live_build_name(&item, &board) {
                 check("building-repair", name.as_str(), emitted);
             }
+        }
+        // ★★★ AND PROMOTIONS, WHICH THIS AUDIT DID NOT COVER UNTIL A WHOLE
+        // FAMILY OF THEM WAS WRONG.
+        //
+        // The comment above says a name audit is only worth what it covers, and
+        // then the audit covered five families out of six. Every spy promotion
+        // went out as `PROMOTION_<NAME>` when the host ships
+        // `PROMOTION_SPY_<NAME>` — 259-341 refusals a game, the seat's largest
+        // refusal category, and a bridge-health drop from 96% to 87% that no
+        // test noticed. Both sources are driven here: the ruleset's own table
+        // and `Game::SPY_PROMOTIONS`, which is not in it.
+        for name in rules.promotions.keys() {
+            check(
+                "promotion",
+                name.as_str(),
+                civ6_unit_promotion_name(name.as_str()),
+            );
+        }
+        for name in civvis::game::Game::SPY_PROMOTIONS {
+            check("spy-promotion", name, civ6_unit_promotion_name(name));
         }
 
         assert!(
