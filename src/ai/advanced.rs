@@ -3866,6 +3866,15 @@ impl AdvancedAi {
         // a unit that cannot act. `advanced_without_barbarian_scouts_are_scouts`
         // prices the withhold.
         ai.enable_barbarian_scouts_are_scouts();
+        // A capturable civilian within reach is taken by walking onto it,
+        // and a settler in the barbarians' hands is never declined. On the
+        // live seat (`civvis-20260818T222844Z` t27–t33) our own captured
+        // settler walked unguarded past four units for seven turns: the two
+        // that stood adjacent were frozen by the duplicate-settler guard,
+        // and the pursuer parked *beside* it every turn — the tile a ranged
+        // attack wants, and the engine rejects attacks on an undefended
+        // civilian. `advanced_without_civilian_rescue` prices the withhold.
+        ai.enable_civilian_rescue();
         ai
     }
 
@@ -4011,6 +4020,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.precise_evacuation = false;
         // The frozen rating anchor must keep playing the game it always
         // played: the adjacent camp clear is default-ON everywhere current,
         // and this line is the gate that keeps it away from the anchor so

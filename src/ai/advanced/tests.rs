@@ -20957,6 +20957,24 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(live.barbarian_scouts_are_scouts);
 }
 
+/// The civilian rescue ships natively: a capturable civilian within reach
+/// is walked onto, and a settler in the barbarians' hands is never
+/// declined (run `civvis-20260818T222844Z` t27–t33 lost our own captured
+/// settler to the old duplicate-settler freeze, twice from adjacency).
+/// The frozen controllers keep their history, and the withhold arm prices
+/// the promotion.
+#[test]
+fn the_civilian_rescue_is_native() {
+    assert!(AdvancedAi::new().base.civilian_rescue);
+    assert!(!AdvancedAi::legacy().base.civilian_rescue);
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_civilian_rescue();
+    assert!(!withheld.base.civilian_rescue);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.civilian_rescue);
+}
+
 /// ★★★★ A camp seven tiles from Rome stood for 130 turns WITH the reach
 /// on (civvis-20260816T200454Z): the home guard's recall budget is half
 /// the army with the garrison charged against it — a three-unit
