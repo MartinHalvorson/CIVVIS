@@ -2581,6 +2581,106 @@ mod tests {
         );
     }
 
+    /// ★★★★ A FRESH LIVE SPY OWES NO PROMOTION, so the mission layer is
+    /// reachable at all. Civilization VI grants a Spy its first promotion at
+    /// level 2; the native rule owes one per level. Seating the host's level
+    /// unshifted made every fresh live Spy permanently "promotable", and
+    /// `legal_spy_actions` returns promotions as the ONLY legal actions while
+    /// one is owed — so no live Spy ever received a travel or mission order
+    /// (run civvis-20260818T095712Z: the same impossible promotion sent for
+    /// 73 consecutive turns). And a Spy that finished its travel must seat in
+    /// the RIVAL city it stands in — matching own cities only imported it
+    /// with no city, which generates no missions either.
+    #[test]
+    fn a_fresh_live_spy_owes_no_promotion_and_a_travelled_one_seats_abroad() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![
+                plot(3, 3, "TERRAIN_GRASS"),
+                plot(4, 4, "TERRAIN_GRASS"),
+                plot(5, 5, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 120,
+            spy_capacity: Some(3),
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 1,
+            cities: vec![StateCity {
+                id: 9,
+                name: "Aduatuca".to_string(),
+                x: 5,
+                y: 5,
+                pop: 6,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+        // A fresh Spy at home, a travelled one standing in the rival city, and
+        // a genuinely levelled one whose earned pick must survive the shift.
+        for (id, x, y, level) in [(77, 4, 4, 1), (78, 5, 5, 1), (79, 4, 4, 2)] {
+            state.units.push(StateUnit {
+                id,
+                kind: "UNIT_SPY".to_string(),
+                x,
+                y,
+                level: Some(level),
+                ..StateUnit::default()
+            });
+        }
+        let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let uid = |civ6: i64| {
+            *rebuilt
+                .unit_ids
+                .iter()
+                .find(|(_, mapped)| **mapped == civ6)
+                .map(|(uid, _)| uid)
+                .expect("the spy is mirrored")
+        };
+
+        let fresh = &rebuilt.game.spies[&uid(77)];
+        assert_eq!(fresh.level, 0, "host level 1 is zero promotions owed");
+        assert!(
+            rebuilt
+                .game
+                .legal_spy_actions(0, fresh.id)
+                .iter()
+                .all(|action| !matches!(action, crate::game::Action::PromoteSpy { .. })),
+            "a fresh Spy must not be gated behind a promotion the host refuses"
+        );
+
+        let travelled = &rebuilt.game.spies[&uid(78)];
+        let seat = travelled.city.expect("the travelled Spy seats in a city");
+        assert_ne!(
+            rebuilt.game.cities[&seat].owner, 0,
+            "the city it stands in is the rival's, which is what missions aim from"
+        );
+
+        let levelled = &rebuilt.game.spies[&uid(79)];
+        assert_eq!(levelled.level, 1, "host level 2 owes exactly one pick");
+        assert!(
+            rebuilt
+                .game
+                .legal_spy_actions(0, levelled.id)
+                .iter()
+                .any(|action| matches!(action, crate::game::Action::PromoteSpy { .. })),
+            "the promotion a mission actually earned is still offered"
+        );
+    }
+
     /// The host's victory checkboxes have crossed the wire in the seat event
     /// all along and were dropped: a live board always played the all-six
     /// default, so `victory_strategy_enabled` could authorise a lane the
@@ -12195,6 +12295,30 @@ fn block_live_spy_production(game: &mut crate::game::Game, capacity: Option<i64>
 /// The unit id is reused as the spy id so an order can be translated straight
 /// back onto the unit it came from. `city` is the city the agent is standing
 /// in, which is what the host's own missions are aimed from.
+///
+/// ★★★★ A LIVE SPY'S PROMOTION ENTITLEMENT IS `level − 1`, NOT `level`. The
+/// native rule (`spy_needs_promotion`) owes a Spy one promotion per level, so
+/// a freshly trained native Spy — level 1, none chosen — picks immediately.
+/// Civilization VI grants the FIRST promotion at level 2: a new Spy has
+/// nothing to pick until a mission levels it. Seating the host's level
+/// unshifted made every fresh live Spy permanently "promotable", and
+/// `legal_spy_actions` returns promotions as the ONLY legal actions while one
+/// is owed — so the whole mission layer was unreachable, not merely
+/// deprioritised. Measured on run civvis-20260818T095712Z: spy 2621443 was
+/// sent the same promotion for 73 consecutive turns (t116–t188), the seat's
+/// four spies drew 129 promotion orders between them, and not one
+/// `SPY_TRAVEL_NEW_CITY` or mission order crossed the bridge in any run on
+/// record. Seat the Spy at `host level − 1` so the mirror owes it exactly
+/// what the host would let it choose; a genuinely levelled Spy still gets
+/// its offer, named per #2012.
+///
+/// ★★ AND THE CITY IT STANDS IN MUST MATCH RIVAL CITIES TOO. Offensive
+/// missions are generated only for `spy.city` (`spy_operation_actions`), and
+/// `advanced_spies` treats a Spy as offensive only when that city has a rival
+/// owner — so matching `unit.pos` against OUR cities alone meant a Spy that
+/// completed its travel imported with `city: None` and could never be handed
+/// the mission it travelled for. Match whatever city stands on the tile; the
+/// counterspy branch already guards on ownership itself.
 fn seat_live_spies(game: &mut crate::game::Game) {
     game.spies.retain(|_, spy| spy.owner != 0);
     let live: Vec<(u32, i64, std::collections::BTreeSet<String>, Option<u32>)> = game
@@ -12205,11 +12329,11 @@ fn seat_live_spies(game: &mut crate::game::Game) {
             let city = game
                 .cities
                 .iter()
-                .find(|(_, city)| city.owner == 0 && city.pos == unit.pos)
+                .find(|(_, city)| city.pos == unit.pos)
                 .map(|(id, _)| *id);
             (
                 unit.id,
-                unit.level.max(1) as i64,
+                (unit.level - 1).max(0) as i64,
                 unit.promotions
                     .iter()
                     .map(|name| name.to_string())
@@ -15701,25 +15825,17 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     // tile at a time. The movement points are real; tile movement is not the
     // operation that spends them.
     //
-    // ⚠⚠⚠ THIS COMMENT USED TO CLAIM THE SPY STILL ACTS, AND IT DOES NOT.
-    // It read "`AssignSpy`, `SpyMission` and `PromoteSpy` … are already
-    // translated by the bridge, and are untouched", by analogy with the trader
-    // clause. The trader half of that analogy is true (`Action::TradeRoute`
-    // really is translated); the spy half was never true. `civvis_orders`'
-    // `translate` has no arm for any of the three, so they fall to its `_ =>
-    // None` and are counted untranslatable, and the mod's resolved-operation
-    // table carries no `UNITOPERATION_SPY_*` verb to receive one.
-    //
-    // What actually stops here is the walking the spy was never able to do —
-    // and with it a decision the planner spent on that unit every turn. What
-    // was ALREADY stopped, everywhere else, is the whole espionage layer: a
-    // live Civilization VI Spy is an ordinary `UNIT_SPY` this mirror imports,
-    // so `Game::spies` — the only structure `AdvancedAi::advanced_spies` and
-    // `BasicAi::spies` iterate — stays empty for the entire game. The engine
-    // models twelve missions and the AI aims them at the denial target; on the
-    // live bridge none of it can fire. Say so here rather than imply otherwise:
-    // the disruption a leading rival should be answered with is the axis this
-    // comment sent readers away from.
+    // ⚠ HISTORY: this comment once claimed the spy still acts, then (correctly,
+    // at the time) that it could not — `civvis_orders`' `translate` had no arm
+    // for `AssignSpy`, `SpyMission` or `PromoteSpy`, and `Game::spies` stayed
+    // empty for the whole of a live game. #1929 added the translate arms, the
+    // mod's `UNITOPERATION_SPY_*` verbs, and `seat_live_spies`; #2012 named
+    // the promotions the host's way; and the promotion-entitlement shift in
+    // `seat_live_spies` is what finally let a live Spy be offered travel and
+    // missions at all (`legal_spy_actions` returns promotions as the ONLY
+    // legal actions while one is owed, and an unshifted fresh Spy owed one
+    // forever). What stops HERE is only the tile-walking a Civilization VI
+    // Spy never does — it travels by `SPY_TRAVEL_NEW_CITY`, not by steps.
     //
     // ⚠ Mirror only. `data/units.json` still gives `spy` its 1 move, so
     // `Rules::source_fingerprint` does not shift and an ordinary CIVVIS game is
