@@ -161,17 +161,26 @@ both.
 
 ### 5. Lane completion, paired on identical seeds
 
-| lane | 24000000 (24 a lane) | 27000000 (32 a lane) |
-|---|---|---|
-| science | 0/24 vs 0/24 | — |
-| culture | **15/24** vs 12/24 | 17/32 vs **19/32** |
-| religious | 11/24 vs 11/24 | 13/28 vs 14/29 |
-| diplomatic | 24/32 vs 24/32 (post-bar) | 24/32 vs 24/32 |
-| domination | 2/24 vs 2/24 | — |
-| score | 24/24 vs 24/24 | — |
+The shipped arm, 32 games a lane at seeds 24000000, against `--without
+strategic-wonders` on the same seeds:
 
-**No lane regresses and no movement replicates across streams.** A ±3-in-24
-swing that changes sign is a null.
+| lane | with | without |
+|---|---:|---:|
+| culture | **17/32** | 15/32 |
+| religious | 16/32 | 16/32 |
+| diplomatic | 27/32 | 27/32 |
+
+25 of the 96 games differ; the other 71 are identical, which is what a lane with
+no qualifying reachable wonder looks like. A disjoint stream (27000000, 32 a
+lane) reads culture 17/32 against 19/32 and diplomatic 24/32 both ways, and the
+earlier all-six sweep at 24000000 read science 0/24 both ways, domination 2/24
+both ways and score 24/24 both ways.
+
+**No lane regresses on any stream, and the one that moves changes sign between
+them.** Cristo Redentor in 29 of 32 games and a win rate that does not move is
+the expected shape for this lane at this clock: Cristo Redentor is an Atomic-era
+wonder, so it lands around t180 of 250 and has forty turns to compound a
+tourism multiplier that wants two hundred.
 
 ## What was decided
 
@@ -182,6 +191,17 @@ deployment maps, regresses no lane over ~480 paired games, and is registered as
 `advanced_without_strategic_wonders` so it stays priceable.
 
 It is **not** shipped as a strength win, because nothing here measured one.
+What is measured is that it does what it was written to do — Cristo Redentor in
+29 of 32 culture games and Kotoku-in in 19 of 32 religious ones, against a
+control that finishes neither in any — and that doing so costs nothing.
+
+**★★★★ THE PREREQUISITE CENSUS, WHICH GENERALISES §2.** 31 of the 53 wonders
+name an `adjacent_district`, and the districts they hang off are the ones a lane
+may never build: harbor 6, campus 4, holy_site 4, encampment 3, city_center 3,
+entertainment_complex 2, commercial_hub 2, industrial_zone 2, theater_square 2.
+So "the agent does not build the wonders its victory needs" is a district
+question for more than half the table, and only the remainder can ever be
+answered by pricing the wonder itself.
 
 ⚠ **It does reach the live seat**, which the deployment screen does not cover.
 `civvis_orders` builds `AdvancedAi::targeting(target)` and then
