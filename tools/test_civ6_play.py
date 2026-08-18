@@ -1460,7 +1460,7 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
         the run never played the game being measured."""
         self.assertEqual(
             civ6_play.summary_reason(
-                {"ruleset_mismatch": True, "mode_mismatch": False,
+                {"ruleset_match": False, "mode_mismatch": False,
                  "seat": {"civ": "CIVILIZATION_ROME"}, "configured": False},
                 "stopped"),
             "wrong_ruleset")
@@ -1473,7 +1473,7 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
         `wrong_ruleset` sat first in the precedence chain, so an unreadable
         readback erased it. `civvis-20260818T032030Z` ended on a rival's culture
         victory at turn 223 and the ledger recorded a refusal."""
-        state = {"ruleset_mismatch": False, "mode_mismatch": False,
+        state = {"ruleset_match": None, "mode_mismatch": False,
                  "seat": {"ruleset": "?"}, "configured": True}
         for ending in ("stopped", "stalled: no event for 240s", "timeout"):
             with self.subTest(ending=ending):

@@ -2432,9 +2432,13 @@ def summary_reason(state: dict, reason: str) -> str:
     game ENDED, so a refusal written over it destroys the ending. That is what
     an unreadable ruleset used to do: `civvis-20260818T032030Z` ended on a
     rival's culture victory at turn 223 and the ledger recorded `wrong_ruleset`.
-    An unreadable readback reaches none of these branches now.
+
+    The three-way `ruleset_match` is carried into the state and collapsed HERE,
+    rather than being flattened into a boolean at the seat event, so the one
+    place that turns "the game disagreed" into a refusal is a place a test can
+    call. `is False` and not truthiness: `None` is the readback failing.
     """
-    if state.get("ruleset_mismatch"):
+    if state.get("ruleset_match") is False:
         return "wrong_ruleset"
     if state.get("mode_mismatch"):
         return "wrong_game_modes"
@@ -2531,7 +2535,8 @@ def _play(args: argparse.Namespace) -> int:
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
-        "ruleset": None, "ruleset_mismatch": False,
+        # Three-way: True agreed, False disagreed, None never read back.
+        "ruleset": None, "ruleset_match": None,
         # ★★★ THE OPENING TEMPO, which is the strongest correlate the live
         # ladder has ever shown. Measured over the 35 completed runs of
         # 2026-08-16/17: cities held at turn 60 correlates r=+0.69 with final
@@ -2585,11 +2590,10 @@ def _play(args: argparse.Namespace) -> int:
             state["modes"] = modes
             state["mode_mismatch"] = not modes_match
             state["ruleset"] = event.get("ruleset")
-            # `is False`, not `not ...`: `None` means the mod could not read the
-            # ruleset back, which is not evidence that it differed. This flag is
-            # what writes `reason: wrong_ruleset` over the run's real ending, so
-            # setting it on an unreadable readback discards a finished game.
-            state["ruleset_mismatch"] = ruleset_match is False
+            # Carried whole, not flattened: `None` means the mod could not read
+            # the ruleset back, which is not evidence that it differed, and it
+            # is `summary_reason` that decides what counts as a refusal.
+            state["ruleset_match"] = ruleset_match
             state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
