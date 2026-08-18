@@ -32,9 +32,21 @@ import sys
 # Every row in the shipped Data XML declares its identity in a `*Type="..."`
 # attribute. Matching that, rather than any uppercase token, keeps localization
 # keys, art definitions and requirement-set names out of the snapshot.
+#
+# ★★★ `UnitPromotionType` WAS MISSING FROM THIS LIST, AND THAT IS WHY THE CLASS
+# REOPENED. The docstring above describes a building name discarded 248 times;
+# the same defect then shipped in promotions, because a family the harvest does
+# not collect is a family the audit cannot check. Civilization VI spells a spy
+# promotion `PROMOTION_SPY_SMEAR_CAMPAIGN` and the bridge emitted
+# `PROMOTION_SMEAR_CAMPAIGN` for all seventeen; the refusals ran 259-341 per
+# live game and took the ledger's orders-applied rate from 96% to 87%.
+#
+# When adding a family here, add the matching loop to `civ6_name_audit` in
+# `src/bin/civvis_orders.rs`. Harvesting a name nothing checks buys nothing.
 TYPE_ATTR = re.compile(
-    rb'(?:BuildingType|DistrictType|UnitType|ImprovementType|ProjectType)'
-    rb'\s*=\s*"((?:BUILDING|DISTRICT|UNIT|IMPROVEMENT|PROJECT)_[A-Z0-9_]+)"'
+    rb'(?:BuildingType|DistrictType|UnitType|ImprovementType|ProjectType'
+    rb'|UnitPromotionType)'
+    rb'\s*=\s*"((?:BUILDING|DISTRICT|UNIT|IMPROVEMENT|PROJECT|PROMOTION)_[A-Z0-9_]+)"'
 )
 
 MAC_DEFAULT = os.path.expanduser(

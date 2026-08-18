@@ -6898,6 +6898,14 @@ local function exportState(player, pid, turn)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- The World Congress standing as of the last session, recorded where
+		-- the review is read. Every alive major appears, including ones this
+		-- seat has not met -- the congress seats them all and shows the seat
+		-- their points, and the ballot the host hands us for
+		-- `WC_RES_DIPLOVICTORY` already names them as targets, which is why
+		-- `voteWorldCongress` may pick a leader from the same set. Carrying it
+		-- no further than the ballot is what left the victory tracker blind.
+		congress_dvp = envoyTally.congress_dvp,
 		-- How many Spies this empire may field, from the same accessor the
 		-- shipped Espionage Overview prints. The mirror blocks Spy production
 		-- outright without it, which is why the seat has never held one.
@@ -8179,6 +8187,128 @@ local function onGovernorAppointed(playerID, governorID)
 	});
 end
 
+-- ★★★★★ THE SALE LANE'S STATE AND THE RIVAL'S ANSWER TO IT.
+--
+-- A `sell` order (see the arm in `applyOrder`) puts CIVVIS's surplus — a
+-- duplicate luxury copy, a strategic block, idle diplomatic favor — into the
+-- outgoing working deal and asks the rival's own valuation for the gold with
+-- `DealProposalAction.EQUALIZE`, exactly the shipped "What would you give me
+-- for this?" button (DiplomacyDealView.lua `RequestEqualizeWorkingDeal`). The
+-- rival answers through `Events.DiplomacyIncomingDeal` with its balanced
+-- INCOMING working deal; the shipped screen copies that over the outgoing deal
+-- and, when the two are equal, sends `ACCEPTED` — which is what enacts the
+-- trade (`OnProposeOrAcceptDeal`). This handler is that click, made only when
+-- the answer is what was asked for: our side holds exactly the items offered,
+-- their side holds gold and nothing else, and the gold clears the floor the
+-- order carried. Anything else is left on the table: the outgoing deal is
+-- cleared and nothing is sent, the same exit the shipped screen takes when the
+-- human simply walks away from a deal they opened.
+--
+-- ⚠ Every incoming deal is written to the ledger (`deal_response`), whether or
+-- not this lane asked for it — the peace lane above has submitted hundreds of
+-- proposals without ever seeing an answer, and this is the first record of
+-- what the engine says back. A deal this lane did not ask for (a rival's own
+-- proposal, which arrives with `PROPOSED`) is logged and otherwise untouched:
+-- that screen belongs to the harness's closers.
+--
+-- Bare globals, both: the main chunk sits at Lua's 200-register ceiling, and
+-- the offline regression (`deal_sale_test.lua`) reads them.
+CivvisTrade = { pending = {}, asked = {} };
+
+CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 or toPlayer ~= pid or fromPlayer == nil then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local trade = CivvisTrade;
+	local pending = trade.pending[fromPlayer];
+	local incoming = try(function()
+		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, fromPlayer);
+	end, nil);
+	-- Read both sides. `theirs` is what the rival puts up; only gold counts
+	-- and anything else marks the answer foreign. `mine` is what the answer
+	-- says we give, matched against the offer by Firaxis type, value and
+	-- amount, so an equalizer that touched our side cannot slip a bigger
+	-- block or a different item through the accept.
+	local gold, gpt, foreign, mine, offered = 0, 0, 0, {}, 0;
+	local mineText = {};
+	if incoming ~= nil then
+		pcall(function()
+			for item in incoming:Items() do
+				local kind = item:GetType();
+				local from = item:GetFromPlayerID();
+				local duration = item:GetDuration() or 0;
+				local amount = item:GetAmount() or 0;
+				if from == fromPlayer then
+					if kind == DealItemTypes.GOLD then
+						if duration == 0 then gold = gold + amount; else gpt = gpt + amount; end
+					else
+						foreign = foreign + 1;
+					end
+				else
+					local key;
+					if kind == DealItemTypes.FAVOR then
+						key = "FAVOR";
+					elseif kind == DealItemTypes.RESOURCES then
+						key = "RESOURCES:" .. tostring(item:GetValueType());
+					else
+						key = "OTHER:" .. tostring(kind);
+					end
+					mine[key] = (mine[key] or 0) + amount;
+					mineText[#mineText + 1] = key .. "=" .. tostring(amount) .. "x" .. tostring(duration);
+				end
+			end
+		end);
+	end
+	local matches = pending ~= nil;
+	if pending ~= nil then
+		for key, amount in pairs(pending.gave or {}) do
+			offered = offered + 1;
+			if mine[key] ~= amount then matches = false; end
+		end
+		for key, _ in pairs(mine) do
+			if (pending.gave or {})[key] == nil then matches = false; end
+		end
+	end
+	local worth = gold + gpt * 25;
+	local session = try(function()
+		return DiplomacyManager.FindOpenSessionID(pid, fromPlayer);
+	end, nil);
+	local closable = pending ~= nil and matches and foreign == 0 and offered > 0
+		and worth >= (pending.floor or 0)
+		and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
+	emit("deal_response", {
+		turn = turn, from = fromPlayer, action = action,
+		gold = gold, gold_per_turn = gpt, worth = worth, foreign = foreign,
+		ours = table.concat(mineText, ","),
+		asked = pending ~= nil, asked_turn = pending and pending.turn or nil,
+		floor = pending and pending.floor or nil, matches = matches,
+		session = session ~= nil and session or -1,
+		closable = closable,
+	});
+	if pending == nil then return; end
+	-- One answer settles one ask, whichever way it went.
+	trade.pending[fromPlayer] = nil;
+	if not closable then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);
+		emit("deal_declined", {
+			turn = turn, from = fromPlayer, action = action, worth = worth,
+			floor = pending.floor, matches = matches, foreign = foreign,
+		});
+		return;
+	end
+	local ok, sent = pcall(function()
+		DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
+		if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
+		DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, fromPlayer);
+		return true;
+	end);
+	emit("deal_closed", {
+		turn = turn, from = fromPlayer, gold = gold, gold_per_turn = gpt, worth = worth,
+		floor = pending.floor, gave = pending.verb, sent = (ok and sent) and true or false,
+		threw = not ok,
+	});
+end
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -8744,6 +8874,159 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ SURPLUS SOLD FOR GOLD, AT THE RIVAL'S OWN PRICE. `verb` is what
+	-- CIVVIS lets go — `RESOURCE_DYES=1,FAVOR=10`, Firaxis's own resource type
+	-- names, favor as a lump — and `x` is the gold-equivalent floor (lump plus
+	-- 25× per-turn) below which the answer is declined. Built the way the
+	-- shipped deal screen builds it (DiplomacyDealView_Expansion2.lua
+	-- `OnClickAvailableResource` / `OnClickAvailableOneTimeFavor`): a resource
+	-- item carries the type from `GetPossibleDealItems`, thirty turns for a
+	-- luxury and a lump for a stockpiled (`Accumulate`) strategic, clipped to
+	-- the engine's own `GetMaxAmount`; favor is a lump clipped the same way.
+	-- Then EQUALIZE, not PROPOSED: the rival fills in its side and
+	-- `CivvisOnIncomingDeal` above closes at or above the floor. No session is
+	-- opened — the deal screen's only unattended exit is refusal.
+	--
+	-- One ask per rival at a time, one ask per rival per `TradeRetryTurns`;
+	-- an ask the engine never answered is dropped after `TradeResponseTurns`
+	-- so it cannot hold the working deal against the peace arm forever.
+	-- Nothing here may claim more than "asked": the close is the handler's,
+	-- and the enacted trade shows in the next export as gold up and the
+	-- stock or favor down.
+	if kind == "sell" then
+		if subject < 0 then return false, "sell_target_unmapped"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "sell_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "sell_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "sell_not_major";
+		end
+		local trade = CivvisTrade;
+		local pending = trade.pending[subject];
+		if pending ~= nil then
+			if (turn - (pending.turn or turn)) < (cfg.TradeResponseTurns or 2) then
+				return false, "sell_pending";
+			end
+			trade.pending[subject] = nil;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
+		end
+		if try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
+			return false, "sell_host_pending";
+		end
+		local asked = trade.asked[subject];
+		if asked ~= nil and (turn - asked) < (cfg.TradeRetryTurns or 3) then
+			return false, "sell_cooldown";
+		end
+		local wanted = {};
+		for name, amount in string.gmatch(verb, "([%w_]+)=(%d+)") do
+			wanted[#wanted + 1] = { name = name, amount = tonumber(amount) or 0 };
+		end
+		if #wanted == 0 then return false, "sell_no_items"; end
+		local floor = math.max(0, math.floor(x or 0));
+		local ran, submitted, reason, gave, gaveText = pcall(function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			if deal == nil then return false, "no_working_deal", {}, ""; end
+			local possible = try(function()
+				return DealManager.GetPossibleDealItems(pid, subject, DealItemTypes.RESOURCES, deal);
+			end, nil) or {};
+			local gave, text = {}, {};
+			for _, want in ipairs(wanted) do
+				if want.name == "FAVOR" then
+					-- Favor is a Gathering Storm item; a ruleset without it has
+					-- no `DealItemTypes.FAVOR` and simply nothing to sell here.
+					local item = DealItemTypes.FAVOR ~= nil
+						and deal:AddItemOfType(DealItemTypes.FAVOR, pid) or nil;
+					if item ~= nil then
+						item:SetDuration(0);
+						local cap = try(function() return item:GetMaxAmount(); end, nil);
+						local amount = want.amount;
+						if cap ~= nil and cap < amount then amount = cap; end
+						local set = amount > 0 and pcall(function() item:SetAmount(amount); end);
+						if set and try(function() return item:IsValid(); end, true) then
+							gave["FAVOR"] = amount;
+							text[#text + 1] = "FAVOR=" .. tostring(amount);
+						else
+							pcall(function() deal:RemoveItemByID(item:GetID()); end);
+						end
+					end
+				else
+					local row = try(function() return GameInfo.Resources[want.name]; end, nil);
+					if row == nil then return false, "unknown_resource:" .. want.name, {}, ""; end
+					local forType = nil;
+					for _, entry in ipairs(possible) do
+						local desc = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+						if desc ~= nil and desc.ResourceType == want.name and entry.IsValid ~= false
+								and (entry.MaxAmount or 0) > 0 then
+							forType = entry.ForType;
+						end
+					end
+					if forType ~= nil then
+						local consumption = try(function()
+							return GameInfo.Resource_Consumption[want.name];
+						end, nil);
+						local lump = consumption ~= nil
+							and (consumption.Accumulate == true or consumption.Accumulate == 1);
+						local item = deal:AddItemOfType(DealItemTypes.RESOURCES, pid);
+						if item ~= nil then
+							item:SetValueType(forType);
+							item:SetDuration(lump and 0 or 30);
+							local cap = try(function() return item:GetMaxAmount(); end, nil);
+							local amount = want.amount;
+							if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+							local set = amount > 0 and pcall(function() item:SetAmount(amount); end);
+							if set and try(function() return item:IsValid(); end, true) then
+								gave["RESOURCES:" .. tostring(forType)] = amount;
+								text[#text + 1] = want.name .. "=" .. tostring(amount)
+									.. "x" .. (lump and "0" or "30");
+							else
+								pcall(function() deal:RemoveItemByID(item:GetID()); end);
+							end
+						end
+					end
+				end
+			end
+			if next(gave) == nil then return false, "nothing_tradeable", gave, ""; end
+			deal:Validate();
+			if not deal:IsValid() then return false, "invalid_deal", gave, table.concat(text, ","); end
+			-- Registered BEFORE the ask goes out: should the engine answer
+			-- synchronously, from inside this very call, the handler must
+			-- already know what was offered and at what floor.
+			trade.pending[subject] = {
+				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
+			};
+			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			return true, "asked", gave, table.concat(text, ",");
+		end);
+		if not ran then
+			submitted, reason, gave, gaveText = false, "throw", {}, "";
+		end
+		if submitted then
+			trade.asked[subject] = turn;
+		elseif trade.pending[subject] ~= nil and trade.pending[subject].turn == turn then
+			-- The ask itself threw after registering; nothing is in flight.
+			trade.pending[subject] = nil;
+		end
+		if not submitted and (reason == "nothing_tradeable" or reason == "invalid_deal") then
+			-- The engine has nothing to sell here right now; do not re-ask
+			-- every turn for the same answer.
+			trade.asked[subject] = turn;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+		end
+		emit("deal_offer", {
+			turn = turn, target = subject, verb = verb, floor = floor,
+			submitted = submitted and true or false, reason = reason,
+			gave = gaveText, threw = reason == "throw",
+		});
+		return submitted, submitted and "sell_asked" or reason;
 	end
 
 	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
@@ -11222,6 +11505,31 @@ local function beginTurn(player, pid, turn)
 			end
 			envoyTally.ballot_ask = {};
 		end
+		-- ★★★★★ AND THE SAME TABLE, KEPT FOR THE STATE EXPORT.
+		--
+		-- `wc_outcome` is a log event: nothing on the CIVVIS side has ever read
+		-- it. Meanwhile the per-turn rival export is met-gated, so the victory
+		-- tracker's diplomatic lane only ever saw the civilizations this seat
+		-- had already contacted. Measured over the 50 runs carrying a congress
+		-- table, 40 of them (80%) had a congress DVP standing HIGHER than any
+		-- rival the decider could see, and in five the gap crossed the denial
+		-- alarm: `civvis-20260818T103630Z` lost a diplomatic victory to a
+		-- player sitting at 22 DVP while the tracker's best visible rival read
+		-- 14, so `urgent_victory_threat` never fired once all game.
+		--
+		-- This is the congress standing and nothing more: the table the seat is
+		-- shown when it votes, stamped with the turn it was shown. It is not a
+		-- live per-turn read of an uncontacted empire — between sessions it
+		-- goes stale exactly the way a human's memory of the last session does.
+		--
+		-- ⚠ Guarded on a non-empty list: an empty Lua table encodes as `{}`, not
+		-- `[]`, and a `points` object where the schema wants an array fails the
+		-- whole state parse rather than this one field. `GetAliveMajorIDs`
+		-- cannot be empty while this seat is playing, so the guard is insurance
+		-- against a host that answered oddly, not an expected branch.
+		if #dvp > 0 then
+			envoyTally.congress_dvp = { turn = turn, points = dvp };
+		end
 	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--
@@ -12309,6 +12617,7 @@ function Initialize()
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
+		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
