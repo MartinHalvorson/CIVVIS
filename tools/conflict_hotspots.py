@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Which files actually tax concurrent work, measured rather than remembered.
+
+`docs/ROADMAP.md` objective 5 names three conflict hotspots — `src/game.rs`,
+`src/ai/advanced.rs`, `web/assets/app.js` — and says they tax every concurrent
+PR. Two of those three are right. Measured over the 200 merges to `main`
+preceding 2026-08-18:
+
+    src/ai/advanced.rs   26%
+    src/elo.rs           18%   <- not on the list
+    src/game.rs          16%
+    src/ai.rs            11%
+    src/server.rs         6%
+    web/assets/app.js     2%   <- on the list
+
+So the objective would send someone to split a file touched by one merge in
+fifty while leaving the second-worst offender unnamed. Size is what the list was
+built from and size is not the tax: `elo.rs` is a seventh of `game.rs`'s length
+and is contended more often, because every live-bridge treatment appends to one
+registry inside it.
+
+    tools/conflict_hotspots.py                 # the current ranking
+    tools/conflict_hotspots.py --merges 500
+    tools/conflict_hotspots.py --check         # fail on a split target nobody edits
+
+Run daily in CI by `.github/workflows/census.yml`, first in that job because it
+needs no toolchain and no build.
+
+## What this deliberately does not measure
+
+Touch rate is exposure, not pain: two PRs editing distant parts of one file do
+not conflict. Real conflict counts are not recoverable from `main`'s history,
+because a squash merge records the resolution and never the collision. Touch
+rate is the honest available proxy, and it is stated as one — the ranking is
+what it can support, and a precise conflict count is not.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+DEFAULT_MERGES = 200
+#: A file the objective names must be contended at least this often. The check
+#: is deliberately ONE-DIRECTIONAL: it fails a target nobody touches, and never
+#: demands that the objective name the current top N.
+#:
+#: Two reasons. The ranking moves every day as merges land, so a both-ways check
+#: would go red on ordinary work rather than on a defect. And touch rate mixes
+#: two problems with different remedies — `src/main.rs` (20%) and `src/elo.rs`
+#: (18%) are contended because every treatment PR appends to one shared line or
+#: list in them, which splitting the file does not fix; moving that data out of
+#: source does, the way `docs/eval/` did it for `docs/EVAL.md`. Only
+#: `advanced.rs` and `game.rs` are contended for the reason "split it" answers.
+#:
+#: So the machine checks the half that is mechanical — is this target real? —
+#: and leaves which remedy fits to the prose.
+MIN_CONTENDED_PCT = 5
+
+
+def touched(sha: str) -> set[str]:
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "show", "--name-only", "--format=",
+         "-m", "--first-parent", sha],
+        capture_output=True, text=True, check=False).stdout
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def recent_merges(count: int) -> list[str]:
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "log", "origin/main", "--format=%H", f"-{count}"],
+        capture_output=True, text=True, check=False).stdout
+    return out.split()
+
+
+def ranking(count: int = DEFAULT_MERGES,
+            minimum: int = 3) -> list[tuple[str, int, int]]:
+    """(path, merges touching it, percent), most contended first.
+
+    Only tracked source files are ranked: generated pages and ledgers are
+    rewritten wholesale by a tool and their contention is answered by
+    regenerating, not by splitting them.
+    """
+    shas = recent_merges(count)
+    if not shas:
+        raise SystemExit("no merges found on origin/main; fetch first")
+    tally: dict[str, int] = {}
+    for sha in shas:
+        for path in touched(sha):
+            if not re.search(r"\.(rs|js|py|sh)$", path):
+                continue
+            tally[path] = tally.get(path, 0) + 1
+    rows = [(path, hits, round(100 * hits / len(shas)))
+            for path, hits in tally.items() if hits >= minimum]
+    rows.sort(key=lambda row: (-row[1], row[0]))
+    return rows
+
+
+def roadmap_objective(text: str) -> str:
+    """The text of the conflict-hotspot objective, or ''.
+
+    Anchored on the phrase rather than the verb: the objective was called
+    "Split the three conflict hotspots" when it named a file nobody edits, and
+    renaming it must not be a way to stop being checked.
+    """
+    match = re.search(
+        r"\n\d+\.\s+\*\*[^\n]*conflict hotspot[^\n]*\*\*(.*?)(?=\n\d+\.\s+\*\*|\n\n##)",
+        text, re.DOTALL | re.IGNORECASE)
+    return match.group(0) if match else ""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--merges", type=int, default=DEFAULT_MERGES)
+    parser.add_argument("--top", type=int, default=8)
+    parser.add_argument("--check", action="store_true",
+                        help="fail when the roadmap names a file outside the "
+                             "measured top ranks, or misses one inside them")
+    args = parser.parse_args(argv)
+
+    rows = ranking(args.merges)
+    if not args.check:
+        print(f"of the last {len(recent_merges(args.merges))} merges to main:")
+        for path, hits, pct in rows[:args.top]:
+            print(f"  {path:26} {hits:4} ({pct}%)")
+        return 0
+
+    objective = roadmap_objective((REPO / "docs" / "ROADMAP.md").read_text())
+    if not objective:
+        print("ROADMAP.md no longer states a split-the-hotspots objective",
+              file=sys.stderr)
+        return 1
+    rate = {path: pct for path, _, pct in rows}
+    # Only the objective's target TABLE, not its prose. A repo path mentioned
+    # in a sentence — the tool that produced the ranking, or a file named as an
+    # example — is not a thing the objective is asking anyone to go and split.
+    named = sorted({
+        path
+        for line in objective.splitlines() if line.lstrip().startswith("|")
+        for path in re.findall(r"`([\w.-]+(?:/[\w.-]+)+\.(?:rs|js|py|sh))`", line)
+    })
+    if not named:
+        print("the conflict-hotspot objective names no target files at all",
+              file=sys.stderr)
+        return 1
+    problems = []
+    for path in named:
+        pct = rate.get(path, 0)
+        if pct < MIN_CONTENDED_PCT:
+            problems.append(
+                f"the objective targets {path}, touched by {pct}% of the last "
+                f"{args.merges} merges — below the {MIN_CONTENDED_PCT}% floor. "
+                f"Splitting a file nobody edits costs a large diff and buys "
+                f"nothing")
+    for problem in problems:
+        print(f"HOTSPOTS: {problem}", file=sys.stderr)
+    if problems:
+        print("run: tools/conflict_hotspots.py", file=sys.stderr)
+        return 1
+    print(f"every split target is really contended: "
+          + ", ".join(f"{p} {rate[p]}%" for p in named))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
