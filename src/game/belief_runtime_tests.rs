@@ -1414,6 +1414,77 @@ fn the_army_combat_beliefs_do_not_reach_an_apostle() {
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), plain + 10.0);
 }
 
+/// ⚠⚠ THE FOUNDER BELIEFS CIVILIZATION VI PAYS FOR SPREADING ABROAD.
+///
+/// Three of them were wired to the *domestic* form of their key until
+/// 2026-08-18: Tithe paid per following city instead of per follower, World
+/// Church paid on followers at home instead of abroad, and Pilgrimage paid on
+/// every following city instead of only foreign ones. The engine already
+/// implemented the correct arms; nothing set them. Read against the shipped
+/// Civilization VI database, whose own modifier rows name the distinction:
+/// `TITHE_GOLD_FOLLOWER`, `WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER`,
+/// `PILGRIMAGE_FAITH_FOREIGN_CITY`, `CHURCH_PROPERTY_GOLD_CITY`.
+///
+/// It is not a rounding difference: it inverts the incentive. Civilization VI
+/// pays a founder to convert its *rivals*, which is the whole reason to build
+/// Missionaries and Apostles. The domestic form pays for converting nobody.
+#[test]
+fn two_founder_beliefs_pay_only_for_the_religion_spread_abroad() {
+    let (mut game, cities) = game_with_capitals(91_765);
+    let religion = establish_religion(&mut game, cities[0], &[]);
+    let evangelize = |game: &mut Game, city: u32, pop: i32| {
+        let city = game.cities.get_mut(&city).unwrap();
+        city.pop = pop;
+        city.pressure =
+            BTreeMap::from([(religion.clone(), 75.0), ("Other Faith".to_string(), 25.0)]);
+        city.atheist_pressure = 0.0;
+    };
+
+    // Only the founder's own city follows: eight population, six followers.
+    evangelize(&mut game, cities[0], 8);
+    {
+        let rival = game.cities.get_mut(&cities[1]).unwrap();
+        rival.pressure = BTreeMap::from([("Other Faith".to_string(), 100.0)]);
+    }
+    for (belief, yields) in [
+        ("tithe", 1.0),
+        ("church_property", 2.0),
+        ("world_church", 0.0),
+        ("pilgrimage", 0.0),
+    ] {
+        game.players[0].religion_beliefs = vec![belief.to_string()];
+        let paid = game.founder_belief_yields(0);
+        let actual = match belief {
+            "tithe" | "church_property" => paid.gold,
+            "world_church" => paid.culture,
+            _ => paid.faith,
+        };
+        assert_eq!(actual, yields, "{belief} with the religion still at home");
+    }
+
+    // Now the rival's city follows too, with six followers of its own.
+    evangelize(&mut game, cities[1], 8);
+    for (belief, yields) in [
+        // Twelve followers now, still one Gold per four of them.
+        ("tithe", 3.0),
+        // Two following cities.
+        ("church_property", 4.0),
+        // Six followers abroad, one Culture per five.
+        ("world_church", 1.0),
+        // One foreign city.
+        ("pilgrimage", 2.0),
+    ] {
+        game.players[0].religion_beliefs = vec![belief.to_string()];
+        let paid = game.founder_belief_yields(0);
+        let actual = match belief {
+            "tithe" | "church_property" => paid.gold,
+            "world_church" => paid.culture,
+            _ => paid.faith,
+        };
+        assert_eq!(actual, yields, "{belief} once the religion is abroad");
+    }
+}
+
 #[test]
 fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     let (mut game, cities) = game_with_capitals(91_764);
@@ -1428,12 +1499,33 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         city.atheist_pressure = 0.0;
     }
 
+    // Two following cities, one of them a rival's, three followers each.
+    // Tithe is paid on followers wherever they are; Church Property on
+    // following cities; World Church and Pilgrimage only on what is abroad.
     game.players[0].religion_beliefs = vec!["tithe".to_string()];
-    assert_eq!(game.founder_belief_yields(0).gold, 6.0);
+    assert_eq!(
+        game.founder_belief_yields(0).gold,
+        1.0,
+        "1 Gold per 4 of 6 followers"
+    );
+    game.players[0].religion_beliefs = vec!["church_property".to_string()];
+    assert_eq!(
+        game.founder_belief_yields(0).gold,
+        4.0,
+        "2 Gold per following city"
+    );
     game.players[0].religion_beliefs = vec!["world_church".to_string()];
-    assert_eq!(game.founder_belief_yields(0).culture, 1.0);
+    assert_eq!(
+        game.founder_belief_yields(0).culture,
+        0.0,
+        "1 Culture per 5 foreign followers, and there are three"
+    );
     game.players[0].religion_beliefs = vec!["pilgrimage".to_string()];
-    assert_eq!(game.founder_belief_yields(0).faith, 4.0);
+    assert_eq!(
+        game.founder_belief_yields(0).faith,
+        2.0,
+        "2 Faith for the one foreign city"
+    );
 
     // Lay Ministry: +1 Faith per Holy Site and +1 Culture per Theater
     // Square in cities following the religion (BELIEF_YIELD_PER_DISTRICT);

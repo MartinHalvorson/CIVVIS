@@ -11826,19 +11826,23 @@ impl Game {
         };
         let sacred_places = effect("yield_per_wonder_city") * wonder_cities;
         Yields {
+            // ⚠ Every arm here has a belief that sets it, and that is
+            // checked: `tools/civvis_inert.py` fails when this function prices
+            // a key no belief supplies. Three arms were removed on 2026-08-18
+            // — Culture per domestic follower, Faith per domestic city, Gold
+            // per foreign city — because the shipped Civilization VI database
+            // has no belief of any of those shapes, so nothing could ever set
+            // them. See `docs/FIDELITY.md`.
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
-                + effect("gold_per_foreign_city") * foreign_following
                 + sacred_places,
-            culture: (effect("culture_per_followers") * followers).floor()
-                + (effect("culture_per_foreign_followers") * foreign_followers).floor()
+            culture: (effect("culture_per_foreign_followers") * foreign_followers).floor()
                 + effect("culture_per_theater_square") * theater_squares
                 + sacred_places,
             // Cross-Cultural Dialogue counts followers abroad only.
             science: (effect("science_per_foreign_followers") * foreign_followers).floor()
                 + sacred_places,
-            faith: effect("faith_per_city") * following
-                + effect("faith_per_foreign_city") * foreign_following
+            faith: effect("faith_per_foreign_city") * foreign_following
                 + effect("faith_per_holy_site") * holy_sites
                 + sacred_places,
             ..Yields::default()

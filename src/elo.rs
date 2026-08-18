@@ -1051,7 +1051,30 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// Rows before and after v9 are not comparable wherever an improvement was ever
 /// pillaged, which on any map with barbarians is most of them.
-pub const ELO_PROTOCOL_VERSION: u32 = 12;
+///
+/// **v13 (2026-08-18) — three Founder beliefs pay for the religion abroad.**
+/// `beliefs.json` wired Tithe, World Church and Pilgrimage to the *domestic*
+/// form of a key the shipped Civilization VI database defines on what is
+/// foreign, and the engine's correct arms — `gold_per_followers`,
+/// `culture_per_foreign_followers`, `faith_per_foreign_city` — were reachable
+/// from no belief at all. Read directly from the installed gameplay database:
+/// `TITHE_GOLD_FOLLOWER` (+1 Gold per 4 followers), `WORLD_CHURCH_CULTURE_
+/// FOREIGN_FOLLOWER` (+1 Culture per 5 foreign followers),
+/// `PILGRIMAGE_FAITH_FOREIGN_CITY` (+2 Faith per foreign following city), and
+/// `CHURCH_PROPERTY_GOLD_CITY` (+2 Gold per following city) — the belief whose
+/// key Tithe had been using, and which `beliefs.json` did not carry at all.
+///
+/// ⚠ This inverts an incentive rather than moving a number. Civilization VI
+/// pays a founder for converting its *rivals*, which is the entire reason to
+/// build Missionaries and Apostles; the domestic form paid for converting
+/// nobody. Religion decides about three quarters of the games on this
+/// evaluator's own board, so every rated row before v13 was played under a
+/// religion economy that rewarded the wrong thing.
+///
+/// The frozen anchor moved with it: 18,572 decisions became 18,466 across the
+/// five anchor profiles. Rows before and after v13 are not comparable in any
+/// game where a religion was founded.
+pub const ELO_PROTOCOL_VERSION: u32 = 13;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

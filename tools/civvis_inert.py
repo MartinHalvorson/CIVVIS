@@ -14,6 +14,14 @@ Usage::
     python tools/civvis_inert.py            # report
     python tools/civvis_inert.py --max 0    # CI ratchet
 
+Both directions, because only one of them was ever checked. The audit above
+asks "which data key does the engine ignore"; ``founder_belief_yields`` asks the
+mirror question, "which key does the engine price that no data supplies", and
+that direction had four dead arms in the belief economy on 2026-08-18. Three of
+them were dead because a belief was wired to the *domestic* form of a key that
+Civilization VI defines on foreign followers, so the engine's correct arm sat
+unreachable while the belief paid the wrong thing. See ``docs/FIDELITY.md``.
+
 A key counts as consumed when the engine contains it as a string literal, or
 when a ``format!`` template could build it. The template check is deliberately
 loose in one direction: a single-segment placeholder such as ``"{prefix}food"``
@@ -72,6 +80,40 @@ def engine_source() -> str:
     )
 
 
+# The engine function whose effect lookups are checked in the reverse direction.
+# One named function rather than a hand-written key list: the list would be
+# complete the day it was written, and this repository has paid for that three
+# times. Renaming the function fails loudly below rather than silently checking
+# nothing.
+BELIEF_YIELD_FN = "fn founder_belief_yields"
+
+
+def belief_yield_keys(source: str) -> set[str]:
+    """Effect keys ``founder_belief_yields`` prices.
+
+    ⚠ A census that returns nothing is a broken census. The caller raises when
+    this comes back empty, because "the engine reads no keys" is never the
+    truth and would make the whole check pass by not running.
+    """
+    start = source.find(BELIEF_YIELD_FN)
+    if start < 0:
+        raise SystemExit(
+            f"civvis_inert: {BELIEF_YIELD_FN!r} is gone; the reverse audit is "
+            "reading nothing. Point BELIEF_YIELD_FN at its replacement."
+        )
+    body = source[start:]
+    end = body.find("\n    fn ", 1)
+    if end > 0:
+        body = body[:end]
+    keys = set(re.findall(r'\beffect\(\s*"([a-z0-9_]+)"', body))
+    if not keys:
+        raise SystemExit(
+            "civvis_inert: found the belief-yield function and no effect keys "
+            "in it; the scrape broke rather than finding an empty function"
+        )
+    return keys
+
+
 def format_templates(source: str) -> list[re.Pattern]:
     patterns = []
     for template in re.findall(r'format!\(\s*"([^"]+)"', source):
@@ -106,6 +148,25 @@ def main() -> int:
     print(f"{len(keys)} effect keys, {len(inert)} with no consumer, {len(waivers)} waived")
     for key, sources in inert:
         print(f"  {key:44} {', '.join(sources)}")
+
+    # The mirror question. A key the engine prices and no data supplies is an
+    # arm that cannot fire — the same defect from the other side, and until
+    # 2026-08-18 nothing asked it.
+    priced = belief_yield_keys(source)
+    unsupplied = sorted(key for key in priced if key not in keys)
+    print(
+        f"{len(priced)} belief-yield keys priced by the engine, "
+        f"{len(unsupplied)} supplied by no belief"
+    )
+    for key in unsupplied:
+        print(f"  {key:44} no belief sets this")
+    if args.max is not None and len(unsupplied) > args.max:
+        print(
+            f"FAIL: {len(unsupplied)} belief-yield keys exceed the ratchet of {args.max}",
+            file=sys.stderr,
+        )
+        return 1
+
     if args.max is not None and len(inert) > args.max:
         print(f"FAIL: {len(inert)} exceeds the ratchet of {args.max}", file=sys.stderr)
         return 1
