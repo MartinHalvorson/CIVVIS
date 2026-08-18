@@ -1921,7 +1921,7 @@ pub struct BasicAi {
     /// Rebuild the recon arm when it is gone and there is still ground to
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
-    recon_replacement: bool,
+    pub(crate) recon_replacement: bool,
     /// Buy one ship for an empire that has none while unexplored water lies
     /// off its coast, and let the advanced controller send it exploring.
     ///
@@ -1937,7 +1937,7 @@ pub struct BasicAi {
     /// — correct for the scout, blind for the sea. Off for the frozen native
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
-    naval_recon: bool,
+    pub(crate) naval_recon: bool,
     /// Count a barbarian camp within `HOME_CAMP_RADIUS` of a city as home
     /// ground the guard clears, not only one within the raider radius.
     ///
@@ -2008,7 +2008,7 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
-    come_ashore: bool,
+    pub(crate) come_ashore: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
