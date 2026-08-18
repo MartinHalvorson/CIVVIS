@@ -913,6 +913,10 @@ impl AdvancedAi {
         // And the city target climbs at the Settler game's own era pace. See
         // `era_paced_expansion`.
         self.enable_era_paced_expansion();
+        // And the rung clock itself: the seat leads the count at t50, loses
+        // it by t150 and stops settling at t116 under an assigned lane. See
+        // `land_grab`.
+        self.enable_land_grab();
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
@@ -1441,6 +1445,19 @@ impl AdvancedAi {
 
     pub fn disable_era_paced_expansion(&mut self) {
         self.era_paced_expansion = false;
+    }
+
+    /// Expand to the land the empire can hold, at pipeline pace (see
+    /// `land_grab`). Sets both halves: the strategic governor's target,
+    /// window and pipeline, and `BasicAi::pick_item`'s pipeline and window.
+    pub fn enable_land_grab(&mut self) {
+        self.land_grab = true;
+        self.base.land_grab = true;
+    }
+
+    pub fn disable_land_grab(&mut self) {
+        self.land_grab = false;
+        self.base.land_grab = false;
     }
 
     /// Price a point of culture at the lane's price of a point of science.

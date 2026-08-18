@@ -41,9 +41,9 @@
     "withholdable": 52
   },
   "derived": {
-    "eval_only_count": 209,
-    "firaxis_only_count": 22,
-    "live_bridge_count": 74,
+    "eval_only_count": 210,
+    "firaxis_only_count": 23,
+    "live_bridge_count": 75,
     "native_engine_repair_count": 52,
     "withholdable_live_count": 52
   },
@@ -204,7 +204,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 209,
+      "declared_count": 210,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -292,6 +292,7 @@
         "live_without_explore_dead_targets",
         "live_without_explore_commit",
         "live_without_bank_envoys",
+        "live_without_land_grab",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -418,7 +419,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 22,
+      "declared_count": 23,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -441,11 +442,12 @@
         "host-settler-pop",
         "explore-dead-targets",
         "bank-envoys",
-        "explore-commit"
+        "explore-commit",
+        "land-grab"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 74,
+      "declared_count": 75,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -520,7 +522,8 @@
         "host-settler-pop",
         "explore-dead-targets",
         "explore-commit",
-        "bank-envoys"
+        "bank-envoys",
+        "land-grab"
       ]
     }
   },
