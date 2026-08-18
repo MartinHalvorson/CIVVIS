@@ -111,5 +111,42 @@ class ResourcePlacementWeightsAreAudited(unittest.TestCase):
         self.assertEqual(projected["stone"]["sea_frequency"], 0)
 
 
+class PolicyRosterIsStrict(unittest.TestCase):
+    def test_a_policy_only_civvis_offers_is_a_divergence(self):
+        result = civ6_fidelity.compare(
+            "Policies",
+            {
+                "discipline": {"slot": "military"},
+                "retired_card": {"slot": "wildcard"},
+            },
+            {"discipline": {"slot": "military"}},
+        )
+
+        self.assertEqual(result["only_ours"], ["retired_card"])
+        self.assertEqual(
+            result["divergences"],
+            [{
+                "table": "Policies",
+                "entry": "retired_card",
+                "field": "row",
+                "ours": "present",
+                "theirs": "absent",
+            }],
+        )
+
+    def test_an_unmodeled_source_policy_remains_a_scope_reading(self):
+        result = civ6_fidelity.compare(
+            "Policies",
+            {"discipline": {"slot": "military"}},
+            {
+                "discipline": {"slot": "military"},
+                "future_card": {"slot": "wildcard"},
+            },
+        )
+
+        self.assertEqual(result["only_theirs"], ["future_card"])
+        self.assertEqual(result["divergences"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

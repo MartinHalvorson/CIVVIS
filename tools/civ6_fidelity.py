@@ -2295,6 +2295,14 @@ def waived(table: str, entry: str, field: str) -> bool:
 # grant the game does not make, and is reported rather than skipped.
 STRICT_TABLES = {"ImprovementUpgrades"}
 
+# CIVVIS intentionally scopes many tables to the content it models, so an
+# unmatched row cannot be universally treated as a defect. Policies are
+# different: a CIVVIS-only card is a selectable rules change that Gathering
+# Storm does not offer. Treat its absence from the resolved source roster as a
+# divergence instead of merely printing an easy-to-miss count in the report.
+STRICT_ROW_TABLES = {"Policies"}
+ROW_PRESENCE_FIELD = "row"
+
 
 def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
     divergences = []
@@ -2341,11 +2349,25 @@ def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
                 waived_count += 1
             else:
                 divergences.append(divergence)
+    only_ours = sorted(set(ours) - set(theirs))
+    if table in STRICT_ROW_TABLES:
+        for name in only_ours:
+            divergence = {
+                "table": table,
+                "entry": name,
+                "field": ROW_PRESENCE_FIELD,
+                "ours": "present",
+                "theirs": "absent",
+            }
+            if waived(table, name, ROW_PRESENCE_FIELD):
+                waived_count += 1
+            else:
+                divergences.append(divergence)
     return {
         "table": table,
         "compared": len(set(ours) & set(theirs)),
         "waived": waived_count,
-        "only_ours": sorted(set(ours) - set(theirs)),
+        "only_ours": only_ours,
         "only_theirs": sorted(
             name for name in set(theirs) - set(ours) if not name.startswith(IGNORED_PREFIXES)
         ),

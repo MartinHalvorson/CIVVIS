@@ -10734,7 +10734,6 @@ impl AdvancedAi {
                 temporary.push("inquisition");
             }
             GrandStrategy::Conquest if at_war => {
-                temporary.push("twilight_valor");
                 if elite_affordable {
                     temporary.push("elite_forces");
                 }
