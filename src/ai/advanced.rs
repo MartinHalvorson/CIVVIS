@@ -2528,6 +2528,23 @@ pub struct AdvancedAi {
     /// worst a long Counterspy is re-asked once mid-run, which the host
     /// refuses once instead of every turn.
     pub spy_mission_patience: bool,
+    /// ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE GROUND. The Settler
+    /// production arm prices `best_settle_site`'s answer; the walker then
+    /// asks `settle_site_loyalty_verdict` for the same ground and refuses it.
+    /// Run civvis-20260818T182702Z (the first hostile map after the
+    /// land-grab pipeline, #2027): 19 Settler starts became 8 foundings and
+    /// a six-city empire at score 552, with 153 loyalty refusals (112
+    /// beyond-reach + 41 forecast-drain) and 54 settler capture/loss lines —
+    /// roughly eleven Settlers of production paid for walkers with nowhere
+    /// to land, while the same binary's friendly-map runs landed 17 and 18
+    /// cities. With `settler_site_agreement` the production gate asks the
+    /// walker's own verdict for the chosen site before starting the build;
+    /// a doomed best site usually sits in a doomed frontier
+    /// (`settler_dead_sites`' own observation), so refusing the build is
+    /// the cheap half of the same answer. Natively the verdict is the drain
+    /// forecast alone (`frontier_loyalty` is a live arm), so the repair is
+    /// an engine repair with a wider live reading, not bridge semantics.
+    pub settler_site_agreement: bool,
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
@@ -3951,6 +3968,7 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             spy_mission_patience: false,
+            settler_site_agreement: false,
             spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
@@ -17222,7 +17240,21 @@ impl AdvancedAi {
                             .flatten()
                     });
                     if let Some(site) = site {
-                        if self.coupled_expansion {
+                        // ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE
+                        // GROUND. This gate priced the site; the walker then
+                        // asks `settle_site_loyalty_verdict` and refuses it —
+                        // and on run civvis-20260818T182702Z that
+                        // disagreement turned 19 Settler starts into 8
+                        // foundings and a six-city empire, with 153 loyalty
+                        // refusals in the why-log while the pipeline kept
+                        // paying for walkers with nowhere to land. Ask the
+                        // walker's own question before starting the Settler;
+                        // a doomed best site usually sits in a doomed
+                        // frontier, so refusing the build is the cheap half
+                        // of the same answer. See `settler_site_agreement`.
+                        if !self.settler_site_is_landable(g, pid, site.0) {
+                            -10_000.0
+                        } else if self.coupled_expansion {
                             self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
                         } else {
                             (920.0 + site.1 * 4.0) * self.settler_price
@@ -20296,6 +20328,15 @@ impl AdvancedAi {
                "{waited} turn(s) so far; marching alone is how the last two settlers \
                 were captured");
         Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
+    /// Whether the production gate may pay for a Settler aimed at `site`:
+    /// under `settler_site_agreement` it asks the walker's own
+    /// [`Self::settle_site_loyalty_verdict`], so a build is never started for
+    /// ground the march will refuse. Off, every gate keeps its historical
+    /// answer.
+    fn settler_site_is_landable(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        !self.settler_site_agreement || self.settle_site_loyalty_verdict(g, pid, site).is_none()
     }
 
     /// Would a city founded at `site` right now bleed Loyalty fast enough to

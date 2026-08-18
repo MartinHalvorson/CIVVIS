@@ -1232,6 +1232,73 @@ fn threatened_recovery_queue_uses_the_live_wall_doctrine_before_damage() {
 }
 
 #[test]
+fn the_settler_build_is_never_paid_for_ground_the_march_refuses() {
+    // Run civvis-20260818T182702Z: 19 Settler starts became 8 foundings and
+    // a six-city empire, with 153 loyalty refusals — the production gate
+    // priced sites the walker's `settle_site_loyalty_verdict` then refused,
+    // so roughly eleven Settlers of production paid for walkers with
+    // nowhere to land. The contract: under `settler_site_agreement` the
+    // gate asks the walker's own question; frozen controllers keep the
+    // historical gate; and the repair is native (engine repairs), not
+    // bridge semantics.
+    let mut game = Game::new_full(2, 24, 16, 109, 250, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let home = game.units[&settler].pos;
+    game.found_city_for(0, home, None);
+    // The walker's veto shape: no own city within FRONTIER_LOYALTY_RADIUS
+    // and fog inside the site's nine-tile pressure disk.
+    let near_home: std::collections::BTreeSet<_> = game.players[0]
+        .explored
+        .iter()
+        .copied()
+        .filter(|p| game.wdist(*p, home) <= 3)
+        .collect();
+    game.players[0].explored = near_home;
+    let remote = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|p| game.wdist(*p, home) > FRONTIER_LOYALTY_RADIUS)
+        .expect("the map has ground beyond the empire's reach");
+
+    let mut live = AdvancedAi::new();
+    live.enable_frontier_loyalty();
+    live.enable_settler_site_agreement();
+    assert!(AdvancedAi::beyond_loyalty_reach(&game, 0, remote));
+    assert!(
+        !live.settler_site_is_landable(&game, 0, remote),
+        "the production gate must ask the walker's own question"
+    );
+
+    let frozen = AdvancedAi::new();
+    assert!(
+        frozen.settler_site_is_landable(&game, 0, remote),
+        "off, every gate keeps its historical answer"
+    );
+
+    let mut bridged = AdvancedAi::new();
+    bridged.enable_live_bridge();
+    assert!(
+        bridged.settler_site_agreement,
+        "the live bundle carries the repair"
+    );
+    bridged.disable_settler_site_agreement();
+    assert!(!bridged.settler_site_agreement);
+
+    let mut native = AdvancedAi::new();
+    native.enable_engine_repairs();
+    assert!(
+        native.settler_site_agreement,
+        "the drain-forecast half is native, so the repair is an engine repair"
+    );
+}
+
+#[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
     // was far behind Kongo at t113, but an empty Ostia still began a
