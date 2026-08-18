@@ -447,6 +447,57 @@ class InteractiveHostOwnership(unittest.TestCase):
         self.assertIn('civvis-interactive-host.sh', source)
         self.assertIn('CIVVIS_LADDER_HOST', source)
 
+    def test_an_explicit_halt_prevents_initial_supervisor_start(self):
+        """A hidden Terminal host must not undo an operator's halt.
+
+        The old host started a fresh supervisor before its first poll, so a
+        live lock-based hold could race with the host into a new game.
+        """
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            started = tmp / "supervisor.started"
+            lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text(
+                "#!/bin/zsh\n"
+                f"print -r -- started > {started}\n")
+            supervisor.chmod(0o755)
+            gamelock = tmp / "gamelock.py"
+            gamelock.write_text(
+                "import sys\n"
+                "if '--hold-status' in sys.argv:\n"
+                "    print('the game is explicitly halted for this test')\n"
+                "    raise SystemExit(0)\n"
+                "raise SystemExit(1)\n")
+            result = subprocess.run(
+                ["/bin/zsh", str(self.HOST)],
+                env={
+                    **os.environ,
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_GAMELOCK": str(gamelock),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                },
+                capture_output=True, text=True, timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(started.exists(), result.stdout)
+            self.assertIn("operator halt active; exiting before startup",
+                          log.read_text())
+
+    def test_every_restart_poll_checks_for_an_operator_halt_first(self):
+        source = self.HOST.read_text()
+        loop = source[source.index("while true; do"):]
+        self.assertIn('if held=$(hold_status); then', loop)
+        self.assertLess(loop.index('if held=$(hold_status); then'),
+                        loop.index('if ! pid_is_live "$supervisor_pid"; then'))
+        self.assertIn('operator halt active; stopping owned children and exiting',
+                      loop)
+
     def test_an_adopted_supervisor_survives_the_host(self):
         with TemporaryDirectory() as raw:
             tmp = Path(raw)
