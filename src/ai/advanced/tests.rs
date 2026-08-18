@@ -12402,6 +12402,98 @@ fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
         .is_none());
 }
 
+/// A city need not be in the mirror's immediate -8-per-turn emergency to be
+/// a bad settlement. A young city caught between equal-distance capitals can
+/// look merely "Wavering" on its founding turn yet still flip before it has
+/// grown into the investment the Settler was meant to make. The advanced
+/// settlement forecast must reject that middle band as well, while the
+/// ordinary controller keeps its historical selection path.
+#[test]
+fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
+    let (mut game, capital, home) = empire_with_a_capital(71_122);
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+
+    // Put the rival capital eight tiles out and choose the midpoint. The
+    // founding minimum is three tiles, so both four-tile distances are legal.
+    let (rival_pos, target) = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|rival| game.wdist(home, *rival) == 8)
+        .find_map(|rival| {
+            game.map
+                .tiles
+                .keys()
+                .copied()
+                .find(|target| game.wdist(home, *target) == 4 && game.wdist(rival, *target) == 4)
+                .map(|target| (rival, target))
+        })
+        .expect("fixture needs a four-tile midpoint between the capitals");
+    let rival = game.found_city_for(1, rival_pos, None);
+    game.cities.get_mut(&capital).unwrap().pop = 6;
+    game.cities.get_mut(&rival).unwrap().pop = 10;
+
+    let loyalty_per_turn = {
+        let mut forecast = game.speculative_clone();
+        let city = forecast.found_city_for(0, target, None);
+        forecast.city_loyalty_per_turn(&forecast.cities[&city])
+    };
+    assert!(
+        loyalty_per_turn < -100.0 / SETTLE_TARGET_LOYALTY_RISK_TURNS
+            && loyalty_per_turn > -8.0,
+        "fixture needs the overlooked middle band, not the old immediate emergency: {loyalty_per_turn}"
+    );
+
+    // Ensure the test exercises a real choice rather than the score floor.
+    for position in game.wdisk(target, 2) {
+        if let Some(tile) = game.map.tiles.get_mut(&position) {
+            tile.resource = Some(crate::name!("rice"));
+        }
+    }
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        if position != target {
+            game.blocked_city_sites.insert(position);
+        }
+    }
+    let settler = game.spawn_test_unit("settler", 0, target);
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    assert!(game.can_found_city(settler));
+
+    let mut ordinary_board = game.clone();
+    let mut ordinary = AdvancedAi::new();
+    assert!(
+        ordinary.advanced_settler_step(&mut ordinary_board, 0, settler),
+        "the ordinary controller retains its established non-forecast path"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let why = live
+        .settle_site_loyalty_verdict(&game, 0, target)
+        .expect("the advanced forecast rejects a city that will flip before it grows");
+    assert!(why.contains("revolt in about"), "{why}");
+    assert!(
+        !live.advanced_settler_step(&mut game, 0, settler),
+        "the advanced controller must retire the risky founding rather than spend the Settler"
+    );
+    assert!(live.settler_site_is_dead(settler, target));
+    assert_eq!(game.player_city_ids(0).len(), 1);
+}
+
 /// ★★★★ A border with no city behind it is a city in the fog. Run
 /// civvis-20260818T155552Z: Setia, founded t55 two tiles from Vietnam's border
 /// with none of Vietnam's four cities on the board, read −13.3 Loyalty a turn
@@ -21164,6 +21256,103 @@ fn the_camp_errand_stands_down_for_war_recon_and_bad_trades() {
 
     assert!(!AdvancedAi::new().base.camp_bounty);
     assert!(!AdvancedAi::legacy().base.camp_bounty);
+}
+
+#[test]
+fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
+    let mut game = Game::new_full(2, 30, 20, 90_081, 120, 0, false);
+    game.map.clear_rivers();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+    }
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+
+    let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    land.sort();
+    let (home, objective_site) = land
+        .iter()
+        .flat_map(|home| land.iter().map(move |objective| (*home, *objective)))
+        .find(|(home, objective)| {
+            game.wdist(*home, *objective) >= 16
+                && game.wdisk(*home, 5).len() >= 24
+                && game.wdisk(*objective, 5).len() >= 24
+        })
+        .expect("the map has two separated interior city sites");
+    for (player, site) in [(0, home), (1, objective_site)] {
+        game.current = player;
+        let settler = game.spawn_test_unit("settler", player, site);
+        game.apply(player, &Action::FoundCity { unit: settler })
+            .expect("each site can found a city");
+    }
+    game.current = 0;
+    game.record_contact(0, 1);
+    let target_city = game.player_city_ids(1)[0];
+    let objective = game.cities[&target_city].pos;
+    let open = |g: &Game, pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            && g.city_at(pos).is_none()
+            && g.units_at(pos).is_empty()
+    };
+    let (assault_at, village) = game
+        .wdisk(home, 4)
+        .into_iter()
+        .filter(|pos| open(&game, *pos) && game.wdist(*pos, home) == 4)
+        .find_map(|assault_at| {
+            game.wdisk(assault_at, crate::ai::VILLAGE_MILITARY_SEEK_RADIUS)
+                .into_iter()
+                .filter(|pos| {
+                    open(&game, *pos)
+                        && game.wdist(assault_at, *pos) == crate::ai::VILLAGE_MILITARY_SEEK_RADIUS
+                        && game.wdist(*pos, objective) > game.wdist(assault_at, objective)
+                })
+                .max()
+                .map(|village| (assault_at, village))
+        })
+        .expect("an open field unit can reach a village away from the campaign objective");
+    game.map.tiles.get_mut(&village).unwrap().improvement = Some(crate::name!("goody_hut"));
+    let assault = game.spawn_test_unit("warrior", 0, assault_at);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(target_city),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.battlefront_observation = false;
+    assert!(ai.base.village_seeking);
+
+    let before = game.wdist(assault_at, village);
+    let mut historic = game.clone();
+    let mut historic_ai = ai.clone();
+    assert_eq!(
+        historic_ai.campaign_staging_step(&mut historic, 0, assault, &plan),
+        Some(true),
+        "precondition: without the village priority this Warrior would stage for war"
+    );
+    assert!(
+        historic.wdist(historic.units[&assault].pos, village) >= before,
+        "the staging route must not accidentally make progress toward the village"
+    );
+
+    assert!(ai.advanced_military_step(&mut game, 0, assault, &plan));
+    assert!(
+        game.wdist(game.units[&assault].pos, village) < before,
+        "the nearby Warrior should collect the charted village before staging for war"
+    );
 }
 
 /// `home_defense_objective` before the campaign march, mirroring the

@@ -219,10 +219,12 @@ const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
 /// Retreats a settler may make while committed to one target before that
 /// target is retired. See `advanced_settler_step`.
 const SETTLER_RETREAT_LIMIT: u32 = 3;
-/// Loyalty per turn at which a forecast city is treated as doomed before its
-/// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
-/// emergency threshold the live mirror uses for a settler's current plot.
-const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+/// A new city that is forecast to exhaust its initial Loyalty within this many
+/// turns is not a viable settlement. Forty turns is the growth forecast's
+/// horizon: a city that cannot remain ours long enough to reach useful size
+/// should yield the site to a safer alternative, even if it is not in the
+/// mirror's immediate -8-per-turn emergency.
+const SETTLE_TARGET_LOYALTY_RISK_TURNS: f64 = 40.0;
 /// How far from an own city a colony still holds on fogged ground. The
 /// loyalty model's citizens press out to nine tiles, but what a colony needs
 /// is enough of that pressure to outweigh rivals it cannot see: measured
@@ -20418,9 +20420,11 @@ impl AdvancedAi {
     }
 
     /// Would a city founded at `site` right now bleed Loyalty fast enough to
-    /// revolt before it repays its Settler? This asks the engine's complete
-    /// Loyalty calculation of a speculative city, using the same -8/turn
-    /// emergency threshold as the live mirror's current-plot protection.
+    /// revolt before it becomes a useful city? This asks the engine's complete
+    /// Loyalty calculation of a speculative city. The live mirror's
+    /// current-plot protection catches only its -8/turn emergency; target
+    /// selection also avoids a steady loss that would flip the city within its
+    /// forty-turn growth forecast.
     /// Why a site would not hold, if it would not: the forecast revolt, or —
     /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
     /// ground. `None` when the site is judged sound.
@@ -20446,12 +20450,16 @@ impl AdvancedAi {
         }
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
-        (forecast.city_loyalty_per_turn(&forecast.cities[&city])
-            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN)
-            .then(|| {
+        let city = &forecast.cities[&city];
+        let loyalty_per_turn = forecast.city_loyalty_per_turn(city);
+        (loyalty_per_turn < -f64::EPSILON)
+            .then(|| city.loyalty / -loyalty_per_turn)
+            .filter(|turns_to_flip| *turns_to_flip <= SETTLE_TARGET_LOYALTY_RISK_TURNS)
+            .map(|turns_to_flip| {
                 format!(
-                    "the city would lose at least {:.0} Loyalty a turn beside its neighbours",
-                    -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+                    "the city would lose {:.1} Loyalty a turn beside its neighbours and revolt in about {:.0} turns",
+                    -loyalty_per_turn,
+                    turns_to_flip.ceil()
                 )
             })
     }
@@ -24924,6 +24932,14 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // A newly charted village is an expiring reward, so resolve it
+            // before this otherwise idle unit is assigned to a pre-war staging
+            // ring or an incidental camp errand. The shared selector gives
+            // Scouts the long chase and admits only a nearby military fallback;
+            // Settlers and Builders stay on their own movement paths.
+            if self.base.village_seeking && self.base.village_collection_step(g, pid, uid) {
+                return true;
+            }
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
                     .linked_to
