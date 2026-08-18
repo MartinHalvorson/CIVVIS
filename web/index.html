@@ -46,6 +46,11 @@
     --gold: #d7b66a;
     --gold-bright: #f0d28c;
     --gold-deep: #8b6b2d;
+    /* The deck's own ground, flat: what shows between the section labels
+       once they stop scrolling and stack. Read off the deck's gradient at
+       the height the stack sits, so the seams between stuck labels look
+       like deck rather than like a hole onto the section scrolling past. */
+    --deck-band: #0c1715;
     --green: #76c893;
     --blue: #76cde4;
     --violet: #c49be8;
@@ -387,7 +392,14 @@
      panels no longer fit, min-height stops the log collapsing and the deck
      goes back to scrolling. */
   .side-scroll {
-    flex: 1; min-height: 0; padding: 12px 11px 22px; overflow-y: auto; overflow-anchor: none;
+    /* No padding above: the command card is the first thing in here and it
+       sticks to the top, so a scroller that reserved twelve pixels over it
+       left a slit for the section to scroll through — visible under the
+       card's own rounded corners, and plainly wrong once the labels below
+       stopped scrolling and the whole band read as fixed. The card carries
+       those twelve pixels as its own margin instead, which puts it in the
+       same place at rest and flush with the edge once it sticks. */
+    flex: 1; min-height: 0; padding: 0 11px 22px; overflow-y: auto; overflow-anchor: none;
     display: flex; flex-direction: column;
     -webkit-overflow-scrolling: touch;
     scrollbar-color: #385148 transparent; scrollbar-width: thin; scrollbar-gutter: stable;
@@ -405,7 +417,7 @@
      controls off screen. The card is opaque, so sections slide in under it. */
   .side-actions {
     position: sticky; top: 0; z-index: 3;
-    flex: 0 0 auto; margin-bottom: 10px; padding: 7px; border: 1px solid #334c43;
+    flex: 0 0 auto; margin: 12px 0 10px; padding: 7px; border: 1px solid #334c43;
     border-radius: 13px; background: linear-gradient(135deg, #14241f, #0c1714);
     box-shadow: inset 0 1px #ffffff08, 0 8px 22px #0003;
   }
@@ -422,6 +434,48 @@
     letter-spacing: .12em; text-transform: uppercase;
   }
   .sidebar-section { flex: 0 0 auto; margin: 0 0 10px; }
+  /* The labels are the deck's menu: six ways into the game, one click each.
+     A section long enough to scroll used to take the menu with it — open Game
+     setup and the four sections under it left the deck entirely, so reaching
+     the war log meant scrolling a form you were not reading. The labels hold
+     their ground instead. Those above the open section pile under the command
+     card, those below it pile on the deck's lower edge, and the open section's
+     body scrolls through the window left between them: the deck reads as an
+     index that stays put around whichever section is doing the scrolling.
+
+     Where each label stops is written onto the section by `syncSectionStops`
+     rather than spelled out here. The command card is one height for a
+     spectator watching and another for a player holding the seat, Government
+     joins the column only once there is a government to show, a battlefield
+     retires the two logs outright, and the labels themselves grow with the
+     deck's type size — a stack of stops guessed in the stylesheet would be
+     wrong in all four cases. The class comes off entirely on a deck too short
+     to hold the stack and still leave a window worth reading; there the menu
+     scrolls as it always did, which is better than a menu covering the section
+     it points at. */
+  #side.deck-stops .sidebar-section:not([open]) {
+    position: sticky; z-index: 2; top: var(--stop-top); bottom: var(--stop-bottom);
+    /* A stuck label is opaque, but the gaps around it are not, and a section
+       scrolling through a four-pixel slit between two labels reads as a
+       rendering fault. The section box is exactly its label, so a ground of
+       its own fills the label's rounded corners, and a spread of the same
+       ground fills the gap to the next label: the stack paints as one band. */
+    background: var(--deck-band); box-shadow: 0 0 0 var(--stop-gap) var(--deck-band);
+  }
+  /* The open section is the one box that must not stick: pinned, a section
+     taller than the window would hold its own tail out of reach below the
+     fold. Its label sticks inside it instead, so the section being read keeps
+     its title at the top of the window. */
+  #side.deck-stops .sidebar-section[open] > .section-label {
+    position: sticky; z-index: 2; top: var(--stop-top);
+  }
+  /* `scrollIntoView` knows nothing about a stack that is holding the top and
+     bottom of the scroller, so a notification sending a reader to Government
+     would land the section's first line behind the labels above it. The stops
+     are the insets to keep clear, and each section already carries its own. */
+  #side.deck-stops .sidebar-section[open] {
+    scroll-margin-top: var(--stop-top); scroll-margin-bottom: var(--stop-bottom);
+  }
   #strategysec[open], #eventsec[open], #warsec[open] { display: flex; flex-direction: column; min-height: 0; }
   /* The strategy dossier owns the space that its former separate reasoning
      panel used to take. Its current plan is fixed at the top; the decision
@@ -3832,6 +3886,7 @@
     --gold: #caa456;
     --gold-bright: #e2c478;
     --gold-deep: #806127;
+    --deck-band: #0b0d0f;
   }
   #maparea { background: var(--ink); }
   #world-transition {

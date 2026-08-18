@@ -77,6 +77,85 @@ function initSidebarSections() {
   remember();
 }
 initSidebarSections();
+// Where each section label stops once the deck starts scrolling. The stack is
+// packed tighter than the flowing column — a stuck label is an index entry
+// rather than a card in a list — and the label at the head of the stack holds
+// that same gap to the command card. The stylesheet spreads each label's own
+// ground by this gap to paint the seams, so it is published as a custom
+// property rather than written down in two places that could drift apart.
+const SECTION_STOP_GAP = 4;
+// The window the stack has to leave for the section that is open. Below this
+// the stops come off: a deck short enough that its menu would take most of the
+// height is better scrolled than pinned.
+const SECTION_STOP_MIN_WINDOW = 140;
+// Measure the stack the deck's menu makes when its labels stick, and write
+// each label's two stops onto its section: how far down the ones above it hold
+// it, and how far up the ones below it do. Everything here is read from the
+// page rather than assumed, because every term moves — the command card is
+// taller with a player in the seat than with a spectator watching, Government
+// and the two logs come and go with the game being shown, and the labels
+// themselves are sized by the deck's type-size setting.
+function syncSectionStops() {
+  const side = document.getElementById("side");
+  const scroller = side && side.querySelector(".side-scroll");
+  if (!scroller) return;
+  const sections = [...document.querySelectorAll(SIDEBAR_SECTIONS)]
+    // A section the game is not showing — Government before there is one, the
+    // logs on a battlefield — is not in the menu and takes no stop.
+    .filter(section => section.getClientRects().length);
+  const card = scroller.querySelector(".side-actions");
+  // The command card sticks at the top of the scroller ahead of every label,
+  // so the stack starts under it. Its own margin is not part of the stop: the
+  // margin belongs to the flowing column, and a stuck label holds the stack's
+  // gap to the card exactly as it holds it to the label above it.
+  const top = (card ? card.getBoundingClientRect().height : 0) + SECTION_STOP_GAP;
+  const steps = sections.map(section =>
+    section.querySelector(":scope > .section-label").getBoundingClientRect().height + SECTION_STOP_GAP);
+  const stack = steps.reduce((total, step) => total + step, 0);
+  // The open section reads through what the stack leaves. Its own label is in
+  // the stack too, so the window is the same whichever section is open.
+  const room = scroller.clientHeight - top - stack;
+  side.style.setProperty("--stop-gap", `${SECTION_STOP_GAP}px`);
+  side.classList.toggle("deck-stops", room >= SECTION_STOP_MIN_WINDOW);
+  let above = top;
+  let below = stack;
+  sections.forEach((section, index) => {
+    below -= steps[index];
+    section.style.setProperty("--stop-top", `${Math.round(above)}px`);
+    section.style.setProperty("--stop-bottom", `${Math.round(below)}px`);
+    above += steps[index];
+  });
+}
+// The stops are a measurement, so they are retaken whenever the page could
+// have changed one: the deck resized, the command card swapped between a
+// spectator's and a player's, a section joining or leaving the menu. A
+// ResizeObserver sees all three, since a section that leaves is a label that
+// resizes to nothing. The retake is deferred to the next frame so that writing
+// the stops during the callback cannot feed itself.
+let sectionStopsPending = false;
+function scheduleSectionStops() {
+  if (sectionStopsPending) return;
+  sectionStopsPending = true;
+  requestAnimationFrame(() => {
+    sectionStopsPending = false;
+    syncSectionStops();
+  });
+}
+function watchSectionStops() {
+  const side = document.getElementById("side");
+  const scroller = side && side.querySelector(".side-scroll");
+  if (!scroller) return;
+  syncSectionStops();
+  if (typeof ResizeObserver !== "function") return;
+  const observer = new ResizeObserver(scheduleSectionStops);
+  observer.observe(scroller);
+  const card = scroller.querySelector(".side-actions");
+  if (card) observer.observe(card);
+  for (const label of document.querySelectorAll(`${SIDEBAR_SECTIONS} > .section-label`)) {
+    observer.observe(label);
+  }
+}
+watchSectionStops();
 // The short setup pass, in the order its questions are asked. Which game is
 // being set up decides what every control under it means, so it is asked
 // first — before who is playing it, the way a menu asks for the game before

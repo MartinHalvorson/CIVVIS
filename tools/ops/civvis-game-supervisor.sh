@@ -39,14 +39,17 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
 STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
-# Attempts per cycle. 1 keeps the ambient loop's contract: every game plays
-# whatever origin/main is at launch and the brain live-upgrades mid-game. N>1
-# turns each cycle into a PINNED BATCH — the pull and build above the climb run
-# once, the climb pins the revision and freezes the decider, and one sha
-# accumulates N comparable ladder rows. Live score stdev is ~178 on a median
-# ~233, so n=1 per sha measures nothing; batches are how a rung's win rate is
-# ever established. The price is that a merge waits out the batch.
-ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-1}
+# Attempts per cycle. One game per source revision cannot establish
+# repeatability; the policy below advances only after a comparable trailing
+# batch. Three is the smallest useful default and can be raised or lowered for
+# an operator's host with CIVVIS_PLAY_ATTEMPTS.
+ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}
+# The live ladder policy is read-only and chooses the lowest rung that still
+# needs a first win or a repeatable trailing batch. CIVVIS_DIFFICULTY remains an
+# explicit emergency/operator override; absent that override, the selected rung
+# is always passed to civ6_civvis_climb rather than inherited from its default.
+RUNS_DIR=$HOME/civvis-civ6-runs/control
+EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # The victory objective. This service passed NOTHING here, and inheriting a
 # launcher default silently is how it spent 307 attempts aiming at Science —
 # the one lane `victory_eval` completes 0/16 at this exact profile, while the
@@ -264,6 +267,22 @@ while true; do
     continue
   fi
 
+  DIFFICULTY=$EXPLICIT_DIFFICULTY
+  if [[ -z "$DIFFICULTY" ]]; then
+    if [[ ! -f "$REPO/tools/civ6_ladder_policy.py" ]]; then
+      say "ladder policy missing at $REPO/tools/civ6_ladder_policy.py; refusing an un-gated run"
+      sleep 300
+      continue
+    fi
+    DIFFICULTY=$(python3 "$REPO/tools/civ6_ladder_policy.py" \
+      --runs "$RUNS_DIR" target 2>>"$SUP") || DIFFICULTY=""
+  fi
+  if [[ ! "$DIFFICULTY" =~ ^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$ ]]; then
+    say "ladder policy returned invalid difficulty '${DIFFICULTY:-<empty>}'; refusing an ungated run"
+    sleep 300
+    continue
+  fi
+
   # ⚠⚠⚠ THE MIRROR SERVER SERVES `/assets/app.js` FROM ITS CWD, while the page's
   # `index.html` is EMBEDDED IN THE BINARY. Run it from a tree whose app.js does
   # not match that binary and one bad top-level lookup blanks the whole map --
@@ -301,7 +320,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA (log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -312,7 +331,8 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
-  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" --strategy "$STRATEGY" \
+  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
+      --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
       ${VICTORY:+--victory "$VICTORY"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
