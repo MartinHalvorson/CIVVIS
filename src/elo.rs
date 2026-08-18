@@ -4751,7 +4751,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
-        "advanced_without_barbarian_scouts_are_scouts" => (Vec::new(), "advanced_without_barbarian_scouts_are_scouts"),
+        "advanced_without_barbarian_scouts_are_scouts" => {
+            (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
+        }
         "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
