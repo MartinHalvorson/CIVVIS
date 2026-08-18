@@ -18,6 +18,66 @@ supervisor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(supervisor)
 
 
+class OperatorHaltTests(unittest.TestCase):
+    def test_wait_for_operator_resume_logs_once_and_rechecks_the_marker(self):
+        with (
+            patch.object(
+                supervisor.gamelock,
+                "operator_halt_description",
+                side_effect=["operator pause", "operator pause", None],
+            ),
+            patch.object(supervisor, "log") as logged,
+            patch.object(supervisor.time, "sleep") as slept,
+        ):
+            supervisor.wait_for_operator_resume(0.25)
+
+        logged.assert_called_once_with(
+            "operator halt active; no spectator will start: operator pause"
+        )
+        self.assertEqual(slept.call_args_list, [((0.25,), {}), ((0.25,), {})])
+
+    def test_main_waits_for_a_halt_before_taking_a_port_or_starting_work(self):
+        args = SimpleNamespace(
+            cooldown=supervisor.FINAL_COUNTDOWN_SECONDS,
+            prepare_once=False,
+            port=8766,
+        )
+        calls = []
+        with (
+            patch.object(supervisor, "parse_args", return_value=args),
+            patch.object(
+                supervisor,
+                "wait_for_operator_resume",
+                side_effect=lambda: calls.append("halt-check"),
+            ),
+            patch.object(
+                supervisor,
+                "acquire_single_instance",
+                side_effect=lambda _port: calls.append("port-lock") or False,
+            ),
+            patch.object(supervisor, "log"),
+        ):
+            self.assertEqual(supervisor.main(), 0)
+
+        self.assertEqual(calls, ["halt-check", "port-lock"])
+
+    def test_server_launch_boundary_refuses_a_halt_without_spawning(self):
+        with (
+            patch.object(
+                supervisor.gamelock,
+                "operator_halt_description",
+                return_value="operator pause",
+            ),
+            patch.object(supervisor.subprocess, "Popen") as spawned,
+        ):
+            with self.assertRaisesRegex(
+                supervisor.OperatorHaltRequested, "operator pause"
+            ):
+                supervisor.start_server(8766, {"players": 4}, False)
+
+        spawned.assert_not_called()
+
+
 class CanonicalSyncTests(unittest.TestCase):
     def test_supervisor_update_reexecs_canonical_code_and_adopts_the_live_game(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -941,6 +1001,13 @@ class RecoveryTests(unittest.TestCase):
         # external deployment boundary, not part of those state-machine
         # scenarios; letting it consult the live 8766 lock makes the suite
         # return before any mocked recovery behavior runs.
+        # The durable operator halt is also host state, not a recovery-state
+        # input.  Individual halt-contract tests cover it above; keeping it
+        # out of these simulated game loops makes their result independent of
+        # whether an operator has intentionally paused this machine today.
+        halt_wait = patch.object(supervisor, "wait_for_operator_resume")
+        halt_wait.start()
+        self.addCleanup(halt_wait.stop)
         instance_guard = patch.object(
             supervisor, "acquire_single_instance", return_value=True
         )
@@ -991,6 +1058,28 @@ class RecoveryTests(unittest.TestCase):
         ):
             self.assertEqual(supervisor.main(), 0)
         start.assert_not_called()
+
+    def test_explicit_halt_stops_an_adopted_spectator_before_the_next_poll(self):
+        """A marker written during a live world must stop it, not only block a restart."""
+        with (
+            patch.object(supervisor, "parse_args", return_value=self.supervisor_args()),
+            patch.object(supervisor, "process_alive", return_value=True),
+            patch.object(supervisor, "read_status", return_value={"turn": 12}),
+            patch.object(supervisor, "source_snapshot", return_value="snapshot"),
+            patch.object(supervisor, "runtime_matches", return_value=False),
+            patch.object(
+                supervisor.gamelock,
+                "operator_halt_description",
+                return_value="operator pause",
+            ),
+            patch.object(supervisor, "stop_background_prebuild") as stop_build,
+            patch.object(supervisor, "stop_server") as stop_server,
+            patch.object(supervisor, "log"),
+        ):
+            self.assertEqual(supervisor.main(), 0)
+
+        stop_build.assert_called_once_with(None)
+        stop_server.assert_called_once_with(None, 321)
 
     def test_successor_detection_closes_the_cooldown_restart_race(self):
         finished = {"server_instance": 7, "seed": 11, "winner": 2}

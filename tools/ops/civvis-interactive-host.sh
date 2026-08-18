@@ -14,6 +14,8 @@ SELF_DIR=${0:A:h}
 SUPERVISOR=${CIVVIS_SUPERVISOR:-${SELF_DIR}/civvis-game-supervisor.sh}
 POPUP_KEEPER=${CIVVIS_POPUP_KEEPER:-${SELF_DIR}/civvis-popup-keeper.sh}
 MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-${SELF_DIR}/civvis-mirror-keeper.sh}
+GAMELOCK=${CIVVIS_GAMELOCK:-${SELF_DIR:h}/civ6_control/gamelock.py}
+GAMELOCK_PYTHON=${CIVVIS_GAMELOCK_PYTHON:-python3}
 LOG=${CIVVIS_INTERACTIVE_HOST_LOG:-$HOME/civvis-civ6-runs/interactive_host.log}
 LOCK=${CIVVIS_INTERACTIVE_HOST_LOCK:-$HOME/.civvis-interactive-host.lock}
 PID_FILE=$LOCK/pid
@@ -28,6 +30,24 @@ mirror_keeper_pid=""
 mirror_keeper_owned=0
 
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
+
+hold_status() {
+  # A missing or unreadable lock helper must not turn an explicit halt into a
+  # fresh game.  Treat an inspection failure as a hold until an operator can
+  # resolve it, while the normal no-hold answer remains exit 1.
+  if [[ ! -f "$GAMELOCK" ]]; then
+    print -r -- "cannot inspect operator halt: missing $GAMELOCK"
+    return 0
+  fi
+  local output="" rc=0
+  output=$("$GAMELOCK_PYTHON" "$GAMELOCK" --hold-status 2>&1)
+  rc=$?
+  case "$rc" in
+    0) print -r -- "$output"; return 0 ;;
+    1) return 1 ;;
+    *) print -r -- "cannot inspect operator halt: ${output:-exit $rc}"; return 0 ;;
+  esac
+}
 
 release_lock() {
   local holder=""
@@ -140,7 +160,10 @@ start_mirror_keeper() {
 }
 
 say "host up (pid $$)"
-if start_supervisor; then
+if held=$(hold_status); then
+  say "operator halt active; exiting before startup: $held"
+  exit 0
+elif start_supervisor; then
   if (( supervisor_owned )); then
     start_popup_keeper || true
     start_mirror_keeper || true
@@ -150,6 +173,10 @@ if start_supervisor; then
 fi
 
 while true; do
+  if held=$(hold_status); then
+    say "operator halt active; stopping owned children and exiting: $held"
+    exit 0
+  fi
   if ! pid_is_live "$supervisor_pid"; then
     say "game supervisor exited; restarting"
     if start_supervisor && (( supervisor_owned )); then
