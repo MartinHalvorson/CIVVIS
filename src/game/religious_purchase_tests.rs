@@ -12,7 +12,8 @@ fn founded_two_cities() -> (Game, u32) {
             .find(|unit| game.units[unit].kind == "settler")
             .unwrap();
         game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
     }
     game.current = 0;
     let city = game.player_city_ids(0)[0];
