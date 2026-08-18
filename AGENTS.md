@@ -27,11 +27,16 @@ After cloning on every computer, bootstrap the clone once:
 python3 tools/civvis_collab.py bootstrap
 ```
 
-This installs the repository guard and a five-minute Git synchronization
-service. The service force-updates the dedicated, clean `main` management
-worktree to GitHub `origin/main` while leaving task worktrees untouched. The
-task launcher repairs both safeguards on every task. Never bypass the guard
-with `--no-verify`.
+This installs the repository guard and every managed background service —
+the five-minute Git synchronization service, the memory guard, and on a
+Civilization VI seat the ladder keeper. The synchronization service
+force-updates the dedicated, clean `main` management worktree to GitHub
+`origin/main` while leaving task worktrees untouched. The task launcher
+repairs **all** of them on every task, which is what makes a service added
+after a machine was bootstrapped reach that machine at all: `start` used to
+repair only the two safeguards that existed when that line was written, and
+the ladder keeper was consequently absent from a Civilization VI seat.
+Never bypass the guard with `--no-verify`.
 
 Start every task with the repository launcher; it creates the isolated
 worktree, globally unique branch, checkpoint, and draft ownership PR:
