@@ -61,6 +61,34 @@ DEFAULT_MERGES = 200
 #: and leaves which remedy fits to the prose.
 MIN_CONTENDED_PCT = 5
 
+#: Hand-written source, whatever language it is written in.
+#:
+#: ★★★ THIS FILTER HID THE FIFTH-MOST-CONTENDED FILE IN THE REPOSITORY. It read
+#: `(rs|js|py|sh)`, and the file it left out was
+#: `tools/civ6_control/mod/CivvisControlAgent.lua` — 21 of the 200 merges to
+#: 2026-08-18, 10%, ahead of `src/ai.rs`, `src/bin/civvis_orders.rs` and
+#: `src/server.rs`, all three of which the ranking did print. It is also 12,245
+#: lines in one file with a hard 199-local ceiling on its main chunk, which is
+#: to say exactly the shape this ranking exists to surface.
+#:
+#: A tool whose first line is "measured rather than remembered" cannot measure a
+#: language it declines to look at, and nothing about the omission was visible in
+#: its output: an absent file and an uncontended one print identically.
+#:
+#: Generated pages and ledgers stay out on purpose — `docs/EVAL_STATUS.md` and
+#: `docs/eval_manifest.json` are rewritten wholesale by a tool and their
+#: contention is answered by regenerating them, not by splitting them. That is a
+#: judgement about how a file is written, not about its extension, so add a
+#: suffix here when the repository starts hand-writing one.
+#:
+#: ⚠ ONE source of truth, because there were two. The `--check` half had its own
+#: copy of this list inside the regex that reads targets out of the objective's
+#: table, so a target the ranking could not see was also a target the check
+#: could not read — a row naming the Lua file would have been prose that nothing
+#: verified, which is the failure this whole tool exists to prevent.
+SOURCE_EXTENSIONS = ("rs", "js", "py", "sh", "lua", "html")
+SOURCE_SUFFIXES = r"\.(" + "|".join(SOURCE_EXTENSIONS) + r")$"
+
 
 def touched(sha: str) -> set[str]:
     out = subprocess.run(
@@ -108,7 +136,7 @@ def ranking(count: int = DEFAULT_MERGES,
     tally: dict[str, int] = {}
     for sha in shas:
         for path in touched(sha):
-            if not re.search(r"\.(rs|js|py|sh)$", path):
+            if not re.search(SOURCE_SUFFIXES, path):
                 continue
             tally[path] = tally.get(path, 0) + 1
     rows = [(path, hits, round(100 * hits / len(shas)))
@@ -165,7 +193,10 @@ def main(argv: list[str] | None = None) -> int:
     named = sorted({
         path
         for line in objective.splitlines() if line.lstrip().startswith("|")
-        for path in re.findall(r"`([\w.-]+(?:/[\w.-]+)+\.(?:rs|js|py|sh))`", line)
+        for path in re.findall(
+            r"`([\w.-]+(?:/[\w.-]+)+\.(?:" + "|".join(SOURCE_EXTENSIONS) + r"))`",
+            line,
+        )
     })
     if not named:
         print("the conflict-hotspot objective names no target files at all",
