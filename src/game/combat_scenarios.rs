@@ -1661,6 +1661,10 @@ fn a_read_range_passes_units_and_still_stops_at_zone_of_control() {
         g.threat_reach(mover).contains(&corner),
         "two plains steps are two movement points; the corner is in reach"
     );
+    assert!(
+        g.attack_reach(mover).contains(&corner),
+        "after one legal approach step the warrior still has the Movement to attack the corner"
+    );
 
     // The reading survives a unit having nothing left to spend. Outside
     // its own turn every unit on the board is in exactly this state, and
@@ -1694,6 +1698,10 @@ fn a_read_range_passes_units_and_still_stops_at_zone_of_control() {
     assert!(
         !g.threat_reach(mover).contains(&corner),
         "zone of control does not move out of the way, so the reading keeps it"
+    );
+    assert!(
+        !g.attack_reach(mover).contains(&corner),
+        "the same ZOC leaves no Movement for the final melee attack, so the corner is safe"
     );
 }
 
