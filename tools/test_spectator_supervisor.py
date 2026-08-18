@@ -946,6 +946,12 @@ class RecoveryTests(unittest.TestCase):
         )
         instance_guard.start()
         self.addCleanup(instance_guard.stop)
+        # `main()` tests use the real production port number but exercise a
+        # mocked state machine. Keep the new port-ownership preflight hermetic
+        # unless an individual case is explicitly modelling a live incumbent.
+        owner_probe = patch.object(supervisor, "port_owner_state", return_value=None)
+        owner_probe.start()
+        self.addCleanup(owner_probe.stop)
         # The countdown used to be settable, so these cases pinned it back to
         # its floor. It is a constant now and `--cooldown` cannot move it, so
         # there is nothing left to pin.
@@ -1173,6 +1179,59 @@ class RecoveryTests(unittest.TestCase):
             port = listener.getsockname()[1]
             self.assertEqual(supervisor.pid_listening_on(port), os.getpid())
         self.assertIsNone(supervisor.pid_listening_on(port))
+
+    def test_readiness_rejects_another_servers_status_response(self):
+        """A stale listener must never make a failed child look ready.
+
+        This is the failure mode after a supervisor temporarily loses its
+        deployment path: the old game keeps answering HTTP while the newly
+        spawned binary fails its bind.  Accepting that response disconnects
+        the supervisor from the real server and strands every later handoff.
+        """
+        child = SimpleNamespace(pid=123, poll=lambda: None, returncode=None)
+        with (
+            patch.object(supervisor, "pid_listening_on", return_value=456),
+            patch.object(supervisor, "read_status") as status,
+        ):
+            with self.assertRaises(supervisor.ServerPortOwnershipError) as raised:
+                supervisor.wait_for_server(8766, child)
+
+        self.assertEqual(raised.exception.expected_pid, 123)
+        self.assertEqual(raised.exception.owner_pid, 456)
+        status.assert_not_called()
+
+    def test_cold_start_rechecks_port_after_preparation_before_launching(self):
+        """A server that survived a repaired deployment is adopted, not raced."""
+        args = self.supervisor_args(adopt_pid=None)
+        active = {"seed": 3, "turn": 88, "current": 1, "winner": None}
+        with tempfile.TemporaryDirectory() as directory:
+            missing_runtime = Path(directory) / "civvis"
+            checkpoint = Path(directory) / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "RUNTIME_BINARY", missing_runtime),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(
+                    supervisor,
+                    "port_owner_state",
+                    side_effect=[None, (4321, active)],
+                ) as owner,
+                patch.object(supervisor, "prepare_latest") as prepare,
+                patch.object(supervisor, "reexec_updated_supervisor"),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="current"),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(supervisor, "promoted_runtime_id", return_value=None),
+                patch.object(supervisor, "read_json", return_value={}),
+                patch.object(supervisor, "read_status", side_effect=KeyboardInterrupt),
+                patch.object(supervisor, "start_server") as start,
+                patch.object(supervisor, "stop_server"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        prepare.assert_called_once_with(args.build_retry)
+        self.assertEqual(owner.call_count, 2)
+        start.assert_not_called()
 
     def test_cold_start_adopts_the_game_already_serving_the_port(self):
         active = {"seed": 3, "turn": 88, "current": 1, "winner": None}

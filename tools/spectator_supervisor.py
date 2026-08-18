@@ -1486,6 +1486,35 @@ def pid_listening_on(port: int) -> int | None:
     return None
 
 
+def port_owner_state(port: int) -> tuple[int, dict[str, Any] | None] | None:
+    """Return the listener and its status without mistaking it for a child.
+
+    A supervisor can come back after its own deployment path was unavailable.
+    In that gap the old server may keep serving the port even though this
+    process no longer has a ``Popen`` handle for it.  Callers that are about to
+    launch must distinguish that live incumbent from an empty port: its HTTP
+    response is useful for adoption, never evidence that a newly launched
+    child is ready.
+    """
+    owner = pid_listening_on(port)
+    if owner is None:
+        return None
+    return owner, read_status(port)
+
+
+class ServerPortOwnershipError(RuntimeError):
+    """A new child lost the listen race to another local server."""
+
+    def __init__(self, port: int, expected_pid: int, owner_pid: int):
+        self.port = port
+        self.expected_pid = expected_pid
+        self.owner_pid = owner_pid
+        super().__init__(
+            f"server PID {expected_pid} did not own port {port}; "
+            f"PID {owner_pid} already listens there"
+        )
+
+
 def process_alive(process: subprocess.Popen[str] | None, adopted_pid: int | None) -> bool:
     if process is not None:
         return process.poll() is None
@@ -1549,7 +1578,15 @@ def stop_server(process: subprocess.Popen[str] | None, adopted_pid: int | None) 
     if pid is None:
         return
     if process is not None:
-        process.terminate()
+        # A failed bind can make the child exit between the readiness check and
+        # this cleanup.  That is already gone, not a reason for a supervisor
+        # crash that would leave the actual listener unmanaged.
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+        except OSError:
+            return
     elif not signal_pid(pid, force=False):
         return
     deadline = time.monotonic() + 5
@@ -1561,7 +1598,10 @@ def stop_server(process: subprocess.Popen[str] | None, adopted_pid: int | None) 
             return
         time.sleep(0.1)
     if process is not None:
-        process.kill()
+        try:
+            process.kill()
+        except OSError:
+            return
     else:
         signal_pid(pid, force=True)
 
@@ -1573,9 +1613,17 @@ def wait_for_server(
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f"server exited with status {process.returncode}")
-        state = read_status(port)
-        if state is not None:
-            return state
+        owner = pid_listening_on(port)
+        if owner == process.pid:
+            state = read_status(port)
+            if state is not None:
+                return state
+        elif owner is not None:
+            # Do not let an inherited server's response make an unsuccessful
+            # child look ready.  If that happened, later handoff code would
+            # retire the failed child and leave the real port owner behind;
+            # every successor would then panic trying to bind the same port.
+            raise ServerPortOwnershipError(port, process.pid, owner)
         time.sleep(0.25)
     raise RuntimeError("server did not become ready")
 
@@ -1819,15 +1867,18 @@ def main() -> int:
     LEAGUE_RECORD = getattr(args, "league_record", True)
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
+    adopted_state: dict[str, Any] | None = None
     if adopted_pid is None:
         # A service manager can start a supervisor while an earlier game is
         # still serving the port - after a supervisor crash, or on a scheduled
         # recovery sweep. Starting a rival server there only loses the bind and
         # leaves the game on screen unmanaged, so take that game over instead.
-        listener = pid_listening_on(args.port)
-        if listener is not None:
-            if read_status(args.port) is not None:
+        incumbent = port_owner_state(args.port)
+        if incumbent is not None:
+            listener, incumbent_state = incumbent
+            if incumbent_state is not None:
                 adopted_pid = listener
+                adopted_state = incumbent_state
                 log(f"a game already owns port {args.port}; taking it over")
             else:
                 log(f"port {args.port} is held by PID {listener}, which is not a game")
@@ -1862,9 +1913,40 @@ def main() -> int:
     ) -> dict[str, Any]:
         nonlocal world_started_at, refresh_deferred_logged
         nonlocal process, adopted_pid, running_runtime_id
+
+        def retain_incumbent() -> dict[str, Any] | None:
+            """Adopt a live listener rather than competing with it for the port."""
+            nonlocal world_started_at, refresh_deferred_logged
+            nonlocal process, adopted_pid, running_runtime_id
+            incumbent = port_owner_state(args.port)
+            if incumbent is None:
+                return None
+            listener, incumbent_state = incumbent
+            if incumbent_state is None:
+                raise RuntimeError(
+                    f"port {args.port} is held by PID {listener}, which is not a game"
+                )
+            process = None
+            adopted_pid = listener
+            # The listener was not this runtime's child, so preserve the fact
+            # that its binary cannot be proven current.  The normal safe
+            # refresh loop will capture a checkpoint before replacing it.
+            running_runtime_id = None
+            world_started_at = None
+            refresh_deferred_logged = False
+            log(
+                f"a live game still owns port {args.port}; taking it over "
+                "instead of launching a rival"
+            )
+            return incumbent_state
+
         stop_server(process, adopted_pid)
         process = None
         adopted_pid = None
+
+        incumbent_state = retain_incumbent()
+        if incumbent_state is not None:
+            return incumbent_state
 
         marker = checkpoint_marker(save_path)
         resume = save_path if marker is not None else None
@@ -1884,6 +1966,15 @@ def main() -> int:
         running_runtime_id = launch_runtime_id
         try:
             recovered = wait_for_server(args.port, process)
+        except ServerPortOwnershipError:
+            # A process appeared after the preflight.  Retire only our failed
+            # child, then keep the server that actually owns the visible port.
+            stop_server(process, None)
+            process = None
+            incumbent_state = retain_incumbent()
+            if incumbent_state is not None:
+                return incumbent_state
+            raise
         except RuntimeError:
             if resume is None:
                 raise
@@ -1893,7 +1984,15 @@ def main() -> int:
             launch_runtime_id = promoted_runtime_id()
             process = start_server(args.port, settings, open_browser)
             running_runtime_id = launch_runtime_id
-            recovered = wait_for_server(args.port, process)
+            try:
+                recovered = wait_for_server(args.port, process)
+            except ServerPortOwnershipError:
+                stop_server(process, None)
+                process = None
+                incumbent_state = retain_incumbent()
+                if incumbent_state is not None:
+                    return incumbent_state
+                raise
             marker = None
 
         if preserve_pause:
@@ -1921,13 +2020,31 @@ def main() -> int:
             if not RUNTIME_BINARY.exists():
                 prepare_latest(args.build_retry)
                 reexec_updated_supervisor(None)
-            state = launch_recovery(not args.no_open)
-        else:
+            # A server can survive while the deployment path is repaired or a
+            # cold build runs. Check once more immediately before a launch so
+            # that survivor is adopted, not mistaken for the new child.
+            incumbent = port_owner_state(args.port)
+            if incumbent is not None:
+                listener, incumbent_state = incumbent
+                if incumbent_state is not None:
+                    adopted_pid = listener
+                    adopted_state = incumbent_state
+                    log(
+                        f"a game appeared on port {args.port} while preparing; "
+                        "taking it over"
+                    )
+                else:
+                    log(
+                        f"port {args.port} is held by PID {listener}, which is not a game"
+                    )
+            if adopted_pid is None:
+                state = launch_recovery(not args.no_open)
+        if adopted_pid is not None:
             if not process_alive(None, adopted_pid):
                 log(f"cannot adopt PID {adopted_pid}: it is not running")
                 return 2
             log(f"adopted PID {adopted_pid} on port {args.port}")
-            state = read_status(args.port)
+            state = adopted_state if adopted_state is not None else read_status(args.port)
             # An inherited world has an unknown age and an unknown boundary, so
             # a stale runtime under it is refreshed rather than waited on.
             world_started_at = None

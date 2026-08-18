@@ -1010,6 +1010,13 @@ class LiveBuildWaitTests(unittest.TestCase):
             elapsed, collab.LIVE_PRESENCE_GRACE_S + 2.0,
             "nothing listening must cost the grace, not --live-timeout-seconds")
 
+    def test_ship_default_waits_through_a_safe_spectator_handoff(self):
+        """A healthy 250-turn spectator must not be restarted to verify a ship."""
+        args = collab.build_parser().parse_args(["ship"])
+        self.assertEqual(
+            args.live_timeout_seconds, collab.LIVE_BUILD_HANDOFF_TIMEOUT_S)
+        self.assertEqual(args.live_timeout_seconds, 30 * 60.0)
+
     def test_a_spectator_that_is_merely_restarting_is_still_waited_for(self):
         """⚠ `ship` runs exactly when a spectator may be restarting.
 
