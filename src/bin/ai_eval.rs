@@ -55,6 +55,8 @@ const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
     "completes 0/16 at the deployment profile (victory_eval, 96 games, two disjoint streams)",
 )];
 
+use civvis::rng::Rng;
+
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
@@ -437,6 +439,124 @@ fn paired_inference(scores: &[f64]) -> PairedInference {
         elo_high: elo_edge(high),
         anytime,
         verdict,
+    }
+}
+
+/// Trials per candidate edge when measuring what this run could have resolved.
+/// Fixed so two readings of the same run agree. The measurement is a property
+/// of the map count and break rate, not of when it was asked.
+const RESOLUTION_SEED: u64 = 20_260_818;
+const RESOLUTION_TRIALS: usize = 400;
+/// The power a reported edge is quoted at.
+const RESOLUTION_POWER: f64 = 0.80;
+/// Bisection steps over the candidate edge. Twelve takes a [0.5, 1.0] bracket
+/// below 0.0002 of paired-map score, far finer than the Elo it is printed as.
+const RESOLUTION_STEPS: usize = 12;
+
+/// Whether the gate would promote this score vector, without building the
+/// interval.
+///
+/// `paired_inference` inverts the betting test over a grid of candidate means
+/// to report an interval, which costs a thousand times what the verdict does.
+/// The power search below asks only for the verdict, hundreds of thousands of
+/// times, so it asks this instead. The two agree by construction — the
+/// interval's `low > 0.5` is the same statement as the challenger direction
+/// rejecting parity — and
+/// `the_fast_verdict_agrees_with_the_full_one` holds them to it.
+fn gate_would_promote(scores: &[f64]) -> bool {
+    if scores.len() < PROMOTION_MIN_MAPS {
+        return false;
+    }
+    let peaks = betting_peaks(scores, 0.5, PROMOTION_MIN_MAPS);
+    let crossing_log_e = -(ANYTIME_TAIL_ALPHA.ln());
+    let challenger = peaks.challenger_log_e >= crossing_log_e;
+    let incumbent = peaks.incumbent_log_e >= crossing_log_e;
+    challenger && !incumbent
+}
+
+/// ★★★★★ THE SMALLEST TRUE EDGE THIS RUN COULD HAVE RESOLVED.
+///
+/// `INCONCLUSIVE` is two completely different statements wearing one word:
+/// "the arms are close" and "this run was too short to tell". Only the map
+/// count and the break rate separate them, and a reader has neither to hand.
+/// Left unsaid, the second reads as the first, and a real effect gets filed as
+/// a null — which is exactly what this repository's log shows happening to
+/// point estimates of +44 to +100 Elo-equivalent.
+///
+/// So the run says it. Simulate the *whole* gate — both conjuncts, the
+/// `PROMOTION_MIN_MAPS` floor, the nonstationarity veto — on synthetic runs of
+/// this length whose maps break at the rate this one did, and bisect for the
+/// smallest edge it would have promoted `RESOLUTION_POWER` of the time.
+///
+/// ⚠ The break rate is taken from the observed run, which is the only estimate
+/// available and is itself noisy on a short run. This is a scale, not a
+/// certificate: it is meant to stop `INCONCLUSIVE` being read as `no effect`,
+/// not to price the next experiment to the Elo.
+fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
+    if maps < PROMOTION_MIN_MAPS || !(0.0..=1.0).contains(&break_rate) || break_rate <= 0.0 {
+        return None;
+    }
+    let mut rng = Rng::new(seed);
+    let power_at = |rng: &mut Rng, score: f64| -> f64 {
+        // A map breaks with probability `break_rate`; when it does the
+        // challenger takes it with whatever probability puts the mean at
+        // `score`. An unbroken map contributes exactly 0.5, as it does live.
+        let win_given_break = 0.5 + (score - 0.5) / break_rate;
+        if !(0.0..=1.0).contains(&win_given_break) {
+            return if score > 0.5 { 1.0 } else { 0.0 };
+        }
+        let mut promoted = 0usize;
+        for _ in 0..RESOLUTION_TRIALS {
+            let scores: Vec<f64> = (0..maps)
+                .map(|_| {
+                    if rng.f64() < break_rate {
+                        f64::from(rng.f64() < win_given_break)
+                    } else {
+                        0.5
+                    }
+                })
+                .collect();
+            promoted += usize::from(gate_would_promote(&scores));
+        }
+        promoted as f64 / RESOLUTION_TRIALS as f64
+    };
+    // The gate cannot promote a score the break rate cannot reach.
+    let mut low = 0.5;
+    let mut high = 0.5 + 0.5 * break_rate;
+    if power_at(&mut rng, high) < RESOLUTION_POWER {
+        return None;
+    }
+    for _ in 0..RESOLUTION_STEPS {
+        let middle = 0.5 * (low + high);
+        if power_at(&mut rng, middle) >= RESOLUTION_POWER {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some(elo_edge(high))
+}
+
+/// One line telling the reader which of the two `INCONCLUSIVE`s this is.
+fn resolution_note(maps: usize, resolved: usize, seed: u64) -> String {
+    if maps == 0 {
+        return String::new();
+    }
+    let break_rate = resolved as f64 / maps as f64;
+    match resolvable_edge(maps, break_rate, seed) {
+        Some(edge) => format!(
+            "resolution: {maps} maps, {:.0}% of them breaking — this gate promotes a true edge of \
+             about {edge:+.0} Elo-equivalent {:.0}% of the time, and anything smaller reads as \
+             INCONCLUSIVE here whether or not it is real",
+            100.0 * break_rate,
+            100.0 * RESOLUTION_POWER,
+        ),
+        None => format!(
+            "resolution: {maps} maps, {:.0}% of them breaking — too few for this gate to promote \
+             any edge {:.0}% of the time; INCONCLUSIVE here carries no evidence either way",
+            100.0 * break_rate,
+            100.0 * RESOLUTION_POWER,
+        ),
     }
 }
 
@@ -2198,6 +2318,15 @@ here and any null is uninformative"
             inference.maps,
         ),
     }
+    // What the verdict above could and could not have seen. Printed for every
+    // verdict, not only the inconclusive one: a PASS earned on a run that
+    // could barely resolve the edge it reports is also worth knowing about.
+    if inference.maps > 0 {
+        println!(
+            "{}",
+            resolution_note(inference.maps, resolved_maps(&directions), RESOLUTION_SEED)
+        );
+    }
     // Separate the decision from the estimate, in the tool rather than in the
     // discipline. The gate above decides; this line says what the number under
     // it is worth, and it is deliberately printed even when the gate did not
@@ -3136,6 +3265,73 @@ mod tests {
     /// slightly under nominal. So the conservatism is real and there is no
     /// drop-in replacement that is both narrower and calibrated. Recorded
     /// as an experiment rather than shipped as a statistic.
+    #[test]
+    fn the_fast_verdict_agrees_with_the_full_one() {
+        let mut rng = Rng::new(4_242);
+        for _ in 0..200 {
+            let maps = PROMOTION_MIN_MAPS + rng.below(40);
+            let scores: Vec<f64> = (0..maps)
+                .map(|_| match rng.below(10) {
+                    0..=2 => 1.0,
+                    3 => 0.0,
+                    _ => 0.5,
+                })
+                .collect();
+            assert_eq!(
+                gate_would_promote(&scores),
+                paired_inference(&scores).verdict == PromotionVerdict::Promote,
+                "fast and full verdicts disagree on {scores:?}"
+            );
+        }
+    }
+
+    /// The number this prints is the whole point, so pin its shape: more maps
+    /// must resolve a smaller edge, and the counts this repository actually
+    /// runs at must land either side of the effects it actually produces.
+    #[test]
+    fn the_reported_resolution_tightens_with_map_count() {
+        let break_rate = 0.28;
+        let forty = resolvable_edge(40, break_rate, RESOLUTION_SEED);
+        let two_hundred = resolvable_edge(200, break_rate, RESOLUTION_SEED);
+        let (forty, two_hundred) = (
+            forty.expect("40 maps resolves something"),
+            two_hundred.expect("200 maps resolves something"),
+        );
+        println!("40 maps: {forty:+.0} Elo   200 maps: {two_hundred:+.0} Elo");
+        assert!(
+            two_hundred < forty,
+            "more maps must resolve a smaller edge: {two_hundred:+.0} against {forty:+.0}"
+        );
+        // The finding this exists to make visible: a 40-map run cannot see the
+        // size of edge this repository's changes actually produce, so an
+        // INCONCLUSIVE there is not evidence of absence.
+        assert!(
+            forty > 60.0,
+            "40 maps was expected to be unable to resolve a small edge, got {forty:+.0}"
+        );
+        assert!(
+            two_hundred < forty * 0.8,
+            "200 maps should be materially better than 40: {two_hundred:+.0} against {forty:+.0}"
+        );
+    }
+
+    #[test]
+    fn a_run_under_the_map_floor_reports_no_resolution() {
+        assert_eq!(
+            resolvable_edge(PROMOTION_MIN_MAPS - 1, 0.3, RESOLUTION_SEED),
+            None
+        );
+        assert!(resolution_note(10, 3, RESOLUTION_SEED).contains("too few"));
+    }
+
+    /// A run where nothing broke has no break rate to reason from, and must
+    /// say so rather than quoting a number derived from a division by zero.
+    #[test]
+    fn a_run_with_no_broken_maps_reports_no_resolution() {
+        let note = resolution_note(40, 0, RESOLUTION_SEED);
+        assert!(note.contains("too few"), "{note}");
+    }
+
     #[test]
     fn the_gate_resolves_the_edges_it_used_to_call_inconclusive() {
         // The three paired-map score vectors this repository has actually
