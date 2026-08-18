@@ -1439,6 +1439,33 @@ class VictoryLaneListTests(unittest.TestCase):
         self.assertIsNotNone(match, "civvis_orders.rs no longer names its lanes")
         self.assertEqual(match.group(1).split("|"), civ6_play.VICTORY_LANES)
 
+    def test_every_direct_or_high_level_default_chooses_science(self):
+        """A bare `civvis_orders` launch must not revive Domination while
+        every high-level launcher forwards Science. The direct fallback is
+        reachable from manual and recovery paths, so it is part of the live
+        controller contract rather than merely a CLI convenience."""
+        binary = self._rust_source("src/bin/civvis_orders.rs")
+        match = re.search(r'const DEFAULT_VICTORY: &str = "([^"]+)";', binary)
+        self.assertIsNotNone(match, "civvis_orders.rs has no named default")
+        self.assertEqual(match.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
+        self.assertEqual(match.group(1), "science")
+        self.assertIn(
+            "unwrap_or_else(|| DEFAULT_VICTORY.to_string())",
+            binary,
+            "the direct invocation must use its named default rather than a detached literal",
+        )
+
+        here = Path(__file__).resolve().parent
+        for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
+            with self.subTest(launcher=launcher):
+                source = (here / launcher).read_text(encoding="utf-8")
+                launcher_default = re.search(
+                    r'^DEFAULT_VICTORY = "([^"]+)"$', source, re.MULTILINE)
+                self.assertIsNotNone(
+                    launcher_default, f"{launcher} has no named default")
+                self.assertEqual(
+                    launcher_default.group(1), civ6_play.DEFAULT_CIVVIS_VICTORY)
+
     def test_the_launcher_list_matches_the_engine_enum(self):
         """Every `VictoryTarget` variant, spelled the way the enum prints it."""
         source = self._rust_source("src/ai/advanced.rs")

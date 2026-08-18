@@ -54,6 +54,11 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 /// that mirror this list in Python.
 const VICTORY_LANES: &str = "civvis|science|culture|religious|diplomatic|domination|score";
 
+/// Direct invocations without `--victory` must agree with the high-level
+/// launchers. They choose Science explicitly because an unrevealed-rival,
+/// 250-turn run cannot complete the historical Domination fallback.
+const DEFAULT_VICTORY: &str = "science";
+
 /// Build the agent for a `--victory` lane, or `None` if the name is not one.
 ///
 /// ⚠ THE SIX NAMES ARE NOT A SEPARATE LIST. They come from
@@ -3178,7 +3183,7 @@ fn main() {
     let frontier: u32 = arg_text(&args, "--frontier")
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
-    let victory = arg_text(&args, "--victory").unwrap_or_else(|| "domination".to_string());
+    let victory = arg_text(&args, "--victory").unwrap_or_else(|| DEFAULT_VICTORY.to_string());
     let rated = resolve_strategy(&args);
     let mut ai = match victory_lane(&victory) {
         Some(lane) => lane,
@@ -4173,6 +4178,18 @@ mod tests {
         assert_eq!(
             super::VICTORY_LANES.split('|').collect::<Vec<_>>(),
             expected
+        );
+    }
+
+    #[test]
+    fn direct_default_uses_the_safe_launcher_lane() {
+        assert_eq!(super::DEFAULT_VICTORY, "science");
+        assert!(super::VICTORY_LANES
+            .split('|')
+            .any(|lane| lane == super::DEFAULT_VICTORY));
+        assert_eq!(
+            super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
+            Some(civvis::ai::VictoryTarget::Science)
         );
     }
 
