@@ -1399,4 +1399,3 @@ earlier for the same class of change (a pillaged improvement granting Housing).
 
 ⚠ Rows before and after v13 are not comparable in any game where a religion was
 founded, which on the evaluator's own board is about three quarters of them.
-
