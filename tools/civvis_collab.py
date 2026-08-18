@@ -1189,6 +1189,46 @@ def finish_ship(
     return 0
 
 
+def merge_pr_or_observe_auto_merge(
+    repo: Path, *, number: int, local_head: str
+) -> Optional[str]:
+    """Squash-merge a green PR, accepting auto-merge that wins the same race.
+
+    Auto-merge is deliberately armed before the required checks finish.  Once
+    they do, GitHub can land the PR between our successful-check poll and this
+    explicit merge request.  A 405 in that interval is either a successful
+    shipment or a brief propagation gap; re-read the PR, then let the caller
+    poll again rather than reporting a false failure.
+    """
+    merge_result = gh_api_write(
+        "PUT",
+        f"repos/{REPOSITORY}/pulls/{number}/merge",
+        {"merge_method": "squash", "sha": local_head},
+        check=False,
+    )
+    if isinstance(merge_result, dict) and merge_result.get("merged"):
+        merged_sha = str(merge_result.get("sha") or "")
+        if merged_sha:
+            return merged_sha
+
+    # The API's non-success response is ambiguous: an actual rejection and an
+    # auto-merge that completed a moment earlier both return here.  The PR is
+    # authoritative for which happened.
+    merged_sha = pr_merge_sha(current_pr(repo))
+    if merged_sha:
+        return merged_sha
+
+    if merge_result is None:
+        return None
+
+    message = (
+        str(merge_result.get("message") or "unknown reason")
+        if isinstance(merge_result, dict)
+        else "the merge request did not complete"
+    )
+    raise CommandError("GitHub refused the green squash merge: " + message)
+
+
 def ship_task(args: argparse.Namespace) -> int:
     """Push a finished task, wait for green CI, squash-merge, and verify live."""
     root = repo_root()
@@ -1436,17 +1476,13 @@ def ship_task(args: argparse.Namespace) -> int:
                 time.sleep(max(0.1, args.poll_seconds))
                 continue
             if state == "success":
-                merge_result = gh_api_write(
-                    "PUT",
-                    f"repos/{REPOSITORY}/pulls/{pr['number']}/merge",
-                    {"merge_method": "squash", "sha": local_head},
+                merged_sha = merge_pr_or_observe_auto_merge(
+                    root, number=int(pr["number"]), local_head=local_head
                 )
-                if not merge_result.get("merged"):
-                    raise CommandError(
-                        "GitHub refused the green squash merge: "
-                        + str(merge_result.get("message") or "unknown reason")
-                    )
-                merged_sha = str(merge_result.get("sha") or "")
+                if not merged_sha:
+                    print("GitHub is still publishing the auto-merge result; rechecking")
+                    time.sleep(max(0.1, args.poll_seconds))
+                    continue
                 return finish_ship(
                     root,
                     number=int(pr["number"]),

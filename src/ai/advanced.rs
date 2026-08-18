@@ -244,6 +244,17 @@ const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
 /// held stood four to six; the distance is the whole signal, and it does not
 /// depend on how big the capital is.
 const FRONTIER_LOYALTY_RADIUS: i32 = 7;
+
+/// How close to a met major's border — one whose owning city this seat has
+/// never seen — a settle site is refused before the walk. Their city stands
+/// somewhere within `CIV6_CITY_OWNERSHIP_REACH` of the border plot, so a site
+/// three tiles from the border is four to eight from a city the loyalty
+/// forecast cannot count. Run civvis-20260818T155552Z: Setia, founded t55 two
+/// tiles from Vietnam's border with none of Vietnam's four cities seen, read
+/// −13.3 Loyalty a turn on its first export and was lost at t63; the forecast
+/// had passed the site because its board held no Vietnamese city at all. See
+/// `frontier_loyalty` and `Game::unseen_major_borders`.
+const UNSEEN_MAJOR_BORDER_RADIUS: i32 = 3;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
@@ -2850,6 +2861,20 @@ pub struct AdvancedAi {
     /// halo, or on fully explored ground, is judged by the forecast as
     /// before. Firaxis-only: it prices the live mirror's fog. Off for
     /// ordinary and frozen controllers.
+    ///
+    /// ★★★★ AND THE BORDER WITH NO CITY BEHIND IT (2026-08-18). Run
+    /// civvis-20260818T155552Z: Setia, founded t55 INSIDE the halo (four
+    /// tiles from Cumae) but two tiles from Vietnam's border — four
+    /// Vietnamese cities, none of them on the board — read −13.3 Loyalty a
+    /// turn on its first export and was lost at t63. The forecast sums the
+    /// cities it can see, so it saw nothing to press the site; the mirror,
+    /// which cannot attribute those plots to a city, had recorded them only
+    /// as ground we cannot found on. Now it also names them
+    /// (`Game::unseen_major_borders`), and under this flag a site within
+    /// `UNSEEN_MAJOR_BORDER_RADIUS` of one is refused before the walk and on
+    /// arrival, journaled as "beside a rival's border whose city the seat has
+    /// never seen". Once that city comes into view the ordinary forecast
+    /// judges the site again.
     pub frontier_loyalty: bool,
     /// A settler target dropped for danger is not re-picked the moment the
     /// danger flickers off.
@@ -20210,6 +20235,18 @@ impl AdvancedAi {
                     .to_string(),
             );
         }
+        // ★★★★ A BORDER WITH NO CITY BEHIND IT IS A CITY IN THE FOG. The
+        // forecast below sums the cities on the board; a met major's border
+        // plot the mirror could attribute to no city of theirs means one
+        // stands within a few tiles unseen, and it will press the new city
+        // from turn one. See `UNSEEN_MAJOR_BORDER_RADIUS`.
+        if self.frontier_loyalty && Self::beside_unseen_major_border(g, site) {
+            return Some(
+                "it lies beside a rival's border whose city the seat has never seen \
+                 — that city presses the site from the fog"
+                    .to_string(),
+            );
+        }
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
         (forecast.city_loyalty_per_turn(&forecast.cities[&city])
@@ -20220,6 +20257,16 @@ impl AdvancedAi {
                     -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
                 )
             })
+    }
+
+    /// Whether a met major's border plot whose owning city this seat has never
+    /// seen lies within `UNSEEN_MAJOR_BORDER_RADIUS` of `site`. Empty on any
+    /// board that is not a live mirror. See `Game::unseen_major_borders`.
+    pub(crate) fn beside_unseen_major_border(g: &Game, site: Pos) -> bool {
+        !g.unseen_major_borders.is_empty()
+            && g.wdisk(site, UNSEEN_MAJOR_BORDER_RADIUS)
+                .into_iter()
+                .any(|pos| g.unseen_major_borders.contains(&pos))
     }
 
     /// Whether `site` is beyond the empire's Loyalty reach on fogged ground:

@@ -1143,6 +1143,60 @@ Added the fast shipping path.
             collab.ship_pr_errors(finished, finished["headRefName"]), []
         )
 
+    def test_explicit_merge_race_accepts_the_auto_merged_pr(self):
+        """Auto-merge can land after the successful-check poll but before PUT."""
+        merged = {
+            "state": "MERGED",
+            "mergeCommit": {"oid": "squash123"},
+        }
+        with (
+            patch.object(collab, "gh_api_write", return_value=None) as write,
+            patch.object(collab, "current_pr", return_value=merged),
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertEqual(result, "squash123")
+        write.assert_called_once_with(
+            "PUT", f"repos/{collab.REPOSITORY}/pulls/9/merge",
+            {"merge_method": "squash", "sha": "head123"}, check=False,
+        )
+
+    def test_in_progress_auto_merge_is_rechecked_not_called_a_failure(self):
+        still_open = {"state": "OPEN", "mergeCommit": {"oid": "not-yet"}}
+        with (
+            patch.object(collab, "gh_api_write", return_value=None),
+            patch.object(collab, "current_pr", return_value=still_open),
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertIsNone(result)
+
+    def test_explicit_merge_uses_its_returned_squash_commit(self):
+        with (
+            patch.object(collab, "gh_api_write",
+                         return_value={"merged": True, "sha": "squash123"}),
+            patch.object(collab, "current_pr") as current,
+        ):
+            result = collab.merge_pr_or_observe_auto_merge(
+                Path.cwd(), number=9, local_head="head123"
+            )
+        self.assertEqual(result, "squash123")
+        current.assert_not_called()
+
+    def test_real_merge_rejection_still_names_the_reason(self):
+        open_pr = {"state": "OPEN", "mergeCommit": {"oid": "not-yet"}}
+        with (
+            patch.object(collab, "gh_api_write",
+                         return_value={"merged": False, "message": "not mergeable"}),
+            patch.object(collab, "current_pr", return_value=open_pr),
+        ):
+            with self.assertRaisesRegex(collab.CommandError, "not mergeable"):
+                collab.merge_pr_or_observe_auto_merge(
+                    Path.cwd(), number=9, local_head="head123"
+                )
+
     def test_required_checks_use_the_newest_run_for_each_name(self):
         rows = [
             {
