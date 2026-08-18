@@ -8,7 +8,9 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ import ladder_watchdog  # noqa: E402
 
 
 class FakeRunner:
-    """Records the argv the keeper would run, e.g. `open -a Terminal ...`."""
+    """Records the argv the keeper would run, e.g. `open -g -j -a Terminal`."""
 
     def __init__(self, returncode: int = 0):
         self.calls: list[list[str]] = []
@@ -78,13 +80,17 @@ class KeeperTestCase(unittest.TestCase):
             mock.patch.object(ladder_watchdog, "stop_supervisor",
                               lambda pid, **kw: (self.stopped.append(pid),
                                                  (True, f"SIGTERM to {pid}"))[1]),
+            mock.patch.object(ladder_watchdog, "interactive_host_pid",
+                              lambda lock=None: None),
         ):
             patch.start()
             self.addCleanup(patch.stop)
 
     @property
     def starts(self):
-        return [c for c in self.runner.calls if c[:3] == ["open", "-a", "Terminal"]]
+        return [c for c in self.runner.calls
+                if c and c[0] == "open" and "-a" in c
+                and c[c.index("-a") + 1:c.index("-a") + 2] == ["Terminal"]]
 
     def live_lock(self, tmp: Path) -> Path:
         """A lock directory naming a process that really is alive: this one."""
@@ -119,7 +125,25 @@ class WhenNoLoopIsRunning(KeeperTestCase):
                 "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
             self.assertEqual(code, 1)
             self.assertEqual(len(self.starts), 1, self.runner.calls)
+            self.assertIn("-g", self.starts[0])
+            self.assertIn("-j", self.starts[0])
             self.assertEqual(self.starts[0][-1], "/x/supervisor.sh")
+
+    def test_an_existing_interactive_host_is_not_given_a_second_terminal(self):
+        with TemporaryDirectory() as raw, \
+             mock.patch.object(ladder_watchdog, "interactive_host_pid",
+                               lambda lock=None: os.getpid()):
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [14.3])
+            log = tmp / "log"
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--host-lock", str(tmp / "host.lock"),
+                "--state", str(tmp / "state.json"), "--log", str(log)])
+            self.assertEqual(code, 1)
+            self.assertEqual(self.starts, [])
+            self.assertIn("not opening a second Terminal", log.read_text())
 
     def test_a_lock_from_a_dead_supervisor_is_not_a_supervisor(self):
         with TemporaryDirectory() as raw:
@@ -408,6 +432,100 @@ class StalenessHasOneDefinition(unittest.TestCase):
                                      stale_hours=3.0,
                                      snapshot=tmp / "absent.json")
             self.assertEqual(code, 1)
+
+
+@unittest.skipUnless(Path("/bin/zsh").exists(),
+                     "the interactive host is a zsh script")
+class InteractiveHostOwnership(unittest.TestCase):
+    """A recovery host must adopt a live loop instead of competing with it."""
+
+    HOST = Path(__file__).resolve().parent / "ops" / "civvis-interactive-host.sh"
+
+    def test_the_terminal_launcher_routes_normal_recovery_through_the_host(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-ladder-terminal-launcher.sh").read_text()
+        self.assertIn('civvis-interactive-host.sh', source)
+        self.assertIn('CIVVIS_LADDER_HOST', source)
+
+    def test_an_adopted_supervisor_survives_the_host(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            host_lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor_lock.mkdir()
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text("#!/bin/zsh\nwhile true; do sleep 1; done\n")
+            supervisor.chmod(0o755)
+            external = subprocess.Popen(["/bin/zsh", str(supervisor)])
+            host = None
+            try:
+                (supervisor_lock / "pid").write_text(f"{external.pid}\n")
+                helper_marks = []
+                helpers = []
+                for name in ("popup-keeper.sh", "mirror-keeper.sh"):
+                    marker = tmp / f"{name}.started"
+                    helper = tmp / name
+                    helper.write_text(
+                        "#!/bin/zsh\n"
+                        f"print -r -- started > {marker}\n"
+                        "while true; do sleep 1; done\n")
+                    helper.chmod(0o755)
+                    helper_marks.append(marker)
+                    helpers.append(helper)
+                env = {
+                    **os.environ,
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_POPUP_KEEPER": str(helpers[0]),
+                    "CIVVIS_MIRROR_KEEPER": str(helpers[1]),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(host_lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                    "CIVVIS_INTERACTIVE_HOST_POLL_S": "1",
+                }
+                host = subprocess.Popen(["/bin/zsh", str(self.HOST)], env=env)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if log.exists() and "adopted already-live game supervisor" in log.read_text():
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(log.exists(), "host did not write a health record")
+                self.assertIn("adopted already-live game supervisor", log.read_text())
+                self.assertFalse(any(mark.exists() for mark in helper_marks),
+                                 "an adopted batch must not get duplicate helpers")
+                host.terminate()
+                host.wait(timeout=5)
+                self.assertIsNone(external.poll(),
+                                  "the host must not terminate an adopted supervisor")
+            finally:
+                if host is not None and host.poll() is None:
+                    host.terminate()
+                    host.wait(timeout=5)
+                if external.poll() is None:
+                    external.terminate()
+                    external.wait(timeout=5)
+
+
+class OvernightWatchdogHasNoImplicitDeadline(unittest.TestCase):
+    def test_the_default_watchdog_is_unbounded_but_accepts_an_operator_deadline(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-watchdog.sh").read_text()
+        self.assertIn(
+            'AUDIT=${CIVVIS_OVERNIGHT_AUDIT:-${SELF_DIR}/civvis-overnight-audit.sh}',
+            source)
+        self.assertIn('STOP_AT=${CIVVIS_OVERNIGHT_STOP_AT:-}', source)
+        self.assertIn('if [[ -n "$STOP_AT" ]]', source)
+        self.assertIn('if [[ -n "$stop_epoch" ]] && (( now >= stop_epoch ))', source)
+
+
+class OvernightAuditRecovery(unittest.TestCase):
+    def test_a_live_legacy_supervisor_is_adopted_without_another_terminal(self):
+        source = (Path(__file__).resolve().parent / "ops" /
+                  "civvis-overnight-audit.sh").read_text()
+        self.assertIn('supervisor_pid=$(live_supervisor_pid || true)', source)
+        self.assertIn('host_state=supervisor-only', source)
+        self.assertIn('/usr/bin/open -g -j -a Terminal "$HOST_LAUNCHER"', source)
+        self.assertNotIn('tell application "Terminal" to do script', source)
 
 
 if __name__ == "__main__":
