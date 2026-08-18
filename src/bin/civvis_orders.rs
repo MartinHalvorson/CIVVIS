@@ -1231,6 +1231,37 @@ const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
 const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
 
+/// Whether the plan in force means to cast its favor: a Diplomacy strategy or
+/// an assigned diplomatic lane. `plan` is the plan report's
+/// `(strategy, victory_target)`; no plan at all holds too.
+fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
+    match plan {
+        None => true,
+        Some((strategy, victory_target)) => {
+            strategy == "diplomacy" || victory_target == Some("diplomatic")
+        }
+    }
+}
+
+/// Drop the planner's own favor sales when the plan means to cast that favor.
+/// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
+/// plan-blind; on a Diplomacy plan those ten points are two votes at the next
+/// session. Returns how many orders were held back.
+fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
+    if !plan_keeps_favor(plan) {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        !(order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR=")))
+    });
+    before - orders.len()
+}
+
 /// Why no favor sale order was appended this turn, for the note; `None` when
 /// one was. `plan` is the plan report's `(strategy, victory_target)`.
 fn append_favor_sale_order(
@@ -1238,10 +1269,10 @@ fn append_favor_sale_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
-    let Some((strategy, victory_target)) = plan else {
+    if plan.is_none() {
         return Some("favor_hold:no_plan");
-    };
-    if strategy == "diplomacy" || victory_target == Some("diplomatic") {
+    }
+    if plan_keeps_favor(plan) {
         return Some("favor_hold:diplomacy_plan");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
@@ -2464,12 +2495,14 @@ fn decide(
     }
 
     let plan = ai.plan_report();
-    match append_favor_sale_order(
-        plan.as_ref()
-            .map(|report| (report.strategy, report.victory_target)),
-        state,
-        &mut orders,
-    ) {
+    let plan_facts = plan
+        .as_ref()
+        .map(|report| (report.strategy, report.victory_target));
+    let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
+    if held_favor_sales > 0 {
+        note_bits.push(format!("favor_hold:planner_sales_dropped={held_favor_sales}"));
+    }
+    match append_favor_sale_order(plan_facts, state, &mut orders) {
         None => note_bits.push("favor_sale=1".to_string()),
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
@@ -7438,6 +7471,32 @@ mod tests {
             Some("favor_hold:planner_sale")
         );
         assert_eq!(planned.len(), 1);
+
+        // The planner's own ten-favor block is held on a Diplomacy plan and
+        // passes on any other; a resource sale is never touched.
+        let mut planner = vec![
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("FAVOR=10".to_string()),
+                pos: Some((10, 0)),
+            },
+            Order {
+                kind: "sell",
+                subject: Some(2),
+                verb: Some("RESOURCE_DYES=1".to_string()),
+                pos: Some((56, 0)),
+            },
+        ];
+        assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
+        assert_eq!(planner.len(), 2);
+        assert_eq!(
+            hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
+            1
+        );
+        assert_eq!(planner.len(), 1);
+        assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
+        assert_eq!(hold_planner_favor_sales(None, &mut planner), 0);
 
         // Nobody eligible: every met rival at war or already near the win.
         let mut nobody = state.clone();

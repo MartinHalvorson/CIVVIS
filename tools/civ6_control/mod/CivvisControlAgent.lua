@@ -8933,7 +8933,10 @@ local function applyOrder(player, pid, row, turn)
 			local gave, text = {}, {};
 			for _, want in ipairs(wanted) do
 				if want.name == "FAVOR" then
-					local item = deal:AddItemOfType(DealItemTypes.FAVOR, pid);
+					-- Favor is a Gathering Storm item; a ruleset without it has
+					-- no `DealItemTypes.FAVOR` and simply nothing to sell here.
+					local item = DealItemTypes.FAVOR ~= nil
+						and deal:AddItemOfType(DealItemTypes.FAVOR, pid) or nil;
 					if item ~= nil then
 						item:SetDuration(0);
 						local cap = try(function() return item:GetMaxAmount(); end, nil);
@@ -8962,7 +8965,8 @@ local function applyOrder(player, pid, row, turn)
 						local consumption = try(function()
 							return GameInfo.Resource_Consumption[want.name];
 						end, nil);
-						local lump = consumption ~= nil and consumption.Accumulate == true;
+						local lump = consumption ~= nil
+							and (consumption.Accumulate == true or consumption.Accumulate == 1);
 						local item = deal:AddItemOfType(DealItemTypes.RESOURCES, pid);
 						if item ~= nil then
 							item:SetValueType(forType);
@@ -8985,6 +8989,12 @@ local function applyOrder(player, pid, row, turn)
 			if next(gave) == nil then return false, "nothing_tradeable", gave, ""; end
 			deal:Validate();
 			if not deal:IsValid() then return false, "invalid_deal", gave, table.concat(text, ","); end
+			-- Registered BEFORE the ask goes out: should the engine answer
+			-- synchronously, from inside this very call, the handler must
+			-- already know what was offered and at what floor.
+			trade.pending[subject] = {
+				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
+			};
 			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
 			return true, "asked", gave, table.concat(text, ",");
 		end);
@@ -8992,9 +9002,12 @@ local function applyOrder(player, pid, row, turn)
 			submitted, reason, gave, gaveText = false, "throw", {}, "";
 		end
 		if submitted then
-			trade.pending[subject] = { turn = turn, floor = floor, gave = gave, verb = gaveText };
 			trade.asked[subject] = turn;
-		elseif reason == "nothing_tradeable" or reason == "invalid_deal" then
+		elseif trade.pending[subject] ~= nil and trade.pending[subject].turn == turn then
+			-- The ask itself threw after registering; nothing is in flight.
+			trade.pending[subject] = nil;
+		end
+		if not submitted and (reason == "nothing_tradeable" or reason == "invalid_deal") then
 			-- The engine has nothing to sell here right now; do not re-ask
 			-- every turn for the same answer.
 			trade.asked[subject] = turn;

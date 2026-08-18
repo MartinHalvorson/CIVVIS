@@ -194,6 +194,11 @@ local function fixture(opts)
 			state.sends = state.sends or {}
 			state.sends[#state.sends + 1] = { action, pid, subject }
 			call("send_" .. tostring(action))
+			-- An engine that answers from inside the ask, before it returns.
+			if action == DealProposalAction.EQUALIZE and opts.answerInline ~= nil then
+				opts.incoming = opts.answerInline
+				onIncoming(subject, pid, DealProposalAction.ADJUSTED)
+			end
 		end,
 		CopyIncomingToOutgoingWorkingDeal = function(pid, subject)
 			state.copied = { pid, subject }
@@ -417,6 +422,20 @@ ok, why = sellOrder(7, 3, dropPlayer, 63, "RESOURCE_DYES=1", 30)
 check("an unanswered ask expires", ok, true)
 check("the expiry is in the ledger", eventField(lastEvent("deal_expired"), "asked_turn"), "60")
 check("the new ask goes out", drop.sends[1][1], "equalize")
+
+-- ─── an engine that answers inside the ask ──────────────────────────────────
+-- Whether the answer comes back on a later event batch or synchronously from
+-- inside `SendWorkingDeal`, the ask is already registered and the close lands.
+reset()
+local inline, inlinePlayer = fixture({ possible = { RESOURCE_DYES = 2 }, answerInline = {
+	{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 12 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 120 },
+} })
+ok, why = sellOrder(7, 3, inlinePlayer, 80, "RESOURCE_DYES=1", 60)
+check("an inline answer still reports the ask", why, "sell_asked")
+check("an inline answer is accepted", inline.sends[2] and inline.sends[2][1], "accepted")
+check("an inline answer settles the ask", trade.pending[3], nil)
+check("an inline close is in the ledger", eventField(lastEvent("deal_closed"), "gold"), "120")
 
 -- ─── item shapes ────────────────────────────────────────────────────────────
 -- A stockpiled strategic is a lump, clipped to what the engine allows.
