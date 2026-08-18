@@ -50,6 +50,15 @@ from civ6_control import macos_input  # noqa: E402
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
 
+def pixel_values(image):
+    """Return pixels without using Pillow's deprecated ``getdata`` API."""
+    flattened = getattr(image, "get_flattened_data", None)
+    if flattened is not None:
+        return flattened()
+    # Pillow before get_flattened_data still needs to run the popup backstop.
+    return image.getdata()
+
+
 def _image_library():
     """Pillow, demanded at the moment it is used rather than at import.
 
@@ -247,7 +256,7 @@ def congress_return_button(rgb, grey):
     # tooltip or a normal HUD button. It always ends in one teal button at the
     # bottom; require both before touching it.
     panel = grey.crop((int(w * 0.12), int(h * 0.12), int(w * 0.95), int(h * 0.90)))
-    panel_dark = sum(value < DARK_LEVEL for value in panel.getdata())
+    panel_dark = sum(value < DARK_LEVEL for value in pixel_values(panel))
     if panel_dark < 0.25 * (panel.size[0] * panel.size[1]):
         return None
     for cluster in green_clusters(rgb):
@@ -289,7 +298,7 @@ def advisor_buttons(rgb, grey):
         top = max(0, int(cluster["cy"] - h * 0.18))
         bottom = max(top + 1, int(cluster["cy"] - h * 0.02))
         paper = grey.crop((left, top, right, bottom))
-        bright = sum(1 for value in paper.getdata() if value > 180)
+        bright = sum(1 for value in pixel_values(paper) if value > 180)
         # A nearby bright panel can leak into a wide crop, as the World Tracker
         # did beside the live World Congress advisor card. Sample immediately
         # around the control and require enough paper that it is inside the card.
@@ -306,7 +315,7 @@ def advisor_buttons(rgb, grey):
         core_left = max(0, int(cluster["cx"] - w * 0.025))
         core_right = min(w, int(cluster["cx"] + w * 0.025))
         core = grey.crop((core_left, top, core_right, bottom))
-        core_bright = sum(1 for value in core.getdata() if value > 180)
+        core_bright = sum(1 for value in pixel_values(core) if value > 180)
         if core_bright < 0.30 * (core.size[0] * core.size[1]):
             continue
         targets.append((cluster["cx"], cluster["cy"]))
@@ -467,7 +476,7 @@ def notice_button(rgb, gray):
             int(w * 0.44), int(h * 0.43),
             int(w * 0.56), int(h * 0.56),
         ))
-        bright = sum(1 for value in panel.getdata() if value > 160)
+        bright = sum(1 for value in pixel_values(panel) if value > 160)
         if bright >= 0.35 * (panel.size[0] * panel.size[1]):
             return (button["cx"], button["cy"])
     return None
