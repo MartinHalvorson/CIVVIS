@@ -370,6 +370,11 @@ struct PlanTrace {
     /// Villages standing on the whole board at first observation — the
     /// denominator that turns final claims into a contested share.
     board_villages: Option<usize>,
+    /// Barbarian camps standing within six tiles of one of the seat's own
+    /// cities the first time the seat is observed at or past the middle
+    /// exploration mark; `None` when the game ended first. Six tiles is the
+    /// engine's own near-a-city radius for the camp-destroyed moment.
+    camps_near_home_by_mark: Option<usize>,
 }
 
 /// Turns at which each seat's explored-plot count is sampled. These match the
@@ -494,6 +499,22 @@ impl PlanTrace {
                     .get("goody_huts_claimed")
                     .copied()
                     .unwrap_or(0),
+            );
+        }
+        // Early-game barbarian exposure: how many camps stand beside this
+        // seat's cities when the opening is over. Sampled, because by the
+        // final position the world era has moved and camps have churned.
+        if g.turn >= EXPLORATION_MARKS[1] && self.camps_near_home_by_mark.is_none() {
+            let homes: Vec<_> = g
+                .player_city_ids(pid)
+                .iter()
+                .map(|cid| g.cities[cid].pos)
+                .collect();
+            self.camps_near_home_by_mark = Some(
+                g.barb_camps
+                    .keys()
+                    .filter(|camp| homes.iter().any(|home| g.wdist(**camp, *home) <= 6))
+                    .count(),
             );
         }
         let recon_now = g
@@ -712,6 +733,16 @@ struct Metrics {
     majors_met_by_t50: f64,
     first_major_meet_turn_sum: f64,
     first_major_meet_seats: usize,
+    /// Barbarian ledger, both sides: what the seat took from the barbarians
+    /// and what the barbarians took from it, plus the camp exposure that
+    /// frames those numbers.
+    camps_cleared: f64,
+    barbs_killed: f64,
+    lost_to_barbarians: f64,
+    civilians_lost_to_barbarians: f64,
+    camps_near_home: f64,
+    camps_near_home_seats: usize,
+    camps_standing: f64,
 }
 
 impl Metrics {
@@ -868,6 +899,15 @@ impl Metrics {
         let counter = |name: &str| g.players[pid].counters.get(name).copied().unwrap_or(0) as f64;
         self.goody_huts_claimed += counter("goody_huts_claimed");
         self.meteor_goodies_claimed += counter("meteor_goodies_claimed");
+        self.camps_cleared += counter("camps");
+        self.barbs_killed += counter("barbs_killed");
+        self.lost_to_barbarians += counter("lost_to_barbarians");
+        self.civilians_lost_to_barbarians += counter("civilians_lost_to_barbarians");
+        if let Some(camps) = trace.camps_near_home_by_mark {
+            self.camps_near_home += camps as f64;
+            self.camps_near_home_seats += 1;
+        }
+        self.camps_standing += g.barb_camps.len() as f64;
         self.era_score += g.players[pid].era_score as f64;
         self.natural_wonders_discovered += g.players[pid].discovered_natural_wonders.len() as f64;
         if let Some(early) = trace.villages_by_mark {
@@ -2119,6 +2159,26 @@ here and any null is uninformative"
             m.majors_met_by_t50 / n,
             mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
             m.recon_peak / n,
+        );
+    }
+    println!("\nBarbarians:");
+    println!("AI          cleared kills lost civ-lost camps<=6@t50 standing");
+    for name in [a, b] {
+        let m = &totals[name];
+        let n = m.games as f64;
+        let near_home = if m.camps_near_home_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.camps_near_home / m.camps_near_home_seats as f64)
+        };
+        println!(
+            "{name:<11} {:>7.2} {:>5.2} {:>4.2} {:>8.2} {:>12} {:>8.2}",
+            m.camps_cleared / n,
+            m.barbs_killed / n,
+            m.lost_to_barbarians / n,
+            m.civilians_lost_to_barbarians / n,
+            near_home,
+            m.camps_standing / n,
         );
     }
     println!("\nVictory types:");
