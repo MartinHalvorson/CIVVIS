@@ -2382,7 +2382,14 @@ mod tests {
         assert_eq!(ENTRANT_SEATING_COMMANDS, ["tournament"]);
         // Every other name in the usage line builds its fleet itself.
         for cmd in [
-            "simulate", "soak", "benchmark", "arena", "league", "evolve", "play", "validate",
+            "simulate",
+            "soak",
+            "benchmark",
+            "arena",
+            "league",
+            "evolve",
+            "play",
+            "validate",
         ] {
             assert!(
                 !ENTRANT_SEATING_COMMANDS.contains(&cmd),
