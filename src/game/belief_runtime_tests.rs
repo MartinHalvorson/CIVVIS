@@ -1503,9 +1503,17 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     // Tithe is paid on followers wherever they are; Church Property on
     // following cities; World Church and Pilgrimage only on what is abroad.
     game.players[0].religion_beliefs = vec!["tithe".to_string()];
-    assert_eq!(game.founder_belief_yields(0).gold, 1.0, "1 Gold per 4 of 6 followers");
+    assert_eq!(
+        game.founder_belief_yields(0).gold,
+        1.0,
+        "1 Gold per 4 of 6 followers"
+    );
     game.players[0].religion_beliefs = vec!["church_property".to_string()];
-    assert_eq!(game.founder_belief_yields(0).gold, 4.0, "2 Gold per following city");
+    assert_eq!(
+        game.founder_belief_yields(0).gold,
+        4.0,
+        "2 Gold per following city"
+    );
     game.players[0].religion_beliefs = vec!["world_church".to_string()];
     assert_eq!(
         game.founder_belief_yields(0).culture,
@@ -1513,7 +1521,11 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         "1 Culture per 5 foreign followers, and there are three"
     );
     game.players[0].religion_beliefs = vec!["pilgrimage".to_string()];
-    assert_eq!(game.founder_belief_yields(0).faith, 2.0, "2 Faith for the one foreign city");
+    assert_eq!(
+        game.founder_belief_yields(0).faith,
+        2.0,
+        "2 Faith for the one foreign city"
+    );
 
     // Lay Ministry: +1 Faith per Holy Site and +1 Culture per Theater
     // Square in cities following the religion (BELIEF_YIELD_PER_DISTRICT);
