@@ -22,10 +22,12 @@ on the authoritative game, where hidden blockers and combat still decide
 legality.
 
 The mode is opt-in and default-off. It is a fair-play implementation and
-correctness boundary, not a strength result; stock `AdvancedAi` remains the
-incumbent until a paired, deployment-shaped screen measures the cost and any
-benefit. Focused regressions cover hidden-unit/terrain redaction, action
-invariance under unseen enemy changes, and a short two-major replay.
+correctness boundary, not the strength incumbent: the strict evaluator now
+exposes it as `fog_honest`, and the 20-map deployment-shaped screen at seed
+prefix `920000..920019` retained stock `advanced` (15.0% paired score, 95%
+Wilson CI 5.2%..36.0%). Focused regressions cover hidden-unit/terrain
+redaction, action invariance under unseen enemy changes, stale-city reference
+cleanup, and a short two-major replay.
 
 ## Run it
 

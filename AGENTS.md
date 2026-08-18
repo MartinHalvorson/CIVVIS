@@ -96,6 +96,39 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   cleanup in a feature PR. CIVVIS has several large conflict hotspots, notably
   `src/game.rs`, `src/ai.rs`, and `web/index.html`.
 
+## A claim is not a check
+
+The defects that survive longest here are not wrong code. Both suites stay
+green; something simply asserts a fact that nothing verifies.
+
+- **A guard you add runs in the same change that adds it.** `civvis_inert.py`
+  documented `--max 0  # CI ratchet` in its own usage from the day it was
+  written and no workflow called it. What it would have reported for that whole
+  time: Poland's Winged Hussar carried `force_retreat` in `data/units.json`, the
+  engine read the key nowhere, and the unit shipped as a plain Cuirassier with
+  no unique ability (#1941, #1943). `tools/test_ci_wiring.py` now fails when a
+  tool's own header claims CI use and no workflow runs it — wire it, or record
+  in `CANNOT_RUN_IN_CI` why a runner cannot.
+- **A sentence that states a fact is enforced by a test, or it is a guess with
+  good posture.** `civ6_fidelity.py` printed "(Gathering Storm load order)"
+  unconditionally and reported 210 divergences against a Vanilla database;
+  acting on that report would have rewritten correct expansion values to vanilla
+  ones (#1946). `FLOAT_DETERMINISM.md` recorded `mapgen.rs` as fully converted
+  while ten platform-trig calls sat in the *default* map script (#1950).
+- **A setting you send is read back from wherever it lands.** `civ6_play.py`
+  verified difficulty, size, speed, map, leader and modes from inside the
+  running game and took `--ruleset` on trust — the one axis with no reading that
+  could be wrong (#1947).
+- **A gate covers the default configuration.** The determinism test pinned
+  `MapScript::Continents` while the CLI defaults to `tennis_ball`, so the check
+  that exists to keep platform trig out of mapgen could not see the map most
+  games are played on (#1950).
+- **Discover, never list.** A hand-written list of files to check is complete
+  the day it is written and silently shrinks afterwards. It has cost this
+  repository three times: twenty-five ungated `tools/` suites, one of `beta/`'s
+  six scripts broken for two separate reasons (#1905), and the mod tests
+  (#1941). Glob them, and fail when the glob comes up empty.
+
 ## Integration
 
 - Keep tasks small and single-purpose. Split independent work into independent
