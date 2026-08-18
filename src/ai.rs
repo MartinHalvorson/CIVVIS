@@ -2279,6 +2279,15 @@ pub struct BasicAi {
     /// same exchange gate as every other attack, recon excluded. Entrant
     /// `advanced_camp_bounty`; off in production pending its screen.
     pub(crate) camp_bounty: bool,
+    /// Walk onto a visible, undefended barbarian camp one legal step away —
+    /// the clear IS the move, so no attack scan ever offers it, and without
+    /// this a unit ends its turn beside a free 50-gold clear until the camp
+    /// spawns the archer that kills it. Unlike `camp_bounty` there is no
+    /// claim, no march, and no exchange gate: it fires only when the clear
+    /// is immediate. Default-ON; OFF on the frozen anchor
+    /// (`AdvancedAi::legacy`) so the rating ledger stands; withheld for
+    /// pricing by `advanced_without_adjacent_camp_clear`.
+    pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
     /// bounty never becomes an army diversion.
@@ -3844,6 +3853,7 @@ impl BasicAi {
             village_seeking: false,
             sea_answers: false,
             camp_bounty: false,
+            adjacent_camp_clear: true,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4037,6 +4047,49 @@ impl BasicAi {
         Some(camp)
     }
 
+    /// Enter a visible, undefended barbarian camp that is one legal step
+    /// away. Camps are captured by movement rather than an attack, so the
+    /// ordinary tactical scan sees no enemy tile here and otherwise holds a
+    /// melee unit beside a free clear. Keep this local: a camp that needs a
+    /// march remains a separately priced errand, while an adjacent clear pays
+    /// its Gold, Era Score, and spawn prevention immediately.
+    pub(crate) fn clear_adjacent_empty_barbarian_camp(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> bool {
+        // Gated so the frozen rating anchor keeps the game it always played:
+        // `AdvancedAi::legacy()` ships this OFF, everything current ships it
+        // ON, and `advanced_without_adjacent_camp_clear` withholds it for
+        // pricing. Minors keep their own defense behaviour, as with the
+        // errand.
+        if !self.adjacent_camp_clear || self.minor {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.owner != pid
+            || Some(pid) == g.barb_pid
+            || g.rules.units[unit.kind].class != "military"
+        {
+            return false;
+        }
+        let camp = g
+            .nbrs(unit.pos)
+            .into_iter()
+            .filter(|position| g.barb_camps.contains_key(position))
+            // `Game` contains the whole board for simulation. Do not turn a
+            // camp in fog into an AI objective merely because its coordinate
+            // happens to be present in the model.
+            .filter(|position| g.player_can_see(pid, *position))
+            .filter(|position| g.units_at(*position).is_empty())
+            .filter(|position| g.can_move(uid, *position))
+            .min();
+        camp.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -4084,6 +4137,7 @@ impl BasicAi {
             village_seeking: false,
             sea_answers: false,
             camp_bounty: false,
+            adjacent_camp_clear: true,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -6537,8 +6591,21 @@ impl BasicAi {
         // discounted price otherwise, so it answers legality and
         // affordability in one question. The weight still gates: it is the
         // reserve the empire keeps back, above whatever the purchase costs.
+        // ⚠⚠ THE THIRD SPELLING OF THE SAME RULE, AND THE ONE THAT DID NOT ASK.
+        // `has_builder_work` gates the production path and the gold-purchase
+        // path; this one counted cities and nothing else, so an empire with
+        // every workable tile already improved went on buying Builders with
+        // Faith. `advanced.rs`'s `PRODUCTION_BUILDERS_PER_CITY` states in prose
+        // that "the existing `has_builder_work` gate stops production once
+        // there is no yield to add" — true of two paths out of three until now.
+        //
+        // Measured over three 250-turn six-player games before this: builders
+        // reached a decision 4,887 times and found no improvable tile anywhere
+        // in the empire on 4,377 of them, flat across the whole game rather
+        // than concentrated late. Blocked-by-terrain was 43.
         if g.players[pid].faith >= self.w.faith_builder
             && builders < n_cities
+            && Self::has_builder_work(g, pid)
             && !city_ids.is_empty()
             && g.unit_purchase_cost(pid, city_ids[0], "builder", "faith")
                 .is_some_and(|cost| g.players[pid].faith + f64::EPSILON >= cost)
@@ -11222,6 +11289,13 @@ impl BasicAi {
         if self.barbarian_garrison_step(g, pid, uid, &enemies) {
             return true;
         }
+        // An empty camp does not appear in `is_enemy_tile`, and
+        // `tactical_step` deliberately holds a melee unit one tile from its
+        // target. Enter it directly before that range-keeping logic turns a
+        // free clear into an idle standoff.
+        if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
+        }
         let Some(threat) = self.barbarian_home_defense_objective(g, pid, uid, &enemies) else {
             return false;
         };
@@ -12361,6 +12435,12 @@ impl BasicAi {
             {
                 return true;
             }
+            // A camp outside the local-defense assignment can still be a
+            // free, visible clear on this unit's next step. Combat, pillage,
+            // and any emergency garrison above retain their precedence.
+            if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             let hostile_water_unit = g
                 .units
                 .values()
@@ -12505,6 +12585,12 @@ impl BasicAi {
                 return self.step_toward(g, pid, uid, home);
             }
             return self.fortify_or_stop(g, pid, uid);
+        }
+        // An adjacent empty camp is a completed objective, not a route to
+        // price: enter it before this otherwise peaceful unit starts a longer
+        // village, escort, or patrol task.
+        if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
         }
         // Tribal villages expire the instant another civilization reaches
         // them. Let the chosen Scout — or the bounded military fallback when
@@ -18276,6 +18362,68 @@ mod tests {
         assert!(meteor_ai.military_step(&mut meteor_board, 0, scout));
         assert_eq!(meteor_board.units[&scout].pos, hut);
         assert!(meteor_board.map.tiles[&hut].improvement.is_none());
+    }
+
+    #[test]
+    fn a_visible_adjacent_empty_barbarian_camp_is_cleared_before_peacetime_movement() {
+        let mut g = Game::new_full(1, 24, 16, 38_006, 30, 0, true);
+        for uid in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(uid);
+        }
+        for camp in g.barb_camps.keys().copied().collect::<Vec<_>>() {
+            g.barb_camps.remove(&camp);
+            if g.map.tiles[&camp].improvement.as_deref() == Some("barbarian_camp") {
+                g.map.tiles.get_mut(&camp).unwrap().improvement = None;
+            }
+        }
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
+        g.barb_scout_homes.clear();
+        g.barb_scout_targets.clear();
+        g.barb_camp_targets.clear();
+        let (origin, camp) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(origin, tile)| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.city_at(**origin).is_none()
+            })
+            .find_map(|(origin, _)| {
+                g.nbrs(*origin)
+                    .into_iter()
+                    .find(|camp| {
+                        g.map.get(*camp).is_some_and(|tile| {
+                            g.rules.is_passable(tile)
+                                && !g.rules.is_water(tile)
+                                && g.city_at(*camp).is_none()
+                        })
+                    })
+                    .map(|camp| (*origin, camp))
+            })
+            .expect("fixture needs a pair of adjacent open land tiles");
+        let warrior = g.spawn_test_unit("warrior", 0, origin);
+        g.barb_camps.insert(camp, g.turn + 1_000);
+        g.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+
+        assert!(
+            g.player_can_see(0, camp),
+            "the adjacent camp is a real sighting"
+        );
+        assert!(g.can_move(warrior, camp), "the clear is a legal move");
+        let mut ai = BasicAi::new();
+        assert!(ai.military_step(&mut g, 0, warrior));
+        assert_eq!(g.units[&warrior].pos, camp);
+        assert!(
+            !g.barb_camps.contains_key(&camp),
+            "entering an empty camp must clear it rather than leave the unit beside it"
+        );
+        assert_eq!(g.players[0].counters.get("camps"), Some(&1));
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == warrior && *to == camp
+        ));
     }
 
     #[test]

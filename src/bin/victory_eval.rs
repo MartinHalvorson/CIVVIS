@@ -78,6 +78,35 @@ use civvis::game::Game;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+/// One seat's government, as `id=government:slotted/slots`.
+///
+/// ⚠ `none` and `chiefdom` are different answers and both are worth seeing. A
+/// seat still on `none` has never adopted a government at all — zero slots, so
+/// every policy card it ever unlocked is unseated — and at the turn limit that
+/// is a defect, not a phase. Anarchy is called out by name because `gov_slots`
+/// returns nothing during it: a seat mid-switch runs those turns on an empty
+/// deck, and the count alone would read as a seat that simply had no cards.
+fn government_cell(
+    id: usize,
+    government: Option<&str>,
+    anarchy_turns: u32,
+    seated: usize,
+    slots: i64,
+) -> String {
+    format!(
+        "{}={}{}:{}/{}",
+        id,
+        government.unwrap_or("none"),
+        if anarchy_turns > 0 {
+            format!("(anarchy {anarchy_turns})")
+        } else {
+            String::new()
+        },
+        seated,
+        slots,
+    )
+}
+
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
         .position(|arg| arg == flag)
@@ -283,6 +312,54 @@ fn main() {
                         .map(move |wonder| format!("{}:{wonder}", city.owner))
                 })
                 .collect();
+            // ★★★★ WHAT THE EMPIRE WAS GOVERNED BY, WHICH THIS TOOL NEVER SAID.
+            //
+            // A verification game reported eras, cities and techs — the outputs
+            // — and nothing about the one empire-wide choice that multiplies
+            // all three. A government is four to six policy slots and the cards
+            // in them, and the difference between an empire under Monarchy with
+            // four cards seated and one still under `none` with zero is not a
+            // small one: `gov_slots` returns nothing at all in Anarchy, so a
+            // seat mid-switch is running the whole turn on an empty deck. Read
+            // a lane table without it and a lane that never lands looks like a
+            // pacing problem rather than an empire that spent forty turns
+            // ungoverned.
+            //
+            // Every major, because the interesting comparison is against the
+            // seats that beat this one; `slotted/slots` rather than a card list
+            // per seat, because the counts are what a scan needs and the
+            // winner's actual deck follows on the same line.
+            let governments: Vec<String> = game
+                .players
+                .iter()
+                .filter(|player| !player.is_minor && !player.is_barbarian)
+                .map(|player| {
+                    let slots = game.gov_slots(player.id);
+                    government_cell(
+                        player.id,
+                        player.government.as_deref(),
+                        player.anarchy_turns,
+                        player.policies.len(),
+                        slots.military + slots.economic + slots.diplomatic + slots.wildcard,
+                    )
+                })
+                .collect();
+            // The winner's actual deck. A count says a slot was filled; only
+            // the names say what the empire was actually paying for, which is
+            // the question a lane result raises first.
+            let seated: String = game
+                .players
+                .get(game.winner.unwrap_or(usize::MAX))
+                .map(|player| {
+                    player
+                        .policies
+                        .iter()
+                        .map(|card| card.to_string())
+                        .collect::<Vec<_>>()
+                        .join("+")
+                })
+                .filter(|cards| !cards.is_empty())
+                .unwrap_or_else(|| "none".to_string());
             let passed = actual == target.as_str();
             failures += usize::from(!passed);
             if passed {
@@ -357,7 +434,7 @@ fn main() {
                 VictoryTarget::Score => format!("score={}", game.score(winner)),
             });
             println!(
-                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} wonders=[{}] {} [{:.2}s]",
+                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} wonders=[{}] govs=[{}] policies={} {} [{:.2}s]",
                 if passed { "PASS" } else { "FAIL" },
                 seed,
                 target.as_str(),
@@ -371,6 +448,8 @@ fn main() {
                 game.world_era,
                 major_progress,
                 wonders.join(" "),
+                governments.join(" "),
+                seated,
                 progress.unwrap_or_default(),
                 game_started.elapsed().as_secs_f64(),
             );
@@ -405,6 +484,28 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three answers a seat can give, told apart.
+    #[test]
+    fn a_government_cell_distinguishes_ungoverned_from_anarchic_from_seated() {
+        assert_eq!(
+            government_cell(0, Some("monarchy"), 0, 4, 6),
+            "0=monarchy:4/6",
+            "an ordinary seat reads its cards against its slots"
+        );
+        assert_eq!(
+            government_cell(3, None, 0, 0, 0),
+            "3=none:0/0",
+            "a seat that never adopted a government must say so rather than \
+             render as an empty deck"
+        );
+        assert_eq!(
+            government_cell(2, Some("monarchy"), 3, 2, 0),
+            "2=monarchy(anarchy 3):2/0",
+            "Anarchy has no slots of its own, so the seat is named as running \
+             on none of the cards it holds"
+        );
+    }
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_string()).collect()
