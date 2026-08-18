@@ -31,6 +31,19 @@ import urllib.request
 REPOSITORY = "MartinHalvorson/CIVVIS"
 DEFAULT_BRANCH = "main"
 REQUIRED_CHECKS = ("cargo-test", "collaboration-policy")
+# Terminal check conclusions that say nothing about the code. A run that was
+# superseded by its own concurrency group, killed by the runner clock, or
+# marked stale never reached a verdict — and, critically, GitHub will not start
+# another one on its own. Auto-merge waits for a required check to go green, so
+# a check that ends in one of these and is never re-run leaves the PR open
+# forever with nothing watching it. `ship` re-runs them instead of reporting a
+# failure the code did not earn. `failure` is deliberately absent: that IS a
+# verdict, and re-running it would just burn CI on a broken tree.
+RETRYABLE_CHECK_CONCLUSIONS = frozenset({"cancelled", "timed_out", "stale"})
+# How many times `ship` re-runs one required check before it stops and says so.
+# A check that is cancelled twice is not being superseded; something is wrong
+# with it, and quietly re-running forever would hide that.
+CHECK_RERUN_LIMIT = 2
 # How long `ship` waits for the production spectator to be LISTENING at all
 # before deciding it is not running. Distinct from `--live-timeout-seconds`,
 # which is how long a spectator that IS up may take to reach the merged
@@ -799,6 +812,7 @@ def required_check_state(
     """
     missing_or_pending: List[str] = []
     failed: List[str] = []
+    retryable: List[str] = []
     thresholds = minimum_started or {}
     for name in required:
         candidates = [
@@ -827,13 +841,67 @@ def required_check_state(
         ).lower()
         if status and status != "completed":
             missing_or_pending.append(name)
+        elif conclusion in RETRYABLE_CHECK_CONCLUSIONS:
+            retryable.append(name)
         elif conclusion not in {"success", "successful"}:
             failed.append(name)
+    # A real failure outranks a cancellation: report the verdict the tree
+    # earned rather than the infrastructure noise beside it. A cancellation
+    # outranks a pending sibling so the re-run is dispatched now instead of
+    # after everything else finishes.
     if failed:
         return "failed", failed
+    if retryable:
+        return "retryable", retryable
     if missing_or_pending:
         return "pending", missing_or_pending
     return "success", []
+
+
+def check_run_id(row: Dict[str, Any]) -> Optional[str]:
+    """The Actions run id behind a check rollup row, if it has one.
+
+    The rollup carries the job URL, not the run id, and the run is what can be
+    re-dispatched: `.../actions/runs/<run>/job/<job>`. Status contexts from
+    outside Actions have no such URL and return ``None``.
+    """
+    match = re.search(
+        r"/actions/runs/(\d+)", str(row.get("detailsUrl") or row.get("details_url") or "")
+    )
+    return match.group(1) if match else None
+
+
+def rerun_required_check(
+    rows: Sequence[Dict[str, Any]], name: str, *, required: Iterable[str] = REQUIRED_CHECKS
+) -> bool:
+    """Re-dispatch the newest run behind required check ``name``.
+
+    Returns whether a re-run was actually requested, so the caller can report
+    an un-retryable check rather than silently looping on it.
+    """
+    if name not in tuple(required):
+        return False
+    candidates = [
+        row
+        for row in rows
+        if str(row.get("name") or row.get("context") or "") == name and check_run_id(row)
+    ]
+    if not candidates:
+        return False
+    latest = max(
+        candidates,
+        key=lambda row: str(row.get("startedAt") or row.get("started_at") or ""),
+    )
+    run_id = check_run_id(latest)
+    return (
+        gh_api_write(
+            "POST",
+            f"repos/{REPOSITORY}/actions/runs/{run_id}/rerun",
+            {},
+            check=False,
+        )
+        is not None
+    )
 
 
 def ship_pr_errors(pr: Dict[str, Any], branch: str) -> List[str]:
@@ -1119,6 +1187,7 @@ def ship_task(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + max(1.0, args.timeout_seconds)
     ready_thresholds: Dict[str, str] = {}
     auto_merge_armed = False
+    rerun_attempts: Dict[str, int] = {name: 0 for name in REQUIRED_CHECKS}
 
     def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
         merged_sha = pr_merge_sha(pr)
@@ -1180,7 +1249,41 @@ def ship_task(args: argparse.Namespace) -> int:
 
         while True:
             if time.monotonic() >= deadline:
-                raise CommandError("timed out waiting for required checks")
+                # ⚠ A timeout is not a verdict, and the agent that reads it has
+                # to know which of two very different situations it is in. With
+                # auto-merge armed and every required check still running, the
+                # PR finishes without us and waiting was the whole plan. With a
+                # check that has stopped without a verdict, nothing is coming —
+                # so sweep once more on the way out rather than leaving a PR
+                # that no one will look at again.
+                pr = current_pr(root)
+                if (finished := finish_merged(pr)) is not None:
+                    return finished
+                rollup = pr.get("statusCheckRollup") or []
+                state, names = required_check_state(
+                    rollup, minimum_started=ready_thresholds
+                )
+                if state == "retryable":
+                    for name in names:
+                        rerun_required_check(rollup, name)
+                    raise CommandError(
+                        "timed out, and "
+                        + ", ".join(names)
+                        + " had stopped without a verdict; re-ran them, so watch "
+                        f"PR #{pr['number']} rather than assuming it merges"
+                    )
+                if state == "failed":
+                    raise CommandError("required checks failed: " + ", ".join(names))
+                raise CommandError(
+                    "timed out waiting for required checks ("
+                    + (", ".join(names) or "none outstanding")
+                    + ")"
+                    + (
+                        "; auto-merge is armed and merges this PR when they pass"
+                        if auto_merge_armed
+                        else "; auto-merge is NOT armed, so this PR needs a look"
+                    )
+                )
             pr = current_pr(root)
             if (finished := finish_merged(pr)) is not None:
                 return finished
@@ -1271,11 +1374,37 @@ def ship_task(args: argparse.Namespace) -> int:
                     time.sleep(args.poll_seconds)
                     continue
 
+            rollup = pr.get("statusCheckRollup") or []
             state, names = required_check_state(
-                pr.get("statusCheckRollup") or [], minimum_started=ready_thresholds
+                rollup, minimum_started=ready_thresholds
             )
             if state == "failed":
                 raise CommandError("required checks failed: " + ", ".join(names))
+            if state == "retryable":
+                # Nothing else will start these. Auto-merge is armed and waiting
+                # for a green required check that can no longer arrive, so the
+                # PR is stuck until someone re-dispatches the run.
+                stuck: List[str] = []
+                for name in names:
+                    if rerun_attempts[name] >= CHECK_RERUN_LIMIT:
+                        stuck.append(f"{name} (re-run {rerun_attempts[name]}x already)")
+                    elif rerun_required_check(rollup, name):
+                        rerun_attempts[name] += 1
+                        print(
+                            f"required check {name} ended without a verdict and "
+                            f"nothing re-starts it; re-running "
+                            f"({rerun_attempts[name]}/{CHECK_RERUN_LIMIT})"
+                        )
+                    else:
+                        stuck.append(f"{name} (no Actions run to re-dispatch)")
+                if stuck:
+                    raise CommandError(
+                        "required checks cannot reach a verdict: "
+                        + ", ".join(stuck)
+                        + " — re-running did not help, so this needs a look"
+                    )
+                time.sleep(max(0.1, args.poll_seconds))
+                continue
             if state == "success":
                 merge_result = gh_api_write(
                     "PUT",

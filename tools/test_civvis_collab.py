@@ -1187,6 +1187,133 @@ Added the fast shipping path.
             ("failed", ["collaboration-policy"]),
         )
 
+    def test_a_cancelled_check_is_retryable_not_a_failure(self):
+        """A cancelled run reached no verdict, and nothing re-starts it.
+
+        This is the shape that stranded PR #1933: `cargo-test` was superseded
+        by its own concurrency group, ended CANCELLED, and armed auto-merge
+        then waited for a green check that could never arrive. Reporting it as
+        a failure blames the tree for something the tree did not do; reporting
+        it as pending waits forever.
+        """
+        for conclusion in ("CANCELLED", "TIMED_OUT", "STALE"):
+            with self.subTest(conclusion=conclusion):
+                rows = [
+                    {
+                        "name": "cargo-test",
+                        "startedAt": "2026-08-18T00:52:20Z",
+                        "status": "COMPLETED",
+                        "conclusion": conclusion,
+                    },
+                    {
+                        "name": "collaboration-policy",
+                        "startedAt": "2026-08-18T00:52:21Z",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                    },
+                ]
+                self.assertEqual(
+                    collab.required_check_state(rows),
+                    ("retryable", ["cargo-test"]),
+                )
+
+    def test_a_real_failure_outranks_a_cancellation_beside_it(self):
+        """Report the verdict the tree earned, not the noise next to it."""
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "status": "COMPLETED",
+                "conclusion": "CANCELLED",
+            },
+            {
+                "name": "collaboration-policy",
+                "startedAt": "2026-08-18T00:52:21Z",
+                "status": "COMPLETED",
+                "conclusion": "FAILURE",
+            },
+        ]
+        self.assertEqual(
+            collab.required_check_state(rows),
+            ("failed", ["collaboration-policy"]),
+        )
+
+    def test_a_cancellation_outranks_a_pending_sibling(self):
+        """Dispatch the re-run now; the sibling can keep running meanwhile."""
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "status": "COMPLETED",
+                "conclusion": "CANCELLED",
+            },
+            {
+                "name": "collaboration-policy",
+                "startedAt": "2026-08-18T00:52:21Z",
+                "status": "IN_PROGRESS",
+                "conclusion": "",
+            },
+        ]
+        self.assertEqual(
+            collab.required_check_state(rows),
+            ("retryable", ["cargo-test"]),
+        )
+
+    def test_check_run_id_reads_the_run_not_the_job(self):
+        """`gh` hands back the job URL; only the run can be re-dispatched."""
+        self.assertEqual(
+            collab.check_run_id(
+                {
+                    "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS"
+                    "/actions/runs/32086139697/job/95570795617"
+                }
+            ),
+            "32086139697",
+        )
+        # A status context from outside Actions has nothing to re-dispatch.
+        self.assertIsNone(
+            collab.check_run_id({"detailsUrl": "https://example.com/scan/17"})
+        )
+        self.assertIsNone(collab.check_run_id({}))
+
+    def test_rerun_targets_the_newest_run_of_the_named_check(self):
+        calls: list = []
+
+        def fake_write(method, path, payload, *, check=True):
+            calls.append((method, path))
+            return {}
+
+        rows = [
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:49:31Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/111/job/1",
+            },
+            {
+                "name": "cargo-test",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/222/job/2",
+            },
+            {
+                "name": "rust-quality",
+                "startedAt": "2026-08-18T00:52:20Z",
+                "detailsUrl": "https://github.com/o/r/actions/runs/333/job/3",
+            },
+        ]
+        original = collab.gh_api_write
+        collab.gh_api_write = fake_write
+        try:
+            self.assertTrue(collab.rerun_required_check(rows, "cargo-test"))
+            # Not a required check: `ship` does not gate on it, so it must not
+            # spend CI re-running it either.
+            self.assertFalse(collab.rerun_required_check(rows, "rust-quality"))
+            self.assertFalse(collab.rerun_required_check([], "cargo-test"))
+        finally:
+            collab.gh_api_write = original
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "POST")
+        self.assertTrue(calls[0][1].endswith("/actions/runs/222/rerun"))
+
     def test_a_pin_only_edit_is_not_a_real_collision(self):
         """The source-contract pin collides by construction; see SOURCE_CONTRACT_PIN."""
         pin_only = [

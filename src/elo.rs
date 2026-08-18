@@ -37,6 +37,9 @@ pub const BUILTIN_AIS: &[&str] = &[
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
 pub const EVAL_ONLY_AIS: &[&str] = &[
+    // Complete fair-play major controller; paired screening owns the
+    // promotion decision before the default controller changes.
+    "fog_honest",
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -122,6 +125,11 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_stack_discipline",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
+    "live_without_parallel_settlers",
+    "live_without_host_settler_pop",
+    "live_without_explore_dead_targets",
+    "live_without_explore_commit",
+    "live_without_bank_envoys",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -178,7 +186,13 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     // finishes none. Which lane is STRONGEST is a different question from which
     // completes, and these are the arms that can answer it.
     "advanced_target_science",
+    // Hold the target fixed and price whether the non-Culture building veto is
+    // keyed to a Great Work slot or the Theater Square district itself.
+    "advanced_great_work_veto_by_district",
     "advanced_target_culture",
+    // The Culture lane is the only targeted lane where its Theater-building
+    // debt can pass the non-Culture Great Work veto and actually be reached.
+    "advanced_target_culture_with_culture_building_debt",
     "advanced_target_religious",
     "advanced_target_diplomatic",
     "advanced_measured_dedication",
@@ -204,6 +218,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_fortify_idle_units",
     "advanced_maritime_splice",
     "advanced_maintenance_deck",
+    "advanced_sea_answers",
     "advanced_recon_fleet",
     "advanced_without_recon_fleet",
     // The two production value/cost treatments: the Builder priced by a
@@ -345,6 +360,11 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "deny-while-targeted",
     "stock-denial-lead-time",
+    "parallel-settlers",
+    "host-settler-pop",
+    "explore-dead-targets",
+    "explore-commit",
+    "bank-envoys",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -374,10 +394,9 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The fourteen bridge treatments that stay out of the native bundle, as tags.
-/// Three encode a rule of Firaxis' game rather than repairing one of ours, one
-/// is excluded on evidence, and the wonder race, the Prophet deferral and the
-/// elective-war stand-down price Firaxis-only records. See
+/// The deployment-profile treatments that stay out of the native bundle, as
+/// tags. Some encode a rule of Firaxis' game, while others price host-only
+/// conditions or are already present in the native production baseline. See
 /// `AdvancedAi::enable_engine_repairs`.
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
@@ -431,6 +450,17 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // t229-245); the native lanes end on their own clock and keep the
     // measured 90 bar until a native run says otherwise.
     "stock-denial-lead-time",
+    // These four react to host movement or host production semantics; native
+    // CIVVIS has neither distinction, so the repair bundle must not imply
+    // they are native engine changes.
+    "parallel-settlers",
+    "host-settler-pop",
+    "explore-dead-targets",
+    "bank-envoys",
+    // Production Advanced already carries committed exploration. It remains
+    // a live treatment so the deployment bundle and its ablation registry are
+    // complete, not because `advanced_synergy` needs to turn it on again.
+    "explore-commit",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -651,7 +681,13 @@ define_arm_kinds! {
     LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
+    LiveWithoutParallelSettlers => "live_without_parallel_settlers",
+    LiveWithoutHostSettlerPop => "live_without_host_settler_pop",
+    LiveWithoutExploreDeadTargets => "live_without_explore_dead_targets",
+    LiveWithoutExploreCommit => "live_without_explore_commit",
+    LiveWithoutBankEnvoys => "live_without_bank_envoys",
     Advanced => "advanced",
+    FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBuildFirst => "advanced_build_first",
     AdvancedSynergy => "advanced_synergy",
@@ -721,6 +757,7 @@ define_arm_kinds! {
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
+    AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedReconFleet => "advanced_recon_fleet",
     AdvancedWithoutReconFleet => "advanced_without_recon_fleet",
     AdvancedEveryLane => "advanced_every_lane",
@@ -740,7 +777,9 @@ define_arm_kinds! {
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedTargetScience => "advanced_target_science",
+    AdvancedGreatWorkVetoByDistrict => "advanced_great_work_veto_by_district",
     AdvancedTargetCulture => "advanced_target_culture",
+    AdvancedTargetCultureWithCultureBuildingDebt => "advanced_target_culture_with_culture_building_debt",
     AdvancedTargetReligious => "advanced_target_religious",
     AdvancedTargetDiplomatic => "advanced_target_diplomatic",
     AdvancedV1 => "advanced_v1",
@@ -3023,6 +3062,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_maintenance_deck" => {
             let mut ai = AdvancedAi::new();
             ai.enable_maintenance_aware_deck();
+        // Sea threats get sea answers: a barbarian raider on water counts
+        // toward the wartime second exploration hull, ships join the
+        // home-defense pool, and responder domain matches the threat's tile.
+        "advanced_sea_answers" => {
+            ai.enable_sea_answers();
             Box::new(ai)
         }
         // The reconnaissance quartet was PROMOTED into `promoted_policy_envoy`
@@ -3206,8 +3250,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_target_science" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Science))
         }
+        // Preserve the Science target and move only the classifier, so the
+        // pre-registered pair has exactly one semantic axis.
+        "advanced_great_work_veto_by_district" => {
+            let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Science);
+            ai.enable_great_work_veto_by_district();
+            Box::new(ai)
+        }
         "advanced_target_culture" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Culture))
+        }
+        // The targeted Culture control has this treatment off. Its paired arm
+        // proves the Theater-building debt is reachable without changing the
+        // target or importing the rest of the live bridge.
+        "advanced_target_culture_with_culture_building_debt" => {
+            let mut ai = AdvancedAi::targeting(crate::ai::VictoryTarget::Culture);
+            ai.enable_culture_building_debt();
+            Box::new(ai)
         }
         "advanced_target_religious" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Religion))
@@ -3234,6 +3293,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
+        "fog_honest" => Box::new(AdvancedAi::fog_honest()),
         // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
         //
         // Eight flags separate the frozen controller from the deployed one, and
@@ -3842,6 +3902,7 @@ impl ArmKind {
 
     fn treatments(self) -> &'static [&'static str] {
         match self {
+            Self::FogHonest => &["fog-honest"],
             // The live bridge is a COMPOSITE, and each flag is tagged so a
             // `live` vs `live_without_*` comparison reports exactly the one
             // mechanism that differs instead of the catch-all
@@ -3924,6 +3985,11 @@ impl ArmKind {
             Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
+            Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),
+            Self::LiveWithoutHostSettlerPop => live_without("host-settler-pop"),
+            Self::LiveWithoutExploreDeadTargets => live_without("explore-dead-targets"),
+            Self::LiveWithoutExploreCommit => live_without("explore-commit"),
+            Self::LiveWithoutBankEnvoys => live_without("bank-envoys"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -3969,7 +4035,13 @@ impl ArmKind {
             Self::AdvancedTargetDomination => &["victory-lane-domination"],
             Self::AdvancedTargetScore => &["victory-lane-score"],
             Self::AdvancedTargetScience => &["victory-lane-science"],
+            Self::AdvancedGreatWorkVetoByDistrict => {
+                &["victory-lane-science", "great-work-veto-by-district"]
+            }
             Self::AdvancedTargetCulture => &["victory-lane-culture"],
+            Self::AdvancedTargetCultureWithCultureBuildingDebt => {
+                &["victory-lane-culture", "culture-building-debt"]
+            }
             Self::AdvancedTargetReligious => &["victory-lane-religious"],
             Self::AdvancedTargetDiplomatic => &["victory-lane-diplomatic"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
@@ -4033,6 +4105,7 @@ impl ArmKind {
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
+            Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedReconFleet => &[
                 "recon-replacement",
                 "recon-flight",
@@ -4464,6 +4537,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "live_without_loyalty_policy_defence")
         }
         "advanced" => (Vec::new(), "advanced"),
+        "fog_honest" => (Vec::new(), "fog_honest"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
         "advanced_synergy_war" => (Vec::new(), "advanced_synergy_war"),
@@ -4522,6 +4596,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
+        "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
         "advanced_without_recon_fleet" => (Vec::new(), "advanced_without_recon_fleet"),
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
@@ -4579,7 +4654,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
         "advanced_target_science" => (Vec::new(), "advanced_target_science"),
+        "advanced_great_work_veto_by_district" => {
+            (Vec::new(), "advanced_great_work_veto_by_district")
+        }
         "advanced_target_culture" => (Vec::new(), "advanced_target_culture"),
+        "advanced_target_culture_with_culture_building_debt" => (
+            Vec::new(),
+            "advanced_target_culture_with_culture_building_debt",
+        ),
         "advanced_target_religious" => (Vec::new(), "advanced_target_religious"),
         "advanced_target_diplomatic" => (Vec::new(), "advanced_target_diplomatic"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -5585,6 +5667,24 @@ mod tests {
             "the champion comparison is a one-axis control"
         );
 
+        let science = builtin_arm("advanced_target_science").expect("control is selectable");
+        let district_veto = builtin_arm("advanced_great_work_veto_by_district")
+            .expect("district-keyed treatment is selectable");
+        assert_eq!(
+            district_veto.spec.differing_axes(&science.spec),
+            vec!["great-work-veto-by-district"],
+            "the veto-key comparison must hold the Science target fixed"
+        );
+
+        let culture = builtin_arm("advanced_target_culture").expect("control is selectable");
+        let culture_debt = builtin_arm("advanced_target_culture_with_culture_building_debt")
+            .expect("Culture debt treatment is selectable");
+        assert_eq!(
+            culture_debt.spec.differing_axes(&culture.spec),
+            vec!["culture-building-debt"],
+            "the Culture debt comparison must hold the victory target fixed"
+        );
+
         let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
         assert_eq!(
             economy.spec.differing_axes(&stock.spec),
@@ -5743,6 +5843,7 @@ mod tests {
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
                 "advanced",
+                "fog_honest",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
                 "advanced_policy_envoy_priority",
@@ -5805,6 +5906,7 @@ mod tests {
                 "advanced_fortify_idle_units",
                 "advanced_maritime_splice",
                 "advanced_maintenance_deck",
+                "advanced_sea_answers",
                 "advanced_recon_fleet",
                 "advanced_without_recon_fleet",
                 "advanced_every_lane",
@@ -5826,7 +5928,9 @@ mod tests {
                 "advanced_target_domination",
                 "advanced_target_score",
                 "advanced_target_science",
+                "advanced_great_work_veto_by_district",
                 "advanced_target_culture",
+                "advanced_target_culture_with_culture_building_debt",
                 "advanced_target_religious",
                 "advanced_target_diplomatic",
                 "advanced_v1",
@@ -5915,8 +6019,24 @@ mod tests {
         );
     }
 
+    /// The evaluator's public tag list and the table that supplies each
+    /// withholding function are two representations of one deployment
+    /// identity. A count alone cannot catch a swapped or renamed treatment.
+    #[test]
+    fn live_bridge_tags_match_the_withholding_table() {
+        let withholding_tags: Vec<&str> = crate::ai::LIVE_TREATMENTS
+            .iter()
+            .map(|(_, tag, _)| *tag)
+            .collect();
+        assert_eq!(
+            LIVE_BRIDGE_TREATMENTS,
+            withholding_tags.as_slice(),
+            "the evaluator stamp and live withholding table disagree; a deployment treatment would be unmeasurable or mislabeled"
+        );
+    }
+
     /// `AdvancedAi::enable_engine_repairs` claims to be `enable_live_bridge`
-    /// minus exactly four Firaxis-semantics flags. Nothing but this test holds
+    /// minus its deployment-profile treatments. Nothing but this test holds
     /// that claim up.
     ///
     /// It fails in the same silent way as the check above, from the other
@@ -6045,6 +6165,14 @@ mod tests {
             "deny_while_targeted",
             // Same: priced on the live seat's steal record, not native play.
             "stock_denial_lead_time",
+            // Host movement and production semantics, not native engine
+            // repairs. `explore_commit` is already set by production
+            // Advanced, but stays in the live registry for full parity.
+            "parallel_settlers",
+            "host_settler_pop",
+            "explore_dead_targets",
+            "explore_commit",
+            "bank_envoys",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
@@ -6242,6 +6370,11 @@ mod tests {
         assert_eq!(
             have, expected,
             "the amenity control must hold amenity-project-preemption, not a later bridge tag"
+        );
+        assert_eq!(
+            held_off, all,
+            "every deployed live treatment needs exactly one live_without_* arm; missing controls: {:?}",
+            all.difference(&held_off).collect::<Vec<_>>()
         );
     }
 
