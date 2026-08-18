@@ -1921,7 +1921,7 @@ pub struct BasicAi {
     /// Rebuild the recon arm when it is gone and there is still ground to
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
-    recon_replacement: bool,
+    pub(crate) recon_replacement: bool,
     /// Buy one ship for an empire that has none while unexplored water lies
     /// off its coast, and let the advanced controller send it exploring.
     ///
@@ -1937,7 +1937,7 @@ pub struct BasicAi {
     /// — correct for the scout, blind for the sea. Off for the frozen native
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
-    naval_recon: bool,
+    pub(crate) naval_recon: bool,
     /// Count a barbarian camp within `HOME_CAMP_RADIUS` of a city as home
     /// ground the guard clears, not only one within the raider radius.
     ///
@@ -2008,7 +2008,7 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
-    come_ashore: bool,
+    pub(crate) come_ashore: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -4581,7 +4581,17 @@ impl BasicAi {
             }
         }
         revise_policy_deck(g, pid, &self.w, pool);
-        if g.players[pid].secret_society.is_none() {
+        // The engine's own gate, restated here rather than guessed at. This
+        // asked once per player per turn for the whole game and was refused
+        // every time in any game without the Secret Societies mode — 894
+        // refused orders in one 150-turn six-player game, second only to
+        // `Fortify`. The Advanced controller's own
+        // `advanced_secret_society` already carried these three conditions;
+        // the Basic path it composes over did not.
+        if g.game_mode("secret_societies")
+            && g.players[pid].secret_society.is_none()
+            && g.players[pid].civics.contains(&crate::name!("code_of_laws"))
+        {
             let society = if self.pursue_religion {
                 "voidsingers"
             } else {
@@ -5885,9 +5895,21 @@ impl BasicAi {
         self.spend_gold(
             g, pid, &city_ids, settlers, builders, traders, military, melee, ranged,
         );
+        // ★★★★ ASK THE ENGINE WHAT IT COSTS. `faith_builder` is a weight, not
+        // a price: a Faith Builder is legal only under the Monumentality
+        // dedication, so from the turn a civ first banks 120 Faith until the
+        // game ends this fired every turn and was refused every turn — 540
+        // refused orders in one 150-turn six-player game, third behind
+        // `Fortify` and `ChooseSecretSociety`. `unit_purchase_cost` returns
+        // `None` for every illegal purchase and the real speed-scaled,
+        // discounted price otherwise, so it answers legality and
+        // affordability in one question. The weight still gates: it is the
+        // reserve the empire keeps back, above whatever the purchase costs.
         if g.players[pid].faith >= self.w.faith_builder
             && builders < n_cities
             && !city_ids.is_empty()
+            && g.unit_purchase_cost(pid, city_ids[0], "builder", "faith")
+                .is_some_and(|cost| g.players[pid].faith + f64::EPSILON >= cost)
         {
             let _ = g.apply(
                 pid,
@@ -11533,8 +11555,16 @@ impl BasicAi {
         }
     }
 
+    /// End a unit's turn: fortify if the engine will take the order, and
+    /// otherwise simply stop. Every controller ends a unit here, including
+    /// civilians and embarked units, and the fortify order used to be issued
+    /// for all of them — `Game::unit_can_fortify` refuses everything that is
+    /// not an unembarked land military unit, so a Settler walking to its site
+    /// spent one refused order per re-entry, up to eight a turn. Asking the
+    /// engine's own predicate first changes no game state: the order it
+    /// replaces was rejected before it could change any.
     fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        if !g.units[&uid].fortified {
+        if !g.units[&uid].fortified && g.unit_can_fortify(&g.units[&uid]) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }
         false

@@ -2817,17 +2817,17 @@ mod tests {
     /// broader repair bundle.
     #[test]
     fn naval_recon_cannot_reach_the_frozen_anchor() {
-        for (name, ai) in [
-            ("advanced_v1", civvis::ai::AdvancedAi::legacy()),
-            ("advanced", civvis::ai::AdvancedAi::new()),
-        ] {
-            assert!(
-                !ai.naval_recon(),
-                "{name} carries live-only naval reconnaissance: the source-contract \
-                 re-pin is valid only while this arm stays unreachable from the \
-                 frozen rating anchor"
-            );
-        }
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().naval_recon(),
+            "advanced_v1 carries live-only naval reconnaissance: the \
+             source-contract re-pin is valid only while this arm stays \
+             unreachable from the frozen rating anchor"
+        );
+        // Production sails since the 2026-08-17 recon-fleet promotion
+        // (corrected-gate matrix PASS, Elo +35, CI +1..+69; see
+        // `promoted_policy_envoy`). The frozen anchor above is the rating
+        // that must not move; `advanced` re-fits whenever it changes.
+        assert!(civvis::ai::AdvancedAi::new().naval_recon());
     }
 
     /// The re-pin above claims the engine-repair bundle cannot reach the

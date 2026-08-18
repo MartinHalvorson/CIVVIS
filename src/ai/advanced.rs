@@ -3521,6 +3521,24 @@ impl AdvancedAi {
         // `hut_collection` above only grabs one inside the current turn's
         // reach. `advanced_without_village_seeking` prices the withhold.
         ai.base.village_seeking = true;
+        // The reconnaissance quartet the live bridge has carried since its
+        // repair era: rebuild a lost scout (`recon_is_the_missing_arm` was
+        // dead code natively without `recon_replacement`), slip a threatened
+        // one away, put a hull on unseen water, and bring embarked explorers
+        // ashore. Promoted on the corrected-gate matrix at 400 pairs, seed
+        // stream 120000000 (`advanced_recon_fleet`, PR #1907's arm):
+        // deployment-online 55.0% (Wilson CI 50.1%..59.8%), Elo +35
+        // (CI +1..+69) — PASS with the interval clear of parity — and
+        // compact-standard 48.4% (CI 43.5%..53.3%) — no-regression ACCEPT.
+        // The mechanism is the fleet itself: recon peak 3.41 vs 1.47-1.74,
+        // revealed plots +54-79%, the board's villages 20% vs 9% won, and
+        // city-states met by t50 up by half. `advanced_without_recon_fleet`
+        // prices the withhold; `advanced_recon_fleet` is now a declared
+        // alias of `advanced`.
+        ai.enable_recon_replacement();
+        ai.enable_recon_flight();
+        ai.enable_naval_recon();
+        ai.enable_come_ashore();
         ai
     }
 
