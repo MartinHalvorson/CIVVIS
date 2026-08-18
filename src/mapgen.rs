@@ -7761,17 +7761,7 @@ mod river_tests {
             .map(|(seed, topology, script, _)| {
                 let mut rng = Rng::new(*seed);
                 let (world, spawns) = generate_with_script(
-                    &rules,
-                    74,
-                    46,
-                    6,
-                    9,
-                    4,
-                    3,
-                    *script,
-                    *topology,
-                    POLED,
-                    &mut rng,
+                    &rules, 74, 46, 6, 9, 4, 3, *script, *topology, POLED, &mut rng,
                 );
                 format!("{:016x}", world_digest(&world, &spawns))
             })
