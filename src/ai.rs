@@ -4590,7 +4590,9 @@ impl BasicAi {
         // the Basic path it composes over did not.
         if g.game_mode("secret_societies")
             && g.players[pid].secret_society.is_none()
-            && g.players[pid].civics.contains(&crate::name!("code_of_laws"))
+            && g.players[pid]
+                .civics
+                .contains(&crate::name!("code_of_laws"))
         {
             let society = if self.pursue_religion {
                 "voidsingers"
