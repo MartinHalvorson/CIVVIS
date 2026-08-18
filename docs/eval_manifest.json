@@ -1,6 +1,6 @@
 {
   "derived": {
-    "eval_only_count": 189,
+    "eval_only_count": 190,
     "firaxis_only_count": 18,
     "live_bridge_count": 69,
     "native_engine_repair_count": 51,
@@ -145,7 +145,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 189,
+      "declared_count": 190,
       "items": [
         "advanced_build_first",
         "advanced_synergy",
@@ -291,6 +291,7 @@
         "advanced_settler_founds_when_stalled",
         "advanced_fortify_idle_units",
         "advanced_maritime_splice",
+        "advanced_maintenance_deck",
         "advanced_recon_fleet",
         "advanced_without_recon_fleet",
         "advanced_every_lane",

@@ -41570,7 +41570,7 @@ impl Game {
             + surcharge
     }
 
-    fn unit_gold_maintenance(&self, pid: usize) -> f64 {
+    pub(crate) fn unit_gold_maintenance(&self, pid: usize) -> f64 {
         let units = self
             .player_unit_ids(pid)
             .into_iter()

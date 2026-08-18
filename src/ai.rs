@@ -611,7 +611,7 @@ const POLICY_SCORE_MAX_WORKERS: usize = 4;
 /// repository has ever got value from: the card is applied and the result
 /// measured, rather than a regression predicting what cards tend to accompany
 /// winning. `docs/SUPERHUMAN.md` §0 is the evidence for preferring the former.
-fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
+fn empire_reading(g: &Game, pid: usize, w: &Weights, net_maintenance: bool) -> f64 {
     // A card counterfactual is a read-only whole-empire sweep. Keep one memo
     // scope over it so the city-yield and ownership derivations shared by its
     // cities are answered once, then drop it before the caller changes cards.
@@ -623,7 +623,7 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
         // building*. `city_yields` carries flat adders -- Urban Planning's
         // `city_production` -- but the whole `*_production_pct` family reaches
         // the game only through `item_prod_mult`, so without this factor Agoge,
-        // Colonization, Ilkum, Maritime Industries, Conscription, Limes and
+        // Colonization, Ilkum, Maritime Industries, Limes and
         // Maneuver all score exactly 0.0 and lose every tie to a card worth a
         // rounding error of gold. That is the failure `PolicyAi` was retired
         // for, one layer up.
@@ -677,9 +677,24 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
     // are identical either side of the counterfactual and cancel exactly in
     // the difference. Including them would add a large constant to both
     // readings and change no ranking.
-    value
-        + w.pol_military * strength
+    // Maintenance is gold the empire pays, not gold a city yields, so a
+    // card whose whole effect is `unit_maintenance_discount` — Conscription,
+    // Levee en Masse — reads identical either side of the counterfactual and
+    // scores exactly 0.0, the same silence `influence_per_turn` had above.
+    // (The `item_prod_mult` comment above used to claim Conscription too;
+    // that was wrong — the discount never touches production.) Subtract the
+    // empire's own unit bill at the gold weight: for every card that does not
+    // move maintenance the bill is identical either side and cancels exactly,
+    // so no other ranking changes. Behind `maintenance_aware_deck` so the
+    // entrant `advanced_maintenance_deck` can price it first.
+    let maintenance = if net_maintenance {
+        w.pol_gold * g.unit_gold_maintenance(pid)
+    } else {
+        0.0
+    };
+    value + w.pol_military * strength
         + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
+        - maintenance
 }
 
 /// Take the Dedications this age offers, best first.
@@ -772,6 +787,7 @@ fn policy_card_score(
     w: &Weights,
     candidate: &(usize, String, Name),
     current_reading: f64,
+    net_maintenance: bool,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
     let incumbent = g.players[pid].policies.contains(card);
@@ -785,12 +801,12 @@ fn policy_card_score(
     // candidate order and the exact `empire_reading` arithmetic are unchanged.
     let (without, with) = if incumbent {
         g.players[pid].policies.remove(card);
-        let without = empire_reading(g, pid, w);
+        let without = empire_reading(g, pid, w, net_maintenance);
         g.players[pid].policies.insert(*card);
         (without, current_reading)
     } else {
         g.players[pid].policies.insert(*card);
-        let with = empire_reading(g, pid, w);
+        let with = empire_reading(g, pid, w, net_maintenance);
         g.players[pid].policies.remove(card);
         (current_reading, with)
     };
@@ -805,7 +821,13 @@ fn policy_card_score(
     (gain + hysteresis, *priority, slot.clone(), *card)
 }
 
-fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkPool>) {
+fn revise_policy_deck(
+    g: &mut Game,
+    pid: usize,
+    w: &Weights,
+    pool: Option<&WorkPool>,
+    net_maintenance: bool,
+) {
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
     if total <= 0 {
@@ -874,7 +896,8 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                     // The branch is reused for all indices claimed by this
                     // worker.  Compute the unchanged slate once, before the
                     // candidate mutations begin, rather than once per card.
-                    let current_reading = empire_reading(&branch, pid, &weights);
+                    let current_reading =
+                        empire_reading(&branch, pid, &weights, net_maintenance);
                     indices
                         .map(|index| {
                             (
@@ -885,6 +908,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                                     &weights,
                                     &candidates[index],
                                     current_reading,
+                                    net_maintenance,
                                 ),
                             )
                         })
@@ -893,10 +917,12 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
             )
         }
         None => {
-            let current_reading = empire_reading(g, pid, w);
+            let current_reading = empire_reading(g, pid, w, net_maintenance);
             candidates
                 .iter()
-                .map(|candidate| policy_card_score(g, pid, w, candidate, current_reading))
+                .map(|candidate| {
+                    policy_card_score(g, pid, w, candidate, current_reading, net_maintenance)
+                })
                 .collect()
         }
     };
@@ -2166,6 +2192,13 @@ pub struct BasicAi {
     /// left it for a rival. Production Advanced turns this on; Basic and the
     /// frozen `advanced_v1` anchor keep the historical rule.
     pub(crate) village_seeking: bool,
+    /// Subtract the empire's unit-maintenance bill (at the gold weight)
+    /// inside the policy counterfactual, so `unit_maintenance_discount`
+    /// cards — Conscription, Levee en Masse — stop scoring exactly 0.0. For
+    /// every other card the bill cancels in the with/without difference, so
+    /// no other ranking moves. Entrant `advanced_maintenance_deck`; off in
+    /// production pending its screen.
+    pub(crate) maintenance_aware_deck: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3444,6 +3477,7 @@ impl BasicAi {
             explore_commit: false,
             hut_collection: false,
             village_seeking: false,
+            maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -3583,6 +3617,7 @@ impl BasicAi {
             explore_commit: false,
             hut_collection: false,
             village_seeking: false,
+            maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -4580,7 +4615,7 @@ impl BasicAi {
                 }
             }
         }
-        revise_policy_deck(g, pid, &self.w, pool);
+        revise_policy_deck(g, pid, &self.w, pool, self.maintenance_aware_deck);
         // The engine's own gate, restated here rather than guessed at. This
         // asked once per player per turn for the whole game and was refused
         // every time in any game without the Secret Societies mode — 894
@@ -11607,11 +11642,11 @@ mod tests {
         };
 
         let mut serial = initial.clone();
-        revise_policy_deck(&mut serial, 0, &weights, None);
+        revise_policy_deck(&mut serial, 0, &weights, None, false);
         for threads in [4, 5] {
             let mut parallel = initial.clone();
             let pool = WorkPool::new(threads);
-            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool));
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false);
 
             assert_eq!(serial.log, parallel.log, "threads={threads}");
             assert_eq!(
@@ -11620,6 +11655,55 @@ mod tests {
                 "worker completion order must not change the authoritative game (threads={threads})"
             );
         }
+    }
+
+    #[test]
+    fn the_maintenance_discount_scores_only_when_the_deck_sees_the_bill() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        game.players[0]
+            .civics
+            .insert(crate::name!("state_workforce"));
+        game.players[0].government = Some("chiefdom".to_string());
+        // An army whose bill the discount would cut: three Spearmen at one
+        // Gold of maintenance each (a Warrior costs nothing to keep).
+        let spots: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .take(3)
+            .collect();
+        for pos in spots {
+            game.spawn_test_unit("spearman", 0, pos);
+        }
+        assert!(game.unit_gold_maintenance(0) > 0.0);
+        let card = crate::name!("conscription");
+        let spec = &game.rules.policies[&card];
+        let candidate = (0usize, spec.slot.clone(), card);
+        let weights = Weights {
+            policy_deck: PolicyDeck::Live,
+            ..Weights::default()
+        };
+
+        // Blind (production today): the discount is an empire-level payment
+        // no city yield carries, so the counterfactual reads 0.0 exactly.
+        let current = empire_reading(&game, 0, &weights, false);
+        let (blind, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
+        assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
+
+        // Aware: the with-side bill is lower by one Gold per unit, so the
+        // gain is the discount at the gold weight — strictly positive.
+        let current = empire_reading(&game, 0, &weights, true);
+        let (aware, ..) = policy_card_score(&mut game, 0, &weights, &candidate, current, true);
+        assert!(
+            aware > 0.0,
+            "the maintenance discount must score its own relief, got {aware}"
+        );
     }
 
     #[test]
@@ -11653,23 +11737,23 @@ mod tests {
 
         // Challenger: the current slate is the exact `without` side, so the
         // incremental scorer must agree with the old two-sweep reading.
-        let current = empire_reading(&game, 0, &weights);
+        let current = empire_reading(&game, 0, &weights, false);
         let mut full = game.clone();
-        let without = empire_reading(&full, 0, &weights);
+        let without = empire_reading(&full, 0, &weights, false);
         full.players[0].policies.insert(card);
-        let with = empire_reading(&full, 0, &weights);
+        let with = empire_reading(&full, 0, &weights, false);
         let expected_gain = with - without;
         let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
         assert_eq!(actual, expected);
 
         // Incumbent: after putting the card on the slate, the current reading
         // is the exact `with` side and only removal needs a fresh sweep.
         game.players[0].policies.insert(card);
-        let current = empire_reading(&game, 0, &weights);
+        let current = empire_reading(&game, 0, &weights, false);
         let mut full = game.clone();
         full.players[0].policies.remove(&card);
-        let without = empire_reading(&full, 0, &weights);
+        let without = empire_reading(&full, 0, &weights, false);
         let gain = current - without;
         let expected = (
             gain + weights.pol_swap_margin * gain.abs(),
@@ -11677,7 +11761,7 @@ mod tests {
             candidate.1.clone(),
             candidate.2,
         );
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, false);
         assert_eq!(actual, expected);
         assert!(game.players[0].policies.contains(&card));
     }
