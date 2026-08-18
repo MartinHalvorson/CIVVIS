@@ -9958,6 +9958,14 @@ const WORLD_WONDER_KEYLINE_RADIUS = 0.62;
 // below, and it is always drawn back at exactly this many user units.
 const WORLD_WONDER_SPRITE_SIZE = 192;
 const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
+// World wonders are rare enough to give their names a wider reading lane than
+// a resource gets. The longest shipped names still shrink from the measured
+// width, rather than overflowing into an unrelated part of the map.
+const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;
+const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;
+const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;
+const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;
+const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;
 // ⚠ The wonder art is code-native vector: `BUILT_WONDER_PAINTER` draws paths,
 // so it has no fixed resolution of its own and costs no asset bytes. The only
 // thing that was ever low-resolution here is this cache. The sprite used to be
@@ -10185,6 +10193,38 @@ function drawWonder(x, y, scale = 1) {
 
 function drawWorldWonderIcon(wonder, x, y, scale = 1) {
   if (!drawWorldWonder(wonder, x, y, scale)) drawWonder(x, y, scale);
+}
+
+// A completed wonder's silhouette says what sort of landmark it is; its name
+// says exactly which one it is. Mirror the resource word treatment at reading
+// zoom, but let a long name use a smaller type size before it is constrained
+// to the nameplate's generous two-hex reading lane.
+function drawWorldWonderWordLabel(wonder, x, y, scale = 1) {
+  if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;
+  const label = titleCase(wonder);
+  const maxWidth = WORLD_WONDER_LABEL_MAX_WIDTH * scale;
+  const labelY = y + WORLD_WONDER_LABEL_BASELINE * scale;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.font = `800 ${WORLD_WONDER_LABEL_FONT_SIZE * scale}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const naturalWidth = Math.max(1, cx.measureText(label).width);
+  const fontSize = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,
+    Math.min(WORLD_WONDER_LABEL_FONT_SIZE * scale,
+      WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth));
+  cx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  // Like resource labels, an ink keyline makes the name readable above every
+  // terrain and territory wash without adding another opaque tile plate.
+  cx.strokeStyle = "rgba(4,8,7,.96)"; cx.lineWidth = Math.max(1.3 * scale, fontSize * .21);
+  cx.strokeText(label, x, labelY, maxWidth);
+  cx.fillStyle = "#fffdf3";
+  cx.fillText(label, x, labelY, maxWidth);
+  cx.restore();
+}
+
+function drawWorldWonderMarker(wonder, x, y, scale = 1) {
+  drawWorldWonderIcon(wonder, x, y, scale);
+  drawWorldWonderWordLabel(wonder, x, y, scale);
 }
 
 // Below this zoom the fine pass inside a motif — furrows, patchwork, doorways —
@@ -18000,7 +18040,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       if (resourceMarkerVisible(t)) drawResourceBadge(t, 0, 0);
       const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
       if (t.district) drawDistrict(t, 0, -built, districtBuildings.get(tileKey));
-      if (t.wonder) drawWorldWonderIcon(t.wonder, 0, -built);
+      if (t.wonder) drawWorldWonderMarker(t.wonder, 0, -built);
     });
   }
 }
@@ -20173,7 +20213,7 @@ function drawScene() {
     // below, seated by the terrain pass above.
     const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
     if (t.district) drawDistrict(t, x, y - built, districtBuildings.get(k));
-    if (t.wonder) drawWorldWonderIcon(t.wonder, x, y - built);
+    if (t.wonder) drawWorldWonderMarker(t.wonder, x, y - built);
   }
   // Lens passes replace or grade the finished ground while leaving the map's
   // geometry and controls alone. Empire goes first because Settler's site

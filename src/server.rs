@@ -13311,6 +13311,59 @@ mod tests {
         );
     }
 
+    /// A landmark silhouette identifies the class of the thing on a tile, but
+    /// viewers need its written name to distinguish the actual world wonder.
+    /// The label deliberately follows the resource-word convention: it only
+    /// appears at reading zoom, has terrain-independent outlined ink, and
+    /// turns a measured long name into smaller type before it is width-bound.
+    #[test]
+    fn browser_labels_completed_world_wonders_with_length_aware_type() {
+        let label = EMBEDDED_INDEX
+            .split("function drawWorldWonderWordLabel")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawWorldWonderMarker").next())
+            .expect("world wonder word label");
+        for contract in [
+            "const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;",
+            "const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;",
+            "const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;",
+            "const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;",
+            "const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;",
+            "if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;",
+            "const label = titleCase(wonder);",
+            "const naturalWidth = Math.max(1, cx.measureText(label).width);",
+            "WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth",
+            "cx.strokeText(label, x, labelY, maxWidth);",
+            "cx.fillText(label, x, labelY, maxWidth);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "world wonder word-label contract is missing: {contract}"
+            );
+        }
+        assert!(
+            label.contains("Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,"),
+            "an exceptionally long name needs a legible minimum size"
+        );
+        assert!(
+            label.contains("cx.strokeStyle = \"rgba(4,8,7,.96)\";"),
+            "the wonder name needs the same terrain-independent keyline as a resource label"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(
+                "function drawWorldWonderMarker(wonder, x, y, scale = 1) {\n  drawWorldWonderIcon(wonder, x, y, scale);\n  drawWorldWonderWordLabel(wonder, x, y, scale);\n}"
+            ),
+            "the icon and its name must stay one normal-map marker"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("if (t.wonder) drawWorldWonderMarker(t.wonder,")
+                .count(),
+            2,
+            "both the flat and globe strategic maps must label completed world wonders"
+        );
+    }
+
     /// A district, wonder or city built on hills splits the tile with the
     /// ground it stands on: the symbol takes the upper three quarters and the
     /// hill is seated in the quarter below, where it stays visible under the
