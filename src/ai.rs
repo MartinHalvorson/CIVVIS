@@ -252,11 +252,17 @@ const NAVAL_RECON_WARTIME_ARM_MAX: usize = 2;
 /// making every scout sweep the whole world every turn.
 const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
 
-/// How far an exploring unit will detour for a tribal village it has already
-/// charted but cannot reach this turn. See `BasicAi::village_seeking`. Two
-/// scout-turns of ground: far enough to catch the villages a sweep walked
+/// How far a reconnaissance unit will detour for a tribal village it has
+/// already charted but cannot reach this turn. See `BasicAi::village_seeking`.
+/// Two scout-turns of ground: far enough to catch the villages a sweep walked
 /// past, near enough that the frontier is never abandoned for a long march.
 const VILLAGE_SEEK_RADIUS: i32 = 6;
+
+/// A nearby field unit can collect a charted village when no Scout is suitable
+/// for it, but it must not become a map-wide errand. Two ordinary land-unit
+/// turns lets an adjacent army cash in a discovery without replacing the recon
+/// arm or pulling it away from its actual job.
+const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
 
 /// The population under which a FRONTIER city gets the garrison-walls
 /// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
@@ -11640,70 +11646,129 @@ impl BasicAi {
         self.explore_goal.borrow_mut().remove(&uid);
     }
 
-    fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let upos = g.units[&uid].pos;
-        // A tribal village the scout can already reach this turn is a
-        // one-off reward, so production recon should not march past it toward
-        // an arbitrary fogged tile. `hut_collection` carries the pickup for
-        // production Advanced now that `tactical_strategy` has left it; both
-        // are false for Basic and the frozen `advanced_v1` anchor. `Game`
-        // contains the whole board for simulation purposes; use live
-        // player vision here so reconnaissance does not gain a route to huts
-        // it has never actually seen.
-        let is_village = |g: &Game, pos: Pos| {
-            matches!(
-                g.map.get(pos).and_then(|tile| tile.improvement.as_deref()),
-                Some("goody_hut" | "meteor_goody")
-            )
-        };
-        let nearby_hut = ((self.tactical_strategy || self.hut_collection)
-            && !g.players[pid].is_barbarian)
-            .then(|| {
-                let visible = g.player_vision_now(pid);
-                g.reachable(uid)
-                    .into_iter()
-                    .filter(|pos| g.sees(&visible, *pos))
-                    .filter(|pos| is_village(g, *pos))
-                    .min_by_key(|pos| (g.wdist(upos, *pos), *pos))
-            })
-            .flatten();
-        if let Some(hut) = nearby_hut {
-            if self.step_toward(g, pid, uid, hut) {
-                return true;
-            }
+    fn is_village(g: &Game, pos: Pos) -> bool {
+        matches!(
+            g.map.get(pos).and_then(|tile| tile.improvement.as_deref()),
+            Some("goody_hut" | "meteor_goody")
+        )
+    }
+
+    /// A village is an explorer's prize first. A nearby ordinary military unit
+    /// may collect one only as a bounded fallback, and never while escorting a
+    /// civilian. Settlers, Builders, and every other civilian role are absent
+    /// by construction: their dedicated movement must not turn into a distant
+    /// goody-hut chase.
+    fn village_collector_role(g: &Game, pid: usize, uid: u32) -> Option<(u8, i32)> {
+        let unit = g.units.get(&uid)?;
+        let spec = &g.rules.units[unit.kind];
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || unit.linked_to.is_some()
+            || spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+        {
+            return None;
         }
-        // A village the empire has already charted but cannot reach this turn
-        // is still a bounded, expiring prize: whichever civilization arrives
-        // first consumes it. Walk toward the nearest one within
-        // `VILLAGE_SEEK_RADIUS` before opening more fog. Knowledge is limited
-        // to tiles in the explored set — ground this seat has actually had in
-        // sight — and the walk re-derives every turn, so a village a rival
-        // pops meanwhile is dropped the moment the tile comes back into view.
-        // One chaser per village: a strictly closer fellow reconnaissance
-        // unit releases this one back to the frontier.
-        if self.village_seeking && !g.players[pid].is_barbarian {
-            let known_village = g
-                .wdisk(upos, VILLAGE_SEEK_RADIUS)
+        Some(if Self::unit_doctrine(g, uid) == UnitDoctrine::Recon {
+            (0, VILLAGE_SEEK_RADIUS)
+        } else {
+            (1, VILLAGE_MILITARY_SEEK_RADIUS)
+        })
+    }
+
+    /// Deterministic ownership of a longer village errand. Recon has first
+    /// claim, then the closest eligible unit of that role; the ID only settles
+    /// an exact tie. A unit that has already spent its movement cannot keep a
+    /// live collector from taking the prize now.
+    fn village_collector_rank(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        village: Pos,
+    ) -> Option<(u8, i32, u32)> {
+        let (role, radius) = Self::village_collector_role(g, pid, uid)?;
+        let distance = g.wdist(g.units[&uid].pos, village);
+        (distance > 0 && distance <= radius && g.unit_can_traverse(uid, village))
+            .then_some((role, distance, uid))
+    }
+
+    /// Return the village this military unit should collect now. A reachable,
+    /// actually seen village is taken immediately by whichever unit can enter
+    /// it; for a longer detour, a Scout wins the claim and an ordinary military
+    /// unit is used only when no suitable Scout can do so.
+    fn village_collection_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        if self.minor || self.barb || g.players[pid].is_barbarian {
+            return None;
+        }
+        let (_, radius) = Self::village_collector_role(g, pid, uid)?;
+        let origin = g.units[&uid].pos;
+        let known_villages: Vec<Pos> = g
+            .wdisk(origin, radius)
+            .into_iter()
+            .filter(|pos| *pos != origin)
+            .filter(|pos| g.players[pid].explored.contains(pos))
+            .filter(|pos| Self::is_village(g, *pos))
+            .collect();
+
+        // Production has charted the target already, so do not clone player
+        // vision for every military unit with no local village. The legacy
+        // immediate-pickup arms still use current sight below, preserving the
+        // old information boundary when bounded seeking is off.
+        if self.village_seeking && !known_villages.is_empty() {
+            if let Some(village) = g
+                .reachable(uid)
                 .into_iter()
-                .filter(|pos| *pos != upos)
-                .filter(|pos| g.players[pid].explored.contains(pos))
-                .filter(|pos| is_village(g, *pos))
-                .filter(|pos| g.unit_can_traverse(uid, *pos))
-                .filter(|pos| {
-                    !g.units.values().any(|other| {
-                        other.owner == pid
-                            && other.id != uid
-                            && Self::unit_doctrine(g, other.id) == UnitDoctrine::Recon
-                            && g.wdist(other.pos, *pos) < g.wdist(upos, *pos)
-                    })
-                })
-                .min_by_key(|pos| (g.wdist(upos, *pos), *pos));
-            if let Some(village) = known_village {
-                if self.step_toward(g, pid, uid, village) {
-                    return true;
-                }
+                .filter(|pos| known_villages.contains(pos))
+                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+            {
+                return Some(village);
+            }
+        } else if self.tactical_strategy || self.hut_collection {
+            let visible = g.player_vision_now(pid);
+            if let Some(village) = g
+                .reachable(uid)
+                .into_iter()
+                .filter(|pos| g.sees(&visible, *pos))
+                .filter(|pos| Self::is_village(g, *pos))
+                .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+            {
+                return Some(village);
             }
         }
+
+        if !self.village_seeking {
+            return None;
+        }
+
+        known_villages
+            .into_iter()
+            .filter(|pos| Self::village_collector_rank(g, pid, uid, *pos).is_some())
+            .filter(|pos| {
+                let own = Self::village_collector_rank(g, pid, uid, *pos);
+                g.player_unit_ids(pid)
+                    .into_iter()
+                    .filter_map(|other| Self::village_collector_rank(g, pid, other, *pos))
+                    .min()
+                    == own
+            })
+            .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+    }
+
+    /// Spend this movement step on a charted tribal village before generic
+    /// exploration, staging, or patrol. The target selector is intentionally
+    /// military-only; civilian movement never reaches this method.
+    pub(crate) fn village_collection_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        let Some(village) = self.village_collection_target(g, pid, uid) else {
+            return false;
+        };
+        self.step_toward(g, pid, uid, village)
+    }
+
+    fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if self.village_collection_step(g, pid, uid) {
+            return true;
+        }
+        let upos = g.units[&uid].pos;
         // `unit_can_traverse` says yes to open water for every land unit the
         // moment embarkation unlocks, so from that turn on the unexplored
         // ocean is a legal exploration goal for the whole army. That is how a
@@ -12440,6 +12505,14 @@ impl BasicAi {
                 return self.step_toward(g, pid, uid, home);
             }
             return self.fortify_or_stop(g, pid, uid);
+        }
+        // Tribal villages expire the instant another civilization reaches
+        // them. Let the chosen Scout — or the bounded military fallback when
+        // no Scout can take it — collect before this unit receives a generic
+        // escort, improvement, or patrol assignment. Civilians never enter
+        // this branch; their dedicated steps retain their local jobs.
+        if self.village_seeking && self.village_collection_step(g, pid, uid) {
+            return true;
         }
         if let Some(target) = self.naval_escort_objective(g, pid, uid) {
             if target != upos && self.step_toward(g, pid, uid, target) {
@@ -18262,6 +18335,107 @@ mod tests {
         yielding.village_seeking = true;
         assert!(!yielding.explore_step(&mut crowded, 0, scout));
         assert_eq!(crowded.units[&scout].pos, origin);
+    }
+
+    #[test]
+    fn a_nearby_military_unit_claims_a_charted_village_without_retasking_civilians() {
+        let mut g = Game::new_full(1, 24, 16, 38_004, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let origin = *g.map.tiles.keys().min().expect("the map has tiles");
+        let village = g
+            .wdisk(origin, VILLAGE_MILITARY_SEEK_RADIUS)
+            .into_iter()
+            .find(|pos| g.wdist(origin, *pos) == VILLAGE_MILITARY_SEEK_RADIUS)
+            .expect("a tile four steps out exists");
+        let civilians: Vec<Pos> = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.wdist(origin, *pos) > VILLAGE_MILITARY_SEEK_RADIUS + 2)
+            .take(2)
+            .collect();
+        assert_eq!(civilians.len(), 2, "the map has room away from the errand");
+        g.map.tiles.get_mut(&village).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let warrior = g.spawn_test_unit("warrior", 0, origin);
+        let builder = g.spawn_test_unit("builder", 0, civilians[0]);
+        let settler = g.spawn_test_unit("settler", 0, civilians[1]);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+
+        let mut ai = BasicAi::new();
+        ai.village_seeking = true;
+        let builder_before = g.units[&builder].pos;
+        let settler_before = g.units[&settler].pos;
+        assert!(
+            !ai.village_collection_step(&mut g, 0, builder)
+                && !ai.village_collection_step(&mut g, 0, settler),
+            "the village collector must reject civilian unit roles"
+        );
+        assert_eq!(g.units[&builder].pos, builder_before);
+        assert_eq!(g.units[&settler].pos, settler_before);
+
+        assert!(ai.military_step(&mut g, 0, warrior));
+        assert!(
+            g.wdist(g.units[&warrior].pos, village) < g.wdist(origin, village),
+            "with no Scout able to claim it, the nearby Warrior should close on the village"
+        );
+    }
+
+    #[test]
+    fn a_scout_keeps_a_long_village_errand_over_the_military_fallback() {
+        let mut g = Game::new_full(1, 24, 16, 38_005, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.map.clear_rivers();
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let scout_origin = *g.map.tiles.keys().min().expect("the map has tiles");
+        let village = g
+            .wdisk(scout_origin, VILLAGE_SEEK_RADIUS)
+            .into_iter()
+            .find(|pos| g.wdist(scout_origin, *pos) == 5)
+            .expect("a tile five steps from the Scout exists");
+        let warrior_origin = g
+            .wdisk(village, VILLAGE_MILITARY_SEEK_RADIUS)
+            .into_iter()
+            .find(|pos| {
+                g.wdist(village, *pos) == VILLAGE_MILITARY_SEEK_RADIUS && *pos != scout_origin
+            })
+            .expect("a tile four steps from the village exists");
+        g.map.tiles.get_mut(&village).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let scout = g.spawn_test_unit("scout", 0, scout_origin);
+        let warrior = g.spawn_test_unit("warrior", 0, warrior_origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+
+        let mut ai = BasicAi::new();
+        ai.village_seeking = true;
+        assert_eq!(
+            ai.village_collection_target(&g, 0, warrior),
+            None,
+            "a long military detour yields when a Scout can collect the village"
+        );
+        assert_eq!(ai.village_collection_target(&g, 0, scout), Some(village));
+        assert!(ai.village_collection_step(&mut g, 0, scout));
+        assert!(
+            g.wdist(g.units[&scout].pos, village) < g.wdist(scout_origin, village),
+            "the Scout should be sent toward the village immediately"
+        );
     }
 
     #[test]

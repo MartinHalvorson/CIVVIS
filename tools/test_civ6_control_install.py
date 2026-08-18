@@ -337,6 +337,36 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("DESKTOP_AFTER = 4", closer)
         self.assertIn('report("autoclose_desktop"', closer)
 
+    def test_spy_popups_clear_through_their_shipped_paths(self) -> None:
+        """Spy overlays must disappear without leaving an end-turn decision behind."""
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        for context in ("EspionagePopup", "EspionageEscape"):
+            self.assertIn(f"<LuaContext>{context}</LuaContext>", modinfo)
+
+        briefing = closer.split('if NAME == "EspionagePopup"', 1)[1].split(
+            "return true;", 1
+        )[0]
+        self.assertIn('type(OnCancel) == "function"', briefing)
+        self.assertIn("OnCancel();", briefing)
+
+        escape = closer.split('if NAME == "EspionageEscape"', 1)[1].split(
+            "return true;", 1
+        )[0]
+        self.assertIn('type(OnButton4) == "function"', escape)
+        self.assertIn("OnButton4();", escape)
+        self.assertIn('or type(OnButton4) == "function"', closer)
+
+        # Treat these full-screen choices like dialogue: on a normal run they
+        # close within 0.25s, while the ladder's 0.05s announcement setting
+        # remains even faster.
+        quick_clock = closer.split('if NAME == "DiplomacyActionView"', 1)[1].split(
+            "end\nif SECONDS < 0", 1
+        )[0]
+        self.assertIn('NAME == "EspionagePopup"', quick_clock)
+        self.assertIn('NAME == "EspionageEscape"', quick_clock)
+
     def test_governors_export_exact_state_and_use_stock_operation_indices(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("-- Governor Titles", 1)[1].split('emit("state"', 1)[0]
@@ -1369,6 +1399,42 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         """
         self.assertIn("EndTurnBlockingChanged = onEndTurnBlockingChanged", self.source)
         self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
+
+
+class PeacetimeWarFloorsTest(unittest.TestCase):
+    """On a CIVVIS seat, the ladder's war floors require an actual war.
+
+    `warTarget` is "who we would fight" and exists from the first met major, so
+    gating the battering-ram entry and the ranged floor on it alone kept a
+    permanent peacetime war footing on CIVVIS runs (41 ranged orders at peace,
+    zero ever alive, run civvis-20260818T212725Z). The `warFooting` gate keys
+    them on `warPressure`'s at-war read instead; `cfg.PeacetimeWarFloors` is
+    the recorded control arm and legacy no-decider runs keep the old build-up.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        cls.ladder = source.split("local function chooseProduction", 1)[1].split(
+            "THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY", 1
+        )[0]
+
+    def test_the_war_footing_gate_reads_a_real_war(self) -> None:
+        self.assertIn(
+            "local warFooting = atWar or not cfg.CivvisDecides"
+            " or cfg.PeacetimeWarFloors;",
+            self.ladder,
+        )
+
+    def test_the_ram_entry_and_ranged_floor_sit_behind_the_gate(self) -> None:
+        ram = self.ladder.split('{ "UNIT_BATTERING_RAM", "siege" }', 1)[0]
+        self.assertIn("warTarget ~= nil and warFooting and not losingWar", ram)
+        ranged = self.ladder.split('pushRangedLandUnits("ranged")', 1)[0]
+        self.assertIn(
+            "if warTarget ~= nil and warFooting\n"
+            "\t\t\tand (counts.ranged or 0) < (cfg.RangedFloor or 3) then",
+            ranged,
+        )
 
 
 class AgentChunkLocalLimitTest(unittest.TestCase):

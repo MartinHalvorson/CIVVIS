@@ -103,7 +103,8 @@ if END_SCREENS[NAME] then SECONDS = END_SECONDS; end
 -- cards. When one refuses its first exit path we need to reach the later response
 -- rungs promptly; twenty one-second probes left a real leader screen up for twenty
 -- seconds before the desktop fallback even began.
-if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
+if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
+		or NAME == "EspionagePopup" or NAME == "EspionageEscape" then
 	SECONDS = math.min(SECONDS, tonumber(cfg.DialogueSeconds) or 0.25);
 	DESKTOP_AFTER = 4;
 end
@@ -162,11 +163,13 @@ local CHAINED = {
 local function haveScreen()
 	return type(OnClose) == "function"
 		or type(Close) == "function"
+		or type(OnCancel) == "function"           -- EspionagePopup
 		or type(OnContinue) == "function"
 		or type(OnPass) == "function"             -- WorldCongressPopup emergency proposal
 		or type(OnClosePopup) == "function"
 		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
 		or type(OnButton1) == "function"           -- ChooseArtifact
+		or type(OnButton4) == "function"           -- EspionageEscape city-center route
 		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
 		or type(OnAccept) == "function"            -- WorldCongressPopup
 		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
@@ -196,18 +199,81 @@ if not haveScreen() then pcall(function() include(NAME); end); end
 -- the global does not change what the event calls. If the swap cannot be made
 -- cleanly the dialog is simply never armed, which leaves this screen exactly
 -- as it ships.
+-- The shipped constant, read off `PopupDialog` when it is loaded and named
+-- literally when it is not. `InGamePopup.lua` opens with
+-- `include("PopupDialog")` and this file includes `InGamePopup` above, so the
+-- table is normally there; the literal is what that constant has always been
+-- and keeps the rule working rather than silently disarming it.
+local CANCEL_COMMAND = "_CMD_CANCEL";
+if type(PopupDialog) == "table" and type(PopupDialog.COMMAND_CANCEL) == "string" then
+	CANCEL_COMMAND = PopupDialog.COMMAND_CANCEL;
+end
+
+-- ★★★★ WHICH GENERIC DIALOGS MAY BE ESCAPED, AND WHY THESE.
+--
+-- Returns `dismissable, buttons` for an option list raised through
+-- `LuaEvents.OnRaisePopupInGame`. Two shapes qualify and no third:
+--
+--   * **one button** — an acknowledgement. UNIT CAPTURED. Nothing is asked, so
+--     nothing is answered by ending it. This was the whole rule until now.
+--   * **any button carrying `_CMD_CANCEL`** — a dialog whose own author wrote a
+--     decline path. `PopupDialogInGame:AddCancelButton` tags its option with
+--     `PopupDialog.COMMAND_CANCEL`, and the shipped `InGamePopup.InputHandler`
+--     maps Escape to `ActivateCommand(COMMAND_CANCEL)` first. Escape therefore
+--     runs that author's cancel callback, which is `nil` in every shipped
+--     caller — the definition of dismissing without consequence.
+--
+-- ⚠⚠ THE REASON THE OLD RULE GAVE FOR REFUSING TWO BUTTONS IS ABOUT A
+-- DIFFERENT SCREEN. It cited "raze or keep this city ... has two and asks
+-- everything". Raze/keep is `RazeCity.lua` with its own `RazeCity.xml`, queued
+-- through `UIManager:QueuePopup` and holding its own input handler; it never
+-- reaches `PopupDialogInGame` and nothing here can touch it. Every shipped
+-- `PopupDialogInGame:new` caller with a CANCEL is a confirmation of an action a
+-- person just took in a panel — `UnitPanel`'s delete, `WorldInput`'s WMD
+-- launch, `GovernmentScreen`'s anarchy switch, `GovernorAssignmentChooser`'s
+-- replacement, `StrategicView_MapPlacement`'s pin. This controller takes none
+-- of them through a panel; it issues the operations directly. A confirmation
+-- reaching an unattended seat is a dialog nothing was waiting on, and declining
+-- it gives the map back.
+--
+-- ⚠ A dialog with two buttons and NO cancel is a forced choice and is left
+-- exactly as it ships. That is the line, and it is read off the data the
+-- dialog carries rather than off a count.
+--
+-- ⚠ A bare global rather than a local, because it is the offline test's only
+-- way in — the same convention as `CivvisResidualBucket` in the agent. Never
+-- `_G.`: the sandbox has none.
+CivvisDialogDismissable = function(options)
+	local buttons = 0;
+	local declinable = false;
+	local seen = {};
+	if type(options) == "table" then
+		for _, option in ipairs(options) do
+			if option.Type == "Button" then
+				buttons = buttons + 1;
+				local command = option.CommandString;
+				if command ~= nil then
+					seen[#seen + 1] = tostring(command);
+					if command == CANCEL_COMMAND then declinable = true; end
+				end
+			end
+		end
+	end
+	return (buttons == 1) or declinable, table.concat(seen, "+");
+end
+
 local dialogIsAnnouncement = false;
+-- What the open dialog's buttons were, as the shipped command strings joined by
+-- '+' ("" when it named none). Reported with the close so the population of
+-- dialogs that actually reach an unattended run becomes a census instead of a
+-- guess: `InGamePopup` is one context rendering every generic dialog in the
+-- game, so `screen:"InGamePopup"` on its own names nothing.
+local dialogButtons = "";
 
 if NAME == "InGamePopup" and type(OnPopupOpen) == "function" then
 	local basePopupOpen = OnPopupOpen;
 	local function countingPopupOpen(id, options)
-		local buttons = 0;
-		if type(options) == "table" then
-			for _, option in ipairs(options) do
-				if option.Type == "Button" then buttons = buttons + 1; end
-			end
-		end
-		dialogIsAnnouncement = (buttons == 1);
+		dialogIsAnnouncement, dialogButtons = CivvisDialogDismissable(options);
 		return basePopupOpen(id, options);
 	end
 	local swapped = pcall(function()
@@ -232,6 +298,22 @@ local function endScreen(attempt)
 		end
 		if type(OnClosePopup) == "function" then OnClosePopup(); return true; end
 		return false;
+	end
+	-- Espionage's briefing/result card is informational after the controller has
+	-- already requested the operation. Its Cancel callback just dequeues the
+	-- popup and returns to the map: it neither starts a new mission nor aborts an
+	-- active one. Use that real UI path rather than calling Close indirectly.
+	if NAME == "EspionagePopup" and type(OnCancel) == "function" then
+		OnCancel();
+		return true;
+	end
+	-- A spy that must escape is different: its plain OnClose only hides the
+	-- panel, leaving the end-turn blocker unanswered so the screen comes back.
+	-- The shipped fourth button routes through the city center, which is the one
+	-- route it always enables, and submits SET_ESCAPE_ROUTE before hiding.
+	if NAME == "EspionageEscape" and type(OnButton4) == "function" then
+		OnButton4();
+		return true;
 	end
 	-- A military-emergency proposal is raised by WorldCongressPopup itself,
 	-- not WorldCongressIntro or WorldCongressBetweenTurns.  Its shipped Pass
@@ -569,6 +651,17 @@ else
 			end);
 			detail = string.format(',"rung":%d,"mode":%d,"session":%d,"fading":%s,"popup":%s',
 			                       rung, mode, session, fading, popup);
+		end
+		-- ⚠ WHICH DIALOG. `InGamePopup` is one context rendering every generic
+		-- dialog in the game, so `screen:"InGamePopup"` names nothing. The
+		-- command strings are what the dialog's author wrote, and they are the
+		-- only field that distinguishes a one-button acknowledgement from a
+		-- confirmation with a Cancel from a forced choice. Without them the
+		-- question "which dialogs actually reach an unattended run" can only be
+		-- answered by reasoning about shipped source, which is how the rule
+		-- above came to protect against a screen that lives somewhere else.
+		if NAME == "InGamePopup" then
+			detail = detail .. string.format(',"buttons":"%s"', dialogButtons);
 		end
 		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s%s',
 		                                  upFor, tostring(ended), tostring(gone), detail));
