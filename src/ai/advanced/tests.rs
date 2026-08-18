@@ -500,7 +500,10 @@ fn a_siege_landing_net_damage_is_not_a_stalled_war() {
 
     let mut bridged = AdvancedAi::new();
     bridged.enable_live_bridge();
-    assert!(bridged.siege_is_progress, "the live bundle carries the repair");
+    assert!(
+        bridged.siege_is_progress,
+        "the live bundle carries the repair"
+    );
     bridged.disable_siege_is_progress();
     assert!(!bridged.siege_is_progress);
 }
