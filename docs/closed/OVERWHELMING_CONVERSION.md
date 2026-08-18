@@ -20,7 +20,7 @@ available (the taker gains a city and the loser loses one), and it is the one
 lever never pulled.
 
 This is not the refuted aggression lane. `docs/RUSH.md` and
-`docs/WAR_TIMING.md` measured *creating* wars — ancient rushes and appointed
+`docs/closed/WAR_TIMING.md` measured *creating* wars — ancient rushes and appointed
 midgame timing attacks — and rejected them on wins. The live agent has the
 opposite problem: it reaches its own Conquest posture and its own declaration
 (`plan strategy=conquest` held for 20 assessments of the last full game) and

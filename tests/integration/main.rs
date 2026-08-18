@@ -7,7 +7,7 @@
 //! compiled it in twice more. One target pays one link and one embed. New
 //! integration suites join here as a `mod`, not as a new top-level file;
 //! `tests/fixtures/` stays where it is — it is preserved evidence named by
-//! `docs/LIVE_GENOME_TRANSFER.md`, not this binary's input.
+//! `docs/closed/LIVE_GENOME_TRANSFER.md`, not this binary's input.
 //!
 //! Inside the modules `include_str!` paths climb two levels (`../../data/…`):
 //! the paths are relative to each source file, which now sits one directory

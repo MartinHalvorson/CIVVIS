@@ -721,7 +721,49 @@ class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
             {"ruleset": "RULESET_EXPANSION_2"}, {"ruleset": None}, {"ruleset": None},
         ]))
         self.assertIn("RULESET_EXPANSION_2", note)
-        self.assertIn("2 row(s) predate", note)
+        self.assertIn("2 row(s) carry no ruleset readback", note)
+
+    def test_an_unreadable_readback_is_unverified_not_a_ruleset_recorded(self):
+        """★★★★★ `?` IS THE MOD'S ANSWER FOR A LOOKUP THAT FAILED, and because
+        it is a truthy string it was printed as a ruleset this record had
+        observed. The published prose read "Rulesets recorded: ?,
+        RULESET_EXPANSION_2" over three rows whose ruleset nobody knows —
+        `civvis-20260818T032030Z`, `040903Z` and `045332Z`, all three played to
+        223/250/250 turns.
+        """
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_EXPANSION_2"},
+            {"ruleset": civ6_ladder.UNREADABLE},
+            {"ruleset": None},
+        ]))
+        self.assertIn("Rulesets recorded: RULESET_EXPANSION_2.", note)
+        self.assertNotIn("?,", note)
+        self.assertIn("2 row(s) carry no ruleset readback", note)
+
+    def test_the_note_says_unverified_is_not_a_mismatch(self):
+        """The prose is the only thing a reader has. It must not let an
+        unverified row be read as a game played under the wrong rules."""
+        note = " ".join(civ6_ladder.same_game_note([{"ruleset": None}]))
+        self.assertIn("Unverified is not a mismatch", note)
+
+    def test_rows_misfiled_before_the_distinction_existed_are_owned(self):
+        """⚠ ROWS ARE NEVER REWRITTEN, so the three games filed as
+        `wrong_ruleset` on an unreadable readback still read that way in the
+        table. Without this line the note above contradicts them."""
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": civ6_ladder.UNREADABLE, "reason": "wrong_ruleset"},
+            {"ruleset": civ6_ladder.UNREADABLE, "reason": "wrong_ruleset"},
+            {"ruleset": "RULESET_EXPANSION_2", "reason": "stopped"},
+        ]))
+        self.assertIn("2 of those row(s) were nevertheless recorded as", note)
+
+    def test_a_genuinely_wrong_ruleset_row_is_not_called_misfiled(self):
+        """The game reported a ruleset and it differed. That refusal was
+        correct and must not be excused by this line."""
+        note = " ".join(civ6_ladder.same_game_note([
+            {"ruleset": "RULESET_STANDARD", "reason": "wrong_ruleset"},
+        ]))
+        self.assertNotIn("nevertheless recorded", note)
 
     def test_a_mode_that_was_on_is_called_out(self):
         note = " ".join(civ6_ladder.same_game_note([
@@ -735,7 +777,83 @@ class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
             {"ruleset": "RULESET_EXPANSION_2", "modes": []},
         ]))
         self.assertNotIn("⚠", note)
-        self.assertNotIn("predate", note)
+        self.assertNotIn("no ruleset readback", note)
+
+
+class ADefeatIsNotAStall(LedgerCase):
+    """★★★★★ OUR OWN DEFEAT WAS INDISTINGUISHABLE FROM THE HARNESS HANGING.
+
+    `civ6_play.py` keeps the terminal event for a defeat exactly as it does for
+    a victory, and the mod synthesises one when no cities remain. `entry_from`
+    projected only `won`, `victory` and `victory_type`, and a defeat carries
+    none of them, so an elimination landed as `{"reason": "stopped",
+    "victory": null, "won": false}` — byte-identical to a run that wedged.
+    Measured on `civvis-20260815T160346Z` (t233), `195951Z` (t102) and
+    `210845Z` (t226), each carrying `{"kind": "defeat", "ours": true}` in
+    `events.jsonl` and each filed as `stopped`.
+    """
+
+    @staticmethod
+    def _defeat(tag, *, ours=True, turn=233, **extra):
+        return summary(tag, last_turn=turn, reason="stopped",
+                       outcome={"kind": "defeat", "ours": ours, "player": 0,
+                                "turn": turn},
+                       **extra)
+
+    def test_our_elimination_reaches_the_row(self):
+        entry = civ6_ladder.entry_from(self._defeat("civvis-20260815T160346Z"))
+        self.assertTrue(entry["defeat"])
+        self.assertFalse(entry["won"], "losing is not winning")
+
+    def test_a_stall_and_a_defeat_are_not_the_same_row(self):
+        """The whole defect: two different endings, one indistinguishable row."""
+        stalled = civ6_ladder.entry_from(
+            summary("hung", reason="stalled: no event for 240s"))
+        lost = civ6_ladder.entry_from(self._defeat("lost"))
+        self.assertNotEqual(
+            (stalled["won"], stalled["defeat"]), (lost["won"], lost["defeat"]))
+        self.assertFalse(stalled["defeat"])
+
+    def test_a_rivals_elimination_is_not_ours(self):
+        """⚠ Civilization VI emits a `defeat` when ANY player is eliminated,
+        including a city-state; 39 of the 111 run event streams still on
+        this machine carry at least one.
+        `civ6_play.finished()` already refuses to stop on those — a run was cut
+        sixteen turns short of a score victory because player 7 died — and the
+        recording side needs the same distinction."""
+        entry = civ6_ladder.entry_from(self._defeat("rival-died", ours=False))
+        self.assertFalse(entry["defeat"])
+
+    def test_a_victory_is_not_recorded_as_a_defeat(self):
+        entry = civ6_ladder.entry_from(summary("won-it", won=True))
+        self.assertTrue(entry["won"])
+        self.assertFalse(entry["defeat"])
+
+    def test_a_row_from_before_the_column_existed_reads_false_not_none(self):
+        self.assertFalse(civ6_ladder.entry_from(summary("older"))["defeat"])
+
+    def test_the_attempt_table_says_defeat_where_it_said_stopped(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, self._defeat("civvis-20260815T195951Z", turn=102)))
+        row = next(line for line in civ6_ladder.markdown_for(
+            self.state()).splitlines() if "civvis-20260815T195951Z" in line)
+        self.assertIn("| defeat |", row)
+        self.assertNotIn("| stopped |", row)
+
+    def test_a_stalled_row_still_reports_how_it_stalled(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary(
+            "wedged", reason="stalled: no event for 240s")))
+        row = next(line for line in civ6_ladder.markdown_for(
+            self.state()).splitlines() if "`wedged`" in line)
+        self.assertIn("stalled: no event for 240s", row)
+        self.assertNotIn("defeat", row)
+
+    def test_the_ending_census_counts_eliminations_apart_from_the_stalls(self):
+        for tag in ("civvis-a", "civvis-b"):
+            civ6_ladder.record_summary(write_run(self.runs, self._defeat(tag)))
+        civ6_ladder.record_summary(write_run(self.runs, summary("won-it", won=True)))
+        table = civ6_ladder.markdown_for(self.state())
+        self.assertIn("2 more ended in our own elimination", table)
 
     def test_an_empty_record_renders_nothing(self):
         self.assertEqual(civ6_ladder.same_game_note([]), [])

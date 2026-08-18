@@ -1138,7 +1138,7 @@ mod tests {
         assert_eq!(globe.distance_row_capacity(), globe.len());
     }
 
-    /// Frozen microbenchmark for `docs/SPHERE_PERFORMANCE.md`.
+    /// Frozen microbenchmark for `docs/closed/SPHERE_PERFORMANCE.md`.
     ///
     /// Run in a fresh process so frequency 21 starts without admitted rows:
     /// `cargo test --release sphere_distance_cache_order_benchmark -- \
