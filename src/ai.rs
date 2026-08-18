@@ -4037,6 +4037,41 @@ impl BasicAi {
         Some(camp)
     }
 
+    /// Enter a visible, undefended barbarian camp that is one legal step
+    /// away. Camps are captured by movement rather than an attack, so the
+    /// ordinary tactical scan sees no enemy tile here and otherwise holds a
+    /// melee unit beside a free clear. Keep this local: a camp that needs a
+    /// march remains a separately priced errand, while an adjacent clear pays
+    /// its Gold, Era Score, and spawn prevention immediately.
+    pub(crate) fn clear_adjacent_empty_barbarian_camp(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.owner != pid
+            || Some(pid) == g.barb_pid
+            || g.rules.units[unit.kind].class != "military"
+        {
+            return false;
+        }
+        let camp = g
+            .nbrs(unit.pos)
+            .into_iter()
+            .filter(|position| g.barb_camps.contains_key(position))
+            // `Game` contains the whole board for simulation. Do not turn a
+            // camp in fog into an AI objective merely because its coordinate
+            // happens to be present in the model.
+            .filter(|position| g.player_can_see(pid, *position))
+            .filter(|position| g.units_at(*position).is_empty())
+            .filter(|position| g.can_move(uid, *position))
+            .min();
+        camp.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -11222,6 +11257,13 @@ impl BasicAi {
         if self.barbarian_garrison_step(g, pid, uid, &enemies) {
             return true;
         }
+        // An empty camp does not appear in `is_enemy_tile`, and
+        // `tactical_step` deliberately holds a melee unit one tile from its
+        // target. Enter it directly before that range-keeping logic turns a
+        // free clear into an idle standoff.
+        if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
+        }
         let Some(threat) = self.barbarian_home_defense_objective(g, pid, uid, &enemies) else {
             return false;
         };
@@ -12361,6 +12403,12 @@ impl BasicAi {
             {
                 return true;
             }
+            // A camp outside the local-defense assignment can still be a
+            // free, visible clear on this unit's next step. Combat, pillage,
+            // and any emergency garrison above retain their precedence.
+            if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             let hostile_water_unit = g
                 .units
                 .values()
@@ -12505,6 +12553,12 @@ impl BasicAi {
                 return self.step_toward(g, pid, uid, home);
             }
             return self.fortify_or_stop(g, pid, uid);
+        }
+        // An adjacent empty camp is a completed objective, not a route to
+        // price: enter it before this otherwise peaceful unit starts a longer
+        // village, escort, or patrol task.
+        if self.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
         }
         // Tribal villages expire the instant another civilization reaches
         // them. Let the chosen Scout — or the bounded military fallback when
@@ -18276,6 +18330,68 @@ mod tests {
         assert!(meteor_ai.military_step(&mut meteor_board, 0, scout));
         assert_eq!(meteor_board.units[&scout].pos, hut);
         assert!(meteor_board.map.tiles[&hut].improvement.is_none());
+    }
+
+    #[test]
+    fn a_visible_adjacent_empty_barbarian_camp_is_cleared_before_peacetime_movement() {
+        let mut g = Game::new_full(1, 24, 16, 38_006, 30, 0, true);
+        for uid in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(uid);
+        }
+        for camp in g.barb_camps.keys().copied().collect::<Vec<_>>() {
+            g.barb_camps.remove(&camp);
+            if g.map.tiles[&camp].improvement.as_deref() == Some("barbarian_camp") {
+                g.map.tiles.get_mut(&camp).unwrap().improvement = None;
+            }
+        }
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
+        g.barb_scout_homes.clear();
+        g.barb_scout_targets.clear();
+        g.barb_camp_targets.clear();
+        let (origin, camp) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(origin, tile)| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.city_at(**origin).is_none()
+            })
+            .find_map(|(origin, _)| {
+                g.nbrs(*origin)
+                    .into_iter()
+                    .find(|camp| {
+                        g.map.get(*camp).is_some_and(|tile| {
+                            g.rules.is_passable(tile)
+                                && !g.rules.is_water(tile)
+                                && g.city_at(*camp).is_none()
+                        })
+                    })
+                    .map(|camp| (*origin, camp))
+            })
+            .expect("fixture needs a pair of adjacent open land tiles");
+        let warrior = g.spawn_test_unit("warrior", 0, origin);
+        g.barb_camps.insert(camp, g.turn + 1_000);
+        g.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+
+        assert!(
+            g.player_can_see(0, camp),
+            "the adjacent camp is a real sighting"
+        );
+        assert!(g.can_move(warrior, camp), "the clear is a legal move");
+        let mut ai = BasicAi::new();
+        assert!(ai.military_step(&mut g, 0, warrior));
+        assert_eq!(g.units[&warrior].pos, camp);
+        assert!(
+            !g.barb_camps.contains_key(&camp),
+            "entering an empty camp must clear it rather than leave the unit beside it"
+        );
+        assert_eq!(g.players[0].counters.get("camps"), Some(&1));
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == warrior && *to == camp
+        ));
     }
 
     #[test]

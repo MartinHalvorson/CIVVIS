@@ -24932,6 +24932,15 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // Camps are captured by entering their tile rather than attacking,
+            // so an adjacent empty one must be claimed before this field unit
+            // is sent to a longer village, escort, or pre-war staging order.
+            // The helper asks current player vision and engine movement first.
+            if !unwanted_settler_adjacent
+                && self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid)
+            {
+                return true;
+            }
             // A newly charted village is an expiring reward, so resolve it
             // before this otherwise idle unit is assigned to a pre-war staging
             // ring or an incidental camp errand. The shared selector gives
@@ -25436,6 +25445,12 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
+            // Recon flight keeps its safety-first escape above, but once it
+            // stands its ground an empty camp beside it is a completed reward,
+            // not fog to scout past.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             if self.base.explore_step(g, pid, uid) {
                 return true;
             }
@@ -25480,6 +25495,13 @@ impl AdvancedAi {
             if garrisoned {
                 return true;
             }
+            // `tactical_step` keeps a melee unit at attack range from its
+            // target, but an empty camp has no defender to attack. Once an
+            // actual city garrison has had first claim, enter this free camp
+            // rather than ending the turn beside it.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             let threat = if self.base.home_defense {
                 self.base.home_defense_objective(g, pid, uid, &barb_only)
             } else {
@@ -25493,6 +25515,12 @@ impl AdvancedAi {
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
             }
+        }
+        // A camp outside the local barbarian-response radius may still be a
+        // one-step clear beside this unit. Immediate combat, civilian capture,
+        // recovery, escorts, and any local defense above keep their priority.
+        if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
         }
         // The defender's claim above is deliberately bounded to the nearest
         // half-army. Let the unclaimed remainder keep assembling on its
