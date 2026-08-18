@@ -2392,10 +2392,10 @@ mod tests {
     }
 
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era, tactics_rules,
-        simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
-        turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS, ENTRANT_SEATING_COMMANDS,
-        DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        simultaneous_soak_job_split, single_simulation_jobs_arg, start_era, strict_f64_arg,
+        strict_i64_arg, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS,
+        DEFAULT_TOURNAMENT_ENTRANTS, ENTRANT_SEATING_COMMANDS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::ai::AdvancedAi;
     use civvis::game::{Action, Game};
