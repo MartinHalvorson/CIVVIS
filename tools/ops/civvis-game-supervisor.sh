@@ -47,6 +47,17 @@ STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
 # ~233, so n=1 per sha measures nothing; batches are how a rung's win rate is
 # ever established. The price is that a merge waits out the batch.
 ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-1}
+# The victory objective. This service passed NOTHING here, and inheriting a
+# launcher default silently is how it spent 307 attempts aiming at Science —
+# the one lane `victory_eval` completes 0/16 at this exact profile, while the
+# hand-run batch loop was inheriting nothing and hard-coding `civvis`. The two
+# production loops were running two different experiments into one ledger.
+#
+# Empty still means "the default the tree declares", which is now stated once in
+# `civ6_play.DEFAULT_CIVVIS_VICTORY` with its evidence; the flag is passed only
+# when this knob is set, so the default has exactly one home and this file does
+# not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
+VICTORY=${CIVVIS_VICTORY:-}
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -302,6 +313,7 @@ while true; do
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" --strategy "$STRATEGY" \
+      ${VICTORY:+--victory "$VICTORY"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,
