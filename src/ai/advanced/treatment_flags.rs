@@ -1714,7 +1714,9 @@ mod guard {
     fn toggles_only() -> &'static str {
         let source = include_str!("treatment_flags.rs");
         let marker = "\n#[cfg(test)]\nmod guard {";
-        &source[..source.find(marker).expect("the guard module moved or was renamed")]
+        &source[..source
+            .find(marker)
+            .expect("the guard module moved or was renamed")]
     }
 
     /// The toggles stay out of the hotspot.

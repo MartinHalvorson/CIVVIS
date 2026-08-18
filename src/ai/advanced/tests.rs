@@ -36,7 +36,10 @@ fn live_bundle_and_registry_agree() {
     // would have gone green on an empty registry. So the scrape reads the
     // controller's whole text — the concatenation, not a named half — and
     // survives the next move as it survived the last one.
-    let source = concat!(include_str!("../advanced.rs"), include_str!("treatment_flags.rs"));
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
     let registry = include_str!("treatments.rs");
     let start = source
         .find("pub fn enable_live_bridge(&mut self) {")
