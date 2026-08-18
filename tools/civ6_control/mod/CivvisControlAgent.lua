@@ -242,7 +242,7 @@ local function typeName(kindTable, hash)
 	return try(function()
 		local row = kindTable[hash];
 		return row and (row.DifficultyType or row.MapSizeType or row.GameSpeedType
-			or row.Type) or nil;
+			or row.RulesetType or row.Type) or nil;
 	end);
 end
 
@@ -371,6 +371,23 @@ local function survey()
 			try(function() return GameConfiguration.GetHandicapType(); end)) or "?",
 		speed = typeName(GameInfo.GameSpeeds,
 			try(function() return GameConfiguration.GetGameSpeedType(); end)) or "?",
+		-- ★★★★★ WHICH GAME THIS IS. The harness SETS `RULESET_EXPANSION_2` and
+		-- nothing ever read it back, so every other setting on this survey was
+		-- verified from inside the game and the one that decides which rules
+		-- exist at all was taken on trust. `setup: "(absent)"` on this build
+		-- means requested settings can silently fail to apply — that is the
+		-- whole reason this survey exists — and the ruleset was the one axis
+		-- with no reading that could be wrong.
+		--
+		-- It is the same shape as the game-modes defect: GAMEMODE_HEROES ran on
+		-- a live game for an unknown number of turns while every log said plain
+		-- Gathering Storm, because nothing reported it. CIVVIS models Gathering
+		-- Storm and nothing else, so a Vanilla or Rise & Fall game is not a
+		-- weaker measurement of the same thing — it is a different game, and
+		-- `civ6_fidelity.py` was separately found auditing against a Vanilla
+		-- database while printing "Gathering Storm" at the top of its report.
+		ruleset = typeName(GameInfo.Rulesets,
+			try(function() return GameConfiguration.GetRuleSet(); end)) or "?",
 		map = try(function() return MapConfiguration.GetScript(); end, "?"),
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
