@@ -28579,7 +28579,7 @@ impl Game {
                         // worked, whichever improvement works it.
                         None => tile.improvement.is_some(),
                     }
-                    .then(|| tile.resource.as_deref())
+                    .then_some(tile.resource.as_deref())
                     .flatten()
                     .and_then(|resource| self.rules.resources.get(resource))
                     .is_some_and(|spec| classes.contains(&spec.class.as_str()))
