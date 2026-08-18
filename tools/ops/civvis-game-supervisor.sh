@@ -258,9 +258,36 @@ while true; do
   fi
   rm -f status.json                     # tools/follow.py dirties the tree
   if [[ "$PIN" == "head" ]]; then
-    git pull -q --ff-only origin main 2>/dev/null
+    # This tree normally has a detached HEAD.  `git pull` can leave that HEAD
+    # unchanged while its failure is hidden, so a batch appears healthy but
+    # keeps replaying an old decider.  Fetch and detach-checkout explicitly,
+    # then refuse the cycle unless the checkout reads back as exact main.
+    if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
+      say "could not fetch origin/main; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    if ! git checkout --quiet --detach origin/main >>"$SUP" 2>&1; then
+      say "could not checkout fetched origin/main; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
   fi
-  HEAD_SHA=$(git rev-parse --short HEAD)
+  HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
+  if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    say "could not resolve the batch checkout HEAD; refusing to run an unverified batch; retrying in 120s"
+    sleep 120
+    continue
+  fi
+  if [[ "$PIN" == "head" ]]; then
+    ORIGIN_MAIN_SHA=$(git rev-parse origin/main 2>/dev/null || true)
+    if [[ "$HEAD_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
+      say "checkout $HEAD_SHA does not equal fetched origin/main ${ORIGIN_MAIN_SHA:-<unresolved>}; refusing to run a stale head batch; retrying in 120s"
+      sleep 120
+      continue
+    fi
+  fi
+  HEAD_SHA=${HEAD_SHA:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
     sleep 120
