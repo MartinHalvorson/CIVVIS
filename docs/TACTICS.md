@@ -1051,3 +1051,74 @@ the table was.
 refuses fewer, and the refusal fires before any games are played. A baseline is
 what every later run is compared against; at 40 games it is a ±15-point
 instrument, and this is what that costs.
+
+## 16. Coordinated finishing: the volley as its own part, plus a three-blow chain (2026-08-18)
+
+Operator goal: 2–3 units standing near each other should work together to
+eliminate enemy units — an enemy two blows from death is a good group target.
+
+**Where that behaviour lived, and why it was dormant.** §8's bounded
+friendly-volley extension is exactly this mechanism for the two-blow case, and
+it shipped (#1360) inside `BasicAi::tactical_strategy`. The war-half removal
+(#1589) then took `tactical_strategy` out of production as part of a
+four-flag bundle on a +38 whole-game gate — a **composite** gate, which never
+priced the volley on its own. Since then the production greedy path has had no
+multi-unit kill reasoning at all: `prioritize_immediate_kills` spends
+single-blow finishes, and the `focus_fire` gene is a flat nudge. (The joint
+search of §§9–10 covers the arena seam and the live bridge, not the world-game
+greedy controller that `battle_bench` measures.)
+
+**Two changes, one flag each.**
+
+- **`AdvancedAi::coordinated_finish`** admits the friendly-volley extension
+  without the rest of the closed bundle. The volley's role bonuses read 0 in
+  this configuration (`tactical_action_bonus` is still gated on
+  `tactical_strategy`), so what is enabled is the kill-credit and the
+  reply repricing — the coordination, not the war-half doctrine. Evaluator
+  arm: `advanced_coordinated_finish`.
+- **`AdvancedAi::volley_chain`** extends the volley to a **pair of
+  finishers** when no lone teammate can complete the kill, so a three-blow
+  group kill is visible to the setup shot. A single finisher is always
+  preferred; the chain runs only when the single-finisher search comes up
+  empty, behind a closed-form damage prefilter (the two heaviest remaining
+  mean blows, with 1.5× headroom for the roll spread, must cover the
+  survivor's health) so a healthy defender never pays the clone enumeration.
+  Both blows must clear their own exact-exchange bar and the reply is priced
+  once, after the whole friendly sequence, against all three exposed bodies.
+  Withhold arm: `advanced_single_finisher_volley` (the treatment minus only
+  the chain).
+
+**Measured.** Screens at 300 paired seeds a cell (block 21,000,000+), kept on
+a fresh confirmation block (22,000,000+) at 1000 paired seeds a cell, seats
+swapped, control at exact 0.00 both for `advanced` and for the treatment
+against itself. `advanced_coordinated_finish` less `advanced`:
+
+| composition | screen (300) | confirm (1000) | confirm sign |
+|---|---:|---:|---|
+| combined arms | +30.3 ± 10.3 | **+32.9 ± 5.9** | 258/167, p < 0.0001 |
+| ranged heavy | +75.7 ± 16.6 | **+85.6 ± 9.4** | 392/215, p < 0.0001 |
+| with siege | +43.3 ± 12.5 | **+21.8 ± 7.9** | 202/157, p = 0.0201 |
+| melee only | +7.3 ± 2.7 | **+7.5 ± 1.7** | 84/32, p < 0.0001 |
+
+Positive on the mean **and** the sign test in every cell — including the
+melee-only stress case that harmed every early version of the joint search.
+Fires-check: play diverged on 448 of 1000 combined-arms confirmation seeds.
+The chain's own share (`advanced_coordinated_finish` less
+`advanced_single_finisher_volley`, 300 seeds a cell, block 21,000,000+):
+ranged +31.8 ± 12.7 (p = 0.0125), siege +22.6 ± 10.0 (p = 0.0243), combined
++5.6 ± 5.1 (noise), melee −0.9 ± 1.7 (2 of 300 seeds diverged — the chain is
+nearly unreachable there, as expected: three-blow ganging is a ranged/siege
+shape). The single-finisher volley returning to a live path carries the rest.
+
+**Cost.** `battle_bench --cost`, one treated seat among five, 6p/74×46,
+interleaved: **1.03×** a stock seat (the joint search is 1.58×). The printed
+joint-tactics census correctly reads 0 for this arm — the volley has no
+census hook; its fires evidence is the divergence count above.
+
+**Whole game.** 150 pairs at 6p/74×46/9cs/250t, seed block 23,000,000,
+`advanced_coordinated_finish` v `advanced`: RESULT-PENDING.
+
+The frozen anchors are untouched by construction (`legacy()` carries neither
+flag; the `ANCHOR_BEHAVIOUR_FNV` fingerprint passes unchanged), and stock
+`advanced` keeps today's behaviour unless the flag is promoted on the
+whole-game evidence above.

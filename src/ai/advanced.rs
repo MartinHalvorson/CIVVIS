@@ -24223,20 +24223,53 @@ impl AdvancedAi {
         // standing is extended by the teammates who can then remove it.  Both
         // blows must clear their own exact-exchange bar, so the chain changes
         // which target the force converges on, not how cheaply it will trade.
-        let mut best_chain: Option<(f64, (u32, usize, u32, usize), Game)> = None;
-        for (order, followup) in Self::forcing_attacks_to(&after_first, pid, target, None)
+        let followups: Vec<Action> = Self::forcing_attacks_to(&after_first, pid, target, None)
             .into_iter()
-            .filter_map(|followup| match &followup {
-                Action::Attack { unit, .. } | Action::Ranged { unit, .. }
-                    if *unit != uid && group.units.contains(unit) =>
-                {
-                    Some(followup)
+            .filter(|followup| match followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. } => {
+                    *unit != uid && group.units.contains(unit)
                 }
-                _ => None,
+                _ => false,
             })
             .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
-            .enumerate()
+            .collect();
+        // A healthy defender pays this branch nothing: unless the two
+        // heaviest remaining blows can plausibly cover the survivor's health
+        // at the engine's mean damage — with headroom for the roll spread and
+        // for modifiers this arithmetic does not see — there is no three-blow
+        // kill to find and the clone enumeration below never starts.
         {
+            let survivor = &after_first.units[&victim];
+            let defence = crate::game::effective_strength(
+                after_first.unit_strength(survivor, true),
+                survivor.hp,
+            );
+            let mut mean_blows: Vec<f64> = followups
+                .iter()
+                .filter_map(|followup| {
+                    let (shooter, ranged) = match followup {
+                        Action::Attack { unit, .. } => (*unit, false),
+                        Action::Ranged { unit, .. } => (*unit, true),
+                        _ => return None,
+                    };
+                    let attacker = after_first.units.get(&shooter)?;
+                    let attack = if ranged {
+                        after_first.unit_ranged_attack_strength(attacker)
+                    } else {
+                        after_first.unit_strength(attacker, false)
+                    };
+                    let attack = crate::game::effective_strength(attack, attacker.hp);
+                    Some((30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0))
+                })
+                .collect();
+            mean_blows.sort_by(|a, b| b.total_cmp(a));
+            let heaviest_pair: f64 = mean_blows.iter().take(2).sum();
+            if heaviest_pair * 1.5 < survivor.hp as f64 {
+                return None;
+            }
+        }
+        let mut best_chain: Option<(f64, (u32, usize, u32, usize), Game)> = None;
+        for (order, followup) in followups.into_iter().enumerate() {
             let (middle, ranged) = match &followup {
                 Action::Attack { unit, .. } => (*unit, false),
                 Action::Ranged { unit, .. } => (*unit, true),
