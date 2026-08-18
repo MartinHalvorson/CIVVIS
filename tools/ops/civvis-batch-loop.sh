@@ -97,6 +97,23 @@ ATTEMPTS=${CIVVIS_BATCH_ATTEMPTS:-8}
 # click has caused this exact symptom), and blaming the code for it would park the
 # loop on an old build for a host fault.
 NOGAME_LIMIT=${CIVVIS_NOGAME_LIMIT:-2}
+# The victory objective this loop plays for. It used to be the literal `civvis`
+# written into all three sites below, while the installed supervisor service
+# passed nothing at all and inherited `science` — two production loops running
+# two different experiments into one ladder. Neither value survived measurement:
+# `science` completes 0/16 at this profile and `civvis` is the untargeted agent.
+# Empty means "whatever the tree we are about to play declares", asked of that
+# tree rather than restated here — the same reason the genome probe below asks
+# the binary which strategy `auto` resolves to instead of ranking them again.
+# `victory_lane` resolves it once per pass, after the checkout, so a batch always
+# reports the lane the code it pinned would use.
+VICTORY=${CIVVIS_VICTORY:-}
+victory_lane() {
+  [[ -n $VICTORY ]] && { print -r -- "$VICTORY"; return 0 }
+  ( cd $RUNNER && python3 -c \
+      'import sys; sys.path.insert(0, "tools"); import civ6_play; print(civ6_play.DEFAULT_CIVVIS_VICTORY)' \
+  ) 2>/dev/null
+}
 # How long to wait before looking again. This is the width of the window in which
 # another driver can take the game between one batch ending and this loop noticing —
 # so it is a contention parameter, not a politeness one. Observed 2026-08-02: other
@@ -358,8 +375,18 @@ while true; do
   # Ask the binary itself which strategy `auto` resolves to, rather than reimplementing
   # the ranking here and risking a provenance file that disagrees with the run.
   probe_dir=$(mktemp -d /tmp/civvis-genome-probe.XXXXXX)
+  lane=$(victory_lane)
+  # An unresolved lane must not become a bare `--victory` with nothing after it.
+  # Skip the pass and say why: a checkout mid-swap fixes itself next time round,
+  # and a permanent breakage names itself in the log instead of running a batch
+  # under an objective nobody chose.
+  if [[ -z $lane ]]; then
+    say "cannot resolve the victory lane from $RUNNER; skipping this pass"
+    sleep $IDLE_S
+    continue
+  fi
   genome=$( ( cd $RUNNER && ./target/release/civvis_orders --mirror $probe_dir --turn 0 \
-              --victory civvis --strategy auto ) 2>&1 >/dev/null \
+              --victory $lane --strategy auto ) 2>&1 >/dev/null \
             | grep -m1 '"kind":"genome"' )
   rm -rf $probe_dir
   [[ -z $genome ]] && genome='{"kind":"genome","strategy":"UNKNOWN — the probe printed nothing"}'
@@ -379,7 +406,7 @@ while true; do
     # it is written by hand beside the command it claims to describe. It said
     # `--war-from-plan` for hours after the flag was removed below. If you change
     # the invocation, change this in the same edit.
-    print -r -- "  batch     --attempts $ATTEMPTS --victory civvis --strategy auto"
+    print -r -- "  batch     --attempts $ATTEMPTS --victory $lane --strategy auto"
     print -r -- "  log       $batchlog"
   } >> $PROV
 
@@ -433,7 +460,7 @@ while true; do
   # read a before/after difference as a code effect.
   ( cd $RUNNER && python3 -u tools/civ6_civvis_climb.py \
       --attempts $ATTEMPTS \
-      --victory civvis \
+      --victory $lane \
       --strategy auto \
       --logs $RUNS/control ) >> $batchlog 2>&1
   rc=$?

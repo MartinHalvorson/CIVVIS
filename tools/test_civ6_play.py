@@ -47,8 +47,12 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
-    def test_supervised_defaults_are_stock_science(self) -> None:
-        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
+    def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
+        """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
+        which also holds the evidence that moved it off `science`. This asserts
+        only that the supervised worker takes the chain's one default and stock
+        weights, so a second copy cannot appear here."""
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "diplomatic")
         self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
 
     def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
@@ -1462,8 +1466,30 @@ class VictoryLaneListTests(unittest.TestCase):
         for launcher in ("civ6_civvis_climb.py", "civ6_brain.py"):
             with self.subTest(launcher=launcher):
                 source = (here / launcher).read_text(encoding="utf-8")
-                self.assertIn("from civ6_play import VICTORY_LANES", source)
+                # The fact, not one spelling of it: the name has to arrive from
+                # `civ6_play`, and the launcher must not declare a list itself.
+                self.assertRegex(
+                    source,
+                    r"from civ6_play import [^\n]*\bVICTORY_LANES\b",
+                    f"{launcher} no longer imports the lane list",
+                )
                 self.assertIn("choices=VICTORY_LANES", source)
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^VICTORY_LANES\s*=", re.MULTILINE),
+                    f"{launcher} declared its own copy of the lane list",
+                )
+                # ⚠ THE SAME CLASS, ONE LEVEL DOWN. The list was collapsed here
+                # in #1871 and the DEFAULT was not: all three launchers declared
+                # `science` while `tools/ops/` held a fourth value that disagreed.
+                # `test_ops_ladder_objective.py` owns that fact; this only stops a
+                # launcher growing a literal of its own again.
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^DEFAULT_(CIVVIS_)?VICTORY\s*=\s*[\"']",
+                               re.MULTILINE),
+                    f"{launcher} declared its own default objective",
+                )
 
 
 if __name__ == "__main__":

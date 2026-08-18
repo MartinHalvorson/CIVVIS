@@ -4162,6 +4162,254 @@
       "utc": "2026-08-16T14:28:01Z",
       "victory": 0,
       "won": false
+    },
+    {
+      "applied_pct": 97.7,
+      "cities_at_60": 5,
+      "city_two_turn": 18,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": -330,
+      "map_size": "MAPSIZE_SMALL",
+      "reason": "stopped",
+      "revisions": [
+        "7c776097d9cea930ee3409050550f31d06ebd401",
+        "d9834d67ce03d6e53890a5929ba0da47a3b77419",
+        "67998d04d3d5c3897ea3865d06b1dda58578d1db",
+        "1043c40bef61c739f204c1fec0ad5dd05a2c777c",
+        "263a4935bbc48f6f4bdba9cc538d5b374c32bfe1",
+        "f0808cf555cefa21aa7190b2400134f47514746d",
+        "79da5413e580b1336ee2e26eaf110db0d8c7accb"
+      ],
+      "rival_best": 973,
+      "score": 643,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260817T214710Z",
+      "turns": 219,
+      "utc": "2026-08-17T22:28:43Z",
+      "victory": 3,
+      "victory_target": "science",
+      "victory_type": "VICTORY_CULTURE",
+      "won": false
+    },
+    {
+      "applied_pct": 98.4,
+      "cities_at_60": 5,
+      "city_two_turn": 16,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": 47,
+      "map_size": "MAPSIZE_SMALL",
+      "mod_arms": {
+        "CampusSpecialist": false,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "PeaceDeterrence": true,
+        "ProbeCitizens": false
+      },
+      "reason": "stopped",
+      "revisions": [
+        "79da5413e580b1336ee2e26eaf110db0d8c7accb",
+        "768b0a1c62ed15aecfca4a2996340673e81808f8",
+        "9a5e7eee6813c6041474895af1d34389b97944eb",
+        "0b2dd5762b8900cf106d52b598af730575e4563a",
+        "c05ffc043aa46a2c033a6eca12e76b5aca279722"
+      ],
+      "rival_best": 911,
+      "score": 958,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260817T223247Z",
+      "turns": 222,
+      "utc": "2026-08-17T23:08:57Z",
+      "victory": 6,
+      "victory_target": "science",
+      "victory_type": "VICTORY_DIPLOMATIC",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "applied_pct": 95.1,
+      "cities_at_60": 5,
+      "city_two_turn": 19,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": 409,
+      "map_size": "MAPSIZE_SMALL",
+      "mod_arms": {
+        "CampusSpecialist": false,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "PeaceDeterrence": true,
+        "ProbeCitizens": false
+      },
+      "reason": "stopped",
+      "revisions": [
+        "c05ffc043aa46a2c033a6eca12e76b5aca279722",
+        "fd1d26e061544fd24e21192c342913f556091dd1",
+        "0c63ffc0ea181b10cf05f8b10c87e8edd0048a8e",
+        "2c9cbe7eb14879f26d0129d395cad5537c557bfe",
+        "300ec569f147c8b381ff98d042a67d8de5227562",
+        "214beeffa8368fa78d9604e577e7fd0d0d0c5b28",
+        "19cc28908f591e5c6f331aee92c5d9e3a598bbde"
+      ],
+      "rival_best": 997,
+      "score": 1406,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260817T231318Z",
+      "turns": 243,
+      "utc": "2026-08-17T23:52:45Z",
+      "victory": 6,
+      "victory_target": "science",
+      "victory_type": "VICTORY_DIPLOMATIC",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "applied_pct": 96.0,
+      "cities_at_60": 6,
+      "city_two_turn": 19,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": 150,
+      "map_size": "MAPSIZE_SMALL",
+      "mod_arms": {
+        "CampusSpecialist": false,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "PeaceDeterrence": true,
+        "ProbeCitizens": false
+      },
+      "reason": "stopped",
+      "revisions": [
+        "ffc306fb5c3ca690ab00a184a60315b87d7ff44c",
+        "444ce83f751868b1b2d311420c8b45e1da30aff0",
+        "d8021c6659616b98e79e3ff3be431ace87ff95d7",
+        "35dbc86156d80e140c48e2e69488e22935d357a8",
+        "e01ec14dec4b9aaf82423eab733d074e6777b55e",
+        "f1a238b107d2f07b6c7af67f7e443a05bff603fd"
+      ],
+      "rival_best": 1041,
+      "score": 1191,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260818T003523Z",
+      "turns": 250,
+      "utc": "2026-08-18T01:17:01Z",
+      "victory": 0,
+      "victory_target": "science",
+      "victory_type": "VICTORY_SCORE",
+      "withheld": [],
+      "won": true
+    },
+    {
+      "applied_pct": 88.8,
+      "cities_at_60": 4,
+      "city_two_turn": 14,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": -315,
+      "map_size": "MAPSIZE_SMALL",
+      "mod_arms": {
+        "CampusSpecialist": false,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "PeaceDeterrence": true,
+        "ProbeCitizens": false
+      },
+      "reason": "stopped",
+      "revisions": [
+        "b3b16e91b60001210d95f2ab5d57ba53fdece8ac",
+        "7c25f65ce373aec34f967942a7a9b73284fc93d2",
+        "95173a6078dd5d2dfdb6f5b01358ef4974768f57",
+        "6dff6bf7b1367ac74582dbf813a20ca7c9836ca2",
+        "57485d68d090f220a689225f064fd218e0cc32ad"
+      ],
+      "rival_best": 1186,
+      "score": 871,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260818T012048Z",
+      "turns": 230,
+      "utc": "2026-08-18T02:03:46Z",
+      "victory": 3,
+      "victory_target": "science",
+      "victory_type": "VICTORY_CULTURE",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "applied_pct": 90.6,
+      "cities_at_60": 5,
+      "city_two_turn": 17,
+      "configured": true,
+      "difficulty": "DIFFICULTY_SETTLER",
+      "lead": -438,
+      "map_size": "MAPSIZE_SMALL",
+      "mod_arms": {
+        "CampusSpecialist": false,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "PeaceDeterrence": true,
+        "ProbeCitizens": false
+      },
+      "modes": [],
+      "reason": "stopped",
+      "revisions": [
+        "2ef37c1139f06c0fdbe24015c60e6e151ad1f97f",
+        "d2fce5b2e45d1c7f63d4782f3b4d192846f64980",
+        "fd97480851d6a10922ef2f82136f9ccd717a4086",
+        "d86dab1111aa1aa1068ae4059c679f3ebecfd093",
+        "f73c00a616269456289d071ffce8ebec54907d99",
+        "c59afa5e724f2470d7168554a2e8204ba71744e3"
+      ],
+      "rival_best": 1140,
+      "ruleset": null,
+      "score": 702,
+      "speed": "GAMESPEED_ONLINE",
+      "tag": "civvis-20260818T020720Z",
+      "turns": 250,
+      "utc": "2026-08-18T03:16:49Z",
+      "victory": 0,
+      "victory_target": "science",
+      "victory_type": "VICTORY_SCORE",
+      "withheld": [],
+      "won": false
+    }
+  ],
+  "victory_types": [
+    {
+      "index": 0,
+      "type": "VICTORY_SCORE"
+    },
+    {
+      "index": 1,
+      "type": "VICTORY_DEFAULT"
+    },
+    {
+      "index": 2,
+      "type": "VICTORY_CONQUEST"
+    },
+    {
+      "index": 3,
+      "type": "VICTORY_CULTURE"
+    },
+    {
+      "index": 4,
+      "type": "VICTORY_RELIGIOUS"
+    },
+    {
+      "index": 5,
+      "type": "VICTORY_TECHNOLOGY"
+    },
+    {
+      "index": 6,
+      "type": "VICTORY_DIPLOMATIC"
     }
   ],
   "wins": {

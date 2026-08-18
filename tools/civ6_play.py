@@ -39,7 +39,39 @@ from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CIVVIS_VICTORY = "science"
+# ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
+# launchers forward `--victory` down one chain and each of them used to declare
+# its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
+# name for the same reason they already import `VICTORY_LANES` — a second copy
+# of a fact is a second place for it to go stale, and these had already drifted
+# from the two `tools/ops/` supervisors, which passed `civvis` and nothing at
+# all. Two production loops were running two different experiments into one
+# ledger.
+#
+# ⚠ SCIENCE WAS THE DEFAULT AND IS THE ONE LANE THAT NEVER LANDS. The bar for
+# moving it was set where the old value was written — "Science stays the default
+# until a lane is measured to beat it" — and 2026-08-17 measured it, twice, at
+# the profile the ladder actually plays (6 players, 250 turns, Online):
+#
+#   * completion (`victory_eval`, 96 games, two disjoint streams, docs/EVAL.md):
+#     diplomatic 14/16, culture 12/16, religious 8/16, domination 2/16,
+#     science **0/16**;
+#   * strength (`ai_eval <lane> advanced_target_science --deployment-comparison`,
+#     docs/EVAL.md): all four named lanes beat the science-targeted incumbent,
+#     diplomatic by +669 CONFIRMED (97.9%, 23-0-1).
+#
+# Diplomacy is the choice among the lanes that land, and it is chosen on the
+# HOST's own census rather than on that +669: `docs/CIV6_LADDER.md` ranks 199
+# real terminal events 6-diplomatic (41) > 3-culture (24) > 4-religious (5).
+# The +669 measures science's floor, not Diplomacy's ceiling — diplomatic vs
+# religious, the fair fight between two lanes that both finish, is 47.9%,
+# p=1.0000, INCONCLUSIVE. So this moves the aim off a lane that cannot finish;
+# it does not claim the new one is strong.
+#
+# ⚠ Rows either side of this change are NOT comparable, and `code_rev` is what
+# separates them. Set `CIVVIS_VICTORY` to run any other lane, including the
+# untargeted `civvis` the batch loop used to hard-code.
+DEFAULT_CIVVIS_VICTORY = "diplomatic"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
@@ -3125,7 +3157,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--civvis-victory", default=DEFAULT_CIVVIS_VICTORY,
                     choices=VICTORY_LANES,
                     help="victory objective passed to the supervised CIVVIS worker; "
-                         "defaults to Science")
+                         f"defaults to {DEFAULT_CIVVIS_VICTORY}")
     ap.add_argument("--civvis-strategy", default=DEFAULT_CIVVIS_STRATEGY,
                     help="rated CIVVIS strategy name; empty keeps stock AdvancedAi. "
                          "auto is an uncalibrated opt-in")

@@ -14,7 +14,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import civ6_brain  # noqa: E402
+import civ6_brain
+import civ6_play  # noqa: E402
 
 
 class FakeProc:
@@ -372,9 +373,11 @@ class Civ6BrainTest(unittest.TestCase):
 
         command = decider.command()
 
-        self.assertEqual(civ6_brain.DEFAULT_VICTORY, "science")
+        # The brain no longer declares a default; it reads the chain's one copy.
+        self.assertIs(civ6_brain.DEFAULT_VICTORY, civ6_play.DEFAULT_CIVVIS_VICTORY)
         self.assertEqual(civ6_brain.DEFAULT_STRATEGY, "")
-        self.assertEqual(command[command.index("--victory") + 1], "science")
+        self.assertEqual(command[command.index("--victory") + 1],
+                         civ6_brain.DEFAULT_VICTORY)
         self.assertNotIn("--strategy", command)
 
 
