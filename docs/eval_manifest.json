@@ -41,7 +41,7 @@
     "withholdable": 54
   },
   "derived": {
-    "eval_only_count": 218,
+    "eval_only_count": 217,
     "firaxis_only_count": 24,
     "live_bridge_count": 78,
     "native_engine_repair_count": 54,
@@ -208,7 +208,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 218,
+      "declared_count": 217,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -412,7 +412,6 @@
         "strategic_h80",
         "strategic_rot20",
         "strategic_rot10",
-        "strategic_deep",
         "strategic_ultra",
         "strategic_deep_default",
         "strategic_deep_tempo",
