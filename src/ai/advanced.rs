@@ -8133,6 +8133,7 @@ impl AdvancedAi {
                     .cmp(&right.1.progress)
                     .then_with(|| right.0.cmp(&left.0))
             })?;
+        let urgent = self.victory_pressure_is_urgent(g, pressure);
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
         // reacting with two holdouts left when the rival also leads our own
@@ -8150,11 +8151,15 @@ impl AdvancedAi {
                 .max(50)
                 .min(match_point);
             if pressure.progress < early_warning
-                || (pressure.progress < match_point && pressure.progress < own_progress + 15)
+                || (pressure.progress < match_point
+                    && !urgent
+                    && pressure.progress < own_progress + 15)
             {
                 return None;
             }
-        } else if pressure.progress < 78 || pressure.progress < own_progress + 15 {
+        } else if pressure.progress < 78
+            || (!urgent && pressure.progress < own_progress + 15)
+        {
             return None;
         }
         // Four of the seven races answer themselves — a culture threat is met
@@ -8191,15 +8196,15 @@ impl AdvancedAi {
         Some((rival, counter))
     }
 
-    /// Terminal clocks require action before an ordinary Formal War countdown
-    /// or a comfortable force ratio is available. Keep this predicate shared
-    /// between declaration timing and campaign readiness so either response
-    /// cannot silently become more permissive than the other.
-    fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
+    /// Terminal clocks require action before an ordinary race margin, Formal
+    /// War countdown, or comfortable force ratio is available. Keep this
+    /// predicate shared between selection, declaration timing, and campaign
+    /// readiness so either response cannot silently become more permissive
+    /// than the other.
+    fn victory_pressure_is_urgent(&self, g: &Game, pressure: VictoryFocus) -> bool {
         if !self.deny_leaders {
             return false;
         }
-        let pressure = self.rival_victory_pressure(g, target);
         let living_majors = g
             .players
             .iter()
@@ -8219,6 +8224,10 @@ impl AdvancedAi {
             || (self.stock_denial_lead_time && stock_lane && pressure.progress >= STOCK_DENIAL_BAR)
             || (pressure.strategy == GrandStrategy::Religion
                 && pressure.progress >= religious_match_point)
+    }
+
+    fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
+        self.victory_pressure_is_urgent(g, self.rival_victory_pressure(g, target))
     }
 
     /// Diagnostic seam: what this planner believes `target`'s best race is,
