@@ -282,7 +282,7 @@ mod tactics;
 pub use advanced::{
     AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GrandStrategy,
     StrategicPlan, StrategyCensus, VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR,
-    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS,
+    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LiveTreatment, LIVE_TREATMENTS,
     PRODUCTION_CITY_TARGET_FLOOR,
 };
 

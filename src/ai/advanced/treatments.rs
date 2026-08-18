@@ -30,7 +30,7 @@ use super::AdvancedAi;
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 78] = [
+pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -83,6 +83,7 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 78] = [
     ("fog_land_capacity", "fog-land-capacity", AdvancedAi::disable_fog_land_capacity),
     ("recon_flight", "recon-flight", AdvancedAi::disable_recon_flight),
     ("score_horizon", "score-horizon", AdvancedAi::disable_score_horizon),
+    ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
     ("one_launch_pad", "one-launch-pad", AdvancedAi::disable_one_launch_pad),
     ("naval_recon", "naval-recon", AdvancedAi::disable_naval_recon),
     ("counter_in_lane", "counter-in-lane", AdvancedAi::disable_counter_in_lane),

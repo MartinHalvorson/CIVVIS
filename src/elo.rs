@@ -229,6 +229,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
     "advanced_without_open_water_navy",
+    "advanced_without_strategic_wonders",
     "advanced_maritime_splice",
     "advanced_sea_answers",
     "advanced_camp_bounty",
@@ -873,6 +874,7 @@ define_arm_kinds! {
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedWithoutOpenWaterNavy => "advanced_without_open_water_navy",
+    AdvancedWithoutStrategicWonders => "advanced_without_strategic_wonders",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedCampBounty => "advanced_camp_bounty",
@@ -3294,6 +3296,16 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_open_water_navy();
             Box::new(ai)
         }
+        // Build the wonders the chosen victory actually needs. Seven of the
+        // twenty points a diplomatic victory needs are wonders and the wonder
+        // arm refused all of them, because it priced no `spec.effects` and
+        // opened its lane only for Culture and Score. See
+        // `AdvancedAi::strategic_wonder_value`; this arm is the withhold.
+        "advanced_without_strategic_wonders" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_strategic_wonders();
+            Box::new(ai)
+        }
         // Reach for the +100% naval-production card while hulls are wanted:
         // the family is invisible to the deck scorer until a sea unit heads a
         // queue and appears in no portfolio, so the Galley-era discount was
@@ -4402,6 +4414,7 @@ impl ArmKind {
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedWithoutOpenWaterNavy => &["open-water-navy-withheld"],
+            Self::AdvancedWithoutStrategicWonders => &["strategic-wonders-withheld"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
@@ -4911,6 +4924,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         }
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_without_open_water_navy" => (Vec::new(), "advanced_without_open_water_navy"),
+        "advanced_without_strategic_wonders" => {
+            (Vec::new(), "advanced_without_strategic_wonders")
+        }
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
         "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
@@ -6318,6 +6334,7 @@ mod tests {
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
                 "advanced_without_open_water_navy",
+                "advanced_without_strategic_wonders",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
                 "advanced_camp_bounty",

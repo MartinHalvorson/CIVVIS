@@ -137,6 +137,49 @@ fn main() {
         .position(|arg| arg == "--turns")
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse::<u32>().ok());
+    // ⚠ A LANE TABLE WITH NO CONTROL ARM IS A DESCRIPTION, NOT A MEASUREMENT.
+    // The table in this file's header says how often each victory lands; it
+    // could not say what any one behaviour contributed to that, because every
+    // run built the same agent. `--without <treatment>` withholds a row of
+    // `LIVE_TREATMENTS` from every seat, so the same seeds can be replayed
+    // with one behaviour removed and the lane counts compared directly.
+    // Repeat the flag to withhold more than one.
+    let withheld: Vec<civvis::ai::LiveTreatment> = {
+        let mut rows = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            if arg != "--without" {
+                continue;
+            }
+            let Some(name) = args.get(index + 1) else {
+                eprintln!("--without requires a treatment name");
+                std::process::exit(2);
+            };
+            match civvis::ai::LIVE_TREATMENTS
+                .iter()
+                .find(|(field, tag, _)| field == name || tag == name)
+            {
+                Some(row) => rows.push(*row),
+                None => {
+                    eprintln!("unknown treatment {name:?}; known names:");
+                    for (field, tag, _) in civvis::ai::LIVE_TREATMENTS.iter() {
+                        eprintln!("  {tag} ({field})");
+                    }
+                    std::process::exit(2);
+                }
+            }
+        }
+        rows
+    };
+    if !withheld.is_empty() {
+        println!(
+            "withholding: {}",
+            withheld
+                .iter()
+                .map(|(_, tag, _)| *tag)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
     let mut failures = 0;
     let mut winners: BTreeMap<&'static str, BTreeSet<usize>> = BTreeMap::new();
     let started = Instant::now();
@@ -157,6 +200,11 @@ fn main() {
                 ..civvis::game::GameOptions::new(players, width, height, seed, turns, city_states)
             });
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
+            for ai in ais.iter_mut() {
+                for treatment in &withheld {
+                    (treatment.2)(ai);
+                }
+            }
             run_game(&mut game, &mut ais);
 
             let actual = game.victory_type.as_deref().unwrap_or("none");
