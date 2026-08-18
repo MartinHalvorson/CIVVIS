@@ -166,6 +166,15 @@ deployment maps, regresses no lane over ~480 paired games, and is registered as
 
 It is **not** shipped as a strength win, because nothing here measured one.
 
+⚠ **It does reach the live seat**, which the deployment screen does not cover.
+`civvis_orders` builds `AdvancedAi::targeting(target)` and then
+`enable_live_bridge()`, so the live agent has both the flag (from
+`promoted_policy_envoy`) and a chosen victory. On the ladder's default lane —
+`diplomatic` — §2 says no qualifying wonder is reachable, so no change is
+expected there; on a Culture or Score seat the live race's wonder *choice* can
+shift, and the value gate above is what keeps a wonder the bars refused from
+being boosted by the race.
+
 **The finding worth more than the change** is §2: the diplomatic lane finishes
 no wonders at all, and the reason is prerequisites rather than price. That is
 the next piece of work — a Diplomacy plan that builds a Harbor, or a Holy Site
