@@ -1,6 +1,6 @@
 {
   "derived": {
-    "eval_only_count": 196,
+    "eval_only_count": 198,
     "firaxis_only_count": 23,
     "live_bridge_count": 74,
     "native_engine_repair_count": 51,
@@ -145,7 +145,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 196,
+      "declared_count": 198,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -272,7 +272,9 @@
         "advanced_target_domination",
         "advanced_target_score",
         "advanced_target_science",
+        "advanced_great_work_veto_by_district",
         "advanced_target_culture",
+        "advanced_target_culture_with_culture_building_debt",
         "advanced_target_religious",
         "advanced_target_diplomatic",
         "advanced_measured_dedication",
