@@ -33192,6 +33192,26 @@ impl Game {
                 Ok(())
             }
         };
+        // TEMPORARY refusal census — local measurement only, never committed.
+        if let Err(reason) = &r {
+            if !self.visibility_suppressed && std::env::var_os("CIVVIS_REFUSAL_CENSUS").is_some() {
+                let trace = std::backtrace::Backtrace::force_capture().to_string();
+                let frames: Vec<&str> = trace
+                    .lines()
+                    .filter(|line| line.contains("civvis::") && !line.contains("Game::apply"))
+                    .take(6)
+                    .map(str::trim)
+                    .collect();
+                eprintln!(
+                    "REFUSED turn={} pid={} action={:?} reason={} via {}",
+                    self.turn,
+                    pid,
+                    action,
+                    reason,
+                    frames.join(" <- ")
+                );
+            }
+        }
         if r.is_ok() {
             // `producible_items` is intentionally retained across short
             // read-only decision helpers, rather than only one `QueryMemo`.
