@@ -805,6 +805,8 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     let scout = game.spawn_test_unit("scout", 1, two_off);
 
     let stock = AdvancedAi::new();
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_barbarian_scouts_are_scouts();
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(
@@ -813,10 +815,16 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     );
     let visible = game.player_vision_now(0);
     let stock_risk = stock.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
+    let withheld_risk = withheld.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
     let live_risk = live.settlement_tile_risk(&game, 0, Some(settler), post, &visible);
     assert!(
-        stock_risk > 0.0,
-        "stock prices the barbarian scout on approach ({stock_risk})"
+        withheld_risk > 0.0,
+        "the withheld arm keeps pricing the barbarian scout ({withheld_risk})"
+    );
+    assert_eq!(
+        stock_risk, 0.0,
+        "production prices a barbarian scout at nothing: it cannot act in \
+         either regime"
     );
     assert_eq!(
         live_risk, 0.0,
@@ -847,7 +855,7 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     again.spawn_test_unit("scout", 1, two_off);
     let visible = again.player_vision_now(0);
     assert!(withheld.settlement_tile_risk(&again, 0, Some(settler), post, &visible) > 0.0);
-    assert!(!AdvancedAi::new().barbarian_scouts_are_scouts);
+    assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
     assert!(!AdvancedAi::legacy().barbarian_scouts_are_scouts);
 }
 
@@ -19978,6 +19986,23 @@ fn a_camp_within_nine_tiles_of_a_city_is_home_ground_the_guard_clears() {
 
     assert!(!AdvancedAi::new().camp_reach());
     assert!(!AdvancedAi::legacy().camp_reach());
+}
+
+/// The barbarian-scout exemption ships natively: Firaxis' barbarian scouts
+/// neither attack nor capture, and the native seat's provably cannot (the
+/// minor-seat gate freezes its military units; the engine scout phase moves
+/// by `relocate`, which has no capture hook). The frozen controllers keep
+/// their history, and the withhold arm prices the promotion.
+#[test]
+fn the_barbarian_scout_exemption_is_native() {
+    assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
+    assert!(!AdvancedAi::legacy().barbarian_scouts_are_scouts);
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_barbarian_scouts_are_scouts();
+    assert!(!withheld.barbarian_scouts_are_scouts);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.barbarian_scouts_are_scouts);
 }
 
 /// ★★★★ A camp seven tiles from Rome stood for 130 turns WITH the reach
