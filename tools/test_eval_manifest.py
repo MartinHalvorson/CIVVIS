@@ -50,6 +50,68 @@ class EvalManifestTests(unittest.TestCase):
             self.assertIn("EVAL_STATUS.md", path.read_text(encoding="utf-8"), path.name)
 
 
+
+class LadderDistanceTest(unittest.TestCase):
+    """The distance block has to survive the ledger it is actually given."""
+
+    def test_ungraded_ledger_says_the_distance_is_unknown(self):
+        attempts = [
+            {"configured": True, "turns": 250, "score": 400, "victory": 0},
+            {"configured": True, "turns": 250, "score": 600, "victory": 0},
+        ]
+        distance = eval_manifest.ladder_distance(attempts)
+        self.assertEqual(distance["full_length"], 2)
+        self.assertEqual(distance["graded"], 0)
+        self.assertNotIn("lead_median", distance)
+        rendered = "\n".join(eval_manifest._ladder_distance_lines(distance))
+        self.assertIn("Distance to a win: **unknown**", rendered)
+
+    def test_a_rival_victory_before_the_clock_is_counted_and_named(self):
+        attempts = [
+            # Ahead on score and beaten by somebody else's condition.
+            {
+                "configured": True,
+                "turns": 243,
+                "score": 1406,
+                "rival_best": 997,
+                "victory": 6,
+            },
+            # Behind, same shape.
+            {
+                "configured": True,
+                "turns": 219,
+                "score": 643,
+                "rival_best": 973,
+                "victory": 3,
+            },
+            # Ran the clock out: ends on score, not stolen.
+            {
+                "configured": True,
+                "turns": 250,
+                "score": 702,
+                "rival_best": 1140,
+                "victory": 0,
+            },
+            # A win is never a theft.
+            {
+                "configured": True,
+                "turns": 222,
+                "score": 900,
+                "rival_best": 800,
+                "victory": 6,
+                "won": True,
+            },
+        ]
+        endings = eval_manifest.ladder_endings(attempts)
+        self.assertEqual(endings["stolen"], {"diplomatic": 1, "culture": 1})
+        self.assertEqual(endings["stolen_while_ahead"], 1)
+
+    def test_an_empty_ledger_reports_no_finished_attempt(self):
+        distance = eval_manifest.ladder_distance([])
+        rendered = "\n".join(eval_manifest._ladder_distance_lines(distance))
+        self.assertIn("no finished attempt on record", rendered)
+
+
 if __name__ == "__main__":
     unittest.main()
 
