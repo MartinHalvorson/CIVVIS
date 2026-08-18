@@ -58,6 +58,21 @@
 //! is a reading of the clock rather than of the agent. Online prices everything
 //! at 50% of Standard, so Online/250 and Standard/500 are the same race. Quote
 //! no number out of this tool without the speed beside it.
+//!
+//! ## `--without <treatment>`
+//!
+//! ⚠ A LANE TABLE WITH NO CONTROL ARM IS A DESCRIPTION, NOT A MEASUREMENT. The
+//! table above says how often each victory lands. It could not say what any one
+//! behaviour contributed to that, because every run it has ever taken built the
+//! same agent — so a change to the controller moved these counts and nothing
+//! here could attribute the movement.
+//!
+//! `--without <treatment>` withholds a row of `LIVE_TREATMENTS` or
+//! `PRODUCTION_TREATMENTS` from every seat, so the same seeds replay with one
+//! behaviour removed and the lane counts compare directly. Repeat the flag to
+//! withhold more than one; an unknown name lists what is available rather than
+//! failing quietly. The fieldless default path is unchanged, so every number
+//! above still reproduces.
 use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
 use civvis::game::Game;
 use std::collections::{BTreeMap, BTreeSet};
