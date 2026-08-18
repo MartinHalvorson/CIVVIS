@@ -18459,6 +18459,56 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
 }
 
 #[test]
+fn tactical_melee_preflight_matches_the_engine_entry_cost_rule() {
+    let mut game = Game::new_full(2, 24, 16, 81_701, 80, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.nbrs(*position).len() == 6)
+        .expect("fixture needs an interior tile");
+    let origin = game.nbrs(target)[0];
+    let attacker = game.spawn_test_unit("warrior", 0, origin);
+    game.spawn_test_unit("warrior", 1, target);
+    game.map.tiles.get_mut(&target).unwrap().feature = Some(crate::name!("forest"));
+    assert!(game.map.set_river_edge(origin, target, true));
+    let attack = Action::Attack {
+        unit: attacker,
+        target,
+    };
+    let engine_offers_attack = |game: &Game| {
+        game.legal_actions(0)
+            .into_iter()
+            .any(|action| action == attack)
+    };
+
+    game.units.get_mut(&attacker).unwrap().moves_left = 1.0;
+    assert!(!engine_offers_attack(&game));
+    assert!(
+        !AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        "the tactical scan must not score an attack that cannot pay its entry cost"
+    );
+
+    game.units.get_mut(&attacker).unwrap().moves_left = 2.0;
+    assert!(engine_offers_attack(&game));
+    assert!(
+        AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        "the preflight must retain the full-movement attack the engine allows"
+    );
+}
+
+#[test]
 fn forcing_reply_search_avoids_a_poisoned_capture() {
     let mut g = Game::new_full(2, 24, 16, 8_117, 80, 0, false);
     g.at_war.insert((0, 1));
