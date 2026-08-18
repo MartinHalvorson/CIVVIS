@@ -130,7 +130,7 @@ pub(crate) const HOME_THREAT_RADIUS: i32 = 6;
 /// `camp_reach`: Civilization VI's camps raise raiders toward cities well
 /// beyond the six-tile raider radius, and a camp is not a raider — it does
 /// not fight back, it keeps producing what does. See `camp_reach`.
-const HOME_CAMP_RADIUS: i32 = 9;
+pub(crate) const HOME_CAMP_RADIUS: i32 = 9;
 
 /// The loyalty level the governor logic has always treated as an emergency.
 /// Retained as a floor so making the rule rate-aware never makes it blinder
@@ -156,6 +156,21 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// diversion — the measured failure mode of the withdrawn home-defense
 /// native slot. Deliberately NOT a gene: the genome is pinned at 40.
 const CAMP_BOUNTY_PARTY: usize = 2;
+
+/// A raider may operate this far from the camp that raised it. The camp's
+/// scout supplies the target; this leash keeps a successful raid from turning
+/// into an all-map chase that abandons the outpost.
+pub(crate) const BARBARIAN_RAID_RADIUS: i32 = 10;
+/// A unit that has been pushed farther than this returns to its camp before it
+/// chooses another target. The small hysteresis prevents it from oscillating
+/// on the boundary of the raid ring.
+const BARBARIAN_RETURN_RADIUS: i32 = BARBARIAN_RAID_RADIUS + 2;
+/// Trade is held while a real raider or camp is this close to one of our
+/// cities. A barbarian Scout is an information unit, not a combat threat.
+pub(crate) const BARBARIAN_TRADE_RISK_RADIUS: i32 = 7;
+/// A city with this many local barbarian pressure points must produce a
+/// defender even when it is not formally at war with a major civilization.
+const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
 
 /// How near a city a hostile must come before that city wants somebody actually
 /// standing in it. Three tiles is one turn's move for most classical units, so a
@@ -1795,6 +1810,10 @@ pub struct UnitMemory {
 pub struct BasicAi {
     minor: bool,
     barb: bool,
+    /// Apply the default early-game barbarian response. The frozen
+    /// `advanced_v1` controller disables this so its recorded decision stream
+    /// remains an honest control; Basic and live Advanced use it.
+    pub(crate) barbarian_tactics: bool,
     /// Fortify any unit whose planner gave it nothing to do, not only one
     /// inside a stand-down window.
     ///
@@ -3091,6 +3110,119 @@ impl BasicAi {
             .map(|city| city.pos)
     }
 
+    /// The camp assignment is the only durable home a barbarian raider has.
+    /// Guards and the engine-managed recon units are included here for
+    /// completeness, although their movement paths stop before this helper is
+    /// used by the raider policy.
+    fn barbarian_home(g: &Game, uid: u32) -> Option<Pos> {
+        g.barb_camp_guards
+            .iter()
+            .find_map(|(camp, guard)| (*guard == uid).then_some(*camp))
+            .or_else(|| g.barb_scout_homes.get(&uid).copied())
+            .or_else(|| {
+                let position = g.units.get(&uid)?.pos;
+                g.barb_camps
+                    .keys()
+                    .min_by_key(|camp| (g.wdist(position, **camp), **camp))
+                    .copied()
+            })
+    }
+
+    fn is_barbarian_scout(g: &Game, uid: u32) -> bool {
+        g.barb_scout_homes.contains_key(&uid)
+    }
+
+    fn is_barbarian_raider(g: &Game, unit: &crate::game::Unit) -> bool {
+        Some(unit.owner) == g.barb_pid
+            && g.rules.units[unit.kind].class == "military"
+            && !g.barb_camp_guards.values().any(|guard| *guard == unit.id)
+            && !Self::is_barbarian_scout(g, unit.id)
+    }
+
+    /// A camp's reported city is a stronger objective than an arbitrary
+    /// nearest city. The fallback is deliberately absent: before a Scout has
+    /// reported, a raider holds near its camp instead of gaining clairvoyant
+    /// knowledge of the map.
+    fn barbarian_assigned_target(g: &Game, uid: u32) -> Option<Pos> {
+        let home = Self::barbarian_home(g, uid)?;
+        g.barb_camp_targets.get(&home).copied()
+    }
+
+    fn barbarian_target_allowed(g: &Game, uid: u32, target: Pos) -> bool {
+        Self::barbarian_home(g, uid)
+            .is_some_and(|home| g.wdist(home, target) <= BARBARIAN_RAID_RADIUS)
+    }
+
+    fn barbarian_target_allowed_for_controller(&self, g: &Game, uid: u32, target: Pos) -> bool {
+        !self.barb
+            || !self.barbarian_tactics
+            || Self::barbarian_target_allowed(g, uid, target)
+    }
+
+    /// Pressure is intentionally a small integer rather than a combat score:
+    /// production needs to answer "one defender or two?", while tactical
+    /// movement uses the full exchange evaluator below.
+    pub(crate) fn barbarian_threat_pressure(g: &Game, pid: usize, cid: u32) -> usize {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return 0;
+        };
+        if g.barb_pid.is_none() {
+            return 0;
+        }
+        let raiders = g
+            .units
+            .values()
+            .filter(|unit| Self::is_barbarian_raider(g, unit))
+            .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
+            .count();
+        let camps = g
+            .barb_camps
+            .keys()
+            .filter(|camp| g.wdist(**camp, city.pos) <= HOME_CAMP_RADIUS)
+            .count();
+        // Keep the return value bounded. A map can have several camps in a
+        // city's nine-tile ring, but the local response still needs only a
+        // compact early defense rather than one unit per camp.
+        raiders.min(3) + camps.min(1)
+    }
+
+    /// Immediate production alarm: a live raider in the home ring or a camp
+    /// close enough that a new raider can reach the city before a fresh unit
+    /// finishes. A camp farther out still informs the bounded camp party and
+    /// trader caution, but should not displace an unrelated culture or science
+    /// build by itself.
+    pub(crate) fn barbarian_local_alarm(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        if g.barb_pid.is_none() {
+            return false;
+        }
+        g.units
+            .values()
+            .any(|unit| {
+                Self::is_barbarian_raider(g, unit)
+                    && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+            })
+            || g
+                .barb_camps
+                .keys()
+                .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
+    }
+
+    /// A Trader is safe to start once the local barbarian ring is quiet. Native
+    /// routes complete immediately from a city, while the live bridge may have
+    /// to walk the unit to its origin, so the conservative gate protects both
+    /// representations and keeps the early queue on military/repair work.
+    pub(crate) fn barbarian_trade_risk(g: &Game, pid: usize) -> bool {
+        if g.barb_pid.is_none() || g.player_city_ids(pid).is_empty() {
+            return false;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::barbarian_local_alarm(g, pid, cid))
+    }
+
     fn minor_enemy_near_home(g: &Game, pid: usize, enemy: usize) -> bool {
         let Some(home) = Self::minor_home(g, pid) else {
             return false;
@@ -3531,10 +3663,28 @@ impl BasicAi {
             .find(|action| matches!(action, Action::Pillage { unit } if *unit == uid))
     }
 
+    /// Barbarian units do not use the major-faction doctrine gate, but they do
+    /// use the same engine legality checks. Attack opportunities are evaluated
+    /// first; this action is the raid that follows when the tile is safe.
+    fn barbarian_raid_action(&self, g: &Game, pid: usize, uid: u32) -> Option<Action> {
+        if !self.barb || !self.barbarian_tactics {
+            return None;
+        }
+        g.legal_doctrine_actions(pid, uid)
+            .into_iter()
+            .find(|action| {
+                matches!(
+                    action,
+                    Action::CoastalRaid { unit, .. } | Action::Pillage { unit } if *unit == uid
+                )
+            })
+    }
+
     pub fn new() -> BasicAi {
         BasicAi {
             minor: false,
             barb: false,
+            barbarian_tactics: true,
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
@@ -3589,6 +3739,10 @@ impl BasicAi {
             settler_idle_turn: None,
             journal: Journal::default(),
         }
+    }
+
+    pub(crate) fn barbarian_tactics_enabled(&self) -> bool {
+        self.barbarian_tactics
     }
 
     /// Open the second settler pipeline slot (see `parallel_settlers`). The
@@ -3760,6 +3914,7 @@ impl BasicAi {
         BasicAi {
             minor: false,
             barb: false,
+            barbarian_tactics: true,
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
@@ -7172,6 +7327,25 @@ impl BasicAi {
         };
         let want_ranged = melee > ranged;
 
+        // Gold defense is city-local: buying the strongest unit in a safe
+        // capital does not save a frontier city whose camp is already active.
+        // Cover the local body gap first, then return to the ordinary war and
+        // economy order. A purchase is still reserve-gated by the helper.
+        let barbarian_cities: Vec<u32> = city_ids
+            .iter()
+            .copied()
+            .filter(|cid| {
+                self.barbarian_tactics && Self::barbarian_defense_gap(g, pid, *cid) > 0
+            })
+            .collect();
+        if !self.minor
+            && !self.barb
+            && !barbarian_cities.is_empty()
+            && self.buy_gold_military(g, pid, &barbarian_cities, reserve, false)
+        {
+            return true;
+        }
+
         // A threatened empire converts cash into defenders before pursuing
         // infrastructure. Two units per city is enough to react without
         // draining the treasury into an endless standing army.
@@ -7193,7 +7367,7 @@ impl BasicAi {
         }
 
         if !self.minor
-            && Self::should_add_trader(g, pid, traders)
+            && self.should_add_trader_for_controller(g, pid, traders)
             && self.buy_gold_unit(g, pid, city_ids, "trader", reserve)
         {
             return true;
@@ -7247,6 +7421,22 @@ impl BasicAi {
             && traders < Self::open_trade_destinations(g, pid)
     }
 
+    fn should_add_trader_safely(g: &Game, pid: usize, traders: usize) -> bool {
+        Self::should_add_trader(g, pid, traders)
+            && !Self::barbarian_trade_risk(g, pid)
+            && g.player_city_ids(pid)
+                .into_iter()
+                .all(|cid| Self::barbarian_threat_pressure(g, pid, cid) == 0)
+    }
+
+    fn should_add_trader_for_controller(&self, g: &Game, pid: usize, traders: usize) -> bool {
+        if self.barbarian_tactics {
+            Self::should_add_trader_safely(g, pid, traders)
+        } else {
+            Self::should_add_trader(g, pid, traders)
+        }
+    }
+
     fn economic_recovery_item(
         &self,
         g: &Game,
@@ -7254,7 +7444,10 @@ impl BasicAi {
         cid: u32,
         traders: usize,
     ) -> Option<Item> {
-        if Self::should_add_trader(g, pid, traders) {
+        if let Some(defence) = self.barbarian_defense_item(g, pid, cid) {
+            return Some(defence);
+        }
+        if self.should_add_trader_for_controller(g, pid, traders) {
             let trader = Item::Unit {
                 unit: crate::name!("trader"),
             };
@@ -7572,6 +7765,81 @@ impl BasicAi {
             .map(|unit| Item::Unit {
                 unit: Name::new(&unit),
             })
+    }
+
+    /// Land defenders that can answer a barbarian raid from this city's tile.
+    /// Recon, air, and naval units do not count: they may be valuable elsewhere
+    /// but cannot hold the local approaches or clear a camp on foot.
+    fn barbarian_local_defenders(g: &Game, pid: usize, city: &crate::game::City) -> usize {
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && matches!(
+                        g.rules.units[unit.kind].domain.as_deref(),
+                        None | Some("land")
+                    )
+                    && g.wdist(unit.pos, city.pos) <= BARBARIAN_LOCAL_DEFENDER_RADIUS
+            })
+            .count()
+    }
+
+    /// The local body count a barbarian threat asks for. One defender covers a
+    /// camp or lone raider; two hold a city against a small early raiding party
+    /// while the field army closes the camp. This is deliberately bounded so a
+    /// crowded map does not turn every camp into an unbounded production sink.
+    fn barbarian_defense_gap(g: &Game, pid: usize, cid: u32) -> usize {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return 0;
+        };
+        if !Self::barbarian_local_alarm(g, pid, cid) {
+            return 0;
+        }
+        let raiders = g
+            .units
+            .values()
+            .filter(|unit| Self::is_barbarian_raider(g, unit))
+            .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
+            .count();
+        let wanted: usize = if raiders >= 2 { 2 } else { 1 };
+        wanted.saturating_sub(Self::barbarian_local_defenders(g, pid, city))
+    }
+
+    /// Production answer for an active barbarian ring. The city first gets a
+    /// melee-capable land defender, then walls once a compact local garrison
+    /// exists. This branch is independent of the optional major-war defense
+    /// experiment because barbarian pressure is a routine early-game hazard.
+    pub(crate) fn barbarian_defense_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<Item> {
+        if self.minor
+            || self.barb
+            || !self.barbarian_tactics
+            || !Self::barbarian_local_alarm(g, pid, cid)
+        {
+            return None;
+        }
+        if Self::barbarian_defense_gap(g, pid, cid) > 0 {
+            let unit = self
+                .best_military(g, pid, cid, Some(false))
+                .or_else(|| self.best_military(g, pid, cid, None))?;
+            return Some(Item::Unit {
+                unit: Name::new(&unit),
+            });
+        }
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+            let wall = Item::Building {
+                building: Name::new(building),
+            };
+            if g.can_produce(pid, cid, &wall) {
+                return Some(wall);
+            }
+        }
+        None
     }
 
     /// Whether any of this city's owned tiles borders territory outside the
@@ -7936,6 +8204,9 @@ impl BasicAi {
         if let Some(defence) = self.besieged_city_item(g, pid, cid) {
             return Some(defence);
         }
+        if let Some(defence) = self.barbarian_defense_item(g, pid, cid) {
+            return Some(defence);
+        }
         if self.minor {
             for project in ["repair_outer_defenses", "repair_encampment"] {
                 let repair = Item::Project {
@@ -7959,7 +8230,9 @@ impl BasicAi {
             && !self.barb
             && g.players[pid].gold_per_turn < -0.5
             && g.players[pid].gold < recovery_reserve;
-        let emergency_defense = at_major_war && military < n_cities.max(1);
+        let emergency_defense = (at_major_war
+            || (self.barbarian_tactics && Self::barbarian_local_alarm(g, pid, cid)))
+            && military < n_cities.max(1);
         if self.minor && !emergency_defense {
             for building in ["walls", "medieval_walls", "renaissance_walls"] {
                 let wall = Item::Building {
@@ -8253,7 +8526,7 @@ impl BasicAi {
             });
         }
         if !self.minor
-            && Self::should_add_trader(g, pid, traders)
+            && self.should_add_trader_for_controller(g, pid, traders)
             && g.can_produce(
                 pid,
                 cid,
@@ -9002,6 +9275,7 @@ impl BasicAi {
         let holding_role_position = g.wdist(upos, target) == preferred_range;
         let within_minor_front = |position: Pos| {
             !self.minor
+                || (self.barb && self.barbarian_tactics)
                 || Self::minor_home(g, pid)
                     .is_some_and(|home| g.wdist(home, position) <= MINOR_DEFENSE_RADIUS)
         };
@@ -9148,7 +9422,7 @@ impl BasicAi {
         allow_livelock_retread: bool,
     ) -> bool {
         let from = g.units[&uid].pos;
-        if self.minor {
+        if self.minor && (!self.barb || !self.barbarian_tactics) {
             let Some(home) = Self::minor_home(g, pid) else {
                 return false;
             };
@@ -9484,6 +9758,24 @@ impl BasicAi {
 
     fn trader_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
+        // In the walking representation a newly built Trader can spend several
+        // turns exposed before reaching an origin. During a local barbarian
+        // alert, retreat it to a friendly city first; once it is on the city
+        // tile, native route creation is immediate and safe to attempt.
+        if self.barbarian_tactics
+            && Self::barbarian_trade_risk(g, pid)
+            && g.city_at(upos).is_none_or(|cid| g.cities[&cid].owner != pid)
+        {
+            let target = g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .min_by_key(|city| (g.wdist(upos, city.pos), city.id))
+                .map(|city| city.pos);
+            if let Some(target) = target {
+                return self.step_toward(g, pid, uid, target);
+            }
+        }
         if let Some(origin) = g.city_at(upos).filter(|c| g.cities[c].owner == pid) {
             // best destination: most districts in range (domestic or foreign)
             let mut best: Option<(usize, usize, u32)> = None;
@@ -10200,13 +10492,25 @@ impl BasicAi {
     /// Pure and deterministic — same board, same assignment, whichever unit is
     /// asking — so `home_defense_objective` can call it to see who is already
     /// spoken for without the two mechanisms fighting over the same units.
+    #[cfg(test)]
+    #[allow(dead_code)]
     fn garrison_assignments(
         &self,
         g: &Game,
         pid: usize,
         enemy_ids: &[usize],
     ) -> Vec<(u32, Pos)> {
-        if !self.home_defense || self.minor || self.barb {
+        self.garrison_assignments_inner(g, pid, enemy_ids, false)
+    }
+
+    fn garrison_assignments_inner(
+        &self,
+        g: &Game,
+        pid: usize,
+        enemy_ids: &[usize],
+        barbarian_response: bool,
+    ) -> Vec<(u32, Pos)> {
+        if (!self.home_defense && !barbarian_response) || self.minor || self.barb {
             return Vec::new();
         }
         // A city wants a garrison when something hostile is close enough to
@@ -10225,6 +10529,7 @@ impl BasicAi {
                 .values()
                 .filter(|enemy| enemy_ids.contains(&enemy.owner))
                 .filter(|enemy| g.rules.units[enemy.kind].class == "military")
+                .filter(|enemy| !Self::is_barbarian_scout(g, enemy.id))
                 .filter(|enemy| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
                 .map(|enemy| effective_strength(g.unit_strength(enemy, true), enemy.hp))
                 .sum();
@@ -10283,9 +10588,30 @@ impl BasicAi {
     /// Walk the assigned defender to its city and hold it. Standing on the tile
     /// IS the job, so arriving means fortifying rather than looking for a fight.
     fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+        self.garrison_step_inner(g, pid, uid, enemy_ids, false)
+    }
+
+    pub(crate) fn barbarian_garrison_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+    ) -> bool {
+        self.garrison_step_inner(g, pid, uid, enemy_ids, true)
+    }
+
+    fn garrison_step_inner(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+        barbarian_response: bool,
+    ) -> bool {
         GARRISON_STEP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some((_, city)) = self
-            .garrison_assignments(g, pid, enemy_ids)
+            .garrison_assignments_inner(g, pid, enemy_ids, barbarian_response)
             .into_iter()
             .find(|(defender, _)| *defender == uid)
         else {
@@ -10334,7 +10660,7 @@ impl BasicAi {
         pid: usize,
         camp_radius: i32,
     ) -> bool {
-        let Some(barb) = g.barb_pid else {
+        let Some(_barb) = g.barb_pid else {
             return false;
         };
         let my_cities: Vec<Pos> = g
@@ -10349,8 +10675,7 @@ impl BasicAi {
         let near_home =
             |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
         g.units.values().any(|unit| {
-            unit.owner == barb
-                && g.rules.units[unit.kind].class == "military"
+            Self::is_barbarian_raider(g, unit)
                 && near_home(unit.pos, HOME_THREAT_RADIUS)
         }) || g
             .barb_camps
@@ -10364,16 +10689,21 @@ impl BasicAi {
     /// Deliberately NOT a gene. The genome is pinned at 40 and a committed
     /// champion rides that exact length, so the constants below ship fixed and
     /// earn a gene later if measurement says they matter.
-    fn home_defense_objective(
+    fn home_defense_objective_inner(
         &self,
         g: &Game,
         pid: usize,
         uid: u32,
         enemy_ids: &[usize],
+        barbarian_response: bool,
     ) -> Option<Pos> {
         // A city-state already guards home and nothing else; barbarians have no
         // homeland to defend. Both would only fight this assignment.
-        if !self.home_defense || self.minor || self.barb {
+        let barbarian_response = barbarian_response
+            && g.barb_pid.is_some_and(|barb| {
+                !enemy_ids.is_empty() && enemy_ids.iter().all(|enemy| *enemy == barb)
+            });
+        if (!self.home_defense && !barbarian_response) || self.minor || self.barb {
             return None;
         }
         let my_cities: Vec<Pos> = g
@@ -10402,6 +10732,7 @@ impl BasicAi {
         for enemy in g.units.values() {
             if !enemy_ids.contains(&enemy.owner)
                 || g.rules.units[enemy.kind].class != "military"
+                || Self::is_barbarian_scout(g, enemy.id)
             {
                 continue;
             }
@@ -10419,14 +10750,18 @@ impl BasicAi {
         // shooting stops rather than leaving the tap running.
         // Peacetime is when the enemy list holds nothing but the barbarian
         // seat: there is no offensive to protect. See `camp_party`.
-        let peacetime = self.camp_party
+        let peacetime = (self.camp_party || barbarian_response)
             && !enemy_ids.is_empty()
             && enemy_ids
                 .iter()
                 .all(|enemy| g.players.get(*enemy).is_some_and(|p| p.is_barbarian));
         if let Some(barb) = g.barb_pid {
             if enemy_ids.contains(&barb) {
-                let camp_radius = self.camp_radius();
+                let camp_radius = if barbarian_response {
+                    HOME_CAMP_RADIUS
+                } else {
+                    self.camp_radius()
+                };
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
                     if distance > camp_radius {
@@ -10445,6 +10780,7 @@ impl BasicAi {
                             .filter(|other| {
                                 enemy_ids.contains(&other.owner)
                                     && g.rules.units[other.kind].class == "military"
+                                    && !Self::is_barbarian_scout(g, other.id)
                             })
                             .map(|other| {
                                 effective_strength(g.unit_strength(other, true), other.hp)
@@ -10476,7 +10812,12 @@ impl BasicAi {
         // Units already holding a city tile are spoken for. Excluding them here
         // is what keeps the two mechanisms from tugging the same unit between a
         // city and a field raider on alternate turns.
-        let garrisoned = self.garrison_assignments(g, pid, enemy_ids);
+        let garrisoned = self.garrison_assignments_inner(
+            g,
+            pid,
+            enemy_ids,
+            barbarian_response,
+        );
         let responders: Vec<u32> = {
             let mut ids: Vec<u32> = g
                 .units
@@ -10490,7 +10831,7 @@ impl BasicAi {
                     // that could neither reach it nor be reached by it.
                     match g.rules.units[unit.kind].domain.as_deref() {
                         None | Some("land") => true,
-                        Some("sea") => self.sea_answers,
+                        Some("sea") => self.sea_answers || barbarian_response,
                         _ => false,
                     }
                 })
@@ -10556,7 +10897,7 @@ impl BasicAi {
                 .iter()
                 .filter(|id| !committed.contains(id))
                 .filter(|id| {
-                    if !self.sea_answers {
+                    if !(self.sea_answers || barbarian_response) {
                         return true;
                     }
                     let sea = g.rules.units[g.units[id].kind].domain.as_deref()
@@ -10589,6 +10930,63 @@ impl BasicAi {
         None
     }
 
+    fn home_defense_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+    ) -> Option<Pos> {
+        self.home_defense_objective_inner(g, pid, uid, enemy_ids, false)
+    }
+
+    pub(crate) fn barbarian_home_defense_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+    ) -> Option<Pos> {
+        self.home_defense_objective_inner(g, pid, uid, enemy_ids, true)
+    }
+
+    /// Default production controllers answer a barbarian home threat even
+    /// though ordinary home defense remains an opt-in experiment for major
+    /// wars. The caller runs its local attack scan first; this method owns the
+    /// bounded garrison/recall assignment and the march to the selected threat.
+    pub(crate) fn barbarian_home_defense_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> bool {
+        if self.minor || self.barb {
+            return false;
+        }
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        if !Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS) {
+            return false;
+        }
+        let enemies = [barb];
+        if self.barbarian_garrison_step(g, pid, uid, &enemies) {
+            return true;
+        }
+        let Some(threat) = self.barbarian_home_defense_objective(g, pid, uid, &enemies) else {
+            return false;
+        };
+        let radius = if g.rules.units[g.units[&uid].kind].has_ranged_attack() {
+            g.unit_attack_range(uid).max(1)
+        } else {
+            1
+        };
+        if g.wdist(g.units[&uid].pos, threat) > radius {
+            return self.step_toward(g, pid, uid, threat);
+        }
+        self.tactical_step(g, pid, uid, threat, &enemies, radius)
+    }
+
     fn nearest_enemy(&self, g: &Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> Option<Pos> {
         // Majors chase barbarians only near home and only when this unit's
         // doctrine would accept the eventual attack. This keeps scouts and
@@ -10608,11 +11006,39 @@ impl BasicAi {
             my_cities.iter().map(|c| g.wdist(tpos, *c)).min().unwrap() <= 6
         };
         let mut best: Option<(i32, Pos)> = None;
+        // The camp's reported target is the raider's assignment. Prefer it
+        // before the generic nearest-enemy scan, while still allowing a
+        // civilian or escort encountered on the way to become the immediate
+        // target through the normal scan below.
+        if self.barb && self.barbarian_tactics {
+            if let Some(home) = Self::barbarian_home(g, uid) {
+                if g.wdist(pos, home) > BARBARIAN_RETURN_RADIUS {
+                    return Some(home);
+                }
+            }
+            if let Some(target) = Self::barbarian_assigned_target(g, uid)
+                .filter(|target| Self::barbarian_target_allowed(g, uid, *target))
+            {
+                if enemy_ids.iter().any(|enemy| {
+                    g.cities
+                        .values()
+                        .any(|city| city.owner == *enemy && city.pos == target)
+                        || g.units_at(target).iter().any(|other| {
+                            enemy_ids.contains(&g.units[other].owner)
+                        })
+                })
+                {
+                    return Some(target);
+                }
+            }
+        }
         for c in g.cities.values() {
             if enemy_ids.contains(&c.owner)
                 && (!self.minor
+                    || (self.barb && self.barbarian_tactics)
                     || Self::minor_home(g, pid)
                         .is_some_and(|home| g.wdist(home, c.pos) <= MINOR_DEFENSE_RADIUS))
+                && self.barbarian_target_allowed_for_controller(g, uid, c.pos)
             {
                 let d = g.wdist(pos, c.pos);
                 if best.map(|b| (d, c.pos) < b).unwrap_or(true) {
@@ -10623,8 +11049,10 @@ impl BasicAi {
         for u in g.units.values() {
             if enemy_ids.contains(&u.owner)
                 && (!self.minor
+                    || (self.barb && self.barbarian_tactics)
                     || Self::minor_home(g, pid)
                         .is_some_and(|home| g.wdist(home, u.pos) <= MINOR_DEFENSE_RADIUS))
+                && self.barbarian_target_allowed_for_controller(g, uid, u.pos)
             {
                 if Some(u.owner) == g.barb_pid
                     && (!near_home(u.pos)
@@ -10684,11 +11112,13 @@ impl BasicAi {
         g.units
             .values()
             .filter(|enemy| {
-                enemy_ids.contains(&enemy.owner)
+                    enemy_ids.contains(&enemy.owner)
                     && Self::waterborne(g, enemy.id)
                     && (!self.minor
+                        || (self.barb && self.barbarian_tactics)
                         || Self::minor_home(g, pid)
                             .is_some_and(|home| g.wdist(home, enemy.pos) <= MINOR_DEFENSE_RADIUS))
+                    && self.barbarian_target_allowed_for_controller(g, uid, enemy.pos)
             })
             .map(|enemy| (g.wdist(unit.pos, enemy.pos), 0, enemy.pos))
             .chain(
@@ -10698,9 +11128,11 @@ impl BasicAi {
                         enemy_ids.contains(&city.owner)
                             && Self::city_is_coastal(g, city.id)
                             && (!self.minor
+                                || (self.barb && self.barbarian_tactics)
                                 || Self::minor_home(g, pid).is_some_and(|home| {
                                     g.wdist(home, city.pos) <= MINOR_DEFENSE_RADIUS
                                 }))
+                            && self.barbarian_target_allowed_for_controller(g, uid, city.pos)
                     })
                     .map(|city| (g.wdist(unit.pos, city.pos), 1, city.pos)),
             )
@@ -11433,7 +11865,17 @@ impl BasicAi {
     }
 
     fn military_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        if self.minor {
+        // The barbarian seat has no city to serve as `minor_home`. Its camp
+        // guard and engine-managed Scout are already moved by the world phase;
+        // every other military unit is a real raider.
+        if self.barb
+            && self.barbarian_tactics
+            && (g.barb_camp_guards.values().any(|guard| *guard == uid)
+                || g.barb_scout_homes.contains_key(&uid))
+        {
+            return self.fortify_or_stop(g, pid, uid);
+        }
+        if self.minor && (!self.barb || !self.barbarian_tactics) {
             let Some(home) = Self::minor_home(g, pid) else {
                 return self.fortify_or_stop(g, pid, uid);
             };
@@ -11467,6 +11909,7 @@ impl BasicAi {
             })
         });
         let decline_settlers = adjacent_enemy_settler
+            && (!self.barb || !self.barbarian_tactics)
             && (self.minor
                 || g.units
                     .values()
@@ -11488,17 +11931,38 @@ impl BasicAi {
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
             return false;
         }
-        let enemy_ids: Vec<usize> = g
+        let mut enemy_ids: Vec<usize> = g
             .players
             .iter()
             .filter(|o| {
                 o.id != pid
                     && o.alive
                     && g.is_at_war(pid, o.id)
-                    && (!self.minor || Self::minor_enemy_near_home(g, pid, o.id))
+                    && (!self.minor
+                        || (self.barb && self.barbarian_tactics)
+                        || Self::minor_enemy_near_home(g, pid, o.id))
             })
             .map(|o| o.id)
             .collect();
+        // A barbarian home threat is a local defense problem, not a major-war
+        // campaign. Admit the seat for the attack scan and the dedicated
+        // bounded responder assignment below; unclaimed wartime units still
+        // use their ordinary major-war list after that assignment gets first
+        // claim.
+        if !self.minor && !self.barb {
+            if let Some(barb) = g.barb_pid {
+                if self.barbarian_tactics
+                    && Self::barbarian_presence_at_home_with_camp_radius(
+                        g,
+                        pid,
+                        HOME_CAMP_RADIUS,
+                    )
+                    && !enemy_ids.contains(&barb)
+                {
+                    enemy_ids.push(barb);
+                }
+            }
+        }
         if !enemy_ids.is_empty() {
             self.patrol_targets.remove(&uid);
             // Pick the best role-adjusted exchange among all attackable tiles.
@@ -11515,6 +11979,7 @@ impl BasicAi {
                     || g.map.get(pos).is_none()
                     || !self.is_enemy_tile(g, pos, &enemy_ids)
                     || (self.minor
+                        && (!self.barb || !self.barbarian_tactics)
                         && Self::minor_home(g, pid)
                             .is_none_or(|home| g.wdist(home, pos) > MINOR_DEFENSE_RADIUS))
                 {
@@ -11579,10 +12044,21 @@ impl BasicAi {
                     return true;
                 }
             }
+            if let Some(action) = self.barbarian_raid_action(g, pid, uid) {
+                if g.apply(pid, &action).is_ok() {
+                    return true;
+                }
+            }
             if let Some(action) = self.heavy_cavalry_pillage_action(g, pid, uid) {
                 if g.apply(pid, &action).is_ok() {
                     return true;
                 }
+            }
+            if !self.barb
+                && self.barbarian_tactics
+                && self.barbarian_home_defense_step(g, pid, uid)
+            {
+                return true;
             }
             let hostile_water_unit = g
                 .units
@@ -11636,6 +12112,11 @@ impl BasicAi {
                 None => self.peacetime_step(g, pid, uid, true),
             };
         }
+        if let Some(action) = self.barbarian_raid_action(g, pid, uid) {
+            if g.apply(pid, &action).is_ok() {
+                return true;
+            }
+        }
         self.peacetime_step(g, pid, uid, false)
     }
 
@@ -11659,6 +12140,7 @@ impl BasicAi {
             .into_iter()
             .filter_map(|position| {
                 if self.minor
+                    && (!self.barb || !self.barbarian_tactics)
                     && Self::minor_home(g, pid)
                         .is_none_or(|home| g.wdist(home, position) > MINOR_DEFENSE_RADIUS)
                 {
@@ -11703,7 +12185,7 @@ impl BasicAi {
     fn peacetime_step(&mut self, g: &mut Game, pid: usize, uid: u32, at_war: bool) -> bool {
         let upos = g.units[&uid].pos;
         let at_war = at_war && self.come_ashore;
-        if self.minor {
+        if self.minor && (!self.barb || !self.barbarian_tactics) {
             let cities = g.player_city_ids(pid);
             if cities.is_empty() {
                 return false;
@@ -11711,6 +12193,15 @@ impl BasicAi {
             let cap = g.cities[&cities[0]].pos;
             if g.wdist(upos, cap) > 2 {
                 return self.step_toward(g, pid, uid, cap);
+            }
+            return self.fortify_or_stop(g, pid, uid);
+        }
+        if self.barb && self.barbarian_tactics {
+            let Some(home) = Self::barbarian_home(g, uid) else {
+                return self.fortify_or_stop(g, pid, uid);
+            };
+            if g.wdist(upos, home) > 1 {
+                return self.step_toward(g, pid, uid, home);
             }
             return self.fortify_or_stop(g, pid, uid);
         }
@@ -15551,6 +16042,142 @@ mod tests {
         g.units.get_mut(&raider).unwrap().pos = far;
 
         assert_eq!(ai.besieged_military_floor(&g, 0, city, 1), 0.0);
+    }
+
+    #[test]
+    fn barbarian_pressure_orders_a_local_melee_defender_even_above_the_army_floor() {
+        let (mut g, city, _raider) = barbarian_at_the_gates_game(81);
+        for uid in g.player_unit_ids(0) {
+            g.remove_unit(uid);
+        }
+        let ai = BasicAi::new();
+        assert_eq!(BasicAi::barbarian_threat_pressure(&g, 0, city), 1);
+        let item = ai
+            .pick_item(&g, 0, city, 1, 0, 4, 0, 0, 8, 8, 0)
+            .expect("a city under a barbarian raid must choose a production item");
+        assert!(matches!(
+            &item,
+            Item::Unit { unit } if g.rules.units[unit].class == "military"
+                && g.rules.units[unit].is_melee_capable()
+        ), "the local emergency should want a melee defender, got {item:?}");
+    }
+
+    #[test]
+    fn barbarian_alert_suppresses_an_available_trader() {
+        let (mut g, city, _raider) = barbarian_at_the_gates_game(82);
+        for uid in g.player_unit_ids(0) {
+            g.remove_unit(uid);
+        }
+        let home = g.cities[&city].pos;
+        let second_center = g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                (4..=15).contains(&g.wdist(home, **pos))
+                    && tile.owner_city.is_none()
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("the test map has a second city site");
+        let settler = g.spawn_test_unit("settler", 0, second_center);
+        g.current = 0;
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        g.players[0].civics.insert(crate::name!("foreign_trade"));
+        // One local guard is enough to make this a trade-suppression test
+        // rather than a second production-floor test.
+        g.spawn_test_unit("warrior", 0, home);
+
+        assert!(BasicAi::should_add_trader(&g, 0, 0));
+        assert!(BasicAi::barbarian_trade_risk(&g, 0));
+        assert!(!BasicAi::should_add_trader_safely(&g, 0, 0));
+        let trader = Item::Unit {
+            unit: crate::name!("trader"),
+        };
+        let choice = BasicAi::new().pick_item(&g, 0, city, 2, 1, 4, 0, 0, 6, 3, 3);
+        assert_ne!(choice, Some(trader), "a nearby raider must displace the Trader");
+    }
+
+    #[test]
+    fn barbarian_raider_uses_pillage_when_no_attack_is_available() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(83);
+        let barb = g.units[&raider].owner;
+        for uid in g.player_unit_ids(0) {
+            g.remove_unit(uid);
+        }
+        let home = g.cities[&city].pos;
+        let raid_tile = g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                g.wdist(home, **pos) >= 3
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.city_at(**pos).is_none()
+                    && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("the city has an open tile outside immediate attack range");
+        {
+            let tile = g.map.tiles.get_mut(&raid_tile).unwrap();
+            tile.owner_city = Some(city);
+            tile.improvement = Some(crate::name!("farm"));
+        }
+        g.units.get_mut(&raider).unwrap().pos = raid_tile;
+        let snapshot = serde_json::to_value(&g).unwrap();
+        let mut g: Game = serde_json::from_value(snapshot).unwrap();
+        g.current = barb;
+        let mut ai = BasicAi::new();
+        ai.barb = true;
+
+        assert!(matches!(
+            ai.barbarian_raid_action(&g, barb, raider),
+            Some(Action::Pillage { unit }) if unit == raider
+        ));
+        assert!(ai.military_step(&mut g, barb, raider));
+        assert!(matches!(
+            g.log.last(),
+            Some((pid, Action::Pillage { unit })) if *pid == barb && *unit == raider
+        ));
+        assert!(g.map.tiles[&raid_tile].pillaged);
+    }
+
+    #[test]
+    fn barbarian_raider_returns_to_its_camp_after_a_long_chase() {
+        let (mut g, _city, raider) = barbarian_at_the_gates_game(84);
+        let barb = g.units[&raider].owner;
+        let open: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.city_at(**pos).is_none()
+                    && g.units_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        let (raider_at, camp) = open
+            .iter()
+            .find_map(|raider_at| {
+                open.iter()
+                    .find(|camp| g.wdist(*raider_at, **camp) > BARBARIAN_RETURN_RADIUS)
+                    .map(|camp| (*raider_at, *camp))
+            })
+            .expect("the map has two open sites beyond the barbarian leash");
+        g.units.get_mut(&raider).unwrap().pos = raider_at;
+        g.barb_camps.insert(camp, g.turn + 1_000);
+        let mut ai = BasicAi::new();
+        ai.barb = true;
+        assert_eq!(
+            ai.nearest_enemy(&g, barb, raider, &[0]),
+            Some(camp),
+            "a raider beyond its leash must return to the nearest camp"
+        );
     }
 
     fn barb_skirmish_game(seed: u64) -> (Game, u32, u32) {

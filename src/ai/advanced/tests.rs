@@ -4014,6 +4014,7 @@ fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     game.apply(0, &Action::FoundCity { unit: settler })
         .expect("found city");
     let city = game.player_city_ids(0)[0];
+    clear_barbarian_fixture(&mut game);
     install_ai_test_district(&mut game, city, "campus");
     install_ai_test_district(&mut game, city, "theater_square");
     game.players[0].techs.insert(crate::name!("writing"));
@@ -13138,6 +13139,7 @@ fn culture_production_trains_one_archaeologist_for_available_artifact_slots() {
         .unwrap();
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     let city = game.player_city_ids(0)[0];
+    clear_barbarian_fixture(&mut game);
     game.cities
         .get_mut(&city)
         .unwrap()
@@ -20252,6 +20254,31 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     assert!(!AdvancedAi::legacy().camp_party());
 }
 
+/// Remove construction-time barbarians from a non-barbarian fixture. Production
+/// tests that are about culture, science, or wartime ceilings should not have
+/// their queue changed by a random camp that happens to spawn near the city;
+/// barbarian-specific tests install their own camps and units explicitly.
+fn clear_barbarian_fixture(game: &mut Game) {
+    if let Some(barb) = game.barb_pid {
+        for uid in game
+            .units
+            .values()
+            .filter(|unit| unit.owner == barb)
+            .map(|unit| unit.id)
+            .collect::<Vec<_>>()
+        {
+            game.remove_unit(uid);
+        }
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    game.barb_camp_guards.clear();
+    game.barb_scout_homes.clear();
+    game.barb_scout_targets.clear();
+    game.barb_camp_targets.clear();
+    game.barb_alerted_until.clear();
+}
+
 /// Board for the camp-errand pins: two founded capitals, no stray units,
 /// no camps, `current = 0`. Returns the game, player 0's capital, and a
 /// placer for open ground at an exact distance from it.
@@ -20305,11 +20332,10 @@ fn open_ground_at(game: &Game, home: Pos, distance: i32) -> Pos {
         .expect("open ground at the distance")
 }
 
-/// The errand itself, pinned as a DIFFERENCE: on the same board, the same
-/// two swordsmen with the errand on clear a warrior-guarded camp six tiles
-/// from the capital, and with the errand off they do not — so the pin
-/// cannot be satisfied by the Basic fallback's incidental wander, which is
-/// exactly what the first version of this test measured by accident.
+/// The errand itself: on the same board, the same two swordsmen clear a
+/// warrior-guarded camp six tiles from the capital. The default barbarian
+/// response is allowed to clear it too; the bounty treatment must not make
+/// the deliberate errand slower than the ordinary response.
 #[test]
 fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
     let run = |bounty: bool| -> (Option<u32>, i64) {
@@ -20356,14 +20382,18 @@ fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
         "the clear is booked on the counter the boosts read"
     );
 
-    // The Basic fallback's wander eventually blunders into this camp too
-    // (t14 on this board), so the discriminator is speed: a deliberate
-    // errand beats an accidental one.
+    // The default barbarian response now deliberately answers a camp this
+    // close, so the errand is a non-regression check rather than a claim that
+    // the bounty flag is the only route to the camp.
     let (without_errand, _) = run(false);
     assert!(
-        with_errand.unwrap() < without_errand.unwrap_or(u32::MAX),
-        "the errand (t{:?}) must clear the camp before the wander does \
-         (t{:?}), or it is not doing anything the fallback did not",
+        without_errand.is_some(),
+        "the default barbarian response must still clear the camp"
+    );
+    assert!(
+        with_errand.unwrap() <= without_errand.unwrap(),
+        "the errand (t{:?}) must not clear the camp after the default response \
+         (t{:?})",
         with_errand,
         without_errand
     );
@@ -20527,16 +20557,12 @@ fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
         rush: false,
     };
     let mut ai = AdvancedAi::new();
-    // Opt into the mechanism under test: `home_defense` left the
-    // production defaults on 2026-08-14 (the war-half removal) and is now
-    // set by the live bridge and the `advanced_war_half` arm.
-    ai.enable_home_defense();
     ai.battlefront_observation = false;
     assert_eq!(
-        ai.base.home_defense_objective(&game, 0, soldier, &[barb]),
+        ai.base
+            .barbarian_home_defense_objective(&game, 0, soldier, &[barb]),
         Some(raider_at),
-        "the homeland must claim this unit against the raider once the \
-             barbarian seat is in its enemy list"
+        "the dedicated barbarian response must claim this unit without a major war"
     );
     let acted = ai.advanced_military_step(&mut game, 0, soldier, &plan);
     assert!(
