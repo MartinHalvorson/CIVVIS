@@ -622,9 +622,10 @@ class OvernightAuditRecovery(unittest.TestCase):
         end = source.index('\n}', start) + 2
         predicate = source[start:end]
         cases = (("primary", 1, 1), ("", 1, 0), ("primary", 0, 0))
+        shell = "/bin/zsh" if Path("/bin/zsh").exists() else "/bin/bash"
         for follower, healthy, expected in cases:
             result = subprocess.run(
-                ["/bin/zsh", "-c",
+                [shell, "-c",
                  f"{predicate}\nfollower_pid={follower!r}\n"
                  f"mirror_healthy={healthy}\nmirror_needs_settle"],
                 capture_output=True, text=True, timeout=5)
