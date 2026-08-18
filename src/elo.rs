@@ -226,6 +226,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_open_water_navy",
     "advanced_maritime_splice",
     "advanced_sea_answers",
+    "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
@@ -834,6 +835,7 @@ define_arm_kinds! {
     AdvancedOpenWaterNavy => "advanced_open_water_navy",
     AdvancedMaritimeSplice => "advanced_maritime_splice",
     AdvancedSeaAnswers => "advanced_sea_answers",
+    AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
@@ -3199,6 +3201,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_sea_answers();
             Box::new(ai)
         }
+        // Deliberate camp clearing as a peacetime errand: the stock native
+        // controller cannot fight barbarians at all, so every camp's gold
+        // bounty, era score, and boost progress goes uncollected. Two
+        // exchange-gated hunters, camps near home only.
+        "advanced_camp_bounty" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_camp_bounty();
+            Box::new(ai)
+        }
         // Withhold the native barbarian-scout exemption so its promotion is
         // priced: the stock controller ships it ON.
         "advanced_without_barbarian_scouts_are_scouts" => {
@@ -4278,6 +4289,7 @@ impl ArmKind {
             Self::AdvancedOpenWaterNavy => &["open-water-navy"],
             Self::AdvancedMaritimeSplice => &["naval-production-card-spliced"],
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
+            Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
@@ -4778,6 +4790,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_open_water_navy" => (Vec::new(), "advanced_open_water_navy"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_sea_answers" => (Vec::new(), "advanced_sea_answers"),
+        "advanced_camp_bounty" => (Vec::new(), "advanced_camp_bounty"),
         "advanced_without_barbarian_scouts_are_scouts" => {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
         }
@@ -6091,6 +6104,7 @@ mod tests {
                 "advanced_open_water_navy",
                 "advanced_maritime_splice",
                 "advanced_sea_answers",
+                "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",

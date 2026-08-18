@@ -151,6 +151,12 @@ const HOME_DEFENSE_MARGIN: f64 = 1.25;
 /// after the damage. Past this range the unit keeps its offensive job.
 const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 
+/// How many camp-errand claims `camp_bounty` may hold at once. Two hunters
+/// convert the opening's nearby camps without ever amounting to an army
+/// diversion — the measured failure mode of the withdrawn home-defense
+/// native slot. Deliberately NOT a gene: the genome is pinned at 40.
+const CAMP_BOUNTY_PARTY: usize = 2;
+
 /// How near a city a hostile must come before that city wants somebody actually
 /// standing in it. Three tiles is one turn's move for most classical units, so a
 /// garrison ordered at this range is in place before the attacker arrives.
@@ -2203,6 +2209,22 @@ pub struct BasicAi {
     /// stops recruiting land units that can never engage it. Entrant
     /// `advanced_sea_answers`; off in production pending its screen.
     pub(crate) sea_answers: bool,
+    /// Deliberate camp clearing as a peacetime errand. The stock native
+    /// controller cannot fight barbarians at all — the military step's
+    /// enemy list admits the barbarian seat only behind `home_defense`,
+    /// which native production ships OFF — so every camp's 50-gold bounty,
+    /// its Ancient–Medieval era score, and its Military Tradition / Bronze
+    /// Working boost progress sit uncollected while a fortified guard holds
+    /// a tile beside the capital for the whole game. This flag funds a
+    /// bounded errand instead: at most `CAMP_BOUNTY_PARTY` claimed hunters,
+    /// peacetime only, camps within `camp_radius()` of home, priced by the
+    /// same exchange gate as every other attack, recon excluded. Entrant
+    /// `advanced_camp_bounty`; off in production pending its screen.
+    pub(crate) camp_bounty: bool,
+    /// The camp errand's claims for the current turn: camp -> (turn,
+    /// claimant unit). One hunter per camp and two camps at a time, so the
+    /// bounty never becomes an army diversion.
+    camp_bounty_claims: BTreeMap<Pos, (u32, u32)>,
     /// Subtract the empire's unit-maintenance bill (at the gold weight)
     /// inside the policy counterfactual, so `unit_maintenance_discount`
     /// cards — Conscription, Levee en Masse — stop scoring exactly 0.0. For
@@ -3553,6 +3575,8 @@ impl BasicAi {
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
+            camp_bounty: false,
+            camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -3651,6 +3675,87 @@ impl BasicAi {
         }
     }
 
+    /// The camp errand's target for this unit: the nearest standing
+    /// barbarian camp on home ground this unit can profitably take, claimed
+    /// so no second unit runs the same errand. `None` stands the errand
+    /// down: for minors and barbarians, for recon, when every nearby camp is
+    /// outmatched, or when both claim slots are already spent. The caller
+    /// owns the peacetime gate.
+    fn camp_bounty_target(&mut self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        if !self.camp_bounty || self.minor || self.barb {
+            return None;
+        }
+        g.barb_pid?;
+        // Peacetime only: a war economy has no spare errand-runners, and
+        // wartime barbarian answering belongs to the home-defense path.
+        if g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        }) {
+            return None;
+        }
+        let (upos, ranged) = {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            // A scout prices an EMPTY camp above its own threshold (the
+            // undefended-tile branch of `exchange_score` pays 27.5 against
+            // Recon's +14), so the class filter cannot be left to the
+            // gate: a bounty is never a recon job.
+            if spec.class != "military" || spec.promotion_class == "recon" {
+                return None;
+            }
+            (unit.pos, spec.has_ranged_attack())
+        };
+        let my_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|c| c.owner == pid)
+            .map(|c| c.pos)
+            .collect();
+        if my_cities.is_empty() {
+            return None;
+        }
+        let camp_radius = self.camp_radius();
+        let turn = g.turn;
+        self.camp_bounty_claims
+            .retain(|_, (claimed_turn, _)| *claimed_turn == turn);
+        let claims_spent = self
+            .camp_bounty_claims
+            .values()
+            .filter(|(_, claimant)| *claimant != uid)
+            .count();
+        let mut best: Option<(i32, Pos)> = None;
+        for camp in g.barb_camps.keys() {
+            match self.camp_bounty_claims.get(camp) {
+                // Another unit already runs this camp's errand.
+                Some((_, claimant)) if *claimant != uid => continue,
+                Some(_) => {}
+                // A fresh claim is available only while a slot is open.
+                None if claims_spent >= CAMP_BOUNTY_PARTY => continue,
+                None => {}
+            }
+            if my_cities.iter().map(|c| g.wdist(*camp, *c)).min().unwrap() > camp_radius {
+                continue;
+            }
+            let d = g.wdist(upos, *camp);
+            if d > HOME_DEFENSE_RECALL_RANGE {
+                continue;
+            }
+            if self.exchange_score(g, uid, *camp, ranged) <= self.attack_threshold(g, uid, *camp) {
+                continue;
+            }
+            if best.map(|b| (d, *camp) < b).unwrap_or(true) {
+                best = Some((d, *camp));
+            }
+        }
+        let (_, camp) = best?;
+        self.camp_bounty_claims.insert(camp, (turn, uid));
+        Some(camp)
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -3695,6 +3800,8 @@ impl BasicAi {
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
+            camp_bounty: false,
+            camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
