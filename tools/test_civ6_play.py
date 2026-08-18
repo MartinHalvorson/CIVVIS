@@ -1425,11 +1425,72 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
                / "CivvisControlAgent.lua").read_text(encoding="utf-8")
         self.assertIn('if type(hash) == "string" then return hash; end', lua)
 
+    def test_an_unreadable_ruleset_is_unverified_not_a_mismatch(self):
+        """★★★★★ `?` MEANS THE READBACK FAILED, NOT THAT THE RULESET DIFFERED.
+
+        Three complete games were thrown away on 2026-08-18 because the two were
+        the same answer: `civvis-20260818T032030Z` (223 turns, score 937, ended
+        on a rival's VICTORY_CULTURE), `040903Z` (250 turns, score 1138, lead
+        -24) and `045332Z` (250 turns, score 683). Every other axis of their
+        seat events was correct.
+        """
+        for absent in (None, "?"):
+            with self.subTest(absent=absent):
+                configured, modes, ruleset = civ6_play.seat_matches_requested(
+                    self._seat(ruleset=absent), args())
+                self.assertIsNone(
+                    ruleset, "an unreadable readback is neither agreement nor "
+                             "disagreement")
+                self.assertTrue(
+                    configured,
+                    "a seat correct on every axis it could report is the game "
+                    "that was asked for")
+                self.assertTrue(modes, "the modes axis is unaffected")
+
+    def test_a_different_ruleset_is_still_a_mismatch(self):
+        """The weakening must stop at unreadable. A game that reports a ruleset
+        CIVVIS does not model is still a different game."""
+        configured, _, ruleset = civ6_play.seat_matches_requested(
+            self._seat(ruleset="RULESET_STANDARD"), args())
+        self.assertIs(ruleset, False)
+        self.assertFalse(configured)
+
     def test_a_wrong_ruleset_run_is_a_refusal_not_a_result(self):
+        """A ruleset the game reported and that differs still takes the column:
+        the run never played the game being measured."""
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"ruleset_mismatch": True, "mode_mismatch": False,
+                 "seat": {"civ": "CIVILIZATION_ROME"}, "configured": False},
+                "stopped"),
+            "wrong_ruleset")
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
-        self.assertIn('"wrong_ruleset" if state["ruleset_mismatch"]', source)
         self.assertIn('"ruleset_requested": args.ruleset,', source)
+
+    def test_an_unreadable_ruleset_does_not_overwrite_the_real_ending(self):
+        """⚠ `reason` IS THE ONLY FIELD SAYING HOW A GAME ENDED, and
+        `wrong_ruleset` sat first in the precedence chain, so an unreadable
+        readback erased it. `civvis-20260818T032030Z` ended on a rival's culture
+        victory at turn 223 and the ledger recorded a refusal."""
+        state = {"ruleset_mismatch": False, "mode_mismatch": False,
+                 "seat": {"ruleset": "?"}, "configured": True}
+        for ending in ("stopped", "stalled: no event for 240s", "timeout"):
+            with self.subTest(ending=ending):
+                self.assertEqual(civ6_play.summary_reason(state, ending), ending)
+
+    def test_the_seat_report_still_decides_the_refusals_it_can_prove(self):
+        """Deleting one false refusal must not delete the true ones."""
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"mode_mismatch": True, "seat": {}, "configured": False},
+                "stopped"),
+            "wrong_game_modes")
+        self.assertEqual(
+            civ6_play.summary_reason(
+                {"seat": {"difficulty": "DIFFICULTY_PRINCE"}, "configured": False},
+                "stopped"),
+            "wrong_game_configuration")
 
 
 class VictoryLaneListTests(unittest.TestCase):

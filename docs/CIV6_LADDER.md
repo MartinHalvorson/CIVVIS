@@ -28,7 +28,7 @@ before that export carries the index alone and reads `—` here.
 Attempts recorded: 317.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: ?, RULESET_EXPANSION_2. 313 row(s) predate the ruleset readback and are unverified rather than agreed.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 316 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -68,9 +68,16 @@ absent from this table have never been completed by anyone here.
 | 5 | — | 3 | 1% |
 | 2 | — | 1 | 0% |
 
-209 of 317 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
+209 of 317 attempts reached a terminal victory event; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
+
+`outcome` is what the game did, not what the harness saw last.
+`defeat` means this controller was eliminated and the game said so;
+`stopped`, `stalled` and `timeout` mean nobody won and nobody lost.
+A ledger that cannot tell defeat from a wedge cannot be used to
+compare anything, and until `defeat` existed here the two were the
+same row.
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
