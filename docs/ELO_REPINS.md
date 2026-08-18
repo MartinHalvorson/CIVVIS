@@ -1402,3 +1402,20 @@ identifiable: **v14 rows are comparable to v12 rows, and v13 rows to neither.**
 `civ6_fidelity.py` had refused a non-Gathering-Storm reference since #1946 and
 the refusal sat in `main`, so three lines of `sqlite3` walked past it. It is in
 `load_cache_database` now.
+
+---
+
+#2078 makes `BasicAi::military_step` drop attack candidates the engine will
+refuse — invisible target, blocked line of sight, wrong melee domain,
+unpayable entry — before scoring, behind `legal_tactical_candidates`: `false`
+in both `BasicAi` constructors, set only by `AdvancedAi::promoted_policy_envoy`
+(production) and withheld by the `advanced_without_legal_candidates` arm. The
+anchor's `legacy()` builds its base from `BasicAi::new()` and never sets the
+flag, and the two new `Game` predicates (`ranged_order_is_legal`,
+`melee_order_is_legal`) are dead code on every frozen path, so `advanced_v1`
+keeps proposing — and having refused — the historical candidates.
+**Verified by playing, not argued**: `advanced_v1_plays_the_same_game_it_always_did`
+passes on this branch at 18,572 decisions and `0x3bda_c2f2_b84d_30fc`.
+Production play does change where a refused order previously won the argmax —
+519 authoritative combat-order refusals per censused deployment game, all from
+this loop — see `docs/eval/2026-08-18-the-base-picker-stops-proposing-attacks-the-engine-will-refu.md`.

@@ -32841,6 +32841,71 @@ impl Game {
             })
     }
 
+    /// Whether the engine will accept `Ranged { unit: uid, target }` right
+    /// now. These are the predicates `legal_actions_within` applies before it
+    /// enumerates a Ranged order and `do_ranged` re-applies before executing
+    /// one — asked here in `do_ranged`'s own order, not re-derived, so the
+    /// answer cannot drift from the refusal.
+    ///
+    /// A controller that proposes ranged candidates on distance alone is
+    /// proposing orders the engine will refuse: a census of one 150-turn
+    /// six-player deployment game (seed 7700000, 2026-08-18) counted 503
+    /// authoritative Ranged refusals, every one from `BasicAi::military_step`
+    /// — 281 "target is not visible", 195 "line of sight blocked", 26
+    /// "nothing to attack" — and each refused winner also shadowed whatever
+    /// legal shot came second. `AdvancedAi`'s tactical picker asks the same
+    /// predicates inline for the same reason.
+    ///
+    /// ⚠ The caller hoists `player_vision_now` and `visibility_viewers` once
+    /// per unit and passes them in. The convenience path rebuilds a whole
+    /// `TileBits` per call and measured **+6.43%** when a picker paid it per
+    /// candidate tile (see `combat_target_visible`'s note).
+    pub(crate) fn ranged_order_is_legal(
+        &self,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        visible: &TileBits,
+        viewers: &BTreeSet<usize>,
+    ) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        let spec = &self.rules.units[unit.kind];
+        spec.has_ranged_attack()
+            && !self.is_embarked(unit)
+            && (!spec.siege
+                || !unit.moved
+                || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            && unit.moves_left > 0.0
+            && unit.attacks_left > 0
+            && self.wdist(unit.pos, target) <= self.unit_attack_range(uid)
+            && self.enemy_ranged_target_at(pid, target)
+            && self.combat_target_visible_at(pid, target, visible, viewers)
+            && self.unit_has_line_of_sight(uid, target)
+    }
+
+    /// Whether the engine will accept `Attack { unit: uid, target }` right
+    /// now — `legal_actions_within`'s own melee predicates plus the hostile
+    /// target check, exactly as `do_attack` applies them. See
+    /// `ranged_order_is_legal` for why a picker asks before proposing; the
+    /// same census counted 17 authoritative melee refusals ("unit cannot
+    /// attack into that domain", "not enough movement to attack", "no combat
+    /// target"), all from the same candidate loop.
+    pub(crate) fn melee_order_is_legal(&self, pid: usize, uid: u32, target: Pos) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        self.rules.units[unit.kind].is_melee_capable()
+            && !self.is_embarked(unit)
+            && unit.moves_left > 0.0
+            && unit.attacks_left > 0
+            && self.wdist(unit.pos, target) == 1
+            && self.enemy_combat_target_at(pid, target)
+            && self.unit_can_melee_target_domain(uid, target)
+            && self.can_pay_melee_entry(uid, target)
+    }
+
     /// A ranged target must be in current shared vision, and a stealthed unit
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but

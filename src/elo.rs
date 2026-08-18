@@ -274,6 +274,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_hut_collection",
     "advanced_without_explore_commit",
     "advanced_without_village_seeking",
+    "advanced_without_legal_candidates",
     "advanced_price_suzerainty",
     "advanced_without_unit_tactics",
     "advanced_league_top",
@@ -896,6 +897,7 @@ define_arm_kinds! {
     AdvancedWithoutHutCollection => "advanced_without_hut_collection",
     AdvancedWithoutExploreCommit => "advanced_without_explore_commit",
     AdvancedWithoutVillageSeeking => "advanced_without_village_seeking",
+    AdvancedWithoutLegalCandidates => "advanced_without_legal_candidates",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -3222,6 +3224,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_hut_collection();
             Box::new(ai)
         }
+        // Production with the base military picker's engine-legality screen
+        // withheld: attack candidates are once again proposed on distance
+        // alone, so a refused order can win the argmax and shadow the legal
+        // runner-up (519 authoritative refusals in one censused deployment
+        // game). The withholding twin for
+        // `BasicAi::legal_tactical_candidates`, shipped on in
+        // `promoted_policy_envoy`.
+        "advanced_without_legal_candidates" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_legal_tactical_candidates();
+            Box::new(ai)
+        }
         "advanced_without_explore_commit" => {
             let mut ai = AdvancedAi::new();
             ai.disable_explore_commit();
@@ -4430,6 +4444,7 @@ impl ArmKind {
             Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
             Self::AdvancedWithoutExploreCommit => &["explore-commit-withheld"],
             Self::AdvancedWithoutVillageSeeking => &["village-seeking-withheld"],
+            Self::AdvancedWithoutLegalCandidates => &["legal-candidate-screen-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
@@ -4935,6 +4950,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_governor_recovery" => (Vec::new(), "advanced_without_governor_recovery"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_hut_collection" => (Vec::new(), "advanced_without_hut_collection"),
+        "advanced_without_legal_candidates" => (Vec::new(), "advanced_without_legal_candidates"),
         "advanced_without_explore_commit" => (Vec::new(), "advanced_without_explore_commit"),
         "advanced_without_village_seeking" => (Vec::new(), "advanced_without_village_seeking"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
@@ -6375,6 +6391,7 @@ mod tests {
                 "advanced_without_builder_floor",
                 "advanced_without_settler_deadline",
                 "advanced_without_hut_collection",
+                "advanced_without_legal_candidates",
                 "advanced_without_explore_commit",
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",

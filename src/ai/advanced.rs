@@ -3662,6 +3662,16 @@ impl AdvancedAi {
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
+        // The base military picker drops attack candidates the engine would
+        // refuse before scoring them, so a doomed order cannot shadow a legal
+        // one (519 authoritative refusals in one censused deployment game,
+        // all from that loop — see `BasicAi::legal_tactical_candidates`).
+        // This is candidate truthfulness, not a war capability: the war-half
+        // history above is about spending MORE on fighting, this is about not
+        // proposing orders `Game::apply` refuses. The frozen identities keep
+        // the historical candidate set; `advanced_unscreened_candidates` in
+        // `src/elo.rs` withholds it so the axis stays measurable.
+        ai.base.legal_tactical_candidates = true;
         // ⚠ The production floor of six was REMOVED on 2026-08-10. It did
         // exactly what it promised — +2.1 cities, +20 population, +6.5
         // districts, +62 terminal score — and paid about **thirty Elo of wins**
