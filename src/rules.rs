@@ -3310,29 +3310,14 @@ mod tests {
         // action uses the same happiness-yield effect but remains deliberately
         // outside the modeled-person roster, rather than being conflated with
         // Scotland's civilization trait.
-        // Moved by three Founder beliefs that paid on the domestic form of a
-        // key Civilization VI defines on what is *abroad*, plus the belief
-        // that owned the key they were borrowing. The shipped database's own
-        // modifier ids name the distinction and were read directly:
-        // `TITHE_GOLD_FOLLOWER` (+1 Gold per 4 followers, not +3 per following
-        // city), `WORLD_CHURCH_CULTURE_FOREIGN_FOLLOWER` (+1 Culture per 5
-        // followers in *other* civilizations' cities, not per follower at
-        // home), `PILGRIMAGE_FAITH_FOREIGN_CITY` (+2 Faith per foreign
-        // following city, not per following city), and
-        // `CHURCH_PROPERTY_GOLD_CITY` (+2 Gold per following city) — which
-        // `beliefs.json` did not have at all, because Tithe was standing in
-        // its place. Cross-Cultural Dialogue's rate moved 1-per-4 to 1-per-5
-        // for the same reason: `PerXItems` is 5.
-        //
-        // This inverts an incentive rather than nudging a number. Civilization
-        // VI pays a founder to convert its *rivals*, which is why Missionaries
-        // and Apostles are worth building; the domestic form paid for
-        // converting nobody. Religion decides about three quarters of the
-        // games on the evaluator's own board, so every religion treatment
-        // measured before this was measured against the wrong gradient.
+        // ⚠ Nothing moved it on 2026-08-18. #2049 changed four Founder
+        // beliefs to the base game's forms and re-pinned this to
+        // `fnv1a64:2effccaa9b3512e3`; #2050 reverted the data and this went
+        // back to the value below unchanged, which is how the revert was
+        // verified rather than trusted. See `docs/FIDELITY.md`.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:2effccaa9b3512e3"
+            "fnv1a64:585ff2655ffd3a6d"
         );
     }
 

@@ -11828,21 +11828,29 @@ impl Game {
         Yields {
             // ⚠ Every arm here has a belief that sets it, and that is
             // checked: `tools/civvis_inert.py` fails when this function prices
-            // a key no belief supplies. Three arms were removed on 2026-08-18
-            // — Culture per domestic follower, Faith per domestic city, Gold
-            // per foreign city — because the shipped Civilization VI database
-            // has no belief of any of those shapes, so nothing could ever set
-            // them. See `docs/FIDELITY.md`.
+            // a key no belief supplies.
+            //
+            // ⚠⚠ THE SHAPES HERE ARE GATHERING STORM'S, NOT THE BASE GAME'S,
+            // AND THE TWO DISAGREE ABOUT EXACTLY THESE BELIEFS. Vanilla pays
+            // Tithe per follower, World Church and Pilgrimage on what is
+            // foreign, and ships Church Property; `Expansion2_RemoveData.xml`
+            // deletes all four of those modifiers and `Expansion2_Beliefs.xml`
+            // replaces them with the per-city and per-follower forms below.
+            // #2049 read the domestic/foreign distinction out of a compiled
+            // cache that happened to hold the base game and changed these to
+            // match it; #2050 put them back. See `docs/FIDELITY.md`.
             gold: effect("gold_per_city") * following
                 + (effect("gold_per_followers") * followers).floor()
                 + sacred_places,
-            culture: (effect("culture_per_foreign_followers") * foreign_followers).floor()
+            culture: (effect("culture_per_followers") * followers).floor()
+                + (effect("culture_per_foreign_followers") * foreign_followers).floor()
                 + effect("culture_per_theater_square") * theater_squares
                 + sacred_places,
             // Cross-Cultural Dialogue counts followers abroad only.
             science: (effect("science_per_foreign_followers") * foreign_followers).floor()
                 + sacred_places,
-            faith: effect("faith_per_foreign_city") * foreign_following
+            faith: effect("faith_per_city") * following
+                + effect("faith_per_foreign_city") * foreign_following
                 + effect("faith_per_holy_site") * holy_sites
                 + sacred_places,
             ..Yields::default()
