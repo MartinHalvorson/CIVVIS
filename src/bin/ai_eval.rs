@@ -3478,15 +3478,21 @@ mod tests {
             let budgets = matrix_job_budgets(jobs);
             assert_eq!(budgets.len(), profiles, "{jobs} jobs");
             // Every requested worker is used, and none is given to nobody.
-            assert_eq!(budgets.iter().sum::<usize>(), jobs, "{jobs} jobs: {budgets:?}");
-            assert!(budgets.iter().all(|budget| *budget > 0), "{jobs} jobs: {budgets:?}");
+            assert_eq!(
+                budgets.iter().sum::<usize>(),
+                jobs,
+                "{jobs} jobs: {budgets:?}"
+            );
+            assert!(
+                budgets.iter().all(|budget| *budget > 0),
+                "{jobs} jobs: {budgets:?}"
+            );
             // A heavier profile is never given less than a lighter one: the
             // matrix's wall time is the slowest child, so starving the
             // expensive shape is the one allocation that costs real time.
             for (index, budget) in budgets.iter().enumerate() {
                 for (other, other_budget) in budgets.iter().enumerate() {
-                    if PROMOTION_PROFILES[index].cost_weight
-                        > PROMOTION_PROFILES[other].cost_weight
+                    if PROMOTION_PROFILES[index].cost_weight > PROMOTION_PROFILES[other].cost_weight
                     {
                         assert!(
                             budget >= other_budget,
