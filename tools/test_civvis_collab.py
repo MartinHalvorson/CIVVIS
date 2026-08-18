@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest import mock
 import concurrent.futures
 import ast
 import re
@@ -1696,3 +1697,80 @@ class EveryCheckIsRequiredOrSaysWhyNot(unittest.TestCase):
     def test_rust_quality_is_required(self):
         """The specific hole this closes; a rename must not silently reopen it."""
         self.assertIn("rust-quality", collab.REQUIRED_CHECKS)
+
+
+class AManagedJobThatFailsToLoadSaysSo(unittest.TestCase):
+    """`launchctl bootout` is asynchronous and `bootstrap` behind it fails.
+
+    Measured on `mbp-m5-max-128` 2026-08-18: `bootstrap` printed "installed
+    CIVVIS spectator service" while `launchctl print` could not find the job at
+    all. The identical command by hand a moment later loaded it first try — the
+    signature of a race, not a bad plist. Every call in the loader passed
+    `check=False`, so nothing said a word, and the service simply stopped
+    existing.
+    """
+
+    def _driver(self, script):
+        """A fake `run` whose `launchctl print` answers follow `script`."""
+        state = {"loaded": script.pop(0), "calls": []}
+
+        class Done:
+            def __init__(self, rc):
+                self.returncode = rc
+                self.stdout = ""
+                self.stderr = ""
+
+        def run(argv, **kwargs):
+            state["calls"].append(list(argv))
+            verb = argv[1] if len(argv) > 1 else ""
+            if verb == "print":
+                return Done(0 if state["loaded"] else 1)
+            if verb == "bootout":
+                return Done(0)
+            if verb == "bootstrap":
+                if script:
+                    state["loaded"] = script.pop(0)
+                return Done(0 if state["loaded"] else 1)
+            return Done(0)
+
+        return run, state
+
+    def test_a_bootstrap_that_loses_the_race_is_retried(self):
+        # loaded, then still-not-loaded once, then loaded.
+        run, state = self._driver([True, False, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            collab.load_managed_job("com.example.job", Path("/x.plist"))
+        bootstraps = [c for c in state["calls"] if c[1] == "bootstrap"]
+        self.assertGreaterEqual(len(bootstraps), 2, state["calls"])
+
+    def test_a_job_that_never_loads_raises_rather_than_reporting_success(self):
+        run, _ = self._driver([False])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            with self.assertRaises(collab.CommandError) as caught:
+                collab.load_managed_job("com.example.job", Path("/x.plist"),
+                                               attempts=3)
+        self.assertIn("absent", str(caught.exception))
+
+    def test_a_job_that_loads_first_try_is_not_retried(self):
+        run, state = self._driver([False, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            collab.load_managed_job("com.example.job", Path("/x.plist"))
+        bootstraps = [c for c in state["calls"] if c[1] == "bootstrap"]
+        self.assertEqual(len(bootstraps), 1, state["calls"])
+
+    def test_the_bootout_is_waited_out_before_bootstrapping(self):
+        run, state = self._driver([True, True])
+        with mock.patch.object(collab, "run", run), \
+             mock.patch.object(collab.time, "sleep", lambda s: None):
+            try:
+                collab.load_managed_job("com.example.job", Path("/x.plist"),
+                                               attempts=2)
+            except collab.CommandError:
+                pass
+        order = [c[1] for c in state["calls"]]
+        self.assertIn("bootout", order)
+        self.assertLess(order.index("bootout"), order.index("bootstrap"),
+                        "the teardown has to be waited out first")
