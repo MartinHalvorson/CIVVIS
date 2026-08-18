@@ -2746,6 +2746,57 @@ fn translate(
             )),
             pos: None,
         }),
+        // ★★★ ESPIONAGE, WHICH HAD NO ROUTE TO A LIVE GAME AT ALL. The engine
+        // models twelve missions and the AI aims them at the denial target
+        // (`great_work_heist` 340 against a Culture leader, `disrupt_rocketry`
+        // 290 against a Science one) — and all three actions fell through this
+        // match's `_ => None` and were counted untranslatable, on top of a
+        // `Game::spies` the live mirror left empty, so nothing was ever chosen
+        // to drop in the first place.
+        //
+        // A spy's id IS its unit id on the live seat (`seat_live_spies`), so
+        // the same `civ6_of` mapping every other unit order uses applies here.
+        // Firaxis' own EspionagePopup issues these as PARAM_X/PARAM_Y plus
+        // `RequestOperation`, and travelling to a new city takes the identical
+        // shape — which is why the destination is required rather than
+        // optional: an empty-parameter spy operation silently does nothing.
+        Action::AssignSpy { spy, city } => {
+            let civ6 = civ6_of.get(spy)?;
+            let target = mirror_state.game.cities.get(city)?.pos;
+            Some(Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("SPY_TRAVEL_NEW_CITY".to_string()),
+                pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+            })
+        }
+        Action::SpyMission {
+            spy,
+            mission,
+            target,
+        } => {
+            let civ6 = civ6_of.get(spy)?;
+            // The engine's own mission names are the host's, lowercased. Keep
+            // the mapping a plain uppercase rather than a table: a name the
+            // host does not know is refused by `CanStartOperation` and named
+            // in the refusal ledger, which is a better failure than a silent
+            // table miss.
+            Some(Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some(format!("SPY_{}", mission.to_uppercase())),
+                pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+            })
+        }
+        Action::PromoteSpy { spy, promotion } => civ6_of.get(spy).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some(format!(
+                "PROMOTE:{}",
+                civ6_unit_promotion_name(promotion.as_str())
+            )),
+            pos: None,
+        }),
         // ★★★ THE ONE ORDER THAT TOUCHES AN ENEMY MISSIONARY. Religious units
         // are excluded from ordinary combat by design — `enemy_combat_target_at`,
         // `do_attack` and `do_ranged` all require `class == "military"`, and
@@ -5832,6 +5883,68 @@ mod tests {
             condemn.pos, None,
             "a parameterless command must not invent a destination"
         );
+    }
+
+    /// ★★★ Espionage had no route to a live game: all three actions fell
+    /// through `translate`'s `_ => None`, on top of a `Game::spies` the mirror
+    /// left empty so nothing was ever chosen to drop.
+    #[test]
+    fn spy_missions_reach_firaxis_unit_operations() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(4, 4), grass(6, 5)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 120,
+            spy_capacity: Some(2),
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            id: 77,
+            kind: "UNIT_SPY".to_string(),
+            x: 4,
+            y: 4,
+            ..StateUnit::default()
+        });
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let spy = *mirror.uid_of.get(&77).expect("the Spy is mirrored");
+
+        // The mission's own name becomes the host's operation, aimed at the
+        // target plot the way Firaxis' EspionagePopup aims it.
+        let heist = translate(
+            &Action::SpyMission {
+                spy,
+                mission: "great_work_heist".to_string(),
+                target: (6, 5),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the mission crosses");
+        assert_eq!(heist.kind, "unit");
+        assert_eq!(heist.subject, Some(77));
+        assert_eq!(heist.verb.as_deref(), Some("SPY_GREAT_WORK_HEIST"));
+        assert!(
+            heist.pos.is_some(),
+            "a spy operation without a destination silently does nothing"
+        );
+
+        let promote = translate(
+            &Action::PromoteSpy {
+                spy,
+                promotion: civvis::name!("technologist"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the promotion crosses");
+        assert!(promote
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("PROMOTE:")));
     }
 
     #[test]
