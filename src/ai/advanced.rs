@@ -3824,16 +3824,19 @@ impl AdvancedAi {
         // reaches, and there it regresses no lane over ~480 paired
         // `victory_eval` games on three seed streams.
         //
-        // ★★★★★ AND THE FINDING THAT OUTRANKS THE CHANGE: a Diplomacy-targeted
-        // agent finishes **zero wonders in 250 turns**, with the arm and
-        // without it, while a Culture agent finishes three and a Score agent
-        // eight. Seven of the twenty points a diplomatic victory needs are
-        // wonders, and they are not being declined on price — the Mahabodhi
-        // Temple needs a founded religion, a Holy Site and a Temple, and the
-        // Statue of Liberty needs a Harbor and Civil Engineering. A diplomatic
-        // empire builds none of those, so `can_produce` never offers the
-        // wonder and this valuation is never consulted. The binding constraint
-        // is the prerequisite chain, and it is a different piece of work.
+        // ★★★★★ AND THE FINDING THAT OUTRANKS THE CHANGE: over 32 250-turn
+        // games a Diplomacy-targeted agent finishes a wonder in **one** of them
+        // with this arm and none without it, while a Culture agent finishes
+        // three in a single game. Seven of the twenty points a diplomatic
+        // victory needs are wonders, and they are not being declined on price —
+        // the Mahabodhi Temple needs a founded religion, a Holy Site and a
+        // Temple, and the Statue of Liberty needs a Harbor and Civil
+        // Engineering. A diplomatic empire builds those once in 32 games, so
+        // `can_produce` never offers the wonder and this valuation is never
+        // consulted. 31 of the 53 wonders name an `adjacent_district` at all —
+        // harbor 6, campus 4, holy_site 4 — so for most of the table the
+        // binding constraint is the district, not the price, and that is a
+        // different piece of work.
         // Recorded in docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md.
         ai.enable_strategic_wonders();
         // The reconnaissance quartet the live bridge has carried since its

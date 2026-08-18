@@ -59,32 +59,27 @@ shipped controller is provably unchanged by this change. Per
 `docs/EVAL_INTEGRITY.md` that verdict is not evidence about the treatment; it is
 evidence about where the treatment can reach.
 
-### 2. ★★★★★ THE DIPLOMATIC LANE FINISHES ZERO WONDERS, AND PRICING CANNOT FIX IT
+### 2. ★★★★★ THE DIPLOMATIC LANE FINISHES ALMOST NO WONDERS, AND PRICING CANNOT FIX IT
 
-The census is unambiguous. Six 250-turn six-player diplomatic games, seeds
-24000000–05, with the arm and without it:
+The census is stark. 32 250-turn six-player diplomatic games a side, seeds
+24000000–31, the shipped arm against `--without strategic-wonders`:
 
-```
-WONDERS seed=24000000 target=diplomatic ->
-WONDERS seed=24000001 target=diplomatic ->
-WONDERS seed=24000002 target=diplomatic ->
-```
+| | with the arm | without it |
+|---|---:|---:|
+| games finishing **no** wonder | **31 of 32** | **32 of 32** |
+| what the one game built | statue_of_liberty | — |
 
-Empty, both arms, every game. The same tool on the same seeds:
-
-```
-target=culture -> 1:cristo_redentor 3:machu_picchu 4:forbidden_city
-target=score   -> 1:great_library 4:hanging_gardens 1:panama_canal 1:pyramids …
-```
-
-So the seven points are not being declined on price. **They are unreachable.**
-The Mahabodhi Temple needs a founded religion, a Holy Site and a Temple, on a
-forest tile beside the district; the Statue of Liberty needs a Harbor, a coastal
-water tile and Civil Engineering. A diplomatic empire builds none of those
-prerequisites, so `can_produce` never offers the wonder and no valuation is ever
-consulted. The one DVP wonder that *is* reachable — the Potala Palace, which
-needs only Astronomy and a hill beside a mountain — is 1 060 production for
-**one** of twenty points, and pricing it in cost the lane games (below).
+The same tool on the same seeds finishes three wonders in a culture game and
+eight in a score game. So the seven diplomatic points in the build menu are not
+being declined on price — the arm is willing, and gets one Statue of Liberty in
+thirty-two attempts. **They are unreachable.** The Mahabodhi Temple needs a
+founded religion, a Holy Site and a Temple, on a forest tile beside the
+district; the Statue of Liberty needs a Harbor, a coastal water tile and Civil
+Engineering. A diplomatic empire builds those prerequisites once in thirty-two
+games, so `can_produce` never offers the wonder and no valuation is consulted.
+The one DVP wonder that *is* freely reachable — the Potala Palace, which needs
+only Astronomy and a hill beside a mountain — is 1 060 production for **one** of
+twenty points, and pricing it in cost the lane games (§4).
 
 This inverts the premise the change started from. The binding constraint on
 "build the wonders the victory needs" is the **prerequisite chain**, not the

@@ -289,15 +289,15 @@ fn main() {
             //
             // The `Item::Wonder` valuation is a claim about intent; a wonder on
             // the map is the artifact. Without this line the two are impossible
-            // to tell apart, and they came apart immediately: a
-            // Diplomacy-targeted agent finishes **zero wonders in 250 turns**,
-            // with or without any change to how they are priced, while a
-            // Culture agent finishes three and a Score agent eight. Seven of
-            // the twenty points a diplomatic victory needs are wonders, so that
-            // is not a pricing result — it is a reachability one, and pricing
-            // cannot fix it. The Mahabodhi Temple needs a founded religion, a
-            // Holy Site and a Temple; the Statue of Liberty needs a Harbor and
-            // Civil Engineering. A diplomatic empire builds none of those.
+            // to tell apart, and they came apart immediately: over 32
+            // 250-turn games a Diplomacy-targeted agent finishes a wonder in
+            // **one** of them, against a Culture agent's three in a single game
+            // and a Score agent's eight. Seven of the twenty points a
+            // diplomatic victory needs are wonders, so that is not a pricing
+            // result — it is a reachability one, and pricing cannot fix it. The
+            // Mahabodhi Temple needs a founded religion, a Holy Site and a
+            // Temple; the Statue of Liberty needs a Harbor and Civil
+            // Engineering. A diplomatic empire builds those once in 32 games.
             //
             // Owner-tagged, because "somebody built the Great Library" and "the
             // seat we are measuring built the Great Library" are different
