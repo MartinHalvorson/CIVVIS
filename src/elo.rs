@@ -140,6 +140,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_land_grab",
     "live_without_siege_is_progress",
     "live_without_spy_mission_patience",
+    "live_without_settler_site_agreement",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -382,6 +383,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "land-grab",
     "siege-is-progress",
     "spy-mission-patience",
+    "settler-site-agreement",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -587,6 +589,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
+    "settler-site-agreement",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -647,6 +650,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
+    "settler-site-agreement",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -782,6 +786,7 @@ define_arm_kinds! {
     LiveWithoutLandGrab => "live_without_land_grab",
     LiveWithoutSiegeIsProgress => "live_without_siege_is_progress",
     LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
+    LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4231,6 +4236,7 @@ impl ArmKind {
             Self::LiveWithoutLandGrab => live_without("land-grab"),
             Self::LiveWithoutSiegeIsProgress => live_without("siege-is-progress"),
             Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
+            Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
