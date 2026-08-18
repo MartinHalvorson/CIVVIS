@@ -41,8 +41,12 @@ Everything the old roadmap called planned has shipped and then some:
 ## Active objectives (ranked 2026-08-17)
 
 1. **Make Settler repeatable, then take Chieftain.** The rung is claimed; two
-   wins in 119 attempts is a result, not a capability. The next milestone is
-   a win rate that survives a batch, and the rung above it.
+   wins in 119 attempts is a result, not a capability. The installed supervisor
+   now runs a three-game pinned batch by default and asks the read-only
+   `tools/civ6_ladder_policy.py` gate which rung to target. It will not advance
+   until the trailing comparable window has at least two wins, three valid
+   outcomes, and matching in-game settings; a live batch still has to satisfy
+   that gate before Chieftain is attempted.
 2. **Close the actuation gap.** ✅ The bridge now carries a host-timed
    `produce_next` lease instead of letting the built-in ladder answer a queue
    completion unseen by CIVVIS; the lease is preserved across slow frames and
