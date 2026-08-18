@@ -238,6 +238,25 @@ every decision it is waiting on and publishes it through
    again.
 3. When nothing is blocking, `UI.RequestAction(ActionTypes.ACTION_ENDTURN)`.
 
+### Production and envoy handoffs are host-timed
+
+The Rust bridge still sends ordinary `produce` orders immediately. When the
+exported queue is expected to finish during that turn, it also sends a
+non-mutating `produce_next` lease. The InGame agent records that lease without
+touching the queue, emits `build_hint`, and consumes it only when the host
+raises its production blocker. The bridge carries the lease across a fresh
+planning board, so a slow host frame cannot release the still-running item as
+foreign production. `production_next_hints`, `production_next_consumed`, and
+`production_next_expired` in the order note make the handoff auditable; leases
+are kept out of the host applied-rate denominator until an actual `build` event.
+
+Envoy orders remain one-token CIVVIS orders and are confirmed by the next host
+frame rather than by the issuing callback. When the optional envoy lane is
+enabled, the mod emits `envoy` for the request and `envoy_reconcile` with the
+fresh `GetTokensToGive()` readback on the following turn. The lower-bound field
+accounts for envoys earned between frames, so a changed purse is not silently
+called a refusal.
+
 This is smaller than enumerating decisions ourselves and it cannot silently
 skip a decision type this build has and the code does not know about: an
 unrecognised blocker is reported by name. A blocker that survives
