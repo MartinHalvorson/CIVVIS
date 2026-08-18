@@ -5885,9 +5885,21 @@ impl BasicAi {
         self.spend_gold(
             g, pid, &city_ids, settlers, builders, traders, military, melee, ranged,
         );
+        // ★★★★ ASK THE ENGINE WHAT IT COSTS. `faith_builder` is a weight, not
+        // a price: a Faith Builder is legal only under the Monumentality
+        // dedication, so from the turn a civ first banks 120 Faith until the
+        // game ends this fired every turn and was refused every turn — 540
+        // refused orders in one 150-turn six-player game, third behind
+        // `Fortify` and `ChooseSecretSociety`. `unit_purchase_cost` returns
+        // `None` for every illegal purchase and the real speed-scaled,
+        // discounted price otherwise, so it answers legality and
+        // affordability in one question. The weight still gates: it is the
+        // reserve the empire keeps back, above whatever the purchase costs.
         if g.players[pid].faith >= self.w.faith_builder
             && builders < n_cities
             && !city_ids.is_empty()
+            && g.unit_purchase_cost(pid, city_ids[0], "builder", "faith")
+                .is_some_and(|cost| g.players[pid].faith + f64::EPSILON >= cost)
         {
             let _ = g.apply(
                 pid,
@@ -11533,8 +11545,16 @@ impl BasicAi {
         }
     }
 
+    /// End a unit's turn: fortify if the engine will take the order, and
+    /// otherwise simply stop. Every controller ends a unit here, including
+    /// civilians and embarked units, and the fortify order used to be issued
+    /// for all of them — `Game::unit_can_fortify` refuses everything that is
+    /// not an unembarked land military unit, so a Settler walking to its site
+    /// spent one refused order per re-entry, up to eight a turn. Asking the
+    /// engine's own predicate first changes no game state: the order it
+    /// replaces was rejected before it could change any.
     fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        if !g.units[&uid].fortified {
+        if !g.units[&uid].fortified && g.unit_can_fortify(&g.units[&uid]) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }
         false
