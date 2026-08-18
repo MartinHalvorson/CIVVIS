@@ -2371,6 +2371,39 @@ here and any null is uninformative"
         "direction resolution: wins rest on {win_resolved} of {} maps that broke, terminal score on {terminal_resolved}",
         inference.maps,
     );
+    // ★★★★★ NOTHING DIFFERED, WHICH IS NOT THE SAME AS PARITY.
+    //
+    // Wins break on about a third of maps by construction, so an all-neutral
+    // win column is ordinary and says little. Terminal score is continuous and
+    // breaks on nearly every map — two agents that play even slightly
+    // differently will separate on it somewhere. When *both* columns are
+    // neutral on *every* map, the arms did not play close games: they played
+    // the same games, and the treatment never changed an outcome on this
+    // profile.
+    //
+    // That is a completely different finding from a null, and it was being
+    // reported as one. `advanced_sea_answers` returned 40 of 40 neutral on
+    // both columns in the 2026-08-18 triage sweep and read as ordinary parity;
+    // the honest reading is that its treatment did not fire. A null asks for a
+    // longer screen, this asks for a mechanism check, and buying the former for
+    // the latter is how a 200-pair screen gets spent on nothing.
+    //
+    // ⚠ Deliberately not a `RETAIN`/`Insufficient` verdict change. The gate
+    // reports what the evidence supports and this is a note about what the
+    // evidence *is*; conflating the two is how the maximum-variance interval
+    // came to override the anytime evidence in the first place.
+    if inference.maps > 0
+        && win_resolved == 0
+        && terminal_resolved == 0
+        && outcomes.mixed_with_draw == 0
+    {
+        println!(
+            "⚠ nothing differed: all {} maps were neutral on wins AND on terminal score, so {a} and \
+             {b} played the same games. The verdict above is not evidence about the treatment — it \
+             did not fire on this profile. Check the mechanism before buying a longer run",
+            inference.maps,
+        );
+    }
     match (
         direction_sign(&directions),
         direction_sign(&terminal_directions),
@@ -3288,6 +3321,32 @@ mod tests {
     /// The number this prints is the whole point, so pin its shape: more maps
     /// must resolve a smaller edge, and the counts this repository actually
     /// runs at must land either side of the effects it actually produces.
+    /// The all-neutral case has to be distinguishable from close play, and the
+    /// distinction is that terminal score is continuous: agents that play even
+    /// slightly differently separate on it somewhere.
+    #[test]
+    fn identical_games_are_distinguishable_from_close_ones() {
+        // Two agents that played the same games: every map neutral on both.
+        let identical = vec![0.5; 30];
+        assert_eq!(resolved_maps(&directional_outcomes(&identical)), 0);
+        assert_eq!(pair_outcomes(&identical).mixed_with_draw, 0);
+        assert_eq!(pair_outcomes(&identical).neutral, 30);
+
+        // Close play: the win column is all-neutral, which is ordinary, but
+        // terminal score separates. This must NOT read as "nothing differed".
+        let wins = vec![0.5; 30];
+        let terminal: Vec<f64> = (0..30)
+            .map(|index| if index % 2 == 0 { 0.55 } else { 0.45 })
+            .collect();
+        assert_eq!(resolved_maps(&directional_outcomes(&wins)), 0);
+        assert_eq!(resolved_maps(&directional_outcomes(&terminal)), 30);
+
+        // And a draw-mixed map is a difference even when neither column
+        // resolves a direction, so it also blocks the claim.
+        let mixed = vec![0.75, 0.5, 0.5];
+        assert_eq!(pair_outcomes(&mixed).mixed_with_draw, 1);
+    }
+
     #[test]
     fn the_reported_resolution_tightens_with_map_count() {
         let break_rate = 0.28;
