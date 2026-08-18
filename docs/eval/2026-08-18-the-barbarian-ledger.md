@@ -48,9 +48,9 @@ Three facts frame the axis:
   end; ~2.5 stand within six tiles of the empire's own cities at t50. Each
   clear pays 50 gold, 2–3 era score (Ancient–Medieval), Military Tradition
   boost progress at one camp, Bronze Working at three kills. The ~19
-  barbarian kills per game say armies fight barbs incidentally (the joint
-  planner attacks anything `is_at_war`); the ~3.3 clears say nobody runs the
-  errand deliberately — the military step's enemy list admits the barbarian
+  barbarian kills per game say armies fight barbs incidentally (the Basic
+  tactical fallback's enemy list carries no barbarian filter); the ~3.3
+  clears say nobody runs the errand deliberately — the military step's enemy list admits the barbarian
   seat only behind `home_defense`, which native production ships OFF.
 - **The two regimes disagree**, so native-null defensive treatments
   (sea-answers precedent) stay honest live-bundle candidates, while the
