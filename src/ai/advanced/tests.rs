@@ -30,6 +30,12 @@
 #[test]
 fn live_bundle_and_registry_agree() {
     let source = include_str!("../advanced.rs");
+    // ⚠ The registry rows live in `treatments.rs` and the bundle in
+    // `advanced.rs`, so the join reads both. Splitting a file must not quietly
+    // narrow a check that scrapes it: this test's whole subject is a fact that
+    // spans the two, and reading only the first would have gone green on an
+    // empty registry.
+    let registry = include_str!("treatments.rs");
     let start = source
         .find("pub fn enable_live_bridge(&mut self) {")
         .expect("enable_live_bridge must exist to be checked");
@@ -90,7 +96,7 @@ fn live_bundle_and_registry_agree() {
         let disabler = format!("disable_{flag}");
         assert!(
             LIVE_TREATMENTS.iter().any(|(name, tag, _)| {
-                source.contains(&format!("(\"{name}\", \"{tag}\", AdvancedAi::{disabler})"))
+                registry.contains(&format!("(\"{name}\", \"{tag}\", AdvancedAi::{disabler})"))
             }),
             "enable_live_bridge turns on {flag} but no LIVE_TREATMENTS row \
                  calls {disabler}; add one, or the treatment ships with no way \
@@ -7087,17 +7093,21 @@ fn the_stock_denial_lanes_get_lead_time_and_refuse_an_inert_counter() {
         !ai.urgent_victory_threat(&game, 1),
         "without the flag a Culture race below 90 raises no alarm at all"
     );
+    assert_eq!(
+        ai.victory_denial(&game, 0),
+        None,
+        "without the early alarm, the ordinary race margin keeps the assigned lane focused"
+    );
     ai.enable_stock_denial_lead_time();
     assert!(
         ai.urgent_victory_threat(&game, 1),
         "the stock lane must alarm at its own bar"
     );
-    // ⚠ Deliberately NOT asserted end-to-end through `victory_denial`
-    // here: on a synthetic three-player board our own Science race reads
-    // progress 100, so the denial's "do not chase a rival barely ahead of
-    // you" margin (`progress < own_progress + 15`) suppresses everything.
-    // That margin is not what this change touches. The two units under
-    // test are the alarm's bar and the counter's actionability.
+    assert_eq!(
+        ai.victory_denial(&game, 0),
+        Some((1, GrandStrategy::Culture)),
+        "an urgent Culture stock must interrupt even a completed assigned race"
+    );
     assert!(
         ai.culture_denial_actionable(&game, 0, 1, GrandStrategy::Culture),
         "we hold the bar, so racing culture moves it"
@@ -7139,6 +7149,45 @@ fn the_stock_denial_lanes_get_lead_time_and_refuse_an_inert_counter() {
     assert!(
         !withheld.urgent_victory_threat(&game, 1),
         "the withhold arm returns the lane to the general 90 alarm"
+    );
+}
+
+/// An assigned lane reports 100% progress by design, but that must not erase
+/// an observed rival's diplomatic match clock. This is the live Civ VI shape:
+/// DVP comes directly from the public World Rankings screen, not a modeled
+/// projection.
+#[test]
+fn urgent_diplomatic_stock_pressure_interrupts_a_completed_targeted_race() {
+    let mut game = Game::new_full(3, 30, 18, 7_220, 300, 0, false);
+    game.victory_conditions = crate::game::VictoryConditions::default();
+    game.players[1].dvp = 16;
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    ai.enable_deny_while_targeted();
+    assert_eq!(
+        ai.rival_pressure(&game, 1),
+        (GrandStrategy::Diplomacy, 80),
+        "sixteen DVP is an 80% public diplomatic clock"
+    );
+    assert!(
+        !ai.denial_is_urgent(&game, 1),
+        "the stock lead-time flag remains the explicit opt-in"
+    );
+    assert_eq!(
+        ai.victory_denial(&game, 0),
+        None,
+        "ordinary pressure must not distract a completed assigned race"
+    );
+
+    ai.enable_stock_denial_lead_time();
+    assert!(
+        ai.denial_is_urgent(&game, 1),
+        "the live bridge must recognize the DVP clock before the general 90 bar"
+    );
+    assert_eq!(
+        ai.victory_denial(&game, 0),
+        Some((1, GrandStrategy::Diplomacy)),
+        "an urgent DVP leader must not be discarded by the assigned-lane margin"
     );
 }
 
