@@ -37124,6 +37124,35 @@ impl Game {
 
             .map(|district| self.district_family(district))
             .unwrap_or(crate::name!("city_center"));
+        // ★★★ CIVILIZATION VI SELLS A CITY DEFENCE FOR NO CURRENCY AT ALL.
+        //
+        // Every purchasable building in the shipped ruleset declares a
+        // `PurchaseYield` -- Monument, Barracks, Granary, Library, Shrine, all
+        // of them. `BUILDING_WALLS`, `BUILDING_CASTLE`, `BUILDING_STAR_FORT`
+        // and Georgia's `BUILDING_TSIKHE` declare none, in any base or
+        // expansion file, so no currency can buy them. Valletta's suzerain
+        // bonus is `MODIFIER_PLAYER_CITIES_ENABLE_BUILDING_FAITH_PURCHASE` with
+        // `DistrictType = DISTRICT_CITY_CENTER`: it changes which currency a
+        // purchasable building takes, not whether an unpurchasable one becomes
+        // buyable. The three `..._PURCHASE_CHEAPER_WALLS/CASTLE/STAR_BONUS`
+        // cost modifiers beside it are vestigial -- they discount a purchase
+        // the game never offers.
+        //
+        // This function granted the opposite, and `building_gold_purchase_cost`
+        // twelve lines below has always refused the same buildings for the same
+        // reason ("City defenses ... remain Production-only"). One engine, two
+        // purchase paths, opposite answers for one building.
+        //
+        // The live seat paid for it: runs `civvis-20260818T113115Z` and
+        // `104654Z`, the two whose minors list carries Valletta with this seat
+        // as suzerain, issued 99 Faith purchases of `BUILDING_CASTLE` (53),
+        // `BUILDING_STAR_FORT` (32) and `BUILDING_WALLS` (14). The host refused
+        // every one, with no reason text and with all four of the mod's probed
+        // parameter shapes answering `can = false`. The other six runs, which
+        // have no Valletta, refused none.
+        if spec.outer_defense > 0 {
+            return None;
+        }
         let valletta = self.grants_city_state_unique_bonus(pid, "Valletta")
             && matches!(district.as_str(), "city_center" | "encampment")
             && self.can_produce(pid, cid, &item);
@@ -37153,11 +37182,10 @@ impl Game {
         if !valletta && (!(worship || jesuit) || !religious_requirements) {
             return None;
         }
-        let discounted_walls = valletta
-            && ["walls", "medieval_walls", "renaissance_walls"]
-                .into_iter()
-                .any(|family| self.building_is_family(Name::new(building), Name::new(family)));
-        let conversion = if discounted_walls { 1.0 } else { 2.0 };
+        // The halved conversion existed only for the wall tiers above, which
+        // are now refused outright; every remaining Faith purchase pays the
+        // stock two-for-one.
+        let conversion = 2.0;
         let discount = self
             .city_district_effect(city, "gold_faith_purchase_discount_pct")
             .clamp(0.0, 100.0);
