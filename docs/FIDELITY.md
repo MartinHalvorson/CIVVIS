@@ -1333,6 +1333,15 @@ Implementing the interpreter instead of the content inverts that:
 - Balance mods become a database swap. The competitive-multiplayer ruleset
   (BBG) is mostly SQL edits, so a modifier-driven CIVVIS gets it nearly free.
 
+The first runtime slice is now checked in: `ModifierSpec` carries an explicit
+`player`, `player_cities`, or `player_units` collection and a validated
+`all`/`any`/`none` requirement set. The collector evaluates those predicates
+against the current player facts without cloning state, and static rules-object
+attachments reject contextual bundles rather than applying them unconditionally.
+This is interpreter infrastructure, not a claim that the 698 effects are done;
+the shipped modifier catalog stays empty until rows are imported from the
+compiled database.
+
 ## Phase 3: the ground-truth bridge
 
 The real game cannot run headless or fast, so it can never be a training
