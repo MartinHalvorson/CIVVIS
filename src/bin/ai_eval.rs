@@ -567,6 +567,10 @@ struct PlanTrace {
     /// exploration mark; `None` when the game ended first. Six tiles is the
     /// engine's own near-a-city radius for the camp-destroyed moment.
     camps_near_home_by_mark: Option<usize>,
+    /// Cities the seat holds the first time it is observed at or past t60 —
+    /// the opening-tempo correlate the live ladder records as
+    /// `cities_at_60`; `None` when the game ended first.
+    cities_at_t60: Option<usize>,
 }
 
 /// Turns at which each seat's explored-plot count is sampled. These match the
@@ -708,6 +712,9 @@ impl PlanTrace {
                     .filter(|camp| homes.iter().any(|home| g.wdist(**camp, *home) <= 6))
                     .count(),
             );
+        }
+        if g.turn >= 60 && self.cities_at_t60.is_none() {
+            self.cities_at_t60 = Some(g.player_city_ids(pid).len());
         }
         let recon_now = g
             .units
@@ -935,6 +942,8 @@ struct Metrics {
     camps_near_home: f64,
     camps_near_home_seats: usize,
     camps_standing: f64,
+    cities_at_t60: f64,
+    cities_at_t60_seats: usize,
 }
 
 impl Metrics {
@@ -1100,6 +1109,10 @@ impl Metrics {
             self.camps_near_home_seats += 1;
         }
         self.camps_standing += g.barb_camps.len() as f64;
+        if let Some(cities) = trace.cities_at_t60 {
+            self.cities_at_t60 += cities as f64;
+            self.cities_at_t60_seats += 1;
+        }
         self.era_score += g.players[pid].era_score as f64;
         self.natural_wonders_discovered += g.players[pid].discovered_natural_wonders.len() as f64;
         if let Some(early) = trace.villages_by_mark {
@@ -2357,12 +2370,19 @@ here and any null is uninformative"
             m.era_score / n,
         );
     }
-    println!("AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major recon-peak");
+    println!(
+        "AI          minors-met by-t50 1st-minor majors-met by-t50 1st-major recon-peak cities@t60"
+    );
     for name in [a, b] {
         let m = &totals[name];
         let n = m.games as f64;
+        let tempo = if m.cities_at_t60_seats == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.2}", m.cities_at_t60 / m.cities_at_t60_seats as f64)
+        };
         println!(
-            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9} {:>10.2}",
+            "{name:<11} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>6.2} {:>9} {:>10.2} {:>10}",
             m.minors_met / n,
             m.minors_met_by_t50 / n,
             mean_turn(m.first_minor_meet_turn_sum, m.first_minor_meet_seats),
@@ -2370,6 +2390,7 @@ here and any null is uninformative"
             m.majors_met_by_t50 / n,
             mean_turn(m.first_major_meet_turn_sum, m.first_major_meet_seats),
             m.recon_peak / n,
+            tempo,
         );
     }
     println!("\nBarbarians:");
