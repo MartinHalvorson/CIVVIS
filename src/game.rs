@@ -15741,7 +15741,10 @@ impl Game {
         }
     }
 
-    fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
+    /// Whether this unit's domain lets it melee that tile at all -- the check
+    /// `do_attack` applies before anything else about the fight. A land unit
+    /// proposing a shot at a ship never gets past here.
+    pub(crate) fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -20853,7 +20856,12 @@ impl Game {
         self.has_line_of_sight(from, to, true)
     }
 
-    fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
+    /// The line-of-sight test `do_ranged` applies, asked of a unit that
+    /// already exists. This is *not* `line_of_sight_from`: that one asks about
+    /// a tile a unit is only considering standing on, and cannot know about
+    /// the firing unit's own `see_through_woods`. Gating a candidate shot with
+    /// the tile version would refuse a Ranger the engine would have allowed.
+    pub(crate) fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
             let attacker_height = self.see_from_level(unit.pos);
@@ -32736,7 +32744,11 @@ impl Game {
             })
     }
 
-    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
+    /// Whether `pid` may legally fire at `pos` at all. `do_ranged`,
+    /// `do_attack` and `do_city_strike` each apply exactly this before a shot,
+    /// so a controller that proposes a target without asking is proposing an
+    /// order the engine will refuse.
+    pub(crate) fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
         let visible = self.player_vision_now(pid);
         let viewers = self.visibility_viewers(pid);
         self.combat_target_visible_at(pid, pos, &visible, &viewers)
