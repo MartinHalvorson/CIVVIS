@@ -1814,6 +1814,18 @@ pub struct UnitDangerMemory {
     pub expires_turn: u32,
 }
 
+/// A legal resting place scored for an endangered unit. Safety is deliberately
+/// recorded separately from the healing rate: a City Center is excellent
+/// recovery ground only when the enemy's next turn cannot harm its garrison.
+#[derive(Clone, Copy)]
+struct EvacuationTile {
+    position: Pos,
+    incoming: f64,
+    healing: i32,
+    city: bool,
+    distance_from_danger: i32,
+}
+
 /// Inspectable, multi-turn memory owned by one individual unit.
 ///
 /// An objective, a danger warning, and a temporary retreat are independent:
@@ -2144,6 +2156,13 @@ pub struct BasicAi {
     /// `AdvancedAi::promoted_policy_envoy`). Evaluator arms opt in through
     /// `AdvancedAi::enable_unit_objective_memory`.
     unit_objective_memory: bool,
+    /// Evacuate a unit when the exact attacks the enemy can make next turn
+    /// are lethal, and use those same envelopes to choose recovery ground.
+    ///
+    /// Basic and the current Advanced controller use this protection. The
+    /// frozen `advanced_v1` replay explicitly withholds it so its historical
+    /// decision stream remains a stable control.
+    precise_evacuation: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -3834,6 +3853,7 @@ impl BasicAi {
             recorded_tactical_step: false,
             tactical_strategy: false,
             unit_objective_memory: false,
+            precise_evacuation: true,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -4118,6 +4138,7 @@ impl BasicAi {
             recorded_tactical_step: false,
             tactical_strategy: false,
             unit_objective_memory: false,
+            precise_evacuation: true,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -4329,51 +4350,366 @@ impl BasicAi {
         requires_retreat
     }
 
-    /// Honor a remembered retreat before resuming a campaign. A retreat chooses
-    /// the neighbor that reduces expected counter-damage, opens distance from
-    /// the dangerous approach, and improves healing. It never discards the
-    /// objective that will be resumed after the short cooldown.
+    /// The next-turn attack envelopes of hostile units the controller can see.
+    /// `Game::attack_reach` does the terrain-accurate movement and attack
+    /// calculation; this layer decides which combatants count as threats to
+    /// this player.
+    fn enemy_attack_envelopes(g: &Game, pid: usize) -> Vec<(u32, BTreeSet<Pos>)> {
+        g.units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.unit_visible_to(unit.id, pid)
+                    && spec.class == "military"
+                    && (spec.is_melee_capable() || spec.has_ranged_attack())
+            })
+            .filter_map(|unit| {
+                let reach: BTreeSet<Pos> = g.attack_reach(unit.id).into_iter().collect();
+                (!reach.is_empty()).then_some((unit.id, reach))
+            })
+            .collect()
+    }
+
+    /// Conservative expected damage from the hostile units whose precise
+    /// next-turn envelopes cover `position`. The engine still rolls combat;
+    /// this intentionally uses its unrandomized centre so a route decision is
+    /// stable and does not consume the game RNG.
+    fn evacuation_incoming_damage(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        envelopes: &[(u32, BTreeSet<Pos>)],
+    ) -> f64 {
+        let Some(unit) = g.units.get(&uid) else {
+            return f64::INFINITY;
+        };
+        let mut defender = unit.clone();
+        defender.pos = position;
+        let defense = effective_strength(
+            g.unit_strength(&defender, true) + g.tile_defense_bonus(position),
+            defender.hp,
+        );
+        // A garrisoned unit is not a combat target: attacks on a City Center
+        // or Encampment damage that district, not the formation stationed in
+        // it. That makes a friendly city a genuine safe refuge even while the
+        // enemy can still bombard its walls.
+        let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
+        let unit_damage: f64 = if garrisoned {
+            0.0
+        } else {
+            envelopes
+                .iter()
+                .filter(|(_, reach)| reach.contains(&position))
+                .filter_map(|(enemy_id, _)| g.units.get(enemy_id).map(|enemy| (*enemy_id, enemy)))
+                .map(|(enemy_id, enemy)| {
+                    let spec = &g.rules.units[enemy.kind];
+                    let attack = if spec.has_ranged_attack() {
+                        g.unit_ranged_attack_strength(enemy)
+                    } else {
+                        g.unit_strength(enemy, false)
+                    } + Self::class_matchup_strength(g, enemy_id, uid);
+                    let defender_strength =
+                        defense + Self::class_matchup_strength(g, uid, enemy_id);
+                    (30.0
+                        * ((effective_strength(attack, enemy.hp) - defender_strength) / 25.0).exp())
+                    .clamp(1.0, 100.0)
+                })
+                .sum()
+        };
+
+        // A walled hostile City Center can strike on its next turn even when
+        // it already spent this turn's strike. A garrison on a City Center or
+        // Encampment is protected by that district rather than directly hit.
+        let city_damage: f64 = if garrisoned {
+            0.0
+        } else {
+            g.cities
+                .values()
+                .filter(|city| {
+                    city.owner != pid
+                        && g.is_at_war(pid, city.owner)
+                        && city.wall_hp > 0
+                        && g.wdist(city.pos, position) <= 2
+                        && g.line_of_sight_from(city.pos, position)
+                })
+                .map(|city| {
+                    (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
+                        .clamp(1.0, 100.0)
+                })
+                .sum()
+        };
+        // Encampments carry an independent strike. As above, a strike spent
+        // today is available again by the enemy's next turn, so only the
+        // durable wall, health, and pillage state constrain this envelope.
+        let encampment_damage: f64 = if garrisoned {
+            0.0
+        } else {
+            g.cities
+                .values()
+                .filter(|city| {
+                    city.owner != pid
+                        && g.is_at_war(pid, city.owner)
+                        && city.encampment_hp > 0
+                        && city.encampment_wall_hp > 0
+                        && !city.encampment_pillaged
+                })
+                .filter_map(|city| {
+                    g.city_district_family_position(city, crate::name!("encampment"))
+                        .filter(|source| {
+                            g.wdist(*source, position) <= 2
+                                && g.line_of_sight_from(*source, position)
+                        })
+                        .map(|_| city)
+                })
+                .map(|city| {
+                    (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
+                        .clamp(1.0, 100.0)
+                })
+                .sum()
+        };
+        unit_damage + city_damage + encampment_damage
+    }
+
+    fn evacuation_tile(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        danger: Option<Pos>,
+        envelopes: &[(u32, BTreeSet<Pos>)],
+    ) -> Option<EvacuationTile> {
+        g.map.get(position)?;
+        let city = g.city_at(position).is_some_and(|city| {
+            let owner = g.cities[&city].owner;
+            owner == pid || g.suzerain_of(owner) == Some(pid)
+        });
+        Some(EvacuationTile {
+            position,
+            incoming: Self::evacuation_incoming_damage(g, pid, uid, position, envelopes),
+            healing: g.healing_location(pid, position).rate(),
+            city,
+            distance_from_danger: danger.map_or(0, |danger| g.wdist(position, danger)),
+        })
+    }
+
+    /// Order recovery ground by safety before all the softer preferences.
+    /// When two tiles are equally safe, better healing, a City Center, and
+    /// greater distance from the recorded danger break the tie in that order.
+    fn evacuation_tile_cmp(left: &EvacuationTile, right: &EvacuationTile) -> Ordering {
+        // An exponential estimate can underflow to signed zero. Normalize the
+        // entire negligible band so a `-0.0` cannot beat an equally safe City
+        // Center before healing gets to break the tie.
+        let incoming = |tile: &EvacuationTile| {
+            if tile.incoming.abs() > 1e-9 {
+                tile.incoming
+            } else {
+                0.0
+            }
+        };
+        let left_incoming = incoming(left);
+        let right_incoming = incoming(right);
+        (left_incoming == 0.0)
+            .cmp(&(right_incoming == 0.0))
+            .then_with(|| right_incoming.total_cmp(&left_incoming))
+            .then(left.healing.cmp(&right.healing))
+            .then(left.city.cmp(&right.city))
+            .then(left.distance_from_danger.cmp(&right.distance_from_danger))
+            .then_with(|| right.position.cmp(&left.position))
+    }
+
+    fn evacuation_tile_is_better(candidate: EvacuationTile, holding: EvacuationTile) -> bool {
+        Self::evacuation_tile_cmp(&candidate, &holding).is_gt()
+    }
+
+    /// First legal step toward healing ground that no observed enemy can attack
+    /// next turn. City Centers win before ordinary friendly ground; neutral
+    /// ground is a last resort when no safe homeward route exists.
+    fn safe_healing_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &[(u32, BTreeSet<Pos>)],
+    ) -> Option<Pos> {
+        let mut cities = HashSet::new();
+        let mut friendly_tiles = HashSet::new();
+        let mut neutral_tiles = HashSet::new();
+        for position in g.map.tiles.keys().copied() {
+            let Some(tile) = g.map.get(position) else {
+                continue;
+            };
+            let friendly_owner = tile
+                .owner_city
+                .and_then(|city| g.cities.get(&city))
+                .is_some_and(|city| city.owner == pid || g.suzerain_of(city.owner) == Some(pid));
+            let healing = g.healing_location(pid, position).rate();
+            if (friendly_owner && healing < 15) || (!friendly_owner && healing != 10) {
+                continue;
+            }
+            let Some(candidate) = Self::evacuation_tile(g, pid, uid, position, None, envelopes)
+            else {
+                continue;
+            };
+            if candidate.incoming > 1e-9 {
+                continue;
+            }
+            if candidate.city {
+                cities.insert(position);
+            } else if friendly_owner {
+                friendly_tiles.insert(position);
+            } else {
+                neutral_tiles.insert(position);
+            }
+        }
+        g.route_step_to_any(uid, &cities)
+            .or_else(|| g.route_step_to_any(uid, &friendly_tiles))
+            .or_else(|| g.route_step_to_any(uid, &neutral_tiles))
+            .filter(|next| g.can_move(uid, *next))
+    }
+
+    /// An emergency withdrawal should not preempt a legal attack that leaves
+    /// this unit alive outside the remaining enemy envelopes. This is a small
+    /// exact forward check, not a combat-score guess: it lets a unit finish a
+    /// kill or create a safe trade when that is genuinely better than fleeing.
+    fn can_survive_by_attacking(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        g.legal_actions_within(pid, ActionFamilies::UNITS)
+            .into_iter()
+            .filter(|action| {
+                matches!(
+                    action,
+                    Action::Attack { unit, .. }
+                        | Action::Ranged { unit, .. }
+                        | Action::PriorityTarget { unit, .. }
+                        if *unit == uid
+                )
+            })
+            .any(|action| {
+                let mut future = g.clone();
+                if future.apply(pid, &action).is_err() {
+                    return false;
+                }
+                let Some(survivor) = future.units.get(&uid) else {
+                    return false;
+                };
+                let envelopes = Self::enemy_attack_envelopes(&future, pid);
+                Self::evacuation_incoming_damage(&future, pid, uid, survivor.pos, &envelopes)
+                    < f64::from(survivor.hp)
+            })
+    }
+
+    /// Spend as much of this turn's legal path as possible reaching chosen
+    /// recovery ground. `Game::reachable` and `Game::path_to` share the exact
+    /// movement rules, so this can take a wounded unit all the way into a
+    /// nearby city rather than stopping one tile short for no tactical reason.
+    fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+        let Some(path) = g.path_to(uid, target) else {
+            return false;
+        };
+        let mut moved = false;
+        for step in path {
+            if !g.can_move(uid, step) || !self.tactical_apply_move(g, pid, uid, step) {
+                break;
+            }
+            moved = true;
+            if g.units.get(&uid).is_none_or(|unit| unit.moves_left <= 0.0) {
+                break;
+            }
+        }
+        moved
+    }
+
+    /// Honor a remembered retreat, or create one immediately when the enemy's
+    /// exact next-turn attacks are likely to kill this unit. A retreat selects
+    /// reachable recovery ground outside those envelopes whenever possible;
+    /// ordinary recovery then holds there until the unit is healthy enough to
+    /// resume its campaign objective.
     pub(crate) fn retreat_step(&self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
-        if !self.unit_objective_memory {
+        if !self.precise_evacuation {
             return None;
         }
-        let danger = self.unit_memories.borrow().get(&uid).and_then(|memory| {
+        if g.is_arena() {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        let spec = &g.rules.units[unit.kind];
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || (!spec.is_melee_capable() && !spec.has_ranged_attack())
+        {
+            return None;
+        }
+        let here = unit.pos;
+        let hp = unit.hp;
+        let remembered = self.unit_memories.borrow().get(&uid).and_then(|memory| {
             memory
                 .retreat_until
                 .filter(|until| g.turn < *until)
                 .and(memory.danger)
-        })?;
-        let here = g.units.get(&uid)?.pos;
-        let hostiles: Vec<u32> = g
-            .units
-            .values()
-            .filter(|unit| {
-                unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
-                    && g.unit_visible_to(unit.id, pid)
-            })
-            .map(|unit| unit.id)
-            .collect();
-        let value = |position: Pos| {
-            -4.0 * self.projected_counter_damage(g, uid, position, &hostiles)
-                + 3.0 * g.wdist(position, danger.position) as f64
-                + 0.5 * g.healing_location(pid, position).rate() as f64
-        };
-        let holding = value(here);
-        let next = g
-            .nbrs(here)
-            .into_iter()
-            .filter(|position| g.can_move(uid, *position))
-            .max_by(|left, right| {
-                value(*left)
-                    .total_cmp(&value(*right))
-                    .then_with(|| right.cmp(left))
+        });
+        let envelopes = Self::enemy_attack_envelopes(g, pid);
+        let holding = Self::evacuation_tile(
+            g,
+            pid,
+            uid,
+            here,
+            remembered.map(|d| d.position),
+            &envelopes,
+        )?;
+        let lethal = holding.incoming >= f64::from(hp);
+        if remembered.is_none() && !lethal {
+            return None;
+        }
+        if lethal && self.can_survive_by_attacking(g, pid, uid) {
+            return None;
+        }
+
+        if lethal {
+            let expected_damage = holding.incoming.ceil().clamp(1.0, 100.0) as u32;
+            let until = g.turn.saturating_add(UNIT_RETREAT_TURNS);
+            let mut memories = self.unit_memories.borrow_mut();
+            let memory = memories.entry(uid).or_default();
+            memory.danger = Some(UnitDangerMemory {
+                position: remembered.map_or(here, |danger| danger.position),
+                expected_damage,
+                observed_turn: g.turn,
+                expires_turn: g.turn.saturating_add(UNIT_DANGER_MEMORY_TURNS),
             });
+            memory.retreat_until = Some(memory.retreat_until.unwrap_or(until).max(until));
+        }
+
+        let danger = self
+            .unit_memories
+            .borrow()
+            .get(&uid)
+            .and_then(|memory| memory.danger)
+            .map(|danger| danger.position);
+        let holding = Self::evacuation_tile(g, pid, uid, here, danger, &envelopes)?;
+        let mut candidates: Vec<EvacuationTile> = g
+            .reachable(uid)
+            .into_iter()
+            .filter_map(|position| Self::evacuation_tile(g, pid, uid, position, danger, &envelopes))
+            .collect();
+        if let Some(step) = self.safe_healing_step(g, pid, uid, &envelopes) {
+            if let Some(candidate) = Self::evacuation_tile(g, pid, uid, step, danger, &envelopes) {
+                candidates.push(candidate);
+            }
+        }
+        let next = candidates.into_iter().max_by(Self::evacuation_tile_cmp);
         match next {
-            Some(next) if value(next) > holding + 1e-9 => Some(
-                self.tactical_apply_move(g, pid, uid, next)
-                    || self.fortify_or_stop(g, pid, uid),
-            ),
+            Some(next)
+                if Self::evacuation_tile_is_better(next, holding)
+                    || (lethal && next.incoming <= holding.incoming + 1e-9) =>
+            {
+                Some(
+                    self.move_to_evacuation_tile(g, pid, uid, next.position)
+                        || self.fortify_or_stop(g, pid, uid),
+                )
+            }
             _ => Some(self.fortify_or_stop(g, pid, uid)),
         }
     }
@@ -12230,6 +12566,19 @@ impl BasicAi {
             self.recovering_units.remove(&uid);
             return None;
         }
+        // This is deliberately before the ordinary withdrawal threshold: a
+        // fresh-looking unit can still be dead to several exact enemy attack
+        // envelopes next turn, and needs to evacuate before it spends this
+        // turn on a low-value attack or march.
+        if self.precise_evacuation {
+            if let Some(acted) = self.retreat_step(g, pid, uid) {
+                // A threat-created retreat is recovery, not merely a two-turn
+                // positional dodge. Keep this unit at the safe destination until
+                // the normal rejoin threshold says it has actually healed up.
+                self.recovering_units.insert(uid);
+                return Some(acted);
+            }
+        }
         let withdraw_at_hp = self.w.withdraw_hp.round() as i32;
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
 
@@ -12245,8 +12594,34 @@ impl BasicAi {
             return None;
         }
 
-        // Once safely inside friendly borders, spending the turn stationary
-        // is faster than sacrificing another healing tick to chase a city.
+        if self.precise_evacuation {
+            let envelopes = Self::enemy_attack_envelopes(g, pid);
+            let here = g.units[&uid].pos;
+            let holding = Self::evacuation_tile(g, pid, uid, here, None, &envelopes);
+            // Once safely inside friendly borders, spending the turn stationary
+            // is faster than sacrificing another healing tick to chase a city.
+            // Keep the threat check in front of this: friendly ground covered by
+            // an enemy envelope is not a place to wait merely because it heals.
+            if g.unit_heal_rate(uid) >= 15 && holding.is_some_and(|tile| tile.incoming <= 1e-9) {
+                return Some(self.fortify_or_stop(g, pid, uid));
+            }
+            if let (Some(holding), Some(next)) =
+                (holding, self.safe_healing_step(g, pid, uid, &envelopes))
+            {
+                if let Some(candidate) = Self::evacuation_tile(g, pid, uid, next, None, &envelopes)
+                {
+                    if Self::evacuation_tile_is_better(candidate, holding) {
+                        return Some(
+                            self.move_to_evacuation_tile(g, pid, uid, candidate.position)
+                                || self.fortify_or_stop(g, pid, uid),
+                        );
+                    }
+                }
+            }
+        }
+
+        // If every safe recovery route is unavailable, keep the historical
+        // friendly-ground recovery rather than resuming a bad attack.
         if g.unit_heal_rate(uid) >= 15 {
             return Some(self.fortify_or_stop(g, pid, uid));
         }
@@ -13227,7 +13602,9 @@ mod tests {
     #[test]
     fn a_dangerous_approach_causes_a_short_retreat_without_losing_the_memory() {
         let mut game = Game::new_full(2, 24, 16, 91_483, 80, 0, false);
-        game.units.clear();
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
         game.at_war.insert((0, 1));
         let positions: Vec<Pos> = game
             .map
@@ -13299,6 +13676,81 @@ mod tests {
             ai.unit_memory(unit).is_none(),
             "short-lived danger is removed once its observation expires"
         );
+    }
+
+    #[test]
+    fn a_lethal_pool_evacuates_to_a_city_the_enemy_cannot_reach() {
+        let mut game = Game::new_full(2, 20, 14, 91_484, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let front = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 2).len() == 19)
+            .expect("fixture needs an interior plains tile");
+        let ring = game.nbrs(front);
+        let enemies = [ring[0], ring[1], ring[2]];
+        let refuge = game
+            .wdisk(front, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, front) == 2
+                    && enemies
+                        .iter()
+                        .all(|enemy| game.wdist(*position, *enemy) >= 3)
+            })
+            .expect("fixture needs a two-step refuge outside every warrior envelope");
+        game.found_city_for(0, refuge, Some("Refuge".to_string()));
+        let defender = game.spawn_test_unit("warrior", 0, front);
+        game.units.get_mut(&defender).unwrap().hp = 55;
+        let enemy_units: Vec<u32> = enemies
+            .into_iter()
+            .map(|position| game.spawn_test_unit("warrior", 1, position))
+            .collect();
+
+        for enemy in enemy_units {
+            assert!(
+                game.attack_reach(enemy).contains(&front),
+                "each nearby warrior can attack the exposed front tile next turn"
+            );
+            assert!(
+                !game.attack_reach(enemy).contains(&refuge),
+                "the City Center is outside that warrior's exact attack envelope"
+            );
+        }
+        assert!(
+            game.reachable(defender).contains(&refuge),
+            "the wounded warrior can reach the City Center this turn"
+        );
+
+        let mut ai = BasicAi::new();
+        assert!(
+            !ai.can_survive_by_attacking(&game, 0, defender),
+            "a counterattack cannot make this three-warrior pool survivable"
+        );
+        assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
+        assert_eq!(game.units[&defender].pos, refuge);
+        assert!(ai.recovering_units.contains(&defender));
+        assert_eq!(game.unit_heal_rate(defender), 20);
     }
 
     #[test]
@@ -18262,7 +18714,10 @@ mod tests {
                 Some((*center, scout, assault, hidden))
             })
             .expect("test map needs an open tactical ring");
-        let enemy = g.spawn_test_unit("modern_armor", 1, enemy_pos);
+        // The scout is meant to demonstrate exploration choice, not ignore a
+        // lethal ambush. A Warrior still gives the assault unit a real attack
+        // target without making this full-health Scout evacuate first.
+        let enemy = g.spawn_test_unit("warrior", 1, enemy_pos);
         let scout = g.spawn_test_unit("scout", 0, scout_pos);
         let assault = g.spawn_test_unit("giant_death_robot", 0, assault_pos);
         g.players[0].explored.extend(g.map.tiles.keys().copied());
@@ -18811,7 +19266,10 @@ mod tests {
             tile.hills = false;
         }
         let spec_ops = game.spawn_test_unit("spec_ops", 0, origin);
-        game.spawn_test_unit("modern_armor", 1, target);
+        // The escort demonstrates bypass targeting. It should not itself be
+        // a guaranteed one-turn kill that correctly triggers the evacuation
+        // policy before the Spec Ops mission can be considered.
+        game.spawn_test_unit("warrior", 1, target);
         let sam = game.spawn_test_unit("mobile_sam", 1, target);
         let mut ai = BasicAi::new();
 
