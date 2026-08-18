@@ -435,6 +435,32 @@ const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
 /// reach. Those are different quantities and this is what the difference cost.
 pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
+/// Passable land per city the land grab prices the board at. Civilization VI
+/// packs cities four tiles apart (`CITY_MIN_RANGE` 3 plus the engine's own
+/// wdist ≥ 4 rule); a city works nineteen tiles at radius two, and the rivals
+/// who out-settle the seat hold twelve to sixteen cities on the Small
+/// Continents board whose revealed land the mirror estimates at 700–1,200
+/// tiles. Thirty tiles a city says "one city per ring, and the ring next to
+/// it" rather than the forty-five that read the map as a twelve-city world.
+/// See `land_grab`.
+pub const LAND_GRAB_TILES_PER_CITY: usize = 30;
+
+/// The land grab's city target never reads below this, even on a board whose
+/// fog hides most of the land: the first eight seats are the ones the seat
+/// already reaches by t100 and then stops at. See `land_grab`.
+pub const LAND_GRAB_CITY_FLOOR: usize = 8;
+
+/// And never above this. Sixteen is the most cities any Firaxis rival has
+/// held on the seat's board at t250; the practical-site search and the
+/// payback deadline decide the rest. See `land_grab`.
+pub const LAND_GRAB_CITY_CEILING: usize = 16;
+
+/// Settlers the land grab keeps in flight from the first city, before the
+/// per-three-cities widening. Two: the capital may queue its next Settler
+/// while the last one walks, which is how the second and third cities come
+/// before t40 rather than t45. See `land_grab` and `settler_in_flight_allowed`.
+pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
+
 /// A growing empire needs enough Builder charges to make new territory earn
 /// its keep. Three active Builders per four cities provide roughly two useful
 /// improvements per city at ordinary three-charge Builders, while the existing
@@ -2582,6 +2608,52 @@ pub struct AdvancedAi {
     /// own cadence was bred against CIVVIS rivals who contest the ground; off
     /// for ordinary and frozen controllers.
     pub era_paced_expansion: bool,
+    /// Expand to the land the empire can hold, at the pace its pipeline can
+    /// walk — the target is the ground, not an era clock.
+    ///
+    /// ★★★★ THE SEAT LEADS THE COUNT AT t50 AND LOSES IT BY t150, AND THEN
+    /// STOPS SETTLING ALTOGETHER. Census over the 26 recorded runs of
+    /// 2026-08-17/18: our cities 4–5 at t50 against the best rival's 2–4,
+    /// 6–8 at t100 against 5–7, then 7–9 at t150 against 7–10, 7–9 at t200
+    /// against 9–13 and 7–10 at t250 against 12–16 (rival mean 9.5–10.5).
+    /// Two settlers were in flight on 1–8% of turns. Three constants held the
+    /// count, none of them the land:
+    ///
+    /// - the target climbs one rung per `standard_duration(60)` (era-paced),
+    ///   so it reads 6 at t1, 8 at t80, 10 at t160 — run T104654Z read "5
+    ///   cities of 7 wanted" from t61 to t87 and "7 of 8" from t106 on;
+    /// - under an assigned lane (`--victory diplomatic`, the seat's standing
+    ///   order) the Settler arm and the "expand first" plan both close at
+    ///   `standard_duration(175)` = t116 Online, and no other route builds a
+    ///   Settler once `active_victory_target` is set. Run T104654Z: "7 cities
+    ///   of 8..11 wanted" on EVERY assessment from t118 to t238, seven cities
+    ///   for 130 turns while its rivals reached 11 and 14;
+    /// - the second pipeline slot (`parallel_settlers`) opens only THREE
+    ///   seats short of the target — a rung target one or two above the count
+    ///   never lets it, which is why the treatment census read it inert.
+    ///
+    /// The operator's brief (2026-08-18): expand much faster and more
+    /// aggressively; claim as much land as we can before it is taken, with
+    /// enough military to defend what is claimed. So, with this on:
+    ///
+    /// - the city target is the fog-estimated land capacity itself, priced at
+    ///   `LAND_GRAB_TILES_PER_CITY` per city between `LAND_GRAB_CITY_FLOOR`
+    ///   and `LAND_GRAB_CITY_CEILING`, from turn one — no era cadence;
+    /// - the Settler arm's window is `expansion_pays_back_for` (the settler
+    ///   must still repay before the turn limit) whatever the lane;
+    /// - the settler pipeline is `LAND_GRAB_PIPELINE_BASE + cities / 3`
+    ///   walkers, bounded by the seats still short (`settler_in_flight_allowed`);
+    ///   `BasicAi::pick_item` opens the same width and the same window;
+    /// - the peacetime land army wants one body per city PLUS one per Settler
+    ///   in flight, so every walker has a guard and every claim a garrison.
+    ///
+    /// The practical-site search, the loyalty forecasts, the settlement-safety
+    /// pricing and the payback deadline gate every settler exactly as before.
+    /// Firaxis-only: it prices the Settler seat's uncontested land against
+    /// Firaxis rivals who out-settle us late; the league cadence was bred
+    /// against CIVVIS rivals who contest the ground. Off for ordinary and
+    /// frozen controllers.
+    pub land_grab: bool,
     /// Price a point of culture at the lane's price of a point of science.
     ///
     /// ★★★★ THE TALLY PAYS THREE FOR A CIVIC AND TWO FOR A TECH, AND THE
@@ -3262,7 +3334,7 @@ impl Default for AdvancedAi {
 /// takes it back out. In `elo::LIVE_BRIDGE_TREATMENTS` order.
 ///
 /// ⚠⚠⚠ THE POINT IS THAT A SHIPPED TREATMENT CANNOT GO UNPRICED.
-/// `enable_live_bridge` turns on 74. Before this table, `elo.rs` carried one
+/// `enable_live_bridge` turns on 75. Before this table, `elo.rs` carried one
 /// hand-written `live_without_*` arm per treatment, and each needed **seven
 /// separate edits**: the name in `EVAL_ONLY_AIS`, an `ArmKind` variant, its
 /// `name()` mapping, the `build_arm` case, a provenance row, a second
@@ -3800,6 +3872,7 @@ impl AdvancedAi {
             rush_route_targets: None,
             counter_in_lane: false,
             era_paced_expansion: false,
+            land_grab: false,
             tally_culture: false,
             culture_building_debt: false,
             great_work_veto_by_district: false,
@@ -4809,6 +4882,10 @@ impl AdvancedAi {
         // And the city target climbs at the Settler game's own era pace. See
         // `era_paced_expansion`.
         self.enable_era_paced_expansion();
+        // And the rung clock itself: the seat leads the count at t50, loses
+        // it by t150 and stops settling at t116 under an assigned lane. See
+        // `land_grab`.
+        self.enable_land_grab();
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
@@ -5343,6 +5420,19 @@ impl AdvancedAi {
 
     pub fn disable_era_paced_expansion(&mut self) {
         self.era_paced_expansion = false;
+    }
+
+    /// Expand to the land the empire can hold, at pipeline pace (see
+    /// `land_grab`). Sets both halves: the strategic governor's target,
+    /// window and pipeline, and `BasicAi::pick_item`'s pipeline and window.
+    pub fn enable_land_grab(&mut self) {
+        self.land_grab = true;
+        self.base.land_grab = true;
+    }
+
+    pub fn disable_land_grab(&mut self) {
+        self.land_grab = false;
+        self.base.land_grab = false;
     }
 
     /// Price a point of culture at the lane's price of a point of science.
@@ -8304,8 +8394,23 @@ impl AdvancedAi {
         } else {
             self.city_target_floor
         };
-        let desired_cities =
-            (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
+        // ★★★★ THE LAND GRAB WANTS THE LAND, NOT A RUNG. See `land_grab`: the
+        // seat leads the count at t50 and loses it by t150 because the target
+        // climbs one rung per era while the rivals settle to the ground. With
+        // it on, the target is the fog-estimated capacity itself — priced
+        // denser than the wide-map ceiling — from turn one; the pipeline,
+        // the practical-site search and the payback deadline pace the count.
+        let desired_cities = if self.land_grab {
+            let land = if self.fog_land_capacity {
+                Self::fog_land_estimate(g, land)
+            } else {
+                land
+            };
+            (2 + land / LAND_GRAB_TILES_PER_CITY)
+                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+        } else {
+            (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
+        };
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -8922,7 +9027,11 @@ impl AdvancedAi {
     }
 
     fn settler_expansion_window_open(&self, g: &Game, pid: usize, cid: u32) -> bool {
-        if self.expansion_pays_back {
+        // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER REPAY,
+        // whatever the lane. See `land_grab`: under an assigned lane the
+        // window used to shut at `standard_duration(175)` — t116 Online — and
+        // run T104654Z then read "7 cities of 8..11 wanted" for 130 turns.
+        if self.land_grab || self.expansion_pays_back {
             self.expansion_pays_back_for(g, pid, cid)
         } else if self.victory_target.is_some() {
             // Assigned lanes have always carried a distinct cutoff. Neither
@@ -18278,7 +18387,15 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
-        if stalled_expansion && city_count + settlers < desired_cities {
+        if self.land_grab && city_count + settlers < desired_cities {
+            // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
+            // `land_grab`: two walkers from the first city, one more for
+            // every three cities held, never more than the seats still short
+            // (the city target stays the hard cap; the seat-count subtraction
+            // is what `parallel_settlers`' "three seats short" rule got wrong
+            // — a rung target one or two above the count never opened it).
+            (LAND_GRAB_PIPELINE_BASE + city_count / 3).min(desired_cities - city_count)
+        } else if stalled_expansion && city_count + settlers < desired_cities {
             // A Settler whose route is repeatedly denied no longer owns the
             // empire's entire expansion pipeline. The city target remains the
             // hard cap, so this opens only the next genuinely missing seat.
@@ -18410,6 +18527,16 @@ impl AdvancedAi {
             _ => city_count,
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
+        // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
+        // `land_grab`: the peacetime land army wants one body per city plus
+        // one per Settler in flight, so a wider pipeline never marches alone
+        // and the ground it claims is held. Wartime targets are already
+        // larger and untouched.
+        let desired_military = if self.land_grab && !active_major_war {
+            desired_military.max(city_count + counts.settlers)
+        } else {
+            desired_military
+        };
         // A camp in the home ring is already a production emergency even
         // before the next raider steps out. Keep one body per city as the
         // normal deterrent and add a second local body for a visible party.
