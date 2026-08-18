@@ -1776,7 +1776,6 @@ impl AdvancedAi {
     pub fn enable_pantheon_board(&mut self) {
         self.base.pantheon_reads_the_board = true;
     }
-
 }
 
 #[cfg(test)]

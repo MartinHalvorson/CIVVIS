@@ -12593,7 +12593,11 @@ mod tests {
                 .filter(|position| *position != centre)
                 .take(count)
                 .collect();
-            assert_eq!(tiles.len(), count, "the capital must own enough tiles to salt");
+            assert_eq!(
+                tiles.len(),
+                count,
+                "the capital must own enough tiles to salt"
+            );
             for position in tiles {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
                 tile.resource = Some(crate::name!("deer"));
@@ -12629,7 +12633,10 @@ mod tests {
         // chose, so the treatment adds a read rather than replacing a policy.
         let mut treated_bare = camp_board(6_101);
         treated_ai.research_with_government(&mut treated_bare, 0, false, None);
-        assert_eq!(treated_bare.players[0].pantheon.as_deref(), Some("divine_spark"));
+        assert_eq!(
+            treated_bare.players[0].pantheon.as_deref(),
+            Some("divine_spark")
+        );
     }
 
     /// ⚠⚠ AN EIGHT-PLAYER GAME LEFT TWO EMPIRES WITH NO PANTHEON AT ALL.
