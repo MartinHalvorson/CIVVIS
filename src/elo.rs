@@ -230,6 +230,10 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     // The two halves of the -95 Elo every-lane composite, so the loss can be
     // attributed instead of bounded. Seeds 29000000 (victory lanes) and
     // 30000000 (expansion lane).
+    // The settling asymmetry: the redirect and the Settler ranking stop at
+    // plan.desired_cities (3 until ~t60) while the cascade settles toward
+    // max(city_target, desired) = 4. Actuation, not ambition. Seed 31000000.
+    "advanced_settlement_gap_target",
     "advanced_governor_victory_lanes",
     "advanced_governor_expansion_lane",
     "advanced_without_governor_recovery",
@@ -738,6 +742,7 @@ define_arm_kinds! {
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
+    AdvancedSettlementGapTarget => "advanced_settlement_gap_target",
     AdvancedGovernorVictoryLanes => "advanced_governor_victory_lanes",
     AdvancedGovernorExpansionLane => "advanced_governor_expansion_lane",
     AdvancedWithoutGovernorRecovery => "advanced_without_governor_recovery",
@@ -2948,6 +2953,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_price_the_suzerainty();
             Box::new(ai)
         }
+        "advanced_settlement_gap_target" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_settlement_gap_target();
+            Box::new(ai)
+        }
         "advanced_governor_victory_lanes" => {
             let mut ai = AdvancedAi::new();
             ai.enable_governor_victory_lanes();
@@ -4064,6 +4074,7 @@ impl ArmKind {
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
+            Self::AdvancedSettlementGapTarget => &["settlement-gap-reads-city-target"],
             Self::AdvancedGovernorVictoryLanes => &["governor-victory-lanes"],
             Self::AdvancedGovernorExpansionLane => &["governor-expansion-lane"],
             Self::AdvancedWithoutGovernorRecovery => &["governor-recovery-withheld"],
@@ -4536,9 +4547,13 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
         "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
         "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
-        "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
+        "advanced_without_battlefront_observation" => {
+            (Vec::new(), "advanced_without_battlefront_observation")
+        }
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
-        "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
+        "advanced_settler_founds_when_stalled" => {
+            (Vec::new(), "advanced_settler_founds_when_stalled")
+        }
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_maritime_splice" => (Vec::new(), "advanced_maritime_splice"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
@@ -4552,6 +4567,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unpriced_war" => (Vec::new(), "advanced"),
         "advanced_without_city_defence" => (Vec::new(), "advanced"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
+        "advanced_settlement_gap_target" => (Vec::new(), "advanced_settlement_gap_target"),
         "advanced_governor_victory_lanes" => (Vec::new(), "advanced_governor_victory_lanes"),
         "advanced_governor_expansion_lane" => (Vec::new(), "advanced_governor_expansion_lane"),
         "advanced_without_governor_recovery" => (Vec::new(), "advanced_without_governor_recovery"),
@@ -5835,6 +5851,7 @@ mod tests {
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
                 "advanced_legacy_policy_deck",
+                "advanced_settlement_gap_target",
                 "advanced_governor_victory_lanes",
                 "advanced_governor_expansion_lane",
                 "advanced_without_governor_recovery",

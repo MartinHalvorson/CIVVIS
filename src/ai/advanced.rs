@@ -2163,6 +2163,10 @@ pub struct AdvancedAi {
     /// Evaluator arm `advanced_without_governor_recovery`; reserved matrix seed
     /// 28000000.
     pub governor_in_recovery: bool,
+
+    /// Let both settling gates read the same city target the baseline cascade
+    /// is handed. See `settlement_target` for the measured asymmetry.
+    pub settlement_gap_reads_city_target: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -3834,6 +3838,7 @@ impl AdvancedAi {
             governor_victory_lanes: false,
             governor_expansion_lane: false,
             governor_in_recovery: true,
+            settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -5279,6 +5284,12 @@ impl AdvancedAi {
     /// `governor_expansion_lane`.
     pub fn enable_governor_expansion_lane(&mut self) {
         self.governor_expansion_lane = true;
+    }
+
+    /// Make the settlement-gap redirect and the Settler ranking honour the same
+    /// city target the cascade settles toward. See `settlement_target`.
+    pub fn enable_settlement_gap_target(&mut self) {
+        self.settlement_gap_reads_city_target = true;
     }
 
     /// Withhold the strategic governor from the Recovery lane, so the baseline
@@ -16756,13 +16767,9 @@ impl AdvancedAi {
 
         let city_count = g.player_city_ids(pid).len();
         let counts = self.counts(g, pid);
-        if city_count + counts.settlers >= plan.desired_cities
-            || counts.settlers
-                >= self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                )
+        let desired = self.settlement_target(plan);
+        if city_count + counts.settlers >= desired
+            || counts.settlers >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
         {
             return;
         }
@@ -18166,6 +18173,39 @@ impl AdvancedAi {
         closer && !retargeted
     }
 
+    /// How many cities the empire's settling paths should be working toward.
+    ///
+    /// ⚠⚠ **Two halves of this agent disagreed about this number, and the
+    /// narrower one held the Settler.** `delegated_cities` hands the baseline
+    /// cascade `restore_target.max(plan.desired_cities)` under its own rule
+    /// that "the plan may widen a governor, never narrow it", so the cascade
+    /// settles toward `max(city_target, desired_cities)` — 4 on the shipped
+    /// genome. Both settling gates in this file read bare
+    /// `plan.desired_cities` instead, which `assess` starts at
+    /// `city_target_floor` (3) and grows only with the era cadence, so it is
+    /// **3 until roughly turn 60 on Online speed**. For that whole opening the
+    /// project redirect below and the Settler arm of `production_value` refuse
+    /// to produce the fourth Settler the same agent's cascade is trying to
+    /// build.
+    ///
+    /// This is not an ambition change, which is the distinction that matters
+    /// here: `city_target_floor = 6` raised what the empire *wanted* and cost
+    /// 41 Elo, while `settler_commit` (+30) and `settlement_safety` (+31)
+    /// paid for *executing* a settlement already intended. This widens neither
+    /// target — it makes the redirect and the ranking honour the target the
+    /// empire is already settling toward.
+    ///
+    /// Off by default; evaluator arm `advanced_settlement_gap_target`,
+    /// reserved matrix seed 31000000.
+    fn settlement_target(&self, plan: &StrategicPlan) -> usize {
+        if self.settlement_gap_reads_city_target {
+            plan.desired_cities
+                .max(self.base.w.city_target.max(0.0) as usize)
+        } else {
+            plan.desired_cities
+        }
+    }
+
     fn settler_in_flight_allowed(
         &self,
         desired_cities: usize,
@@ -18361,11 +18401,9 @@ impl AdvancedAi {
                 -10_000.0
             }
             Item::Unit { unit } if unit == "settler" => {
-                let in_flight_allowed = self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                );
+                let settlement_target = self.settlement_target(plan);
+                let in_flight_allowed =
+                    self.settler_in_flight_allowed(settlement_target, city_count, counts.settlers);
                 // ★★★★ ASK THE CHEAP QUESTIONS FIRST. The site scan below is
                 // the most expensive question in this arm — a valued sweep of
                 // a radius-11 disk, and once Shipbuilding is in, of the whole
@@ -18377,7 +18415,7 @@ impl AdvancedAi {
                 // window are `&self` reads whose only writes are the
                 // settlement atlas (a value cache that recomputes identically
                 // on a miss), so skipping them changes no score and no order.
-                if city_count + counts.settlers < plan.desired_cities
+                if city_count + counts.settlers < settlement_target
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && self.settler_expansion_window_open(g, pid, cid)
@@ -28227,10 +28265,8 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            let adaptive_expansion_dispatch = self.adaptive_expansion_dispatches(
-                &plan,
-                active_victory_target,
-            );
+            let adaptive_expansion_dispatch =
+                self.adaptive_expansion_dispatches(&plan, active_victory_target);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
