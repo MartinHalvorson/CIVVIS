@@ -17427,12 +17427,7 @@ impl AdvancedAi {
     /// governor on a throwaway board with only this city's queue cleared and
     /// return the item it would start.  The caller carries that item as a
     /// deferred hint; no authoritative game or controller state is mutated.
-    pub fn preview_live_production(
-        &self,
-        g: &Game,
-        pid: usize,
-        city: u32,
-    ) -> Option<Item> {
+    pub fn preview_live_production(&self, g: &Game, pid: usize, city: u32) -> Option<Item> {
         let plan = self.plan.clone()?;
         let mut preview = self.clone();
         let mut board = g.clone();

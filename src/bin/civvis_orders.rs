@@ -420,8 +420,7 @@ fn host_production_finishes_this_turn(city: &mirror::StateCity) -> bool {
         && city.production_cost > 0.0
         && city.production_progress >= 0.0
         && (city.production_turns >= 0.0 && city.production_turns <= 1.0 + f64::EPSILON
-            || city.production_progress + city.production + f64::EPSILON
-                >= city.production_cost)
+            || city.production_progress + city.production + f64::EPSILON >= city.production_cost)
 }
 
 /// Firaxis remembers a submitted peace offer per target for five turns.
@@ -1422,9 +1421,9 @@ fn append_next_production_hints(
     let mut hinted = 0;
     for city in &state.cities {
         if !host_production_finishes_this_turn(city)
-            || orders.iter().any(|order| {
-                order.kind == "produce" && order.subject == Some(city.id)
-            })
+            || orders
+                .iter()
+                .any(|order| order.kind == "produce" && order.subject == Some(city.id))
         {
             continue;
         }
@@ -2284,14 +2283,8 @@ fn decide(
         orders.push(policy_deck_order(&planned_game, 0));
     }
 
-    let production_hints = append_next_production_hints(
-        ai,
-        &planned_game,
-        mirror_state,
-        state,
-        &mut orders,
-        ours,
-    );
+    let production_hints =
+        append_next_production_hints(ai, &planned_game, mirror_state, state, &mut orders, ours);
     if production_hints > 0 {
         note_bits.push(format!("production_next_hints={production_hints}"));
     }
@@ -5357,7 +5350,10 @@ mod tests {
     fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
         let (snapshot, state) = production_board();
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
-        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
         let mut planned = mirror.game.clone();
         assert!(
             !planned.cities[&cid].queue.is_empty(),
