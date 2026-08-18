@@ -150,6 +150,27 @@ struct History {
     reported_unit: BTreeMap<u32, bool>,
     reported_city: BTreeMap<u32, bool>,
     tracks: BTreeMap<u32, Track>,
+    /// Per major unit, for its whole life: its kind, whether it has ever
+    /// changed tile, and whether its work mark has ever moved.
+    ///
+    /// ★★★★★ THIS IS THE QUESTION THE IDLE TABLE CANNOT ASK. A share tells you
+    /// how much of a kind's time is spent standing still; it cannot separate a
+    /// fleet that works hard and rests from a fleet half of which was never
+    /// usable. The Galley was the second: 53 hulls built and **20 that never
+    /// moved once**, because a lakeside city counts as coastal and its hull can
+    /// never leave the lake (#1989, promoted #1997). The idle share said 54.3%
+    /// and did not say that.
+    lives: BTreeMap<u32, UnitLife>,
+}
+
+#[derive(Clone)]
+struct UnitLife {
+    kind: String,
+    turns: u64,
+    moved: bool,
+    worked: bool,
+    last: civvis::Pos,
+    last_mark: WorkMark,
 }
 
 /// Everything about a unit that changes when it accomplishes something:
@@ -271,6 +292,10 @@ struct MotionBreakdown {
     /// left to spend, and a warrior that declined every trade are three
     /// separate defects that the one 20% figure reports as a single number.
     major_by_kind: BTreeMap<String, (u64, u64)>,
+    /// Per major unit kind: how many were ever seen, how many never acted at
+    /// all, and how many of those lived long enough for that to be a decision
+    /// rather than a birth. See `History::lives`.
+    major_lives: BTreeMap<String, (u64, u64, u64)>,
 }
 
 fn controller_role(g: &Game, owner: usize) -> &'static str {
@@ -303,6 +328,12 @@ impl MotionBreakdown {
             entry.0 += turns;
             entry.1 += idle;
         }
+        for (kind, (built, never, never_long)) in &other.major_lives {
+            let entry = self.major_lives.entry(kind.clone()).or_insert((0, 0, 0));
+            entry.0 += built;
+            entry.1 += never;
+            entry.2 += never_long;
+        }
     }
 
     fn total(&self) -> Motion {
@@ -318,6 +349,43 @@ impl MotionBreakdown {
         println!("{indent}       city-state {}", self.minor.line());
         println!("{indent}       barbarian  {}", self.barbarian.line());
         self.print_major_kinds(indent);
+        self.print_major_lives(indent);
+    }
+
+    /// Units that lived and never did one thing.
+    ///
+    /// The idle table above is a share of time; this is a count of units. A
+    /// kind can idle 50% of its turns because it works in bursts, or because
+    /// half of the ones built were never usable, and only this line tells them
+    /// apart. It is printed narrow on purpose: a kind with no never-actors is
+    /// not news.
+    fn print_major_lives(&self, indent: &str) {
+        let mut rows: Vec<(&String, u64, u64, u64)> = self
+            .major_lives
+            .iter()
+            .filter(|(_, (_, _, never_long))| *never_long > 0)
+            .map(|(kind, (built, never, never_long))| (kind, *built, *never, *never_long))
+            .collect();
+        rows.sort_by(|left, right| {
+            right
+                .3
+                .cmp(&left.3)
+                .then(right.1.cmp(&left.1))
+                .then(left.0.cmp(right.0))
+        });
+        if rows.is_empty() {
+            return;
+        }
+        println!(
+            "{indent}       major units that never acted (lived {NEVER_ACTED_MIN_TURNS}+ turns and \
+             never moved or worked, of all built)"
+        );
+        for (kind, built, _never, never_long) in rows.iter().take(10) {
+            println!(
+                "{indent}         {kind:<24} {never_long:>4} of {built:<4}  {:>5.1}% of the ones built",
+                100.0 * *never_long as f64 / (*built).max(1) as f64,
+            );
+        }
     }
 
     /// The major idle-field share, attributed to the units that spend it.
@@ -357,6 +425,10 @@ impl MotionBreakdown {
         }
     }
 }
+
+/// A unit has to have lived a while before never acting is a verdict on the
+/// controller rather than on when the game ended.
+const NEVER_ACTED_MIN_TURNS: u64 = 15;
 
 /// Update one unit's episode and account for this turn of its life. Returns a
 /// livelock detail exactly once per episode, when it first crosses the
@@ -618,6 +690,28 @@ fn audit_turn(
             );
         }
         if role == "major" {
+            // Whole-life ledger, kept beside the per-turn one. `work_mark`
+            // already carries everything that changes when a unit accomplishes
+            // something, so "has this unit ever done anything" is one
+            // comparison rather than a second definition of work.
+            let mark = work_mark(g, *id);
+            let life = history.lives.entry(*id).or_insert_with(|| UnitLife {
+                kind: unit.kind.to_string(),
+                turns: 0,
+                moved: false,
+                worked: false,
+                last: unit.pos,
+                last_mark: mark,
+            });
+            life.turns += 1;
+            // Self-contained on purpose: the two comparisons below are against
+            // this ledger's own previous values, not against `tracks` or
+            // `unit_still_since`, both of which are rewritten elsewhere in this
+            // same loop and would make the answer depend on statement order.
+            life.moved |= life.last != unit.pos;
+            life.worked |= life.last_mark != mark;
+            life.last = unit.pos;
+            life.last_mark = mark;
             let after = *motion.for_owner(g, unit.owner);
             let entry = motion
                 .major_by_kind
@@ -982,6 +1076,19 @@ fn main() {
             }
         }
         audit_result(&g, &mut found);
+        for life in history.lives.values() {
+            let entry = motion
+                .major_lives
+                .entry(life.kind.clone())
+                .or_insert((0, 0, 0));
+            entry.0 += 1;
+            if !life.moved && !life.worked {
+                entry.1 += 1;
+                if life.turns >= NEVER_ACTED_MIN_TURNS {
+                    entry.2 += 1;
+                }
+            }
+        }
         totals_motion.add(&motion);
 
         if !quiet {
