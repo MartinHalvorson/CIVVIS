@@ -5146,6 +5146,17 @@ pub struct Game {
     /// ground on the following turn instead of sealing our own invasion out.
     #[serde(default)]
     pub closed_borders: BTreeSet<Pos>,
+    /// Ground a MET major civilization owns whose owning city this seat has
+    /// never seen — the border in the fog. Written fresh from the export every
+    /// turn beside `closed_borders`, and empty on any board that is not a
+    /// live mirror. A settle site beside such a border sits four to seven
+    /// tiles from a city the loyalty forecast cannot count, and the forecast
+    /// then says nothing while the host says −13 a turn: run
+    /// civvis-20260818T155552Z founded Setia at t55 two tiles from Vietnam's
+    /// border (four Vietnamese cities, none seen), read −13.3 Loyalty on its
+    /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
+    #[serde(default)]
+    pub unseen_major_borders: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -5585,6 +5596,7 @@ impl From<GameSer> for Game {
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
+            unseen_major_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -6178,6 +6190,7 @@ impl Game {
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
+            unseen_major_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
