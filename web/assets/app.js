@@ -8893,10 +8893,10 @@ function drawStrategicWoodlandIcon(t, x, y) {
   cx.scale(STRATEGIC_WOODLAND_ICON_SCALE, STRATEGIC_WOODLAND_ICON_SCALE);
   cx.translate(-x, -y);
   if (jungle) {
-    // Rainforest sweeps up and left, using broad canopies rather than firs.
-    for (const [dx, dy, height, spread] of [[-10, -3, 12, 7.5],
-                                              [1, 3, 15, 8.5],
-                                              [10, 7, 11, 6.8]]) {
+    // Rainforest sweeps up and right, using broad canopies rather than firs.
+    for (const [dx, dy, height, spread] of [[-10, 7, 11, 6.8],
+                                              [-1, 3, 15, 8.5],
+                                              [10, -3, 12, 7.5]]) {
       const tx = x + dx, base = y + dy + 4 + lift + STRATEGIC_WOODLAND_CONTENT_INSET;
       cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.9;
       cx.beginPath(); cx.moveTo(tx, base); cx.lineTo(tx, base - height); cx.stroke();
@@ -8907,11 +8907,11 @@ function drawStrategicWoodlandIcon(t, x, y) {
                                  spread * .72, 2.35, -.12, 0, 7); cx.fill();
     }
   } else {
-    // Woods climb from lower left to upper right. That reversed diagonal keeps
+    // Woods climb from lower right to upper left. That reversed diagonal keeps
     // their pointed fir stand distinct from rainforest beneath an army token.
-    for (const [dx, dy, height, spread] of [[-10, 9, 13, 6.5],
+    for (const [dx, dy, height, spread] of [[-10, -7, 18, 8.5],
                                               [0, 1, 16, 7.5],
-                                              [10, -7, 18, 8.5]]) {
+                                              [10, 9, 13, 6.5]]) {
       const tx = x + dx, base = y + dy + 4 + lift + STRATEGIC_WOODLAND_CONTENT_INSET;
       cx.strokeStyle = "#142d1b"; cx.lineWidth = 1.15;
       cx.beginPath(); cx.moveTo(tx, base + 1); cx.lineTo(tx, base - height * .28); cx.stroke();
