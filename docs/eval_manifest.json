@@ -41,7 +41,7 @@
     "withholdable": 51
   },
   "derived": {
-    "eval_only_count": 199,
+    "eval_only_count": 205,
     "firaxis_only_count": 23,
     "live_bridge_count": 74,
     "native_engine_repair_count": 51,
@@ -186,7 +186,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 199,
+      "declared_count": 205,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -194,6 +194,12 @@
         "advanced_synergy_war",
         "advanced_synergy_economy",
         "live",
+        "live_target_science",
+        "live_target_culture",
+        "live_target_religious",
+        "live_target_diplomatic",
+        "live_target_domination",
+        "live_target_score",
         "live_without_amenity_project_preemption",
         "live_without_amenity_district_path",
         "live_without_governor_every_lane",

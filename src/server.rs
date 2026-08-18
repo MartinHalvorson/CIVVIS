@@ -12446,6 +12446,95 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
+    /// The deck's six labels are its menu, and a menu is only a menu while it
+    /// is on screen. Opening a long section — Game setup is nine hundred
+    /// pixels of form — used to carry every label below it out of the deck, so
+    /// reaching the war log meant scrolling back through a form nobody was
+    /// reading. The labels stick instead: the ones above the open section pile
+    /// under the command card, the ones below it pile on the deck's lower
+    /// edge, and the open section scrolls through the window between them.
+    ///
+    /// The one box that must not stick is the open section itself. Pinned, a
+    /// section taller than the window would hold its own tail below the fold
+    /// with no way to scroll to it; its label sticks inside it instead.
+    #[test]
+    fn the_deck_menu_holds_its_place_while_a_section_scrolls() {
+        assert!(EMBEDDED_INDEX.contains(
+            "#side.deck-stops .sidebar-section:not([open]) {\n    position: sticky; z-index: 2; \
+             top: var(--stop-top); bottom: var(--stop-bottom);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "#side.deck-stops .sidebar-section[open] > .section-label {\n    \
+             position: sticky; z-index: 2; top: var(--stop-top);\n  }"
+        ));
+        assert!(
+            !EMBEDDED_INDEX.contains("#side.deck-stops .sidebar-section {"),
+            "a section that sticks while it is open puts its own tail out of reach"
+        );
+        // A scripted open — a notification sending a reader to Government —
+        // scrolls to its section, and `scrollIntoView` does not know a stack
+        // is holding the scroller's edges. The stops are the insets to keep
+        // clear, and the section already carries them.
+        assert!(EMBEDDED_INDEX.contains(
+            "#side.deck-stops .sidebar-section[open] {\n    scroll-margin-top: var(--stop-top); \
+             scroll-margin-bottom: var(--stop-bottom);\n  }"
+        ));
+        // The seams are painted, or the section scrolling through the gap
+        // between two stuck labels reads as a rendering fault. One gap, named
+        // once: the script publishes it and the stylesheet spreads by it.
+        assert!(EMBEDDED_INDEX.contains(
+            "background: var(--deck-band); box-shadow: 0 0 0 var(--stop-gap) var(--deck-band);"
+        ));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("--deck-band: #").count(),
+            2,
+            "the deck's ground is a palette value, stated once per palette"
+        );
+        assert!(EMBEDDED_APP_JS
+            .contains("side.style.setProperty(\"--stop-gap\", `${SECTION_STOP_GAP}px`);"));
+        // Every term in the stack moves — the command card is one height for a
+        // spectator and another for a player holding the seat, Government and
+        // the two logs join and leave with the game being shown, and the
+        // labels are sized by the deck's type setting — so the stops are
+        // measured in the page rather than written down here.
+        assert!(EMBEDDED_APP_JS.contains("function syncSectionStops()"));
+        assert!(EMBEDDED_APP_JS.contains(".filter(section => section.getClientRects().length)"));
+        assert!(EMBEDDED_APP_JS.contains(
+            "const top = (card ? card.getBoundingClientRect().height : 0) + SECTION_STOP_GAP;"
+        ));
+        assert!(EMBEDDED_APP_JS
+            .contains("section.style.setProperty(\"--stop-top\", `${Math.round(above)}px`);"));
+        assert!(EMBEDDED_APP_JS
+            .contains("section.style.setProperty(\"--stop-bottom\", `${Math.round(below)}px`);"));
+        // A deck too short to hold the stack and still leave a window worth
+        // reading scrolls its menu the way it always did: a menu covering the
+        // section it points at would be the worse of the two.
+        assert!(EMBEDDED_APP_JS.contains("const SECTION_STOP_MIN_WINDOW = 140;"));
+        assert!(EMBEDDED_APP_JS.contains("const room = scroller.clientHeight - top - stack;"));
+        assert!(EMBEDDED_APP_JS
+            .contains("side.classList.toggle(\"deck-stops\", room >= SECTION_STOP_MIN_WINDOW);"));
+        // The stops are a measurement, so a resized deck, a swapped command
+        // card and a section joining or leaving the menu all retake them. The
+        // retake waits for the next frame so writing a stop inside the
+        // observer's own callback cannot feed itself.
+        assert!(
+            EMBEDDED_APP_JS.contains("const observer = new ResizeObserver(scheduleSectionStops);")
+        );
+        assert!(EMBEDDED_APP_JS.contains("observer.observe(scroller);"));
+        assert!(EMBEDDED_APP_JS.contains("for (const label of document.querySelectorAll(`${SIDEBAR_SECTIONS} > .section-label`)) {"));
+        assert!(EMBEDDED_APP_JS
+            .contains("requestAnimationFrame(() => {\n    sectionStopsPending = false;"));
+        assert!(EMBEDDED_APP_JS.contains("watchSectionStops();"));
+        // Nothing shows above the command card. The scroller reserved twelve
+        // pixels over it, and a sticky box cannot rise above its own content
+        // box, so the section scrolled through the slit that left — under the
+        // card's rounded corners, and unmistakable once the labels below it
+        // stopped moving. The card carries those pixels as its own margin.
+        assert!(EMBEDDED_INDEX
+            .contains("flex: 1; min-height: 0; padding: 0 11px 22px; overflow-y: auto;"));
+        assert!(EMBEDDED_INDEX.contains("flex: 0 0 auto; margin: 12px 0 10px; padding: 7px;"));
+    }
+
     /// The first world a civvis.ai visitor ever waits on is the smallest
     /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
     /// shipped table, spectated, at Online speed, under simultaneous turns.

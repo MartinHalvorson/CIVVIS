@@ -111,6 +111,14 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory "$VICTORY"}', source)
 
+    def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        self.assertIn("civ6_ladder_policy.py", source)
+        self.assertIn('--runs "$RUNS_DIR" target', source)
+        self.assertIn('--difficulty "$DIFFICULTY"', source)
+        self.assertIn("CIVVIS_DIFFICULTY", source)
+        self.assertIn("ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}", source)
+
 
 if __name__ == "__main__":
     unittest.main()

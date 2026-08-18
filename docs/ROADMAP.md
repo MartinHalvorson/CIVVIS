@@ -41,11 +41,19 @@ Everything the old roadmap called planned has shipped and then some:
 ## Active objectives (ranked 2026-08-17)
 
 1. **Make Settler repeatable, then take Chieftain.** The rung is claimed; two
-   wins in 119 attempts is a result, not a capability. The next milestone is
-   a win rate that survives a batch, and the rung above it.
-2. **Close the actuation gap.** Applied-rate floored on the ledger; envoy
-   spending and the built-in production ladder's ~27% share are the open
-   holes.
+   wins in 119 attempts is a result, not a capability. The installed supervisor
+   now runs a three-game pinned batch by default and asks the read-only
+   `tools/civ6_ladder_policy.py` gate which rung to target. It will not advance
+   until the trailing comparable window has at least two wins, three valid
+   outcomes, and matching in-game settings; a live batch still has to satisfy
+   that gate before Chieftain is attempted.
+2. **Close the actuation gap.** ✅ The bridge now carries a host-timed
+   `produce_next` lease instead of letting the built-in ladder answer a queue
+   completion unseen by CIVVIS; the lease is preserved across slow frames and
+   its consume/expiry counts are recorded. Optional envoy spending now has a
+   next-frame host readback (`envoy_reconcile`) rather than treating an issued
+   request as proof. Batch runs still measure the resulting applied-rate and
+   ladder-share change before the next objective is reprioritized.
 3. **Price the shipped live-seat bundle by withholding.** `live_without_*`
    arms exist for every withholdable treatment; run the unpriced ones
    through the paired evaluator before the next `city_target_floor` hides

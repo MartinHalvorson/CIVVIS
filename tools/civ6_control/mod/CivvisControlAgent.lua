@@ -2621,7 +2621,16 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local wanted = nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
-		if cityId ~= nil then wanted = civvisBuild[cityId]; end
+		if cityId ~= nil then
+			-- A direct choice owns the current queue.  If that queue was already
+			-- finishing when the board was exported, the Rust decider also sent a
+			-- deferred next-build lease under a string key in this same table (the
+			-- Lua 5.1 main chunk is at its 200-local ceiling). Consume that lease
+			-- only after the host raises the production blocker, never while the old
+			-- item is still running.
+			wanted = civvisBuild[cityId]
+				or civvisBuild[tostring(cityId) .. ":next"];
+		end
 	end
 	local function playable(name)
 		-- Already asked for this one on this turn and the game did not start it.
@@ -3671,6 +3680,9 @@ local function driveProduction(player, turn, force)
 						if ok then
 							issued = issued + 1;
 							lastBuild[cityId] = { turn = turn, item = name };
+							if civvisBuild[tostring(cityId) .. ":next"] == name then
+								civvisBuild[tostring(cityId) .. ":next"] = nil;
+							end
 							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
 							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
 							elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
@@ -4496,6 +4508,10 @@ local function chooseEnvoy(player, pid, turn)
 		turn = turn, held = tokens, placed = placed, target = target,
 		met_minors = #seen, suzerainties = suzerainties, levied = levied,
 	});
+	-- The following turn's beginTurn reads the host's fresh influence object and
+	-- emits `envoy_reconcile`; do not call this an immediate confirmation because
+	-- the UI operation can be asynchronous and the old handle is unsafe to read.
+	envoyTally.pending = { turn = turn, held_before = tokens, requested = placed };
 	if levied ~= nil then return "levy"; end
 	if placed > 0 then return "envoy"; end
 	return "envoy_considered";
@@ -9222,6 +9238,27 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and verb or "throw";
 	end
 
+	if kind == "produce_next" then
+		local city = liveCity(player, subject);
+		if city == nil then return false, "no_city"; end
+		verb = CIVVIS_PROJECT_TYPES[verb]
+			or CIVVIS_GOVERNMENT_BUILDING_TYPES[verb]
+			or verb;
+		local row2, resolved = resolveType(GameInfo.Types, verb);
+		if row2 == nil then return false, "unknown_" .. verb; end
+		local cityId = tonumber(subject) or -1;
+		civvisBuild[tostring(cityId) .. ":next"] = resolved;
+		-- This is a durable handoff, not a build request.  The queue remains
+		-- untouched until `driveProduction` sees the matching end-turn blocker.
+		emit("build_hint", {
+			turn = turn, city = cityId, item = resolved,
+			production_turns = try(function()
+				return city:GetBuildQueue():GetTurnsLeft();
+			end, -1),
+		});
+		return true, "queued";
+	end
+
 	if kind == "produce" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
@@ -10577,7 +10614,7 @@ end
 -- `orders` event that says only "CIVVIS decided" reads identical whether every
 -- order landed or every one was refused.
 local function applyOrders(player, pid, turn, rows)
-	local applied, refused = 0, 0;
+	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
@@ -10648,7 +10685,14 @@ local function applyOrders(player, pid, turn, rows)
 		end);
 		if safe then ok, why = res1, res2; end
 		if ok then
-			applied = applied + 1;
+			if kind == "produce_next" then
+				-- A lease is accepted by the control channel but has not yet
+				-- mutated the host. Keep it out of the host applied-rate numerator
+				-- and denominator; the later `build` event is the actuation proof.
+				deferred = deferred + 1;
+			else
+				applied = applied + 1;
+			end
 			byKind[kind] = (byKind[kind] or 0) + 1;
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
@@ -10776,8 +10820,9 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, source = "civvis", seen = #rows,
+		turn = turn, source = "civvis", seen = #rows - deferred,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		deferred = deferred,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
 		-- Also not part of `applied`: Great People driven to their own use —
@@ -10829,9 +10874,10 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows,
+		orders_seen = #rows - deferred,
 		orders_applied = applied,
 		orders_refused = refused,
+		orders_deferred = deferred,
 		orders_polls = awaiting.polls,
 		residual = residualAnswers,
 		blocker = blockerName(currentBlocker(pid)),
@@ -10996,6 +11042,32 @@ local function beginTurn(player, pid, turn)
 	-- `playTurn` never executes. A call added there would have been inert in
 	-- exactly the configuration that matters — the same trap the `come_ashore`
 	-- comment records for the tactical path.
+	--
+	-- Read back the previous turn's host token count before planning another
+	-- spend. The immediate `envoy` event is intentionally issuing-side: the
+	-- gameplay object can lag while `UI.RequestPlayerOperation` is resolving.
+	-- This next-frame record is the first authoritative host value, and the
+	-- lower bound makes token generation between frames explicit rather than
+	-- mistaking a changed purse for a failed order.
+	pcall(function()
+		local pending = envoyTally.pending;
+		if pending == nil then return; end
+		local fresh = player:GetInfluence();
+		if fresh == nil then return; end
+		local heldAfter = try(function() return fresh:GetTokensToGive(); end);
+		if heldAfter == nil then return; end
+		local heldBefore = tonumber(pending.held_before) or 0;
+		local requested = tonumber(pending.requested) or 0;
+		emit("envoy_reconcile", {
+			turn = turn,
+			requested_turn = pending.turn,
+			held_before = heldBefore,
+			requested = requested,
+			held_after = heldAfter,
+			minimum_after = math.max(0, heldBefore - requested),
+		});
+		envoyTally.pending = nil;
+	end);
 	if cfg.EnvoyEnabled then
 		pcall(function() chooseEnvoy(player, pid, turn); end);
 	end
@@ -11165,6 +11237,9 @@ local function beginTurn(player, pid, turn)
 	awaiting.source = "pending";
 	-- Per turn, or the tally becomes cumulative and unreadable.
 	residualAnswers = {};
+	-- The same table carries direct choices and deferred `city:next` leases.
+	-- Keeping one table is necessary because Lua 5.1's main chunk has only
+	-- 200 registers and this file already uses the practical ceiling.
 	civvisBuild = {};
 end
 

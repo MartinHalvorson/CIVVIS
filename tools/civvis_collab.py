@@ -1735,21 +1735,13 @@ def bootstrap_command(args: argparse.Namespace) -> int:
     )
     if failure:
         raise CommandError(str(failure))
-    service_paths = install_freshness_service(root)
-    guard = install_memory_guard(root)
-    ladder = install_ladder_supervisor(root)
+    services = install_managed_services(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
-    for path in service_paths:
-        print(f"installed CIVVIS freshness service: {path}")
-    if guard is not None:
-        print(f"installed CIVVIS memory guard: {guard}")
-    else:
-        print("memory guard: macOS only, not installed on this platform")
-    for path in ladder:
-        print(f"installed CIVVIS ladder service: {path}")
-    if not ladder:
-        print("ladder supervisor: this host is not a Civilization VI seat, "
-              "not installed")
+    for name, absent, paths in services:
+        for path in paths:
+            print(f"installed CIVVIS {name}: {path}")
+        if not paths and absent:
+            print(f"{name}: {absent}")
     print_refresh_report(report)
     return 0
 
@@ -1819,7 +1811,12 @@ def start_task(args: argparse.Namespace) -> int:
         raise CommandError(
             "cannot start from a synchronized origin/main: " + str(failure)
         )
-    install_freshness_service(root)
+    # Every managed service, not the two that existed when this line was
+    # written: a host bootstrapped before a service was added never got it, and
+    # the ladder keeper was missing from a Civilization VI seat for that reason.
+    # Repairs are quiet — this runs on every task, and a launcher that reports
+    # three green services on every start is a launcher nobody reads.
+    install_managed_services(root)
     git(root, "worktree", "add", "-b", branch, str(worktree), "origin/main")
     git(worktree, "commit", "--allow-empty", "-m", f"claim: {args.task.replace('-', ' ')}")
     git(worktree, "push", "-u", "origin", branch)
@@ -2540,6 +2537,55 @@ def install_memory_guard(repo: Path) -> Optional[Path]:
     run(("launchctl", "bootstrap", domain, str(path)), check=False)
     run(("launchctl", "kickstart", f"{domain}/{MEMGUARD_LABEL}"), check=False)
     return path
+
+
+#: Every managed background service, with the sentence to print when a host
+#: does not get one. `bootstrap` installs them; `start` REPAIRS them, which is
+#: the half that was missing.
+#:
+#: ⚠⚠ A SERVICE ADDED AFTER A MACHINE WAS BOOTSTRAPPED NEVER REACHED IT.
+#: `bootstrap` is documented as a once-per-clone step and behaves like one, so
+#: for a year the repair path on every task installed exactly the two
+#: safeguards that existed when it was written — the push guard and the
+#: freshness service. The memory guard and the ladder keeper were added later
+#: and were bootstrap-only. Measured on `mbp-m5-pro-64` 2026-08-18: a host that
+#: `host_plays_civ6()` calls a Civilization VI seat, with the freshness services
+#: loaded and `com.civvis.ladder-watchdog` **absent** — so the keeper built on
+#: 2026-08-17 to end a 14.3-hour silent outage was not running on the machine it
+#: was built for. AGENTS.md said "the task launcher repairs both safeguards",
+#: and "both" was the whole bug.
+#:
+#: ⚠ DISCOVERED, NOT LISTED. `test_civvis_collab.py` finds every installer that
+#: writes into `~/Library/LaunchAgents` and fails if it is missing here, because
+#: a hand-written list of things to repair is complete on the day it is written
+#: and silently shrinks afterwards.
+MANAGED_SERVICES: Tuple[Tuple[str, str, str], ...] = (
+    ("freshness service", "install_freshness_service", ""),
+    ("memory guard", "install_memory_guard",
+     "macOS only, not installed on this platform"),
+    ("ladder service", "install_ladder_supervisor",
+     "this host is not a Civilization VI seat, not installed"),
+)
+
+
+def install_managed_services(repo: Path) -> List[Tuple[str, str, List[Path]]]:
+    """Install or repair every managed service. Idempotent, and cheap when green.
+
+    Each installer already returns without touching launchd when its plist is
+    unchanged and its job is loaded, which is what makes this safe to run on
+    every `start` — the freshness service has been called that way all along.
+    """
+    results: List[Tuple[str, str, List[Path]]] = []
+    for name, function, absent in MANAGED_SERVICES:
+        produced = globals()[function](repo)
+        if produced is None:
+            paths: List[Path] = []
+        elif isinstance(produced, Path):
+            paths = [produced]
+        else:
+            paths = list(produced)
+        results.append((name, absent, paths))
+    return results
 
 
 def install_freshness_service(repo: Path) -> List[Path]:
