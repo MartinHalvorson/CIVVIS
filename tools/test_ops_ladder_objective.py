@@ -119,6 +119,31 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         self.assertIn("CIVVIS_DIFFICULTY", source)
         self.assertIn("ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}", source)
 
+    def test_head_pin_refreshes_the_detached_checkout_before_a_batch(self):
+        """A detached runner must not silently replay a stale ladder rung.
+
+        The live runner sat at 24e5c068 while its `origin/main` ref was fifteen
+        commits ahead: its uninspected `git pull` did not move detached HEAD,
+        so it also missed the supervisor's ladder-policy wiring.  This is a
+        source contract because the production loop is shell; it locks both the
+        explicit update sequence and the read-back that rejects any mismatch.
+        """
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index('rm -f status.json')
+        end = source.index('if ! cargo build', start)
+        sync = source[start:end]
+
+        self.assertIn('git -c gc.auto=0 fetch --quiet origin main', sync)
+        self.assertIn('git checkout --quiet --detach origin/main', sync)
+        self.assertIn('ORIGIN_MAIN_SHA=$(git rev-parse origin/main', sync)
+        self.assertIn('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"', sync)
+        self.assertIn('refusing to run a stale head batch', sync)
+        self.assertNotIn('git pull -q --ff-only origin main', sync)
+        self.assertLess(sync.index('fetch --quiet origin main'),
+                        sync.index('checkout --quiet --detach origin/main'))
+        self.assertLess(sync.index('checkout --quiet --detach origin/main'),
+                        sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
+
 
 if __name__ == "__main__":
     unittest.main()
