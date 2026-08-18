@@ -6101,7 +6101,10 @@ mod tests {
     #[test]
     fn no_agent_name_is_registered_twice() {
         let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for (list, names) in [("BUILTIN_AIS", BUILTIN_AIS), ("EVAL_ONLY_AIS", EVAL_ONLY_AIS)] {
+        for (list, names) in [
+            ("BUILTIN_AIS", BUILTIN_AIS),
+            ("EVAL_ONLY_AIS", EVAL_ONLY_AIS),
+        ] {
             for name in names {
                 seen.entry(name).or_default().push(list);
             }
