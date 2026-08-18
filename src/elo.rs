@@ -223,6 +223,16 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
     "advanced_legacy_policy_deck",
+    // The governor withheld from Recovery — the one lane where it decides
+    // production for the shipped agent. `advanced_every_lane` measured the
+    // governor at -62/-95 Elo on the other five lanes; this asks whether the
+    // deficit is a property of the governor itself. Reserved seed 28000000.
+    // The two halves of the -95 Elo every-lane composite, so the loss can be
+    // attributed instead of bounded. Seeds 29000000 (victory lanes) and
+    // 30000000 (expansion lane).
+    "advanced_governor_victory_lanes",
+    "advanced_governor_expansion_lane",
+    "advanced_without_governor_recovery",
     "advanced_without_builder_floor",
     "advanced_without_settler_deadline",
     "advanced_without_hut_collection",
@@ -728,6 +738,9 @@ define_arm_kinds! {
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
+    AdvancedGovernorVictoryLanes => "advanced_governor_victory_lanes",
+    AdvancedGovernorExpansionLane => "advanced_governor_expansion_lane",
+    AdvancedWithoutGovernorRecovery => "advanced_without_governor_recovery",
     AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
     AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
     AdvancedWithoutHutCollection => "advanced_without_hut_collection",
@@ -2935,6 +2948,21 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_price_the_suzerainty();
             Box::new(ai)
         }
+        "advanced_governor_victory_lanes" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_governor_victory_lanes();
+            Box::new(ai)
+        }
+        "advanced_governor_expansion_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_governor_expansion_lane();
+            Box::new(ai)
+        }
+        "advanced_without_governor_recovery" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_governor_in_recovery();
+            Box::new(ai)
+        }
         "advanced_without_builder_floor" => {
             let mut ai = AdvancedAi::new();
             ai.disable_production_builder_floor();
@@ -4036,6 +4064,9 @@ impl ArmKind {
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
+            Self::AdvancedGovernorVictoryLanes => &["governor-victory-lanes"],
+            Self::AdvancedGovernorExpansionLane => &["governor-expansion-lane"],
+            Self::AdvancedWithoutGovernorRecovery => &["governor-recovery-withheld"],
             Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
             Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
             Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
@@ -4521,6 +4552,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unpriced_war" => (Vec::new(), "advanced"),
         "advanced_without_city_defence" => (Vec::new(), "advanced"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
+        "advanced_governor_victory_lanes" => (Vec::new(), "advanced_governor_victory_lanes"),
+        "advanced_governor_expansion_lane" => (Vec::new(), "advanced_governor_expansion_lane"),
+        "advanced_without_governor_recovery" => (Vec::new(), "advanced_without_governor_recovery"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_hut_collection" => (Vec::new(), "advanced_without_hut_collection"),
         "advanced_without_explore_commit" => (Vec::new(), "advanced_without_explore_commit"),
@@ -5801,6 +5835,9 @@ mod tests {
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
                 "advanced_legacy_policy_deck",
+                "advanced_governor_victory_lanes",
+                "advanced_governor_expansion_lane",
+                "advanced_without_governor_recovery",
                 "advanced_without_builder_floor",
                 "advanced_without_settler_deadline",
                 "advanced_without_hut_collection",
