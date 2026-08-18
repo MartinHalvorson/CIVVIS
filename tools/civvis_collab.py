@@ -80,6 +80,11 @@ CHECK_RERUN_LIMIT = 2
 # revision. `ship` runs when a spectator may be restarting onto that revision,
 # so this is a grace for it to reappear, not a single probe.
 LIVE_PRESENCE_GRACE_S = 30.0
+# A supervised spectator finishes its current game before rebuilding from main.
+# A four-seat, 250-turn exhibition can exceed the old ten-minute allowance, so
+# ``ship`` must wait through that safe handoff instead of reporting an
+# unverified merge while the healthy spectator is still serving the old build.
+LIVE_BUILD_HANDOFF_TIMEOUT_S = 30 * 60.0
 BRANCH_RE = re.compile(
     r"^agent/(?P<machine>[a-z0-9][a-z0-9-]{0,31})/"
     r"(?P<agent>[a-z0-9][a-z0-9-]{0,31})/"
@@ -3416,7 +3421,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ship.add_argument("--timeout-seconds", type=float, default=1200.0)
     ship.add_argument("--poll-seconds", type=float, default=10.0)
-    ship.add_argument("--live-timeout-seconds", type=float, default=600.0)
+    ship.add_argument(
+        "--live-timeout-seconds",
+        type=float,
+        default=LIVE_BUILD_HANDOFF_TIMEOUT_S,
+    )
     ship.add_argument(
         "--live-url",
         default=os.environ.get(
