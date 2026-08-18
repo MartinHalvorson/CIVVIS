@@ -20168,61 +20168,67 @@ fn open_ground_at(game: &Game, home: Pos, distance: i32) -> Pos {
         .expect("open ground at the distance")
 }
 
-/// The errand itself: a swordsman with nothing else to do walks out to a
-/// warrior-guarded camp four tiles from the capital, takes the guard, steps
-/// onto the tile, and the empire books the clear and its bounty. Everything
-/// runs through the production military step, so the pin covers the consult
-/// slot, the approach, the exchange, and the engine's reward in one piece.
+/// The errand itself, pinned as a DIFFERENCE: on the same board, the same
+/// two swordsmen with the errand on clear a warrior-guarded camp six tiles
+/// from the capital, and with the errand off they do not — so the pin
+/// cannot be satisfied by the Basic fallback's incidental wander, which is
+/// exactly what the first version of this test measured by accident.
 #[test]
 fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
-    let (mut game, home) = camp_bounty_board(90_079);
-    let barb = game.barb_pid.unwrap();
-    let camp = open_ground_at(&game, home, 4);
-    // A spawn tick far in the future keeps THIS camp from raising raiders
-    // mid-pin; the world's other spawn rolls land far from the errand.
-    game.barb_camps.insert(camp, game.turn + 1_000);
-    game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
-    game.spawn_test_unit("warrior", barb, camp);
-    let hunter = game.spawn_test_unit("swordsman", 0, home);
-    let second = game.spawn_test_unit("swordsman", 0, home);
-
-    let mut ai = AdvancedAi::new();
-    ai.enable_camp_bounty();
-    let mut cleared_by = None;
-    // Seat-turns: three seats per world turn, thirty world turns of margin
-    // for four tiles of walking and a fight.
-    for _ in 0..90 {
-        let pid = game.current;
-        if pid == 0 {
-            ai.take_turn(&mut game, 0);
+    let run = |bounty: bool| -> (Option<u32>, i64) {
+        let (mut game, home) = camp_bounty_board(90_079);
+        let barb = game.barb_pid.unwrap();
+        let camp = open_ground_at(&game, home, 6);
+        // A spawn tick far in the future keeps THIS camp from raising
+        // raiders mid-pin.
+        game.barb_camps.insert(camp, game.turn + 1_000);
+        game.map.tiles.get_mut(&camp).unwrap().improvement =
+            Some(crate::name!("barbarian_camp"));
+        game.spawn_test_unit("warrior", barb, camp);
+        game.spawn_test_unit("swordsman", 0, home);
+        game.spawn_test_unit("swordsman", 0, home);
+        let mut ai = AdvancedAi::new();
+        ai.base.camp_bounty = bounty;
+        let mut cleared_by = None;
+        // Seat-turns: three seats per world turn, thirty world turns of
+        // margin for six tiles of walking and a fight.
+        for _ in 0..90 {
+            let pid = game.current;
+            if pid == 0 {
+                ai.take_turn(&mut game, 0);
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            if !game.barb_camps.contains_key(&camp) {
+                cleared_by = Some(game.turn);
+                break;
+            }
         }
-        if game.winner.is_none() && game.current == pid {
-            let _ = game.apply(pid, &Action::EndTurn);
-        }
-        if !game.barb_camps.contains_key(&camp) {
-            cleared_by = Some(game.turn);
-            break;
-        }
-    }
-    assert!(
-        cleared_by.is_some(),
-        "thirty turns is four of walking and a fight; the camp must fall"
-    );
-    assert!(
-        game.players[0]
+        let camps = game.players[0]
             .counters
             .get("camps")
-            .is_some_and(|camps| *camps >= 1),
-        "the clear is booked on the counter the boosts read"
-    );
+            .copied()
+            .unwrap_or(0);
+        (cleared_by, camps)
+    };
+
+    let (with_errand, booked) = run(true);
     assert!(
-        game.players[0]
-            .counters
-            .get("barbs_killed")
-            .is_some_and(|kills| *kills >= 1),
-        "the guard fell on the way in"
+        with_errand.is_some(),
+        "thirty turns is six of walking and a fight; the errand must clear \
+         the camp"
     );
-    let _ = (hunter, second);
+    assert!(booked >= 1, "the clear is booked on the counter the boosts read");
+
+    let (without_errand, _) = run(false);
+    assert!(
+        without_errand.is_none(),
+        "without the errand the same army left the camp standing (cleared at \
+         t{:?}) — if this fires, the pin no longer discriminates and needs a \
+         farther camp",
+        without_errand
+    );
 }
 
 /// The errand's own gates, pinned at the function: a major war stands it
