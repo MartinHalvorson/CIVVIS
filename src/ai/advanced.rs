@@ -2163,6 +2163,10 @@ pub struct AdvancedAi {
     /// Evaluator arm `advanced_without_governor_recovery`; reserved matrix seed
     /// 28000000.
     pub governor_in_recovery: bool,
+
+    /// Let both settling gates read the same city target the baseline cascade
+    /// is handed. See `settlement_target` for the measured asymmetry.
+    pub settlement_gap_reads_city_target: bool,
     /// Race for wonders on the live Civilization VI seat.
     ///
     /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
@@ -3808,6 +3812,7 @@ impl AdvancedAi {
             governor_victory_lanes: false,
             governor_expansion_lane: false,
             governor_in_recovery: true,
+            settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -5246,6 +5251,12 @@ impl AdvancedAi {
     /// `governor_expansion_lane`.
     pub fn enable_governor_expansion_lane(&mut self) {
         self.governor_expansion_lane = true;
+    }
+
+    /// Make the settlement-gap redirect and the Settler ranking honour the same
+    /// city target the cascade settles toward. See `settlement_target`.
+    pub fn enable_settlement_gap_target(&mut self) {
+        self.settlement_gap_reads_city_target = true;
     }
 
     /// Withhold the strategic governor from the Recovery lane, so the baseline
@@ -16692,13 +16703,9 @@ impl AdvancedAi {
 
         let city_count = g.player_city_ids(pid).len();
         let counts = self.counts(g, pid);
-        if city_count + counts.settlers >= plan.desired_cities
-            || counts.settlers
-                >= self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                )
+        let desired = self.settlement_target(plan);
+        if city_count + counts.settlers >= desired
+            || counts.settlers >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
         {
             return;
         }
@@ -18102,6 +18109,39 @@ impl AdvancedAi {
         closer && !retargeted
     }
 
+    /// How many cities the empire's settling paths should be working toward.
+    ///
+    /// ⚠⚠ **Two halves of this agent disagreed about this number, and the
+    /// narrower one held the Settler.** `delegated_cities` hands the baseline
+    /// cascade `restore_target.max(plan.desired_cities)` under its own rule
+    /// that "the plan may widen a governor, never narrow it", so the cascade
+    /// settles toward `max(city_target, desired_cities)` — 4 on the shipped
+    /// genome. Both settling gates in this file read bare
+    /// `plan.desired_cities` instead, which `assess` starts at
+    /// `city_target_floor` (3) and grows only with the era cadence, so it is
+    /// **3 until roughly turn 60 on Online speed**. For that whole opening the
+    /// project redirect below and the Settler arm of `production_value` refuse
+    /// to produce the fourth Settler the same agent's cascade is trying to
+    /// build.
+    ///
+    /// This is not an ambition change, which is the distinction that matters
+    /// here: `city_target_floor = 6` raised what the empire *wanted* and cost
+    /// 41 Elo, while `settler_commit` (+30) and `settlement_safety` (+31)
+    /// paid for *executing* a settlement already intended. This widens neither
+    /// target — it makes the redirect and the ranking honour the target the
+    /// empire is already settling toward.
+    ///
+    /// Off by default; evaluator arm `advanced_settlement_gap_target`,
+    /// reserved matrix seed 31000000.
+    fn settlement_target(&self, plan: &StrategicPlan) -> usize {
+        if self.settlement_gap_reads_city_target {
+            plan.desired_cities
+                .max(self.base.w.city_target.max(0.0) as usize)
+        } else {
+            plan.desired_cities
+        }
+    }
+
     fn settler_in_flight_allowed(
         &self,
         desired_cities: usize,
@@ -18307,12 +18347,10 @@ impl AdvancedAi {
                         .flatten()
                 });
                 let expansion_open = self.settler_expansion_window_open(g, pid, cid);
-                let in_flight_allowed = self.settler_in_flight_allowed(
-                    plan.desired_cities,
-                    city_count,
-                    counts.settlers,
-                );
-                if city_count + counts.settlers < plan.desired_cities
+                let settlement_target = self.settlement_target(plan);
+                let in_flight_allowed =
+                    self.settler_in_flight_allowed(settlement_target, city_count, counts.settlers);
+                if city_count + counts.settlers < settlement_target
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && expansion_open
@@ -28126,10 +28164,8 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            let adaptive_expansion_dispatch = self.adaptive_expansion_dispatches(
-                &plan,
-                active_victory_target,
-            );
+            let adaptive_expansion_dispatch =
+                self.adaptive_expansion_dispatches(&plan, active_victory_target);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -37507,6 +37543,60 @@ mod tests {
             resumed > fresh,
             "incremental evaluation should prefer finishing invested infrastructure"
         );
+    }
+
+    #[test]
+    fn the_settling_gates_and_the_cascade_disagree_about_the_city_target() {
+        // The defect this repairs is an internal disagreement, so the test
+        // states both sides of it. `delegated_cities` widens the cascade's
+        // target to max(city_target, desired_cities); the settling gates in
+        // this file read the bare plan number. On the shipped genome that is
+        // 4 against 3 for the whole opening.
+        let shipped = AdvancedAi::new();
+        assert!(
+            shipped.plan_city_target,
+            "the redirect this repairs is live in production"
+        );
+        let gene = shipped.base.w.city_target as usize;
+        assert!(
+            gene >= 4,
+            "shipped genome settles toward at least four cities"
+        );
+
+        let opening = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            // What `assess` yields before the era cadence widens it.
+            desired_cities: 3,
+            assessed_turn: 10,
+            rush: false,
+        };
+        assert_eq!(
+            shipped.settlement_target(&opening),
+            3,
+            "today both settling gates stop one city short of the cascade"
+        );
+
+        let mut repaired = AdvancedAi::new();
+        repaired.enable_settlement_gap_target();
+        assert_eq!(
+            repaired.settlement_target(&opening),
+            gene,
+            "the repair honours the target the cascade is already settling toward"
+        );
+
+        // It must WIDEN only. Once the plan has grown past the gene, the plan
+        // wins — otherwise this would narrow late expansion, which is the
+        // failure mode `city_target_floor` was removed for.
+        let late = StrategicPlan {
+            desired_cities: 9,
+            assessed_turn: 140,
+            ..opening
+        };
+        assert_eq!(repaired.settlement_target(&late), 9);
+        assert_eq!(shipped.settlement_target(&late), 9);
     }
 
     #[test]
@@ -52342,16 +52432,22 @@ mod research_probe {
             block.contains("|| every_lane"),
             "the every-lane arm reaches the same production call"
         );
+        // The arm is two flags since the bisect: the composite still covers
+        // the same five lanes, but each half can be measured on its own.
         let arm = src
-            .split("let every_lane = self.governor_every_lane")
+            .split("let every_lane = (self.governor_victory_lanes")
             .nth(1)
-            .expect("the arm is gated by the flag")
+            .expect("the arm is gated by the flags")
             .split(';')
             .next()
             .expect("the arm ends");
         for lane in ["Science", "Culture", "Religion", "Diplomacy", "Expansion"] {
             assert!(arm.contains(&format!("GrandStrategy::{lane}")), "the {lane} lane is covered");
         }
+        assert!(
+            arm.contains("self.governor_expansion_lane"),
+            "the Expansion lane hangs off its own half"
+        );
         assert!(
             !arm.contains("GrandStrategy::Conquest") && !arm.contains("GrandStrategy::Recovery"),
             "war lanes keep their own routing"
