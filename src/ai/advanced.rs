@@ -5114,6 +5114,12 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
+    /// Let the deck counterfactual see the unit-maintenance bill. See
+    /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
+    pub fn enable_maintenance_aware_deck(&mut self) {
+        self.base.maintenance_aware_deck = true;
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {
