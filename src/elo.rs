@@ -4352,6 +4352,7 @@ impl ArmKind {
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
             Self::AdvancedCongressCounter => &["congress-counter-target"],
             Self::AdvancedCongressVotes => &["congress-counter-votes"],
+            Self::AdvancedPantheonBoard => &["pantheon-reads-the-board"],
             Self::AdvancedCongressCounterHard => {
                 &["congress-counter-target", "congress-counter-votes"]
             }
