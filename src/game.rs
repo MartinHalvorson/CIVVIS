@@ -16136,6 +16136,21 @@ impl Game {
             .iter()
             .filter(|p| self.wdist(city.pos, **p) <= 3)
         {
+            // ⚠ A PILLAGED IMPROVEMENT GIVES NOTHING UNTIL IT IS REPAIRED, AND
+            // THIS LOOP USED TO IGNORE THAT. The building loop below has always
+            // honoured `city.pillaged_buildings`; this one never looked at
+            // `tile.pillaged`, so a razed farm kept feeding the city's growth
+            // ceiling forever. Housing is what caps growth, so the city went on
+            // planning against a ceiling the host had already taken away.
+            //
+            // The per-source drift comparison is what surfaced it: on the live
+            // seat `improvements` read HIGH against the host — Ostia +1.5,
+            // Cumae +2, Aquileia +1 — while every other category agreed. A
+            // total-only comparison had shown the same cities off by ±1 to ±2
+            // for weeks without naming anything.
+            if self.map.tiles[pos].pillaged {
+                continue;
+            }
             if let Some(improvement) = self.map.tiles[pos].improvement.as_deref() {
                 let spec = self
                     .rules

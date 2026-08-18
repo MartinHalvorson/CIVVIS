@@ -203,3 +203,79 @@ fn housing_is_unchanged_by_the_split() {
         );
     }
 }
+
+#[test]
+fn a_pillaged_improvement_grants_no_housing() {
+    // ⚠ Civilization VI gives a pillaged improvement NOTHING until it is
+    // repaired — no yields, no housing. CIVVIS's building loop has always
+    // honoured that (`city.pillaged_buildings`); the improvement loop did not
+    // look at `tile.pillaged` at all, so a razed farm kept feeding the city's
+    // growth ceiling forever.
+    //
+    // This is the asymmetry the per-source drift comparison surfaced:
+    // `improvements` read HIGH against the host on the live seat — Ostia +1.5,
+    // Cumae +2, Aquileia +1 — while every other category agreed.
+    let mut game = played(30, 31337);
+    let id = *game.cities.keys().next().expect("a played game has a city");
+
+    // Put a farm on an owned tile inside the city's three-ring.
+    let centre = game.cities[&id].pos;
+    let site = *game.cities[&id]
+        .owned_tiles
+        .iter()
+        .find(|p| **p != centre && game.wdist(centre, **p) <= 3)
+        .expect("a city owns a tile beside its centre");
+    {
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.improvement = Some(crate::name!("farm"));
+        tile.pillaged = false;
+    }
+    let standing = game.city_housing_sources(&game.cities[&id]).improvements;
+
+    game.map.tiles.get_mut(&site).unwrap().pillaged = true;
+    let razed = game.city_housing_sources(&game.cities[&id]).improvements;
+
+    assert!(
+        standing > razed,
+        "a pillaged improvement still grants {standing} housing (razed reads \
+         {razed}); Civilization VI gives it nothing until it is repaired"
+    );
+
+    // And repairing it brings the housing back, so the rule is a gate rather
+    // than a one-way deletion.
+    game.map.tiles.get_mut(&site).unwrap().pillaged = false;
+    assert_eq!(
+        game.city_housing_sources(&game.cities[&id]).improvements,
+        standing,
+        "repairing the improvement must restore its housing"
+    );
+}
+
+#[test]
+fn pillaging_moves_only_the_improvement_category() {
+    // The fix must not leak into water, buildings or districts: a razed farm is
+    // an improvement question and nothing else.
+    let mut game = played(30, 4242);
+    let id = *game.cities.keys().next().expect("a played game has a city");
+    let centre = game.cities[&id].pos;
+    let site = *game.cities[&id]
+        .owned_tiles
+        .iter()
+        .find(|p| **p != centre && game.wdist(centre, **p) <= 3)
+        .expect("a city owns a tile beside its centre");
+    {
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.improvement = Some(crate::name!("farm"));
+        tile.pillaged = false;
+    }
+    let before = game.city_housing_sources(&game.cities[&id]);
+    game.map.tiles.get_mut(&site).unwrap().pillaged = true;
+    let after = game.city_housing_sources(&game.cities[&id]);
+
+    assert_eq!(before.water, after.water);
+    assert_eq!(before.buildings, after.buildings);
+    assert_eq!(before.districts, after.districts);
+    assert_eq!(before.civics, after.civics);
+    assert_eq!(before.other, after.other);
+    assert!(after.improvements < before.improvements);
+}

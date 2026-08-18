@@ -893,7 +893,25 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
 /// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
 /// 75 against a flat 25).
-pub const ELO_PROTOCOL_VERSION: u32 = 8;
+/// **v9 (2026-08-18) — a pillaged improvement stops granting Housing.**
+/// `city_housing_sources` skipped `tile.pillaged` entirely while the building
+/// loop beside it had always honoured `city.pillaged_buildings`, so a razed
+/// farm went on feeding a city's growth ceiling until somebody repaired it.
+/// Housing is what caps growth in Civilization VI, so this changes when cities
+/// grow and therefore what every agent decides — the frozen anchor included:
+/// 20,464 decisions became 20,482 across the five anchor profiles.
+///
+/// ⚠ This is the case the ledger version exists for, and it is NOT the case
+/// `ai.rs`'s live-adapter gates cover. Those gate a fix behind the live bridge
+/// when the bug "only bites the live bridge"; this is the opposite. `mirror.rs`
+/// overwrites housing with the host's own figure every turn, and `game.rs` says
+/// the correction is "Empty on a native game" — so the live seat was already
+/// right and every OFFLINE game was wrong. Gating this behind the live adapter
+/// would have preserved the bug in exactly the games this ledger rates.
+///
+/// Rows before and after v9 are not comparable wherever an improvement was ever
+/// pillaged, which on any map with barbarians is most of them.
+pub const ELO_PROTOCOL_VERSION: u32 = 9;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
