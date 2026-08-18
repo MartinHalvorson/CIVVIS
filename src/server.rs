@@ -13314,8 +13314,11 @@ mod tests {
     /// A landmark silhouette identifies the class of the thing on a tile, but
     /// viewers need its written name to distinguish the actual world wonder.
     /// The label deliberately follows the resource-word convention: it only
-    /// appears at reading zoom, has terrain-independent outlined ink, and
-    /// turns a measured long name into smaller type before it is width-bound.
+    /// appears at reading zoom and has terrain-independent outlined ink. It
+    /// also stays on the wonder's own tile: it sits just under the art, in the
+    /// band where the hex is still nearly full width, and its lane is the width
+    /// the hex actually has at the bottom of the type — a measured long name
+    /// takes smaller type, then a second line, before it is width-bound.
     #[test]
     fn browser_labels_completed_world_wonders_with_length_aware_type() {
         let label = EMBEDDED_INDEX
@@ -13325,25 +13328,43 @@ mod tests {
             .expect("world wonder word label");
         for contract in [
             "const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;",
-            "const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;",
-            "const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;",
-            "const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;",
-            "const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;",
+            "const WORLD_WONDER_LABEL_FONT_SIZE = 8.8;",
+            "const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.4;",
+            "const WORLD_WONDER_LABEL_BASELINE = S * YS * .44;",
+            "const WORLD_WONDER_LABEL_LINE_PITCH = 6.8;",
+            "const WORLD_WONDER_LABEL_MARGIN = 1.6;",
+            "function hexWidthAt(dy) {\n  return 2 * SQ3 * Math.max(0, S - Math.max(S / 2, Math.abs(dy) / YS));\n}",
+            "function worldWonderLabelLane(lineMiddle, fontSize) {\n  return Math.max(1, hexWidthAt(lineMiddle + fontSize * .5) - 2 * WORLD_WONDER_LABEL_MARGIN);\n}",
+            "function worldWonderLabelBreak(label, measure) {",
+            "function worldWonderLabelFit(lines, measure) {",
+            "size = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE, size);",
             "if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;",
             "const label = titleCase(wonder);",
-            "const naturalWidth = Math.max(1, cx.measureText(label).width);",
-            "WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth",
-            "cx.strokeText(label, x, labelY, maxWidth);",
-            "cx.fillText(label, x, labelY, maxWidth);",
+            "let fit = worldWonderLabelFit([label], measure);",
+            "if (twoLines && (twoLines.size > fit.size || twoLines.ease > fit.ease)) fit = twoLines;",
+            "const lane = worldWonderLabelLane(middle, fit.size) * scale;",
+            "cx.strokeText(line, x, lineY, lane);",
+            "cx.fillText(line, x, lineY, lane);",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(contract),
                 "world wonder word-label contract is missing: {contract}"
             );
         }
+        // The lane must be the tile's own width at the type, not a fixed lane
+        // wider than the tile: the old two-hex reading lane ran into both
+        // neighbours' lower corners and was clipped off on the globe.
         assert!(
-            label.contains("Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,"),
-            "an exceptionally long name needs a legible minimum size"
+            !EMBEDDED_INDEX.contains("WORLD_WONDER_LABEL_MAX_WIDTH"),
+            "the wonder name lane is the hex width at the type, not a fixed lane"
+        );
+        // Under the art and inside the full-width band: the label's centre
+        // must lie between the plinth (six k under the centre, plus outline)
+        // and the point where a pointy-top hex begins to taper (S * YS / 2).
+        let baseline = 36.0 * 0.92 * 0.44;
+        assert!(
+            baseline > 12.0 && baseline < 36.0 * 0.92 / 2.0 + 2.0,
+            "the wonder name sits just under the art, in the tile's wide band; got {baseline:.1}"
         );
         assert!(
             label.contains("cx.strokeStyle = \"rgba(4,8,7,.96)\";"),
@@ -13881,6 +13902,46 @@ mod tests {
                 "the azimuthal main map let the sky back in: {contract}"
             );
         }
+    }
+
+    /// The azimuthal chart cannot lay out the antipode: it spreads that one
+    /// point round the whole rim, so a cell reaching it has corners at
+    /// bearings a quarter or half a turn apart, and the straight chords drawn
+    /// between them cut across the middle of the sheet — an empire's wash
+    /// flooding the frame, its frontier ribbon slashed corner to corner, at
+    /// the zoom-out limit where the rim sits in the corners of the stage. The
+    /// chart leaves every cell within a few cell-widths of the antipode off
+    /// the sheet instead, and does so in the one place every painter, hit
+    /// test and overlay gets its cell geometry from.
+    #[test]
+    fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
+        // The margin is a bound in cell-widths, measured off the globe once.
+        assert!(EMBEDDED_INDEX.contains("const PLANET_CHART_ANTIPODE_CELLS = 5;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return {frequency:raw.frequency, corners, cells, reach:planetCellReach(cells, corners)};"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function planetCellReach(cells, corners) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function planetChartAntipodeFloor() {\n  return -Math.cos(Math.min(Math.PI / 2, PLANET_CHART_ANTIPODE_CELLS * (PLANET?.reach || 0)));\n}"
+        ));
+        // Applied at the source of every projected cell, on the chart only:
+        // the globe has a limb to fold at and no antipode in view.
+        let geometry = EMBEDDED_INDEX
+            .split("function planetCellGeometry(tile, camera, scale, centerX, centerY) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetChartHorizon").next())
+            .expect("planet cell geometry");
+        assert!(geometry.contains(
+            "const center = planetProject(cell.center, camera, scale, centerX, centerY);\n  if (camera.chart && center.z < planetChartAntipodeFloor()) return null;"
+        ));
+        assert!(geometry.contains("return {cell, points, center};"));
+        // Both consumers of cell geometry go through it, so no painter can
+        // project an antipode cell on its own.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("planetCellGeometry(").count(),
+            3,
+            "cell geometry has one definition and two callers"
+        );
     }
 
     #[test]

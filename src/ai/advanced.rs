@@ -3908,6 +3908,11 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        // The frozen rating anchor must keep playing the game it always
+        // played: the adjacent camp clear is default-ON everywhere current,
+        // and this line is the gate that keeps it away from the anchor so
+        // the ledger stands (see `advanced_v1_plays_the_same_game_it_always_did`).
+        ai.base.adjacent_camp_clear = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
@@ -4182,6 +4187,12 @@ impl AdvancedAi {
     /// Whether the wider camp reach is on. See `BasicAi::camp_reach`.
     pub fn camp_reach(&self) -> bool {
         self.base.camp_reach
+    }
+
+    /// Whether the adjacent camp clear is on. See
+    /// `BasicAi::adjacent_camp_clear`.
+    pub fn adjacent_camp_clear(&self) -> bool {
+        self.base.adjacent_camp_clear
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on
@@ -20771,34 +20782,72 @@ impl AdvancedAi {
             return false;
         }
         let visible = self.battlefront_visibility(g, pid);
-        let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
-            let Some(tile) = g.map.get(*target) else {
-                return false;
+        // The checks in dropping order, each with a name. Run 212725Z spent
+        // t224-t248 with FOUR settlers orbiting one site — "sets (22, 21)
+        // aside" every hysteresis period, per settler, staggered — and the
+        // journal could not say WHICH check flickered, so the lane's next
+        // measurement had nothing to bite on (the promotion-block class:
+        // no clean discriminator). Same conditions, same order, same
+        // short-circuit as the closure this replaces; only the first
+        // failure's name escapes.
+        let target_drop_reason = |target: Pos| -> Option<&'static str> {
+            let Some(tile) = g.map.get(target) else {
+                return Some("the tile left the map");
             };
-            !g.rules.is_water(tile)
-                && g.rules.is_passable(tile)
-                && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
-                && tile
-                    .owner_city
-                    .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && Some(*target) != avoid
-                // A site the host or the mirror has since blocked is not a
-                // target, however it was chosen: `best_settler_target`
-                // refuses `blocked_city_sites` when it PICKS a site, but a
-                // site can join that set after the pick (see the standing
-                // case at the top of this function for the measured cost).
-                && !g.blocked_city_sites.contains(target)
-                && !self.settler_site_is_dead(uid, *target)
-                // A momentarily unavailable route is not a bad site. Under
-                // `settler_commit` the stall counter decides when to give up,
-                // not a single blocked turn.
-                && (*target == current
-                    || g.route_step(uid, *target, 0).is_some()
-                    || self.settler_commit)
-                && (!self.settlement_safety
-                    || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
-                        <= SETTLER_STEP_RISK_LIMIT)
-        });
+            if g.rules.is_water(tile) {
+                return Some("water");
+            }
+            if !g.rules.is_passable(tile) {
+                return Some("impassable");
+            }
+            if g.cities.values().any(|c| g.wdist(c.pos, target) < 4) {
+                return Some("a city within three tiles");
+            }
+            if !tile
+                .owner_city
+                .is_none_or(|cid| g.cities[&cid].owner == pid)
+            {
+                return Some("another empire's ground");
+            }
+            if Some(target) == avoid {
+                return Some("the site it is avoiding");
+            }
+            // A site the host or the mirror has since blocked is not a
+            // target, however it was chosen: `best_settler_target`
+            // refuses `blocked_city_sites` when it PICKS a site, but a
+            // site can join that set after the pick (see the standing
+            // case at the top of this function for the measured cost).
+            if g.blocked_city_sites.contains(&target) {
+                return Some("the host blocked the plot");
+            }
+            if self.settler_site_is_dead(uid, target) {
+                return Some("marked dead for this settler");
+            }
+            // A momentarily unavailable route is not a bad site. Under
+            // `settler_commit` the stall counter decides when to give up,
+            // not a single blocked turn.
+            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
+            {
+                return Some("no route this turn");
+            }
+            if self.settlement_safety
+                && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            {
+                return Some("step risk above the limit");
+            }
+            None
+        };
+        let cached_drop = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .and_then(target_drop_reason);
+        let valid_target = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .filter(|_| cached_drop.is_none());
         // The target forecast is a live-bridge repair, not a production or
         // tournament policy. `settler_commit` is on in the normal promoted
         // controller, whereas both default constructors leave
@@ -20817,11 +20866,12 @@ impl AdvancedAi {
                         uid,
                         (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
                     );
+                    let why = cached_drop.unwrap_or("no cached site");
                     think!(self.journal(), Expansion, Detail,
                            "Settler sets {dropped:?} aside";
-                           "the cached site stopped passing its checks; it stays out of the next \
-                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
-                            flickering at the edge of sight cannot flip the march every frame";
+                           "the cached site stopped passing its checks ({why}); it stays out of the \
+                            next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
+                            threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
                 }
             }
@@ -25090,6 +25140,15 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // Camps are captured by entering their tile rather than attacking,
+            // so an adjacent empty one must be claimed before this field unit
+            // is sent to a longer village, escort, or pre-war staging order.
+            // The helper asks current player vision and engine movement first.
+            if !unwanted_settler_adjacent
+                && self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid)
+            {
+                return true;
+            }
             // A newly charted village is an expiring reward, so resolve it
             // before this otherwise idle unit is assigned to a pre-war staging
             // ring or an incidental camp errand. The shared selector gives
@@ -25616,6 +25675,12 @@ impl AdvancedAi {
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
             }
+            // Recon flight keeps its safety-first escape above, but once it
+            // stands its ground an empty camp beside it is a completed reward,
+            // not fog to scout past.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             if self.base.explore_step(g, pid, uid) {
                 return true;
             }
@@ -25660,6 +25725,13 @@ impl AdvancedAi {
             if garrisoned {
                 return true;
             }
+            // `tactical_step` keeps a melee unit at attack range from its
+            // target, but an empty camp has no defender to attack. Once an
+            // actual city garrison has had first claim, enter this free camp
+            // rather than ending the turn beside it.
+            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                return true;
+            }
             let threat = if self.base.home_defense {
                 self.base.home_defense_objective(g, pid, uid, &barb_only)
             } else {
@@ -25673,6 +25745,12 @@ impl AdvancedAi {
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
             }
+        }
+        // A camp outside the local barbarian-response radius may still be a
+        // one-step clear beside this unit. Immediate combat, civilian capture,
+        // recovery, escorts, and any local defense above keep their priority.
+        if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return true;
         }
         // The defender's claim above is deliberately bounded to the nearest
         // half-army. Let the unclaimed remainder keep assembling on its

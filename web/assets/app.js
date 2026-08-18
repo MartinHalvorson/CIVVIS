@@ -9958,14 +9958,31 @@ const WORLD_WONDER_KEYLINE_RADIUS = 0.62;
 // below, and it is always drawn back at exactly this many user units.
 const WORLD_WONDER_SPRITE_SIZE = 192;
 const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
-// World wonders are rare enough to give their names a wider reading lane than
-// a resource gets. The longest shipped names still shrink from the measured
-// width, rather than overflowing into an unrelated part of the map.
+// A wonder's name lives on the wonder's own tile. It used to hang below the
+// art at three quarters of the way to the tile's bottom point, with a reading
+// lane nearly two hexes wide: down there the hex has tapered to half its width,
+// so every name but the shortest ran out over both neighbours' lower corners
+// — into their resource words, under the banner of the city the wonder was
+// built beside — and on the globe, where a tile's paint is clipped to its own
+// face, the overhang was simply cut off. Now the name sits just under the
+// art's plinth, in the band where the tile is still nearly full width, and its
+// reading lane is the width the hex actually has at the bottom edge of the
+// type. The measured name is fitted into that lane: smaller type first, then a
+// second line for the names that need one, and only then a squeeze.
 const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;
-const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;
-const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;
-const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;
-const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;
+const WORLD_WONDER_LABEL_FONT_SIZE = 8.8;
+const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.4;
+const WORLD_WONDER_LABEL_BASELINE = S * YS * .44;
+const WORLD_WONDER_LABEL_LINE_PITCH = 6.8;
+// The name's lane keeps this much clear of the tile edge on either side, so
+// its keyline never straddles a border ribbon.
+const WORLD_WONDER_LABEL_MARGIN = 1.6;
+// How wide a pointy-top hex is at a signed vertical offset from its centre, in
+// the same squashed screen units the map is drawn in: full width through the
+// middle band, tapering to nothing at the top and bottom points.
+function hexWidthAt(dy) {
+  return 2 * SQ3 * Math.max(0, S - Math.max(S / 2, Math.abs(dy) / YS));
+}
 // ⚠ The wonder art is code-native vector: `BUILT_WONDER_PAINTER` draws paths,
 // so it has no fixed resolution of its own and costs no asset bytes. The only
 // thing that was ever low-resolution here is this cache. The sprite used to be
@@ -10195,30 +10212,76 @@ function drawWorldWonderIcon(wonder, x, y, scale = 1) {
   if (!drawWorldWonder(wonder, x, y, scale)) drawWonder(x, y, scale);
 }
 
+// The lane a line of the name may fill: the hex's own width at that line's
+// lower edge, less the margin. Widths are in unscaled tile units; the caller
+// scales the answer.
+function worldWonderLabelLane(lineMiddle, fontSize) {
+  return Math.max(1, hexWidthAt(lineMiddle + fontSize * .5) - 2 * WORLD_WONDER_LABEL_MARGIN);
+}
+// Where the name breaks if it has to: at the space that leaves the two halves
+// nearest to equal, measured rather than counted, so "Statue Of Liberty" splits
+// after "Statue Of" and not after "Statue".
+function worldWonderLabelBreak(label, measure) {
+  let best = null, bestGap = Infinity;
+  for (let at = label.indexOf(" "); at > 0; at = label.indexOf(" ", at + 1)) {
+    const head = label.slice(0, at), tail = label.slice(at + 1);
+    const gap = Math.abs(measure(head) - measure(tail));
+    if (gap < bestGap) { bestGap = gap; best = [head, tail]; }
+  }
+  return best;
+}
+// The type size at which every line of a layout fits its lane, floored at the
+// legible minimum; and how far short of fitting the floor leaves it (1 = fits).
+function worldWonderLabelFit(lines, measure) {
+  let size = WORLD_WONDER_LABEL_FONT_SIZE;
+  const middleOf = index => WORLD_WONDER_LABEL_BASELINE +
+    (index - (lines.length - 1) / 2) * WORLD_WONDER_LABEL_LINE_PITCH;
+  lines.forEach((line, index) => {
+    const natural = Math.max(1, measure(line));
+    const lane = worldWonderLabelLane(middleOf(index), size);
+    size = Math.min(size, WORLD_WONDER_LABEL_FONT_SIZE * lane / natural);
+  });
+  size = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE, size);
+  let ease = 1;
+  lines.forEach((line, index) => {
+    const natural = Math.max(1, measure(line)) * size / WORLD_WONDER_LABEL_FONT_SIZE;
+    ease = Math.min(ease, worldWonderLabelLane(middleOf(index), size) / natural);
+  });
+  return {lines, size, ease, middleOf};
+}
 // A completed wonder's silhouette says what sort of landmark it is; its name
 // says exactly which one it is. Mirror the resource word treatment at reading
-// zoom, but let a long name use a smaller type size before it is constrained
-// to the nameplate's generous two-hex reading lane.
+// zoom — outlined ink, no plate — but keep the name on the wonder's tile: a
+// long name takes smaller type, then a second line, and is width-squeezed only
+// once both of those have been spent.
 function drawWorldWonderWordLabel(wonder, x, y, scale = 1) {
   if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;
   const label = titleCase(wonder);
-  const maxWidth = WORLD_WONDER_LABEL_MAX_WIDTH * scale;
-  const labelY = y + WORLD_WONDER_LABEL_BASELINE * scale;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-  cx.font = `800 ${WORLD_WONDER_LABEL_FONT_SIZE * scale}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
-  const naturalWidth = Math.max(1, cx.measureText(label).width);
-  const fontSize = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,
-    Math.min(WORLD_WONDER_LABEL_FONT_SIZE * scale,
-      WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth));
+  cx.font = `800 ${WORLD_WONDER_LABEL_FONT_SIZE}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const measure = text => cx.measureText(text).width;
+  let fit = worldWonderLabelFit([label], measure);
+  if (fit.ease < 1) {
+    const broken = worldWonderLabelBreak(label, measure);
+    const twoLines = broken && worldWonderLabelFit(broken, measure);
+    // Two lines win when they read larger, or squeeze less, than one.
+    if (twoLines && (twoLines.size > fit.size || twoLines.ease > fit.ease)) fit = twoLines;
+  }
+  const fontSize = fit.size * scale;
   cx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
   cx.textAlign = "center"; cx.textBaseline = "middle";
   // Like resource labels, an ink keyline makes the name readable above every
   // terrain and territory wash without adding another opaque tile plate.
   cx.strokeStyle = "rgba(4,8,7,.96)"; cx.lineWidth = Math.max(1.3 * scale, fontSize * .21);
-  cx.strokeText(label, x, labelY, maxWidth);
   cx.fillStyle = "#fffdf3";
-  cx.fillText(label, x, labelY, maxWidth);
+  fit.lines.forEach((line, index) => {
+    const middle = fit.middleOf(index);
+    const lane = worldWonderLabelLane(middle, fit.size) * scale;
+    const lineY = y + middle * scale;
+    cx.strokeText(line, x, lineY, lane);
+    cx.fillText(line, x, lineY, lane);
+  });
   cx.restore();
 }
 
@@ -12910,7 +12973,22 @@ function decodePlanet(raw) {
                          nbrs:new Array(ids.length).fill(null)});
   }
   linkPlanetCells(cells);
-  return {frequency:raw.frequency, corners, cells};
+  return {frequency:raw.frequency, corners, cells, reach:planetCellReach(cells, corners)};
+}
+// The widest a cell is, as the angle from its centre to its farthest corner.
+// One number for the whole globe: a geodesic tiling's cells are all within a
+// few per cent of one another, and the chart's antipode margin below wants a
+// bound, not a per-cell figure.
+function planetCellReach(cells, corners) {
+  let reach = 0;
+  for (const cell of cells.values()) {
+    const [cx0, cy0, cz0] = cell.center;
+    for (const id of cell.ids) {
+      const toward = cx0 * corners[3 * id] + cy0 * corners[3 * id + 1] + cz0 * corners[3 * id + 2];
+      reach = Math.max(reach, Math.acos(Math.max(-1, Math.min(1, toward))));
+    }
+  }
+  return reach;
 }
 
 // Which tile lies across each of a tile's own edges, read off the geometry
@@ -13202,10 +13280,29 @@ function planetFlightStep(target, ease) {
   return done;
 }
 
+// An azimuthal chart lays the whole sphere out around one point, and the one
+// point it cannot lay out is the antipode: everything there is at the same
+// distance from the centre in every direction at once, so the projection
+// spreads it round the entire rim of the chart. A cell that reaches that far
+// has corners at bearings a quarter or half a turn apart, and the straight
+// chords drawn between them cut across the middle of the sheet — an empire's
+// wash flooding the frame, its frontier ribbon slashed corner to corner, at
+// the zoom-out limit where the rim sits in the corners of the stage. Every
+// cell within this many cell-widths of the antipode is left off the chart
+// instead. What that costs is a sliver of sea at the very rim, in the frame's
+// far corners and only at the last notch of zoom; what remains is drawn with
+// its corners a modest span of bearing apart, so its edges stay near where
+// they belong.
+const PLANET_CHART_ANTIPODE_CELLS = 5;
+function planetChartAntipodeFloor() {
+  return -Math.cos(Math.min(Math.PI / 2, PLANET_CHART_ANTIPODE_CELLS * (PLANET?.reach || 0)));
+}
 function planetCellGeometry(tile, camera, scale, centerX, centerY) {
   const cell = PLANET?.cells.get(key(tile.pos));
   if (!cell) return null;
   const radius = camera.radius * scale;
+  const center = planetProject(cell.center, camera, scale, centerX, centerY);
+  if (camera.chart && center.z < planetChartAntipodeFloor()) return null;
   const points = cell.ids.map(id => planetProject(
     [PLANET.corners[3 * id], PLANET.corners[3 * id + 1], PLANET.corners[3 * id + 2]],
     camera, scale, centerX, centerY));
@@ -13220,7 +13317,7 @@ function planetCellGeometry(tile, camera, scale, centerX, centerY) {
     point.x = centerX + dx * radius / length;
     point.y = centerY + dy * radius / length;
   }
-  return {cell, points, center:planetProject(cell.center, camera, scale, centerX, centerY)};
+  return {cell, points, center};
 }
 // How far round the world a chart of this scale still reaches, given as the
 // cosine everything above is already working in: the angle to the far corner of
