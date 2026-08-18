@@ -6007,6 +6007,93 @@ mod tests {
     }
 
     /// Two entrants that resolve to one agent make their difference noise.
+    /// ★★★★★ NO **NEW** SELECTABLE NAME MAY QUIETLY BE ANOTHER SELECTABLE NAME.
+    ///
+    /// An arm whose spec equals another's builds the identical agent, so a run
+    /// naming both measures one agent against itself. `ai_eval` refuses such a
+    /// pair at launch, which is the right last line of defence — but only after
+    /// somebody has chosen the arm, queued the run and waited. The registry is
+    /// where it is cheap to know, and this pins what is already true so that
+    /// anything new has to be argued for.
+    ///
+    /// Collapses arrive on a predictable schedule and in three flavours:
+    ///
+    /// - **A promoted treatment whose enabling arm was left behind.**
+    ///   `advanced_recon_fleet` is exactly that: the reconnaissance quartet
+    ///   went into `AdvancedAi::new()` and the arm stayed, so it can only ever
+    ///   report parity. It was found by spending forty paired games on it.
+    ///   Once a treatment is in the bundle the arm that still measures
+    ///   something is the **withholding** twin — here
+    ///   `advanced_without_recon_fleet`, which does not collapse.
+    /// - **A withholding arm for a treatment that was deleted.**
+    ///   `advanced_without_bounded_recovery` withholds a mechanism production
+    ///   no longer has, so it withholds nothing.
+    /// - **An artifact-driven fallback.** `evolved` resolves to `advanced`
+    ///   against the empty fixture directory used here, exactly as
+    ///   `entrants_that_collapse_to_one_agent_are_reported` demonstrates. That
+    ///   is a property of the fixture, not of the registry, and it is why this
+    ///   test pins a set rather than asserting the set is empty.
+    ///
+    /// Fixing the first two flavours means deleting registry entries, which is
+    /// a judgement about what history to keep and is deliberately not made
+    /// here. Making them **visible and bounded** is.
+    #[test]
+    fn no_new_selectable_arm_collapses_onto_another() {
+        let dir = "target/test-arm-collapse";
+        let _ = fs::remove_dir_all(dir);
+        fs::create_dir_all(dir).unwrap();
+        let names: Vec<&str> = BUILTIN_AIS
+            .iter()
+            .chain(EVAL_ONLY_AIS.iter())
+            .copied()
+            .collect();
+        let collapsed = collapsed_entrants(&names, dir);
+        fs::remove_dir_all(dir).unwrap();
+        let mut involved: Vec<String> = collapsed
+            .iter()
+            .flat_map(|(left, right, _)| [left.clone(), right.clone()])
+            .collect();
+        involved.sort();
+        involved.dedup();
+        let expected = [
+            // The agent every collapse below lands on, plus the two artifact
+            // fallbacks that reach it against an empty fixture directory.
+            "advanced",
+            "advanced_evolved",
+            "evolved",
+            // Enabling arms whose treatment is now in `AdvancedAi::new()`.
+            "advanced_banking_dedication",
+            "advanced_holy_v0",
+            "advanced_plan_city_target",
+            "advanced_policy_envoy_priority",
+            "advanced_recon_fleet",
+            // Withholding arms whose treatment production no longer has.
+            "advanced_without_bounded_recovery",
+            "advanced_without_city_defence",
+            "advanced_without_city_target_floor",
+            "advanced_without_unit_tactics",
+            "advanced_without_unpriced_war",
+            // The same two shapes outside the `advanced` family.
+            "advanced_blind_to_leaders",
+            "advanced_evolved_blind",
+            "basic",
+            "basic_evolved",
+            "strategic",
+            "strategic_score",
+            "strategic_warm",
+        ];
+        let mut expected: Vec<String> = expected.iter().map(|name| name.to_string()).collect();
+        expected.sort();
+        assert_eq!(
+            involved, expected,
+            "the set of registry names that build the same agent as some other \
+             name has changed. A NEW entry here is an arm that can never \
+             measure anything: promote the treatment and keep the withholding \
+             twin, or delete the arm. A REMOVED entry is a fix and belongs in \
+             this list's absence."
+        );
+    }
+
     #[test]
     fn entrants_that_collapse_to_one_agent_are_reported() {
         let dir = "target/test-provenance-collapse";
