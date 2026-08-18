@@ -12134,7 +12134,10 @@ fn a_site_beside_an_unseen_majors_border_is_doomed_before_the_walk() {
     let why = live
         .settle_site_loyalty_verdict(&game, 0, site)
         .expect("the live seat dooms a site two tiles from an unseen major's border");
-    assert!(why.contains("border whose city the seat has never seen"), "{why}");
+    assert!(
+        why.contains("border whose city the seat has never seen"),
+        "{why}"
+    );
 
     // Four tiles from the border: outside the radius, judged by the forecast.
     game.unseen_major_borders.clear();
@@ -12149,7 +12152,9 @@ fn a_site_beside_an_unseen_majors_border_is_doomed_before_the_walk() {
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_frontier_loyalty();
-    assert!(withheld.settle_site_loyalty_verdict(&game, 0, site).is_none());
+    assert!(withheld
+        .settle_site_loyalty_verdict(&game, 0, site)
+        .is_none());
 }
 
 /// A tile at exactly `distance` from `home`, chosen deterministically so

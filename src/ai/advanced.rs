@@ -20212,8 +20212,7 @@ impl AdvancedAi {
     /// board that is not a live mirror. See `Game::unseen_major_borders`.
     pub(crate) fn beside_unseen_major_border(g: &Game, site: Pos) -> bool {
         !g.unseen_major_borders.is_empty()
-            && g
-                .wdisk(site, UNSEEN_MAJOR_BORDER_RADIUS)
+            && g.wdisk(site, UNSEEN_MAJOR_BORDER_RADIUS)
                 .into_iter()
                 .any(|pos| g.unseen_major_borders.contains(&pos))
     }
