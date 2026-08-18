@@ -9,10 +9,10 @@ plus ``ModifierArguments`` and an optional ``RequirementSet``.
 
 CIVVIS hardcodes those effects one at a time in Rust. That is a defensible
 choice, but it leaves one question unanswered: *how much is left?* This tool
-answers it by frequency. It ranks every ``EffectType`` by how many modifier
-rows reference it, cross-references ``tools/modifier_coverage.json`` for what
-CIVVIS does with it, and reports the unmodelled rows as a single number that
-should only ever go down.
+answers it by frequency. It ranks every *active* ``EffectType`` by how many
+modifier rows reference it, cross-references ``tools/modifier_coverage.json``
+for what CIVVIS does with it, and reports the unmodelled rows as a single
+number that should only ever go down.
 
 Usage::
 
@@ -37,7 +37,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_fidelity import LOAD_ORDER, PACK_EXCLUDE, REPO, find_install, truthy  # noqa: E402
+from civ6_fidelity import (  # noqa: E402
+    CROSS_EXPANSION,
+    LOAD_ORDER,
+    PACK_EXCLUDE,
+    REMOVE_DATA,
+    REPO,
+    find_install,
+    truthy,
+)
 
 # Every gameplay file can carry modifiers, so unlike the rules-data audit there
 # is no useful filename filter; a full parse of the three load-order
@@ -71,6 +79,50 @@ class Modifiers:
         self.requirement_sets: dict[str, list[str]] = collections.defaultdict(list)
         self.set_kinds: dict[str, str] = {}
 
+    def detach(self, modifier_id: str, table: str, owner: str = "") -> None:
+        """Remove matching direct owner bindings from an overlay ``Delete``.
+
+        The same modifier can be granted from more than one owner table.  A
+        ``PolicyModifiers`` delete must not silently detach a separate trait
+        binding, and a delete containing an owner names only that one binding.
+        """
+        pairs = zip(
+            self.attachments.get(modifier_id, []),
+            self.owners.get(modifier_id, []),
+        )
+        retained = [
+            (attached_table, attached_owner)
+            for attached_table, attached_owner in pairs
+            if attached_table != table or (owner and attached_owner != owner)
+        ]
+        if retained:
+            self.attachments[modifier_id] = [attached_table for attached_table, _ in retained]
+            self.owners[modifier_id] = [attached_owner for _, attached_owner in retained]
+        else:
+            self.attachments.pop(modifier_id, None)
+            self.owners.pop(modifier_id, None)
+
+    def active_modifier_ids(self) -> set[str]:
+        """Return modifiers reachable from a live owner attachment.
+
+        Expansion overlays often leave a retired row in ``Modifiers`` after
+        deleting its owner binding.  It cannot execute.  Conversely,
+        ``ATTACH_MODIFIER`` rows point at a child through their ``ModifierId``
+        argument, so a direct-attachment-only filter would lose live nested
+        effects.  Start with real owner bindings and take that graph closure.
+        """
+        # A separate table can retain an inert reference after the expansion
+        # deletes the modifier row itself.  It is not a runnable root.
+        active = {modifier_id for modifier_id in self.attachments if modifier_id in self.rows}
+        pending = list(active)
+        while pending:
+            modifier_id = pending.pop()
+            child = self.arguments.get(modifier_id, {}).get("ModifierId")
+            if child in self.rows and child not in active:
+                active.add(child)
+                pending.append(child)
+        return active
+
     def apply_file(self, path: Path) -> None:
         try:
             root = ET.parse(path).getroot()
@@ -82,17 +134,33 @@ class Modifiers:
             if table.tag == "DynamicModifiers":
                 for node in table:
                     row = fields(node)
-                    if "ModifierType" in row:
+                    if node.tag == "Delete":
+                        self.dynamic.pop(row.get("ModifierType", ""), None)
+                    elif "ModifierType" in row:
                         self.dynamic[row["ModifierType"]] = row
             elif table.tag == "Modifiers":
                 for node in table:
                     row = fields(node)
-                    if "ModifierId" in row:
+                    modifier_id = row.get("ModifierId")
+                    if node.tag == "Delete" and modifier_id:
+                        self.rows.pop(modifier_id, None)
+                        self.arguments.pop(modifier_id, None)
+                        self.attachments.pop(modifier_id, None)
+                        self.owners.pop(modifier_id, None)
+                    elif modifier_id:
                         self.rows.setdefault(row["ModifierId"], {}).update(row)
             elif table.tag == "ModifierArguments":
                 for node in table:
                     row = fields(node)
-                    if "ModifierId" in row and "Name" in row:
+                    modifier_id = row.get("ModifierId")
+                    name = row.get("Name")
+                    if node.tag == "Delete" and modifier_id and name:
+                        arguments = self.arguments.get(modifier_id)
+                        if arguments is not None:
+                            arguments.pop(name, None)
+                            if not arguments:
+                                self.arguments.pop(modifier_id, None)
+                    elif modifier_id and name:
                         self.arguments[row["ModifierId"]][row["Name"]] = row.get("Value", "")
             elif table.tag == "Requirements":
                 for node in table:
@@ -129,12 +197,24 @@ class Modifiers:
                         continue
                     where = fields(node)
                     doomed = where.get("ModifierId")
-                    if doomed and doomed in self.attachments:
-                        del self.attachments[doomed]
-                        self.owners.pop(doomed, None)
+                    if doomed:
+                        owner = next(
+                            (
+                                value
+                                for key, value in where.items()
+                                if key not in ("ModifierId", "Name", "Id")
+                            ),
+                            "",
+                        )
+                        self.detach(doomed, table.tag, owner)
                 # BuildingModifiers, TraitModifiers, BeliefModifiers, ... —
                 # the tables that bind a modifier to the object that owns it.
                 for node in table:
+                    # ``Delete ModifierId=...`` has the same identifier shape
+                    # as a binding row.  It was previously removed above and
+                    # then accidentally appended again as an ownerless binding.
+                    if node.tag == "Delete":
+                        continue
                     row = fields(node)
                     if "ModifierId" not in row:
                         continue
@@ -150,8 +230,16 @@ class Modifiers:
                         ),
                         "",
                     )
-                    self.attachments[row["ModifierId"]].append(table.tag)
-                    self.owners[row["ModifierId"]].append(owner)
+                    bindings = zip(
+                        self.attachments[row["ModifierId"]],
+                        self.owners[row["ModifierId"]],
+                    )
+                    # Compatibility overlays sometimes restate an identical
+                    # binding.  It remains one executable modifier, not two
+                    # owners in the audit report.
+                    if (table.tag, owner) not in bindings:
+                        self.attachments[row["ModifierId"]].append(table.tag)
+                        self.owners[row["ModifierId"]].append(owner)
 
     def condition(self, modifier_id: str) -> str:
         """The requirement set on a modifier, spelled out.
@@ -197,18 +285,39 @@ class Modifiers:
 
 def load(install: Path) -> Modifiers:
     modifiers = Modifiers()
+    deferred: list[Path] = []
     for relative in LOAD_ORDER:
         directory = install / relative
         if not directory.is_dir():
             print(f"warning: missing load-order directory {relative}", file=sys.stderr)
             continue
-        for path in sorted(directory.rglob("*.xml")):
+        paths = sorted(directory.rglob("*.xml"))
+        core = relative in LOAD_ORDER[:3]
+        # The expansion manifests assign RemoveData priority 1: those deletes
+        # happen before the expansion re-declares its replacement rows.  A
+        # lexical walk instead applies them late and makes an old policy
+        # modifier look live just because a compatibility XML was read after
+        # it.  Keep this in lockstep with civ6_fidelity.load_database().
+        if core:
+            for path in paths:
+                if REMOVE_DATA.match(path.name):
+                    modifiers.apply_file(path)
+        for path in paths:
             # Match the rules audit's baseline: optional game modes and
             # non-rules pack files are out of scope, so their modifiers are
             # not backlog.
-            if relative.startswith("DLC/") and PACK_EXCLUDE.search(path.name):
+            if core and REMOVE_DATA.match(path.name):
                 continue
-            modifiers.apply_file(path)
+            if core and CROSS_EXPANSION.search(path.name):
+                deferred.append(path)
+            elif not core and PACK_EXCLUDE.search(path.name):
+                continue
+            else:
+                modifiers.apply_file(path)
+    # Rise and Fall's Gathering Storm compatibility overlay must run after the
+    # two ordinary expansion passes, just as the game does.
+    for path in deferred:
+        modifiers.apply_file(path)
     return modifiers
 
 
@@ -365,11 +474,11 @@ def census(modifiers: Modifiers) -> list[dict]:
     collections_by_effect: dict[str, collections.Counter] = collections.defaultdict(
         collections.Counter
     )
-    for modifier_id in modifiers.rows:
+    for modifier_id in sorted(modifiers.active_modifier_ids()):
         effect, collection = modifiers.resolve(modifier_id)
         counts[effect] += 1
         collections_by_effect[effect][collection] += 1
-        for table in modifiers.attachments.get(modifier_id) or ["(unattached)"]:
+        for table in modifiers.attachments.get(modifier_id) or ["(nested modifier)"]:
             owners[effect][table] += 1
     coverage = load_coverage()
     out = []
@@ -399,8 +508,9 @@ def report(entries: list[dict], modifiers: Modifiers, install: Path, limit: int)
         "",
         f"Reference: `{install}` (Gathering Storm load order).",
         "",
-        f"{total} modifier rows across {len(entries)} distinct effects, bound by "
-        f"{len(modifiers.attachments)} attachments.",
+        f"{total} active modifier rows across {len(entries)} distinct effects, "
+        f"rooted at {sum(modifier_id in modifiers.rows for modifier_id in modifiers.attachments)} "
+        "direct attachments.",
         "",
         "| Status | Effects | Rows | Share |",
         "|---|---:|---:|---:|",
@@ -546,12 +656,12 @@ def main() -> int:
 
     if args.effect:
         wanted = args.effect if args.effect.startswith("EFFECT_") else f"EFFECT_{args.effect}"
-        for modifier_id in sorted(modifiers.rows):
+        for modifier_id in sorted(modifiers.active_modifier_ids()):
             effect, collection = modifiers.resolve(modifier_id)
             if effect != wanted:
                 continue
             arguments = modifiers.arguments.get(modifier_id, {})
-            attached = modifiers.attachments.get(modifier_id) or ["(unattached)"]
+            attached = modifiers.attachments.get(modifier_id) or ["(nested modifier)"]
             objects = list(modifiers.owners.get(modifier_id) or [])
             objects += [""] * (len(attached) - len(objects))
             owners = ", ".join(
