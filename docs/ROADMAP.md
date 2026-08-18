@@ -62,8 +62,36 @@ Everything the old roadmap called planned has shipped and then some:
    portfolio search now auto-activates for promoted `AdvancedAi` on the 20×20
    Battlefield, is measured on the skirmish benchmark, and leaves native-world
    and frozen-anchor identities unchanged.
-5. **Split the three conflict hotspots** (`src/game.rs`, `src/ai/advanced.rs`,
-   `web/assets/app.js`) along existing seams; they tax every concurrent PR.
+5. **Relieve the measured conflict hotspots**, which are not the three this
+   objective used to name. Measured over the 200 merges preceding 2026-08-18
+   (`tools/conflict_hotspots.py`; CI checks the targets below are real):
+
+   | file | merges touching it | why it is contended |
+   |---|---:|---|
+   | `src/ai/advanced.rs` | 26% | size — one 19.8k-line impl block |
+   | `src/main.rs` | 20% | one shared line: the source-contract re-pin |
+   | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
+   | `src/bin/civvis_orders.rs` | 17% | one shared list: the `--without` arms |
+   | `src/game.rs` | 16% | size |
+
+   The old list was built from file size, and size is not the tax. `elo.rs` is
+   a seventh of `game.rs`'s length and is contended more often. And
+   `web/assets/app.js` — the third-largest file in the repository, and one of
+   the three this objective used to name — is touched by **one merge in fifty**;
+   it is off the list, because splitting a file nobody edits costs a large diff
+   and buys nothing.
+
+   **Two problems, two remedies.** Splitting along seams answers the ones
+   contended for their size — `advanced.rs`, then `game.rs`. It does nothing
+   for `main.rs`, `elo.rs` and `civvis_orders.rs`, where every treatment PR
+   appends to *one shared line or list*: two such PRs conflict whatever the
+   file's length, and the fix is to move that data out of source, the way
+   `docs/eval/` did it for `docs/EVAL.md`'s single append point.
+
+   ⚠ Touch rate is exposure, not pain — two PRs editing distant parts of one
+   file do not collide. Real conflict counts are not recoverable from `main`,
+   because a squash merge records the resolution and never the collision. The
+   ranking is what the available evidence supports; a conflict count is not.
 6. **Delete measured-null code.** ✅ The 2026-08-17 cleanup removes the
    confirmed-null `bounded_recovery` and `envoy_infrastructure` arms from
    production while retaining explicit evaluator/live-bridge controls and
