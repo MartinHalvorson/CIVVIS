@@ -141,6 +141,21 @@ jobs:
       # canonical hashes and its deliberate negative mutation to stay stable.
       - name: Differential fidelity golden ratchet
         run: python3 tools/check_differential_golden.py
+      # `civvis_inert.py` has documented `--max 0` as its "CI ratchet" since it
+      # was written, and no workflow ever called it. It needs nothing but the
+      # repository, so there was no obstacle — it simply was not wired in, and a
+      # data key whose consumer is refactored away goes on doing nothing with
+      # every gate green. That is exactly the failure its own docstring
+      # describes: the Sphinx kept two dead effects through fourteen iterations.
+      #
+      # ⚠ The ratchet is 1, not 0, and the one is a REAL defect rather than an
+      # accepted one: `force_retreat` is Poland's Winged Hussar ability, present
+      # in `data/units.json` and read by nothing, so the unit is a plain
+      # Cuirassier replacement. Genuinely descriptive keys are waived by name in
+      # `tools/inert_waivers.json` with the reason; this one is not waived
+      # because it should be fixed. Lower the number when it is.
+      - name: Rules data has no effect key the engine ignores
+        run: python3 tools/civvis_inert.py --max 1
 
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
@@ -348,15 +363,27 @@ jobs:
               print(f"::warning::only ~{200 - slots} local slot(s) left; prefer "
                     "a bare global for anything new at the top level")
           PY
-      - name: Blocker ownership and the residual census
-        run: lua5.1 tools/civ6_control/mod/residual_census_test.lua
-      - name: Envoy spend order
-        run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
-      - name: Stranded settler gate
-        run: lua5.1 tools/civ6_control/mod/stranded_settler_test.lua
-      - name: Direct peace submission
-        run: lua5.1 tools/civ6_control/mod/peace_submission_test.lua
-      - name: World Congress leader selection
-        run: lua5.1 tools/civ6_control/mod/congress_leader_test.lua
-      - name: World Congress penalty-ballot target
-        run: lua5.1 tools/civ6_control/mod/victory_threat_test.lua
+      # ⚠ DISCOVERED, NOT LISTED — THE LIST WAS THE BUG TWICE ALREADY.
+      #
+      # These six were named one per step, which is the same shape that left
+      # twenty-five `tools/` suites ungated (fixed in collaboration-policy.yml)
+      # and one of `beta/`'s six scripts broken for two separate reasons with
+      # nobody running it (#1905). The list happens to be complete today; what
+      # it cannot do is stay complete on its own, and a mod test that no gate
+      # runs fails inside Civilization VI on a machine with a 45-minute
+      # feedback loop.
+      #
+      # Fails when the glob comes up empty, so a rename cannot quietly empty
+      # the gate the way a hand-written list quietly shrinks it.
+      - name: Every mod test the tree ships
+        run: |
+          shopt -s nullglob
+          tests=(tools/civ6_control/mod/*_test.lua)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "no mod tests discovered - the glob or the naming moved"
+            exit 1
+          fi
+          for t in "${tests[@]}"; do
+            echo "== $t"
+            lua5.1 "$t"
+          done

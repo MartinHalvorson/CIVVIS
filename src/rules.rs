@@ -1648,6 +1648,19 @@ pub struct Rules {
     pub civic_ancestors: SpecMap<BTreeSet<String>>,
     /// Which effect keys each family of specs declares at all.
     pub effect_index: EffectIndex,
+    /// For each district, the family each of its adjacency keys names — in
+    /// `DistrictSpec::adjacency`'s own key order, `None` for a key that is not
+    /// a district at all.
+    ///
+    /// The district adjacency count table resolves a key like
+    /// `government_plaza` by interning it and walking `replaces`. It runs
+    /// once per (plot, district, key), and a settlement scan asks it for
+    /// nineteen plots at each of ~154 candidate sites: about twenty million
+    /// `Name::new` calls in a six-player game, each one an `RwLock` read and a
+    /// hash. `Name::new`'s own documentation says it belongs at the edges and
+    /// that hot code should carry a `Name` it was given. This is that edge —
+    /// the keys are fixed when the ruleset loads and never change afterwards.
+    pub district_adjacency_families: SpecMap<Vec<Option<Name>>>,
 }
 
 /// The effect keys each family of specs actually grants something towards.
@@ -2739,6 +2752,7 @@ impl Rules {
             tech_ancestors: SpecMap::default(),
             civic_ancestors: SpecMap::default(),
             effect_index: EffectIndex::default(),
+            district_adjacency_families: SpecMap::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -2795,7 +2809,52 @@ impl Rules {
         rules.tech_ancestors = ancestry(&rules.techs);
         rules.civic_ancestors = ancestry(&rules.civics);
         rules.effect_index = rules.build_effect_index();
+        rules.district_adjacency_families = rules.build_district_adjacency_families();
         Ok(rules)
+    }
+
+    /// Resolve every district-naming adjacency key to the family it counts,
+    /// once. See [`Rules::district_adjacency_families`].
+    ///
+    /// The membership test is `SpecMap::contains_key(&str)`, which probes by
+    /// string hash and does not intern, so this is exactly the guard the count
+    /// table applies — and because every key that passes it was already
+    /// interned as a district id at load, the `Name::new` below cannot hand
+    /// out a new id.
+    fn build_district_adjacency_families(&self) -> SpecMap<Vec<Option<Name>>> {
+        self.districts
+            .iter()
+            .map(|(district, spec)| {
+                let families = spec
+                    .adjacency
+                    .keys()
+                    .map(|key| {
+                        self.districts
+                            .contains_key(key.as_str())
+                            .then(|| self.district_family_of(Name::new(key.as_str())))
+                    })
+                    .collect::<Vec<_>>();
+                (district.to_string(), families)
+            })
+            .collect()
+    }
+
+    /// The base family `district` replaces, following the chain. The
+    /// ruleset-side twin of `Game::district_family`, which cannot be used here
+    /// because no `Game` exists while the ruleset is still being built.
+    fn district_family_of(&self, district: Name) -> Name {
+        let mut current = district;
+        for _ in 0..self.districts.len() {
+            let Some(parent) = self
+                .districts
+                .get_interned(current)
+                .and_then(|spec| spec.replaces)
+            else {
+                break;
+            };
+            current = parent;
+        }
+        current
     }
 
     /// Index which effect keys each family of specs declares. See
