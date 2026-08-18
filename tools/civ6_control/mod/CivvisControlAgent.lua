@@ -11184,10 +11184,44 @@ local function beginTurn(player, pid, turn)
 				end, 0)) or 0 };
 			end
 		end
+		local favorNow = tonumber(try(function() return player:GetFavor(); end, 0)) or 0;
 		emit("wc_outcome", {
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
-			favor = tonumber(try(function() return player:GetFavor(); end, 0)) or 0,
+			favor = favorNow,
 		});
+		-- ★★★★★ AND THE HALF THAT MAKES THE BALLOT A CHECK INSTEAD OF A CLAIM.
+		--
+		-- `wc_vote` has always reported what the ballot INTENDED -- `cast 3,
+		-- spent 612` -- and nothing ever compared that with what the host went
+		-- on to record. It recorded one vote, every time, for 961 resolutions
+		-- across 29 runs, and the Favor was never taken. An operation that is
+		-- queued and then silently declined is indistinguishable from one that
+		-- worked, unless something reads the result back.
+		--
+		-- This is that read. `PlayerSelections` above is the host's own count
+		-- for our seat; the ask is what this turn's ballot sent. `registered`
+		-- being false is the defect reporting itself, per resolution, with the
+		-- Favor readings that priced it -- which is what the next repair needs
+		-- and what no run so far has had.
+		if type(envoyTally.ballot_ask) == "table" then
+			for _, r in ipairs(resolutions) do
+				local ask = envoyTally.ballot_ask[r.type];
+				if type(ask) == "table" and type(r.ours) == "table" then
+					local recorded = tonumber(r.ours.votes) or 0;
+					local asked = tonumber(ask.votes) or 0;
+					emit("wc_ballot_verdict", {
+						turn = turn, resolution = r.type,
+						asked = asked, recorded = recorded,
+						registered = recorded >= asked,
+						option_asked = ask.option, option_recorded = r.ours.option,
+						favor_at_ballot = envoyTally.ballot_favor_now,
+						favor_entering_congress = envoyTally.ballot_favor_entering,
+						favor_now = favorNow,
+					});
+				end
+			end
+			envoyTally.ballot_ask = {};
+		end
 	end);
 	-- ★★★★ AN EMPIRE WITH NO CITIES IS DEFEATED, AND `PlayerDefeat` DOES NOT SAY SO.
 	--
@@ -11525,7 +11559,43 @@ local function tick()
 			local costs = wc:GetVotesandFavorCost(pid);
 			if type(resolutions) ~= "table" then return 0, 0, "no_resolutions"; end
 			if type(costs) ~= "table" then costs = {}; end
-			local favor = try(function() return Players[pid]:GetFavor(); end, 0) or 0;
+			-- ★★★★★ NINE HUNDRED AND SIXTY-ONE RESOLUTIONS, ONE VOTE EVERY TIME.
+			--
+			-- The ballot below has reported `spent 264-924` on every session
+			-- since #1766, and the host's own review has recorded our seat at
+			-- `votes = 1` on 961 of 961 resolutions across 29 recorded runs --
+			-- never once above the free vote -- while Favor rose monotonically
+			-- through every "spend" (run civvis-20260818T091159Z: 584, 676, 681,
+			-- 809, 816, 952 across four of them). Rivals cast 5 to 14. The
+			-- OPTION we choose does register, and changes when we change it, so
+			-- the operation reaches the core and only the extra votes are
+			-- refused: what is failing is the purchase, not the ballot.
+			--
+			-- The one difference from the shipped screen is the budget it is
+			-- priced against. `WorldCongressPopup.lua` reads
+			-- `GetFavorEnteringCongress()` for every stage of a live session and
+			-- `GetFavor()` only after it ends (line 466); this asked for as many
+			-- votes as CURRENT Favor could buy. Asking beyond what the core will
+			-- sell is a coherent explanation for a purchase that fails whole and
+			-- leaves the free vote standing.
+			--
+			-- So price it the way the screen does, and -- because that is a
+			-- hypothesis and not a finding -- record both readings and what the
+			-- host went on to record, rather than assuming this fixed it. The
+			-- lower of the two cannot lose a vote we are already not getting.
+			-- `wc_ballot_verdict`, emitted beside the next `wc_outcome`, is the
+			-- half that settles it.
+			local favorNow = tonumber(try(function() return Players[pid]:GetFavor(); end, 0)) or 0;
+			local favorEntering = tonumber(try(function()
+				return Players[pid]:GetFavorEnteringCongress();
+			end, nil));
+			local favor = favorNow;
+			if favorEntering ~= nil and favorEntering >= 0 and favorEntering < favor then
+				favor = favorEntering;
+			end
+			envoyTally.ballot_favor_now = favorNow;
+			envoyTally.ballot_favor_entering = favorEntering;
+			envoyTally.ballot_ask = {};
 			-- The diplomatic-victory leader among the others.  Keep this sampling
 			-- beside the actual vote: it is the host API contract and exposes a
 			-- useful DVP/score snapshot to the pure selector below.
@@ -11730,6 +11800,11 @@ local function tick()
 						UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
 					end);
 					if sent then cast = cast + 1; end
+					-- What this ballot ASKED for, per resolution, so the next
+					-- review can be compared with it rather than trusted. `pcall`
+					-- reports only that the call did not raise; the host's own
+					-- `PlayerSelections` is the only thing that reports a vote.
+					envoyTally.ballot_ask[rtype] = { votes = votes, option = option };
 				end
 			end
 			pcall(function()
