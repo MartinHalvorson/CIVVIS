@@ -41,7 +41,7 @@
     "withholdable": 54
   },
   "derived": {
-    "eval_only_count": 218,
+    "eval_only_count": 219,
     "firaxis_only_count": 24,
     "live_bridge_count": 78,
     "native_engine_repair_count": 54,
@@ -208,7 +208,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 218,
+      "declared_count": 219,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -385,6 +385,7 @@
         "advanced_every_lane",
         "advanced_builder_survey",
         "advanced_unit_efficiency",
+        "advanced_wonder_reach",
         "advanced_without_unpriced_economy",
         "advanced_without_unpriced_war",
         "advanced_without_city_defence",

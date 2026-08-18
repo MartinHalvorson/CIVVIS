@@ -24956,3 +24956,237 @@ fn envoy_income_census() {
     }
     println!();
 }
+
+/// The wonder-prerequisite credit ships off everywhere: the production
+/// incumbent and the frozen anchor score builds exactly as they did before
+/// the arm existed.
+#[test]
+fn the_wonder_reach_flag_is_off_in_every_shipping_constructor() {
+    assert!(
+        !AdvancedAi::new().wonder_prereq_reach,
+        "the production incumbent must not carry the reach credit"
+    );
+    assert!(
+        !AdvancedAi::legacy().wonder_prereq_reach,
+        "the frozen anchor must not carry the reach credit"
+    );
+}
+
+/// A Culture city that values the Great Library but owns neither the Library
+/// nor a Campus pays both prerequisites a share of the wonder's own score —
+/// and the flag is what routes the credit, so the same menu without the arm
+/// is unchanged.
+#[test]
+fn a_valued_wonder_credits_the_prerequisites_that_unblock_it() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut control = AdvancedAi::new();
+    control.refresh_research_weight(&game);
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+
+    let wonder = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos: game.cities[&city].pos,
+    };
+    let wonder_score = treated.production_value(&game, 0, city, &wonder, &plan, &counts);
+    assert!(
+        wonder_score > 0.0,
+        "the fixture wonder must clear the arm's own gates: {wonder_score}"
+    );
+
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    let library_credit = credits
+        .get(&crate::name!("library"))
+        .copied()
+        .unwrap_or(0.0);
+    let campus_credit = credits.get(&crate::name!("campus")).copied().unwrap_or(0.0);
+    let expected = wonder_score * WONDER_REACH_SHARE / 2.0;
+    assert!(
+        library_credit >= expected && campus_credit >= expected,
+        "both missing steps carry at least the Great Library's split share \
+         ({expected}): library {library_credit}, campus {campus_credit}"
+    );
+
+    let campus_site = game
+        .district_sites(city, crate::name!("campus"))
+        .into_iter()
+        .next()
+        .expect("a legal Campus site");
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: campus_site,
+    };
+    let with_credit = treated.production_value(&game, 0, city, &campus, &plan, &counts);
+    let without_credit = control.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        with_credit > without_credit + expected * 0.9,
+        "the Campus menu entry must carry the wonder credit: \
+         {with_credit} vs {without_credit}"
+    );
+
+    // Once the Campus stands, the Library is the single missing step and its
+    // credit doubles: one step left of two, same wonder behind it.
+    install_ai_test_district(&mut game, city, "campus");
+    let treated = {
+        let mut ai = AdvancedAi::new();
+        ai.enable_wonder_prereq_reach();
+        ai.refresh_research_weight(&game);
+        ai
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    let library_only = credits
+        .get(&crate::name!("library"))
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        !credits.contains_key(&crate::name!("campus")),
+        "a standing Campus is no longer a missing prerequisite"
+    );
+    assert!(
+        library_only > library_credit * 1.5,
+        "the last missing step concentrates the credit: \
+         {library_only} vs split {library_credit}"
+    );
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    let with_credit = treated.production_value(&game, 0, city, &library, &plan, &counts);
+    let without_credit = control.production_value(&game, 0, city, &library, &plan, &counts);
+    assert!(
+        with_credit > without_credit + library_only * 0.9,
+        "the Library menu entry must carry the concentrated credit: \
+         {with_credit} vs {without_credit}"
+    );
+}
+
+/// A wonder the `Item::Wonder` arm refuses — here because the plan opens no
+/// wonder lane — earns its prerequisites nothing: the credit is a share of
+/// the arm's own score, never an independent opinion.
+#[test]
+fn a_refused_wonder_earns_its_prerequisites_nothing() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    assert!(
+        !matches!(game.players[0].civ.as_str(), "Egypt" | "China"),
+        "the fixture seat must not be a wonder civilization, whose lane is \
+         open under any plan: {}",
+        game.players[0].civ
+    );
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        credits.is_empty(),
+        "no lane, no credit — the ledger must be empty, got {credits:?}"
+    );
+}
+
+/// A wonder that already stands anywhere in the world pays nothing: its race
+/// is over, and its prerequisites are back to their own merits.
+#[test]
+fn a_built_wonder_stops_paying_its_prerequisites() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        credits.contains_key(&crate::name!("library")),
+        "before anyone builds it, the Great Library must be paying its \
+         prerequisites, got {credits:?}"
+    );
+
+    // The wonder goes up — anywhere in the world serves; `world_stamp`
+    // tracks `city.wonders`, so the standing census sees it.
+    let home_pos = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("great_library"), home_pos);
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        !credits.contains_key(&crate::name!("library"))
+            && !credits.contains_key(&crate::name!("campus")),
+        "a wonder that already stands must stop crediting Library and \
+         Campus, got {credits:?}"
+    );
+}

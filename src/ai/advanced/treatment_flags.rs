@@ -1233,6 +1233,18 @@ impl AdvancedAi {
         self.builder_reward_survey = true;
     }
 
+    /// Credit a wonder's missing prerequisite buildings/districts with a
+    /// share of the wonder's own production score. Evaluator arm
+    /// `advanced_wonder_reach`; off in production.
+    pub fn enable_wonder_prereq_reach(&mut self) {
+        self.wonder_prereq_reach = true;
+    }
+
+    /// Withhold the wonder-prerequisite credit. Evaluator-only.
+    pub fn disable_wonder_prereq_reach(&mut self) {
+        self.wonder_prereq_reach = false;
+    }
+
     /// Credit strength-per-production and the civ's own unique unit in the
     /// military production arm. Evaluator arm `advanced_unit_efficiency`;
     /// off in production.

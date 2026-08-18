@@ -252,6 +252,11 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_every_lane",
     "advanced_builder_survey",
     "advanced_unit_efficiency",
+    // A wonder's missing prerequisite buildings/districts are credited with a
+    // share of the wonder's own production score, so valued wonders become
+    // reachable instead of never offered. Reserved matrix seed 32000000; one
+    // pre-registered run.
+    "advanced_wonder_reach",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -885,6 +890,7 @@ define_arm_kinds! {
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
+    AdvancedWonderReach => "advanced_wonder_reach",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -3285,6 +3291,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
+        // A wonder blocked only by missing buildings/districts prices those
+        // prerequisites with a share of its own wonder-arm score, so the
+        // build order can walk toward wonders it values instead of waiting
+        // to qualify by accident. Reserved matrix seed 32000000.
+        "advanced_wonder_reach" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_wonder_prereq_reach();
+            Box::new(ai)
+        }
         // Price the promoted open-water rule by taking it back out. The
         // enqueue path gated on `city_is_coastal`, and a lake is water, so a
         // lakeside city built Galleys that never left the lake: 20 of 53 major
@@ -4427,6 +4442,7 @@ impl ArmKind {
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
+            Self::AdvancedWonderReach => &["wonder-prereq-reach"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4936,6 +4952,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
+        "advanced_wonder_reach" => (Vec::new(), "advanced_wonder_reach"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -6378,6 +6395,7 @@ mod tests {
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
+                "advanced_wonder_reach",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
