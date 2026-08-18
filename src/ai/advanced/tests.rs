@@ -29,12 +29,17 @@
 /// here, naming itself.
 #[test]
 fn live_bundle_and_registry_agree() {
-    let source = include_str!("../advanced.rs");
-    // ⚠ The registry rows live in `treatments.rs` and the bundle in
-    // `advanced.rs`, so the join reads both. Splitting a file must not quietly
-    // narrow a check that scrapes it: this test's whole subject is a fact that
-    // spans the two, and reading only the first would have gone green on an
-    // empty registry.
+    // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles
+    // in `treatment_flags.rs`, and `advanced.rs` still holds everything else.
+    // Splitting a file must not quietly narrow a check that scrapes it: this
+    // test's whole subject is a fact that spans them, and reading only one
+    // would have gone green on an empty registry. So the scrape reads the
+    // controller's whole text — the concatenation, not a named half — and
+    // survives the next move as it survived the last one.
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
     let registry = include_str!("treatments.rs");
     let start = source
         .find("pub fn enable_live_bridge(&mut self) {")
