@@ -64,11 +64,16 @@ def version_lane(lane: pathlib.Path) -> None:
     shim_path = lane / "shim.js"
     worker_path = lane / "worker.js"
     wasm_path = lane / "civvis.wasm"
-    # The viewer's script moved out of the page into assets/app.js (#1289).
-    # A lane pinned to a revision from before that — the stable lane routinely
-    # is — keeps the script inline in index.html and ships no app.js, so its
-    # absence is a shape, not an error.
-    app_js_path = lane / "assets" / "app.js"
+    # The viewer's scripts moved out of the page into assets/*.js (#1289, and
+    # further carves since). A lane pinned to a revision from before that — the
+    # stable lane routinely is — keeps the script inline in index.html and ships
+    # none of them, so an empty list is a shape, not an error.
+    #
+    # ⚠ EVERY SCRIPT, NOT `app.js`. Naming one file meant a later carve's atlas
+    # references were never content-versioned, so a stale atlas could be served
+    # from cache after the art changed — the exact staleness this module exists
+    # to prevent.
+    script_paths = sorted((lane / "assets").glob("*.js")) if (lane / "assets").is_dir() else []
     for required in (page_path, shim_path, worker_path, wasm_path):
         if not required.is_file():
             raise FileNotFoundError(f"published lane is missing {required.name}")
@@ -110,15 +115,15 @@ def version_lane(lane: pathlib.Path) -> None:
     )
     page_path.write_text(page, encoding="utf-8")
 
-    # The viewer's script (`assets/app.js`) carries the atlas references now.
-    # Version them inside the script first, so the script's own bytes — and
-    # therefore the hash the page requests it by — change whenever any atlas
-    # it names changes: the same dependency-hash chaining the generated shim
-    # uses for the wasm and worker. In a pre-app.js lane the references sit
-    # in the page and the page's own pass covers them.
+    # The viewer's scripts carry the atlas references now. Version them inside
+    # each script first, so a script's own bytes — and therefore the hash the
+    # page requests it by — change whenever any atlas it names changes: the same
+    # dependency-hash chaining the generated shim uses for the wasm and worker.
+    # In a pre-app.js lane the references sit in the page and the page's own
+    # pass covers them.
     referenced_assets = 0
-    if app_js_path.is_file():
-        referenced_assets += version_references(app_js_path, lane)
+    for script_path in script_paths:
+        referenced_assets += version_references(script_path, lane)
     referenced_assets += version_references(page_path, lane)
     if referenced_assets == 0:
         raise ValueError("published viewer contains no unversioned atlas references")

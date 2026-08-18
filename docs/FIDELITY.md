@@ -1412,12 +1412,20 @@ wildcards, and duplicate JSON keys, non-finite numbers, backwards turns and
 missing selected turns fail closed. Live tails may opt into one unterminated
 final line with `--allow-trailing-partial`; golden traces should not.
 
-This comparator does not yet pretend that a pair of traces is a full turn-0
-replay. The action injector and forced-randomness recorder still have to produce
-the candidate trace. Once they do, this boundary is the part that turns their
-output into a deterministic first-divergence test instead of a final-score
-eyeball check. The hermetic contract is pinned in
-`tools/test_civ6_differential.py`.
+The repository now carries a small sanitized transition spine in
+`tests/fixtures/differential/`. `tools/check_differential_golden.py` validates
+its strict frame keys and canonical payload hashes, compares a transport-
+reencoded candidate, and runs a deliberate mutation that must be reported at
+the changed JSON pointer. The committed `manifest.json` is a reviewable hash
+ratchet: changing a fixture or canonicalisation rules requires updating the
+expected transition proof in the same change.
+
+This corpus does not pretend to be a full turn-0 replay. The action injector
+and forced-randomness recorder still have to produce the candidate trace. Once
+they do, this boundary is the part that turns their output into a deterministic
+first-divergence test instead of a final-score eyeball check. The hermetic
+contract remains pinned in `tools/test_civ6_differential.py`, and the golden
+ratchet runs in the required CI test job.
 
 ## Determinism rules for engine code
 

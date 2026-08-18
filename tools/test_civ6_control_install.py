@@ -671,6 +671,20 @@ class ProtectedInstallTest(unittest.TestCase):
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         self.assertIn("spy_capacity = try(function()", source)
         self.assertIn("player:GetDiplomacy():GetSpyCapacity()", source)
+    def test_a_soldier_can_condemn_an_enemy_missionary(self) -> None:
+        # Religious units are excluded from ordinary combat by design, so
+        # Condemn Heretic is the only order that touches one. CIVVIS decided it
+        # all along and the bridge dropped it.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('"UNITCOMMAND_CONDEMN_HERETIC"', source)
+        block = source.split('if verb == "CONDEMN_HERETIC" then', 1)[1]
+        block = block.split("Anything else is a named operation", 1)[0]
+        # A COMMAND, not an operation — the two use different request APIs.
+        self.assertIn('CMD["UNITCOMMAND_CONDEMN_HERETIC"]', block)
+        self.assertIn("commandUnit(unit, hash, true)", block)
+        self.assertNotIn("operate(", block)
+        # An unresolved hash is named, never silently skipped.
+        self.assertIn('"unknown_cmd_"', block)
 
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits

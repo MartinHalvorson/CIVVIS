@@ -3521,6 +3521,24 @@ impl AdvancedAi {
         // `hut_collection` above only grabs one inside the current turn's
         // reach. `advanced_without_village_seeking` prices the withhold.
         ai.base.village_seeking = true;
+        // The reconnaissance quartet the live bridge has carried since its
+        // repair era: rebuild a lost scout (`recon_is_the_missing_arm` was
+        // dead code natively without `recon_replacement`), slip a threatened
+        // one away, put a hull on unseen water, and bring embarked explorers
+        // ashore. Promoted on the corrected-gate matrix at 400 pairs, seed
+        // stream 120000000 (`advanced_recon_fleet`, PR #1907's arm):
+        // deployment-online 55.0% (Wilson CI 50.1%..59.8%), Elo +35
+        // (CI +1..+69) — PASS with the interval clear of parity — and
+        // compact-standard 48.4% (CI 43.5%..53.3%) — no-regression ACCEPT.
+        // The mechanism is the fleet itself: recon peak 3.41 vs 1.47-1.74,
+        // revealed plots +54-79%, the board's villages 20% vs 9% won, and
+        // city-states met by t50 up by half. `advanced_without_recon_fleet`
+        // prices the withhold; `advanced_recon_fleet` is now a declared
+        // alias of `advanced`.
+        ai.enable_recon_replacement();
+        ai.enable_recon_flight();
+        ai.enable_naval_recon();
+        ai.enable_come_ashore();
         ai
     }
 
@@ -18230,26 +18248,36 @@ impl AdvancedAi {
                 -10_000.0
             }
             Item::Unit { unit } if unit == "settler" => {
-                let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
-                    g.players[pid]
-                        .techs
-                        .contains(&crate::name!("shipbuilding"))
-                        .then(|| {
-                            self.best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
-                        })
-                        .flatten()
-                });
-                let expansion_open = self.settler_expansion_window_open(g, pid, cid);
                 let in_flight_allowed = self.settler_in_flight_allowed(
                     plan.desired_cities,
                     city_count,
                     counts.settlers,
                 );
+                // ★★★★ ASK THE CHEAP QUESTIONS FIRST. The site scan below is
+                // the most expensive question in this arm — a valued sweep of
+                // a radius-11 disk, and once Shipbuilding is in, of the whole
+                // map — while the three gates beside it are integer
+                // comparisons that settle the arm outright. Every city that is
+                // not in the market for a Settler used to pay the sweep and
+                // then throw the answer away, and `production_value` runs this
+                // arm for every city on every review. Both the scan and the
+                // window are `&self` reads whose only writes are the
+                // settlement atlas (a value cache that recomputes identically
+                // on a miss), so skipping them changes no score and no order.
                 if city_count + counts.settlers < plan.desired_cities
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
-                    && expansion_open
+                    && self.settler_expansion_window_open(g, pid, cid)
                 {
+                    let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
+                        g.players[pid]
+                            .techs
+                            .contains(&crate::name!("shipbuilding"))
+                            .then(|| {
+                                self.best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
+                            })
+                            .flatten()
+                    });
                     if let Some(site) = site {
                         if self.coupled_expansion {
                             self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
@@ -20863,15 +20891,18 @@ impl AdvancedAi {
         // The old candidate loop asked every city whether it was within the
         // four-tile founding exclusion radius. Global searches can visit the
         // whole Ludicrous map, so materialize that small union once instead
-        // of repeating a city scan for every tile.
-        let city_exclusion = (radius > 12)
-            .then(|| {
-                g.cities
-                    .values()
-                    .flat_map(|city| g.wdisk(city.pos, 3))
-                    .collect::<BTreeSet<_>>()
-            })
-            .unwrap_or_default();
+        // of repeating a city scan for every tile. The union was built only
+        // for `radius > 12`, which left the two radii the settler path
+        // actually walks — the radius-8 local pass and the radius-11 scan the
+        // Settler production arm runs for every city — paying an O(cities)
+        // `wdist` scan per plot of the disk. `wdisk(pos, 3)` is exactly the
+        // set of plots at `wdist <= 3`, so the union answers the same
+        // question at every radius.
+        let city_exclusion = g
+            .cities
+            .values()
+            .flat_map(|city| g.wdisk(city.pos, 3))
+            .collect::<BTreeSet<_>>();
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -20885,11 +20916,7 @@ impl AdvancedAi {
                     || g.rules.is_water(tile)
                     || !g.rules.is_passable(tile)
                     || g.tile_is_natural_wonder(tile)
-                    || if radius > 12 {
-                        city_exclusion.contains(&pos)
-                    } else {
-                        g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
-                    }
+                    || city_exclusion.contains(&pos)
                     || tile
                         .owner_city
                         .is_some_and(|cid| g.cities[&cid].owner != pid)
@@ -20921,12 +20948,18 @@ impl AdvancedAi {
         // all ~154 of them is work it can never read. Leave those positions to
         // `settlement_atlas_value`'s own on-demand fill, which caches into the
         // same atlas and so still serves a later ranking scan this turn.
+        //
+        // ★★★★ THE PREFILTER ONLY SAVES WHAT IT DOES NOT PRE-VALUE. The split
+        // above exists so the expensive value is paid for the top `limit`
+        // candidates alone, and the batch handed the overflow straight back —
+        // every plot the prefilter had just excluded was valued anyway, one
+        // 19-plot × districts adjacency sweep each. The overflow is read only
+        // by the `sites.is_empty()` fallback below, which reaches
+        // `settlement_atlas_value` per plot on demand and computes the
+        // identical number there. Same reasoning as the line above, one gate
+        // further in.
         if self.settlement_safety && self.battlefront_frame.is_some() && !stop_at_first {
-            let atlas_positions = candidates
-                .iter()
-                .chain(overflow.iter())
-                .map(|(pos, _)| *pos)
-                .collect::<Vec<_>>();
+            let atlas_positions = candidates.iter().map(|(pos, _)| *pos).collect::<Vec<_>>();
             self.settlement_atlas_values(g, pid, &atlas_positions);
         }
         let mut score_site = |pos| {

@@ -505,3 +505,88 @@ to demonstrate strength.
 That is an argument for measuring the settlement search's *value* at its current
 breadth — not for cutting it blind. A narrower scan is a play change and has to
 clear the same gate as any other.
+## The expansion scan: four skipped questions (2026-08-17)
+
+The July profile above ranked *leaves*. The 2026-08-17 settler profile ranked
+*subsystems* and found the settlement scan holding a fifth of the run, so this
+round asked a different question — not "which operation is expensive" but
+"which expensive derivation is computed and then discarded". Four were, and
+removing them is the largest single-round CPU result recorded in this file.
+
+Every change below is answer-identical by construction: it changes *whether* a
+value is computed, never how. That claim is checked, not asserted — the four
+150-turn, six-player, 74-by-46, nine-city-state, online-speed reports at seeds
+7,320,000–7,320,003 are byte-identical to the baseline after the elapsed-time
+line is removed, and `advanced_v1_plays_the_same_game_it_always_did` — the
+anchor fingerprint over every action the frozen controller applies across five
+profiles — is unchanged.
+
+### 1. The Settler arm valued a site it had already decided not to build
+
+`production_value`'s Settler arm opened with `best_settle_site(g, pid,
+city.pos, 11)`, plus a whole-map scan once Shipbuilding is in, and then read
+that site only inside a gate made of three integer comparisons and a window
+test. Every city that was not in the market for a Settler — most cities, most
+reviews, and `production_value` runs the arm for each of them — paid a valued
+sweep of a 331-plot disk and threw the answer away. The gate now runs first.
+
+### 2. The global prefilter pre-valued the candidates it had just excluded
+
+`settle_sites_with_limit_cached` splits candidates at
+`SETTLEMENT_GLOBAL_PREFILTER_LIMIT` so the expensive site value is paid for the
+top 512 alone — and then handed `candidates.chain(overflow)` to the atlas,
+which valued the overflow anyway. The prefilter saved nothing it did not
+immediately give back. The overflow is read only by the `sites.is_empty()`
+fallback, which reaches `settlement_atlas_value` per plot on demand and
+computes the identical number there.
+
+### 3. The founding-exclusion union was built for the radius that never runs
+
+The union of `wdisk(city.pos, 3)` was materialized only for `radius > 12`,
+leaving the two radii the expansion path actually walks — the radius-8 local
+pass and the radius-11 scan in the Settler arm — running an O(cities) `wdist`
+scan for every plot of the disk. `wdisk(pos, 3)` is exactly the set of plots at
+`wdist <= 3`, so the union answers the same question at every radius.
+
+### 4. `adjacent_land` was computed for six placement rules that never read it
+
+`plot_fits_placement_with_neighbors` runs once per (plot, district) — six times
+per plot for a stock civilization, across nineteen plots per site. It computed
+`adjacent_land` (six map lookups and six water tests) eagerly, and only the
+`coast`/`water_park` arm reads it. Moved into that arm. In the same table,
+three `Name`-versus-literal comparisons in the district adjacency count
+(`terrain == "mountain"`, `feature == Some("forest")`, `Some("jungle")`) became
+interned `name!` comparisons: a `Name`/`&str` compare loads the entry out of
+the 32,768-slot registry and then compares text, while `Name`/`Name` is one
+integer compare, and interning is injective so the answer cannot differ. The
+key's family name in the district-name arm is now interned once per key instead
+of once per neighbour.
+
+### Result
+
+Paired A/B, alternating baseline and candidate seed by seed so host load falls
+on both equally; `ci` profile, `--jobs 1`, eight games per arm.
+
+| comparison | baseline user CPU | candidate user CPU | change |
+| --- | ---: | ---: | ---: |
+| changes 1–3 vs the branch point | 101.49s | 90.03s | −11.3% |
+| change 4 vs changes 1–3 | 83.01s | 78.81s | −5.1% |
+| all four vs `origin/main` after #1911 | 91.61s | 75.19s | **−17.9%** |
+
+The last row is the one that matters and it is larger than the first two
+compounded, because #1911's `stop_at_first` landed in between: an existence
+query now stops at the first qualifying site *and* no longer pre-values the
+overflow behind it. The two changes multiply rather than overlap.
+
+### What this round says about the standing rule
+
+The file's standing rule after eight consecutive nulls was: *the payer is an
+expensive derivation that is recomputed, not a cheap operation that is
+frequent.* All four wins above are the same shape and sharpen it by one word —
+**recomputed or discarded**. Nothing here made an operation faster. Three of
+the four removed a derivation whose result was never read, and the fourth moved
+one behind the branch that reads it. The rejected experiments recorded earlier
+in this file — interned effect maps, route scratch reuse, traversal profiles —
+all tried to make frequent cheap work cheaper, and all measured null or worse.
+That asymmetry is now eight nulls against four wins, and it has never gone the
+other way.
