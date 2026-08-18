@@ -41,6 +41,39 @@ class ProductionActuatorTests(unittest.TestCase):
         self.assertLess(predicate, rejection)
         self.assertLess(rejection, request)
 
+    def test_next_build_lease_is_deferred_until_the_blocker(self) -> None:
+        start = self.source.index('if kind == "produce_next" then')
+        end = self.source.index('if kind == "produce" then', start)
+        hint = self.source[start:end]
+        self.assertIn('civvisBuild[tostring(cityId) .. ":next"] = resolved', hint)
+        self.assertIn('emit("build_hint"', hint)
+        self.assertNotIn("CityManager.RequestOperation", hint)
+        self.assertRegex(
+            self.choose,
+            r'civvisBuild\[cityId\]\s*\n\s*or civvisBuild\[tostring\(cityId\) .. ":next"\]',
+        )
+        self.assertNotIn("civvisNextBuild", self.source)
+
+    def test_next_build_lease_is_not_counted_as_host_applied_rate(self) -> None:
+        apply_orders = self.source.split("local function applyOrders", 1)[1]
+        self.assertIn('kind == "produce_next"', apply_orders)
+        self.assertRegex(
+            apply_orders,
+            re.compile(
+                r'if kind == "produce_next" then.*?deferred = deferred \+ 1;.*?'
+                r'else\s+applied = applied \+ 1;',
+                re.DOTALL,
+            ),
+        )
+        self.assertIn("seen = #rows - deferred", apply_orders)
+        self.assertIn("orders_deferred = deferred", apply_orders)
+
+    def test_next_build_lease_is_consumed_after_a_successful_start(self) -> None:
+        consume = self.source.index('if civvisBuild[tostring(cityId) .. ":next"] == name then')
+        request = self.source.rfind("CityManager.RequestOperation", 0, consume)
+        self.assertLess(request, consume)
+        self.assertIn('civvisBuild[tostring(cityId) .. ":next"] = nil', self.source[consume:])
+
     def test_army_rung_is_bounded_and_era_proof(self) -> None:
         self.assertRegex(
             self.choose,

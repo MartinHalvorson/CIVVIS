@@ -409,6 +409,26 @@ struct Order {
     pos: Option<(i32, i32)>,
 }
 
+/// Marker kept in `ours` while a `produce_next` lease is waiting for the host
+/// queue to finish.  It prevents the next fresh planning board from releasing
+/// the still-running item as foreign before the blocker consumes the lease.
+const DEFERRED_PRODUCTION_PREFIX: &str = "__civvis_next__:";
+
+/// Whether a host-reported queue is expected to finish during this turn.
+///
+/// A next-build hint is only safe when the current item is already paid for by
+/// the city's own production forecast.  Unknown host metrics deliberately do
+/// not qualify: guessing would turn a deferred handoff into an early queue
+/// replacement, which is the exact actuation bug this path is meant to avoid.
+fn host_production_finishes_this_turn(city: &mirror::StateCity) -> bool {
+    city.producing.is_some()
+        && city.production >= 0.0
+        && city.production_cost > 0.0
+        && city.production_progress >= 0.0
+        && (city.production_turns >= 0.0 && city.production_turns <= 1.0 + f64::EPSILON
+            || city.production_progress + city.production + f64::EPSILON >= city.production_cost)
+}
+
 /// Firaxis remembers a submitted peace offer per target for five turns.
 ///
 /// `CivvisControlAgent.lua` rejects another offer while
@@ -1389,6 +1409,102 @@ impl Order {
     }
 }
 
+/// Add deferred production choices for host queues that will finish this turn.
+///
+/// The ordinary `produce` orders still actuate immediately.  These hints are a
+/// separate, non-mutating order kind: the Lua controller stores them and uses
+/// one only if the corresponding city later raises its production blocker.  A
+/// city with a direct choice is intentionally excluded because replacing its
+/// queue would make the hint race the decision it is meant to follow.
+fn append_next_production_hints(
+    ai: &civvis::ai::AdvancedAi,
+    planned_game: &civvis::game::Game,
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    ours: &mut std::collections::BTreeMap<i64, String>,
+) -> usize {
+    let mut hinted = 0;
+    for city in &state.cities {
+        if !host_production_finishes_this_turn(city)
+            || orders
+                .iter()
+                .any(|order| order.kind == "produce" && order.subject == Some(city.id))
+        {
+            continue;
+        }
+        let Some(cid) = mirror_state.cid_of.get(&city.id).copied() else {
+            continue;
+        };
+        let Some(item) = ai.preview_live_production(planned_game, 0, cid) else {
+            continue;
+        };
+        let Some(name) = civ6_live_build_name(&item, planned_game) else {
+            continue;
+        };
+        // The hint is a CIVVIS choice that the host has not consumed yet.  Keep
+        // a marker in the persistent production ownership map so the next mirror
+        // does not classify the still-running queue as foreign and immediately
+        // release it.  `settle_deferred_production_hints` removes the marker once
+        // the host reports the hinted item as its current queue.
+        ours.insert(city.id, format!("{DEFERRED_PRODUCTION_PREFIX}{name}"));
+        orders.push(Order {
+            kind: "produce_next",
+            subject: Some(city.id),
+            verb: Some(name),
+            pos: civ6_build_pos(&item),
+        });
+        hinted += 1;
+    }
+    hinted
+}
+
+/// Reconcile deferred production ownership against the next authoritative host
+/// frame.  A matching queue means the hint was consumed and becomes ordinary
+/// CIVVIS ownership.  A different queue is released only when it is not itself
+/// still approaching its blocker; this keeps a slow or lagging host queue intact
+/// for another frame instead of turning a timing miss into an early replacement.
+fn settle_deferred_production_hints(
+    ours: &mut std::collections::BTreeMap<i64, String>,
+    state: &civvis::mirror::StateSnapshot,
+) -> (usize, usize) {
+    let pending: Vec<(i64, String)> = ours
+        .iter()
+        .filter_map(|(city, value)| {
+            value
+                .strip_prefix(DEFERRED_PRODUCTION_PREFIX)
+                .map(|name| (*city, name.to_string()))
+        })
+        .collect();
+    let mut consumed = 0;
+    let mut expired = 0;
+    for (city_id, expected) in pending {
+        let Some(city) = state.cities.iter().find(|city| city.id == city_id) else {
+            ours.remove(&city_id);
+            expired += 1;
+            continue;
+        };
+        match city.producing.as_deref() {
+            Some(current) if current == expected => {
+                ours.insert(city_id, expected);
+                consumed += 1;
+            }
+            Some(_) if host_production_finishes_this_turn(city) => {
+                // The old queue is still near its blocker; leave the lease in
+                // place for the host's next production callback.
+            }
+            Some(_) | None => {
+                // A different, non-finishing queue means the host answered the
+                // blocker without consuming this lease.  Let normal foreign
+                // production release recover the city on this frame.
+                ours.remove(&city_id);
+                expired += 1;
+            }
+        }
+    }
+    (consumed, expired)
+}
+
 /// One turn's decision, against a mirror and an agent that PERSIST across turns.
 ///
 /// ★★★★★ WHY PERSISTENCE IS THE WHOLE POINT. A fresh `AdvancedAi` on a fresh board
@@ -1472,7 +1588,11 @@ fn release_foreign_production(
         let Some(producing) = city.producing.as_deref() else {
             continue;
         };
-        if ours.get(&city.id).map(String::as_str) == Some(producing) {
+        if ours
+            .get(&city.id)
+            .is_some_and(|owned| owned.starts_with(DEFERRED_PRODUCTION_PREFIX))
+            || ours.get(&city.id).map(String::as_str) == Some(producing)
+        {
             continue;
         }
         let Some(cid) = cid_of.get(&city.id).copied() else {
@@ -1926,6 +2046,8 @@ fn decide(
             std::process::exit(2);
         }
     }
+    let (production_hints_consumed, production_hints_expired) =
+        settle_deferred_production_hints(ours, state);
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -2165,6 +2287,22 @@ fn decide(
     }
     if policy_changed {
         orders.push(policy_deck_order(&planned_game, 0));
+    }
+
+    let production_hints =
+        append_next_production_hints(ai, &planned_game, mirror_state, state, &mut orders, ours);
+    if production_hints > 0 {
+        note_bits.push(format!("production_next_hints={production_hints}"));
+    }
+    if production_hints_consumed > 0 {
+        note_bits.push(format!(
+            "production_next_consumed={production_hints_consumed}"
+        ));
+    }
+    if production_hints_expired > 0 {
+        note_bits.push(format!(
+            "production_next_expired={production_hints_expired}"
+        ));
     }
 
     let (person_orders, great_person_stall) = great_person_orders(state);
@@ -5162,6 +5300,27 @@ mod tests {
         (snapshot, state)
     }
 
+    #[test]
+    fn host_production_finish_gate_requires_authoritative_metrics() {
+        let mut city = StateCity {
+            producing: Some("UNIT_WARRIOR".to_string()),
+            production: 8.0,
+            production_cost: 40.0,
+            production_progress: 32.0,
+            production_turns: 1.0,
+            ..StateCity::default()
+        };
+        assert!(host_production_finishes_this_turn(&city));
+
+        city.production_progress = 10.0;
+        city.production_turns = 4.0;
+        assert!(!host_production_finishes_this_turn(&city));
+
+        city.production_progress = -1.0;
+        city.production_turns = -1.0;
+        assert!(!host_production_finishes_this_turn(&city));
+    }
+
     /// ⚠⚠ The defect: the mod ladder answers `ENDTURN_BLOCKING_PRODUCTION`, the next
     /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
     /// which only produces for a city whose queue is empty — says nothing. Measured at
@@ -5209,7 +5368,10 @@ mod tests {
     fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
         let (snapshot, state) = production_board();
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
-        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
         let mut planned = mirror.game.clone();
         assert!(
             !planned.cities[&cid].queue.is_empty(),
@@ -5251,6 +5413,42 @@ mod tests {
         assert!(
             !planned.cities[&cid].queue.is_empty(),
             "work in progress CIVVIS asked for must survive, or it re-chooses every turn"
+        );
+    }
+
+    #[test]
+    fn a_deferred_production_hint_preserves_a_slow_host_queue() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].production = 8.0;
+        state.cities[0].production_cost = 40.0;
+        state.cities[0].production_progress = 32.0;
+        state.cities[0].production_turns = 1.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror
+            .cid_of
+            .get(&7)
+            .expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        let mut ours = std::collections::BTreeMap::from([(
+            7_i64,
+            format!("{DEFERRED_PRODUCTION_PREFIX}UNIT_SETTLER"),
+        )]);
+
+        assert_eq!(settle_deferred_production_hints(&mut ours, &state), (0, 0));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0,
+            "a near-finished old queue stays intact until its blocker consumes the lease"
+        );
+        assert!(!planned.cities[&cid].queue.is_empty());
+
+        state.cities[0].production_progress = 10.0;
+        state.cities[0].production_turns = 4.0;
+        assert_eq!(settle_deferred_production_hints(&mut ours, &state), (0, 1));
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1,
+            "a stale lease is released once the host is no longer approaching its blocker"
         );
     }
 

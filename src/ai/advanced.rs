@@ -17417,6 +17417,25 @@ impl AdvancedAi {
         }
     }
 
+    /// Preview the next production choice for a city whose host queue is about
+    /// to finish.
+    ///
+    /// Civilization VI can raise `ENDTURN_BLOCKING_PRODUCTION` after the live
+    /// board was exported and the ordinary batch was applied.  The bridge must
+    /// not answer that prompt with a second hand-written AI, but it also cannot
+    /// replace a still-running queue early.  Run the same strategic production
+    /// governor on a throwaway board with only this city's queue cleared and
+    /// return the item it would start.  The caller carries that item as a
+    /// deferred hint; no authoritative game or controller state is mutated.
+    pub fn preview_live_production(&self, g: &Game, pid: usize, city: u32) -> Option<Item> {
+        let plan = self.plan.clone()?;
+        let mut preview = self.clone();
+        let mut board = g.clone();
+        board.cities.get_mut(&city)?.queue.clear();
+        preview.advanced_production(&mut board, pid, &plan, false);
+        board.cities.get(&city)?.queue.first().cloned()
+    }
+
     /// The army target, raised while a war is running to account for the enemy
     /// it has to beat.
     ///
