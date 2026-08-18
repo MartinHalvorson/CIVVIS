@@ -18646,7 +18646,7 @@ impl Game {
         // Ranged strikes require standing walls; Embrasure supplies one more.
     }
 
-    fn encampment_can_strike(&self, city: &City) -> bool {
+    pub(crate) fn encampment_can_strike(&self, city: &City) -> bool {
         city.encampment_hp > 0
             && city.encampment_wall_hp > 0
             && !city.encampment_pillaged
@@ -24666,7 +24666,11 @@ impl Game {
         }
     }
 
-    fn city_district_family_position(&self, city: &City, family: impl AsName) -> Option<Pos> {
+    pub(crate) fn city_district_family_position(
+        &self,
+        city: &City,
+        family: impl AsName,
+    ) -> Option<Pos> {
         city.districts.iter().find_map(|(district, position)| {
             self.district_is_family(district, family)
                 .then_some(*position)
