@@ -8,6 +8,8 @@
     "thermonuclear_devices": "Recorded as the counter project_effect:thermonuclear_devices, read the same way.",
     "power_source_coal": "Descriptive label. The swap is implemented in converted_power_plant, matched on the project name.",
     "power_source_oil": "Descriptive label; see power_source_coal.",
-    "power_source_nuclear": "Descriptive label; see power_source_coal."
+    "power_source_nuclear": "Descriptive label; see power_source_coal.",
+    "ai_value": "Descriptive hint on nazca_line, not an effect: the engine values improvements from their yields, and no valuation reads a data-supplied score. Left in the data because the shipped database carries it.",
+    "scenario_only": "Descriptive marker. All eleven carriers are already `unbuildable: true`, which is the gate that actually keeps them out of an ordinary game; see the note at src/rules.rs:3137."
   }
 }
