@@ -692,8 +692,7 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights, net_maintenance: bool) -> f
     } else {
         0.0
     };
-    value + w.pol_military * strength
-        + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
+    value + w.pol_military * strength + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
         - maintenance
 }
 
@@ -896,8 +895,7 @@ fn revise_policy_deck(
                     // The branch is reused for all indices claimed by this
                     // worker.  Compute the unchanged slate once, before the
                     // candidate mutations begin, rather than once per card.
-                    let current_reading =
-                        empire_reading(&branch, pid, &weights, net_maintenance);
+                    let current_reading = empire_reading(&branch, pid, &weights, net_maintenance);
                     indices
                         .map(|index| {
                             (
