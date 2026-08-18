@@ -130,10 +130,29 @@ fn elo_edge(score: f64) -> f64 {
     400.0 * (bounded / (1.0 - bounded)).log10()
 }
 
-fn game_score(winner: Option<usize>, seats: &[&str], challenger: &str) -> f64 {
-    winner
-        .and_then(|pid| seats.get(pid))
-        .map_or(0.5, |name| if *name == challenger { 1.0 } else { 0.0 })
+/// The pair's half-point for one game.
+///
+/// ⚠ Indexed by seat, not by name, because `--field` puts agents on the board
+/// that are neither entrant. Naming the winner was enough while every chair
+/// held `a` or `b`: anything that was not the challenger was the incumbent by
+/// construction. With a field it is not, and the name test would have scored a
+/// field seat's victory as a win *for the incumbent* — the one arrangement that
+/// could make a denial treatment look worse precisely when it worked.
+///
+/// A game won by neither entrant is a draw, exactly as a game nobody won
+/// already was: neither side achieved the objective. Fieldless, the two seat
+/// sets partition every chair, so this is identical to the name test it
+/// replaces.
+fn game_score(
+    winner: Option<usize>,
+    challenger_seats: &BTreeSet<usize>,
+    incumbent_seats: &BTreeSet<usize>,
+) -> f64 {
+    match winner {
+        Some(pid) if challenger_seats.contains(&pid) => 1.0,
+        Some(pid) if incumbent_seats.contains(&pid) => 0.0,
+        _ => 0.5,
+    }
 }
 
 /// Construct one evaluator seat through the same strict boundary that guards
@@ -154,13 +173,17 @@ fn evaluator_ai(
 /// Challenger share of terminal Civilization score across the evaluated
 /// seats. This is a bounded secondary development diagnostic, not a win and
 /// never an input to the promotion verdict.
-fn terminal_score_share(g: &Game, seats: &[&str], challenger: &str) -> f64 {
+fn terminal_score_share(
+    g: &Game,
+    challenger_seats: &BTreeSet<usize>,
+    incumbent_seats: &BTreeSet<usize>,
+) -> f64 {
     let mut challenger_score = 0_i64;
     let mut total_score = 0_i64;
-    for (pid, name) in seats.iter().enumerate() {
-        let score = g.score(pid).max(0);
+    for pid in challenger_seats.iter().chain(incumbent_seats.iter()) {
+        let score = g.score(*pid).max(0);
         total_score += score;
-        if *name == challenger {
+        if challenger_seats.contains(pid) {
             challenger_score += score;
         }
     }
@@ -1642,7 +1665,7 @@ fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
 }
 
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
-    const PROFILE_FLAGS: [&str; 11] = [
+    const PROFILE_FLAGS: [&str; 12] = [
         "--players",
         "--width",
         "--height",
@@ -1654,6 +1677,11 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
         "--poles",
         "--victories",
         "--randomize-civs",
+        // Who else is on the board is a profile axis, and the strongest one:
+        // it decides which victory conditions the run can produce at all. The
+        // matrix's two recorded profiles are fieldless and every promotion
+        // number in `docs/EVAL.md` was taken that way.
+        "--field",
     ];
     if let Some(flag) = PROFILE_FLAGS
         .into_iter()
@@ -1804,6 +1832,47 @@ fn main() {
             "unknown AI {name:?}: builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
         );
     }
+    // ★★★★★ WHO ELSE IS ON THE BOARD, AND WHY THAT IS THE WHOLE QUESTION.
+    //
+    // This evaluator seats the two entrants and nobody else: every one of
+    // `--players` chairs is `a` or `b`. Both are `AdvancedAi` variants in
+    // practice, `AdvancedAi` routes to religion, and the consequence was
+    // measured on 2026-08-18 (`docs/eval/`): over 12 games at the deployment
+    // shape the profile produced **9 religious, 3 science, and zero
+    // diplomatic, culture or domination**, while the live Civilization VI
+    // ladder over the same period lost **41 games to a rival's diplomatic
+    // victory and 24 to culture**. The two distributions are nearly disjoint.
+    // We screen against ourselves and deploy against somebody who plays
+    // differently, and `advanced_congress_counter`,
+    // `advanced_congress_votes` and `advanced_congress_counter_hard` have sat
+    // unscreened in the registry because the board can never produce the
+    // condition they answer. An inert reading would have said nothing.
+    //
+    // `--field` names the agents that fill the chairs the paired entrants do
+    // not take, so a denial treatment can be screened against its incumbent on
+    // a board that actually produces the lanes Firaxis' AI pursues. Measured
+    // the same day: `--field live_target_diplomatic` turns diplomatic 0 of 12
+    // into 3 of 12 and produces culture as well.
+    //
+    // ⚠ Empty by default, and every existing number in `docs/EVAL.md` was
+    // taken with it empty. A field changes the experiment, not the harness: it
+    // is a different profile and its results are not comparable to fieldless
+    // ones. `--matrix` refuses it for that reason — the promotion matrix's
+    // recorded profiles are fieldless.
+    let field_names = text(&args, "--field", "");
+    let field: Vec<&str> = field_names
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    for name in &field {
+        if !BUILTIN_AIS.contains(name) && !EVAL_ONLY_AIS.contains(name) {
+            eprintln!(
+                "--field: unknown AI {name:?}; builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
+            );
+            std::process::exit(2);
+        }
+    }
     if args.iter().any(|argument| argument == "--matrix") {
         run_profile_matrix(&args, a, b);
     }
@@ -1837,7 +1906,18 @@ fn main() {
         );
         std::process::exit(2);
     }
-    let provenance = builtin_provenances(&[a, b], &artifact_dir);
+    // The field is in the game, so it is in the provenance: "a result is never
+    // filed under an agent that was never in the game" applies to the chairs
+    // that decide which victories are reachable just as much as to the two
+    // being compared. Named here rather than only in the profile line so the
+    // degraded and `--require-artifacts` checks below cover them as well.
+    let mut named: Vec<&str> = vec![a, b];
+    for name in &field {
+        if !named.contains(name) {
+            named.push(name);
+        }
+    }
+    let provenance = builtin_provenances(&named, &artifact_dir);
     for entry in &provenance {
         println!("{}", entry.line());
     }
@@ -2022,6 +2102,13 @@ here and any null is uninformative"
         eprintln!("unknown difficulty {difficulty:?}");
         std::process::exit(2);
     }
+    if !field.is_empty() && players < 3 {
+        eprintln!(
+            "--field needs a chair to sit in: the two entrants take seats 0 and 1, so \
+             --players must be at least 3"
+        );
+        std::process::exit(2);
+    }
     let enabled_victories = VictoryConditions::NAMES
         .into_iter()
         .filter(|name| victory_conditions.is_enabled(name))
@@ -2038,8 +2125,31 @@ here and any null is uninformative"
             "fixed"
         },
     );
+    // A result is never filed without saying who was in the game. Printed
+    // whether or not a field was named, so a fieldless run states that too
+    // rather than leaving the reader to infer it from silence.
+    if field.is_empty() {
+        println!(
+            "field: none — all {players} seats are the paired entrants (every recorded \
+             result in docs/EVAL.md was taken this way)"
+        );
+    } else {
+        let seating: Vec<String> = (2..players)
+            .map(|pid| format!("{}={}", pid, field[(pid - 2) % field.len()]))
+            .collect();
+        println!(
+            "field: {} — entrants take seats 0 and 1 and swap; the rest are {}",
+            field.join(", "),
+            seating.join(" ")
+        );
+        println!(
+            "⚠ a field is a different profile: these numbers are not comparable to \
+             fieldless runs, and a game won by a field seat is a draw for the pair"
+        );
+    }
     let mut totals: BTreeMap<String, Metrics> = [a, b]
         .into_iter()
+        .chain(field.iter().copied())
         .map(|name| (name.to_string(), Metrics::default()))
         .collect();
     let mut total_turns = 0_u64;
@@ -2067,6 +2177,8 @@ here and any null is uninformative"
     struct PlayedGame<'a> {
         game: Game,
         seats: Vec<&'a str>,
+        challenger_seats: BTreeSet<usize>,
+        incumbent_seats: BTreeSet<usize>,
         traces: Vec<PlanTrace>,
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
@@ -2095,18 +2207,40 @@ here and any null is uninformative"
             let local_pair = pair + index / 2;
             let swap = index % 2;
             let game_seed = seed + local_pair as u64;
+            // Fieldless: every chair alternates between the entrants, which is
+            // how every recorded result was taken. With a field: the entrants
+            // hold seats 0 and 1 and still swap between the pair's two games —
+            // the same balancing argument over two chairs instead of all of
+            // them — and the field cycles through the rest.
             let seats: Vec<&str> = (0..players)
-                .map(|pid| if (pid + swap) % 2 == 0 { a } else { b })
+                .map(|pid| {
+                    if field.is_empty() {
+                        if (pid + swap) % 2 == 0 { a } else { b }
+                    } else if pid < 2 {
+                        if (pid + swap) % 2 == 0 { a } else { b }
+                    } else {
+                        field[(pid - 2) % field.len()]
+                    }
+                })
                 .collect();
-            let challenger_seats: BTreeSet<usize> = seats
+            let entrant_seats: Vec<usize> = if field.is_empty() {
+                (0..players).collect()
+            } else {
+                vec![0, 1]
+            };
+            let challenger_seats: BTreeSet<usize> = entrant_seats
                 .iter()
-                .enumerate()
-                .filter(|(_, name)| **name == a)
-                .map(|(pid, _)| pid)
+                .copied()
+                .filter(|pid| seats[*pid] == a)
+                .collect();
+            let incumbent_seats: BTreeSet<usize> = entrant_seats
+                .iter()
+                .copied()
+                .filter(|pid| seats[*pid] == b)
                 .collect();
             let mut game = Game::new_with(GameOptions {
                 difficulty: difficulty.clone(),
-                human_seats: challenger_seats,
+                human_seats: challenger_seats.clone(),
                 speed: speed.clone(),
                 map_script,
                 map_topology,
@@ -2143,6 +2277,8 @@ here and any null is uninformative"
             PlayedGame {
                 game,
                 seats,
+                challenger_seats,
+                incumbent_seats,
                 traces,
                 targets,
                 censuses,
@@ -2154,6 +2290,8 @@ here and any null is uninformative"
             let PlayedGame {
                 game,
                 seats,
+                challenger_seats,
+                incumbent_seats,
                 traces,
                 targets,
                 censuses,
@@ -2168,8 +2306,8 @@ here and any null is uninformative"
                         .unwrap_or_else(|| "no winner".to_string()),
                 )
                 .or_default() += 1;
-            let score = game_score(game.winner, &seats, a);
-            let terminal = terminal_score_share(&game, &seats, a);
+            let score = game_score(game.winner, &challenger_seats, &incumbent_seats);
+            let terminal = terminal_score_share(&game, &challenger_seats, &incumbent_seats);
             if index % 2 == 0 {
                 pair_scores.push(score);
                 pair_terminal_scores.push(terminal);
