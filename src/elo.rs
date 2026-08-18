@@ -1099,7 +1099,26 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// written under v13 were played on the base game's beliefs and must stay
 /// identifiable. **v14 rows are comparable to v12 rows; v13 rows are
 /// comparable to neither.**
-pub const ELO_PROTOCOL_VERSION: u32 = 14;
+/// **v15 (2026-08-18) — a Builder can reach a pillaged tile.**
+/// `has_builder_work` — the gate that decides whether to *train* a Builder —
+/// counts a pillaged improvement anywhere in the empire. The Builder's own
+/// target sweep tested only `valid_improvements`, which a pillaged-but-improved
+/// tile fails, and handled repair for the tile it already stood on and nowhere
+/// else. Two definitions of "work" that disagreed, with the wider one spending
+/// the production and the narrower one choosing the destination: the empire
+/// trained Builders for work its Builders could not walk to, and a razed farm
+/// earned nothing until one wandered onto it.
+///
+/// Counted over three 250-turn six-player games before the repair: Builders
+/// reached a decision with no target 3,704 times, and `has_builder_work` said
+/// there was work on **508** of them.
+///
+/// This reaches every seat, the frozen anchor included: 18,572 decisions became
+/// 18,586 across the five anchor profiles. ⚠ Its strength effect is not
+/// measured — the justification is that two definitions of the same thing
+/// disagreed, not a demonstrated gain. Rows before and after v15 are not
+/// comparable in any game where an improvement was pillaged.
+pub const ELO_PROTOCOL_VERSION: u32 = 15;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
