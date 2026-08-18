@@ -16020,6 +16020,86 @@ impl AdvancedAi {
     /// city-states. This deliberately never replaces an active build, a
     /// threatened city's queue, or the earlier defense, Envoy, religion,
     /// Science, Culture, and Amenity reservations.
+    /// The land half of [`Self::reserve_idle_naval_recon`], and the missing
+    /// reach of `recon_replacement`.
+    ///
+    /// ★★★★ THE TREATMENT WAS ON AND COULD NOT REACH THE SEAT. The rebuild
+    /// logic — `BasicAi::recon_is_the_missing_arm`, with its own four-star
+    /// writeup — is consulted only by `BasicAi::pick_item`, and the live
+    /// seat's production runs through THIS governor, whose scorer prices a
+    /// Scout at `-2_000` once one exists and as a weak Warrior otherwise. So
+    /// the live seat builds its one opening Scout and never another: run
+    /// civvis-20260818T212725Z built one Scout on turn 2 and had zero recon
+    /// units from t150 to the end, while its four idle Settlers collected
+    /// 115 site refusals with a single reason — "beyond the empire's Loyalty
+    /// reach on ground the seat has NOT EXPLORED, where the rivals that
+    /// press it have never been seen". The unexplored-ground clause of that
+    /// veto is permanently true when nothing ever explores, so the empire's
+    /// founding, not just its map, is what the missing arm costs
+    /// (idle_settler_turns 45-112 across all five 08-18 runs).
+    ///
+    /// Same shape as the naval eye below: claim one idle, non-threatened
+    /// queue for the fastest recon unit while the arm is missing. The arm
+    /// target, the queued-recon accounting, and the withhold all live in
+    /// `recon_is_the_missing_arm` — `--without recon-replacement` disables
+    /// this reach exactly as it disables the BasicAi one.
+    fn reserve_idle_land_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // A second eye is valuable only while it does not deepen the live
+        // war-economy deficit — the same precedence the naval eye honours.
+        if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+            || !self.base.recon_is_the_missing_arm(g, pid)
+        {
+            return;
+        }
+        let mut best: Option<(f64, u32, String)> = None;
+        for city in g.player_city_ids(pid) {
+            let current = &g.cities[&city];
+            let threatened = plan.threatened_city == Some(city)
+                || (current.last_attacked > 0 && g.turn.saturating_sub(current.last_attacked) <= 4);
+            if !current.queue.is_empty() || threatened {
+                continue;
+            }
+            let Some(unit) = self.base.best_recon(g, pid, city) else {
+                continue;
+            };
+            let item = Item::Unit {
+                unit: Name::new(&unit),
+            };
+            let turns = g.item_remaining_cost_for_city(pid, city, &item)
+                / g.city_yields(city).production.max(1.0);
+            let replace = best.as_ref().is_none_or(|(old_turns, old_city, old_unit)| {
+                turns + f64::EPSILON < *old_turns
+                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                        && (city, unit.as_str()) < (*old_city, old_unit.as_str()))
+            });
+            if replace {
+                best = Some((turns, city, unit));
+            }
+        }
+        let Some((turns, city, unit)) = best else {
+            return;
+        };
+        let item = Item::Unit {
+            unit: Name::new(&unit),
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} to reopen the land frontier", city_name, Self::plain_item(&item);
+                "the empire has no land eyes and unexplored ground is what the settler \
+                 veto reads; this is the fastest viable launch ({turns:.1} turns)");
+        }
+    }
+
     fn reserve_idle_naval_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // A second eye is valuable only while it does not deepen the live
         // war-economy deficit. The ordinary governor's recovery branch takes
@@ -27672,6 +27752,13 @@ impl AdvancedAi {
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
             self.reserve_idle_naval_recon(g, pid, &plan);
+            // And the land eye, which the settler veto reads: the loyalty
+            // forecast's unexplored-ground clause held four settlers idle for
+            // the whole back half of run civvis-20260818T212725Z while the
+            // empire owned zero recon units and the strategic scorer priced a
+            // Scout as a weak Warrior. Same claim discipline as the naval eye:
+            // one idle, safe queue, only while `recon_is_the_missing_arm`.
+            self.reserve_idle_land_recon(g, pid, &plan);
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.
