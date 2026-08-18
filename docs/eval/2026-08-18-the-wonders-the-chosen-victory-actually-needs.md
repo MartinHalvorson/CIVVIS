@@ -93,8 +93,13 @@ valuation, and it is a different piece of work.
 ### 3. Where it does reach, it picks the right wonder every time
 
 The Culture lane is where the arm can act — its wonders need no district the
-lane does not already build — and the census shows it acting, cleanly. Six
-250-turn six-player culture games, seeds 24000000–05, arm against `--without`:
+lane does not already build — and the census shows it acting, cleanly. Over 32
+250-turn six-player culture games a side (seeds 24000000–31),
+**Cristo Redentor is finished in 29 of 32 with the arm and 0 of 32 without it**.
+It is `seaside_resort_tourism_pct: 100` plus `religious_tourism_unreduced` — the
+densest tourism in the table, and a culture victory is tourists.
+
+The first six games, side by side:
 
 | seed | with the arm | without it |
 |---|---|---|
@@ -105,16 +110,28 @@ lane does not already build — and the census shows it acting, cleanly. Six
 | 04 | **cristo_redentor** · great_bath · apadana | apadana |
 | 05 | **st_basils_cathedral** · **cristo_redentor** · … | hanging_gardens · … |
 
-**Cristo Redentor in six of six with the arm and none of six without it.** It is
-`seaside_resort_tourism_pct: 100` plus `religious_tourism_unreduced` — the
-densest tourism in the table, and a culture victory is tourists. The control
-builds the Hanging Gardens and Temple of Artemis instead, which are food and
-Amenities. St Basil's Cathedral (`city_religious_tourism_pct: 100`) arrives the
-same way.
+The control builds the Hanging Gardens and the Temple of Artemis instead, which
+are food and Amenities. St Basil's Cathedral
+(`city_religious_tourism_pct: 100`) arrives the same way.
+
+And the Religion lane the same way, on 32 games a side (seeds 24000000–31):
+
+| | with the arm | without it |
+|---|---:|---:|
+| games finishing a wonder | **19 of 32** | **0 of 32** |
+| which wonder | kotoku_in ×19 | — |
+
+Kotoku-in is `city_faith_pct: 20` and four free Warrior Monks — faith is the
+fuel a religious victory burns, and the control finishes no wonder at all in any
+of the 32. Note this is the arm's **rule 2 being city-specific**: Kotoku-in
+clears the cost bar only where the city's faith is already large enough for
++20% of it to be worth 1 420, which is why a flat data-sheet valuation could
+never have expressed it.
 
 So the mechanism is not merely firing, it is firing in the intended direction
-and choosing the intended wonder. What it does not do is move the win rate
-(§4) — which is a statement about effect size, not about correctness.
+and choosing the intended wonder in two different lanes. What it does not do is
+move the win rate (§5) — which is a statement about effect size, not about
+correctness.
 
 ### 4. Two arms cut on evidence before the screen ran
 
