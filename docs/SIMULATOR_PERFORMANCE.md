@@ -2,6 +2,10 @@
 
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
+
+⚠ **Read the last section first.** Each profile here superseded the one above
+it, and the most recent — 2026-08-18 — supersedes the "the profile is now flat"
+conclusion directly above it after a single day.
 Percentages below are diagnostic signals, not an additive decomposition:
 library routines such as `memcmp` and `memmove` are costs incurred by several
 higher-level systems.
@@ -703,3 +707,117 @@ borrowed API also showed no win. The allocator cost is real but it is **spread
 thin** — no single call site owns enough of it to repay a targeted fix. Anything
 that moves this number will have to be structural (arena or reuse across a whole
 turn), and that is a correctness and determinism risk rather than a local edit.
+
+## 2026-08-18 the flat profile lasted one day, and a promoted feature owns 13%
+
+⚠⚠ **THE SECTION ABOVE IS WHAT A PROFILE LOOKS LIKE BEFORE THE NEXT FEATURE
+LANDS.** It concluded that the profile was flat, that nothing named was over
+2.5%, and that the only remaining lever was structural. Twenty-four hours and
+about forty merges later, a fresh `sample` of head — same method, same shape,
+`ci` binary, one 6-player 74×46 nine-city-state Online game at `--jobs 1` —
+reads:
+
+| subsystem | % of working samples |
+| --- | ---: |
+| **`naval_recon`** | **13.3%** |
+| `forcing_reply_*` | 6.1% |
+| `Game::do_end_turn` | 5.1% |
+| `refresh_all_visibility` | 4.2% |
+| `Game::speculative_clone` | 1.6% |
+| `advanced_settler_step` | 1.1% |
+
+The settlement scan, which owned a fifth of the game on 2026-08-17 and has two
+sections of this document to itself, is now **1.1%** — #1911 and #1917 did what
+they claimed. And the largest cost in the simulator is a subsystem that did not
+appear in any earlier profile in this file, because it was promoted the same
+week (#1989, #1997: the open-water navy).
+
+`BTreeSet<(i64, i64)>::insert` was the single hottest leaf in the whole
+program: 710 of ~8,140 working samples, all of them under
+`BasicAi::naval_recon_ship_can_chart`.
+
+### The component was never the question
+
+`naval_recon_waterway` flood-filled the entire connected navigable-water
+component into a `BTreeSet<Pos>`. Both of its callers passed that set straight
+to `naval_recon_waterway_can_chart` and kept one boolean. On a 74×46 map the
+open sea is thousands of tiles, and the arm ran the fill once per naval unit
+and twice per city, inside a check that production calls per city.
+
+The irony is recorded three functions higher in the same file, in
+`city_has_open_water`: *"Deliberately the six neighbours and not a flood fill:
+the exact question is the size of the connected body, and `production_value`
+cannot afford a flood fill per candidate per city per turn."* The naval-recon
+arm was doing exactly that.
+
+The predicate is `size >= 4` — monotone — and two existential quantifiers over
+the same set. All three are settled by a **prefix** of the walk, so
+`naval_recon_can_chart_from` evaluates them as it walks and stops when the
+answer is fixed.
+
+**The early exit is exact, not a heuristic.** Every tile it counts is a tile the
+reference set contains, so a `true` from a prefix is a `true` from the whole;
+and a walk that exhausts its queue has dequeued exactly the reference set, so a
+`false` is the reference's `false`. `naval_recon_early_exit_agrees_with_the_full_walk`
+asserts that against the retained full-walk implementation over four maps at
+three exploration stages — including the fully-charted stage, where every walk
+must run to exhaustion and every answer is `false`, which is the case the early
+exit cannot short-circuit.
+
+### What it bought
+
+Counted first, because the clock is the thing this document keeps catching out.
+One 150-turn six-player game at seed 7,310,002:
+
+| | walks | tiles dequeued |
+| --- | ---: | ---: |
+| before | 23,943 | **8,681,806** |
+| after | 23,943 | **1,870,273** |
+
+**78.5% of the flood-fill work removed**, 6.8M fewer dequeues per game, with
+the same answer every time.
+
+Then the clock, `tools/speed_ab.py`, three independent seed blocks, byte-identical
+game reports in every pair:
+
+| seeds | games | result |
+| --- | ---: | ---: |
+| 7311000–7311007 | 8 | **−3.57%** |
+| 4200000–4200007 | 8 | **−4.50%** |
+| 5550000–5550009 | 10 | **−5.61%** |
+
+Noise floor on the same host the same hour, baseline against itself: **+0.04%**.
+
+### Rejected: bounding the *number* of walks as well as their length
+
+`naval_recon_is_the_missing_arm` counts naval eyes across the whole empire and
+then compares the total against an `arm_target` of **one or two**; and it runs
+`city_has_naval_recon_launch` over the city list twice, where the second pass
+only asks whether *any* city passed — which the first pass already knows. So:
+hoist `major_naval_war` (it reads no waterway) to fix `arm_target` first,
+`take(arm_target)` on the eye count, and fold the two city passes into one.
+
+Exact, and it works: walks **23,943 → 18,062** (−24.6%), tiles **1,870,273 →
+1,679,322** (−10.2%). Wall clock, same eight seeds: **−3.57% → −3.60%**.
+
+It removes 191k dequeues out of the 8.68M the early exit was up against — about
+0.3% of the run, under half the noise floor. Two declarative iterator chains
+become an imperative loop with two more early returns, in a function that
+already has several. Recorded and reverted, on the same rule the sphere-reserve
+change was reverted under: a correct-looking change that buys nothing is still a
+change to read.
+
+**What that says about the rest of this subsystem.** After the early exit the
+average walk is 78 tiles, and what remains is dominated by the walks that must
+exhaust to answer `false`. The `BTreeSet<Pos>` those walks probe is now ~1.7M
+operations a game — under a percent of the run at any plausible cost per
+operation. This subsystem is finished at the local level; the next reader should
+profile before assuming otherwise.
+
+### The standing rule this round adds
+
+**A promoted feature is a performance event, and the profile is stale the day
+after it lands.** `naval_recon` went from absent to the largest cost in the
+simulator in one week, in code that passed a strength gate — which measures
+Elo, not tiles. Nothing in CI would ever have reported it. Re-profile after a
+batch of merges, not only after a performance change.

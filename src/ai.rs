@@ -2729,9 +2729,10 @@ impl BasicAi {
         while let Some(pos) = frontier.pop_front() {
             tiles += 1;
             if !reaches_open_water {
-                reaches_open_water = g.map.get(pos).is_some_and(|tile| {
-                    matches!(tile.terrain.as_str(), "coast" | "ocean")
-                });
+                reaches_open_water = g
+                    .map
+                    .get(pos)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"));
             }
             if !charts_something {
                 charts_something = !g.players[pid].explored.contains(&pos)
@@ -2741,10 +2742,7 @@ impl BasicAi {
                         })
                     });
             }
-            if tiles >= NAVAL_RECON_MIN_WATERWAY_TILES
-                && reaches_open_water
-                && charts_something
-            {
+            if tiles >= NAVAL_RECON_MIN_WATERWAY_TILES && reaches_open_water && charts_something {
                 return true;
             }
             for neighbor in g.nbrs(pos) {
@@ -2822,11 +2820,7 @@ impl BasicAi {
         if unit.owner != pid || spec.class != "military" || spec.domain.as_deref() != Some("sea") {
             return false;
         }
-        Self::naval_recon_can_chart_from(
-            g,
-            pid,
-            std::iter::once(unit.pos).chain(g.nbrs(unit.pos)),
-        )
+        Self::naval_recon_can_chart_from(g, pid, std::iter::once(unit.pos).chain(g.nbrs(unit.pos)))
     }
 
     pub(crate) fn empire_is_coastal(g: &Game, pid: usize) -> bool {
@@ -17076,9 +17070,18 @@ mod tests {
                 }
             }
         }
-        assert!(compared > 500, "only {compared} comparisons ran; the sweep collapsed");
-        assert!(agreed_true > 0, "no start ever charted; only the false branch was compared");
-        assert!(agreed_false > 0, "every start charted; the exhausting walk was never compared");
+        assert!(
+            compared > 500,
+            "only {compared} comparisons ran; the sweep collapsed"
+        );
+        assert!(
+            agreed_true > 0,
+            "no start ever charted; only the false branch was compared"
+        );
+        assert!(
+            agreed_false > 0,
+            "every start charted; the exhausting walk was never compared"
+        );
     }
 
     #[test]
