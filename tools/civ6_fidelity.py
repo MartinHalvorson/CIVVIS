@@ -968,6 +968,8 @@ def project_resources(database: Database) -> dict[str, dict]:
         bases, flat_land, hills, _ = collapse_terrains(terrains.get(name, []))
         entry = {
             "class": RESOURCE_CLASSES.get(row.get("ResourceClassType"), "?"),
+            "frequency": number(row.get("Frequency")),
+            "sea_frequency": number(row.get("SeaFrequency")),
             "yields": yields.get(name, {}),
             "terrain": bases,
             # Some(true): hills-only spawns (Sheep); Some(false): flat-only
@@ -2070,6 +2072,8 @@ def ours_resources() -> dict[str, dict]:
     for name, entry in load_ours("resources").items():
         row = {
             "class": entry.get("class", "bonus"),
+            "frequency": entry.get("frequency", 0),
+            "sea_frequency": entry.get("sea_frequency", 0),
             "yields": {k: v for k, v in entry.get("yields", {}).items() if v},
             "terrain": lakes_are_coast(set(entry.get("terrain", []))),
             "feature": set(entry.get("feature", [])),

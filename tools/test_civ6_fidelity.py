@@ -78,5 +78,38 @@ class TheReferenceIsChecked(unittest.TestCase):
         self.assertIn("expansion sentinels", source)
 
 
+class ResourcePlacementWeightsAreAudited(unittest.TestCase):
+    def test_projected_resources_keep_land_and_sea_weights_distinct(self):
+        database = database_with({
+            "Resources": [
+                {
+                    "ResourceType": "RESOURCE_FISH",
+                    "ResourceClassType": "RESOURCECLASS_BONUS",
+                    "Frequency": "0",
+                    "SeaFrequency": "23",
+                },
+                {
+                    "ResourceType": "RESOURCE_WHALES",
+                    "ResourceClassType": "RESOURCECLASS_LUXURY",
+                    "Frequency": "0",
+                    "SeaFrequency": "1",
+                },
+                {
+                    "ResourceType": "RESOURCE_STONE",
+                    "ResourceClassType": "RESOURCECLASS_BONUS",
+                    "Frequency": "10",
+                    "SeaFrequency": "0",
+                },
+            ]
+        })
+
+        projected = civ6_fidelity.project_resources(database)
+        self.assertEqual(projected["fish"]["frequency"], 0)
+        self.assertEqual(projected["fish"]["sea_frequency"], 23)
+        self.assertEqual(projected["whales"]["sea_frequency"], 1)
+        self.assertEqual(projected["stone"]["frequency"], 10)
+        self.assertEqual(projected["stone"]["sea_frequency"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
