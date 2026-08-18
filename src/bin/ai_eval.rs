@@ -150,7 +150,7 @@ fn seat_plan<'a>(
     b: &'a str,
     field: &[&'a str],
 ) -> (Vec<&'a str>, BTreeSet<usize>, BTreeSet<usize>) {
-    let entrant = |pid: usize| if (pid + swap) % 2 == 0 { a } else { b };
+    let entrant = |pid: usize| if (pid + swap).is_multiple_of(2) { a } else { b };
     let seats: Vec<&str> = (0..players)
         .map(|pid| {
             if field.is_empty() || pid < 2 {
@@ -2255,8 +2255,7 @@ here and any null is uninformative"
             let local_pair = pair + index / 2;
             let swap = index % 2;
             let game_seed = seed + local_pair as u64;
-            let (seats, challenger_seats, incumbent_seats) =
-                seat_plan(players, swap, a, b, &field);
+            let (seats, challenger_seats, incumbent_seats) = seat_plan(players, swap, a, b, &field);
             let mut game = Game::new_with(GameOptions {
                 difficulty: difficulty.clone(),
                 human_seats: challenger_seats.clone(),
@@ -3970,11 +3969,7 @@ mod tests {
                 (
                     game.turn,
                     game.winner,
-                    game_score(
-                        game.winner,
-                        &BTreeSet::from([0]),
-                        &BTreeSet::from([1]),
-                    ),
+                    game_score(game.winner, &BTreeSet::from([0]), &BTreeSet::from([1])),
                 )
             })
         };
