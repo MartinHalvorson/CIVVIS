@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -252,6 +253,42 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
                 env={**os.environ, "CIVVIS_LADDER_LOG": str(log),
                      "CIVVIS_LADDER_SUPERVISOR": str(stub)},
                 capture_output=True, text=True, timeout=60)
+
+    def test_keeping_the_window_skips_the_window_step_entirely(self):
+        """The opt-out is real, so an operator can watch the loop live."""
+        with TemporaryDirectory() as raw:
+            log = Path(raw) / "ladder.log"
+            with mock.patch.dict(os.environ, {"CIVVIS_LADDER_KEEP_WINDOW": "1"}):
+                self._run("print -r -- hello\n", log)
+            self.assertNotIn("window:", log.read_text())
+
+    def test_the_window_step_is_valid_applescript(self):
+        """A syntax error here would be invisible.
+
+        The step runs `osascript` for its effect and the launcher must not die
+        when a host has no window server, so a broken script would simply do
+        nothing and the window would keep covering the game. Compiling it is the
+        check that a green run cannot hide.
+        """
+        text = self.LAUNCHER.read_text()
+        script = text.split("<<'APPLESCRIPT'\n", 1)[1].split("\nAPPLESCRIPT", 1)[0]
+        with TemporaryDirectory() as raw:
+            done = subprocess.run(
+                ["osacompile", "-o", str(Path(raw) / "x.scpt"), "-"],
+                input=script, capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_window_it_calls_its_own_must_have_a_live_shell(self):
+        """A tty is not an identity once its shell has exited.
+
+        macOS reassigns a tty device number as soon as the shell using it exits,
+        so a dead launcher window keeps reporting the tty that the newly opened
+        one was just given. Matching on tty alone claimed three windows as
+        "mine" — measured 2026-08-18, `minimised 3, reaped 0` — and the dead
+        ones were never reaped because each had already been taken for self.
+        """
+        text = self.LAUNCHER.read_text()
+        self.assertIn("(tty of t) is myTty and (busy of w) is true", text)
 
     def test_the_loops_stdout_and_stderr_land_in_the_file(self):
         with TemporaryDirectory() as raw:

@@ -162,8 +162,29 @@ def quadrant_frame(quadrant: str, screen_w: int, screen_h: int,
     return (x, y, width, height)
 
 
+def _as(text: "str") -> "str":
+    """`text` as an AppleScript string literal.
+
+    ★★★ NOT `json.dumps`. JSON escapes every non-ASCII character as `\\uXXXX`,
+    and AppleScript has no `\\u` escape — it reads the backslash-u literally and
+    dies with AppleScript error -2741, a syntax error naming an unknown token
+    where it wanted a closing quote.
+    Window titles here are full of characters that trip it: Chrome titles the
+    live viewer `CIVVIS · Civ VI Simulator`, and Terminal separates its title
+    fields with an em dash. So the ONE window the standard layout has to place
+    by title could never be placed on this host, and `layout` reported
+    `placed: false` with a syntax error where the operator expected a mirror
+    beside the game.
+
+    `osascript` reads UTF-8, so the characters go through untouched; only the
+    two that end a literal need escaping.
+    """
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = None,
-                 title: "str | None" = None) -> "str | None":
+                 title: "str | None" = None,
+                 skip_owners: "frozenset[str]" = frozenset()) -> "str | None":
     """Move one window into `frame`; returns an error string or None.
 
     Size before position, deliberately: Aspyr's window constrains a requested
@@ -172,7 +193,7 @@ def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = Non
     """
     x, y, w, h = frame
     if process and not title:
-        finder = f'first process whose name contains {json.dumps(process)}'
+        finder = f'first process whose name contains {_as(process)}'
         window = "window 1"
     else:
         # Title match walks every visible process's windows; first match wins.
@@ -202,9 +223,21 @@ def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = Non
         owner, _, window_name = line.partition("\t")
         if not window_name or not pattern.search(window_name):
             continue
+        # ★★★ A WINDOW THIS LAYOUT ALREADY PLACED BY PROCESS IS NOT A CANDIDATE.
+        # The title patterns are deliberately loose, and a loose pattern will
+        # eventually match a window that is not the target: the standard
+        # layout's `CIVVIS|127\.0\.0\.1` matched a *Terminal* window on this
+        # host, because the operator had named a shell session "CIVVIS gaps and
+        # priorities" — so the upper-left slot would have been given the
+        # terminal that lower-left had just been given, and the live mirror
+        # would never appear. Terminal is placed by an explicit process spec, so
+        # its windows are spoken for; skip them rather than tighten a pattern
+        # that will drift again.
+        if owner in skip_owners:
+            continue
         script = (f'tell application "System Events" to tell '
-                  f'(first process whose name is {json.dumps(owner)}) to tell '
-                  f'(first window whose name is {json.dumps(window_name)})\n'
+                  f'(first process whose name is {_as(owner)}) to tell '
+                  f'(first window whose name is {_as(window_name)})\n'
                   f'  set size to {{{w}, {h}}}\n'
                   f'  set position to {{{x}, {y}}}\n'
                   f'end tell')
@@ -218,10 +251,16 @@ def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
     if size is None:
         return [{"error": "desktop size unavailable"}]
     report = []
+    # Processes this layout positions explicitly. A later title match must not
+    # re-claim one of their windows; see `place_window`.
+    claimed = frozenset(
+        spec["process"] for spec in assignments if spec.get("process")
+    )
     for spec in assignments:
         frame = quadrant_frame(spec["quadrant"], *size)
         error = place_window(frame, process=spec.get("process"),
-                             title=spec.get("title"))
+                             title=spec.get("title"),
+                             skip_owners=claimed)
         report.append({"quadrant": spec["quadrant"],
                        "target": spec.get("process") or spec.get("title"),
                        "placed": error is None,
@@ -234,16 +273,16 @@ def modal_census() -> "list[dict]":
     found = []
     for owner, spec in KNOWN_MODALS.items():
         count = _osascript(f'tell application "System Events" to count windows '
-                           f'of process {json.dumps(owner)}')
+                           f'of process {_as(owner)}')
         if count.returncode != 0 or not count.stdout.strip().isdigit():
             continue
         if int(count.stdout.strip()) == 0:
             continue
         texts = _osascript(f'tell application "System Events" to tell process '
-                           f'{json.dumps(owner)} to get value of every static text '
+                           f'{_as(owner)} to get value of every static text '
                            f'of window 1')
         buttons = _osascript(f'tell application "System Events" to tell process '
-                             f'{json.dumps(owner)} to get name of every button '
+                             f'{_as(owner)} to get name of every button '
                              f'of window 1')
         text = texts.stdout.strip() if texts.returncode == 0 else ""
         names = [b.strip() for b in buttons.stdout.split(",")] \
@@ -284,7 +323,7 @@ def dismiss_modals() -> "list[dict]":
         if button:
             done = _osascript(
                 f'tell application "System Events" to tell process '
-                f'{json.dumps(modal["owner"])} to click button {json.dumps(button)} '
+                f'{_as(modal["owner"])} to click button {_as(button)} '
                 f'of window 1')
             entry["dismissed"] = done.returncode == 0
         report.append(entry)

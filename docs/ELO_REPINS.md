@@ -1402,3 +1402,23 @@ identifiable: **v14 rows are comparable to v12 rows, and v13 rows to neither.**
 `civ6_fidelity.py` had refused a non-Gathering-Storm reference since #1946 and
 the refusal sat in `main`, so three lines of `sqlite3` walked past it. It is in
 `load_cache_database` now.
+
+---
+
+## v15 (2026-08-18) — visible adjacent empty barbarian camps clear immediately
+
+#2067 corrects a real legacy-path behavior change rather than hiding it behind
+an experiment. A barbarian camp is cleared by moving onto its tile, but the
+ordinary tactical mover treats a camp as a threat and holds a melee unit at the
+usual one-tile attack range. With no defender to attack, that can leave a free
+camp standing indefinitely; a Scout can instead explore past it.
+
+The direct-clear helper enters only a currently visible, unoccupied camp one
+legal step away, after combat, retreat, escort, and city-garrison priorities.
+It deliberately reaches `AdvancedAi::legacy()`, so the frozen controller's
+action stream genuinely changes: the five anchor profiles move from **18,572**
+decisions and `0x3bda_c2f2_b84d_30fc` to **18,471** and
+`0xdfa3936f40f19de9`.
+
+The Elo protocol advances to **15** and starts a new ledger. v15 rows are not
+comparable to v14 or older rows.
