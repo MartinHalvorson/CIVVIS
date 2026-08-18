@@ -3186,43 +3186,50 @@ fn main() {
     // turn the brain recorded zero orders.
     //
     // Anything this binary emits that is not a response belongs on stderr.
-    eprintln!("{}", serde_json::json!({
-        "kind": "genome",
-        "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
-        "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),
-        "civ": rated.as_ref().and_then(|c| c.civ.clone()),
-        "strength_bound": rated.as_ref().map(|c| c.strength),
-        "per_civ": rated.as_ref().map(|c| c.per_civ),
-        "lane": rated.as_ref().and_then(|c| c.lane.clone()),
-        "victory": victory.clone(),
-        "parallel_settlers": ai.parallel_settlers,
-        // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
-        //
-        // A stale binary is invisible: `summary.json` records no revision, and
-        // three of thirty-two recent live runs were executing a pre-fix build,
-        // each losing most of a city's production to a defect already fixed on
-        // `main`. They were identifiable only because they emitted a build name
-        // a later commit had corrected — an accident that will not repeat for
-        // the next stale build.
-        //
-        // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
-        // `enable_live_bridge` turns on, and a test already forces the two to
-        // agree. So a binary that predates a repair emits a SHORTER list, and
-        // the difference names exactly which repairs were missing. That also
-        // gives any A/B the one thing it needs and has never had: which
-        // treatments were actually live in the arm it measured.
-        //
-        // `revision` beside it is the supervisor's label when there is one —
-        // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
-        // `null` for an ordinary development build, which is honest: the
-        // treatment list is the identity that always reports.
-        "revision": civvis::server::runtime_commit_or_none(),
-        // ⚠ `.as_slice()`, not the array. serde implements `Serialize` for
-        // `[T; N]` only up to N = 32, so the registry silently had a ceiling at
-        // 32 treatments: the 33rd stops compiling here, in a binary that has
-        // nothing to do with adding one. A slice has no such bound.
-        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS.as_slice(),
-    }));
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "kind": "genome",
+            "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
+            "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),
+            "civ": rated.as_ref().and_then(|c| c.civ.clone()),
+            "strength_bound": rated.as_ref().map(|c| c.strength),
+            "per_civ": rated.as_ref().map(|c| c.per_civ),
+            "lane": rated.as_ref().and_then(|c| c.lane.clone()),
+            "victory": victory.clone(),
+            "parallel_settlers": ai.parallel_settlers,
+            // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
+            //
+            // A stale binary is invisible: `summary.json` records no revision, and
+            // three of thirty-two recent live runs were executing a pre-fix build,
+            // each losing most of a city's production to a defect already fixed on
+            // `main`. They were identifiable only because they emitted a build name
+            // a later commit had corrected — an accident that will not repeat for
+            // the next stale build.
+            //
+            // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
+            // `enable_live_bridge` turns on, and a test already forces the two to
+            // agree. So a binary that predates a repair emits a SHORTER list, and
+            // the difference names exactly which repairs were missing. That also
+            // gives any A/B the one thing it needs and has never had: which
+            // treatments were actually live in the arm it measured.
+            //
+            // `revision` beside it is the supervisor's label when there is one —
+            // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
+            // `null` for an ordinary development build, which is honest: the
+            // treatment list is the identity that always reports.
+            "revision": civvis::server::runtime_commit_or_none(),
+            // ⚠ THE CONSTANT IS A SLICE, AND THAT IS LOAD-BEARING HERE. serde
+            // implements `Serialize` for `[T; N]` only up to N = 32, so while this
+            // was a fixed-size array the registry had a silent ceiling at 32
+            // treatments: the 33rd stopped compiling in this binary, which has
+            // nothing to do with adding one. It carried `.as_slice()` for that
+            // reason; `LIVE_BRIDGE_TREATMENTS` is `&[&str]` now, so the bound is
+            // gone at the declaration and `.as_slice()` on it would resolve to the
+            // unstable `str::as_slice` instead.
+            "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
+        })
+    );
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
     //
