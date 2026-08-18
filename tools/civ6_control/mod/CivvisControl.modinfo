@@ -100,6 +100,22 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<!-- Spy mission briefings/results are informational overlays once the
+		     controller has issued its order. An escape route is a genuine blocker,
+		     so the shared closer uses its always-available city-center response
+		     instead of merely hiding it and letting it cover the map again. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseEspionagePopup">
+			<Properties>
+				<LuaContext>EspionagePopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseEspionageEscape">
+			<Properties>
+				<LuaContext>EspionageEscape</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<!-- The relic screens, reported sitting over the map. Neither
 		     exposes OnClose or Close; their buttons call OnHideScreen and
 		     OnButton1, which the shim now tries. -->
