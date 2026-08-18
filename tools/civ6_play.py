@@ -359,6 +359,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # ArmyCap). `losingWar` arms only after a declaration, and the wars
         # that end runs are declared on us.
         "PeaceDeterrence": args.peace_deterrence,
+        # On a CIVVIS seat the ladder's ram entry and ranged floor now require
+        # an actual war (`warPressure`'s at-war read); `warTarget` alone is
+        # "who we would fight" and exists from the first met major, which kept
+        # a permanent peacetime war footing that displaced every development
+        # rung (run civvis-20260818T212725Z: 41 ranged orders at peace, zero
+        # alive). This flag restores the old always-on footing as the control.
+        "PeacetimeWarFloors": args.peacetime_war_floors,
         "ExploreUntilTurn": args.explore_until_turn,
         # Domination on a four-civ map needs ALL THREE enemy original capitals.
         # A score victory at the turn limit needs only to be ahead, and warring
@@ -2964,6 +2971,7 @@ def _play(args: argparse.Namespace) -> int:
         # which the summary already records field by field.
         "mod_arms": {
             "PeaceDeterrence": args.peace_deterrence,
+            "PeacetimeWarFloors": args.peacetime_war_floors,
             "CounterResolutions": args.counter_resolutions,
             "EnvoyPlace": args.envoy_place,
             "EnvoyLevy": args.envoy_levy,
@@ -3118,6 +3126,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-peace-deterrence", dest="peace_deterrence",
                     action="store_false",
                     help="withhold the peacetime deterrence lift (the A/B arm)")
+    ap.add_argument("--peacetime-war-floors", action="store_true", default=False,
+                    help="restore the fallback ladder's pre-2073 behaviour on a "
+                         "CIVVIS seat: the battering-ram entry and the ranged "
+                         "floor fire whenever a war TARGET exists, war or no "
+                         "war (the A/B control arm; legacy no-decider runs "
+                         "keep this behaviour regardless)")
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")

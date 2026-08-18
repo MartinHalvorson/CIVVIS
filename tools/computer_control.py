@@ -207,18 +207,36 @@ def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = Non
         done = _osascript(script)
         return None if done.returncode == 0 else (done.stderr or done.stdout).strip()
     pattern = re.compile(title or "", re.I)
-    listing = _osascript(
-        'tell application "System Events"\n'
-        '  set out to ""\n'
-        '  repeat with proc in (every process whose background only is false)\n'
-        '    repeat with win in (every window of proc)\n'
-        '      set out to out & (name of proc) & "\\t" & (name of win) & "\\n"\n'
-        '    end repeat\n'
-        '  end repeat\n'
-        '  return out\n'
-        'end tell')
-    if listing.returncode != 0:
-        return (listing.stderr or listing.stdout).strip()
+    # ★★★ RETRIED, BECAUSE THIS RACES EXACTLY WHEN IT IS NEEDED. Walking every
+    # visible process's windows fails with `-1719` ("Invalid index") when the
+    # process list changes under the enumeration — and the moment the layout is
+    # wanted is the moment Civilization VI is launching, which is precisely when
+    # processes and windows are appearing and disappearing. Observed twice on
+    # 2026-08-18: `layout` returned `placed: false` for the mirror, and the same
+    # call succeeded seconds later with nothing else changed.
+    #
+    # A transient enumeration failure is not "no window matches", and reporting
+    # it as a placement failure sends the operator looking for a mapping bug
+    # that is not there. Three attempts over roughly a second; a genuine
+    # failure still returns its own message rather than a retry loop's.
+    listing = None
+    for attempt in range(3):
+        listing = _osascript(
+            'tell application "System Events"\n'
+            '  set out to ""\n'
+            '  repeat with proc in (every process whose background only is false)\n'
+            '    repeat with win in (every window of proc)\n'
+            '      set out to out & (name of proc) & "\\t" & (name of win) & "\\n"\n'
+            '    end repeat\n'
+            '  end repeat\n'
+            '  return out\n'
+            'end tell')
+        if listing.returncode == 0:
+            break
+        if attempt < 2:
+            time.sleep(0.4)
+    if listing is None or listing.returncode != 0:
+        return (listing.stderr or listing.stdout).strip() if listing else "no window listing"
     for line in listing.stdout.splitlines():
         owner, _, window_name = line.partition("\t")
         if not window_name or not pattern.search(window_name):
