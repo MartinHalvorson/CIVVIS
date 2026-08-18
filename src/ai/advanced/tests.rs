@@ -21276,6 +21276,74 @@ fn the_camp_errand_stands_down_for_war_recon_and_bad_trades() {
     assert!(!AdvancedAi::legacy().base.camp_bounty);
 }
 
+/// An empty camp is captured by movement, not a melee attack. The barbarian
+/// responder used to hand this target to `tactical_step`, which correctly holds
+/// an ordinary melee unit one tile from a defender but incorrectly left this
+/// camp standing forever. A Scout could instead walk past it to explore. The
+/// direct clear must work without the longer-range, default-off camp-bounty
+/// treatment.
+#[test]
+fn an_adjacent_empty_camp_is_cleared_instead_of_being_held_or_explored_past() {
+    for (seed, kind) in [(90_082, "warrior"), (90_083, "scout")] {
+        let (mut game, home) = camp_bounty_board(seed);
+        let camp = open_ground_at(&game, home, 1);
+        game.barb_camps.insert(camp, game.turn + 1_000);
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+        let unit = game.spawn_test_unit(kind, 0, home);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.battlefront_observation = false;
+
+        assert!(
+            !ai.base.camp_bounty,
+            "the direct clear ships independently of the errand"
+        );
+        assert!(
+            BasicAi::barbarian_presence_at_home_with_camp_radius(
+                &game,
+                0,
+                crate::ai::HOME_CAMP_RADIUS
+            ),
+            "the local camp takes the barbarian-response path"
+        );
+        assert!(game.player_can_see(0, camp));
+        assert!(ai.advanced_military_step(&mut game, 0, unit, &plan));
+        assert_eq!(game.units[&unit].pos, camp, "{kind} must enter the camp");
+        assert!(
+            !game.barb_camps.contains_key(&camp),
+            "the responder must enter the undefended camp, not stop next to it"
+        );
+        assert_eq!(game.players[0].counters.get("camps"), Some(&1));
+    }
+}
+
+/// The adjacent camp clear ships default-ON, and this gate is the reason the
+/// v14 rating ledger survives it: `AdvancedAi::legacy()` — the frozen anchor
+/// whose fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins —
+/// must never see the treatment, exactly like `naval_recon`. The withhold arm
+/// `advanced_without_adjacent_camp_clear` prices it from the current
+/// controller instead.
+#[test]
+fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
+    assert!(
+        !AdvancedAi::legacy().adjacent_camp_clear(),
+        "the frozen anchor must keep playing the game it always played; \
+         re-pinning it starts a new ledger and is not this treatment's call"
+    );
+    assert!(AdvancedAi::new().adjacent_camp_clear());
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_adjacent_camp_clear();
+    assert!(!withheld.adjacent_camp_clear());
+}
+
 #[test]
 fn a_charted_village_preempts_a_prewar_campaign_staging_order() {
     let mut game = Game::new_full(2, 30, 20, 90_081, 120, 0, false);

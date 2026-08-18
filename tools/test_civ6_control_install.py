@@ -1401,6 +1401,42 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
 
 
+class PeacetimeWarFloorsTest(unittest.TestCase):
+    """On a CIVVIS seat, the ladder's war floors require an actual war.
+
+    `warTarget` is "who we would fight" and exists from the first met major, so
+    gating the battering-ram entry and the ranged floor on it alone kept a
+    permanent peacetime war footing on CIVVIS runs (41 ranged orders at peace,
+    zero ever alive, run civvis-20260818T212725Z). The `warFooting` gate keys
+    them on `warPressure`'s at-war read instead; `cfg.PeacetimeWarFloors` is
+    the recorded control arm and legacy no-decider runs keep the old build-up.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        cls.ladder = source.split("local function chooseProduction", 1)[1].split(
+            "THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY", 1
+        )[0]
+
+    def test_the_war_footing_gate_reads_a_real_war(self) -> None:
+        self.assertIn(
+            "local warFooting = atWar or not cfg.CivvisDecides"
+            " or cfg.PeacetimeWarFloors;",
+            self.ladder,
+        )
+
+    def test_the_ram_entry_and_ranged_floor_sit_behind_the_gate(self) -> None:
+        ram = self.ladder.split('{ "UNIT_BATTERING_RAM", "siege" }', 1)[0]
+        self.assertIn("warTarget ~= nil and warFooting and not losingWar", ram)
+        ranged = self.ladder.split('pushRangedLandUnits("ranged")', 1)[0]
+        self.assertIn(
+            "if warTarget ~= nil and warFooting\n"
+            "\t\t\tand (counts.ranged or 0) < (cfg.RangedFloor or 3) then",
+            ranged,
+        )
+
+
 class AgentChunkLocalLimitTest(unittest.TestCase):
     """The agent's main chunk must stay inside Lua's 200-local ceiling.
 

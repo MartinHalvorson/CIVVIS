@@ -2914,7 +2914,33 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local targetStrength = warTarget ~= nil and (try(function()
 		return Players[warTarget.player]:GetStats():GetMilitaryStrength();
 	end, 0) or 0) or 0;
-	if warTarget ~= nil and not losingWar
+	-- ★★★★★ ON A CIVVIS SEAT, A WAR FOOTING NEEDS A WAR. SIXTH instance of this
+	-- file's recurring class — a gate that is right when attacking and wrong in
+	-- the state that ends runs — except this one is wrong at PEACE. `warTarget`
+	-- is "who we would fight", and `findWarTarget` returns somebody the moment
+	-- any major is met, so on a CIVVIS run — where `MakeWar` never fires because
+	-- the Rust decider owns war policy — the ram entry and the ranged floor
+	-- below have been a PERMANENT war footing, not a war-opening one.
+	--
+	-- Measured on run civvis-20260818T212725Z (Trajan, Settler, diplomacy lane):
+	-- at peace from t156 to the end, yet 41 `ranged` build orders across the run
+	-- and 23 UNIT_MACHINE_GUN starts — and ZERO machine guns ever alive in any
+	-- state export, because the Rust decider displaces the foreign item a turn
+	-- or two later, the floor reads ALIVE units, and the loop re-fires at every
+	-- production prompt forever. Runs 165035Z (29 of 54 ranged orders before its
+	-- t130 war) and 182702Z show the same signature; all three finished 450+
+	-- behind. The same day's WIN (155500Z, +472, both ladder records) is what
+	-- these prompts buy when they fall through: `develop` fired 72 times and
+	-- built 22 campuses.
+	--
+	-- So on a CIVVIS seat these two entries require the war to EXIST — `atWar`
+	-- from `warPressure`, hoisted above, true only against a living major. The
+	-- legacy ladder (no Rust decider) keeps the pre-war build-up: there the mod
+	-- itself declares, and arming BEFORE its own declaration is the design.
+	-- `PeacetimeWarFloors` restores the old behaviour as the control arm, and
+	-- rides in the run summary's `mod_arms` so a batch says which side it ran.
+	local warFooting = atWar or not cfg.CivvisDecides or cfg.PeacetimeWarFloors;
+	if warTarget ~= nil and warFooting and not losingWar
 			and ourStrength * 2 >= targetStrength
 			and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
@@ -2933,7 +2959,11 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- ARCHER-ONLY army is the opposite failure and this project has already had it —
 	-- 518 archer advances and 31 range attacks with zero captures, because ranged
 	-- cannot take a plot. Two or three archers alongside the melee, then melee again.
-	if warTarget ~= nil and (counts.ranged or 0) < (cfg.RangedFloor or 3) then
+	-- ⚠ `warFooting` above: on a CIVVIS seat this floor exists only while a war
+	-- does. It reads ALIVE units and its request can be displaced by the Rust
+	-- decider before completing, so at peace it re-fires unsatisfiably forever.
+	if warTarget ~= nil and warFooting
+			and (counts.ranged or 0) < (cfg.RangedFloor or 3) then
 		pushRangedLandUnits("ranged");
 	end
 	-- ★★★★★ THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY, OR IT IS DEAD CODE.

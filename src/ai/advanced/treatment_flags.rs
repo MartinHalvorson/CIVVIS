@@ -1300,6 +1300,17 @@ impl AdvancedAi {
         self.base.camp_bounty = true;
     }
 
+    /// Walk onto a visible, undefended barbarian camp one legal step away.
+    /// See `BasicAi::adjacent_camp_clear`; withheld by
+    /// `advanced_without_adjacent_camp_clear`.
+    pub fn enable_adjacent_camp_clear(&mut self) {
+        self.base.adjacent_camp_clear = true;
+    }
+
+    pub fn disable_adjacent_camp_clear(&mut self) {
+        self.base.adjacent_camp_clear = false;
+    }
+
     /// Let the deck counterfactual see the unit-maintenance bill. See
     /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
     pub fn enable_maintenance_aware_deck(&mut self) {
