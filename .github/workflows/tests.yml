@@ -135,6 +135,12 @@ jobs:
       # bytes to the remote without touching the tree an agent may be editing.
       - name: The worktree audit still catches unstaged work
         run: python3 tools/civvis_worktree_audit.py --selftest
+      # A comparator with only temporary unit-test traces can silently drift
+      # from the replay schema while every test still passes. Keep one small,
+      # sanitized transition spine in the repository and require both its
+      # canonical hashes and its deliberate negative mutation to stay stable.
+      - name: Differential fidelity golden ratchet
+        run: python3 tools/check_differential_golden.py
 
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
