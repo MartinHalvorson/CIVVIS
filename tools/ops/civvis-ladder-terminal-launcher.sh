@@ -36,6 +36,71 @@ say() {
 # worth keeping — measured 2026-08-17T21:20Z, where the "starting" line landed
 # and the status line did not. Append directly, and redirect the supervisor's
 # own output with `>>` so nothing depends on a second process staying alive.
+# ★★★ THE WINDOW GETS OUT OF THE WAY, BECAUSE THE WINDOW IS NOT THE LOG.
+#
+# The header above is emphatic that everything worth keeping is teed to
+# ${LOG}, which is precisely why nothing is lost by hiding this window — and
+# something IS lost by showing it. `open -a Terminal` opens a NEW window every
+# time the keeper recovers the loop, each one lands in front of whatever the
+# operator is looking at, and the operator is looking at a Civilization VI game
+# being recorded. Four dead launcher windows had stacked up over one afternoon
+# of restarts on 2026-08-18 and had to be minimised by hand.
+#
+# Two lines fix both halves: this window minimises itself, and the dead ones
+# from previous recoveries are closed. A dead launcher window holds no
+# information — its shell has exited and its output is in ${LOG} — so closing it
+# discards nothing. A BUSY one is a live lane and is never touched.
+#
+# Set CIVVIS_LADDER_KEEP_WINDOW=1 to watch it live instead; `tail -f ${LOG}`
+# does the same job without a window in front of the game.
+if [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]]; then
+  # ⚠ The result is LOGGED, not discarded. A silent `|| true` here would make
+  # "the window still covers the game" and "the script never ran" look the same
+  # from the log, which is the whole failure mode this file exists to prevent.
+  window_report=$(/usr/bin/osascript - "$TTY" 2>&1 <<'APPLESCRIPT'
+on run argv
+  set myTty to item 1 of argv
+  set mineSeen to 0
+  set reaped to 0
+  set liveSeen to 0
+  tell application "Terminal"
+    repeat with i from (count of windows) to 1 by -1
+      try
+        set w to item i of windows
+        if (count of tabs of w) > 0 then
+          set mine to false
+          -- ⚠ `tty` ALONE IS NOT AN IDENTITY. macOS reassigns a tty device
+          -- number as soon as its shell exits, so a dead launcher window keeps
+          -- reporting the tty this live one was just given: matching on tty
+          -- alone claimed three windows as "mine" and reaped none of them.
+          -- A window whose shell has exited is not this shell; require both.
+          repeat with t in tabs of w
+            try
+              if (tty of t) is myTty and (busy of w) is true then set mine to true
+            end try
+          end repeat
+          if mine then
+            set miniaturized of w to true
+            set mineSeen to mineSeen + 1
+          else if (name of w) contains "civvis-ladder-terminal-launcher" then
+            if (busy of w) is false then
+              close w
+              set reaped to reaped + 1
+            else
+              set liveSeen to liveSeen + 1
+            end if
+          end if
+        end if
+      end try
+    end repeat
+  end tell
+  return "minimised " & mineSeen & ", reaped " & reaped & ", live siblings " & liveSeen & ", tty " & myTty
+end run
+APPLESCRIPT
+) || window_report="osascript failed"
+  say "window: ${window_report}; follow the run with: tail -f ${LOG}"
+fi
+
 say "starting managed interactive host ${HOST} (pid $$)"
 /bin/zsh "$HOST" >> "$LOG" 2>&1
 # ⚠ NOT `status`: in zsh that name is read-only, an alias for $?, and
