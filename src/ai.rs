@@ -3737,13 +3737,7 @@ impl BasicAi {
                 None if claims_spent >= CAMP_BOUNTY_PARTY => continue,
                 None => {}
             }
-            if my_cities
-                .iter()
-                .map(|c| g.wdist(*camp, *c))
-                .min()
-                .unwrap()
-                > camp_radius
-            {
+            if my_cities.iter().map(|c| g.wdist(*camp, *c)).min().unwrap() > camp_radius {
                 continue;
             }
             let d = g.wdist(upos, *camp);

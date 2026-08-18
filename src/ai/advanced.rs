@@ -26092,8 +26092,9 @@ impl AdvancedAi {
                         } else {
                             1
                         };
-                        if let Some(next) =
-                            g.route_step(uid, camp, stop).filter(|next| g.can_move(uid, *next))
+                        if let Some(next) = g
+                            .route_step(uid, camp, stop)
+                            .filter(|next| g.can_move(uid, *next))
                         {
                             return self.base.path_move(g, pid, uid, next);
                         }

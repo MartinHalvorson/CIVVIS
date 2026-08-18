@@ -20186,8 +20186,7 @@ fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
         // A spawn tick far in the future keeps THIS camp from raising
         // raiders mid-pin.
         game.barb_camps.insert(camp, game.turn + 1_000);
-        game.map.tiles.get_mut(&camp).unwrap().improvement =
-            Some(crate::name!("barbarian_camp"));
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         game.spawn_test_unit("warrior", barb, camp);
         game.spawn_test_unit("swordsman", 0, home);
         game.spawn_test_unit("swordsman", 0, home);
@@ -20209,11 +20208,7 @@ fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
                 break;
             }
         }
-        let camps = game.players[0]
-            .counters
-            .get("camps")
-            .copied()
-            .unwrap_or(0);
+        let camps = game.players[0].counters.get("camps").copied().unwrap_or(0);
         (cleared_by, camps)
     };
 
@@ -20223,7 +20218,10 @@ fn the_peacetime_errand_clears_the_camp_and_collects_the_bounty() {
         "thirty turns is six of walking and a fight; the errand must clear \
          the camp"
     );
-    assert!(booked >= 1, "the clear is booked on the counter the boosts read");
+    assert!(
+        booked >= 1,
+        "the clear is booked on the counter the boosts read"
+    );
 
     // The Basic fallback's wander eventually blunders into this camp too
     // (t14 on this board), so the discriminator is speed: a deliberate
