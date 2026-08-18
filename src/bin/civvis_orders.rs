@@ -2746,6 +2746,23 @@ fn translate(
             )),
             pos: None,
         }),
+        // ★★★ THE ONE ORDER THAT TOUCHES AN ENEMY MISSIONARY. Religious units
+        // are excluded from ordinary combat by design — `enemy_combat_target_at`,
+        // `do_attack` and `do_ranged` all require `class == "military"`, and
+        // walking onto one neither captures nor kills it — so Condemn Heretic
+        // and theological combat are the only removals in the model. CIVVIS has
+        // been deciding this action all along (`condemn_step`, gated on
+        // `victory_planning`, war, and standing on the target) and it fell
+        // straight through this match's `_ => None` and was counted
+        // untranslatable. The unit's co-location IS the target, which is why
+        // nothing but the subject crosses: Firaxis gives the command row no
+        // `InterfaceMode`, so its own UnitPanel requests it parameterless too.
+        Action::CondemnHeretic { unit, .. } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("CONDEMN_HERETIC".to_string()),
+            pos: None,
+        }),
         Action::Spread { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -5789,6 +5806,32 @@ mod tests {
         assert_eq!(spread.kind, "unit");
         assert_eq!(spread.subject, Some(91));
         assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+
+        // ★★★ And the one order that touches an ENEMY religious unit. It used
+        // to fall through this match's `_ => None` and be counted
+        // untranslatable, so a rival Apostle standing in our territory —
+        // untouchable by ordinary combat, by design — could not be answered by
+        // anything the bridge could send. `target_unit` deliberately does not
+        // cross: the command is parameterless in Firaxis' own UnitPanel (its
+        // `UnitCommands` row carries no `InterfaceMode`) and the engine
+        // requires the mover to be standing on the target anyway, so the
+        // co-location IS the target.
+        let condemn = translate(
+            &Action::CondemnHeretic {
+                unit,
+                target_unit: 4242,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the condemnation crosses");
+        assert_eq!(condemn.kind, "unit");
+        assert_eq!(condemn.subject, Some(91));
+        assert_eq!(condemn.verb.as_deref(), Some("CONDEMN_HERETIC"));
+        assert_eq!(
+            condemn.pos, None,
+            "a parameterless command must not invent a destination"
+        );
     }
 
     #[test]
