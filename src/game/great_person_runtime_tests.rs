@@ -13,6 +13,112 @@ fn scientist_game(seed: u64) -> (Game, u32, Pos) {
     (game, city, campus)
 }
 
+fn set_test_city_amenity_surplus(game: &mut Game, city: u32, surplus: i64) {
+    game.observed_city_amenity_adjustments.remove(&city);
+    let modeled = game.city_amenity_surplus(&game.cities[&city]);
+    game.observed_city_amenity_adjustments
+        .insert(city, surplus - modeled);
+}
+
+fn great_person_points(game: &Game, kind: &str) -> f64 {
+    game.great_person_points_per_turn(0)
+        .get(kind)
+        .copied()
+        .unwrap_or(0.0)
+}
+
+fn assert_close(actual: f64, expected: f64) {
+    assert!(
+        (actual - expected).abs() < 1e-9,
+        "expected {expected}, got {actual}"
+    );
+}
+
+#[test]
+fn scottish_enlightenment_scales_happy_and_ecstatic_yields_and_gpp() {
+    let (mut scotland, city, campus) = scientist_game(95_010);
+    scotland.players[0].civ = "Scotland".to_string();
+    install_test_district(&mut scotland, city, "industrial_zone");
+    // Rome keeps precisely the same board and normal Happiness band. It is a
+    // control for Scotland's source-specific portion of the additive percent
+    // sum, independent of any unrelated city modifiers in the fixture.
+    let mut rome = scotland.clone();
+    rome.players[0].civ = "Rome".to_string();
+
+    set_test_city_amenity_surplus(&mut scotland, city, 0);
+    set_test_city_amenity_surplus(&mut rome, city, 0);
+    assert_eq!(scotland.city_happiness(&scotland.cities[&city]), "content");
+    let scotland_content = scotland.city_yields(city);
+    let rome_content = rome.city_yields(city);
+    assert_close(scotland_content.science, rome_content.science);
+    assert_close(scotland_content.production, rome_content.production);
+    assert_close(
+        great_person_points(&scotland, "scientist"),
+        great_person_points(&rome, "scientist"),
+    );
+    assert_close(
+        great_person_points(&scotland, "engineer"),
+        great_person_points(&rome, "engineer"),
+    );
+
+    set_test_city_amenity_surplus(&mut scotland, city, 3);
+    set_test_city_amenity_surplus(&mut rome, city, 3);
+    assert_eq!(scotland.city_happiness(&scotland.cities[&city]), "happy");
+    let scotland_happy = scotland.city_yields(city);
+    let rome_happy = rome.city_yields(city);
+    // Scotland's +5% is half of the normal Happy +10% band, while its Great
+    // Person modifiers give one point from each exact active district.
+    assert_close(
+        scotland_happy.science - rome_happy.science,
+        (rome_happy.science - rome_content.science) / 2.0,
+    );
+    assert_close(
+        scotland_happy.production - rome_happy.production,
+        (rome_happy.production - rome_content.production) / 2.0,
+    );
+    assert_close(
+        great_person_points(&scotland, "scientist") - great_person_points(&rome, "scientist"),
+        1.0,
+    );
+    assert_close(
+        great_person_points(&scotland, "engineer") - great_person_points(&rome, "engineer"),
+        1.0,
+    );
+
+    set_test_city_amenity_surplus(&mut scotland, city, 5);
+    set_test_city_amenity_surplus(&mut rome, city, 5);
+    assert_eq!(scotland.city_happiness(&scotland.cities[&city]), "ecstatic");
+    let scotland_ecstatic = scotland.city_yields(city);
+    let rome_ecstatic = rome.city_yields(city);
+    // Ecstatic doubles every Scottish Enlightenment amount: +10% yields and
+    // two points from each matching district.
+    assert_close(
+        scotland_ecstatic.science - rome_ecstatic.science,
+        (rome_ecstatic.science - rome_content.science) / 2.0,
+    );
+    assert_close(
+        scotland_ecstatic.production - rome_ecstatic.production,
+        (rome_ecstatic.production - rome_content.production) / 2.0,
+    );
+    assert_close(
+        great_person_points(&scotland, "scientist") - great_person_points(&rome, "scientist"),
+        2.0,
+    );
+    assert_close(
+        great_person_points(&scotland, "engineer") - great_person_points(&rome, "engineer"),
+        2.0,
+    );
+
+    // The source requirements name the active Campus exactly; a pillaged one
+    // removes both its ordinary and Scottish Scientist points.
+    scotland.map.tiles.get_mut(&campus).unwrap().pillaged = true;
+    rome.map.tiles.get_mut(&campus).unwrap().pillaged = true;
+    assert_close(
+        great_person_points(&scotland, "scientist"),
+        great_person_points(&rome, "scientist"),
+    );
+}
+
 fn recruit_current_scientist(game: &mut Game) -> String {
     let expected = game
         .current_great_person("scientist")
