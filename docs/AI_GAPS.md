@@ -160,6 +160,20 @@ generated, untracked, and absent from the shipped tree. In a normal checkout:
 Calling these names “learned agents” without stating the artifact is therefore
 incorrect.
 
+The next-step boundary is now implemented without changing that conclusion.
+`tools/action_policy_train.py` trains a low-capacity, replica-aware pairwise
+ranker from fresh `q_counterfactual` games, splits by independent game, and
+refuses to write a candidate unless held-out BCE, fixed 0.70 abstention
+coverage, and gated return lift all clear their declared bars. The reusable
+`tools/action_conditioned_eval.py` consumes that artifact and refuses to open
+an untouched external profile after a failed selection gate. Rust's optional
+`valuenet::ActionPolicy` loader validates the same schema and returns to the
+scripted expert for missing, malformed, tied, or low-confidence candidates.
+This closes the reproducible action-conditioned training and safety boundary;
+it does **not** promote a model or change the live controller. A fresh external
+profile and a mirrored gameplay A/B remain required evidence for that separate
+decision.
+
 ### 3. Predicting outcomes has not produced a safe action objective
 
 The 25-feature value net uses full-state empire aggregates. Historical models
@@ -455,10 +469,11 @@ that boundary rather than re-running the old stringly comparisons.
    belief-pressure surface into a major civilization that consumes observation,
    memory, and belief end-to-end. This remains the largest rules-integrity gap
    and is prerequisite to honest learned policies.
-4. **Learn action-conditioned advantage with abstention.** Expand the
-   counterfactual action corpus, reserve deployment as an untouched calibration
-   set, and fall back to scripted play out of distribution. A state-value argmax
-   is not an action-value policy.
+4. **Validate a fresh action-conditioned candidate.** The trainer, artifact
+   loader, and selection gate now exist; the remaining work is data collection
+   on disjoint profiles and the mirrored gameplay A/B. Keep deployment
+   untouched until selection passes, and fall back to scripted play outside the
+   supported distribution. A state-value argmax is not an action-value policy.
 5. **Screen the full expansion investment.** The bounded
    `advanced_coupled_expansion` treatment now models settler production,
    population, escort, travel, settlement, and payback together. The oracle
@@ -487,9 +502,10 @@ the next code edit is:
 3. **Screen the fog-honest major controller.** Run the opt-in arm on disjoint
    compact and deployment prefixes, measure replay refusals and throughput,
    and promote it only if the matrix gate pays for the information boundary.
-4. **Learn action-conditioned advantage with abstention.** Expand the action
-   corpus, hold deployment out for calibration, and fall back to scripted play
-   outside the supported distribution.
+4. **Validate a fresh action-conditioned candidate.** Use the new trainer and
+   fixed-threshold evaluator on disjoint action corpora; do not tune coverage
+   on the deployment profile, and do not integrate a candidate before the
+   mirrored gameplay gate.
 5. **Search full expansion investment, then price strategic search.** Model
    production, population, travel, settlement, and payback together; retain
    expensive macro search unless a genome-matched deployment comparison pays
@@ -931,3 +947,19 @@ The confirmation estimate remains the quotable number. A pooled point estimate
 would still contain the discovery prefix selected on the gate, so it is not
 printed as a headline unless per-map results are retained for a separate,
 explicit diagnostic.
+
+## 2026-08-17 the action-conditioned policy boundary is now reproducible
+
+The repository now has one path from a fresh causal corpus to a safely
+reviewable candidate. `tools/action_policy_train.py` retains all four matched
+doctrine returns as pairwise posterior targets, keeps train/selection games
+disjoint, and refuses to emit an artifact when held-out BCE, fixed-threshold
+coverage, or gated lift fails. `tools/action_conditioned_eval.py` enforces the
+same 34-state + 133-action schema and will not inspect an untouched external
+profile after selection fails. `valuenet::ActionPolicy` validates the emitted
+schema and abstains on malformed, tied, or low-confidence candidate sets.
+
+This is an infrastructure completion, not a strength claim: no policy file is
+embedded, no default AI loads it, and the incumbent remains scripted. A future
+fresh external screen and mirrored gameplay A/B must earn promotion; the
+rejected historical Q corpora remain closed.

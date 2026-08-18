@@ -11,11 +11,121 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+/// JSON schema emitted by `tools/action_policy_train.py`.
+pub const ACTION_POLICY_SCHEMA: &str = "civvis-action-policy-v1";
+
 #[derive(Deserialize, Clone)]
 pub struct ValueNet {
     pub sizes: Vec<usize>,
     pub weights: Vec<Vec<Vec<f64>>>, // [layer][in][out]
     pub biases: Vec<Vec<f64>>,
+}
+
+/// A validated linear action-conditioned ranker.
+///
+/// The policy is deliberately a pointer-style scorer: the number of legal
+/// actions varies every turn, so a fixed output head would either invent
+/// illegal actions or require a second mask protocol.  Callers pass the
+/// already legal candidate feature rows and the index of the scripted expert.
+/// `choose` returns a sibling only when the declared confidence threshold is
+/// met; otherwise `None` means retain the scripted action.
+///
+/// This type is an optional artifact boundary, not a production controller.
+/// No default AI constructs it, and a malformed or absent artifact fails
+/// closed to the existing scripted behavior.
+#[derive(Deserialize, Clone)]
+pub struct ActionPolicy {
+    pub schema: String,
+    pub feature_width: usize,
+    pub weights: Vec<f64>,
+    pub min_probability: f64,
+}
+
+enum PolicyArtifact {
+    Missing,
+    Invalid,
+    Policy(ActionPolicy),
+}
+
+fn read_policy(dir: &Path) -> PolicyArtifact {
+    let Ok(raw) = fs::read_to_string(dir.join("action_policy.json")) else {
+        return PolicyArtifact::Missing;
+    };
+    match serde_json::from_str::<ActionPolicy>(&raw) {
+        Ok(policy) if policy.valid() => PolicyArtifact::Policy(policy),
+        _ => PolicyArtifact::Invalid,
+    }
+}
+
+impl ActionPolicy {
+    /// Resolve a local action-policy artifact, then the committed `data/`
+    /// tier, with the same present-but-invalid stop rule as [`ValueNet::load`].
+    pub fn load(dir: &str) -> Option<ActionPolicy> {
+        Self::load_under(Path::new(""), dir)
+    }
+
+    fn load_under(base: &Path, dir: &str) -> Option<ActionPolicy> {
+        match read_policy(&base.join(dir)) {
+            PolicyArtifact::Policy(policy) => Some(policy),
+            PolicyArtifact::Invalid => None,
+            PolicyArtifact::Missing => match read_policy(&base.join("data").join(dir)) {
+                PolicyArtifact::Policy(policy) => Some(policy),
+                _ => None,
+            },
+        }
+    }
+
+    fn valid(&self) -> bool {
+        self.schema == ACTION_POLICY_SCHEMA
+            && self.feature_width > 0
+            && self.weights.len() == self.feature_width
+            && self.weights.iter().all(|value| value.is_finite())
+            && self.min_probability.is_finite()
+            && self.min_probability > 0.5
+            && self.min_probability < 1.0
+    }
+
+    /// Score one already-validated candidate row.
+    pub fn score(&self, features: &[f32]) -> Option<f64> {
+        if features.len() != self.feature_width || !features.iter().all(|value| value.is_finite()) {
+            return None;
+        }
+        let score: f64 = self
+            .weights
+            .iter()
+            .zip(features)
+            .map(|(weight, value)| *weight * f64::from(*value))
+            .sum();
+        score.is_finite().then_some(score)
+    }
+
+    /// Return the highest-scoring non-expert sibling when its posterior clears
+    /// the artifact's fixed threshold.  Ties and weak margins abstain.
+    pub fn choose(&self, candidates: &[Vec<f32>], expert_index: usize) -> Option<usize> {
+        if candidates.len() < 2 || expert_index >= candidates.len() {
+            return None;
+        }
+        let scores: Option<Vec<f64>> = candidates.iter().map(|row| self.score(row)).collect();
+        let scores = scores?;
+        let sibling = (0..candidates.len())
+            .filter(|index| *index != expert_index)
+            .max_by(|left, right| {
+                scores[*left]
+                    .total_cmp(&scores[*right])
+                    .then_with(|| right.cmp(left))
+            })?;
+        let margin = scores[sibling] - scores[expert_index];
+        if !margin.is_finite() {
+            return None;
+        }
+        let probability = if margin >= 0.0 {
+            1.0 / (1.0 + (-margin).exp())
+        } else {
+            let exponential = margin.exp();
+            exponential / (1.0 + exponential)
+        };
+        (probability >= self.min_probability).then_some(sibling)
+    }
 }
 
 /// What a directory holds, distinguishing "no artifact here" from "an
@@ -177,7 +287,7 @@ impl ValueNet {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_net, Artifact, ValueNet};
+    use super::{read_net, ActionPolicy, Artifact, ValueNet, ACTION_POLICY_SCHEMA};
     use std::path::{Path, PathBuf};
 
     /// A structurally valid net of the requested input width, as JSON.
@@ -216,6 +326,11 @@ mod tests {
     fn place(dir: &Path, body: &str) {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join("valuenet.json"), body).unwrap();
+    }
+
+    fn place_policy(dir: &Path, body: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("action_policy.json"), body).unwrap();
     }
 
     /// Preserve parity with a Python training artifact when one is present.
@@ -313,5 +428,55 @@ mod tests {
         assert!(!network.valid());
         network.weights[0][0].push(f64::NAN);
         assert!(!network.valid());
+    }
+
+    fn policy_json(weight: f64, min_probability: f64) -> String {
+        format!(
+            "{{\"schema\":\"{ACTION_POLICY_SCHEMA}\",\"feature_width\":2,\"weights\":[{weight},0.0],\"min_probability\":{min_probability}}}"
+        )
+    }
+
+    #[test]
+    fn action_policy_resolves_local_before_data_snapshot() {
+        let base = base("policy-local-wins");
+        place_policy(&base.join("evolved"), &policy_json(1.0, 0.7));
+        place_policy(&base.join("data").join("evolved"), &policy_json(-1.0, 0.7));
+        let policy = ActionPolicy::load_under(&base, "evolved").expect("local policy resolves");
+        assert_eq!(policy.weights[0], 1.0);
+    }
+
+    #[test]
+    fn action_policy_rejects_invalid_artifacts_without_fallback() {
+        let base = base("policy-invalid");
+        place_policy(&base.join("evolved"), &policy_json(1.0, 0.5));
+        place_policy(&base.join("data").join("evolved"), &policy_json(1.0, 0.7));
+        assert!(
+            ActionPolicy::load_under(&base, "evolved").is_none(),
+            "a broken local policy must not silently become a different policy"
+        );
+    }
+
+    #[test]
+    fn action_policy_abstains_below_threshold_and_selects_legal_sibling() {
+        let policy: ActionPolicy = serde_json::from_str(&policy_json(1.0, 0.7)).unwrap();
+        let candidates = vec![vec![0.0, 0.0], vec![1.0, 0.0], vec![-1.0, 0.0]];
+        assert_eq!(policy.choose(&candidates, 0), Some(1));
+
+        let weak: ActionPolicy = serde_json::from_str(&policy_json(0.01, 0.7)).unwrap();
+        assert_eq!(weak.choose(&candidates, 0), None);
+        assert_eq!(policy.choose(&candidates, 4), None);
+        assert_eq!(policy.choose(&[vec![0.0, 0.0]], 0), None);
+    }
+
+    #[test]
+    fn action_policy_ties_retain_the_expert_and_bad_rows_fail_closed() {
+        let policy: ActionPolicy = serde_json::from_str(&policy_json(1.0, 0.7)).unwrap();
+        let tied = vec![vec![0.0, 0.0], vec![0.0, 0.0]];
+        assert_eq!(policy.choose(&tied, 0), None);
+        assert_eq!(
+            policy.choose(&[vec![f32::NAN, 0.0], vec![1.0, 0.0]], 0),
+            None
+        );
+        assert_eq!(policy.score(&[0.0]), None);
     }
 }
