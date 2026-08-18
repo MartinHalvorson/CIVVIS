@@ -2101,6 +2101,19 @@ pub struct BasicAi {
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
     pub(crate) come_ashore: bool,
+    /// A capturable civilian within a military unit's movement reach is taken
+    /// by walking onto it, and a settler in the barbarians' hands is never
+    /// declined — it is plunder to take back (usually our own production),
+    /// not a duplicate to refuse. Off for the frozen native controllers,
+    /// whose recorded ladders would otherwise shift underneath them, and
+    /// enabled by the production Advanced constructor. See
+    /// `capture_adjacent_civilian` and `pursue_capturable_civilian`.
+    ///
+    /// Motivated by run `civvis-20260818T222844Z`: our captured settler
+    /// walked unguarded past four of our units for seven turns (t27–t33);
+    /// the two times a unit stood adjacent, `decline_settlers` ordered it to
+    /// fortify instead, and the settler was lost to a camp.
+    pub(crate) civilian_rescue: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -3820,6 +3833,7 @@ impl BasicAi {
             camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
+            civilian_rescue: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4060,6 +4074,7 @@ impl BasicAi {
             camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
+            civilian_rescue: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -12208,11 +12223,18 @@ impl BasicAi {
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[g.units[&uid].kind];
         let doctrine = Self::unit_doctrine(g, uid);
+        // A settler in the barbarians' hands is never declined: recapture
+        // costs one move and returns a full production payment (usually our
+        // own settler walking home to a camp), so it must neither be refused
+        // by the duplicate/unusable guard below nor trip its freeze.
+        // `barb_pid`, not `is_barbarian` — Free Cities carry the flag too.
+        let barb_rescue: Option<usize> = if self.civilian_rescue { g.barb_pid } else { None };
         let adjacent_enemy_settler = g.nbrs(upos).into_iter().any(|position| {
             g.units_at(position).into_iter().any(|other| {
                 g.units[&other].owner != pid
                     && g.is_at_war(pid, g.units[&other].owner)
                     && g.units[&other].kind == "settler"
+                    && barb_rescue != Some(g.units[&other].owner)
             })
         });
         let decline_settlers = adjacent_enemy_settler
@@ -12223,6 +12245,9 @@ impl BasicAi {
                     .any(|unit| unit.owner == pid && unit.kind == "settler")
                 || !self.has_practical_settle_site(g, pid));
         if self.capture_adjacent_civilian(g, pid, uid, decline_settlers) {
+            return true;
+        }
+        if self.pursue_capturable_civilian(g, pid, uid, decline_settlers) {
             return true;
         }
         if decline_settlers {
@@ -12455,7 +12480,11 @@ impl BasicAi {
                         if other.owner == pid || !g.is_at_war(pid, other.owner) {
                             return None;
                         }
+                        // A barbarian-held settler outranks everything and is
+                        // never declined; see `civilian_rescue`.
+                        let barb_rescue = self.civilian_rescue && g.barb_pid == Some(other.owner);
                         match other.kind.as_str() {
+                            "settler" if barb_rescue => Some(4),
                             "settler" if !decline_settlers => Some(3),
                             "settler" => None,
                             "builder" => Some(2),
@@ -12472,6 +12501,100 @@ impl BasicAi {
             .max_by_key(|(value, position)| (*value, std::cmp::Reverse(*position)))
             .map(|(_, position)| position);
         target.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
+    }
+
+    /// The rescue pursuit: a capturable civilian within this turn's movement
+    /// reach is taken by walking onto it, not watched from adjacency.
+    ///
+    /// Adjacent-only capture lost a settler on the live seat
+    /// (`civvis-20260818T222844Z` t27–t33): the pursuer stepped to the tile
+    /// *beside* the settler every turn — the position a ranged attack wants,
+    /// and the engine rejects attacks on an undefended civilian — while the
+    /// barbarians walked it home to a camp. One step per call; the unit loop
+    /// composes the walk within the turn, and the adjacent branch above
+    /// finishes the capture. Settlers and builders only: a generic support
+    /// pickup is not worth pulling a formation apart, and stays
+    /// adjacent-only.
+    fn pursue_capturable_civilian(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        decline_settlers: bool,
+    ) -> bool {
+        if !self.civilian_rescue || g.rules.units[g.units[&uid].kind].class != "military" {
+            return false;
+        }
+        let origin = g.units[&uid].pos;
+        let reach = g.units[&uid].moves_left.floor() as i32;
+        if reach < 2 {
+            return false;
+        }
+        // A unit standing on or beside one of our own settlers is plausibly
+        // its escort; rescuing one civilian must not expose another.
+        let beside_own_settler = g.nbrs(origin).into_iter().chain([origin]).any(|position| {
+            g.units_at(position).into_iter().any(|other| {
+                other != uid && g.units[&other].owner == pid && g.units[&other].kind == "settler"
+            })
+        });
+        if beside_own_settler {
+            return false;
+        }
+        let barb_rescue: Option<usize> = g.barb_pid;
+        let minor_gate = (self.minor && (!self.barb || !self.barbarian_tactics))
+            .then(|| Self::minor_home(g, pid));
+        let goal = g
+            .units
+            .values()
+            .filter_map(|other| {
+                if other.owner == pid || !g.is_at_war(pid, other.owner) {
+                    return None;
+                }
+                let value = match other.kind.as_str() {
+                    "settler" if barb_rescue == Some(other.owner) => 4,
+                    "settler" if !decline_settlers => 3,
+                    "builder" => 2,
+                    _ => return None,
+                };
+                if let Some(home) = minor_gate {
+                    if home.is_none_or(|home| g.wdist(home, other.pos) > MINOR_DEFENSE_RADIUS) {
+                        return None;
+                    }
+                }
+                let distance = g.wdist(origin, other.pos);
+                if distance < 2 || distance > reach {
+                    return None;
+                }
+                // A civilian standing under an enemy military unit cannot be
+                // captured by entering; that tile is an attack problem.
+                let guarded = g.units_at(other.pos).into_iter().any(|oid| {
+                    let blocker = &g.units[&oid];
+                    blocker.owner != pid && g.rules.units[blocker.kind].class == "military"
+                });
+                if guarded {
+                    return None;
+                }
+                Some((value, std::cmp::Reverse(distance), std::cmp::Reverse(other.pos)))
+            })
+            .max()
+            .map(|(_, _, std::cmp::Reverse(position))| position);
+        let Some(goal) = goal else {
+            return false;
+        };
+        let Some(next) = g
+            .route_step(uid, goal, 0)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return false;
+        };
+        let kind = g.units[&uid].kind.as_str();
+        think!(self.journal, Military, Decision,
+               "{kind} {uid} marches to rescue a capturable civilian";
+               "an undefended enemy civilian is {reach} or fewer tiles away; \
+                walking onto it captures it, and a settler taken back from \
+                the barbarians repays its whole production";
+               goal);
+        self.path_move(g, pid, uid, next)
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
@@ -18785,6 +18908,145 @@ mod tests {
             game.log.last(),
             Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
         ));
+    }
+
+    /// A flattened two-city board with every stray unit removed: the shared
+    /// prelude of the civilian-capture tests. Returns the game and the tile
+    /// beside player 0's capital that a capture target stands on.
+    fn capture_test_board(seed: u64) -> (Game, Pos) {
+        let mut game = Game::new_full(2, 20, 14, seed, 120, 0, true);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let target = game
+            .nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        (game, target)
+    }
+
+    /// A settler in the barbarians' hands is never declined. On run
+    /// `civvis-20260818T222844Z` our own captured settler stood beside a
+    /// unit of ours twice (t27, t33) and both times the duplicate-settler
+    /// guard ordered a fortify instead; the settler was walked to a camp.
+    #[test]
+    fn a_barbarian_held_settler_is_rescued_despite_a_duplicate() {
+        let (mut game, target) = capture_test_board(91_773);
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let barb = game.barb_pid.unwrap();
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        // The duplicate that made the old guard decline: our own settler,
+        // alive but far from the rescuer.
+        let far = game.cities[&game.player_city_ids(1)[0]].pos;
+        let own = game.spawn_test_unit("settler", 0, far);
+        let captured = game.spawn_test_unit("settler", barb, target);
+        let mut ai = BasicAi::new();
+        ai.civilian_rescue = true;
+
+        assert!(ai.military_step(&mut game, 0, warrior));
+        assert_eq!(game.units[&captured].owner, 0);
+        assert_eq!(game.units[&own].owner, 0);
+    }
+
+    /// The frozen controllers keep their recorded behavior: with the rescue
+    /// off, the duplicate-settler guard still declines a barbarian-held
+    /// settler and holds the unit.
+    #[test]
+    fn without_the_rescue_a_duplicate_settler_is_still_declined() {
+        let (mut game, target) = capture_test_board(91_773);
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let barb = game.barb_pid.unwrap();
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let far = game.cities[&game.player_city_ids(1)[0]].pos;
+        game.spawn_test_unit("settler", 0, far);
+        let captured = game.spawn_test_unit("settler", barb, target);
+        let mut ai = BasicAi::new();
+
+        ai.military_step(&mut game, 0, warrior);
+        assert_eq!(game.units[&captured].owner, barb);
+    }
+
+    /// A major rival's settler is unchanged by the rescue: the
+    /// duplicate/unusable guard still declines it.
+    #[test]
+    fn a_duplicate_settler_from_a_major_is_still_declined_under_rescue() {
+        let (mut game, target) = capture_test_board(91_772);
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.at_war.insert((0, 1));
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let far = game.cities[&game.player_city_ids(1)[0]].pos;
+        game.spawn_test_unit("settler", 0, far);
+        let enemy_settler = game.spawn_test_unit("settler", 1, target);
+        let mut ai = BasicAi::new();
+        ai.civilian_rescue = true;
+
+        ai.military_step(&mut game, 0, warrior);
+        assert_eq!(game.units[&enemy_settler].owner, 1);
+    }
+
+    /// Capture reach is movement, not adjacency: a barbarian-held settler
+    /// two tiles out is walked onto within the same turn. Adjacent-only
+    /// capture is how the live pursuer parked *beside* the settler every
+    /// turn while the barbarians walked it home.
+    #[test]
+    fn a_barbarian_held_settler_two_tiles_away_is_walked_onto() {
+        let (mut game, mid) = capture_test_board(91_773);
+        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
+        let barb = game.barb_pid.unwrap();
+        let target = game
+            .nbrs(mid)
+            .into_iter()
+            .find(|position| {
+                game.wdist(origin, *position) == 2
+                    && game.city_at(*position).is_none()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .unwrap();
+        let warrior = game.spawn_test_unit("warrior", 0, origin);
+        let captured = game.spawn_test_unit("settler", barb, target);
+        let mut ai = BasicAi::new();
+        ai.civilian_rescue = true;
+
+        // The unit loop's shape: step until the unit declines or runs dry.
+        for _ in 0..8 {
+            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior)
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            game.units[&captured].owner,
+            0,
+            "two tiles and two movement points are a capture, not a vigil"
+        );
     }
 
     #[test]

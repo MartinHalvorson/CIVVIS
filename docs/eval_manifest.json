@@ -1,7 +1,7 @@
 {
   "coverage": {
     "named": 20,
-    "never_named": 34,
+    "never_named": 35,
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
@@ -9,6 +9,7 @@
       "blind-objective-strength",
       "blind-objective-units",
       "campus-every-city",
+      "civilian-rescue",
       "district-coverage",
       "endgame-war-runway",
       "escort-unstick",
@@ -38,14 +39,14 @@
       "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 54
+    "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 217,
+    "eval_only_count": 219,
     "firaxis_only_count": 24,
-    "live_bridge_count": 78,
-    "native_engine_repair_count": 54,
-    "withholdable_live_count": 54
+    "live_bridge_count": 79,
+    "native_engine_repair_count": 55,
+    "withholdable_live_count": 55
   },
   "ladder": {
     "ahead": 6,
@@ -114,7 +115,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 54,
+      "declared_count": 55,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -142,6 +143,7 @@
         "recon-replacement",
         "recon-flight",
         "barbarian-scouts-are-scouts",
+        "civilian-rescue",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -173,7 +175,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 30,
+      "declared_count": 31,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -201,6 +203,7 @@
         "recon-replacement",
         "recon-flight",
         "barbarian-scouts-are-scouts",
+        "civilian-rescue",
         "naval-recon",
         "camp-reach",
         "camp-party",
@@ -208,7 +211,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 217,
+      "declared_count": 219,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -300,6 +303,7 @@
         "live_without_siege_is_progress",
         "live_without_spy_mission_patience",
         "live_without_settler_site_agreement",
+        "live_without_civilian_rescue",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -377,6 +381,7 @@
         "advanced_sea_answers",
         "advanced_camp_bounty",
         "advanced_without_barbarian_scouts_are_scouts",
+        "advanced_without_civilian_rescue",
         "advanced_engine_faith_price",
         "advanced_maintenance_deck",
         "advanced_recon_fleet",
@@ -459,7 +464,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 78,
+      "declared_count": 79,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -538,7 +543,8 @@
         "land-grab",
         "siege-is-progress",
         "spy-mission-patience",
-        "settler-site-agreement"
+        "settler-site-agreement",
+        "civilian-rescue"
       ]
     }
   },

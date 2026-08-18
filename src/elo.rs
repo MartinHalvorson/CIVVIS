@@ -141,6 +141,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_siege_is_progress",
     "live_without_spy_mission_patience",
     "live_without_settler_site_agreement",
+    "live_without_civilian_rescue",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -233,6 +234,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_sea_answers",
     "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
+    "advanced_without_civilian_rescue",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
     "advanced_recon_fleet",
@@ -398,6 +400,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "siege-is-progress",
     "spy-mission-patience",
     "settler-site-agreement",
+    "civilian-rescue",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -590,6 +593,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "civilian-rescue",
     "naval-recon",
     "camp-reach",
     "camp-party",
@@ -655,6 +659,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "civilian-rescue",
     "naval-recon",
     "camp-reach",
     "camp-party",
@@ -801,6 +806,7 @@ define_arm_kinds! {
     LiveWithoutSiegeIsProgress => "live_without_siege_is_progress",
     LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
+    LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -876,6 +882,7 @@ define_arm_kinds! {
     AdvancedSeaAnswers => "advanced_sea_answers",
     AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
+    AdvancedWithoutCivilianRescue => "advanced_without_civilian_rescue",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
     AdvancedReconFleet => "advanced_recon_fleet",
@@ -3326,6 +3333,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_barbarian_scouts_are_scouts();
             Box::new(ai)
         }
+        // Withhold the civilian rescue so its promotion is priced: the stock
+        // controller ships it ON. See `BasicAi::civilian_rescue`.
+        "advanced_without_civilian_rescue" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_civilian_rescue();
+            Box::new(ai)
+        }
         // Read the Faith price from the engine rather than the Standard-speed
         // `spec.cost * 2.0` literal. At Online -- the deployment and live-bridge
         // speed -- that literal asks for twice what the engine charges, and it
@@ -4286,6 +4300,7 @@ impl ArmKind {
             Self::LiveWithoutSiegeIsProgress => live_without("siege-is-progress"),
             Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
+            Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4405,6 +4420,7 @@ impl ArmKind {
             Self::AdvancedSeaAnswers => &["sea-answers-sea-threats"],
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
+            Self::AdvancedWithoutCivilianRescue => &["civilian-rescue-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
             Self::AdvancedReconFleet => &[
@@ -4916,6 +4932,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_barbarian_scouts_are_scouts" => {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
         }
+        "advanced_without_civilian_rescue" => (Vec::new(), "advanced_without_civilian_rescue"),
         "advanced_engine_faith_price" => (Vec::new(), "advanced_engine_faith_price"),
         "advanced_maintenance_deck" => (Vec::new(), "advanced_maintenance_deck"),
         "advanced_recon_fleet" => (Vec::new(), "advanced"),
@@ -6357,6 +6374,7 @@ mod tests {
                 "advanced_sea_answers",
                 "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
+                "advanced_without_civilian_rescue",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
                 "advanced_recon_fleet",
