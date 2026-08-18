@@ -24519,19 +24519,19 @@ fn envoy_income_census() {
         }
 
         let spec = game.rules.wonders[wonder].clone();
-        for node in spec.tech.clone().into_iter() {
-            let mut open = vec![node];
+        if let Some(tech) = spec.tech {
+            let mut open = vec![tech];
             while let Some(node) = open.pop() {
-                if game.players[0].techs.insert(node.clone()) {
-                    open.extend(game.rules.techs[&node].requires.iter().cloned());
+                if game.players[0].techs.insert(node) {
+                    open.extend(game.rules.techs[&node].requires.iter().copied());
                 }
             }
         }
-        for node in spec.civic.clone().into_iter() {
-            let mut open = vec![node];
+        if let Some(civic) = spec.civic {
+            let mut open = vec![civic];
             while let Some(node) = open.pop() {
-                if game.players[0].civics.insert(node.clone()) {
-                    open.extend(game.rules.civics[&node].requires.iter().cloned());
+                if game.players[0].civics.insert(node) {
+                    open.extend(game.rules.civics[&node].requires.iter().copied());
                 }
             }
         }
@@ -24541,8 +24541,8 @@ fn envoy_income_census() {
 
         // Three buildings, the required ones among them.
         let mut buildings = vec![crate::name!("monument"), crate::name!("granary")];
-        buildings.extend(spec.requires_buildings.iter().cloned());
-        buildings.extend(spec.requires_any_buildings.iter().take(1).cloned());
+        buildings.extend(spec.requires_buildings.iter().copied());
+        buildings.extend(spec.requires_any_buildings.iter().take(1).copied());
         game.cities.get_mut(&city).unwrap().buildings = buildings;
 
         // The district the wonder must sit beside, and a tile beside it that
@@ -24551,7 +24551,7 @@ fn envoy_income_census() {
             .adjacent_district
             .as_ref()
             .map(|family| install_ai_test_district(&mut game, city, family.as_str()));
-        let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+        let owned: Vec<Pos> = game.cities[&city].owned_tiles.to_vec();
         for pos in owned {
             if pos == center || game.wdist(pos, center) > 3 {
                 continue;
