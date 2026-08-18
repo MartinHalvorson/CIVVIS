@@ -33,8 +33,16 @@ REGISTRY_NAMES = (
     "ENGINE_REPAIR_TREATMENTS",
 )
 
+# ⚠ THE REGISTRY LISTS NO LONGER CARRY A LENGTH, AND THAT IS THE POINT. They
+# were `[&str; N]` with N typed by hand — the largest 188 — and on 2026-08-17
+# #1865 added an arm, missed the count, and left `main` unable to build for
+# wasm until #1869 fixed the number. They are `&[&str]` now, which cannot go
+# stale. This reads both shapes so a lane pinned to an older revision still
+# parses; `count` is simply absent from the newer one.
 ARRAY_RE = re.compile(
-    r"pub const (?P<name>[A-Z][A-Z0-9_]*)\s*:\s*\[&str;\s*(?P<count>\d+)\]\s*=\s*\[(?P<body>.*?)\];",
+    r"pub const (?P<name>[A-Z][A-Z0-9_]*)\s*:\s*"
+    r"(?:\[&str;\s*(?P<count>\d+)\]\s*=\s*\[|&\[&str\]\s*=\s*&\[)"
+    r"(?P<body>.*?)\];",
     re.DOTALL,
 )
 STRING_RE = re.compile(r'"((?:\\.|[^"\\])*)"')
@@ -61,7 +69,10 @@ def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
             continue
         body = _strip_comments(match.group("body"))
         items = [_rust_string(value) for value in STRING_RE.findall(body)]
-        declared = int(match.group("count"))
+        # A hand-typed length is the thing that used to go stale; where one is
+        # still present it is still checked, and where the declaration counts
+        # itself there is nothing left to disagree with.
+        declared = int(match.group("count")) if match.group("count") else len(items)
         if declared != len(items):
             raise ValueError(
                 f"{name}: declaration says {declared}, found {len(items)} strings"
