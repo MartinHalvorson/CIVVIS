@@ -501,6 +501,15 @@ impl AdvancedAi {
         self.deny_while_targeted = false;
     }
 
+    /// See [`Self::siege_is_progress`].
+    pub fn enable_siege_is_progress(&mut self) {
+        self.siege_is_progress = true;
+    }
+
+    pub fn disable_siege_is_progress(&mut self) {
+        self.siege_is_progress = false;
+    }
+
     /// See [`Self::stock_denial_lead_time`].
     pub fn enable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = true;
@@ -951,6 +960,10 @@ impl AdvancedAi {
         // with the whole counter apparatus gated off. Match point overrides
         // the lane's focus; ordinary pressure still never does.
         self.enable_deny_while_targeted();
+        // ⚠ And the fatigue clock must not offer away a siege that is landing
+        // net damage — Chennai at 190/200, "the war has stalled: 1180 power
+        // against their 82". See `siege_is_progress`.
+        self.enable_siege_is_progress();
         // ⚠ And the alarm must reach the two lanes it cannot answer late.
         // Four of the five stolen games above were Culture; the general 90
         // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
@@ -1046,6 +1059,10 @@ impl AdvancedAi {
         self.enable_siege_tracks_the_wall();
         self.enable_siege_commitment();
         self.enable_war_patience();
+        // And a siege landing net damage resets the fatigue clock, so the
+        // peace desk cannot offer away a war one hit from a capture. See
+        // `siege_is_progress`.
+        self.enable_siege_is_progress();
         self.enable_endgame_war_runway();
         // Holding one. Barbarians take 7.0 major cities a game, 65% of
         // everything a major loses.
