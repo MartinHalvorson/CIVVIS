@@ -427,6 +427,80 @@ fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
 }
 
 #[test]
+fn a_siege_landing_net_damage_is_not_a_stalled_war() {
+    // The Chennai shape from run civvis-20260817T075857Z: an assigned lane
+    // (no campaign target), a long defensive war, no capture ever — and the
+    // rival capital ground from 12 to 190 of 200 damage while the fatigue
+    // clock read "no progress". At t212 the seat offered peace with 1180
+    // power against 82 and the city healed to full. The contract: an at-war
+    // rival city whose health FELL since the last observation is campaign
+    // progress, and only a siege the defender out-heals may still fatigue
+    // into a peace offer.
+    let (mut game, _, rival_capital) = timed_war_fixture(11);
+    let rival_capital_position = game.cities[&rival_capital].pos;
+    // The fatigued offer stands down against a one-city rival (taking the
+    // capital would eliminate them); the measured shape had a multi-city
+    // defender, so this fixture gets one too.
+    found_nearby_test_city(&mut game, 1, rival_capital_position);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn = 120;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut live = AdvancedAi::new();
+    live.enable_siege_is_progress();
+    live.major_war_since = Some(80);
+    live.last_campaign_progress = 80;
+    // A controller mid-game has been counting all along; a zeroed count
+    // would trip the frozen count-based clock on the first observation.
+    live.last_city_count = game.player_city_ids(0).len();
+    live.observe_campaign(&game, 0);
+    game.cities.get_mut(&rival_capital).unwrap().hp -= 40;
+    live.observe_campaign(&game, 0);
+    assert_eq!(
+        live.last_campaign_progress, game.turn,
+        "net damage on a besieged city is campaign progress"
+    );
+    live.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        !live.peace_offers.contains(&1),
+        "a siege that is winning must not be offered away"
+    );
+
+    let mut outhealed = AdvancedAi::new();
+    outhealed.enable_siege_is_progress();
+    outhealed.major_war_since = Some(80);
+    outhealed.last_campaign_progress = 80;
+    outhealed.last_city_count = game.player_city_ids(0).len();
+    outhealed.observe_campaign(&game, 0);
+    outhealed.observe_campaign(&game, 0);
+    assert_eq!(
+        outhealed.last_campaign_progress, 80,
+        "health the defender holds flat buys no progress"
+    );
+    outhealed.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        outhealed.peace_offers.contains(&1),
+        "a siege the defender out-heals is genuinely stalled and may fatigue"
+    );
+
+    let mut bridged = AdvancedAi::new();
+    bridged.enable_live_bridge();
+    assert!(bridged.siege_is_progress, "the live bundle carries the repair");
+    bridged.disable_siege_is_progress();
+    assert!(!bridged.siege_is_progress);
+}
+
+#[test]
 fn banked_envoys_reclaim_a_nonobjective_hostile_suzerain_city_state() {
     // A city-state that follows its hostile Suzerain into war cannot take
     // an Envoy until peace with that major lands. The live bridge should

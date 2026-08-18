@@ -1227,6 +1227,27 @@ pub struct AdvancedAi {
     /// city's identity, so an ownership transition distinguishes a campaign
     /// gain from a newly founded city without guessing from its name or size.
     campaign_city_owners: BTreeMap<u32, usize>,
+    /// City and wall health of every at-war rival city at the preceding
+    /// observation, so `siege_is_progress` can tell a siege that is landing
+    /// net damage from one the defender out-heals. See the flag.
+    campaign_city_health: BTreeMap<u32, (i32, i32)>,
+    /// ★★★★ A SIEGE THAT IS WINNING IS NOT A STALLED WAR. The fatigue clock
+    /// (`last_campaign_progress`) resets only on a foreign city changing
+    /// hands, so a war spent grinding a city down reads as "no progress" for
+    /// exactly as long as the grinding takes — and the fatigued branch then
+    /// offers the defender peace at the moment of victory. Measured on live
+    /// run civvis-20260817T075857Z: Chennai ground from 12 to 190 of 200
+    /// damage, and at t212 the seat journaled "Offering peace to India | the
+    /// war has stalled: 1180 power against their 82" — a fourteen-to-one war
+    /// offered away one hit from a capture, after which the city healed to
+    /// full. Across the 54 completed runs since 2026-08-16 the fleet reduced
+    /// at-war rival cities to 180–190/200 four times and captured none.
+    /// With this flag, an at-war rival city whose city or wall health DROPPED
+    /// since the last observation counts as campaign progress: out-damaging
+    /// the defender's healing is the war working, and only a siege the
+    /// defender out-heals can stall. Live-bridge repair, withholdable as
+    /// `siege-is-progress`.
+    pub siege_is_progress: bool,
     campaign_observed: bool,
     last_city_count: usize,
     peace_until: u32,
@@ -3763,6 +3784,8 @@ impl AdvancedAi {
             major_war_since: None,
             last_campaign_progress: 0,
             campaign_city_owners: BTreeMap::new(),
+            campaign_city_health: BTreeMap::new(),
+            siege_is_progress: false,
             campaign_observed: false,
             last_city_count: 0,
             peace_until: 0,
@@ -4470,6 +4493,15 @@ impl AdvancedAi {
         self.deny_while_targeted = false;
     }
 
+    /// See [`Self::siege_is_progress`].
+    pub fn enable_siege_is_progress(&mut self) {
+        self.siege_is_progress = true;
+    }
+
+    pub fn disable_siege_is_progress(&mut self) {
+        self.siege_is_progress = false;
+    }
+
     /// See [`Self::stock_denial_lead_time`].
     pub fn enable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = true;
@@ -4920,6 +4952,10 @@ impl AdvancedAi {
         // with the whole counter apparatus gated off. Match point overrides
         // the lane's focus; ordinary pressure still never does.
         self.enable_deny_while_targeted();
+        // ⚠ And the fatigue clock must not offer away a siege that is landing
+        // net damage — Chennai at 190/200, "the war has stalled: 1180 power
+        // against their 82". See `siege_is_progress`.
+        self.enable_siege_is_progress();
         // ⚠ And the alarm must reach the two lanes it cannot answer late.
         // Four of the five stolen games above were Culture; the general 90
         // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
@@ -5015,6 +5051,10 @@ impl AdvancedAi {
         self.enable_siege_tracks_the_wall();
         self.enable_siege_commitment();
         self.enable_war_patience();
+        // And a siege landing net damage resets the fatigue clock, so the
+        // peace desk cannot offer away a war one hit from a capture. See
+        // `siege_is_progress`.
+        self.enable_siege_is_progress();
         self.enable_endgame_war_runway();
         // Holding one. Barbarians take 7.0 major cities a game, 65% of
         // everything a major loses.
@@ -5905,6 +5945,36 @@ impl AdvancedAi {
             self.last_campaign_progress = g.turn;
         }
         self.last_city_count = cities;
+        // ★★★★ Net damage on a besieged city is campaign progress. Only
+        // cities of players this seat is AT WAR with are compared, and only a
+        // DROP against the previous observation counts — a defender whose
+        // healing outpaces the bombardment shows non-falling health and the
+        // fatigue clock runs on, which is the one siege that genuinely has
+        // stalled. The map is rebuilt from the current at-war set each
+        // observation, so peace forgets a city and a later war starts a fresh
+        // baseline instead of inheriting one from the last campaign.
+        if self.siege_is_progress {
+            let mut health_now = BTreeMap::new();
+            let mut siege_advanced = false;
+            for (city, observed) in &g.cities {
+                if observed.owner == pid || !g.is_at_war(pid, observed.owner) {
+                    continue;
+                }
+                let health = (observed.hp, observed.wall_hp);
+                if self
+                    .campaign_city_health
+                    .get(city)
+                    .is_some_and(|before| health.0 < before.0 || health.1 < before.1)
+                {
+                    siege_advanced = true;
+                }
+                health_now.insert(*city, health);
+            }
+            if siege_advanced {
+                self.last_campaign_progress = g.turn;
+            }
+            self.campaign_city_health = health_now;
+        }
         let major_war = g.players.iter().any(|p| {
             p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
         });
