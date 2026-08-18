@@ -71,12 +71,11 @@ reported fifteen. Five are fixed here; the rest are triaged below.
   2, government plaza 1, strategic 1), which is what makes the one outlier
   convincing rather than a projection artifact.
 
-- **`Buildings` — three uniques carrying their base building's yield.** The
-  Prasat replaces the Temple (Faith 4, one Relic slot) and ships Faith **6** with
-  the same single slot; CIVVIS had the Temple's 4 and an invented second slot.
-  The Sukiennice replaces the Market (Gold 2) and does not raise it; CIVVIS had
-  3. The Tlachtli replaces the Arena (Culture 1) and doubles it to **2**; CIVVIS
-  had the Arena's 1. One error repeated three times, which is what identified it.
+- **`Buildings` — three uniques must follow the installed Gathering Storm rows,
+  not stale expansion snippets.** The Prasat ships Faith **4** with two Relic
+  slots; CIVVIS had 6 and one. The Sukiennice ships Gold **3**; CIVVIS had 2.
+  The Tlachtli ships Culture **1**; CIVVIS had 2. The XML load order, not an
+  isolated historical row, is the authority for all three.
 - **`Improvements` / `sphinx` terrain.** CIVVIS allowed Snow;
   `Improvement_ValidTerrains` lists Desert, Grassland, Plains and Tundra with
   their Hills variants, and no Snow.

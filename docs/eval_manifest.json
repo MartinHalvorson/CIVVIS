@@ -48,10 +48,10 @@
     "withholdable_live_count": 51
   },
   "ladder": {
-    "attempts": 313,
-    "configured": 309,
-    "latest_utc": "2026-08-18T03:16:49Z",
-    "terminal": 205,
+    "attempts": 317,
+    "configured": 310,
+    "latest_utc": "2026-08-18T06:17:27Z",
+    "terminal": 209,
     "wins": 3
   },
   "registry": {
@@ -345,6 +345,7 @@
         "advanced_lower_city_target",
         "advanced_settler_founds_when_stalled",
         "advanced_fortify_idle_units",
+        "advanced_open_water_navy",
         "advanced_maritime_splice",
         "advanced_sea_answers",
         "advanced_camp_bounty",

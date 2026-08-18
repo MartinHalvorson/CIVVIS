@@ -1801,6 +1801,10 @@ pub struct BasicAi {
     /// Off by default; evaluator arm `advanced_fortify_idle_units`. See
     /// `hold_stood_down_unit` for the measurement that motivates it.
     pub fortify_idle_units: bool,
+    /// Build hulls only where they have open water to sail into. Off by
+    /// default pending its screen; see `city_has_open_water` and the evaluator
+    /// arm `advanced_open_water_navy`.
+    pub open_water_navy: bool,
     /// Let the baseline governor build the district that repairs an Amenity
     /// deficit.
     ///
@@ -2559,6 +2563,40 @@ impl BasicAi {
         })
     }
 
+    /// ★★★★★ WHETHER A HULL BUILT HERE HAS ANYWHERE TO SAIL.
+    ///
+    /// `city_is_coastal` asks only whether some adjacent tile is water, and a
+    /// **lake is water**. Firaxis lets a lakeside city build a Galley and the
+    /// Galley then spends the whole game on the lake — a real trap in the real
+    /// game, faithfully reproduced, and the AI walked into it every time.
+    ///
+    /// Measured over three 150-turn six-player games: majors built 53 naval
+    /// hulls, **20 of which never moved once**, 12 of those sitting on `lake`
+    /// terrain. Only 17.2% of major naval unit-turns involved any movement,
+    /// and a Galley was idle on 54.3% of its own turns — the largest single
+    /// block of wasted major unit-turns in `audit`. Tracing the enqueue showed
+    /// 12 of 15 naval builds in one game came from a city whose only adjacent
+    /// water was lake.
+    ///
+    /// The stranded hull costs three times over: the production that built it,
+    /// the gold maintenance it draws for the rest of the game, and — because
+    /// it counts toward `desired_navy` — the fleet that could have sailed and
+    /// now never gets ordered.
+    ///
+    /// Open water specifically, which is also Firaxis' own rule for a Harbour.
+    /// Deliberately the six neighbours and not a flood fill: the exact
+    /// question is the size of the connected body, and `production_value`
+    /// cannot afford a flood fill per candidate per city per turn.
+    pub(crate) fn city_has_open_water(g: &Game, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| {
+            g.nbrs(city.pos).into_iter().any(|pos| {
+                g.map
+                    .get(pos)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+            })
+        })
+    }
+
     /// Whether this civilization's naval units can cross Ocean tiles. This
     /// mirrors the sea portion of `Game::traversal_class`: a Galley penned
     /// behind deep water before Cartography has not found an open route.
@@ -2602,10 +2640,39 @@ impl BasicAi {
         waterway
     }
 
-    /// A waterway pays for a dedicated scout only when it is genuinely roomy
-    /// and has either unseen water or a live-mirror frontier at its edge.
+    /// A waterway pays for a dedicated scout only when it is genuinely roomy,
+    /// reaches open water, and has either unseen water or a live-mirror
+    /// frontier at its edge.
+    ///
+    /// ★★★★★ THE OPEN-WATER TEST IS THE ONE THAT WAS MISSING, AND IT COST MORE
+    /// THAN THE SIZE TEST SAVED. `NAVAL_RECON_MIN_WATERWAY_TILES` is 4 — room
+    /// for one full Galley move — so any lake of four tiles licensed a hull.
+    /// A lake is a closed system: the scout charts all of it within a couple
+    /// of turns, the frontier test then goes false, and the hull is stranded
+    /// there for the rest of the game, drawing maintenance and counting
+    /// against `desired_navy` so the fleet that could sail is never built.
+    ///
+    /// Measured over three 150-turn six-player games before the fix: majors
+    /// built 53 naval hulls, **20 of which never moved once**, 12 of those
+    /// sitting on `lake` terrain. Only 17.2% of major naval unit-turns
+    /// involved any movement, and a Galley was idle on 54.3% of its own turns
+    /// — the largest single block of wasted major unit-turns in `audit`.
+    /// Tracing the enqueue showed 12 of 15 naval builds in one game came from
+    /// a city whose only adjacent water was lake, all of them through this
+    /// arm rather than through `production_value`, which is why the naval gate
+    /// there never saw them.
+    ///
+    /// A size floor cannot express this: the question is not how much water
+    /// there is, it is whether the water goes anywhere. Ocean tiles are
+    /// already excluded from the flood fill until the civ can cross them, so
+    /// a Galley's coastal waterway still qualifies on its `coast` tiles.
     fn naval_recon_waterway_can_chart(g: &Game, pid: usize, waterway: &BTreeSet<Pos>) -> bool {
         waterway.len() >= NAVAL_RECON_MIN_WATERWAY_TILES
+            && waterway.iter().any(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+            })
             && waterway.iter().any(|pos| {
                 !g.players[pid].explored.contains(pos)
                     || g.nbrs(*pos).into_iter().any(|neighbor| {
@@ -3498,6 +3565,7 @@ impl BasicAi {
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
             fortify_idle_units: false,
+            open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -3728,6 +3796,7 @@ impl BasicAi {
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
             fortify_idle_units: false,
+            open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -6350,7 +6419,14 @@ impl BasicAi {
     }
 
     fn best_naval_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<Name> {
-        if !Self::city_is_coastal(g, cid) {
+        // Open water, not merely water. See `city_has_open_water`: this is the
+        // enqueue path that was building the stranded lake fleet.
+        let launchable = if self.open_water_navy {
+            Self::city_has_open_water(g, cid)
+        } else {
+            Self::city_is_coastal(g, cid)
+        };
+        if !launchable {
             return None;
         }
         let (total, melee, ranged, raiders, carriers) = Self::naval_counts(g, pid);

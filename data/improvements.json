@@ -173,7 +173,6 @@
   "snow",
   "tundra"
  ],
- "requires_flat": true,
  "effects": {
   "religious_unit_heal_rate": 15,
   "adjacent_district_pair_faith": 1,
@@ -316,7 +315,7 @@
    "silver",
    "uranium"
   ],
-  "hills_or_resource": true,
+  "hills_or_resource_or_feature": true,
   "terrain": [
    "desert",
    "grassland",
@@ -1317,7 +1316,7 @@
   "plunder_type": "heal",
   "plunder_amount": 50,
   "unique_to": "Inca",
-  "requires_hills": true,
+  "hills_or_feature": true,
   "terrain": [
    "desert",
    "grassland",

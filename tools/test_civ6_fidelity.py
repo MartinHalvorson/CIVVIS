@@ -111,6 +111,73 @@ class ResourcePlacementWeightsAreAudited(unittest.TestCase):
         self.assertEqual(projected["stone"]["sea_frequency"], 0)
 
 
+class ImprovementPlacementAlternativesAreAudited(unittest.TestCase):
+    def test_a_feature_can_be_an_alternative_to_hills(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+            "Improvement_ValidFeatures": [
+                {
+                    "ImprovementType": "IMPROVEMENT_ROCK_HEWN_CHURCH",
+                    "FeatureType": "FEATURE_VOLCANIC_SOIL",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["rock_hewn_church"]
+        self.assertFalse(projected["requires_hills"])
+        self.assertTrue(projected["hills_or_feature"])
+
+    def test_hills_only_improvement_stays_hills_only(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_HILL_FORT"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_HILL_FORT",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["hill_fort"]
+        self.assertTrue(projected["requires_hills"])
+        self.assertFalse(projected["hills_or_feature"])
+
+    def test_resource_and_feature_are_independent_hill_alternatives(self):
+        database = database_with({
+            "Improvements": [{"ImprovementType": "IMPROVEMENT_MINE"}],
+            "Improvement_ValidTerrains": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "TerrainType": "TERRAIN_PLAINS_HILLS",
+                },
+            ],
+            "Improvement_ValidFeatures": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "FeatureType": "FEATURE_VOLCANIC_SOIL",
+                },
+            ],
+            "Improvement_ValidResources": [
+                {
+                    "ImprovementType": "IMPROVEMENT_MINE",
+                    "ResourceType": "RESOURCE_IRON",
+                },
+            ],
+        })
+
+        projected = civ6_fidelity.project_improvements(database)["mine"]
+        self.assertFalse(projected["requires_hills"])
+        self.assertFalse(projected["hills_or_resource"])
+        self.assertFalse(projected["hills_or_feature"])
+        self.assertTrue(projected["hills_or_resource_or_feature"])
+
+
 class PolicyRosterIsStrict(unittest.TestCase):
     def test_a_policy_only_civvis_offers_is_a_divergence(self):
         result = civ6_fidelity.compare(

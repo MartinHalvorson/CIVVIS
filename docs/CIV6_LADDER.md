@@ -25,10 +25,10 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 313.
+Attempts recorded: 317.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. 313 row(s) predate the ruleset readback and are unverified rather than agreed.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: ?, RULESET_EXPANSION_2. 313 row(s) predate the ruleset readback and are unverified rather than agreed.
 
 ## Which victories have been won, per difficulty
 
@@ -61,23 +61,19 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | VICTORY_SCORE | 127 | 62% |
+| 0 | VICTORY_SCORE | 129 | 62% |
 | 6 | VICTORY_DIPLOMATIC | 43 | 21% |
-| 3 | VICTORY_CULTURE | 26 | 13% |
+| 3 | VICTORY_CULTURE | 28 | 13% |
 | 4 | — | 5 | 2% |
 | 5 | — | 3 | 1% |
 | 2 | — | 1 | 0% |
 
-205 of 313 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
+209 of 317 attempts reached a terminal event; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
-| `civvis-20260815T042826Z` | Settler | — | yes | stopped | 250 | 394 | 2026-08-15T05:13:19Z |
-| `civvis-20260815T051714Z` | Settler | — | yes | stopped | 242 | 442 | 2026-08-15T05:57:44Z |
-| `civvis-20260815T060130Z` | Settler | — | yes | stopped | 250 | 290 | 2026-08-15T06:45:08Z |
-| `civvis-20260815T064852Z` | Settler | — | yes | stopped | 250 | 407 | 2026-08-15T07:32:46Z |
 | `civvis-20260815T073627Z` | Settler | — | yes | stopped | 250 | 506 | 2026-08-15T08:20:27Z |
 | `civvis-20260815T082408Z` | Settler | — | yes | stopped | 250 | 427 | 2026-08-15T09:06:25Z |
 | `civvis-20260815T103152Z` | Settler | — | yes | stopped | 250 | 446 | 2026-08-15T11:18:58Z |
@@ -114,3 +110,7 @@ absent from this table have never been completed by anyone here.
 | `civvis-20260818T003523Z` | Settler | science | yes | win | 250 | 1191 | 2026-08-18T01:17:01Z |
 | `civvis-20260818T012048Z` | Settler | science | yes | stopped | 230 | 871 | 2026-08-18T02:03:46Z |
 | `civvis-20260818T020720Z` | Settler | science | yes | stopped | 250 | 702 | 2026-08-18T03:16:49Z |
+| `civvis-20260818T032030Z` | Settler | science | NO | wrong_ruleset | 223 | 937 | 2026-08-18T04:02:03Z |
+| `civvis-20260818T040903Z` | Settler | diplomatic | NO | wrong_ruleset | 250 | 1138 | 2026-08-18T04:49:44Z |
+| `civvis-20260818T045332Z` | Settler | diplomatic | NO | wrong_ruleset | 250 | 683 | 2026-08-18T05:31:37Z |
+| `civvis-20260818T053908Z` | Settler | diplomatic | yes | stopped | 241 | 634 | 2026-08-18T06:17:27Z |
