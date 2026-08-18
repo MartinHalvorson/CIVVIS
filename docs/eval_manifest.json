@@ -1,8 +1,8 @@
 {
   "derived": {
-    "eval_only_count": 190,
-    "firaxis_only_count": 18,
-    "live_bridge_count": 69,
+    "eval_only_count": 196,
+    "firaxis_only_count": 23,
+    "live_bridge_count": 74,
     "native_engine_repair_count": 51,
     "withholdable_live_count": 51
   },
@@ -145,7 +145,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 190,
+      "declared_count": 196,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -222,6 +222,11 @@
         "live_without_settler_stack_discipline",
         "live_without_camp_party",
         "live_without_buildings_before_projects",
+        "live_without_parallel_settlers",
+        "live_without_host_settler_pop",
+        "live_without_explore_dead_targets",
+        "live_without_explore_commit",
+        "live_without_bank_envoys",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -292,6 +297,7 @@
         "advanced_settler_founds_when_stalled",
         "advanced_fortify_idle_units",
         "advanced_maritime_splice",
+        "advanced_sea_answers",
         "advanced_recon_fleet",
         "advanced_without_recon_fleet",
         "advanced_every_lane",
@@ -340,7 +346,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 18,
+      "declared_count": 23,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -359,11 +365,16 @@
         "tally-great-people",
         "barbarian-scouts-are-scouts",
         "deny-while-targeted",
-        "stock-denial-lead-time"
+        "stock-denial-lead-time",
+        "parallel-settlers",
+        "host-settler-pop",
+        "explore-dead-targets",
+        "bank-envoys",
+        "explore-commit"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 69,
+      "declared_count": 74,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -433,7 +444,12 @@
         "camp-party",
         "buildings-before-projects",
         "deny-while-targeted",
-        "stock-denial-lead-time"
+        "stock-denial-lead-time",
+        "parallel-settlers",
+        "host-settler-pop",
+        "explore-dead-targets",
+        "explore-commit",
+        "bank-envoys"
       ]
     }
   },

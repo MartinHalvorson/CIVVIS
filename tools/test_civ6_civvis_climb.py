@@ -10,6 +10,7 @@ spend a rung of the budget. Everything below is that sentence from a different a
 """
 
 from pathlib import Path
+import collections
 import json
 import re
 import sys
@@ -546,6 +547,37 @@ class BatchPowerTests(unittest.TestCase):
         # The number is per arm; a single pinned batch is HALF of a paired
         # comparison, and the line must not let it read as the whole thing.
         self.assertIn("PER ARM", climb.batch_power_line(8))
+
+
+class BatchCompositionTests(unittest.TestCase):
+    """A game killed by our own clock is not a loss, and nothing said so."""
+
+    def test_a_clean_batch_says_so_without_a_warning(self):
+        line = climb.batch_composition_line(collections.Counter({"stopped": 8}))
+        self.assertIn("8/8 played to a finish", line)
+        self.assertNotIn("NOT a loss", line)
+
+    def test_an_unfinished_attempt_is_named_and_disclaimed(self):
+        # The row carries `outcome.won = None`, so any win rate counting
+        # `won == True` over all rows scores it a non-win. The batch has to
+        # say it happened or the number is quietly wrong.
+        line = climb.batch_composition_line(
+            collections.Counter({"stopped": 5, "timeout": 3}))
+        self.assertIn("5/8 played to a finish", line)
+        self.assertIn("timeout=3", line)
+        self.assertIn("NOT a loss", line)
+
+    def test_an_empty_batch_does_not_claim_a_denominator(self):
+        line = climb.batch_composition_line(collections.Counter())
+        self.assertIn("measured nothing", line)
+        self.assertNotIn("0/0", line)
+
+    def test_every_ending_is_named_not_just_the_known_ones(self):
+        # Reasons are whatever the harness wrote; an unfamiliar one must still
+        # appear rather than be folded into a catch-all.
+        line = climb.batch_composition_line(
+            collections.Counter({"stopped": 1, "attempt frozen; resume failed": 1}))
+        self.assertIn("attempt frozen; resume failed=1", line)
 
 if __name__ == "__main__":
     unittest.main()

@@ -15834,10 +15834,9 @@ fn the_live_seat_banks_an_envoy_it_has_no_use_for() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     assert!(
-        !live.bank_envoys,
-        "the composite does not carry it; the bridge sets it"
+        live.bank_envoys,
+        "the composite carries every controller switch the live bridge deploys"
     );
-    live.enable_bank_envoys();
     live.advanced_envoys(&mut live_game, 0, GrandStrategy::Science, None);
     assert_eq!(
         live_game.players[0].envoys_free, 3,
@@ -15857,7 +15856,7 @@ fn the_live_seat_banks_an_envoy_it_has_no_use_for() {
     fresh_game.players[0].envoys = vec![(minors[0], 8)];
     fresh_game.players[0].envoys_free = 3;
     let mut live = AdvancedAi::new();
-    live.enable_bank_envoys();
+    live.enable_live_bridge();
     live.advanced_envoys(&mut fresh_game, 0, GrandStrategy::Science, None);
     assert_eq!(
         fresh_game.envoys_at(0, minors[1]),
