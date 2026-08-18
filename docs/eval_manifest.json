@@ -41,7 +41,7 @@
     "withholdable": 51
   },
   "derived": {
-    "eval_only_count": 206,
+    "eval_only_count": 207,
     "firaxis_only_count": 23,
     "live_bridge_count": 74,
     "native_engine_repair_count": 51,
@@ -186,7 +186,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 206,
+      "declared_count": 207,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -345,6 +345,7 @@
         "advanced_lower_city_target",
         "advanced_settler_founds_when_stalled",
         "advanced_fortify_idle_units",
+        "advanced_open_water_navy",
         "advanced_maritime_splice",
         "advanced_sea_answers",
         "advanced_engine_faith_price",
