@@ -6342,7 +6342,13 @@ mod tests {
     /// mechanisms — and it was caught by reading the merge, not by CI.
     #[test]
     fn live_bridge_treatments_name_every_flag_the_helper_sets() {
-        let source = include_str!("ai/advanced.rs");
+        // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
+        // scrape reads the controller's whole text so a further split cannot
+        // narrow it to a half that no longer holds them.
+        let source = concat!(
+            include_str!("ai/advanced.rs"),
+            include_str!("ai/advanced/treatment_flags.rs")
+        );
         let body = source
             .split("pub fn enable_live_bridge(&mut self) {")
             .nth(1)
@@ -6512,7 +6518,13 @@ mod tests {
             "explore_commit",
             "bank_envoys",
         ];
-        let source = include_str!("ai/advanced.rs");
+        // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
+        // scrape reads the controller's whole text so a further split cannot
+        // narrow it to a half that no longer holds them.
+        let source = concat!(
+            include_str!("ai/advanced.rs"),
+            include_str!("ai/advanced/treatment_flags.rs")
+        );
         let calls = |name: &str| -> BTreeSet<String> {
             let body = source
                 .split(&format!("pub fn {name}(&mut self) {{"))

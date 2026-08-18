@@ -68,7 +68,7 @@ Everything the old roadmap called planned has shipped and then some:
 
    | file | merges touching it | why it is contended |
    |---|---:|---|
-   | `src/ai/advanced.rs` | 23% | size — one 24.7k-line impl block |
+   | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
    | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
    | `src/game.rs` | 17% | size |
    | `src/main.rs` | 16% | one shared line: the anchor-behaviour re-pin |
@@ -95,6 +95,17 @@ Everything the old roadmap called planned has shipped and then some:
    appends to *one shared line or list*: two such PRs conflict whatever the
    file's length, and the fix is to move that data out of source, the way
    `docs/eval/` did it for `docs/EVAL.md`'s single append point.
+
+   **`advanced.rs` had both problems, and its shared-anchor half is done
+   (2026-08-18).** It is the most contended file in the repository *and* the
+   one every live-treatment PR appends to. Both of its append anchors have now left it:
+   the `LIVE_TREATMENTS` table to `advanced/treatments.rs` (#2022), and the 182
+   `enable_*`/`disable_*` toggles — the anchor whose collisions had already
+   swallowed a function's closing brace twice — to
+   `advanced/treatment_flags.rs`. A guard in the new file fails when a toggle
+   is defined in `advanced.rs` again, so the move does not quietly reverse.
+   The size half is untouched: `advanced.rs` is still 27k lines and still
+   first on the table above.
 
    ⚠ Touch rate is exposure, not pain — two PRs editing distant parts of one
    file do not collide. Real conflict counts are not recoverable from `main`,

@@ -11,13 +11,13 @@
 //! Every treatment PR appends here. Now it appends to eighty lines that hold
 //! nothing else, rather than to line 3,300 of twenty-eight thousand.
 //!
-//! ⚠ This is one of the two anchors a treatment PR touches, not both. The
-//! `enable_*`/`disable_*` pair still lands in `advanced.rs` beside the flag it
-//! sets, and two PRs adding a pair at the same anchor have collided here before
-//! — with the resolution swallowing the earlier function's closing brace, twice
-//! on 2026-08-16. Moving those too is a twelve-hundred-line move in a file that
-//! takes a quarter of all merges, which is its own change with its own risk;
-//! this one is deliberately the small half.
+//! This was one of the two anchors a treatment PR touches, and deliberately
+//! the small half: the `enable_*`/`disable_*` pair still landed in
+//! `advanced.rs` beside the flag it sets, two PRs adding a pair at that anchor
+//! had collided there twice on 2026-08-16, and one of those resolutions
+//! swallowed the earlier function's closing brace. **The other half followed
+//! it out on 2026-08-18**: all 182 toggles now live in
+//! `advanced/treatment_flags.rs`, which also guards that they stay there.
 //!
 //! ⚠ The arm names are published in `docs/EVAL.md` and `docs/eval/`. They are
 //! the identity a measured result is filed under, so renaming a row here

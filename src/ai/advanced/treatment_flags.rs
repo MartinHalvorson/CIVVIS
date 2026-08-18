@@ -1664,14 +1664,15 @@ impl AdvancedAi {
         self.solvent_faith_army = true;
     }
 
+    // `pub(super)` rather than private, the one line of this file that is not
+    // code motion: this is the only toggle `advanced.rs` itself calls, and a
+    // child module's private item is not visible to its parent. Widened by
+    // exactly one module, not to the crate.
     /// The Battlefield map is a bounded combat controller, not a Civ-world
     /// deployment profile. Route the already-measured portfolio search there
     /// for promoted controllers, while preserving the frozen anchor and any
     /// explicit evaluator withholding. The flag is set on the controller so
     /// telemetry and `Ai::joint_tactics_census` describe what actually ran.
-    // `pub(super)` rather than private: this is the one toggle `advanced.rs`
-    // itself calls, and a child module's private item is not visible to its
-    // parent. Visibility is widened by exactly one module, not to the crate.
     pub(super) fn enable_arena_joint_tactics(&mut self, g: &Game) {
         if self.victory_planning && g.is_arena() && !self.joint_tactics_forced_off {
             self.joint_tactics = true;
