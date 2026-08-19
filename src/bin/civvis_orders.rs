@@ -896,13 +896,16 @@ impl HostMoveRefusals {
         }
     }
 
-    /// Take the proved-unwalkable plots off the mirror's speculative frontier.
+    /// Take the proved-unwalkable plots off the mirror's speculative frontier —
+    /// both domains' priors, since the refusal came from whichever unit was sent
+    /// and the plot is dead for the sea's scout as much as the land's.
     fn apply(&self, mirror: &mut civvis::mirror::LiveMirror) {
         for &(x, y) in &self.dead {
             let pos = civvis::hex::offset_to_axial(x, y);
             if let Some(tile) = mirror.game.map.tiles.get_mut(&pos) {
                 if tile.terrain == "unknown" {
                     tile.assumed_traversable = false;
+                    tile.assumed_navigable = false;
                 }
             }
         }
