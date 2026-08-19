@@ -23724,6 +23724,86 @@ impl Game {
                     && peer_spec.domain.as_deref() != Some("sea")))
     }
 
+    /// Every tile this unit can end a move on this turn, with the movement it
+    /// keeps THERE for a blow, and the path that gets it there.
+    ///
+    /// The same flood as [`Game::reachable`] with one difference that matters
+    /// to a planner: entering enemy zone of control still stops further
+    /// movement (the flood does not expand past such a tile), but the
+    /// movement the unit keeps on arrival is reported rather than zeroed —
+    /// `flow` writes 0 there, which is right for "can it move on" and wrong
+    /// for "can it still strike", since a unit that stops in a zone of
+    /// control keeps its unused movement for the attack (`do_attack`,
+    /// `do_ranged`, `can_pay_melee_entry`). Paths are the flood's own
+    /// parents, so every step is one the engine will accept in sequence.
+    ///
+    /// A reading for candidate generation, never a permission: the engine
+    /// re-decides every step when the line is played.
+    pub(crate) fn approach_reach(&self, uid: u32) -> BTreeMap<Pos, (f64, Vec<Pos>)> {
+        let mut out = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return out;
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        let max_moves = self.unit_max_moves(uid);
+        if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
+            return out;
+        }
+        let _memo = self.query_memo();
+        // Per tile: movement kept on arrival, and whether the arrival stopped
+        // the unit (zone of control) so nothing expands from it.
+        let mut best: BTreeMap<Pos, (f64, bool)> = BTreeMap::new();
+        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        best.insert(start, (moves, false));
+        let mut queue = vec![start];
+        while let Some(cur) = queue.pop() {
+            let (rem, stopped) = best[&cur];
+            if rem <= 0.0 || stopped {
+                continue;
+            }
+            for n in self.nbrs(cur) {
+                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                    continue;
+                }
+                let cost = self.unit_step_cost(uid, cur, n);
+                let fresh = cur == start && rem >= max_moves;
+                if rem < cost && !fresh {
+                    continue; // MP paid up front (Civ 6)
+                }
+                let new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
+                let stops = self.formation_enters_enemy_zoc(uid, n);
+                if best.get(&n).map(|b| new_rem > b.0).unwrap_or(true) {
+                    best.insert(n, (new_rem, stops));
+                    parent.insert(n, cur);
+                    queue.push(n);
+                }
+            }
+        }
+        for (pos, (rem, _)) in best {
+            if pos == start {
+                continue;
+            }
+            let mut path = vec![pos];
+            let mut cur = pos;
+            while let Some(p) = parent.get(&cur) {
+                if *p == start {
+                    break;
+                }
+                path.push(*p);
+                cur = *p;
+            }
+            path.reverse();
+            out.insert(pos, (rem, path));
+        }
+        out
+    }
+
+    /// The movement a unit would pay to enter `to` from `from` — the exact
+    /// preflight a melee blow needs after a move (`can_pay_melee_entry`).
+    pub(crate) fn step_cost_for(&self, uid: u32, from: Pos, to: Pos) -> f64 {
+        self.unit_step_cost(uid, from, to)
+    }
+
     /// All tiles the unit can reach this turn with its remaining movement
     /// (Dijkstra maximizing leftover MP; every intermediate tile must be
     /// legally enterable, matching repeated single-step moves).
@@ -31291,10 +31371,10 @@ impl Game {
                 if self.players[pid].is_barbarian {
                     return false;
                 }
-                if spec
-                    .host_competition
-                    .as_deref()
-                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                if spec.requires_host_competition()
+                    && !spec
+                        .host_competition_kinds()
+                        .any(|kind| self.host_competition(pid, kind).is_some())
                 {
                     return false;
                 }
@@ -31332,6 +31412,7 @@ impl Game {
                 if !spec
                     .requires_buildings
                     .iter()
+                    .chain(&spec.consumes_buildings)
                     .all(|building| self.city_has_building_family(city, Name::new(building)))
                 {
                     return false;
@@ -47709,6 +47790,31 @@ impl Game {
                     > 0.0
                 {
                     self.cities.get_mut(&cid).unwrap().reactor_age = 0;
+                }
+                let consumed_buildings: Vec<Name> = self.cities[&cid]
+                    .buildings
+                    .iter()
+                    .copied()
+                    .filter(|building| {
+                        spec.consumes_buildings
+                            .iter()
+                            .any(|family| self.building_is_family(*building, Name::new(family)))
+                    })
+                    .collect();
+                let consumed_nuclear_plant = consumed_buildings.iter().any(|building| {
+                    self.building_is_family(*building, crate::name!("nuclear_power_plant"))
+                });
+                if !consumed_buildings.is_empty() {
+                    let city = self.cities.get_mut(&cid).unwrap();
+                    city.buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.pillaged_buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.building_eras
+                        .retain(|building, _| !consumed_buildings.contains(building));
+                    if consumed_nuclear_plant {
+                        city.reactor_age = 0;
+                    }
                 }
                 if let Some(target) = Self::converted_power_plant(project) {
                     let plants = ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"];

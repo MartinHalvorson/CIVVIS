@@ -937,6 +937,37 @@ class LatestCodeGuarantee(LedgerCase):
                          ["aaa", "bbb", "ddd"])
         self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
 
+    def test_decider_genome_reads_the_deciders_own_first_record(self):
+        why = self.runs / "why.log"
+        why.write_text(
+            "[genome] no strategy 'WildCard9' in /x/data/league\n"
+            '{"civ":null,"kind":"genome","lane":null,"parallel_settlers":true,'
+            '"per_civ":null,"revision":null,"source":"AdvancedAi::new",'
+            '"strategy":"stock","strength_bound":null,"treatments":["a","b"]}\n'
+            "[why] t1 Strategy/Strategy Grand strategy: expansion | ...\n")
+        self.assertEqual(
+            civ6_ladder.decider_genome(why),
+            {"strategy": "stock", "source": "AdvancedAi::new", "lane": None,
+             "civ": None, "strength_bound": None})
+        resolved = self.runs / "why2.log"
+        resolved.write_text(
+            '{"civ":"Rome","kind":"genome","lane":null,"source":"data/league",'
+            '"strategy":"g56-48","strength_bound":0.51}\n')
+        self.assertEqual(civ6_ladder.decider_genome(resolved)["strategy"], "g56-48")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "absent.log"))
+        # A why.log without the record (an older decider) is not "stock".
+        (self.runs / "why3.log").write_text("[why] t1 nothing\n")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "why3.log"))
+
+    def test_the_genome_played_and_the_name_asked_for_are_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("genomed",
+                               genome={"strategy": "stock", "source": "AdvancedAi::new"},
+                               strategy_requested="WildCard9")))
+        row = self.state()["attempts"][0]
+        self.assertEqual(row["genome"]["strategy"], "stock")
+        self.assertEqual(row["strategy_requested"], "WildCard9")
+
     def test_the_revision_history_is_recorded_on_the_attempt(self):
         civ6_ladder.record_summary(write_run(
             self.runs, summary("tracked", decider_revisions=["aaa", "bbb"])))

@@ -284,6 +284,21 @@ event advertises `moves_at_turn_start`, and only then does the mirror trust
 the export's `moves`. `--no-cap-moves-to-reach` / `--no-cancel-queued-paths`
 restore the old rules for an A/B. See `docs/LIVE_TACTICS.md` §6.
 
+### A mid-turn combat frame, off by default (2026-08-19)
+
+With `CombatFrames ≥ 1` (`--combat-frames`), once the opening orders and
+their per-unit queue have settled on a turn that issued a strike, the mod
+exports the board again stamped `frame: 1` and waits for the brain to answer
+the same turn on it — its own short poll budget (`CombatFramePolls`), no
+stale answer, no fallback: past the budget `combat_frame_timeout` and the
+turn ends as before. The order channel gained a `frame` column (rows of frame
+N sit at seq 10000·N; one `ready` row per turn names the newest frame; a
+database from before the column is migrated in place); the mod's readers
+select by frame and read a column-less channel as frame 0. On a frame no
+unit is handed to explore automation and no `turn` record is written. Units
+export `attacks_remaining`. Default **off** until one live run has been read
+(`docs/LIVE_TACTICS.md` §8).
+
 ### The tactical ledger (2026-08-19)
 
 The mod writes the combat record the host already knows (`CivvisLedger`):
