@@ -4529,12 +4529,12 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
-/// Host World Congress competitions move the diplomatic race outside the
-/// ordinary Congress ballot. The exact score table must therefore make the
-/// World Games project legal and compelling, while the World's Fair rewards
+/// Host competitions move the diplomatic race outside the ordinary Congress
+/// ballot. The exact score table must therefore make World Games and either
+/// Aid Request project legal and compelling, while the World's Fair rewards
 /// the Great Person points existing district projects already produce.
 #[test]
-fn live_competitions_price_world_games_and_worlds_fair_production() {
+fn live_competitions_price_host_projects_and_worlds_fair_production() {
     let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
     let settler = game
         .player_unit_ids(0)
@@ -4560,6 +4560,9 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     let athlete = Item::Project {
         project: crate::name!("train_athletes"),
     };
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
     let granary = Item::Building {
         building: crate::name!("granary"),
     };
@@ -4567,6 +4570,10 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     assert!(
         !game.can_produce(0, city, &athlete),
         "the host-only project cannot escape into a native menu"
+    );
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "the shared Aid Request project cannot escape into a native menu"
     );
 
     game.replace_host_competitions(vec![crate::game::HostCompetition {
@@ -4598,6 +4605,53 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     game.replace_host_competitions(Vec::new());
     assert!(!game.can_produce(0, city, &athlete));
     assert!(ai.production_value(&game, 0, city, &athlete, &plan, &counts) < -1_000.0);
+
+    // Firaxis grants the same 200-point Send Aid project for either kind of
+    // request. Each individual host kind must make it legal and compelling;
+    // treating the plural rules row as an AND would silently lose one aid
+    // emergency.
+    for kind in ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"] {
+        game.replace_host_competitions(vec![crate::game::HostCompetition {
+            kind: kind.to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        }]);
+        assert!(
+            game.can_produce(0, city, &aid),
+            "{kind} grants the shared Send Aid project"
+        );
+        let aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+        assert!(
+            aid_value > granary_value,
+            "the 200-point Send Aid project must outrank ordinary infrastructure during {kind}: {aid_value} vs {granary_value}"
+        );
+    }
+    game.replace_host_competitions(vec![
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_AID".to_string(),
+            ends: game.turn + 1,
+            ours: 0.0,
+            leader: 200.0,
+        },
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_MILITARY_AID".to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        },
+    ]);
+    let best_live_aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+    assert!(
+        best_live_aid_value > granary_value,
+        "when both kinds are active, the viable military request must win over an expiring ordinary request: {best_live_aid_value} vs {granary_value}"
+    );
+    game.replace_host_competitions(Vec::new());
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "with neither aid emergency live the shared project is withdrawn"
+    );
+    assert!(ai.production_value(&game, 0, city, &aid, &plan, &counts) < -1_000.0);
 
     install_ai_test_district(&mut game, city, "campus");
     let grants = Item::Project {
@@ -26469,4 +26523,73 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     // Frozen and ordinary controllers never project.
     assert!(!AdvancedAi::new().projected_stock_denial);
     assert!(!AdvancedAi::legacy().projected_stock_denial);
+}
+
+/// ★★★★ THE FAITH THAT BUYS THE PANTHEON IS ONE CARD, AND THE PLAN KEPT
+/// THROWING IT AWAY. See `AdvancedAi::expansion_pantheon`: God-King is the
+/// live capital's only early Faith, the portfolio replaced it at the first
+/// civic after Code of Laws, and the pantheon landed at median t22 and as late
+/// as t108 with 6–9 Faith banked against a price of 12.5. With the flag on the
+/// card is wanted first while the pantheon is unfounded and unaffordable, and
+/// released the turn it is founded; ordinary and frozen controllers keep the
+/// bred deck.
+#[test]
+fn the_expansion_pantheon_keeps_god_king_until_the_pantheon_is_founded() {
+    let slotted = |treated: bool, pantheon: Option<&str>, faith: f64| {
+        let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        // The live seat at its first civic swap: Chiefdom's lone economic
+        // slot, with God-King, Urban Planning, Ilkum and Colonization all on
+        // offer.
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].civics.extend([
+            crate::name!("code_of_laws"),
+            crate::name!("craftsmanship"),
+            crate::name!("foreign_trade"),
+            crate::name!("early_empire"),
+        ]);
+        game.players[0].policies.clear();
+        game.players[0].pantheon = pantheon.map(str::to_string);
+        game.players[0].faith = faith;
+        let mut ai = AdvancedAi::new();
+        if treated {
+            ai.enable_expansion_pantheon();
+        }
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Expansion);
+        game.players[0].policies.clone()
+    };
+    let god_king = crate::name!("god_king");
+
+    // Off: the bred deck never wants the Faith card.
+    assert!(
+        !slotted(false, None, 0.0).contains(&god_king),
+        "the ordinary controller keeps its deck"
+    );
+    // On, no pantheon, no Faith: God-King holds the slot.
+    assert!(
+        slotted(true, None, 0.0).contains(&god_king),
+        "the pantheon is God-King's alone until it is founded"
+    );
+    // On, the price already banked: the slot goes back to the plan.
+    assert!(
+        !slotted(true, None, 200.0).contains(&god_king),
+        "Faith enough for the pantheon frees the slot"
+    );
+    // On, pantheon founded: released the same turn.
+    assert!(
+        !slotted(true, Some("religious_settlements"), 0.0).contains(&god_king),
+        "a founded pantheon releases the card"
+    );
+
+    // Frozen and ordinary controllers never carry the flag.
+    assert!(!AdvancedAi::new().expansion_pantheon);
+    assert!(!AdvancedAi::legacy().expansion_pantheon);
+    assert!(!AdvancedAi::new().base.expansion_pantheon);
 }

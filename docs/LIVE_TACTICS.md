@@ -115,3 +115,90 @@ and explore guard against a stubbed host, and the Rust tests prove the
 capability gate. The first live runs should be read for `orders_queue` and
 for the exchange ratio; a wedge shows as `queue_stalled` with `waited` at the
 cap.
+
+## 5. Step 5 — the tactical ledger (landed with step 1's successor change)
+
+**Mechanism.** The mod (`CivvisLedger`) writes the combat record the host
+already knows into the run's own event stream: `combat` at
+`Events.CombatVisEnd` — attacker and defender (player, id, kind, plot), hit
+points read back at Begin and End, damage both ways, kills, the
+`UnitDamageChanged` deltas observed while the combat was open, and the strike's
+host preview joined on; `strike` before every ATTACK / RANGE_ATTACK with
+`CombatManager.SimulateAttackInto`'s predicted damage — the same call the
+shipped UnitPanel makes to draw the combat preview; `unit_lost` for our units
+leaving the map, with the last known kind and the treasury (a bankruptcy
+disband and a battlefield loss are one field apart); `city_occupation` when a
+city changes hands. Hostile and rival units carry the host's unit id in the
+export, so a combat and a next-frame sighting name the same unit.
+
+`tools/civ6_tactics_ledger.py <run-dir> [--hof HallofFame.sqlite]` reads one
+run into one report: orders and the queue's strikes planned / landed, the
+MOVE_TO arrival ledger against the next frame (arrived, short, did not move —
+with or without movement at export —, gone; by unit kind), combat and the
+host-preview error, the roster of military units gone with their last
+context, the hover share, and the Hall of Fame. Where the recording mod did
+not emit an event it says `(mod predates the ledger)` rather than printing a
+zero.
+
+**Measured on the recorded runs (2026-08-01/02, pre-queue mod):** run
+`live-head-rome-20260802T164220Z` — 1,608 unit orders on 235 turns (6.84 per
+turn), 0 unit-turns with more than one order; 1,397 first moves judged:
+arrived 82.3 %, did not move 12.5 % (159 with movement at export, 15
+without); 78 military units left the board (43 at full hp with the treasury
+empty, 19 beside a hostile, 16 with no visible threat); 99 of 384 near-hostile
+unit-turns hovered (25.8 %); Hall of Fame across the 12 local games: 0.18
+kills per loss. These are the numbers the program started from, now
+reproducible from the ledger in one command.
+
+**Not verified in-game yet.** `CombatVisBegin/End`, `UnitDamageChanged`,
+`SimulateAttackInto` and `CityOccupationChanged` are read the way the shipped
+UI reads them, and both readings (hit-point readback and damage deltas) are
+recorded side by side so the first live run says which one is right. The
+offline regression (`combat_ledger_test.lua`) proves the events are shaped as
+the ledger tool expects.
+
+## 6. Step 2 — a host-grounded board (movement, roads, queued paths)
+
+**What was wrong.** `mirror_unit_moves` handed every mirrored unit its full
+allowance every turn, because the export's `moves` had misled twice — and it
+misled because the host had already spent the movement before the brain
+could act: a `MOVE_TO` whose host path outran the turn was *queued*, and the
+host walked the unit along it at the start of the next turn, before
+`beginTurn` exports (turn 31 of run `civvis-20260730T120107Z`: 7 of 8 units at
+`moves: 0` at the start of the turn). Roads were never exported and the board
+wrote `road = 0` everywhere, so every march was priced across roadless ground.
+
+**Mechanism.** The mod (`CivvisBoard`):
+- caps every `MOVE_TO` to the furthest plot on the host's own path that the
+  unit reaches *this* turn (`UnitManager.GetMoveToPathEx` — `plots` and
+  per-plot `turns`, the shipped WorldInput's own path); a walk that would
+  take two turns is sent as its first turn's leg and the brain re-plans the
+  rest from the real position next turn, so no path is left queued to walk
+  the unit somewhere stale; a move whose first step is already next turn is
+  refused by name (`move_no_moves_this_turn`); a melee ATTACK (a `MOVE_TO`
+  onto the defender) is never capped; the row's own destination is rewritten
+  so the per-unit queue expects the capped plot; counted as `move_capped` /
+  `move_no_reach` on the `orders` event and detailed in `move_capped` events;
+- cancels combat units' queued host paths at turn start
+  (`UNITCOMMAND_CANCEL`; civilians keep theirs — a settler's long walk is what
+  a queued path is for) and reports `queued_paths {found, cancelled}`;
+- exports each unit's `queued_dest` and `embarked`, and each tile's route
+  (`rt`, by name from `GameInfo.Routes`) and `rp` (pillaged);
+- advertises `moves_at_turn_start` on the `seat` event.
+
+The mirror maps `rt` onto the engine's route ladder (`route_level`: Ancient 1
+… Railroad 5, a pillaged road 0) and, **only when the seat advertises
+`moves_at_turn_start`**, starts each unit with `min(allowance, moves)` —
+`mirror_unit_moves_for` — on both the fresh-board and the persistent path;
+against an older mod every unit keeps its full allowance exactly as before.
+`moves_short=N` in the decide note counts units the host had already walked
+before the frame; zero is the healthy reading once every move is capped.
+
+**Not measured yet.** Offline: `host_board_test.lua` (cap, refuse, attack
+uncapped, queue expectation follows the cap, cancel only combat units) and
+the mirror tests (`host_routes_land_on_the_engines_ladder`,
+`exported_routes_reach_the_board`,
+`exported_movement_is_trusted_only_with_the_seat_capability`). The first live
+runs should be read for `move_capped` / `move_no_reach` on `orders`,
+`queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
+did-not-move share (12.5 % before).

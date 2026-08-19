@@ -977,6 +977,16 @@ impl AdvancedAi {
         // it by t150 and stops settling at t116 under an assigned lane. See
         // `land_grab`.
         self.enable_land_grab();
+        // And the pantheon is the one that founds a city, bought with the
+        // Faith card the portfolio used to throw away at the first civic
+        // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
+        // where Religious Settlements is a free Settler at ~t20. See
+        // `expansion_pantheon`.
+        self.enable_expansion_pantheon();
+        // And the book's own Settler slot survives the host's population
+        // floor: half the recorded openings burned it and ordered the first
+        // Settler four turns later. See `opening_settler_waits`.
+        self.enable_opening_settler_waits();
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
@@ -1612,6 +1622,31 @@ impl AdvancedAi {
     pub fn disable_land_grab(&mut self) {
         self.land_grab = false;
         self.base.land_grab = false;
+    }
+
+    /// Take the pantheon that founds a city and keep the Faith card that buys
+    /// it (see `expansion_pantheon`). Sets both halves: the strategic
+    /// portfolio's God-King want, and `BasicAi`'s pantheon prefix.
+    pub fn enable_expansion_pantheon(&mut self) {
+        self.expansion_pantheon = true;
+        self.base.expansion_pantheon = true;
+    }
+
+    pub fn disable_expansion_pantheon(&mut self) {
+        self.expansion_pantheon = false;
+        self.base.expansion_pantheon = false;
+    }
+
+    /// Hold the opening book's Settler slot for the host's population floor
+    /// (see `opening_settler_waits`).
+    pub fn enable_opening_settler_waits(&mut self) {
+        self.opening_settler_waits = true;
+        self.base.opening_settler_waits = true;
+    }
+
+    pub fn disable_opening_settler_waits(&mut self) {
+        self.opening_settler_waits = false;
+        self.base.opening_settler_waits = false;
     }
 
     /// Price a point of culture at the lane's price of a point of science.

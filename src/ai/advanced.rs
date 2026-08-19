@@ -536,6 +536,12 @@ const STACKED_GUARD_MIN_HP: i32 = 40;
 /// radius. Named here because a census that scores siting against raw
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
+/// Faith a turn the empire must already collect WITHOUT God-King before the
+/// live portfolio stops wanting the card for its pantheon. Below it the
+/// pantheon is God-King's alone (the live capital makes none of its own — see
+/// `AdvancedAi::expansion_pantheon`); at or above it a Holy Site or a Faith
+/// wonder reaches the price unaided and the slot stays with the plan.
+const PANTHEON_FAITH_CARD_FLOOR: f64 = 1.0;
 
 /// The floor production Advanced used to open on, retained as the value
 /// `advanced_wide_opening` still tests.
@@ -2948,6 +2954,57 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
+    /// The pantheon that founds a city, and the Faith to reach it.
+    ///
+    /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
+    /// Measured over the 40 recorded 2026-08-17/19 runs: the capital makes no
+    /// Faith of its own; God-King (+1 Faith, +1 Gold) is what the baseline
+    /// slots into the lone Chiefdom economic slot at Code of Laws (~t7), and
+    /// the plan's portfolio replaces it at the next civic (~t14–18, "the
+    /// oldest card the plan does not want") for Ilkum or Urban Planning. The
+    /// treasury then sits at 6–9 Faith against the 12.5 the pantheon costs on
+    /// Online, and the pantheon lands at **t11–t108, median t22** — t35–t108
+    /// in a third of the games, t108 on run civvis-20260818T155552Z.
+    ///
+    /// And when it lands it is Divine Spark, 40 of 40 times: the shipped
+    /// prefix's first choice, +1 Great Person point in Campus, Holy Site and
+    /// Theater Square districts the seat does not yet stand. Civilization VI's
+    /// Religious Settlements grants a free Settler in the capital
+    /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`,
+    /// `MODIFIER_PLAYER_GRANT_UNIT_IN_CAPITAL`, `Expansion2_Beliefs.xml`),
+    /// and Fertility Rites a free Builder; the engine already models both.
+    /// The seat's median second city is founded at t21, its third at t38, its
+    /// fourth at t53 (`cities_at_60` = 4, and 0 wins in 22 games below 4); a
+    /// Settler that appears at ~t20 for 12.5 Faith is a city ~t24 the capital
+    /// did not spend 40–55 production on.
+    ///
+    /// The operator's brief (2026-08-18/19): expand much faster, from the
+    /// start. So, with this on:
+    ///
+    /// - `BasicAi::expansion_pantheon`: Religious Settlements, then Fertility
+    ///   Rites, lead the pantheon prefix; every other rank is as shipped;
+    /// - the policy portfolio wants God-King first while the empire has no
+    ///   pantheon, holds less Faith than the pantheon costs, and no other
+    ///   Faith income would reach the price sooner — so the card the baseline
+    ///   happened to slot is KEPT through the civic swap until the pantheon is
+    ///   founded, then released to Colonization and the rest exactly as before.
+    ///
+    /// The mirror learns a `taken_BELIEF_*` refusal from the host
+    /// (`Game::blocked_pantheons`), so a first choice a rival already holds
+    /// falls to the next rank on the following turn instead of to the mod's
+    /// database-order fallback. Firaxis-only: it prices the Settler seat's
+    /// pantheon against a host that grants units for it; the native lanes
+    /// keep the shipped prefix and the bred policy weights. Off for ordinary
+    /// and frozen controllers.
+    pub expansion_pantheon: bool,
+    /// The opening book's Settler waits for the host's population floor
+    /// instead of burning its slot. See `BasicAi::opening_settler_waits` for
+    /// the measurement (the `SCOUT,BUILDER,SETTLER…` half of the recorded
+    /// openings orders its first Settler at t9–13 and founds city 2 at t19–24,
+    /// against t5–8 and t15–19 when the slot plays). Firaxis-only: the host's
+    /// Settler floor is what the slot trips over; the native book keeps its
+    /// bred behaviour. Off for ordinary and frozen controllers.
+    pub opening_settler_waits: bool,
     /// Price a point of culture at the lane's price of a point of science.
     ///
     /// ★★★★ THE TALLY PAYS THREE FOR A CIVIC AND TWO FOR A TECH, AND THE
@@ -4380,6 +4437,8 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
+            expansion_pantheon: false,
+            opening_settler_waits: false,
             tally_culture: false,
             culture_building_debt: false,
             district_building_chain: false,
@@ -7858,6 +7917,33 @@ impl AdvancedAi {
         (known_land.saturating_mul(total) / known).max(counted_land)
     }
 
+    /// Whether God-King's Faith is what stands between this empire and its
+    /// pantheon. See `expansion_pantheon`. True while the empire has no
+    /// pantheon, holds less Faith than the pantheon costs, and would collect
+    /// under `PANTHEON_FAITH_CARD_FLOOR` Faith a turn without the card — an
+    /// empire with a Holy Site or a Faith wonder reaches the price on its own
+    /// and keeps its slot for the plan's cards.
+    pub(crate) fn pantheon_faith_card_pays(&self, g: &Game, pid: usize) -> bool {
+        let Some(player) = g.players.get(pid) else {
+            return false;
+        };
+        if player.pantheon.is_some() || player.faith >= g.pantheon_faith_cost() {
+            return false;
+        }
+        let income: f64 = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).faith)
+            .sum::<f64>()
+            + g.player_yield_extras(pid).faith;
+        let card_share = if player.policies.contains(&crate::name!("god_king")) {
+            g.policy_effect(pid, "capital_faith")
+        } else {
+            0.0
+        };
+        income - card_share < PANTHEON_FAITH_CARD_FLOOR
+    }
+
     fn expansion_pays_back_for(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
         let production = g.city_yields(cid).production.max(1.0);
@@ -10319,6 +10405,18 @@ impl AdvancedAi {
         //
         // Ranked ahead of the plan's ordinary cards because a revolt is unrecoverable
         // and a yield card is not.
+        // ★★★★ THE FAITH THAT BUYS THE PANTHEON COMES FROM ONE CARD, AND THE
+        // PLAN THREW IT AWAY. See `expansion_pantheon`: God-King is the live
+        // seat's only early Faith, the portfolio swapped it out at the first
+        // civic after Code of Laws, and the pantheon — a free Settler under
+        // Religious Settlements — landed at median t22 and as late as t108.
+        // Wanted first, so `desired_set` below keeps it slotted through the
+        // civic swap; it leaves the list the turn the pantheon is founded and
+        // the slot goes to Colonization exactly as before.
+        if self.expansion_pantheon && self.pantheon_faith_card_pays(g, pid) {
+            temporary.retain(|card| *card != "god_king");
+            temporary.insert(0, "god_king");
+        }
         let bleeding = if !self.loyalty_policy_defence {
             0
         } else {
@@ -19627,14 +19725,19 @@ impl AdvancedAi {
                                 250.0
                             }
                         }
-                        _ if spec.host_competition.is_some() => {
-                            let value = self.host_competition_score_value(
-                                g,
-                                pid,
-                                spec.host_competition.as_deref().unwrap(),
-                                spec.competition_score,
-                                turns,
-                            );
+                        _ if spec.requires_host_competition() => {
+                            let value = spec
+                                .host_competition_kinds()
+                                .map(|kind| {
+                                    self.host_competition_score_value(
+                                        g,
+                                        pid,
+                                        kind,
+                                        spec.competition_score,
+                                        turns,
+                                    )
+                                })
+                                .fold(0.0, f64::max);
                             // A host-unlocked project that cannot complete
                             // before the current competition expires is not a
                             // neutral fallback: letting it win a tie would
@@ -28963,6 +29066,10 @@ impl AdvancedAi {
         // or threatened-city queue.
         self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, true);
 
+        // The opening book's held Settler takes the capital's queue the turn
+        // the city reaches the host's floor, whether or not the book is still
+        // in play. See `opening_settler_waits`.
+        self.base.play_pending_book_settler(g, pid);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {

@@ -96,10 +96,26 @@
       "completion_loyalty": 20
     }
   },
+  "send_aid": {
+    "cost": 200,
+    "host_competitions": [
+      "EMERGENCY_SEND_AID",
+      "EMERGENCY_SEND_MILITARY_AID"
+    ],
+    "competition_score": 200,
+    "repeatable": true
+  },
   "train_athletes": {
     "cost": 200,
     "host_competition": "EMERGENCY_WORLD_GAMES",
     "competition_score": 50,
+    "repeatable": true
+  },
+  "train_astronauts": {
+    "cost": 200,
+    "district": "spaceport",
+    "host_competition": "EMERGENCY_SPACE_STATION",
+    "competition_score": 30,
     "repeatable": true
   },
   "repair_outer_defenses": {

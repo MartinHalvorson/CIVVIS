@@ -2293,6 +2293,11 @@ pub struct BasicAi {
     precise_evacuation: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
+    /// The opening book's Settler slot, held back because the capital was
+    /// below the host's population floor when its turn came. Played the turn
+    /// the capital grows, ahead of whatever filler took the slot. See
+    /// `opening_settler_waits` and `play_pending_book_settler`.
+    book_settler_pending: bool,
     /// Units that have withdrawn from combat stay in recovery until they are
     /// healthy enough to rejoin it, instead of advancing again after one tick.
     recovering_units: HashSet<u32>,
@@ -2514,6 +2519,48 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
+    /// Take the pantheon that founds a city. Civilization VI's Religious
+    /// Settlements grants a free Settler in the capital
+    /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
+    /// and Fertility Rites a free Builder — the engine models both
+    /// (`do_choose_pantheon`). The shipped prefix ranks Divine Spark first,
+    /// so the live seat took Divine Spark in 40 of 40 recorded 2026-08-17/19
+    /// runs (+1 Great Person point in districts it did not yet have) while
+    /// the same 12.5 Faith could have stood a Settler at ~t20 — a city ~t24
+    /// against a median third city at t38, and the capital's next 40–55
+    /// production freed. With this on the two founding pantheons lead the
+    /// prefix, in that order; every other rank is unchanged, and the board
+    /// term of `pantheon_reads_the_board` still adds on top. Set only through
+    /// `AdvancedAi::enable_expansion_pantheon` (the Civilization VI bridge);
+    /// native constructors and the frozen anchor keep the shipped order.
+    /// See `research_with_government` and `AdvancedAi::expansion_pantheon`.
+    pub(crate) expansion_pantheon: bool,
+    /// The opening book's Settler waits for the host's population floor
+    /// instead of burning its slot.
+    ///
+    /// ★★★★ THE BOOK'S SECOND BUILD IS A SETTLER, AND HALF THE TIME IT NEVER
+    /// PLAYS. The live genome's book is scout, settler, builder, slinger.
+    /// Civilization VI (and `Game::can_produce`) refuse a Settler below
+    /// population 2; the capital is founded at ~t2, finishes the Scout at
+    /// ~t6 and grows to 2 at ~t7 (median over 102 recorded runs, range
+    /// 4–10). When the Scout completes first, the book's `g.apply` of the
+    /// Settler fails, `book_pos` has already advanced, and the slot is
+    /// simply gone: the Builder plays, the Settler comes from `pick_item`
+    /// once the Builder is done. Measured: openings that read
+    /// `SCOUT,SETTLER,…` order the first Settler at t5–8 and found city 2 at
+    /// t15–19; the `SCOUT,BUILDER,SETTLER,…` half order it at t9–13 and found
+    /// city 2 at t19–24 — four turns of the whole game, on the turn-60 city
+    /// count that gates every win (0 in 22 below four cities).
+    ///
+    /// The engine, like the host, banks a switched item's progress
+    /// (`City::production_progress`), so with this on the refused slot is
+    /// HELD rather than burned: the next slot plays now, and the turn the
+    /// capital reaches the floor the Settler takes the queue ahead of that
+    /// filler, which resumes afterwards with nothing lost. Set only through
+    /// `AdvancedAi::enable_opening_settler_waits` (the Civilization VI
+    /// bridge); native constructors and the frozen anchor keep the burning
+    /// slot. See `cities` and `play_pending_book_settler`.
+    pub(crate) opening_settler_waits: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -4033,6 +4080,7 @@ impl BasicAi {
             precise_evacuation: true,
             w: Weights::default(),
             book_pos: 0,
+            book_settler_pending: false,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
@@ -4062,6 +4110,8 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            expansion_pantheon: false,
+            opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -4093,6 +4143,20 @@ impl BasicAi {
     /// `--explain-settler` probe can play the same gate.
     pub fn enable_land_grab(&mut self) {
         self.land_grab = true;
+    }
+
+    /// Lead the pantheon prefix with the two that found a city (see
+    /// `expansion_pantheon`). The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_expansion_pantheon`.
+    pub fn enable_expansion_pantheon(&mut self) {
+        self.expansion_pantheon = true;
+    }
+
+    /// Hold the opening book's Settler slot for the host's population floor
+    /// instead of burning it (see `opening_settler_waits`). The Civilization
+    /// VI bridge sets this through `AdvancedAi::enable_opening_settler_waits`.
+    pub fn enable_opening_settler_waits(&mut self) {
+        self.opening_settler_waits = true;
     }
 
     /// Give up an exploration target the host will not move the unit toward
@@ -4322,6 +4386,7 @@ impl BasicAi {
             precise_evacuation: true,
             w,
             book_pos: 0,
+            book_settler_pending: false,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
@@ -4351,6 +4416,8 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            expansion_pantheon: false,
+            opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -5077,6 +5144,72 @@ impl BasicAi {
     /// opening to play. See `AdvancedAi::skip_opening_book`.
     pub fn skip_opening_book(&mut self) {
         self.book_pos = self.book_pos.max(4);
+        self.book_settler_pending = false;
+    }
+
+    /// Whether the opening book's Settler slot is still waiting for the
+    /// capital to reach the host's population floor. See
+    /// `opening_settler_waits`.
+    pub fn book_settler_pending(&self) -> bool {
+        self.book_settler_pending
+    }
+
+    /// Play the opening book's held Settler the turn the capital reaches the
+    /// host's population floor, ahead of whatever filler took its slot. See
+    /// `opening_settler_waits`. Returns true when a Settler was started this
+    /// call. Idempotent: the hold clears the turn it is played, given up
+    /// (no practical site at the floor), or found already answered by a
+    /// Settler in the capital's queue.
+    pub fn play_pending_book_settler(&mut self, g: &mut Game, pid: usize) -> bool {
+        if !self.book_settler_pending || self.minor || self.barb {
+            return false;
+        }
+        let Some(capital) = g
+            .player_city_ids(pid)
+            .into_iter()
+            .find(|cid| g.cities[cid].is_capital)
+        else {
+            self.book_settler_pending = false;
+            return false;
+        };
+        let city = &g.cities[&capital];
+        if matches!(city.queue.first(), Some(Item::Unit { unit }) if unit == "settler") {
+            self.book_settler_pending = false;
+            return false;
+        }
+        if (city.pop as f64) < HOST_SETTLER_MIN_POP {
+            return false;
+        }
+        self.book_settler_pending = false;
+        if !self.has_practical_settle_site(g, pid) {
+            return false;
+        }
+        let filler = city.queue.first().cloned();
+        let started = g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city: capital,
+                    item: Item::Unit {
+                        unit: crate::name!("settler"),
+                    },
+                },
+            )
+            .is_ok();
+        if started {
+            think!(self.journal, Cities, Decision,
+            "{} starts the opening book's settler", g.cities[&capital].name;
+            "the capital has reached population {}, the floor the host asks of a \
+             Settler; {} resumes afterwards with its progress banked",
+            g.cities[&capital].pop,
+            match &filler {
+                Some(Item::Unit { unit }) => format!("the {unit}"),
+                Some(Item::Building { building }) => format!("the {building}"),
+                Some(_) => "the queue".to_string(),
+                None => "nothing".to_string(),
+            });
+        }
+        started
     }
 
     /// Whether the scripted opening has been played (or skipped). See
@@ -5916,18 +6049,36 @@ impl BasicAi {
             // while only those six exist or while one of them is still free.
             // What changes is the case that used to have no answer at all: every
             // named pantheon taken, and the empire founding none.
-            let mut pantheons: Vec<String> = [
-                "divine_spark",
-                "fertility_rites",
-                "god_of_the_forge",
-                "religious_settlements",
-                "god_of_the_open_sky",
-                "god_of_the_sea",
-            ]
-            .into_iter()
-            .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
-            .map(str::to_string)
-            .collect();
+            // ★★★★ THE PANTHEON THAT FOUNDS A CITY LEADS THE PREFIX ON THE
+            // LIVE SEAT. See `expansion_pantheon`: Religious Settlements is a
+            // free Settler in the capital and Fertility Rites a free Builder,
+            // and Divine Spark — the shipped first choice, taken in 40 of 40
+            // recorded live runs — pays nothing until a district stands.
+            let prefix: &[&str] = if self.expansion_pantheon {
+                &[
+                    "religious_settlements",
+                    "fertility_rites",
+                    "divine_spark",
+                    "god_of_the_forge",
+                    "god_of_the_open_sky",
+                    "god_of_the_sea",
+                ]
+            } else {
+                &[
+                    "divine_spark",
+                    "fertility_rites",
+                    "god_of_the_forge",
+                    "religious_settlements",
+                    "god_of_the_open_sky",
+                    "god_of_the_sea",
+                ]
+            };
+            let mut pantheons: Vec<String> = prefix
+                .iter()
+                .copied()
+                .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
+                .map(str::to_string)
+                .collect();
             for belief in g.rules.beliefs.pantheon.keys() {
                 if !pantheons.contains(belief) {
                     pantheons.push(belief.clone());
@@ -7083,6 +7234,15 @@ impl BasicAi {
             }
         }
         for cid in &city_ids {
+            // The held opening-book Settler takes the capital's queue the turn
+            // the city reaches the host's floor. See `opening_settler_waits`.
+            if self.book_settler_pending
+                && g.cities[cid].is_capital
+                && self.play_pending_book_settler(g, pid)
+            {
+                settlers += 1;
+                continue;
+            }
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
@@ -7110,6 +7270,23 @@ impl BasicAi {
                     }
                     let name = OPENING_MENU[i];
                     if name == "settler" && !self.has_practical_settle_site(g, pid) {
+                        continue;
+                    }
+                    // ★★★★ THE SLOT IS HELD, NOT BURNED, WHEN THE CAPITAL IS
+                    // STILL BELOW THE HOST'S FLOOR. See `opening_settler_waits`:
+                    // the next slot plays now, and the Settler takes the queue
+                    // the turn the city grows.
+                    if name == "settler"
+                        && self.opening_settler_waits
+                        && (g.cities[cid].pop as f64) < HOST_SETTLER_MIN_POP
+                    {
+                        self.book_settler_pending = true;
+                        think!(self.journal, Cities, Detail,
+                               "{} holds the opening book's settler", g.cities[cid].name;
+                               "the capital is population {} and the host asks {} of a Settler; \
+                                the next opener plays now and the Settler takes the queue the \
+                                turn the city grows",
+                               g.cities[cid].pop, HOST_SETTLER_MIN_POP as u32);
                         continue;
                     }
                     let item = if name == "monument" {
@@ -13816,6 +13993,196 @@ mod tests {
             treated_bare.players[0].pantheon.as_deref(),
             Some("divine_spark")
         );
+    }
+
+    /// ★★★★ THE LIVE SEAT TAKES THE PANTHEON THAT FOUNDS A CITY. See
+    /// `expansion_pantheon`: Religious Settlements grants a Settler in the
+    /// capital and Fertility Rites a Builder, and the shipped prefix — Divine
+    /// Spark first — took Divine Spark in 40 of 40 recorded live runs. With
+    /// the flag on the founding pantheons lead; a Religious Settlements a
+    /// rival already holds (`Game::blocked_pantheons`, the mirror's read of a
+    /// `taken_BELIEF_*` refusal) falls to Fertility Rites; the shipped order
+    /// is untouched with the flag off.
+    #[test]
+    fn the_expansion_pantheon_founds_a_city_and_falls_to_the_next_when_taken() {
+        let board = |seed: u64| {
+            let mut game = Game::new_full(2, 30, 18, seed, 200, 0, false);
+            game.current = 0;
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].faith = 200.0;
+            game
+        };
+        let settlers = |game: &Game| {
+            game.player_unit_ids(0)
+                .into_iter()
+                .filter(|unit| game.units[unit].kind == "settler")
+                .count()
+        };
+
+        // Off: the shipped first choice, and no unit granted for it.
+        let mut shipped = BasicAi::new();
+        shipped.pursue_religion = true;
+        let mut bare = board(6_101);
+        shipped.research_with_government(&mut bare, 0, false, None);
+        assert_eq!(bare.players[0].pantheon.as_deref(), Some("divine_spark"));
+        assert_eq!(settlers(&bare), 0);
+
+        // On: the pantheon that founds a city, and the Settler it grants.
+        let mut live = BasicAi::new();
+        live.pursue_religion = true;
+        live.enable_expansion_pantheon();
+        let mut treated = board(6_101);
+        live.research_with_government(&mut treated, 0, false, None);
+        assert_eq!(
+            treated.players[0].pantheon.as_deref(),
+            Some("religious_settlements")
+        );
+        assert_eq!(
+            settlers(&treated),
+            1,
+            "the host grants a Settler in the capital"
+        );
+
+        // On, first choice held by a rival: the next founding pantheon, not
+        // the shipped list's first name.
+        let mut contested = board(6_101);
+        contested
+            .blocked_pantheons
+            .insert(crate::name!("religious_settlements"));
+        live.research_with_government(&mut contested, 0, false, None);
+        assert_eq!(
+            contested.players[0].pantheon.as_deref(),
+            Some("fertility_rites")
+        );
+        assert_eq!(settlers(&contested), 0);
+        assert_eq!(
+            contested
+                .player_unit_ids(0)
+                .into_iter()
+                .filter(|unit| contested.units[unit].kind == "builder")
+                .count(),
+            1,
+            "Fertility Rites grants a Builder"
+        );
+    }
+
+    /// ★★★★ THE BOOK'S SETTLER SLOT IS HELD FOR THE HOST'S FLOOR, NOT BURNED.
+    /// See `opening_settler_waits`: with a Settler at the head of the book and
+    /// the capital still at population 1, the shipped book fails the
+    /// `g.apply`, advances past the slot, and plays the next opener — the
+    /// Settler is gone until `pick_item` finds its own reason. With the flag
+    /// on the next opener plays now, and the turn the capital reaches
+    /// population 2 the Settler takes the queue ahead of it, the filler's
+    /// progress banked (`City::production_progress`) exactly as the host
+    /// keeps it. Ordinary and frozen controllers keep the burning slot.
+    #[test]
+    fn the_opening_books_settler_waits_for_the_hosts_population_floor() {
+        let board = |seed: u64| {
+            let mut game = Game::new_full(2, 30, 18, seed, 200, 0, false);
+            game.current = 0;
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game
+        };
+        let capital = |game: &Game| game.player_city_ids(0)[0];
+        // Settler first, then Builder, so the slot in question is the very
+        // first decision and its filler is unambiguous.
+        let book_first_settler = |ai: &mut BasicAi| {
+            ai.w.open0 = 3.0; // OPENING_MENU[3] is Settler.
+            ai.w.open1 = 2.0; // OPENING_MENU[2] is Builder.
+            ai.w.open2 = 1.0;
+            ai.w.open3 = 5.0;
+        };
+        let head = |game: &Game| game.cities[&capital(game)].queue.first().cloned();
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+
+        // Shipped: the slot burns. The Builder plays at population 1, and the
+        // capital growing to 2 changes nothing.
+        let mut shipped = BasicAi::new();
+        book_first_settler(&mut shipped);
+        let mut bare = board(6_101);
+        assert_eq!(bare.cities[&capital(&bare)].pop, 1);
+        assert!(
+            shipped.has_practical_settle_site(&bare, 0),
+            "the board must offer a site"
+        );
+        shipped.cities(&mut bare, 0);
+        assert_eq!(
+            head(&bare),
+            Some(builder.clone()),
+            "the burned slot's filler"
+        );
+        assert!(!shipped.book_settler_pending());
+        bare.cities.get_mut(&capital(&bare)).unwrap().pop = 2;
+        shipped.cities(&mut bare, 0);
+        assert_eq!(
+            head(&bare),
+            Some(builder.clone()),
+            "shipped: nothing revisits the slot"
+        );
+
+        // Live: the slot is held; the Builder plays now, and the Settler takes
+        // the queue the turn the capital reaches the floor.
+        let mut live = BasicAi::new();
+        book_first_settler(&mut live);
+        live.enable_opening_settler_waits();
+        let mut treated = board(6_101);
+        live.cities(&mut treated, 0);
+        assert_eq!(
+            head(&treated),
+            Some(builder.clone()),
+            "the next opener plays now"
+        );
+        assert!(
+            live.book_settler_pending(),
+            "and the Settler slot is held, not burned"
+        );
+        // Not yet: still population 1.
+        live.cities(&mut treated, 0);
+        assert_eq!(head(&treated), Some(builder.clone()));
+        assert!(live.book_settler_pending());
+        // A turn of Builder progress, then the city grows.
+        {
+            let city = treated.cities.get_mut(&capital(&treated)).unwrap();
+            city.production = 7.0;
+            city.pop = 2;
+        }
+        live.cities(&mut treated, 0);
+        assert_eq!(
+            head(&treated),
+            Some(settler.clone()),
+            "the held Settler takes the queue"
+        );
+        assert!(!live.book_settler_pending(), "played once, then released");
+        let city = &treated.cities[&capital(&treated)];
+        assert_eq!(
+            city.production_progress.get("unit:builder").copied(),
+            Some(7.0),
+            "the filler's progress is banked, as the host banks it"
+        );
+        // And nothing plays it twice.
+        live.cities(&mut treated, 0);
+        assert_eq!(head(&treated), Some(settler));
+        assert!(!live.book_settler_pending());
+
+        // Frozen and ordinary controllers never carry the flag.
+        assert!(!BasicAi::new().opening_settler_waits);
+        assert!(!AdvancedAi::new().opening_settler_waits);
+        assert!(!AdvancedAi::legacy().opening_settler_waits);
     }
 
     /// ⚠⚠ AN EIGHT-PLAYER GAME LEFT TWO EMPIRES WITH NO PANTHEON AT ALL.

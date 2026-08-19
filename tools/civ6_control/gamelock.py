@@ -32,7 +32,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-LOCK = Path.home() / ".civvis-civ6-game.lock"
+# The lock directory. Overridable for a test that drives the CLI in a
+# subprocess, so it inspects the test's lock and not this machine's live game.
+LOCK = Path(os.environ.get(
+    "CIVVIS_GAME_LOCK_DIR", str(Path.home() / ".civvis-civ6-game.lock")))
 # A live lock holder protects a single active game.  An explicit halt is a
 # different thing: it is the operator saying that *no* new game may start until
 # they resume it.  Keeping that intent in a small durable marker avoids making
@@ -346,6 +349,23 @@ if __name__ == "__main__":
                          help="clear the explicit operator halt")
     actions.add_argument("--hold-status", action="store_true",
                          help="print an explicit or standing hold and exit 0, else exit 1")
+    # ⚠⚠ THE INTERACTIVE HOST READ `--hold-status` AS "STOP THE MACHINE", AND
+    # THE STANDING HALF OF THAT ANSWER IS TRANSIENT. `standing_hold` reports a
+    # lock whose live holder drives no run — deliberately, so a keeper can tell
+    # a halted machine from a wedged loop. But between one attempt's exit and
+    # the next attempt's launch the batch loop holds the lock under a tag no
+    # process yet carries in its argv, for a few seconds — and the host, polling
+    # every five, read that as "operator halt active", stopped its own
+    # supervisor, and the batch loop and the game under it died with it. Live on
+    # this host 2026-08-18/19: four games ended at t18/t44/t72/t83 with
+    # `reason: game exited`, no crash report, each within seconds of a
+    # `held by pid … and no harness is driving that tag` line in
+    # interactive_host.log; 36 of 111 ladder rows never finished. Acting on a
+    # halt needs the DURABLE marker and nothing else; this flag answers that
+    # question and only that question.
+    actions.add_argument("--halt-status", action="store_true",
+                         help="print the explicit, durable operator halt and exit 0, "
+                              "else exit 1 (a live lock holder is not a halt)")
     ap.add_argument("--reason", default="",
                     help="optional note recorded with --halt")
     ap.add_argument("--status", action="store_true")
@@ -367,6 +387,12 @@ if __name__ == "__main__":
         if standing is None:
             sys.exit(1)
         print(standing)
+        sys.exit(0)
+    if args.halt_status:
+        explicit = operator_halt_description()
+        if explicit is None:
+            sys.exit(1)
+        print(explicit)
         sys.exit(0)
 
     print(describe())

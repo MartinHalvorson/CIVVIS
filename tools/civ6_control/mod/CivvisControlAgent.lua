@@ -226,6 +226,8 @@ local function resolveActions()
 		-- of those sightings already have one of our military units within two
 		-- tiles, against 12,708 rival religious-unit sightings to our 590.
 		"UNITCOMMAND_CONDEMN_HERETIC",
+		-- Cancels a unit's queued path; see CivvisBoard.cancelQueuedPaths.
+		"UNITCOMMAND_CANCEL",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -469,6 +471,10 @@ local function survey()
 		-- as before. A capability the sender assumes and the receiver lacks is
 		-- how an accepted order becomes a silent no-op.
 		order_queue = cfg.OrderQueue ~= false,
+		-- Every MOVE_TO capped to this turn's leg and combat units' queued
+		-- paths cancelled at turn start, so `moves` at export means movement
+		-- available this turn and the mirror may trust it. See CivvisBoard.
+		moves_at_turn_start = cfg.CapMovesToReach ~= false,
 	});
 
 	if cfg.SurveyEnums then
@@ -6144,6 +6150,7 @@ local function exportState(player, pid, turn)
 			};
 		end
 		local progress = unitProgress(unit);
+		CivvisLedger.kinds[tostring(try(function() return unit:GetID(); end, -1))] = name;
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
@@ -6184,6 +6191,15 @@ local function exportState(player, pid, turn)
 			formation_count = try(function()
 				return unit:GetFormationUnitCount();
 			end, 1),
+			-- Where a queued host path will carry the unit at its next turn
+			-- start (nil when none), and whether it is embarked. See CivvisBoard.
+			queued_dest = try(function()
+				local index = UnitManager.GetQueuedDestination(unit);
+				if index == nil then return nil; end
+				local plot = Map.GetPlotByIndex(index);
+				return plot and { plot:GetX(), plot:GetY() } or nil;
+			end, nil),
+			embarked = try(function() return unit:IsEmbarked(); end, nil),
 			great_person = greatPerson,
 		};
 	end);
@@ -6277,6 +6293,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, kind = name,
 								base = unitBaseType(name),
 								class = unitClass(name),
@@ -6517,6 +6534,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
@@ -6727,6 +6745,9 @@ local function exportState(player, pid, turn)
 				local ux, uy = unit:GetX(), unit:GetY();
 				if plotRevealed(pid, ux, uy) then
 					hostiles[#hostiles + 1] = {
+						-- The host's own unit id, so a combat event and a
+						-- next-frame sighting name the same unit. See CivvisLedger.
+						id = try(function() return unit:GetID(); end, nil),
 						x = ux, y = uy, player = bid,
 						type = try(function()
 							return GameInfo.Units[unit:GetUnitType()].UnitType;
@@ -6761,6 +6782,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							hostiles[#hostiles + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, player = bid,
 								type = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -7777,6 +7799,15 @@ local function exportTiles(player, pid, turn)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★★ THE ROAD. Never exported; the mirror wrote `road = 0`
+						-- everywhere and priced every march across roadless ground.
+						-- Sent by name (`GameInfo.Routes`), nil where none stands.
+						rt = try(function()
+							local route = plot:GetRouteType();
+							if route == nil or route < 0 then return nil; end
+							return typeName("Routes", "RouteType", route);
+						end, nil),
+						rp = try(function() return plot:IsRoutePillaged() and true or nil; end, nil),
 						-- ★★★★ WHAT STANDS ON THE OTHER CIVILIZATIONS' GROUND. A rival
 						-- city record is name, size, health, walls and capital; its
 						-- districts and wonders were never exported, so a rival's
@@ -8559,6 +8590,229 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		threw = not ok,
 	});
 end
+
+-- ------------------------------------------------------------ tactical ledger
+--
+-- ★★★★★ NOTHING IN A LIVE RUN'S RECORD SAID WHO KILLED WHOM. Kills, losses,
+-- damage dealt and taken, captures — every reading of the live army so far was
+-- a reconstruction from units vanishing between two `state` exports, or the
+-- host's Hall of Fame opened by hand: twelve finished games, 343 of ours lost,
+-- 61 of theirs killed, 0 cities taken. This block writes the combat record the
+-- host already knows into the run's own event stream, so
+-- `tools/civ6_tactics_ledger.py` reads a ledger and not a guess.
+--
+-- Two sources, recorded side by side because neither is verified in-game yet:
+--   * `Events.CombatVisBegin/End(kVisData)` — the host's own combat
+--     visualisation, fired for every combat this seat can see, carrying the
+--     attacker/defender component ids (`playerID`, `componentID`,
+--     `componentType`, the shape MapPinManager.lua reads). Hit points are read
+--     back at Begin and at End; a defender that no longer resolves at End was
+--     killed.
+--   * `Events.UnitDamageChanged(player, unitId, damage)` — the core's own
+--     per-unit damage change, collected while a combat is open.
+--   The ledger tool prefers the damage events and falls back to the readback.
+--
+-- And the host's own STRIKE PREVIEW: `CombatManager.SimulateAttackInto` is what
+-- the shipped UnitPanel calls to draw the combat preview, and it answers the
+-- same numbers for our order before it is issued. Recorded as `strike`, and
+-- joined onto the `combat` that follows, so predicted-versus-actual per strike
+-- is one field apart.
+--
+-- ⚠ Handles are never cached across events (see the SIGSEGV note on
+-- `applyOrder`); every read re-resolves through `UnitManager.GetUnit`.
+-- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
+CivvisLedger = { open = {}, damage = {}, pending = {}, kinds = {} };
+
+CivvisLedger.componentKey = function(id)
+	if id == nil then return nil; end
+	local player = try(function() return id.playerID; end, nil);
+	local comp = try(function() return id.componentID; end, nil);
+	if player == nil or comp == nil then return nil; end
+	return tostring(player) .. ":" .. tostring(comp);
+end;
+
+-- What a combat participant is right now: hp for a unit, garrison/wall damage
+-- for a city or district; `gone` when it no longer resolves.
+CivvisLedger.describe = function(id)
+	if id == nil then return nil; end
+	local player = tonumber(try(function() return id.playerID; end, nil));
+	local comp = tonumber(try(function() return id.componentID; end, nil));
+	if player == nil or comp == nil then return nil; end
+	local isUnit = try(function() return id.componentType == ComponentType.UNIT; end, true);
+	if isUnit ~= false then
+		local unit = try(function() return UnitManager.GetUnit(player, comp); end);
+		if unit == nil then return { player = player, id = comp, type = "unit", gone = true }; end
+		return {
+			player = player, id = comp, type = "unit",
+			kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?"),
+			x = tonumber(try(function() return unit:GetX(); end, -1)) or -1,
+			y = tonumber(try(function() return unit:GetY(); end, -1)) or -1,
+			hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0),
+		};
+	end
+	-- A city or district defends with its garrison and its walls.
+	local district = try(function() return CityManager.GetDistrict(player, comp); end);
+	if district == nil then return { player = player, id = comp, type = "district", gone = true }; end
+	return {
+		player = player, id = comp, type = "district",
+		x = tonumber(try(function() return district:GetX(); end, -1)) or -1,
+		y = tonumber(try(function() return district:GetY(); end, -1)) or -1,
+		hp = tonumber(try(function()
+			return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON)
+				- district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+		end, nil)),
+		wall_hp = tonumber(try(function()
+			return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER)
+				- district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+		end, nil)),
+	};
+end;
+
+-- The host's own preview of the strike about to be requested. nil when the
+-- host is busy or the API is absent — an honest blank, not a zero.
+CivvisLedger.preview = function(unit, verb, x, y)
+	if try(function() return UI.IsGameCoreBusy(); end, false) == true then return nil; end
+	local combatType = nil;
+	if verb == "RANGE_ATTACK" then
+		combatType = try(function()
+			local ranged = unit:GetRangedCombat() or 0;
+			local bombard = unit:GetBombardCombat() or 0;
+			if bombard > ranged then return CombatTypes.BOMBARD; end
+			return CombatTypes.RANGED;
+		end, nil);
+	end
+	local results = try(function()
+		return CombatManager.SimulateAttackInto(unit:GetComponentID(), combatType, x, y);
+	end, nil);
+	if results == nil then return nil; end
+	local function read(side, key)
+		return tonumber(try(function()
+			return results[CombatResultParameters[side]][CombatResultParameters[key]];
+		end, nil));
+	end
+	local out = {
+		damage_to_defender = read("DEFENDER", "DAMAGE_TO"),
+		damage_to_attacker = read("ATTACKER", "DAMAGE_TO"),
+		defender_wall_damage = read("DEFENDER", "DEFENSE_DAMAGE_TO"),
+		attacker_strength = read("ATTACKER", "COMBAT_STRENGTH"),
+		defender_strength = read("DEFENDER", "COMBAT_STRENGTH"),
+	};
+	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	return out;
+end;
+
+-- Called from `applyOrder` before a strike is requested: emit the preview and
+-- remember it, so the combat this strike produces can carry it.
+CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
+	local preview = CivvisLedger.preview(unit, verb, x, y);
+	local kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?");
+	local hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0);
+	CivvisLedger.pending[tostring(subject)] = {
+		turn = turn, verb = verb, x = x, y = y, preview = preview, hp = hp, kind = kind,
+	};
+	emit("strike", { turn = turn, unit = subject, unit_kind = kind, verb = verb,
+	                 x = x, y = y, hp = hp, preview = preview });
+end;
+
+CivvisLedger.onCombatVisBegin = function(kVisData)
+	local attacker = try(function() return kVisData[CombatVisType.ATTACKER]; end);
+	local defender = try(function() return kVisData[CombatVisType.DEFENDER]; end);
+	local key = CivvisLedger.componentKey(attacker);
+	if key == nil then return; end
+	CivvisLedger.open[key] = {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		attacker = CivvisLedger.describe(attacker),
+		defender = CivvisLedger.describe(defender),
+		attacker_id = attacker, defender_id = defender,
+		damage_events = {},
+	};
+end;
+
+CivvisLedger.onUnitDamageChanged = function(player, unitId, damage)
+	local who = tostring(player) .. ":" .. tostring(unitId);
+	local previous = CivvisLedger.damage[who];
+	CivvisLedger.damage[who] = tonumber(damage);
+	if previous == nil or tonumber(damage) == nil then return; end
+	local delta = tonumber(damage) - previous;
+	for _, combat in pairs(CivvisLedger.open) do
+		if CivvisLedger.componentKey(combat.attacker_id) == who
+				or CivvisLedger.componentKey(combat.defender_id) == who then
+			combat.damage_events[#combat.damage_events + 1] = { who = who, delta = delta };
+		end
+	end
+end;
+
+CivvisLedger.onCombatVisEnd = function(kVisData)
+	local attacker = try(function() return kVisData[CombatVisType.ATTACKER]; end);
+	local key = CivvisLedger.componentKey(attacker);
+	if key == nil then return; end
+	local combat = CivvisLedger.open[key];
+	CivvisLedger.open[key] = nil;
+	if combat == nil then return; end
+	local attackerNow = CivvisLedger.describe(combat.attacker_id);
+	local defenderNow = CivvisLedger.describe(combat.defender_id);
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local preview = nil;
+	if combat.attacker ~= nil and combat.attacker.player == pid then
+		local pending = CivvisLedger.pending[tostring(combat.attacker.id)];
+		if pending ~= nil and pending.turn == combat.turn then
+			preview = pending.preview;
+			CivvisLedger.pending[tostring(combat.attacker.id)] = nil;
+		end
+	end
+	local function hpOf(desc) return desc ~= nil and desc.hp or nil; end
+	local function wallOf(desc) return desc ~= nil and desc.wall_hp or nil; end
+	local defenderKilled = defenderNow ~= nil and defenderNow.gone == true;
+	local attackerKilled = attackerNow ~= nil and attackerNow.gone == true;
+	local damageToDefender, damageToAttacker = nil, nil;
+	if hpOf(combat.defender) ~= nil then
+		if defenderKilled then damageToDefender = hpOf(combat.defender);
+		elseif hpOf(defenderNow) ~= nil then damageToDefender = hpOf(combat.defender) - hpOf(defenderNow); end
+	end
+	if hpOf(combat.attacker) ~= nil then
+		if attackerKilled then damageToAttacker = hpOf(combat.attacker);
+		elseif hpOf(attackerNow) ~= nil then damageToAttacker = hpOf(combat.attacker) - hpOf(attackerNow); end
+	end
+	emit("combat", {
+		turn = combat.turn,
+		attacker = combat.attacker, defender = combat.defender,
+		attacker_hp_end = hpOf(attackerNow), defender_hp_end = hpOf(defenderNow),
+		defender_wall_hp_end = wallOf(defenderNow),
+		damage_to_defender = damageToDefender, damage_to_attacker = damageToAttacker,
+		defender_killed = defenderKilled, attacker_killed = attackerKilled,
+		damage_events = combat.damage_events,
+		ours = combat.attacker ~= nil and combat.attacker.player == pid,
+		against_us = combat.defender ~= nil and combat.defender.player == pid,
+		preview = preview,
+	});
+end;
+
+-- One of OUR units left the map — combat, disband, capture, deletion. Named
+-- with the kind the last export knew, and with the treasury, so a bankruptcy
+-- disband and a battlefield loss are one field apart.
+CivvisLedger.onUnitRemoved = function(player, unitId)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	if tonumber(player) ~= pid then return; end
+	emit("unit_lost", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[tostring(unitId)],
+		gold = tonumber(try(function()
+			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
+		end, nil)),
+	});
+end;
+
+CivvisLedger.onCityOccupationChanged = function(player, cityId)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local city = try(function() return CityManager.GetCity(player, cityId); end);
+	emit("city_occupation", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		player = tonumber(player), city = tonumber(cityId),
+		name = try(function() return city:GetName(); end, nil),
+		original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+		ours_now = tonumber(player) == pid,
+	});
+end;
 
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
@@ -10494,9 +10748,28 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "MOVE_TO" or verb == "ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
+			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
+			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
+			-- The row's own x/y are rewritten so the queue expects the capped
+			-- plot; the original destination rides in `move_capped`.
+			if verb == "MOVE_TO" and cfg.CapMovesToReach ~= false then
+				local capped, why = CivvisBoard.capToTurn(unit, x, y);
+				if capped == false then
+					CivvisBoard.stats.no_reach = CivvisBoard.stats.no_reach + 1;
+					return false, "move_" .. tostring(why);
+				elseif capped ~= nil then
+					CivvisBoard.stats.capped = CivvisBoard.stats.capped + 1;
+					emit("move_capped", { turn = turn, unit = subject,
+					                      want = { x, y }, sent = { capped.x, capped.y },
+					                      turns = capped.turns });
+					x, y = capped.x, capped.y;
+					row.x, row.y = x, y;
+				end
+			end
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			if verb == "ATTACK" then CivvisLedger.strike(unit, subject, verb, x, y, turn); end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
 				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
@@ -10584,6 +10857,7 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			return operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params), verb;
 		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
@@ -11657,6 +11931,93 @@ CivvisQueue.inContact = function(pid, unit, turn)
 	return false;
 end;
 
+-- --------------------------------------------------------- host-grounded board
+--
+-- ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. `mirror_unit_moves`
+-- handed every mirrored unit its full allowance every turn, because the
+-- export's `moves` had misled twice — and it misled because the host had
+-- already spent the movement before the brain could act: a `MOVE_TO` whose
+-- host path ran longer than CIVVIS priced was QUEUED, and the host walked the
+-- unit along it at the start of the next turn, before `beginTurn` exports.
+-- Turn 31 of run civvis-20260730T120107Z: 7 of 8 units at `moves: 0` at the
+-- start of the turn. Measured across the recorded runs: 12.5 % of MOVE_TOs
+-- did not move at all, most of them with movement showing at export.
+--
+-- Two rules make `moves` mean "movement available this turn", and the `seat`
+-- event says so (`moves_at_turn_start`) so the mirror may trust it:
+--   * every MOVE_TO is CAPPED to the furthest plot on the host's own path that
+--     the unit reaches THIS turn (`UnitManager.GetMoveToPathEx(unit, dest)`
+--     gives `plots` and `turns`; the shipped WorldInput draws the same path);
+--     a walk that would take two turns is sent as its first turn's leg, and
+--     the brain re-plans the rest from the real position next turn — no path
+--     is left queued to walk the unit somewhere stale;
+--   * combat units that enter the turn with a queued destination anyway (an
+--     older order, the fallback ladder, explore automation) get
+--     `UNITCOMMAND_CANCEL` at turn start, so the brain owns them from the next
+--     turn on. Civilians keep theirs: a settler's long walk is exactly what a
+--     queued path is for.
+-- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
+-- host and the board disagreed. One bare global table (200-local ceiling).
+CivvisBoard = { stats = { capped = 0, no_reach = 0 } };
+
+CivvisBoard.reset = function()
+	CivvisBoard.stats = { capped = 0, no_reach = 0 };
+end;
+
+-- The furthest plot on the host's path to (x, y) that `unit` reaches this
+-- turn. Returns nil when the whole path lands this turn (no cap), false and a
+-- reason when the unit cannot take even the first step, or the capped plot.
+CivvisBoard.capToTurn = function(unit, x, y)
+	local path = try(function()
+		return UnitManager.GetMoveToPathEx(unit, Map.GetPlotIndex(x, y));
+	end, nil);
+	if path == nil or path.plots == nil or path.turns == nil then return nil; end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	if n <= 1 then return nil; end
+	local last = tonumber(path.turns[n]);
+	if last == nil or last <= 1 then return nil; end
+	local reach = nil;
+	for i = 2, n do
+		local t = tonumber(path.turns[i]);
+		if t ~= nil and t <= 1 then reach = path.plots[i]; end
+	end
+	if reach == nil then return false, "no_moves_this_turn"; end
+	local plot = try(function() return Map.GetPlotByIndex(reach); end, nil);
+	if plot == nil then return nil; end
+	local cx = tonumber(try(function() return plot:GetX(); end, nil));
+	local cy = tonumber(try(function() return plot:GetY(); end, nil));
+	if cx == nil or cy == nil then return nil; end
+	return { x = cx, y = cy, turns = last };
+end;
+
+-- Cancel queued paths on combat units at the start of our turn, and report
+-- how many units entered the turn with one at all.
+CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
+	local found, cancelled = 0, 0;
+	eachUnit(player, function(unit)
+		local queued = try(function() return UnitManager.GetQueuedDestination(unit); end, nil);
+		if queued == nil then return; end
+		found = found + 1;
+		local combat = try(function()
+			local row = GameInfo.Units[unit:GetUnitType()];
+			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
+		end, false) == true;
+		if not combat then return; end
+		local hash = CMD["UNITCOMMAND_CANCEL"];
+		if hash == nil then return; end
+		local ok = try(function()
+			return UnitManager.CanStartCommand(unit, hash, false, true) == true;
+		end, false);
+		if ok and pcall(function() UnitManager.RequestCommand(unit, hash); end) then
+			cancelled = cancelled + 1;
+		end
+	end);
+	if found > 0 then
+		emit("queued_paths", { turn = turn, found = found, cancelled = cancelled });
+	end
+end;
+
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
@@ -11917,6 +12278,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- Unmentioned combat units kept off the explore automation because a
 		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
 		explore_guarded = guarded,
+		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
+		-- refused because the unit could not take even the first step this
+		-- turn. See CivvisBoard.
+		move_capped = CivvisBoard.stats.capped,
+		move_no_reach = CivvisBoard.stats.no_reach,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -12171,6 +12537,8 @@ local function beginTurn(player, pid, turn)
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
 	warTarget = findWarTarget(player, pid);
+	CivvisBoard.reset();
+	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
@@ -13577,6 +13945,12 @@ function Initialize()
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
+		-- The tactical ledger: see CivvisLedger.
+		CombatVisBegin = CivvisLedger.onCombatVisBegin,
+		CombatVisEnd = CivvisLedger.onCombatVisEnd,
+		UnitDamageChanged = CivvisLedger.onUnitDamageChanged,
+		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
+		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,
 	}) do
 		pcall(function() Events[name].Add(handler); end);
 	end
