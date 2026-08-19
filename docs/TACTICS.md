@@ -1091,24 +1091,30 @@ greedy controller that `battle_bench` measures.)
 **Measured.** Screens at 300 paired seeds a cell (block 21,000,000+), kept on
 a fresh confirmation block (22,000,000+) at 1000 paired seeds a cell, seats
 swapped, control at exact 0.00 both for `advanced` and for the treatment
-against itself. `advanced_coordinated_finish` less `advanced`:
+against itself. The confirmation was then **re-taken on this branch's merged
+tip** — five PRs (#2059 evacuation among them, the same tactical subsystem)
+landed underneath the first reading and roughly halved it, which is the
+repository's standing rule about tuning-era figures in action. The merged-tip
+column is the one this document claims. `advanced_coordinated_finish` less
+`advanced`, 1000 paired seeds a cell:
 
-| composition | screen (300) | confirm (1000) | confirm sign |
+| composition | pre-merge base | **merged tip** | merged-tip sign |
 |---|---:|---:|---|
-| combined arms | +30.3 ± 10.3 | **+32.9 ± 5.9** | 258/167, p < 0.0001 |
-| ranged heavy | +75.7 ± 16.6 | **+85.6 ± 9.4** | 392/215, p < 0.0001 |
-| with siege | +43.3 ± 12.5 | **+21.8 ± 7.9** | 202/157, p = 0.0201 |
-| melee only | +7.3 ± 2.7 | **+7.5 ± 1.7** | 84/32, p < 0.0001 |
+| combined arms | +32.9 ± 5.9 | **+18.1 ± 4.6** | 187/118, p = 0.0001 |
+| ranged heavy | +85.6 ± 9.4 | **+49.2 ± 6.6** | 304/157, p < 0.0001 |
+| with siege | +21.8 ± 7.9 | +9.6 ± 5.2 | 116/102, p = 0.38 — a null |
+| melee only | +7.5 ± 1.7 | **+5.4 ± 1.4** | 75/30, p < 0.0001 |
 
-Positive on the mean **and** the sign test in every cell — including the
-melee-only stress case that harmed every early version of the joint search.
-Fires-check: play diverged on 448 of 1000 combined-arms confirmation seeds.
-The chain's own share (`advanced_coordinated_finish` less
-`advanced_single_finisher_volley`, 300 seeds a cell, block 21,000,000+):
-ranged +31.8 ± 12.7 (p = 0.0125), siege +22.6 ± 10.0 (p = 0.0243), combined
-+5.6 ± 5.1 (noise), melee −0.9 ± 1.7 (2 of 300 seeds diverged — the chain is
-nearly unreachable there, as expected: three-blow ganging is a ranged/siege
-shape). The single-finisher volley returning to a live path carries the rest.
+Decisive on mean **and** sign on combined arms, ranged and the melee-only
+stress case that harmed every early version of the joint search; siege
+dropped to a directional null on the tip; no composition harmed. Fires-check:
+play diverged on 448 of 1000 combined-arms confirmation seeds. The chain's
+own share on the merged tip (`advanced_coordinated_finish` less
+`advanced_single_finisher_volley`, 300 seeds a cell): ranged **+31.1 ± 8.3**
+(sign 53/21, p = 0.0003), combined +5.9 ± 3.4 (directional), siege +4.1 ± 5.7
+(noise), melee −0.9 ± 1.7 (2 of 300 seeds diverged — the chain is nearly
+unreachable there, as expected: three-blow ganging is a ranged shape). The
+single-finisher volley returning to a live path carries the rest.
 
 **Cost.** `battle_bench --cost`, one treated seat among five, 6p/74×46,
 interleaved: **1.03×** a stock seat (the joint search is 1.58×). The printed
