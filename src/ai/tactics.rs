@@ -190,6 +190,12 @@ pub(crate) struct JointTactics {
     pub max_units: usize,
     /// Lines kept per unit, including the declining line.
     pub max_lines: usize,
+    /// Offer approach lines from the engine's exact reach flood
+    /// (`Game::approach_reach`) from two hexes out, not just the adjacent
+    /// step. Withholdable as the live treatment `joint-reach-lines`
+    /// (`AdvancedAi::joint_reach_lines`); off, the portfolio is the §9
+    /// geometry without its two-step block. See `docs/TACTICS.md` §17.
+    pub reach_lines: bool,
 }
 
 impl Default for JointTactics {
@@ -199,6 +205,7 @@ impl Default for JointTactics {
             generations: 20,
             max_units: 8,
             max_lines: 16,
+            reach_lines: true,
         }
     }
 }
@@ -591,7 +598,7 @@ impl JointTactics {
             // at two hexes out. Siege stays grounded. Every line is still
             // played through the engine at fitness time, which refuses what
             // this reading got wrong.
-            if unit.moves_left > 0.0 && !siege_grounded {
+            if self.reach_lines && unit.moves_left > 0.0 && !siege_grounded {
                 let mut seen: BTreeSet<(Pos, Pos, bool)> = BTreeSet::new();
                 for (to, (kept, path)) in g.approach_reach(uid) {
                     if kept <= 0.0 || path.len() < 2 || g.wdist(unit.pos, to) < 2 {
@@ -649,6 +656,79 @@ impl JointTactics {
                                 - role_bonus,
                             actions,
                         });
+                    }
+                }
+            }
+
+            // THE WITHHELD GEOMETRY: with `reach_lines` off (the live treatment
+            // `joint-reach-lines` withheld, or `advanced_joint_tactics_geometric`
+            // seated) the portfolio is exactly what shipped before §17 — this
+            // two-step block, kept verbatim so the withhold arm measures the
+            // reach lines against the real incumbent and nothing else.
+            //
+            // Two steps, then the attack the second step opens. This is what
+            // gives a two-move unit its real reach: the one-step block above
+            // only ever fights what is already at arm's length, so a fight
+            // two tiles out is invisible to the whole search and the unit
+            // stands off while the per-unit mover hovers. Bounded the same
+            // way as one step — geometric generation, no clones, the engine
+            // refuses what is actually illegal when the line is played.
+            //
+            // The intermediate tile is filtered against known hostile
+            // adjacency: a first step into a zone of control forfeits the
+            // second, so nearly every such line dies at evaluation and only
+            // dilutes the portfolio. (Cavalry that ignores ZOC loses a
+            // through-the-ring flank to this filter; it keeps every
+            // around-the-ring one, which is the common case.)
+            //
+            // ⚠ STRICTLY MORE than two movement: the blow itself needs
+            // movement left — `do_attack` and `do_ranged` both refuse a unit
+            // at 0.0 — so for a two-move unit every two-step line is a
+            // suicide walk that arrives, is refused, and stands in contact
+            // unfortified. Measured: admitting them moved the melee-only
+            // bench from −7.6 to −32.6 (p = 0.0005); this gate is what keeps
+            // the reach for three-plus-move units without re-buying that.
+            if !self.reach_lines && unit.moves_left > 2.0 && !siege_grounded {
+                let mut seen: BTreeSet<(Pos, Pos, bool)> = BTreeSet::new();
+                for to1 in first_ring.iter().copied() {
+                    let Some(handoff) = plannable_step(to1) else {
+                        continue;
+                    };
+                    if hostile_adjacent(to1) {
+                        continue;
+                    }
+                    for to2 in g.nbrs(to1) {
+                        if to2 == unit.pos || first_ring.contains(&to2) {
+                            continue;
+                        }
+                        let Some(tile) = g.map.get(to2) else {
+                            continue;
+                        };
+                        if !g.rules.is_passable(tile) || g.rules.is_water(tile) != sea {
+                            continue;
+                        }
+                        for (target, action) in Self::strikes_from(g, pid, uid, to2, range) {
+                            let ranged = matches!(action, Action::Ranged { .. });
+                            if !seen.insert((to2, target, ranged)) {
+                                continue;
+                            }
+                            let role_bonus =
+                                base.tactical_action_bonus_from(g, uid, to2, target, ranged);
+                            let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
+                                + role_bonus
+                                - 8.0
+                                - if handoff { HANDOFF_DISCOUNT } else { 0.0 };
+                            lines.push(Line {
+                                prior,
+                                toll: base.attack_threshold(g, uid, target) + wounded_margin
+                                    - role_bonus,
+                                actions: vec![
+                                    Action::Move { unit: uid, to: to1 },
+                                    Action::Move { unit: uid, to: to2 },
+                                    action,
+                                ],
+                            });
+                        }
                     }
                 }
             }

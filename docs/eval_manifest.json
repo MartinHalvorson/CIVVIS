@@ -57,9 +57,9 @@
     "withholdable": 59
   },
   "derived": {
-    "eval_only_count": 236,
-    "firaxis_only_count": 29,
-    "live_bridge_count": 88,
+    "eval_only_count": 238,
+    "firaxis_only_count": 30,
+    "live_bridge_count": 89,
     "native_engine_repair_count": 59,
     "withholdable_live_count": 59
   },
@@ -234,7 +234,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 236,
+      "declared_count": 238,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -257,6 +257,7 @@
         "live_without_fog_land_capacity",
         "live_without_home_defense",
         "live_without_joint_tactics",
+        "live_without_joint_reach_lines",
         "live_without_loyalty_policy_defence",
         "live_without_solvent_faith_army",
         "live_without_siege_muster",
@@ -444,6 +445,7 @@
         "advanced_without_unit_tactics",
         "advanced_league_top",
         "advanced_joint_tactics",
+        "advanced_joint_tactics_geometric",
         "advanced_coordinated_finish",
         "advanced_single_finisher_volley",
         "strategic_cheap",
@@ -475,9 +477,10 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 29,
+      "declared_count": 30,
       "items": [
         "joint-tactics",
+        "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
         "solvent-faith-army",
@@ -509,9 +512,10 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 88,
+      "declared_count": 89,
       "items": [
         "joint-tactics",
+        "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
         "siege-muster",

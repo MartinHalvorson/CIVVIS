@@ -250,3 +250,35 @@ covers the channel and the migration; the mirror tests cover
 `attacks_remaining`. Turn it on for one live run (`--combat-frames 1`) and
 read `combat_frame`, `combat_frame_timeout`, `orders.frame`, and the ledger's
 strikes-landed and exchange ratio against a run without it.
+
+## 9. Every step behind a switch the ledger records — how to A/B each one
+
+Each step ships **on** (except the combat frame) and can be withheld without
+a rebuild, and every live row says which switches were on: the mod-side
+switches ride in the summary's `mod_arms` (→ `docs/civ6_ladder.json`), the
+brain-side withholds in `withheld`. Read a comparison with
+`tools/civ6_tactics_ledger.py` on each arm's runs.
+
+| step | switch (default) | withhold | where it is recorded |
+|---|---|---|---|
+| 1 · per-unit order queue | `OrderQueue` (on) | `civ6_play.py --no-order-queue` — the mod applies one order per unit per turn and the seat stops advertising `order_queue`, so the brain defers follow-ups exactly as before | `mod_arms.OrderQueue` |
+| 1 · explore guard | `ExploreGuard` (on), `ExploreGuardRadius` 4 | `--no-explore-guard` | `mod_arms.ExploreGuard` |
+| 1b · combat frame | `CombatFrames` (**0 = off**), `CombatFramePolls` 20 | `--combat-frames 1` turns it ON for a run | `mod_arms.CombatFrames` |
+| 2 · moves capped to this turn's leg, trusted movement | `CapMovesToReach` (on) | `--no-cap-moves-to-reach` — also stops the seat advertising `moves_at_turn_start`, so the mirror returns to the full allowance | `mod_arms.CapMovesToReach` |
+| 2 · queued paths cancelled at turn start | `CancelQueuedPaths` (on) | `--no-cancel-queued-paths` | `mod_arms.CancelQueuedPaths` |
+| 3 · joint search reach lines | `joint_reach_lines` (on wherever the joint search runs) | live: `--without joint-reach-lines` (`live_without_joint_reach_lines` arm); bench/arena: `advanced_joint_tactics_geometric` seats the pre-§17 portfolio — measured to reproduce the old figure exactly (cavalry +398.0 on block 7,200,000) | `withheld` (live) / the arm name |
+| 5 · strike preview | `StrikePreview` (on) | `--no-strike-preview` — `strike` events carry no prediction | `mod_arms.StrikePreview` |
+
+Pillage translation, the tactical ledger's events and the export of ids,
+roads, `queued_dest`, `embarked` and `attacks_remaining` are data, not
+decisions, and stay on.
+
+**What to read per arm.** `orders_queue.strikes_landed` and the arrival
+ledger (step 1); `move_capped`, `move_no_reach`, `queued_paths`, `moves_short`
+and the did-not-move share (step 2); the ledger's kills per loss, damage
+dealt/taken and the hover share (all); `combat_frame` /
+`combat_frame_timeout` and the ladder's `applied_pct` (1b). The bench pair for
+step 3 is `battle_bench --a advanced_joint_tactics --b
+advanced_joint_tactics_geometric` (cavalry cell, 300 seeds, block 7,200,000:
+**+59.0 ± 17.1**, sign p = 0.0023), and `tactics_bench` seats both arms on the
+arena regimes.
