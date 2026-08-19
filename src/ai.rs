@@ -17450,10 +17450,20 @@ mod tests {
             building: crate::name!("walls"),
         };
         // No walls yet: both arms order ancient walls.
-        assert_eq!(all_tiers.barbarian_defense_item(&g, 0, city), Some(walls.clone()));
-        assert_eq!(one_tier.barbarian_defense_item(&g, 0, city), Some(walls.clone()));
+        assert_eq!(
+            all_tiers.barbarian_defense_item(&g, 0, city),
+            Some(walls.clone())
+        );
+        assert_eq!(
+            one_tier.barbarian_defense_item(&g, 0, city),
+            Some(walls.clone())
+        );
         // Ancient walls standing: the old arm escalates, the repaired one is done.
-        g.cities.get_mut(&city).unwrap().buildings.push(crate::name!("walls"));
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
         let max_wall = g.city_max_wall_hp(&g.cities[&city]);
         g.cities.get_mut(&city).unwrap().wall_hp = max_wall;
         let medieval = Item::Building {
