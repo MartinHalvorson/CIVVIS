@@ -14141,9 +14141,9 @@ end
 -- The bridge already knows how to take an Aid Request's first-place score,
 -- Climate Accords' power-plant decommission score, and World's Fair's Great
 -- Person point score. World Games' 50-point athlete project is likewise
--- already priced. All paths require membership, while the prior controller
--- merely let the World Crisis prompt wait for a person. Firaxis's own
--- WorldCrisisPopup handles
+-- already priced. International Space Station's 30-point astronaut project is
+-- too. All paths require membership, while the prior controller merely let the
+-- World Crisis prompt wait for a person. Firaxis's own WorldCrisisPopup handles
 -- `Events.EmergencyAvailable` by issuing this exact ACCEPT_EMERGENCY operation
 -- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE. Take that same operation,
 -- but only for competitions with a priced path that this controller has
@@ -14167,16 +14167,19 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 	local climate = kind == "EMERGENCY_CLIMATE_ACCORDS";
 	local worldsFair = kind == "EMERGENCY_WORLDS_FAIR";
 	local worldGames = kind == "EMERGENCY_WORLD_GAMES";
-	local targetFree = climate or worldsFair or worldGames;
+	local spaceStation = kind == "EMERGENCY_SPACE_STATION";
+	local targetFree = climate or worldsFair or worldGames or spaceStation;
 	if not targetFree and cfg.AutoJoinAidRequests == false then return; end
 	if climate and cfg.AutoJoinClimateAccords == false then return; end
 	if worldsFair and cfg.AutoJoinWorldsFair == false then return; end
 	if worldGames and cfg.AutoJoinWorldGames == false then return; end
+	if spaceStation and cfg.AutoJoinSpaceStation == false then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	local function report(reason, submitted)
 		emit(climate and "climate_accords_join"
 			or worldsFair and "worlds_fair_join"
-			or worldGames and "world_games_join" or "aid_emergency_join", {
+			or worldGames and "world_games_join"
+			or spaceStation and "space_station_join" or "aid_emergency_join", {
 			turn = turn, target = target or -1,
 			emergency = kind ~= "" and kind or tostring(emergencyType or ""),
 			submitted = submitted and true or false, reason = reason,
@@ -14191,9 +14194,9 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 		return;
 	end
 	if targetFree then
-		-- Climate Accords, World's Fair, and World Games have NoTarget=true. The
-		-- shipped popup sends -1 through PARAM_OTHER_PLAYER; a real player ID is
-		-- mismatched.
+		-- Climate Accords, World's Fair, World Games, and International Space
+		-- Station have NoTarget=true. The shipped popup sends -1 through
+		-- PARAM_OTHER_PLAYER; a real player ID is mismatched.
 		if target ~= -1 then
 			report("unexpected_target", false);
 			return;
@@ -14267,6 +14270,7 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 	local key = climate and ("climate_join:" .. kind)
 		or worldsFair and ("worlds_fair_join:" .. kind)
 		or worldGames and ("world_games_join:" .. kind)
+		or spaceStation and ("space_station_join:" .. kind)
 		or ("aid_join:" .. kind .. ":" .. target);
 	if turn >= 0 and peaceAsked[key] == turn then
 		report("duplicate", false);

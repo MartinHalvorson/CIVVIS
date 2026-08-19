@@ -1,10 +1,10 @@
--- Offline regression for automatic World Games membership.
+-- Offline regression for automatic International Space Station membership.
 --
--- Firaxis grants the 50-score Train Athletes project only to members of the
--- target-free World Games. CIVVIS already models that score race, so exercise
--- the actual emergency callback before the contest begins.
+-- Firaxis grants the 30-score Train Astronauts project only to members of the
+-- target-free Space Station competition. CIVVIS already models that race, so
+-- exercise the actual emergency callback before the contest begins.
 --
--- Run: lua5.1 tools/civ6_control/mod/world_games_join_test.lua
+-- Run: lua5.1 tools/civ6_control/mod/space_station_join_test.lua
 
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 
@@ -30,6 +30,7 @@ UI = { DataError = function() end }
 CivvisControlConfig = {
 	Play = true, AutoJoinAidRequests = true, AutoJoinClimateAccords = true,
 	AutoJoinWorldsFair = true, AutoJoinWorldGames = true,
+	AutoJoinSpaceStation = true,
 }
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
@@ -53,12 +54,12 @@ local function check(name, got, want)
 	end
 end
 
-local PID, TYPE = 7, 97
-local nextTurn = 500
+local PID, TYPE = 7, 101
+local nextTurn = 600
 
 local function lastJoin()
 	for i = #logs, 1, -1 do
-		if logs[i]:find('"kind":"world_games_join"', 1, true) then
+		if logs[i]:find('"kind":"space_station_join"', 1, true) then
 			return logs[i]
 		end
 	end
@@ -97,15 +98,16 @@ local function fixture(opts)
 	CivvisControlConfig.AutoJoinAidRequests = opts.aidEnabled ~= false
 	CivvisControlConfig.AutoJoinClimateAccords = opts.climateEnabled ~= false
 	CivvisControlConfig.AutoJoinWorldsFair = opts.fairEnabled ~= false
+	CivvisControlConfig.AutoJoinWorldGames = opts.gamesEnabled ~= false
 	if opts.defaultEnabled then
-		CivvisControlConfig.AutoJoinWorldGames = nil
+		CivvisControlConfig.AutoJoinSpaceStation = nil
 	else
-		CivvisControlConfig.AutoJoinWorldGames = opts.enabled ~= false
+		CivvisControlConfig.AutoJoinSpaceStation = opts.enabled ~= false
 	end
 	GameInfo = { EmergencyAlliances = {} }
 	if not opts.noDefinition then
 		GameInfo.EmergencyAlliances[opts.eventType or TYPE] = {
-			EmergencyType = opts.kind or "EMERGENCY_WORLD_GAMES",
+			EmergencyType = opts.kind or "EMERGENCY_SPACE_STATION",
 		}
 	end
 	Game = {
@@ -121,14 +123,14 @@ local function fixture(opts)
 			}
 		end,
 	}
-	-- World Games is target-free. It must not inspect Players[-1] or diplomacy.
+	-- ISS is target-free. It must not inspect Players[-1] or diplomacy.
 	Players = {}
 	PlayerOperations = {
 		PARAM_OTHER_PLAYER = "other",
 		PARAM_EMERGENCY_TYPE = "emergency",
 		ACCEPT_EMERGENCY = "accept",
 	}
-	if opts.noApi then PlayerOperations.PARAM_EMERGENCY_TYPE = nil end
+	if opts.noApi then PlayerOperations.ACCEPT_EMERGENCY = nil end
 	UI.RequestPlayerOperation = function(pid, operation, parameters)
 		state.requests[#state.requests + 1] = {
 			pid = pid, operation = operation, other = parameters.other,
@@ -145,24 +147,24 @@ end
 -- A synchronous re-publish cannot submit a second request in the same turn.
 local good = fixture({ reenter = true })
 registrations.EmergencyAvailable(-1, TYPE)
-check("World Games submits once", #good.requests, 1)
-check("World Games uses local player", good.requests[1].pid, PID)
-check("World Games uses accept operation", good.requests[1].operation, "accept")
-check("World Games keeps no-target sentinel", good.requests[1].other, -1)
-check("World Games keeps emergency type", good.requests[1].emergency, TYPE)
-check("World Games checked exact tracker player", good.trackerPlayer, PID)
-check("World Games reports submission, not membership", submitted(), true)
-check("World Games submission reason", reason(), "submitted")
+check("Space Station submits once", #good.requests, 1)
+check("Space Station uses local player", good.requests[1].pid, PID)
+check("Space Station uses accept operation", good.requests[1].operation, "accept")
+check("Space Station keeps no-target sentinel", good.requests[1].other, -1)
+check("Space Station keeps emergency type", good.requests[1].emergency, TYPE)
+check("Space Station checked exact tracker player", good.trackerPlayer, PID)
+check("Space Station reports submission, not membership", submitted(), true)
+check("Space Station submission reason", reason(), "submitted")
 
--- The new setting defaults on and is independent of the earlier competition
--- switches, so an existing opt-out cannot strand this athlete score race.
+-- The new setting defaults on and is independent of every earlier competition
+-- switch, so an existing opt-out cannot strand this astronaut score race.
 local defaultOn = fixture({
 	aidEnabled = false, climateEnabled = false, fairEnabled = false,
-	defaultEnabled = true,
+	gamesEnabled = false, defaultEnabled = true,
 })
 registrations.EmergencyAvailable(-1, TYPE)
-check("World Games defaults on independently", #defaultOn.requests, 1)
-check("World Games default-on reports submitted", submitted(), true)
+check("Space Station defaults on independently", #defaultOn.requests, 1)
+check("Space Station default-on reports submitted", submitted(), true)
 
 -- An availability event alone is never authority. The current tracker row
 -- must match, still require input, and not already contain our membership.
@@ -209,8 +211,8 @@ check("other competition never submits", #other.requests, 0)
 check("other competition does not touch tracker", other.trackerReads, 0)
 
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
-check("handler recognizes World Games", src:find(
-	'kind == "EMERGENCY_WORLD_GAMES"', 1, true) ~= nil, true)
+check("handler recognizes Space Station", src:find(
+	'kind == "EMERGENCY_SPACE_STATION"', 1, true) ~= nil, true)
 check("handler retains Firaxis accept operation", src:find(
 	"PlayerOperations.ACCEPT_EMERGENCY", 1, true) ~= nil, true)
 
@@ -218,4 +220,4 @@ if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
 end
-print("all World Games join checks passed")
+print("all Space Station join checks passed")

@@ -163,7 +163,7 @@ registrations.EmergencyAvailable(TARGET, TYPE)
 check("military Aid submits", #military.requests, 1)
 check("military Aid reports submitted", submitted(), true)
 
-local other = fixture({ kind = "EMERGENCY_SPACE_STATION" })
+local other = fixture({ kind = "EMERGENCY_CONTROL_TEST_UNSUPPORTED" })
 registrations.EmergencyAvailable(TARGET, TYPE)
 check("other competition never submits", #other.requests, 0)
 check("other competition does not touch tracker", other.trackerReads, 0)
