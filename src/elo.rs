@@ -144,6 +144,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
+    "live_without_barbarian_walls_one_tier",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -416,6 +417,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
+    "barbarian-walls-one-tier",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -610,6 +612,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -676,6 +679,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -831,6 +835,7 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
+    LiveWithoutBarbarianWallsOneTier => "live_without_barbarian_walls_one_tier",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4440,6 +4445,7 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
+            Self::LiveWithoutBarbarianWallsOneTier => live_without("barbarian-walls-one-tier"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name

@@ -1990,6 +1990,24 @@ pub struct BasicAi {
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
     pub(crate) garrison_walls: bool,
+    /// Barbarian pressure buys ancient walls and nothing above them.
+    ///
+    /// ★★★★ `barbarian_defense_item` walked `walls → medieval_walls →
+    /// renaissance_walls` and ordered the first tier the city could still
+    /// produce, every time the local alarm fired with no unit gap — so a
+    /// walled city under a raider ring bought Medieval Walls (110), then
+    /// Renaissance Walls (150), against an enemy that cannot take a city at
+    /// all: barbarians never capture in Civilization VI, and `do_attack` leaves
+    /// a depleted city at 1 hit point for them here too. Measured over the 23
+    /// live games of 2026-08-18/19: 65 ancient walls, **26 medieval and 14
+    /// renaissance walls "for nearby barbarian pressure"** — roughly five
+    /// thousand production spent on tiers that change nothing a raider can
+    /// do, in cities that were building no Library. Ancient walls are the
+    /// tier that gives the city its ranged strike, which is the one thing
+    /// walls do to a raider; with this on they are the only tier the arm
+    /// orders. Live bundle and native repair (war half). Off for ordinary and
+    /// frozen controllers.
+    pub(crate) barbarian_walls_one_tier: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -3920,6 +3938,7 @@ impl BasicAi {
             housing_districts: false,
             garrison_under_fire: false,
             garrison_walls: false,
+            barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -4208,6 +4227,7 @@ impl BasicAi {
             housing_districts: false,
             garrison_under_fire: false,
             garrison_walls: false,
+            barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -8698,7 +8718,14 @@ impl BasicAi {
                 unit: Name::new(&unit),
             });
         }
-        for building in ["walls", "medieval_walls", "renaissance_walls"] {
+        // See `barbarian_walls_one_tier`: a raider cannot take a city, so
+        // the tiers above ancient walls buy it nothing.
+        let tiers: &[&str] = if self.barbarian_walls_one_tier {
+            &["walls"]
+        } else {
+            &["walls", "medieval_walls", "renaissance_walls"]
+        };
+        for building in tiers {
             let wall = Item::Building {
                 building: Name::new(building),
             };
@@ -17386,6 +17413,70 @@ mod tests {
         let snapshot = serde_json::to_value(&g).unwrap();
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, city, bid)
+    }
+
+    /// ★★★★ Barbarians never capture a city — `do_attack` leaves a depleted
+    /// city at 1 hit point for them — yet `barbarian_defense_item` walked the
+    /// wall tiers and bought Medieval and Renaissance Walls "for nearby
+    /// barbarian pressure" 40 times across 23 live games. See
+    /// `barbarian_walls_one_tier`: under a raider ring with the local garrison
+    /// already standing, ancient walls are ordered once, and a city that has
+    /// them is asked for nothing above them.
+    #[test]
+    fn barbarian_pressure_buys_ancient_walls_and_no_tier_above_them() {
+        let (mut g, city, _raider) = barbarian_at_the_gates_game(88_301);
+        g.players[0].techs.insert(crate::name!("masonry"));
+        g.players[0].techs.insert(crate::name!("castles"));
+        g.players[0].techs.insert(crate::name!("siege_tactics"));
+        // The city already holds its local defender: the arm's unit branch is
+        // satisfied and only the wall branch answers.
+        let cpos = g.cities[&city].pos;
+        for _ in 0..2 {
+            g.spawn_test_unit("warrior", 0, cpos);
+        }
+        assert!(
+            BasicAi::barbarian_local_alarm(&g, 0, city),
+            "precondition: the raider ring is in reach"
+        );
+        assert_eq!(
+            BasicAi::barbarian_defense_gap(&g, 0, city),
+            0,
+            "precondition: no defender is owed, so the wall branch decides"
+        );
+        let mut one_tier = BasicAi::new();
+        one_tier.barbarian_walls_one_tier = true;
+        let all_tiers = BasicAi::new();
+        let walls = Item::Building {
+            building: crate::name!("walls"),
+        };
+        // No walls yet: both arms order ancient walls.
+        assert_eq!(all_tiers.barbarian_defense_item(&g, 0, city), Some(walls.clone()));
+        assert_eq!(one_tier.barbarian_defense_item(&g, 0, city), Some(walls.clone()));
+        // Ancient walls standing: the old arm escalates, the repaired one is done.
+        g.cities.get_mut(&city).unwrap().buildings.push(crate::name!("walls"));
+        let max_wall = g.city_max_wall_hp(&g.cities[&city]);
+        g.cities.get_mut(&city).unwrap().wall_hp = max_wall;
+        let medieval = Item::Building {
+            building: crate::name!("medieval_walls"),
+        };
+        assert!(
+            g.can_produce(0, city, &medieval),
+            "precondition: the fixture can produce medieval walls"
+        );
+        let escalated = all_tiers.barbarian_defense_item(&g, 0, city);
+        assert!(
+            matches!(&escalated, Some(Item::Building { building }) if building.as_str() == "medieval_walls"),
+            "precondition: the shipped arm walks up a tier ({escalated:?})"
+        );
+        assert_eq!(
+            one_tier.barbarian_defense_item(&g, 0, city),
+            None,
+            "a raider cannot take the city; nothing above ancient walls is owed to it"
+        );
+        // Stock controllers never carry it (the live bundle and the native
+        // repair bundle turn it on; `live_bundle_and_registry_agree` pins the
+        // wiring).
+        assert!(!BasicAi::new().barbarian_walls_one_tier);
     }
 
     #[test]

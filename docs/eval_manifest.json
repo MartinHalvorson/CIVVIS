@@ -1,10 +1,11 @@
 {
   "coverage": {
     "named": 31,
-    "never_named": 24,
+    "never_named": 25,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
+      "barbarian-walls-one-tier": "live_without_barbarian_walls_one_tier",
       "blind-objective-strength": "live_without_blind_objective_strength",
       "blind-objective-units": "live_without_blind_objective_units",
       "campus-every-city": "live_without_campus_every_city",
@@ -31,6 +32,7 @@
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
+      "barbarian-walls-one-tier",
       "blind-objective-strength",
       "blind-objective-units",
       "campus-every-city",
@@ -54,14 +56,14 @@
       "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 55
+    "withholdable": 56
   },
   "derived": {
-    "eval_only_count": 228,
+    "eval_only_count": 229,
     "firaxis_only_count": 26,
-    "live_bridge_count": 81,
-    "native_engine_repair_count": 55,
-    "withholdable_live_count": 55
+    "live_bridge_count": 82,
+    "native_engine_repair_count": 56,
+    "withholdable_live_count": 56
   },
   "ladder": {
     "ahead": 6,
@@ -130,7 +132,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 55,
+      "declared_count": 56,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -153,6 +155,7 @@
         "home-defense",
         "garrison-under-fire",
         "garrison-walls",
+        "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
         "recon-replacement",
@@ -190,7 +193,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 31,
+      "declared_count": 32,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -213,6 +216,7 @@
         "home-defense",
         "garrison-under-fire",
         "garrison-walls",
+        "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
         "recon-replacement",
@@ -226,7 +230,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 228,
+      "declared_count": 229,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -321,6 +325,7 @@
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
         "live_without_district_building_chain",
+        "live_without_barbarian_walls_one_tier",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -490,7 +495,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 81,
+      "declared_count": 82,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -572,7 +577,8 @@
         "spy-mission-patience",
         "settler-site-agreement",
         "civilian-rescue",
-        "district-building-chain"
+        "district-building-chain",
+        "barbarian-walls-one-tier"
       ]
     }
   },
