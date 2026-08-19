@@ -593,6 +593,31 @@ that way.
 
 See `docs/CIV6_LADDER.md` for the current standing.
 
+### A lost game is stopped, not played out (2026-08-19)
+
+The ladder loses its games early and then plays them to turn 250 anyway: of
+the 48 live games that had reached a terminal result by 2026-08-19 (7 wins),
+34 sat under three quarters of the best rival's score for five consecutive
+turns at or after turn 120, and none of those 34 won — 3,700 game-turns, about
+nine host-hours per batch of twelve, spent on results already written. The
+wins' own low-water marks after turn 120 were 0.87 and 0.88 of the rival's
+score, so the line sits a tenth under the worst comeback the seat has staged.
+
+`civ6_play.py --abandon-below-win-rate 0.05` stops a run once the **measured
+expected win rate** — the Laplace rate `(wins+1)/(games+2)` of the
+best-evidenced matching cell in `civ6_play.ABANDON_CELLS` (`(100, 0.60)`
+0/25, `(120, 0.75)` 0/34) — has sat under the floor for `ABANDON_PATIENCE`
+(5) consecutive agent turns. A readable standing back over the floor resets
+the count; a turn without a standing neither counts nor resets. Off by
+default; `civ6_civvis_climb.py` forwards the same flag and the supervisor
+reads `CIVVIS_ABANDON_BELOW_WIN_RATE` from the login shell (the operator's
+request on 2026-08-19 was "ok to abandon games early if expected win rate
+<5%"). An abandoned run is filed with `reason: "abandoned"` and the verdict
+(turn, standing, estimate, floor) in its summary and ledger row — its own
+ending, never a stall, a wedge or a defeat. The table is measured, not
+chosen: re-fit it when the ladder climbs (the fit is written out in
+`tools/test_civ6_play.py`).
+
 ### The run always tests the latest code
 
 Two mechanisms, one guarantee. Between games, the supervisor pulls and
