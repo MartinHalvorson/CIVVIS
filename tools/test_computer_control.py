@@ -333,5 +333,20 @@ class AppleScriptStringTest(unittest.TestCase):
         self.assertEqual(cc._as("a\\b"), '"a\\\\b"')
 
 
+class ProcessWindowSelectionTest(unittest.TestCase):
+    def test_process_specs_choose_by_requested_frame_not_window_order(self) -> None:
+        with mock.patch.object(
+            cc, "_osascript",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as run:
+            self.assertIsNone(cc.place_window((0, 558, 864, 559), process="Terminal"))
+
+        script = run.call_args.args[0]
+        self.assertIn("repeat with i from 1 to (count of windows)", script)
+        self.assertIn("candidateScore", script)
+        self.assertIn("set position to {0, 558}", script)
+        self.assertNotIn("to tell window 1", script)
+
+
 if __name__ == "__main__":
     unittest.main()

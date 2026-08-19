@@ -891,9 +891,10 @@ def place_game(side: str = "left", fraction: float = 0.5,
     the operator asked for the real game in the upper right with a terminal
     beneath it.
 
-    Re-applied on every focus pass rather than once at launch: each ladder
-    attempt relaunches Civ 6, and a fresh process comes up wherever the game
-    last remembered rather than where it was put.
+    The live loop checks the current frame before calling this function.  An
+    unchanged frame is left alone: repeating identical ``set size`` and
+    ``set position`` operations still creates WindowServer geometry traffic,
+    which can make unrelated Terminal windows reflow.
     """
     if side == "none":
         return
@@ -913,6 +914,9 @@ def place_game(side: str = "left", fraction: float = 0.5,
         x, y = screen_w - width, screen_h - height
     else:
         x, y = (0 if side == "left" else screen_w - width), menu
+    desired = (x, y, width, height)
+    if game_window() == desired:
+        return
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'

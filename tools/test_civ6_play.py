@@ -384,6 +384,7 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "game_window", return_value=None), \
              patch.object(civ6_play.subprocess, "run") as run:
             civ6_play.place_game("right", 0.5, 0.5)
 
@@ -391,6 +392,14 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertLess(script.index("set size"), script.index("set position"))
         self.assertIn("set size to {756, 480}", script)
         self.assertIn("set position to {756, 33}", script)
+
+    def test_place_game_does_not_rewrite_an_unchanged_frame(self) -> None:
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "game_window", return_value=(756, 33, 756, 480)), \
+             patch.object(civ6_play.subprocess, "run") as run:
+            civ6_play.place_game("right", 0.5, 0.5)
+
+        run.assert_not_called()
 
     def test_screen_locked_reads_console_session_state(self) -> None:
         with patch.object(
