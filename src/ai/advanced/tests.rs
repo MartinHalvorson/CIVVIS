@@ -75,6 +75,52 @@ fn production_bundle_rows_are_real() {
     }
 }
 
+/// The complement guard: every `PRODUCTION_OPT_INS` row names a behaviour
+/// production actually ships OFF and whose enable function actually turns it
+/// on — otherwise `victory_eval --with` seats the untreated agent and calls
+/// it treated.
+#[test]
+fn production_opt_in_rows_are_real() {
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
+    let start = source
+        .find("fn promoted_policy_envoy(")
+        .expect("promoted_policy_envoy must exist to be checked");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("promoted_policy_envoy must be a complete function");
+    let bundle = &body[..end];
+
+    for (field, tag, enable) in PRODUCTION_OPT_INS.iter() {
+        let enabled = bundle.contains(&format!("enable_{field}();"))
+            || bundle.contains(&format!("{field} = true;"));
+        assert!(
+            !enabled,
+            "PRODUCTION_OPT_INS lists `{tag}` but promoted_policy_envoy \
+             already turns `{field}` on; a shipped behaviour belongs in \
+             PRODUCTION_TREATMENTS with a withholding twin instead"
+        );
+        assert!(
+            source.contains(&format!("pub fn enable_{field}(&mut self)")),
+            "`{tag}` has no opt-in function `enable_{field}`"
+        );
+        let mut ai = AdvancedAi::new();
+        enable(&mut ai);
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.wonder_prereq_reach, "the reach credit must ship off");
+    for row in PRODUCTION_OPT_INS.iter() {
+        (row.2)(&mut ai);
+    }
+    assert!(
+        ai.wonder_prereq_reach,
+        "opting in must actually flip the reach credit on"
+    );
+}
+
 #[test]
 fn live_bundle_and_registry_agree() {
     // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles
