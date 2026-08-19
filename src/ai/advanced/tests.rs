@@ -27,6 +27,100 @@
 /// So it is checked instead. The bundle's own source is the input: a
 /// treatment added to `enable_live_bridge` without a registry row fails
 /// here, naming itself.
+/// ★★★★ THE MIRROR THE REGISTRY DID NOT HAVE.
+///
+/// `live_bundle_and_registry_agree` above pins what the live bridge adds. Ask
+/// the same question of production and there was no table to ask it of, so a
+/// tool that wanted "the shipped agent minus one promoted behaviour" learned
+/// each name by hand — the exact shape that left `civvis_orders` carrying 57
+/// hand-written arms against 68 registry rows, with eleven shipped treatments
+/// uncontrolled.
+///
+/// `PRODUCTION_TREATMENTS` is that table, and this is what keeps it honest: a
+/// row must name a behaviour `promoted_policy_envoy` really turns on, and must
+/// have the withholding twin its third field points at.
+///
+/// ⚠ Correctness, not completeness — and that is deliberate. A promoted
+/// behaviour with no row is not a defect; a row that names a behaviour
+/// production does not have is a `--without` that silently withholds nothing.
+#[test]
+fn production_bundle_rows_are_real() {
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
+    let start = source
+        .find("fn promoted_policy_envoy(")
+        .expect("promoted_policy_envoy must exist to be checked");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("promoted_policy_envoy must be a complete function");
+    let bundle = &body[..end];
+
+    for (field, tag, _) in PRODUCTION_TREATMENTS.iter() {
+        // Either form the constructor uses: the toggle, or the field directly.
+        let enabled = bundle.contains(&format!("enable_{field}();"))
+            || bundle.contains(&format!("{field} = true;"));
+        assert!(
+            enabled,
+            "PRODUCTION_TREATMENTS lists `{tag}` but promoted_policy_envoy \
+             never turns `{field}` on, so withholding it withholds nothing"
+        );
+        assert!(
+            source.contains(&format!("pub fn disable_{field}(&mut self)")),
+            "`{tag}` has no withholding twin `disable_{field}`, so it ships \
+             unpriceable"
+        );
+    }
+}
+
+/// The complement guard: every `PRODUCTION_OPT_INS` row names a behaviour
+/// production actually ships OFF and whose enable function actually turns it
+/// on — otherwise `victory_eval --with` seats the untreated agent and calls
+/// it treated.
+#[test]
+fn production_opt_in_rows_are_real() {
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
+    let start = source
+        .find("fn promoted_policy_envoy(")
+        .expect("promoted_policy_envoy must exist to be checked");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("promoted_policy_envoy must be a complete function");
+    let bundle = &body[..end];
+
+    for (field, tag, enable) in PRODUCTION_OPT_INS.iter() {
+        let enabled = bundle.contains(&format!("enable_{field}();"))
+            || bundle.contains(&format!("{field} = true;"));
+        assert!(
+            !enabled,
+            "PRODUCTION_OPT_INS lists `{tag}` but promoted_policy_envoy \
+             already turns `{field}` on; a shipped behaviour belongs in \
+             PRODUCTION_TREATMENTS with a withholding twin instead"
+        );
+        assert!(
+            source.contains(&format!("pub fn enable_{field}(&mut self)")),
+            "`{tag}` has no opt-in function `enable_{field}`"
+        );
+        let mut ai = AdvancedAi::new();
+        enable(&mut ai);
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.wonder_prereq_reach, "the reach credit must ship off");
+    for row in PRODUCTION_OPT_INS.iter() {
+        (row.2)(&mut ai);
+    }
+    assert!(
+        ai.wonder_prereq_reach,
+        "opting in must actually flip the reach credit on"
+    );
+}
+
 #[test]
 fn live_bundle_and_registry_agree() {
     // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles
@@ -19352,6 +19446,139 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
 }
 
 #[test]
+fn friendly_volley_chains_two_finishers_onto_a_three_blow_kill() {
+    let mut base = Game::new_full(2, 24, 16, 81_700, 80, 0, false);
+    for unit in base.units.keys().copied().collect::<Vec<_>>() {
+        base.remove_unit(unit);
+    }
+    for tile in base.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    base.current = 0;
+    base.at_war.insert((0, 1));
+    let target = base
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| base.nbrs(*position).len() == 6)
+        .expect("fixture needs an interior tile");
+    let firing_lines: Vec<Pos> = base
+        .wdisk(target, 2)
+        .into_iter()
+        .filter(|position| base.wdist(*position, target) == 2)
+        .take(3)
+        .collect();
+    assert_eq!(
+        firing_lines.len(),
+        3,
+        "interior tile needs three firing lines"
+    );
+    let opener = base.spawn_test_unit("archer", 0, firing_lines[0]);
+    let second = base.spawn_test_unit("archer", 0, firing_lines[1]);
+    let third = base.spawn_test_unit("archer", 0, firing_lines[2]);
+    let defender = base.spawn_test_unit("warrior", 1, target);
+    let opening = Action::Ranged {
+        unit: opener,
+        target,
+    };
+
+    // Discover an exact seeded-damage window rather than hard-coding a
+    // combat-roll amount: after the opening shot no lone teammate may
+    // remove the defender, while either ordering of the remaining two
+    // shots must — so the single-finisher search comes up empty and only
+    // the chain can see the kill.
+    let survives = |position: &Game, shots: &[u32]| -> Option<bool> {
+        let mut speculative = position.clone();
+        for shooter in shots {
+            let action = Action::Ranged {
+                unit: *shooter,
+                target,
+            };
+            if speculative.apply(0, &action).is_err() {
+                return None;
+            }
+        }
+        Some(speculative.units.contains_key(&defender))
+    };
+    let game = (2..=100)
+        .find_map(|hp| {
+            let mut candidate = base.clone();
+            candidate.units.get_mut(&defender).unwrap().hp = hp;
+            let alive_after = |shots: &[u32]| survives(&candidate, shots);
+            (alive_after(&[opener, second])?
+                && alive_after(&[opener, third])?
+                && !alive_after(&[opener, second, third])?
+                && !alive_after(&[opener, third, second])?)
+            .then_some(candidate)
+        })
+        .expect("three archers must admit a three-blow damage window");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let group = ForceGroup {
+        id: opener,
+        domain: ForceDomain::Land,
+        units: vec![opener, second, third],
+        anchor: game.units[&opener].pos,
+        objective: target,
+        focus_target: Some(target),
+        posture: ForcePosture::Engage,
+        readiness: 1.0,
+        local_strength_ratio: 1.0,
+    };
+    // `coordinated_finish` must open the volley layer on its own — the
+    // war-half bundle that used to carry it stays closed.
+    let mut ai = AdvancedAi::new();
+    ai.coordinated_finish = true;
+    let (bonus, reply) = ai
+        .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+        .expect("two teammates together finish what neither can alone");
+    assert_eq!(
+        bonus,
+        ai.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE
+    );
+    assert!(reply.is_finite());
+    let mut chained = AdvancedAi::new();
+    chained.enable_tactical_strategy();
+    assert!(
+        chained
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_some(),
+        "the chain also reaches the historical tactical_strategy route"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.coordinated_finish = true;
+    withheld.volley_chain = false;
+    assert!(
+        withheld
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "with the chain withheld no lone finisher exists at this window"
+    );
+    assert!(
+        AdvancedAi::new()
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "stock production keeps the volley layer dormant until it is priced"
+    );
+    assert!(
+        AdvancedAi::legacy()
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .is_none(),
+        "the frozen control keeps the production-only tactical extension off"
+    );
+}
+
+#[test]
 fn tactical_melee_preflight_matches_the_engine_entry_cost_rule() {
     let mut game = Game::new_full(2, 24, 16, 81_701, 80, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
@@ -25121,6 +25348,477 @@ fn envoy_income_census() {
         }
     }
     println!();
+}
+
+/// The wonder-prerequisite credit ships off everywhere: the production
+/// incumbent and the frozen anchor score builds exactly as they did before
+/// the arm existed.
+#[test]
+fn the_wonder_reach_flag_is_off_in_every_shipping_constructor() {
+    assert!(
+        !AdvancedAi::new().wonder_prereq_reach,
+        "the production incumbent must not carry the reach credit"
+    );
+    assert!(
+        !AdvancedAi::legacy().wonder_prereq_reach,
+        "the frozen anchor must not carry the reach credit"
+    );
+}
+
+/// A Culture city that values the Great Library but owns neither the Library
+/// nor a Campus pays both prerequisites a share of the wonder's own score —
+/// and the flag is what routes the credit, so the same menu without the arm
+/// is unchanged.
+#[test]
+fn a_valued_wonder_credits_the_prerequisites_that_unblock_it() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut control = AdvancedAi::new();
+    control.refresh_research_weight(&game);
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+
+    let wonder = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos: game.cities[&city].pos,
+    };
+    let wonder_score = treated.production_value(&game, 0, city, &wonder, &plan, &counts);
+    assert!(
+        wonder_score > 0.0,
+        "the fixture wonder must clear the arm's own gates: {wonder_score}"
+    );
+
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    let library_credit = credits
+        .get(&crate::name!("library"))
+        .copied()
+        .unwrap_or(0.0);
+    let campus_credit = credits.get(&crate::name!("campus")).copied().unwrap_or(0.0);
+    let expected = wonder_score * WONDER_REACH_SHARE / 2.0;
+    assert!(
+        library_credit >= expected && campus_credit >= expected,
+        "both missing steps carry at least the Great Library's split share \
+         ({expected}): library {library_credit}, campus {campus_credit}"
+    );
+
+    let campus_site = game
+        .district_sites(city, crate::name!("campus"))
+        .into_iter()
+        .next()
+        .expect("a legal Campus site");
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: campus_site,
+    };
+    let with_credit = treated.production_value(&game, 0, city, &campus, &plan, &counts);
+    let without_credit = control.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        with_credit > without_credit + expected * 0.9,
+        "the Campus menu entry must carry the wonder credit: \
+         {with_credit} vs {without_credit}"
+    );
+
+    // Once the Campus stands, the Library is the single missing step and its
+    // credit doubles: one step left of two, same wonder behind it.
+    install_ai_test_district(&mut game, city, "campus");
+    let treated = {
+        let mut ai = AdvancedAi::new();
+        ai.enable_wonder_prereq_reach();
+        ai.refresh_research_weight(&game);
+        ai
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    let library_only = credits
+        .get(&crate::name!("library"))
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        !credits.contains_key(&crate::name!("campus")),
+        "a standing Campus is no longer a missing prerequisite"
+    );
+    assert!(
+        library_only > library_credit * 1.5,
+        "the last missing step concentrates the credit: \
+         {library_only} vs split {library_credit}"
+    );
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    let with_credit = treated.production_value(&game, 0, city, &library, &plan, &counts);
+    let without_credit = control.production_value(&game, 0, city, &library, &plan, &counts);
+    assert!(
+        with_credit > without_credit + library_only * 0.9,
+        "the Library menu entry must carry the concentrated credit: \
+         {with_credit} vs {without_credit}"
+    );
+}
+
+/// A wonder the `Item::Wonder` arm refuses — here because the plan opens no
+/// wonder lane — earns its prerequisites nothing: the credit is a share of
+/// the arm's own score, never an independent opinion.
+#[test]
+fn a_refused_wonder_earns_its_prerequisites_nothing() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    assert!(
+        !matches!(game.players[0].civ.as_str(), "Egypt" | "China"),
+        "the fixture seat must not be a wonder civilization, whose lane is \
+         open under any plan: {}",
+        game.players[0].civ
+    );
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        credits.is_empty(),
+        "no lane, no credit — the ledger must be empty, got {credits:?}"
+    );
+}
+
+/// A wonder that already stands anywhere in the world pays nothing: its race
+/// is over, and its prerequisites are back to their own merits.
+#[test]
+fn a_built_wonder_stops_paying_its_prerequisites() {
+    let mut game = Game::new(2, 32, 24, 5_414, 500, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    clear_barbarian_fixture(&mut game);
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.cities.get_mut(&city).unwrap().buildings =
+        vec![crate::name!("monument"), crate::name!("granary")];
+    game.turn = 10;
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_prereq_reach();
+    treated.refresh_research_weight(&game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        credits.contains_key(&crate::name!("library")),
+        "before anyone builds it, the Great Library must be paying its \
+         prerequisites, got {credits:?}"
+    );
+
+    // The wonder goes up — anywhere in the world serves; `world_stamp`
+    // tracks `city.wonders`, so the standing census sees it.
+    let home_pos = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("great_library"), home_pos);
+    let counts = treated.counts(&game, 0);
+    let credits = treated.wonder_reach_credits(&game, 0, city, &plan, &counts);
+    assert!(
+        !credits.contains_key(&crate::name!("library"))
+            && !credits.contains_key(&crate::name!("campus")),
+        "a wonder that already stands must stop crediting Library and \
+         Campus, got {credits:?}"
+    );
+}
+
+/// A fixture that can legally build a named wonder: three cities so the
+/// lane guards are satisfied, the buildings and adjacent district the
+/// wonder requires, and one owned tile shaped to its terrain sheet.
+fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+    let mut game = Game::new_with(crate::game::GameOptions {
+        barbarians: false,
+        ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
+    });
+    for settler in game.player_unit_ids(0) {
+        if game.units[&settler].kind == "settler" {
+            let _ = game.apply(0, &Action::FoundCity { unit: settler });
+        }
+    }
+    let city = game.player_city_ids(0)[0];
+    // Three cities: the lane never opens for a two-city empire.
+    let center = game.cities[&city].pos;
+    for step in [5, 8] {
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(center, *pos) == step)
+            .collect();
+        for site in sites {
+            let settler = game.spawn_unit("settler", 0, site);
+            if game.can_found_city(settler)
+                && game.apply(0, &Action::FoundCity { unit: settler }).is_ok()
+            {
+                break;
+            }
+            game.units.remove(&settler);
+        }
+    }
+
+    let spec = game.rules.wonders[wonder].clone();
+    if let Some(tech) = spec.tech {
+        let mut open = vec![tech];
+        while let Some(node) = open.pop() {
+            if game.players[0].techs.insert(node) {
+                open.extend(game.rules.techs[&node].requires.iter().copied());
+            }
+        }
+    }
+    if let Some(civic) = spec.civic {
+        let mut open = vec![civic];
+        while let Some(node) = open.pop() {
+            if game.players[0].civics.insert(node) {
+                open.extend(game.rules.civics[&node].requires.iter().copied());
+            }
+        }
+    }
+    if spec.founded_religion {
+        game.players[0].religion = Some("buddhism".to_string());
+    }
+
+    // Three buildings, the required ones among them.
+    let mut buildings = vec![crate::name!("monument"), crate::name!("granary")];
+    buildings.extend(spec.requires_buildings.iter().copied());
+    buildings.extend(spec.requires_any_buildings.iter().take(1).copied());
+    game.cities.get_mut(&city).unwrap().buildings = buildings;
+
+    // The district the wonder must sit beside, and a tile beside it that
+    // matches the wonder's terrain sheet.
+    let district = spec
+        .adjacent_district
+        .as_ref()
+        .map(|family| install_ai_test_district(&mut game, city, family.as_str()));
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.to_vec();
+    for pos in owned {
+        if pos == center || game.wdist(pos, center) > 3 {
+            continue;
+        }
+        if district.is_some_and(|seat| game.wdist(pos, seat) != 1) {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        if tile.district.is_some() || tile.wonder.is_some() {
+            continue;
+        }
+        tile.flooded = false;
+        tile.improvement = None;
+        tile.resource = None;
+        tile.feature = spec.feature.first().cloned();
+        if let Some(terrain) = spec.terrain.first() {
+            tile.terrain = *terrain;
+        } else if spec.feature.is_empty() {
+            tile.terrain = crate::name!("grassland");
+        }
+        tile.hills = spec.hills.unwrap_or(false);
+        break;
+    }
+    game.turn = 90;
+    (game, city)
+}
+
+fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+    StrategicPlan {
+        strategy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: turn,
+        rush: false,
+    }
+}
+
+/// ★★★★★ THE DEFECT, STATED AS A NUMBER: seven of the twenty points a
+/// diplomatic victory needs are wonders, and the Diplomacy-targeted agent
+/// refused all three of them at the `-10_000` sentinel — not because it
+/// judged them badly, but because the wonder arm never priced
+/// `spec.effects` and only opened its lane for Culture and Score.
+#[test]
+fn a_diplomacy_agent_may_build_the_wonders_that_carry_a_third_of_its_victory() {
+    let (game, city) = strategic_wonder_fixture(6_401, "mahabodhi_temple");
+    let site = game
+        .wonder_sites(city, "mahabodhi_temple")
+        .into_iter()
+        .next()
+        .expect("a legal Mahabodhi site");
+    let item = Item::Wonder {
+        wonder: crate::name!("mahabodhi_temple"),
+        pos: site,
+    };
+    assert!(game.can_produce(0, city, &item));
+
+    let treated = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    let mut control = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    control.disable_strategic_wonders();
+    let plan = wonder_plan(GrandStrategy::Diplomacy, game.turn);
+
+    let refused = control.production_value(&game, 0, city, &item, &plan, &control.counts(&game, 0));
+    assert!(
+        refused <= -9_999.0,
+        "the defect: a Diplomacy agent refuses a wonder worth two of its \
+         twenty victory points outright ({refused})"
+    );
+    let priced = treated.production_value(&game, 0, city, &item, &plan, &treated.counts(&game, 0));
+    assert!(
+        priced > 0.0,
+        "the repair: the same wonder is a legal, positively-valued build \
+         ({priced})"
+    );
+}
+
+/// And the lane stays shut for a wonder this victory does not need. The
+/// arm opens a lane for the wonders that finish the game the agent is
+/// playing for, which is not the same thing as opening it for wonders.
+#[test]
+fn a_wonder_the_chosen_victory_does_not_need_is_still_refused() {
+    let (game, city) = strategic_wonder_fixture(6_402, "great_library");
+    let site = game
+        .wonder_sites(city, "great_library")
+        .into_iter()
+        .next()
+        .expect("a legal Great Library site");
+    let item = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos: site,
+    };
+    assert!(game.can_produce(0, city, &item));
+
+    let scientist = AdvancedAi::targeting(VictoryTarget::Science);
+    let diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    let beakers = scientist.production_value(
+        &game,
+        0,
+        city,
+        &item,
+        &wonder_plan(GrandStrategy::Science, game.turn),
+        &scientist.counts(&game, 0),
+    );
+    let no_votes = diplomat.production_value(
+        &game,
+        0,
+        city,
+        &item,
+        &wonder_plan(GrandStrategy::Diplomacy, game.turn),
+        &diplomat.counts(&game, 0),
+    );
+    assert!(
+        beakers > 0.0,
+        "the unresearched half of the tech tree, boosted, is a Science \
+         wonder ({beakers})"
+    );
+    assert!(
+        no_votes <= -9_999.0,
+        "and buys a Diplomacy agent no votes, so its lane stays shut \
+         ({no_votes})"
+    );
+}
+
+/// ⚠ The Conquest lane is priced at nothing on purpose, and this pins it.
+/// Wonders that put units on the map looked like a Domination arm and
+/// measured as a cost — `victory_eval` completed the lane 1/8 with them
+/// and 3/8 without. See `strategic_wonder_value`.
+#[test]
+fn the_conquest_lane_buys_no_wonders_and_that_is_deliberate() {
+    let (game, city) = strategic_wonder_fixture(6_404, "statue_of_zeus");
+    let spec = game.rules.wonders["statue_of_zeus"].clone();
+    let general = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        general.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Conquest),
+        0.0,
+        "seven free units is not a reason to stop building units"
+    );
+}
+
+/// Rule 2 of `strategic_wonder_value`: a rate effect is priced as the flat
+/// yield it is equivalent to, so the same wonder is a different build in a
+/// different city. The arm as written could not tell them apart — it read
+/// only the data sheet, which is identical everywhere.
+#[test]
+fn a_science_multiplier_is_worth_what_the_city_it_multiplies_makes() {
+    let (mut game, city) = strategic_wonder_fixture(6_403, "oxford_university");
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let spec = game.rules.wonders["oxford_university"].clone();
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+
+    let quiet = ai.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Science);
+    install_ai_test_district(&mut game, city, "campus");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    game.cities.get_mut(&city).unwrap().pop += 6;
+    let research = ai.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Science);
+    assert!(
+        research > quiet,
+        "Oxford is worth more where there is more science to multiply: \
+         {research} vs {quiet}"
+    );
+    let _ = plan;
 }
 
 /// ★★★★ The live seat built one Scout on turn 2 and owned zero recon units
