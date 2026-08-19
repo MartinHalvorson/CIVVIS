@@ -57,9 +57,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 226,
-    "firaxis_only_count": 25,
-    "live_bridge_count": 80,
+    "eval_only_count": 227,
+    "firaxis_only_count": 26,
+    "live_bridge_count": 81,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -226,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 226,
+      "declared_count": 227,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -458,7 +458,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 25,
+      "declared_count": 26,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -489,7 +489,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 80,
+      "declared_count": 81,
       "items": [
         "joint-tactics",
         "live-trader-route",
