@@ -26470,3 +26470,108 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     assert!(!AdvancedAi::new().projected_stock_denial);
     assert!(!AdvancedAi::legacy().projected_stock_denial);
 }
+
+/// Three mutually adjacent land tiles with nothing on them, and a unit with
+/// movement to spare, so a whole loop fits inside one turn.
+fn hex_triangle(game: &crate::game::Game) -> Option<[(i32, i32); 3]> {
+    let open = |pos: (i32, i32)| {
+        game.map
+            .get(pos)
+            .is_some_and(|tile| !game.rules.is_water(tile))
+            && game.units_at(pos).is_empty()
+    };
+    for (a, _) in game.map.tiles.iter() {
+        if !open(*a) {
+            continue;
+        }
+        for b in game.nbrs(*a) {
+            if !open(b) {
+                continue;
+            }
+            for c in game.nbrs(*a) {
+                if c != b && open(c) && game.wdist(b, c) == 1 {
+                    return Some([*a, b, c]);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `A -> B -> C -> A` is a wasted turn the shipped guard cannot see.
+///
+/// `recorded_tactical_step` remembers the single tile a unit just left, so it
+/// refuses `A -> B -> A` and passes a loop one hop longer. Measured over three
+/// 6-player 200-turn games, that is not a corner: the live bundle walks 329
+/// routes ending where they began and **191 of them are exactly this shape**,
+/// against 23 of the two-hop shape the shipped guard already covers.
+#[test]
+fn the_whole_turn_guard_refuses_a_three_hop_loop_that_the_shipped_one_allows() {
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    let [a, b, c] = hex_triangle(&game).expect("fixture offers three adjacent open land tiles");
+
+    for (guard, expected) in [(false, true), (true, false)] {
+        let mut board = game.clone();
+        let uid = board.spawn_test_unit("horseman", 0, a);
+        // Movement is not what is under test; terrain cost must not decide it.
+        board.units.get_mut(&uid).unwrap().moves_left = 12.0;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_recorded_tactical_step();
+        if guard {
+            ai.enable_whole_turn_backtrack_guard();
+        }
+
+        assert!(ai.base.path_move(&mut board, 0, uid, b), "step to B");
+        assert!(ai.base.path_move(&mut board, 0, uid, c), "step to C");
+        assert_eq!(
+            ai.base.path_move(&mut board, 0, uid, a),
+            expected,
+            "closing the loop back to the start, guard={guard}"
+        );
+        assert_eq!(
+            board.units[&uid].pos == a,
+            expected,
+            "and the unit is back where it began only when the loop was allowed"
+        );
+    }
+    let _ = &mut game;
+}
+
+/// The one-hop reversal stays refused with the wider guard on.
+///
+/// The wider rule has to *contain* the shipped one — a trail whose last entry
+/// is the tile being proposed is still a trail that contains it — or turning
+/// it on would trade one pathology for another.
+#[test]
+fn the_whole_turn_guard_still_refuses_the_immediate_reversal() {
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    let [a, b, _] = hex_triangle(&game).expect("fixture offers adjacent open land tiles");
+    for guard in [false, true] {
+        let mut board = game.clone();
+        let uid = board.spawn_test_unit("horseman", 0, a);
+        board.units.get_mut(&uid).unwrap().moves_left = 12.0;
+        let mut ai = AdvancedAi::new();
+        ai.enable_recorded_tactical_step();
+        if guard {
+            ai.enable_whole_turn_backtrack_guard();
+        }
+        assert!(ai.base.path_move(&mut board, 0, uid, b), "step to B");
+        assert!(
+            !ai.base.path_move(&mut board, 0, uid, a),
+            "stepping straight back is refused either way, guard={guard}"
+        );
+    }
+    let _ = &mut game;
+}
+
+/// The treatment is off in the shipped controller and on in the live bundle.
+#[test]
+fn the_whole_turn_guard_is_a_live_treatment() {
+    assert!(!AdvancedAi::new().base.whole_turn_backtrack_guard);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.whole_turn_backtrack_guard);
+    live.disable_whole_turn_backtrack_guard();
+    assert!(!live.base.whole_turn_backtrack_guard);
+}

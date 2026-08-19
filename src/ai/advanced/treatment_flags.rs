@@ -106,6 +106,21 @@ impl AdvancedAi {
         self.base.legal_tactical_candidates = false;
     }
 
+    /// Refuse a step onto any tile this unit has already stood on this turn.
+    ///
+    /// `enable_recorded_tactical_step` remembers one tile, which refuses
+    /// `A -> B -> A` and lets `A -> B -> C -> A` through. See
+    /// `BasicAi::whole_turn_backtrack_guard` for what that costs.
+    pub fn enable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = true;
+    }
+
+    /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
+    /// `LIVE_TREATMENTS`.
+    pub fn disable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -645,6 +660,9 @@ impl AdvancedAi {
         // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
         // steps recorded.
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         self.enable_bounded_recovery();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
@@ -1105,6 +1123,9 @@ impl AdvancedAi {
         self.enable_war_reinforcement();
         self.enable_come_ashore();
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.
