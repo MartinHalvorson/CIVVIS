@@ -1400,7 +1400,15 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
         return;
     }
     let complete = complete_pairs(rows);
-    let mut by_civ: BTreeMap<&str, (Vec<f64>, Vec<f64>, Vec<(u64, usize)>)> = BTreeMap::new();
+    /// One civilization's evidence for the gene: paired win differences,
+    /// paired share differences, and the game pair each came from.
+    #[derive(Default)]
+    struct CivEvidence {
+        win: Vec<f64>,
+        share: Vec<f64>,
+        clusters: Vec<(u64, usize)>,
+    }
+    let mut by_civ: BTreeMap<&str, CivEvidence> = BTreeMap::new();
     let mut unlabelled = 0usize;
     for (a, b) in &complete {
         let bits: Vec<bool> = a.genome.chars().map(|c| c == '1').collect();
@@ -1414,10 +1422,10 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
         let sign = if bits[index] { 1.0 } else { -1.0 };
         let entry = by_civ.entry(a.civ.as_str()).or_default();
         entry
-            .0
+            .win
             .push(sign * (f64::from(u8::from(a.win)) - f64::from(u8::from(b.win))));
-        entry.1.push(sign * (a.score_share - b.score_share));
-        entry.2.push((a.seed, a.pair));
+        entry.share.push(sign * (a.score_share - b.score_share));
+        entry.clusters.push((a.seed, a.pair));
     }
     if unlabelled > 0 {
         println!(
@@ -1440,12 +1448,12 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
     );
     let mut table: Vec<(&str, usize, f64, f64, f64, f64)> = by_civ
         .iter()
-        .map(|(civ, (win, share, clusters))| {
-            let (wd, wse) = clustered_mean_se(win, clusters);
-            let (sd, sse) = clustered_mean_se(share, clusters);
+        .map(|(civ, evidence)| {
+            let (wd, wse) = clustered_mean_se(&evidence.win, &evidence.clusters);
+            let (sd, sse) = clustered_mean_se(&evidence.share, &evidence.clusters);
             (
                 *civ,
-                win.len(),
+                evidence.win.len(),
                 wd,
                 wse,
                 sd,
