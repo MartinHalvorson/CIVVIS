@@ -58,6 +58,23 @@ const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
 use civvis::rng::Rng;
 
 const PROMOTION_MIN_MAPS: usize = 20;
+/// Opt-in early stopping. After every scheduling chunk the paired inference is
+/// re-read, and the run ends as soon as the promotion gate is decisive —
+/// `PASS` or `RETAIN` — instead of playing every preregistered pair.
+///
+/// This is statistically clean for the gate itself: its verdict rests on the
+/// anytime-valid betting evidence and the betting interval, both of which hold
+/// under optional stopping by construction (that is what "anytime-valid"
+/// means), so a verdict read at map k is the same verdict the full run would
+/// have been entitled to at map k. It is NOT clean for the two legacy readings
+/// printed beside it — the exact sign test and the retired Wilson interval
+/// assume a fixed sample — so a stopped run says so on its own report and
+/// those lines are not confirmatory there.
+///
+/// Off by default, so every preregistered fixed-N run is exactly what it was.
+/// The recorded crossings say what it buys: map 42, 46, 51, 57 and 134 on runs
+/// of 120–400 pairs (`docs/EVAL.md`), i.e. 0–70% of an evaluation's wall.
+const STOP_WHEN_DECISIVE: &str = "--stop-when-decisive";
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
 const ANYTIME_TAIL_ALPHA: f64 = 0.025;
@@ -435,6 +452,16 @@ fn anytime_evidence(scores: &[f64]) -> AnytimeEvidence {
         challenger_crossed_at: peaks.challenger_crossed_at,
         incumbent_crossed_at: peaks.incumbent_crossed_at,
     }
+}
+
+/// Whether `STOP_WHEN_DECISIVE` may end the run here: the gate has read a
+/// `PASS` or a `RETAIN` on the pairs played so far. `Insufficient` and
+/// `Inconclusive` keep playing.
+fn early_stop_is_warranted(scores: &[f64]) -> bool {
+    matches!(
+        paired_inference(scores).verdict,
+        PromotionVerdict::Promote | PromotionVerdict::Retain
+    )
 }
 
 /// Paired-map inference: the score, both intervals, and the promotion verdict.
@@ -1865,6 +1892,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
     let require_artifacts = args
         .iter()
         .any(|argument| argument == "--require-artifacts");
+    // Each profile child stops on its own decisive verdict; the parent still
+    // reads every child's gate line exactly as before.
+    let stop_when_decisive = args.iter().any(|argument| argument == STOP_WHEN_DECISIVE);
     let executable = std::env::current_exe().expect("resolve ai_eval executable");
 
     let outputs = if total_jobs < PROMOTION_PROFILES.len() {
@@ -1875,7 +1905,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 let profile_seed = matrix_profile_seed(seed, index);
                 let profile_confirm_seed =
                     confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
-                let child_args = matrix_child_args(MatrixChildRequest {
+                let mut child_args = matrix_child_args(MatrixChildRequest {
                     challenger,
                     incumbent,
                     pairs,
@@ -1886,6 +1916,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     require_artifacts,
                     confirm_seed: profile_confirm_seed,
                 });
+                if stop_when_decisive {
+                    child_args.push(STOP_WHEN_DECISIVE.to_string());
+                }
                 let output = Command::new(&executable)
                     .args(child_args)
                     .output()
@@ -1906,7 +1939,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let profile_confirm_seed =
                             confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
-                        let child_args = matrix_child_args(MatrixChildRequest {
+                        let mut child_args = matrix_child_args(MatrixChildRequest {
                             challenger,
                             incumbent,
                             pairs,
@@ -1917,6 +1950,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             require_artifacts,
                             confirm_seed: profile_confirm_seed,
                         });
+                        if stop_when_decisive {
+                            child_args.push(STOP_WHEN_DECISIVE.to_string());
+                        }
                         let output = Command::new(executable)
                             .args(child_args)
                             .output()
@@ -2341,6 +2377,8 @@ here and any null is uninformative"
     // turn-limit cost variance; the former two-game window repeatedly left
     // half the workers idle on each chunk's long tail.
     let chunk_pairs = jobs.max(1).saturating_mul(2);
+    let stop_when_decisive = args.iter().any(|arg| arg == STOP_WHEN_DECISIVE);
+    let mut stopped_early_at: Option<usize> = None;
     let mut pair = 0usize;
     while pair < pairs {
         let chunk = chunk_pairs.min(pairs - pair);
@@ -2477,6 +2515,19 @@ here and any null is uninformative"
         }
         pair += chunk;
         eprintln!("progress: {pair}/{pairs} map pairs complete");
+        if stop_when_decisive && pair < pairs {
+            // The pair scores are still game+swap sums here; the halving
+            // below the loop is what `paired_inference` expects.
+            let halved: Vec<f64> = pair_scores.iter().map(|score| score / 2.0).collect();
+            if early_stop_is_warranted(&halved) {
+                eprintln!(
+                    "decisive after {pair} of {pairs} map pairs ({:?}); stopping early under {STOP_WHEN_DECISIVE}",
+                    paired_inference(&halved).verdict
+                );
+                stopped_early_at = Some(pair);
+                break;
+            }
+        }
     }
     for score in pair_scores.iter_mut() {
         *score /= 2.0;
@@ -2521,6 +2572,13 @@ here and any null is uninformative"
         );
     }
     println!();
+    if let Some(played) = stopped_early_at {
+        println!(
+            "stopped early: {played} of {pairs} preregistered map pairs played — the promotion gate's \
+             anytime-valid verdict was decisive and {STOP_WHEN_DECISIVE} was given; the sign test and \
+             Wilson lines below are read at a data-dependent sample and are not confirmatory here"
+        );
+    }
     let inference = paired_inference(&pair_scores);
     let outcomes = pair_outcomes(&pair_scores);
     let directions = directional_outcomes(&pair_scores);
@@ -3115,6 +3173,36 @@ here and any null is uninformative"
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+
+    /// `--stop-when-decisive` ends a run only on a decisive gate: never under
+    /// `PROMOTION_MIN_MAPS`, never on parity, and on either side once the
+    /// anytime-valid evidence and the betting interval agree.
+    #[test]
+    fn early_stopping_waits_for_a_decisive_gate() {
+        assert!(!early_stop_is_warranted(&[]));
+        assert!(
+            !early_stop_is_warranted(&vec![1.0; PROMOTION_MIN_MAPS - 1]),
+            "insufficient maps never stop, however lopsided"
+        );
+        assert!(
+            !early_stop_is_warranted(&vec![0.5; 200]),
+            "parity never stops: the run plays out to its preregistered size"
+        );
+        assert!(
+            early_stop_is_warranted(&vec![1.0; 40]),
+            "a challenger sweep stops on PASS"
+        );
+        assert!(
+            early_stop_is_warranted(&vec![0.0; 40]),
+            "an incumbent sweep stops on RETAIN"
+        );
+        let mixed: Vec<f64> = (0..60).map(|i| if i % 3 == 0 { 0.5 } else { 1.0 }).collect();
+        assert!(early_stop_is_warranted(&mixed));
+        // The verdict the stop reads is the gate's own verdict, not a new rule.
+        assert_eq!(paired_inference(&mixed).verdict, PromotionVerdict::Promote);
+        assert_eq!(paired_inference(&vec![0.5; 200]).verdict, PromotionVerdict::Inconclusive);
+    }
 
     #[test]
     fn a_gate_passing_size_is_labelled_the_discovery_estimate_it_is() {
