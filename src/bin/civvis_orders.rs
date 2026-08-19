@@ -1719,9 +1719,10 @@ fn append_aid_gift_order(
             if amount > spendable {
                 return None;
             }
-            let target_is_peaceful_met_major = state.rivals.iter().any(|rival| {
-                rival.player as i64 == emergency.target && !rival.at_war
-            });
+            let target_is_peaceful_met_major = state
+                .rivals
+                .iter()
+                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war);
             target_is_peaceful_met_major.then_some((emergency, amount))
         })
         // If rare overlapping Aid Requests are both finishable, bank the
@@ -1741,9 +1742,7 @@ fn append_aid_gift_order(
     // finish-line gift together.  The gift is already affordable and converts
     // directly into a two-DVP first-place attempt, so it has priority over an
     // unrelated sale or passage purchase to the same recipient this frame.
-    orders.retain(|order| {
-        !(order.subject == Some(target) && matches!(order.kind, "sell" | "buy"))
-    });
+    orders.retain(|order| !(order.subject == Some(target) && matches!(order.kind, "sell" | "buy")));
     orders.insert(
         0,
         Order {
