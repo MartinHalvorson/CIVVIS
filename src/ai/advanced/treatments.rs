@@ -30,7 +30,25 @@ use super::AdvancedAi;
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 82] = [
+/// ★★★ NO COUNT, BECAUSE THE COUNT KEPT BEING WRONG.
+///
+/// This was `[LiveTreatment; N]`, and N is a number every appending PR has to
+/// raise while every other appending PR raises it too. On 2026-08-19 `main`
+/// stopped compiling with `expected an array with a size of 80, found one with
+/// a size of 83`: two treatments had landed within minutes of each other, each
+/// correctly bumping the count it saw. Two repair PRs were opened, both saying
+/// "81 rows" — and by the time either could merge the table held 83, so both
+/// were stale before review. That is not a mistake anyone made; it is what a
+/// hand-maintained length does on a list this contended.
+///
+/// A slice has no length to maintain. Appending a row is now a one-line diff
+/// that cannot break the build, and the only thing two concurrent PRs can
+/// collide on is the row itself — which is a real conflict, resolved by keeping
+/// both lines.
+///
+/// Every consumer already used `.iter()`, `.len()`, or `for … in`, all of which
+/// a slice supports unchanged.
+pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),

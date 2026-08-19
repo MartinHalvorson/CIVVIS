@@ -877,6 +877,18 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
+    /// A World Congress competition that must currently be active on the
+    /// authoritative host before this project is legal.  These projects use
+    /// Firaxis's `UnlocksFromEffect` rather than a normal tech or civic gate,
+    /// so they must never appear in a native CIVVIS production menu.
+    #[serde(default)]
+    pub host_competition: Option<String>,
+    /// Competition points the host awards when this project completes.  Kept
+    /// in the rules row beside the exact project cost, rather than in an AI
+    /// name switch, so another host-unlocked competition can use the same
+    /// legal-production and valuation path.
+    #[serde(default)]
+    pub competition_score: f64,
     #[serde(default)]
     pub repeatable: bool,
     /// Per-turn yield conversion percentages while this project is active.
@@ -3331,9 +3343,15 @@ mod tests {
         // `Expansion2_RemoveData.xml` checked for every id, not from the
         // compiled cache. Two of the five are cases where the cache on a
         // base-game machine states the opposite of the shipped rule.
+        //
+        // Moved again by the real Gathering Storm World Games project.
+        // `PROJECT_TRAIN_ATHLETES` costs 200 Production, grants 50 competition
+        // score, and is unlocked by the host's World Congress effect rather
+        // than a tree node. Native CIVVIS games do not surface it; live
+        // mirrors do only while the authoritative tracker names World Games.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:9539e12040db0e7d"
+            "fnv1a64:a5f2fb4757d83b55"
         );
     }
 
@@ -3978,7 +3996,18 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 25);
+        assert_eq!(rules.projects.len(), 26);
+        let athletes = rules
+            .projects
+            .get(&crate::name!("train_athletes"))
+            .expect("the Gathering Storm World Games project is modeled");
+        assert_eq!(athletes.cost, 200.0);
+        assert_eq!(
+            athletes.host_competition.as_deref(),
+            Some("EMERGENCY_WORLD_GAMES")
+        );
+        assert_eq!(athletes.competition_score, 50.0);
+        assert!(athletes.repeatable);
         // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.

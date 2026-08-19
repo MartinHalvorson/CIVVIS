@@ -8715,7 +8715,13 @@ impl AdvancedAi {
         let horizon = turns.clamp(1.0, 16.0);
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
-        for (kind, award) in g.project_completion_gpp_awards(pid, cid, project) {
+        let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
+        let world_fair_score = gpp_awards
+            .values()
+            .copied()
+            .filter(|award| award.is_finite() && *award > f64::EPSILON)
+            .sum::<f64>();
+        for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
             // but a disabled class has no race tempo to extend.
@@ -8857,7 +8863,65 @@ impl AdvancedAi {
                 value = value.min(PROJECT_BEHIND_BUILDINGS_CAP);
             }
         }
+        // The World Fair counts each Great Person point as competition score,
+        // including the completion awards above. That payoff is immediate and
+        // host-authoritative, so it must remain outside the normal "build the
+        // Library first" cap: a competition that ends before the building is
+        // complete cannot be resumed later.
         value
+            + self.host_competition_score_value(
+                g,
+                pid,
+                "EMERGENCY_WORLDS_FAIR",
+                world_fair_score,
+                turns,
+            )
+    }
+
+    /// Price one host-reported competition score gain against its deadline and
+    /// current standing. The result is raw production value, in the same
+    /// units as the surrounding project and building arms; production-value's
+    /// common normalizer then still prefers the city that can finish in time.
+    fn host_competition_score_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        kind: &str,
+        score_gain: f64,
+        completion_turns: f64,
+    ) -> f64 {
+        if !score_gain.is_finite() || score_gain <= f64::EPSILON {
+            return 0.0;
+        }
+        let Some(competition) = g.host_competition(pid, kind) else {
+            return 0.0;
+        };
+        let remaining = competition.ends.saturating_sub(g.turn) as f64;
+        if remaining <= 0.0 || completion_turns > remaining + f64::EPSILON {
+            return 0.0;
+        }
+        let deficit = (competition.leader - competition.ours).max(0.0);
+        let after = competition.ours + score_gain;
+        // The closer the host clock, the less opportunity remains to replace
+        // this move. The clamp prevents a final-turn score from becoming an
+        // unbounded override while still making a 29-turn competition matter.
+        let urgency = (1.0 + 10.0 / remaining.max(1.0)).min(3.5);
+        let base = score_gain * 38.0 * urgency;
+        let race_swing = if deficit > f64::EPSILON && after + f64::EPSILON >= competition.leader {
+            // Catching the current leader is where the tier and its victory
+            // rewards change hands; carry a concrete tempo premium rather than
+            // treating fifty World Games points like an ordinary yield.
+            950.0 + (score_gain - deficit).max(0.0) * 12.0
+        } else if deficit > f64::EPSILON {
+            // Closing a large gap is still valuable but cannot claim a tier
+            // transition this particular completion does not reach.
+            (score_gain / deficit.max(score_gain)).min(1.0) * 260.0
+        } else {
+            // A narrow lead must be defended; a decisive lead does not justify
+            // pinning every city to the same repeatable project.
+            (score_gain - (competition.ours - competition.leader).max(0.0)).max(0.0) * 14.0
+        };
+        base + race_swing
     }
 
     fn product_layout_value(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> f64 {
@@ -19388,6 +19452,24 @@ impl AdvancedAi {
                                 850.0
                             } else {
                                 250.0
+                            }
+                        }
+                        _ if spec.host_competition.is_some() => {
+                            let value = self.host_competition_score_value(
+                                g,
+                                pid,
+                                spec.host_competition.as_deref().unwrap(),
+                                spec.competition_score,
+                                turns,
+                            );
+                            // A host-unlocked project that cannot complete
+                            // before the current competition expires is not a
+                            // neutral fallback: letting it win a tie would
+                            // replace a real build with a refused stale order.
+                            if value > 0.0 {
+                                value
+                            } else {
+                                -10_000.0
                             }
                         }
                         _ if space_race => {
