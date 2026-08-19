@@ -1647,7 +1647,7 @@ mod tests {
     #[test]
     fn genes_are_balanced_across_pairs() {
         let screened = vec![true; 8];
-        let mut on = vec![0usize; 8];
+        let mut on = [0usize; 8];
         let pairs = 2000;
         for pair in 0..pairs {
             for (i, &bit) in draw_genome(99, pair, &screened).iter().enumerate() {
