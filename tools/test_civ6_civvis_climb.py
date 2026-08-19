@@ -1537,6 +1537,20 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         values.update(changes)
         return SimpleNamespace(**values)
 
+    def test_the_abandon_floor_reaches_the_play_command_only_when_set(self):
+        """Operator request 2026-08-19 — "ok to abandon games early if
+        expected win rate <5%": the floor is forwarded verbatim, and absent it
+        the harness keeps its own default of playing every game out."""
+        cmd = climb.play_command(
+            self._play_args(abandon_below_win_rate=0.05), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--abandon-below-win-rate", cmd)
+        self.assertEqual(cmd[cmd.index("--abandon-below-win-rate") + 1], "0.05")
+        self.assertNotIn(
+            "--abandon-below-win-rate",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")))
+
     def test_a_withheld_deterrence_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))

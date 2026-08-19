@@ -72,6 +72,16 @@ EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # when this knob is set, so the default has exactly one home and this file does
 # not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
 VICTORY=${CIVVIS_VICTORY:-}
+# The floor under a game's expected win rate, below which the harness stops
+# playing it out (`civ6_play.ABANDON_CELLS`: the ladder's own measured table;
+# 0/34 of the live games that were under three quarters of the best rival's
+# score for five turns past turn 120 ever won). Unset means every game is
+# played to its end. Operator request 2026-08-19: "ok to abandon games early
+# if expected win rate <5%" — set `CIVVIS_ABANDON_BELOW_WIN_RATE=0.05` in the
+# login shell the launcher inherits (~/.zprofile on this host, beside
+# CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
+# a stall or a defeat.
+ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -398,6 +408,7 @@ while true; do
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
       ${VICTORY:+--victory "$VICTORY"} \
+      ${ABANDON_BELOW:+--abandon-below-win-rate "$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,
