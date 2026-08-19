@@ -1841,6 +1841,17 @@ pub struct UnitMemory {
     pub retreat_until: Option<u32>,
 }
 
+/// The hostile next-turn attack envelopes, remembered with the exact board
+/// they were computed on. See `BasicAi::enemy_attack_envelopes`.
+struct AttackEnvelopeCache {
+    /// `(turn, viewer, board fingerprint)` — the fingerprint covers every
+    /// unit's identity, owner, place and fighting state, every city's owner
+    /// and place, the map epoch and the war ledger: everything `attack_reach`
+    /// reads. Equal keys mean equal envelopes for every enemy.
+    key: (u32, usize, u64),
+    envelopes: std::sync::Arc<Vec<(u32, BTreeSet<Pos>)>>,
+}
+
 #[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
@@ -2216,6 +2227,20 @@ pub struct BasicAi {
     /// `RefCell` lets both serial and snapshot tactical planners update only
     /// their own unit's entry without changing the broad movement API.
     unit_memories: RefCell<BTreeMap<u32, UnitMemory>>,
+    /// The last hostile attack envelopes computed, with the exact board they
+    /// belong to. `enemy_attack_envelopes` was recomputed for every one of the
+    /// seat's units on every turn — one `attack_reach` flow field per visible
+    /// enemy per own unit — and #2059 (2026-08-18) took a 6-player 74×46
+    /// 150-turn Online game from 16.7 s to 102.7 s on that alone.
+    ///
+    /// Shared across clones on purpose: the frontier plans each unit on a
+    /// fresh clone of this controller and of the board and drops both, so a
+    /// per-clone memo would be computed once per unit and thrown away — which
+    /// is what the profile showed after a first, per-clone version of this
+    /// cache. Every unit of one frontier batch is planned against the same
+    /// board, so the first to compute serves the rest; every reader checks
+    /// the key, so a worker that has applied an action recomputes.
+    attack_envelope_cache: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
@@ -3929,6 +3954,7 @@ impl BasicAi {
             fortify_idle_units: false,
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
+            attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4216,6 +4242,7 @@ impl BasicAi {
             fortify_idle_units: false,
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
+            attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4421,7 +4448,97 @@ impl BasicAi {
     /// `Game::attack_reach` does the terrain-accurate movement and attack
     /// calculation; this layer decides which combatants count as threats to
     /// this player.
-    fn enemy_attack_envelopes(g: &Game, pid: usize) -> Vec<(u32, BTreeSet<Pos>)> {
+    ///
+    /// ★★★★ COMPUTED ONCE PER BOARD, NOT ONCE PER OWN UNIT. `retreat_step`
+    /// asks for these for every military unit of the seat on every turn, and
+    /// each answer is one `attack_reach` flow field per visible enemy.
+    /// Measured 2026-08-19 (`civvis simulate --seed 7311001 --jobs 1
+    /// --players 6 --turns 150 --width 74 --height 46 --city-states 9 --speed
+    /// online`, `ci` profile): 102.7 s per game with the per-unit recompute
+    /// #2059 shipped against 16.7 s the commit before it, and a `sample` of
+    /// head put `retreat_step → enemy_attack_envelopes → attack_reach` at a
+    /// third of the main thread — a six-fold slowdown of every simulation on
+    /// the fleet.
+    ///
+    /// The key is exact: the fingerprint below covers everything
+    /// `attack_reach` reads, so a hit returns what a recompute would have,
+    /// byte for byte (`tools/speed_ab.py`: reports agree on every paired
+    /// seed). What it buys is the frontier — `plan_general_unit_turn` plans a
+    /// whole batch of units against clones of one board, and every unit of
+    /// the batch now shares one computation — plus every own unit that steps
+    /// without moving anything. A serial path that moves a unit between two
+    /// steps still recomputes, because the moved unit's zone of control is
+    /// part of every enemy's reach; the exact key does not pretend otherwise.
+    fn enemy_attack_envelopes(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> std::sync::Arc<Vec<(u32, BTreeSet<Pos>)>> {
+        let key = (g.turn, pid, Self::attack_envelope_fingerprint(g));
+        // A poisoned lock only means another worker panicked mid-store; the
+        // value inside is a complete entry or `None`, either of which is safe
+        // to read.
+        let slot = self
+            .attack_envelope_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(cache) = slot.as_ref() {
+            if cache.key == key {
+                return std::sync::Arc::clone(&cache.envelopes);
+            }
+        }
+        drop(slot);
+        let envelopes = std::sync::Arc::new(Self::compute_enemy_attack_envelopes(g, pid));
+        let mut slot = self
+            .attack_envelope_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(std::sync::Arc::new(AttackEnvelopeCache {
+            key,
+            envelopes: std::sync::Arc::clone(&envelopes),
+        }));
+        envelopes
+    }
+
+    /// Everything `attack_reach` reads: every unit's identity, owner, place,
+    /// health, movement and fighting state (an own unit's place matters too —
+    /// its zone of control ends an enemy's move), every city's identity,
+    /// owner and place, the map epoch, and the war ledger. FNV-1a over those
+    /// fields in table order, so equal boards hash equal.
+    fn attack_envelope_fingerprint(g: &Game) -> u64 {
+        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const PRIME: u64 = 0x0000_0100_0000_01b3;
+        let mut hash = OFFSET;
+        let mut mix = |value: u64| {
+            for byte in value.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(PRIME);
+            }
+        };
+        mix(g.map.tiles.epoch());
+        mix(g.wars.len() as u64);
+        for unit in g.units.values() {
+            mix(u64::from(unit.id));
+            mix(unit.owner as u64);
+            mix(unit.pos.0 as u64);
+            mix(unit.pos.1 as u64);
+            mix(unit.hp as u64);
+            mix(unit.moves_left.to_bits());
+            mix(unit.attacks_left as u64);
+            mix(unit.formation as u64);
+            mix(u64::from(unit.fortified) | (u64::from(unit.zoc_stopped) << 1));
+        }
+        mix(g.cities.len() as u64);
+        for city in g.cities.values() {
+            mix(u64::from(city.id));
+            mix(city.owner as u64);
+            mix(city.pos.0 as u64);
+            mix(city.pos.1 as u64);
+        }
+        hash
+    }
+
+    fn compute_enemy_attack_envelopes(g: &Game, pid: usize) -> Vec<(u32, BTreeSet<Pos>)> {
         g.units
             .values()
             .filter(|unit| {
@@ -4601,6 +4718,43 @@ impl BasicAi {
         uid: u32,
         envelopes: &[(u32, BTreeSet<Pos>)],
     ) -> Option<Pos> {
+        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
+        // and it used to price every tile with `evacuation_tile` — a defender
+        // strength, every covering enemy's attack strength, and a scan of
+        // every hostile city with `is_at_war` per city — 3,404 times per unit
+        // on a 74×46 map. That was half the simulator after #2059. The scan
+        // only keeps a tile whose incoming damage is exactly zero, and
+        // `evacuation_incoming_damage` is zero precisely when the tile is a
+        // garrison district or lies outside every enemy envelope AND out of
+        // strike range of every hostile walled city and encampment (each
+        // covering source contributes at least the clamp's floor of one).
+        // So the safety test is a set lookup, computed once, and the tile
+        // loop pays only for its heal-rate read — under a query-memo scope, so
+        // `suzerain_of` is answered once per minor, not once per tile.
+        let _memo = g.query_memo();
+        let covered: BTreeSet<Pos> = envelopes
+            .iter()
+            .flat_map(|(_, reach)| reach.iter().copied())
+            .collect();
+        let strike_sources: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .flat_map(|city| {
+                let centre = (city.wall_hp > 0).then_some(city.pos);
+                let encampment = (city.encampment_hp > 0
+                    && city.encampment_wall_hp > 0
+                    && !city.encampment_pillaged)
+                    .then(|| g.city_district_family_position(city, crate::name!("encampment")))
+                    .flatten();
+                centre.into_iter().chain(encampment)
+            })
+            .collect();
+        let struck = |position: Pos| {
+            strike_sources
+                .iter()
+                .any(|source| g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position))
+        };
         let mut cities = HashSet::new();
         let mut friendly_tiles = HashSet::new();
         let mut neutral_tiles = HashSet::new();
@@ -4616,14 +4770,16 @@ impl BasicAi {
             if (friendly_owner && healing < 15) || (!friendly_owner && healing != 10) {
                 continue;
             }
-            let Some(candidate) = Self::evacuation_tile(g, pid, uid, position, None, envelopes)
-            else {
-                continue;
-            };
-            if candidate.incoming > 1e-9 {
+            let city_here = g.city_at(position);
+            let garrisoned = city_here.is_some() || g.encampment_at(position).is_some();
+            if !garrisoned && (covered.contains(&position) || struck(position)) {
                 continue;
             }
-            if candidate.city {
+            let city = city_here.is_some_and(|city| {
+                let owner = g.cities[&city].owner;
+                owner == pid || g.suzerain_of(owner) == Some(pid)
+            });
+            if city {
                 cities.insert(position);
             } else if friendly_owner {
                 friendly_tiles.insert(position);
@@ -4661,7 +4817,7 @@ impl BasicAi {
                 let Some(survivor) = future.units.get(&uid) else {
                     return false;
                 };
-                let envelopes = Self::enemy_attack_envelopes(&future, pid);
+                let envelopes = self.enemy_attack_envelopes(&future, pid);
                 Self::evacuation_incoming_damage(&future, pid, uid, survivor.pos, &envelopes)
                     < f64::from(survivor.hp)
             })
@@ -4718,7 +4874,7 @@ impl BasicAi {
                 .filter(|until| g.turn < *until)
                 .and(memory.danger)
         });
-        let envelopes = Self::enemy_attack_envelopes(g, pid);
+        let envelopes = self.enemy_attack_envelopes(g, pid);
         let holding = Self::evacuation_tile(
             g,
             pid,
@@ -12657,7 +12813,7 @@ impl BasicAi {
         }
 
         if self.precise_evacuation {
-            let envelopes = Self::enemy_attack_envelopes(g, pid);
+            let envelopes = self.enemy_attack_envelopes(g, pid);
             let here = g.units[&uid].pos;
             let holding = Self::evacuation_tile(g, pid, uid, here, None, &envelopes);
             // Once safely inside friendly borders, spending the turn stationary
