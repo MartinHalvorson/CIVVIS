@@ -8231,7 +8231,10 @@ mod tests {
         // buys only EXTRA votes, and those never register. Run
         // civvis-20260819T054901Z banked 566 points to t222 and cast none of
         // them, losing to the rival diplomatic victory it was saving for.
-        for diplomatic in [Some(("diplomacy", None)), Some(("expansion", Some("diplomatic")))] {
+        for diplomatic in [
+            Some(("diplomacy", None)),
+            Some(("expansion", Some("diplomatic"))),
+        ] {
             let mut sold = Vec::new();
             assert_eq!(
                 append_favor_sale_order(diplomatic, &state, &mut sold),
