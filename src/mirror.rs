@@ -11134,6 +11134,14 @@ pub struct Seat {
     /// switched off. `None` (older mod) keeps the default.
     #[serde(default)]
     pub victories: Option<SeatVictories>,
+    /// The mod sequences a unit's orders (`CivvisQueue`): a strike after a
+    /// walk is issued once the walk has arrived, a found after a walk once
+    /// the settler stands on its site. `civvis_orders` sends a unit's whole
+    /// planned sequence only when this is true; against an older mod it
+    /// defers the follow-ups to the next frame exactly as before. Absent
+    /// (older mod) reads `false`, which is the conservative behaviour.
+    #[serde(default)]
+    pub order_queue: bool,
 }
 
 /// See [`Seat::victories`]. Each checkbox is independently optional so one
