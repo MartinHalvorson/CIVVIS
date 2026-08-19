@@ -249,6 +249,7 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
     Reporting it here is how anyone will notice whether they worked.
     """
     stolen: dict[str, int] = {}
+    stolen_turns: dict[str, list[int]] = {}
     stolen_while_ahead = 0
     for attempt in attempts:
         if not attempt.get("configured") or attempt.get("won"):
@@ -263,6 +264,7 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         name = LADDER_VICTORY_NAMES.get(victory, f"type {victory}")
         stolen[name] = stolen.get(name, 0) + 1
+        stolen_turns.setdefault(name, []).append(turns)
         rival = attempt.get("rival_best")
         score = attempt.get("score")
         if (
@@ -273,6 +275,14 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             stolen_while_ahead += 1
     return {
         "stolen": dict(sorted(stolen.items(), key=lambda item: (-item[1], item[0]))),
+        "stolen_turns": {
+            name: {
+                "earliest": min(turns),
+                "median": sorted(turns)[len(turns) // 2],
+                "latest": max(turns),
+            }
+            for name, turns in sorted(stolen_turns.items())
+        },
         "stolen_while_ahead": stolen_while_ahead,
     }
 
@@ -417,6 +427,18 @@ def _ladder_distance_lines(ladder: dict[str, Any]) -> list[str]:
             f"({detail}), of which **{ladder['stolen_while_ahead']}** while our "
             "own score was the highest on the board"
         )
+    windows = ladder.get("stolen_turns") or {}
+    if windows:
+        # ⚠ The count says which lane to work on; only the turn says whether a
+        # simulated lane is behaving like the real one. A rival's diplomatic
+        # victory has never landed before turn 202 on this ladder, so a native
+        # game that produces none before then is not necessarily wrong, and one
+        # that ends at the turn limit has not had the chance to be.
+        detail = ", ".join(
+            f"{name} {edge['earliest']}\u2013{edge['latest']} (median {edge['median']})"
+            for name, edge in windows.items()
+        )
+        lines.append(f"- The turns those landed on: {detail}")
     return lines
 
 

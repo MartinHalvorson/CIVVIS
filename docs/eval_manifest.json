@@ -82,6 +82,33 @@
       "religious": 5,
       "technology": 3
     },
+    "stolen_turns": {
+      "conquest": {
+        "earliest": 27,
+        "latest": 27,
+        "median": 27
+      },
+      "culture": {
+        "earliest": 145,
+        "latest": 245,
+        "median": 221
+      },
+      "diplomatic": {
+        "earliest": 202,
+        "latest": 247,
+        "median": 234
+      },
+      "religious": {
+        "earliest": 75,
+        "latest": 233,
+        "median": 170
+      },
+      "technology": {
+        "earliest": 242,
+        "latest": 244,
+        "median": 242
+      }
+    },
     "stolen_while_ahead": 4,
     "terminal": 232,
     "wins": 7

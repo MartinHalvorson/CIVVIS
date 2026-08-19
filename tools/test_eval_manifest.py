@@ -236,3 +236,47 @@ class BundleCoverageTests(unittest.TestCase):
         self.assertIn("## Bundle coverage", page)
         self.assertIn(f"Never named in any round: {self.coverage['never_named']}",
                       page)
+
+
+class StolenTurnsTest(unittest.TestCase):
+    """The turn a stolen lane lands on, not only how often it is stolen."""
+
+    def attempt(self, victory, turns, **kw):
+        row = {"configured": True, "won": False, "victory": victory, "turns": turns}
+        row.update(kw)
+        return row
+
+    def test_a_stolen_lane_reports_the_window_it_landed_in(self):
+        """★★★★★ THE COUNT SAYS WHICH LANE, THE TURN SAYS WHETHER OURS BEHAVES.
+
+        A rival's diplomatic victory has never landed before turn 202 on this
+        ladder and lands at a median of 234 — a photo finish against the
+        250-turn limit. Four iterations of work on CIVVIS' own diplomatic lane
+        were aimed at a count with no window beside it, and 'our native lane
+        produces almost none' cannot be read against 'theirs lands at 239'
+        without knowing the second number.
+        """
+        rows = [
+            self.attempt(6, 202),
+            self.attempt(6, 234),
+            self.attempt(6, 247),
+            self.attempt(3, 145),
+        ]
+        summary = eval_manifest.ladder_endings(rows)
+        windows = summary["stolen_turns"]
+        self.assertEqual(
+            windows["diplomatic"], {"earliest": 202, "median": 234, "latest": 247}
+        )
+        self.assertEqual(
+            windows["culture"], {"earliest": 145, "median": 145, "latest": 145}
+        )
+
+    def test_a_lane_that_ran_the_clock_out_is_not_stolen(self):
+        """A game that reaches the limit ends on score by construction, so it
+        has not been stolen and must not widen anyone's window."""
+        rows = [self.attempt(6, 250), self.attempt(6, 210)]
+        summary = eval_manifest.ladder_endings(rows)
+        self.assertEqual(
+            summary["stolen_turns"]["diplomatic"],
+            {"earliest": 210, "median": 210, "latest": 210},
+        )
