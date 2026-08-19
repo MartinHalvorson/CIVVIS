@@ -289,7 +289,7 @@ pub use advanced::{
     AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GrandStrategy,
     LiveTreatment, StrategicPlan, StrategyCensus, VictoryTarget, LAND_GRAB_CITY_CEILING,
     LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS,
-    PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_TREATMENTS,
+    PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -2150,6 +2150,22 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Drop attack candidates the engine will refuse — invisible target, no
+    /// line of sight, wrong melee domain, unpayable entry cost — before they
+    /// are scored, so a doomed order cannot win the argmax and shadow a legal
+    /// one. `military_step` scores candidates statically rather than on a
+    /// clone, which is how a refused shot could outscore a real one: a census
+    /// of one 150-turn deployment game counted 519 authoritative combat-order
+    /// refusals, every one from that candidate loop (see
+    /// `Game::ranged_order_is_legal`).
+    ///
+    /// Off for the frozen identities — the `advanced_v1` anchor's legacy
+    /// base, the dated `basic` tournament entrant, and the evaluator
+    /// controls — whose recorded ladders must keep replaying the historical
+    /// candidate set. Production `AdvancedAi` turns it on in
+    /// `promoted_policy_envoy`; `advanced_unscreened_candidates` in
+    /// `src/elo.rs` is the withholding twin that keeps the axis measurable.
+    pub(crate) legal_tactical_candidates: bool,
     /// Use explicit combined-arms roles when assigning attacks and movement:
     /// the melee/anti-cavalry/cavalry counter cycle, safe ranged standoff,
     /// siege against walls, compatible ram/tower escorts, and distinct light-
@@ -3862,6 +3878,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
@@ -4148,6 +4165,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
@@ -12777,6 +12795,14 @@ impl BasicAi {
                 1
             };
             let mut best: Option<(f64, Pos, Action)> = None;
+            // Hoisted out of the candidate loop below (see
+            // `Game::ranged_order_is_legal`): `player_vision_now` clones a
+            // whole `TileBits`, and neither frame can move while this loop
+            // applies nothing. Built lazily — most units reach no enemy tile.
+            let mut vision_frames: Option<(
+                crate::world::TileBits,
+                std::collections::BTreeSet<usize>,
+            )> = None;
             for pos in g.wdisk(upos, radius) {
                 if pos == upos
                     || g.map.get(pos).is_none()
@@ -12790,7 +12816,23 @@ impl BasicAi {
                 }
                 let distance = g.wdist(upos, pos);
                 let mut modes = Vec::with_capacity(2);
-                if spec.has_ranged_attack() && distance <= g.unit_attack_range(uid) {
+                // ⚠ Candidates here are scored statically, not on a clone, so
+                // an order the engine refuses can win the argmax outright and
+                // the unit does nothing offensive at all — the legal shot
+                // that came second is shadowed, not merely delayed. Census:
+                // 519 authoritative refusals in one deployment game, all from
+                // this loop. Behind `legal_tactical_candidates` the engine's
+                // own predicates screen the set; the frozen identities keep
+                // the historical candidates (see the field's note).
+                if spec.has_ranged_attack()
+                    && distance <= g.unit_attack_range(uid)
+                    && (!self.legal_tactical_candidates || {
+                        let frames = vision_frames.get_or_insert_with(|| {
+                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                        });
+                        g.ranged_order_is_legal(pid, uid, pos, &frames.0, &frames.1)
+                    })
+                {
                     modes.push((
                         true,
                         Action::Ranged {
@@ -12802,6 +12844,14 @@ impl BasicAi {
                 if g.units[&uid].kind == "spec_ops"
                     && distance <= g.unit_attack_range(uid)
                     && g.priority_support_target_at(pid, pos).is_some()
+                    && (!self.legal_tactical_candidates || {
+                        let frames = vision_frames.get_or_insert_with(|| {
+                            (g.player_vision_now(pid), g.visibility_viewers(pid))
+                        });
+                        g.units[&uid].attacks_left > 0
+                            && g.combat_target_visible_at(pid, pos, &frames.0, &frames.1)
+                            && g.unit_has_line_of_sight(uid, pos)
+                    })
                 {
                     modes.push((
                         true,
@@ -12811,7 +12861,10 @@ impl BasicAi {
                         },
                     ));
                 }
-                if spec.is_melee_capable() && distance == 1 {
+                if spec.is_melee_capable()
+                    && distance == 1
+                    && (!self.legal_tactical_candidates || g.melee_order_is_legal(pid, uid, pos))
+                {
                     modes.push((
                         false,
                         Action::Attack {
@@ -18727,6 +18780,225 @@ mod tests {
             ai.tactical_action_bonus_from(&g, archer, exposed, enemy_pos, true),
             SAFE_RANGED_FIRE,
             "a range-two shot is outside a melee defender's direct return fire"
+        );
+    }
+
+    /// Flatten a disk to bare passable plains so a scenario's visibility,
+    /// line of sight, and movement costs are exactly what it placed there.
+    fn flatten_disk(g: &mut Game, center: Pos, radius: i32) {
+        for pos in g.wdisk(center, radius) {
+            let Some(tile) = g.map.tiles.get_mut(&pos) else {
+                continue;
+            };
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+        }
+    }
+
+    /// A tile whose whole radius-`radius` disk is on the map, so a scenario
+    /// built around it never loses a ring tile to the map edge.
+    fn open_anchor(g: &Game, radius: i32) -> Pos {
+        let full = (1 + 3 * radius * (radius + 1)) as usize;
+        g.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| g.wdisk(*pos, radius).len() == full)
+            .expect("a tile with a full disk exists")
+    }
+
+    /// The candidate loop scores statically, so before the legality screen a
+    /// refused shot could win the argmax and the legal runner-up was never
+    /// taken — the unit did nothing offensive at all. Census: 519 authoritative
+    /// combat-order refusals in one 150-turn deployment game, all from that
+    /// loop. Both halves are pinned: the frozen identities keep the historical
+    /// shadowing, production drops the refused candidate and takes the shot.
+    #[test]
+    fn a_refused_shot_no_longer_shadows_the_legal_one() {
+        let build = || {
+            let mut g = Game::new_full(2, 24, 16, 37_106, 30, 0, false);
+            for unit in g.units.keys().copied().collect::<Vec<_>>() {
+                g.remove_unit(unit);
+            }
+            g.at_war.insert((0, 1));
+            let anchor = open_anchor(&g, 3);
+            flatten_disk(&mut g, anchor, 3);
+            let ring2: Vec<Pos> = g
+                .wdisk(anchor, 2)
+                .into_iter()
+                .filter(|pos| g.wdist(*pos, anchor) == 2)
+                .collect();
+            let blocked_pos = ring2[0];
+            // The far side of the ring, so walling off one corridor leaves
+            // the other target's corridor untouched.
+            let clear_pos = *ring2
+                .iter()
+                .max_by_key(|pos| (g.wdist(**pos, blocked_pos), pos.0, pos.1))
+                .unwrap();
+            let corridor: Vec<Pos> = g
+                .nbrs(anchor)
+                .into_iter()
+                .filter(|pos| g.wdist(*pos, blocked_pos) == 1)
+                .collect();
+            for middle in corridor {
+                g.map.tiles.get_mut(&middle).unwrap().terrain = crate::name!("mountain");
+            }
+            let archer = g.spawn_test_unit("archer", 0, anchor);
+            let blocked = g.spawn_test_unit("warrior", 1, blocked_pos);
+            let clear = g.spawn_test_unit("warrior", 1, clear_pos);
+            // A near-dead target outscores a full-health one, so the refused
+            // shot is the one the argmax wants.
+            g.units.get_mut(&blocked).unwrap().hp = 5;
+            g.units.get_mut(&blocked).unwrap().moves_left = 0.0;
+            g.units.get_mut(&clear).unwrap().moves_left = 0.0;
+            (g, archer, blocked, clear, blocked_pos, clear_pos)
+        };
+
+        // Engine preconditions: the wall makes one shot illegal, not both.
+        let (g, archer, _, _, blocked_pos, clear_pos) = build();
+        let frames = (g.player_vision_now(0), g.visibility_viewers(0));
+        assert!(
+            !g.ranged_order_is_legal(0, archer, blocked_pos, &frames.0, &frames.1),
+            "the walled corridor must refuse the shot"
+        );
+        assert!(
+            g.ranged_order_is_legal(0, archer, clear_pos, &frames.0, &frames.1),
+            "the open corridor must allow the shot"
+        );
+        // Scoring precondition: the refused candidate wins the argmax, so the
+        // scenario really exercises shadowing rather than a lucky ordering.
+        let ai = BasicAi::new();
+        let utility = |pos: Pos| {
+            ai.exchange_score(&g, archer, pos, true) - ai.attack_threshold(&g, archer, pos)
+                + ai.tactical_action_bonus(&g, archer, pos, true)
+        };
+        assert!(
+            utility(blocked_pos) > utility(clear_pos) && utility(clear_pos) > 0.0,
+            "the blocked kill must outscore the clear shot, and the clear \
+             shot must clear the threshold on its own"
+        );
+
+        // The frozen candidate set: the refused winner shadows the legal shot
+        // and nobody is hit. This is the recorded ladders' behavior.
+        let (mut g, archer, blocked, clear, _, _) = build();
+        let mut ai = BasicAi::new();
+        ai.military_step(&mut g, 0, archer);
+        assert_eq!(
+            g.units[&blocked].hp, 5,
+            "no shot can reach the walled target"
+        );
+        assert_eq!(g.units[&clear].hp, 100, "the legal shot was shadowed");
+
+        // The screened candidate set: the doomed candidate never enters the
+        // argmax, and the legal shot is taken the same turn.
+        let (mut g, archer, blocked, clear, _, _) = build();
+        let mut ai = BasicAi::new();
+        ai.legal_tactical_candidates = true;
+        assert!(ai.military_step(&mut g, 0, archer));
+        assert_eq!(
+            g.units[&blocked].hp, 5,
+            "the walled target still cannot be hit"
+        );
+        assert!(
+            g.units[&clear].hp < 100,
+            "the legal shot is taken instead of being shadowed"
+        );
+    }
+
+    /// The per-unit action loop is the whole mechanism behind same-turn
+    /// multi-step play: each `military_step` call performs one action, and
+    /// the `0..8` loop in `units` re-invokes it while movement remains. An
+    /// archer with two movement points closes one hex and fires the same
+    /// turn.
+    #[test]
+    fn an_archer_steps_once_and_shoots_in_the_same_turn() {
+        let mut g = Game::new_full(2, 24, 16, 37_107, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, 1));
+        let anchor = open_anchor(&g, 4);
+        flatten_disk(&mut g, anchor, 4);
+        let start = g
+            .wdisk(anchor, 3)
+            .into_iter()
+            .find(|pos| g.wdist(*pos, anchor) == 3)
+            .unwrap();
+        let warrior = g.spawn_test_unit("warrior", 1, anchor);
+        g.units.get_mut(&warrior).unwrap().hp = 50;
+        g.units.get_mut(&warrior).unwrap().moves_left = 0.0;
+        let archer = g.spawn_test_unit("archer", 0, start);
+        let mut ai = BasicAi::new();
+        ai.legal_tactical_candidates = true;
+        ai.units(&mut g, 0);
+        assert_ne!(g.units[&archer].pos, start, "the archer closed the gap");
+        assert!(
+            g.units[&warrior].hp < 50,
+            "and fired in the same turn from the tile the step opened"
+        );
+    }
+
+    /// A settler with movement to spare founds on arrival rather than
+    /// standing on its site until the next turn.
+    #[test]
+    fn a_settler_steps_once_and_founds_in_the_same_turn() {
+        let mut g = Game::new_full(2, 24, 16, 37_108, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        let anchor = open_anchor(&g, 3);
+        flatten_disk(&mut g, anchor, 3);
+        let target = g.nbrs(anchor)[0];
+        let settler = g.spawn_test_unit("settler", 0, anchor);
+        let mut ai = BasicAi::new();
+        assert!(ai.valid_settle_site(&g, 0, target));
+        ai.settler_targets.insert(settler, target);
+        ai.units(&mut g, 0);
+        assert!(
+            g.player_city_ids(0)
+                .iter()
+                .any(|city| g.cities[city].pos == target),
+            "the settler stepped onto its site and founded the same turn"
+        );
+    }
+
+    /// A builder with movement to spare improves the tile it walked to rather
+    /// than standing on the job until the next turn.
+    #[test]
+    fn a_builder_steps_once_and_improves_in_the_same_turn() {
+        let mut g = Game::new_full(1, 20, 14, 37_109, 40, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        let start = g.units[&settler].pos;
+        flatten_disk(&mut g, start, 1);
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = g.player_city_ids(0)[0];
+        let center = g.cities[&city].pos;
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        let builder = g.spawn_test_unit("builder", 0, center);
+        g.units.get_mut(&builder).unwrap().charges = 3;
+        let mut ai = BasicAi::new();
+        ai.units(&mut g, 0);
+        assert_ne!(
+            g.units[&builder].pos, center,
+            "the builder stepped off the city center toward its job"
+        );
+        assert_eq!(
+            g.units[&builder].charges, 2,
+            "and spent a charge the same turn"
+        );
+        assert!(
+            g.map.tiles[&g.units[&builder].pos].improvement.is_some(),
+            "the tile it stands on carries the new improvement"
         );
     }
 

@@ -83,6 +83,10 @@ const TACTICAL_VOLLEY_CANDIDATE_LIMIT: usize = 3;
 /// been checked in deterministic unit order, more choices buy little tactical
 /// signal while multiplying the clone-heavy hot path.
 const TACTICAL_VOLLEY_FINISHER_LIMIT: usize = 8;
+/// Second finishers tried per middle blow when no lone teammate can complete
+/// the kill.  The chain only runs in that no-single-finisher case, so this
+/// bounds a branch that is idle in the common two-blow engagement.
+const TACTICAL_VOLLEY_SECOND_FINISHER_LIMIT: usize = 4;
 /// The opening shot earns one and a half ordinary kill bonuses when it lets a
 /// teammate finish the same defender.  The actual kill remains priced by the
 /// finisher's exact exchange; this bonus only corrects the first unit's
@@ -261,6 +265,19 @@ const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
 /// `AdvancedAi::live_wonder_race_scale`.
 const LIVE_WONDER_RACE_LATE_SCALE: f64 = 2.0;
+
+/// Share of a blocked wonder's own production score credited to the missing
+/// prerequisite that unblocks it, split across the prerequisites still
+/// missing. Half, not all: the prerequisite is an option on the wonder, not
+/// the wonder, and it must not outbid the wonder itself once both are
+/// producible. See `AdvancedAi::wonder_reach_credit`.
+const WONDER_REACH_SHARE: f64 = 0.5;
+
+/// A wonder more than this many construction steps away earns its
+/// prerequisites nothing: a two-step chain (Library, then an adjacent
+/// Campus) is a plan, a longer one is a fantasy the queue should not fund.
+/// See `AdvancedAi::wonder_reach_credit`.
+const WONDER_REACH_MAX_MISSING: usize = 2;
 
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
@@ -1297,6 +1314,18 @@ struct TurnStartHostile {
     sea: bool,
 }
 
+/// One production menu's wonder-prerequisite credits: for each missing
+/// building/district family, a share of the best wonder score it would
+/// unblock in this city. See `AdvancedAi::wonder_reach_credit`.
+#[derive(Clone, Default)]
+struct WonderReachLedger {
+    pid: usize,
+    cid: u32,
+    turn: u32,
+    valid: bool,
+    credits: BTreeMap<Name, f64>,
+}
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -1317,6 +1346,11 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// Wonder-prerequisite credits for the city whose production menu is
+    /// being scored, rebuilt when the (player, city, turn) key moves on. The
+    /// menu scores every candidate consecutively, so one entry is enough;
+    /// `RefCell` for the same reason as `settlement_atlas`.
+    wonder_reach: RefCell<WonderReachLedger>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -2350,6 +2384,17 @@ pub struct AdvancedAi {
     /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
     /// written for.
     pub live_wonder_race: bool,
+    /// Price a wonder's missing prerequisites with a share of the wonder's
+    /// own production score, so a valued wonder the city cannot yet start
+    /// pulls its Library, Temple or Campus up the build order instead of
+    /// waiting for them to arrive by accident. The census behind #2061 found
+    /// the binding constraint on most lanes' wonders is the prerequisite
+    /// chain, not the valuation: `can_produce` never offers what the city
+    /// never qualified for. Scored through the `Item::Wonder` arm itself, so
+    /// a wonder the arm refuses earns its prerequisites nothing. Off by
+    /// default; evaluator arm `advanced_wonder_reach`.
+    /// See `wonder_reach_credit`.
+    pub wonder_prereq_reach: bool,
     /// Build the wonders the chosen victory actually needs.
     ///
     /// The wonder arm of `production_value` prices no `spec.effects` at all
@@ -3338,6 +3383,26 @@ pub struct AdvancedAi {
     /// means what its paired measurement says.
     joint_tactics_forced_off: bool,
 
+    /// Admit the friendly-volley extension without the rest of the closed
+    /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
+    /// and left production with that bundle's removal (#1589, +38 for the
+    /// composite) — but a composite gate never prices its parts, so this flag
+    /// reaches the one part this goal is about: a force finishing a defender
+    /// together.  Off by default and off for the frozen anchors; the
+    /// `advanced_coordinated_finish` evaluator arm is the treatment that
+    /// prices it against stock `advanced`.
+    pub coordinated_finish: bool,
+
+    /// Extend the friendly volley to a pair of finishers when no lone
+    /// teammate can complete the kill, so an enemy two sound blows from death
+    /// is still a group target for 2–3 units.  Inert wherever the volley
+    /// layer itself is off (`tactical_strategy` and [`Self::coordinated_finish`]
+    /// both unset — Basic, the frozen `advanced_v1` anchor, and today's stock
+    /// production controller); the `advanced_single_finisher_volley`
+    /// evaluator arm withholds only this chain from the treatment to price it
+    /// separately.
+    pub volley_chain: bool,
+
     /// Units this turn's joint plan already reached a decision for, including
     /// the ones it decided should not attack. Their greedy attack selection is
     /// suppressed so a declined trade is not immediately re-taken by the
@@ -3595,7 +3660,7 @@ impl Default for AdvancedAi {
 /// repository. `docs/ROADMAP.md` objective 5 names that as the case splitting
 /// does not answer and moving the data out does. See `advanced/treatments.rs`.
 mod treatments;
-pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_TREATMENTS};
+pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///
@@ -3735,6 +3800,16 @@ impl AdvancedAi {
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
+        // The base military picker drops attack candidates the engine would
+        // refuse before scoring them, so a doomed order cannot shadow a legal
+        // one (519 authoritative refusals in one censused deployment game,
+        // all from that loop — see `BasicAi::legal_tactical_candidates`).
+        // This is candidate truthfulness, not a war capability: the war-half
+        // history above is about spending MORE on fighting, this is about not
+        // proposing orders `Game::apply` refuses. The frozen identities keep
+        // the historical candidate set; `advanced_unscreened_candidates` in
+        // `src/elo.rs` withholds it so the axis stays measurable.
+        ai.base.legal_tactical_candidates = true;
         // ⚠ The production floor of six was REMOVED on 2026-08-10. It did
         // exactly what it promised — +2.1 cities, +20 population, +6.5
         // districts, +62 terminal score — and paid about **thirty Elo of wins**
@@ -4060,6 +4135,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            wonder_reach: RefCell::new(WonderReachLedger::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -4132,6 +4208,7 @@ impl AdvancedAi {
             governor_in_recovery: true,
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
+            wonder_prereq_reach: false,
             strategic_wonders: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -4189,6 +4266,8 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
+            coordinated_finish: false,
+            volley_chain: true,
             tactics_resolved: BTreeSet::new(),
             tactics_withdrawn: BTreeSet::new(),
             tactics_plans: 0,
@@ -7933,6 +8012,96 @@ impl AdvancedAi {
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
     fn live_wonder_race_lanes(city_count: usize) -> usize {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
+    /// What producing `item` is worth purely as a step toward wonders this
+    /// city cannot start yet: the `wonder_prereq_reach` treatment. Zero for
+    /// anything but a Building or District, and zero whenever the
+    /// `Item::Wonder` arm itself would refuse the wonder — the credit is a
+    /// share of that arm's own score, so every lane gate, era gate and
+    /// completion gate the arm applies keeps applying here. Returned in the
+    /// same normalized units as `production_value`'s result and added after
+    /// its normalizer: the credit is the wonder's discounted score, not a
+    /// property of the carrier's own cost.
+    fn wonder_reach_credit(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> f64 {
+        if !matches!(item, Item::Building { .. } | Item::District { .. }) {
+            return 0.0;
+        }
+        let credit_for = |credits: &BTreeMap<Name, f64>| {
+            credits
+                .iter()
+                .filter(|(family, _)| g.item_satisfies_wonder_prerequisite(item, **family))
+                .map(|(_, credit)| *credit)
+                .fold(0.0, f64::max)
+        };
+        {
+            let ledger = self.wonder_reach.borrow();
+            if ledger.valid && ledger.pid == pid && ledger.cid == cid && ledger.turn == g.turn {
+                return credit_for(&ledger.credits);
+            }
+        }
+        let credits = self.wonder_reach_credits(g, pid, cid, plan, counts);
+        let credit = credit_for(&credits);
+        *self.wonder_reach.borrow_mut() = WonderReachLedger {
+            pid,
+            cid,
+            turn: g.turn,
+            valid: true,
+            credits,
+        };
+        credit
+    }
+
+    /// Build one city's ledger: for every wonder blocked here only by
+    /// missing buildings/districts, score the wonder through the ordinary
+    /// `Item::Wonder` arm as if it had ground, and credit each missing
+    /// prerequisite family with `WONDER_REACH_SHARE` of that score split
+    /// across the missing steps. Families keep the best wonder they unblock,
+    /// not a sum — finishing a Library does not finish two wonders.
+    fn wonder_reach_credits(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> BTreeMap<Name, f64> {
+        let mut credits = BTreeMap::new();
+        let city_pos = g.cities[&cid].pos;
+        for wonder in g.rules.wonders.keys() {
+            let Some(missing) = g.wonder_missing_prerequisites(cid, wonder.as_str()) else {
+                continue;
+            };
+            if missing.is_empty() || missing.len() > WONDER_REACH_MAX_MISSING {
+                continue;
+            }
+            let hypothetical = Item::Wonder {
+                wonder: *wonder,
+                pos: city_pos,
+            };
+            let score = self.production_value(g, pid, cid, &hypothetical, plan, counts);
+            if score <= 0.0 {
+                continue;
+            }
+            let share = score * WONDER_REACH_SHARE / missing.len() as f64;
+            for group in missing {
+                for family in group {
+                    let entry = credits.entry(family).or_insert(0.0);
+                    if share > *entry {
+                        *entry = share;
+                    }
+                }
+            }
+        }
+        credits
     }
 
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
@@ -19064,7 +19233,17 @@ impl AdvancedAi {
         } else {
             1.0
         };
-        completion_discount * raw / (7.0 + turns.max(1.0))
+        let normalized = completion_discount * raw / (7.0 + turns.max(1.0));
+        if !self.wonder_prereq_reach {
+            return normalized;
+        }
+        // Added after the normalizer, in its units: the credit is a share of
+        // a wonder's already-normalized score, not a yield of the carrier —
+        // dividing it again by the carrier's build time would make a cheap
+        // Monument a better step toward the Great Library than the Library
+        // it requires. Refusals returned above and never reach this line, so
+        // a vetoed carrier cannot be resurrected by the wonder behind it.
+        normalized + self.wonder_reach_credit(g, pid, cid, item, plan, counts)
     }
 
     fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
@@ -24620,14 +24799,19 @@ impl AdvancedAi {
         )
     }
 
-    /// Find a direct, two-unit kill that the normal per-unit evaluator cannot
+    /// Find a direct group kill that the normal per-unit evaluator cannot
     /// see as one line.  The first unit still needs to choose a sound exact
-    /// attack; this only credits it when a surviving teammate in the same
-    /// engaged force can legally remove that *same* defender immediately.
+    /// attack; this only credits it when surviving teammates in the same
+    /// engaged force can legally remove that *same* defender immediately —
+    /// one finisher when one blow is enough, and behind [`Self::volley_chain`]
+    /// a pair of finishers when the defender needs three blows in all.  A
+    /// single finisher is always preferred: the chain is searched only when
+    /// no lone teammate can complete the kill, so the deeper case never
+    /// spends a third unit a second could have saved.
     ///
     /// The bounded extension deliberately excludes movement, cities, and
     /// quiet follow-ups.  It fixes the harmful ordering assumption that the
-    /// enemy replies between two friendly shots without reopening the removed
+    /// enemy replies between friendly shots without reopening the removed
     /// portfolio search or its performance cost.
     fn friendly_volley_extension(
         &self,
@@ -24638,7 +24822,7 @@ impl AdvancedAi {
         group: &ForceGroup,
         plan: &StrategicPlan,
     ) -> Option<(f64, f64)> {
-        if !self.base.tactical_strategy
+        if !(self.base.tactical_strategy || self.coordinated_finish)
             || group.posture != ForcePosture::Engage
             || group.units.len() < 2
         {
@@ -24710,14 +24894,161 @@ impl AdvancedAi {
                 best = Some((finish_score, finisher, order, after_second));
             }
         }
-        let (_, finisher, _, after_second) = best?;
+        if let Some((_, finisher, _, after_second)) = best {
+            let reply = Self::forcing_reply_penalty_from_position(
+                self.work_pool.as_ref(),
+                &after_second,
+                pid,
+                &[uid, finisher],
+            );
+            return Some((
+                self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+                reply,
+            ));
+        }
+        if !self.volley_chain {
+            return None;
+        }
+
+        // No lone teammate can finish the wounded defender — search a bounded
+        // pair of finishers instead, so an enemy two sound blows from death is
+        // still a group target.  The same enumeration as above supplies the
+        // middle blow; each candidate middle blow that leaves the defender
+        // standing is extended by the teammates who can then remove it.  Both
+        // blows must clear their own exact-exchange bar, so the chain changes
+        // which target the force converges on, not how cheaply it will trade.
+        let followups: Vec<Action> = Self::forcing_attacks_to(&after_first, pid, target, None)
+            .into_iter()
+            .filter(|followup| match followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. } => {
+                    *unit != uid && group.units.contains(unit)
+                }
+                _ => false,
+            })
+            .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
+            .collect();
+        // A healthy defender pays this branch nothing: unless the two
+        // heaviest remaining blows can plausibly cover the survivor's health
+        // at the engine's mean damage — with headroom for the roll spread and
+        // for modifiers this arithmetic does not see — there is no three-blow
+        // kill to find and the clone enumeration below never starts.
+        {
+            let survivor = &after_first.units[&victim];
+            let defence = crate::game::effective_strength(
+                after_first.unit_strength(survivor, true),
+                survivor.hp,
+            );
+            let mut mean_blows: Vec<f64> = followups
+                .iter()
+                .filter_map(|followup| {
+                    let (shooter, ranged) = match followup {
+                        Action::Attack { unit, .. } => (*unit, false),
+                        Action::Ranged { unit, .. } => (*unit, true),
+                        _ => return None,
+                    };
+                    let attacker = after_first.units.get(&shooter)?;
+                    let attack = if ranged {
+                        after_first.unit_ranged_attack_strength(attacker)
+                    } else {
+                        after_first.unit_strength(attacker, false)
+                    };
+                    let attack = crate::game::effective_strength(attack, attacker.hp);
+                    Some((30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0))
+                })
+                .collect();
+            mean_blows.sort_by(|a, b| b.total_cmp(a));
+            let heaviest_pair: f64 = mean_blows.iter().take(2).sum();
+            if heaviest_pair * 1.5 < survivor.hp as f64 {
+                return None;
+            }
+        }
+        // Score, then (middle, middle order, finisher, finisher order) as the
+        // deterministic tie-break, then the finished position the reply is
+        // priced against.
+        type ChainCandidate = (f64, (u32, usize, u32, usize), Game);
+        let mut best_chain: Option<ChainCandidate> = None;
+        for (order, followup) in followups.into_iter().enumerate() {
+            let (middle, ranged) = match &followup {
+                Action::Attack { unit, .. } => (*unit, false),
+                Action::Ranged { unit, .. } => (*unit, true),
+                _ => unreachable!("friendly volley only retains direct ground attacks"),
+            };
+            let mut after_second = after_first.speculative_clone();
+            if after_second.apply(pid, &followup).is_err()
+                || !after_second.units.contains_key(&victim)
+            {
+                continue;
+            }
+            let middle_score = Self::tactical_attack_value_owned(
+                after_first.speculative_clone(),
+                pid,
+                middle,
+                &followup,
+                plan,
+            ) - self.base.attack_threshold(&after_first, middle, target)
+                + self
+                    .base
+                    .tactical_action_bonus(&after_first, middle, target, ranged);
+            if !middle_score.is_finite() || middle_score <= 0.0 {
+                continue;
+            }
+            for (last_order, last) in Self::forcing_attacks_to(&after_second, pid, target, None)
+                .into_iter()
+                .filter_map(|last| match &last {
+                    Action::Attack { unit, .. } | Action::Ranged { unit, .. }
+                        if *unit != uid && *unit != middle && group.units.contains(unit) =>
+                    {
+                        Some(last)
+                    }
+                    _ => None,
+                })
+                .take(TACTICAL_VOLLEY_SECOND_FINISHER_LIMIT)
+                .enumerate()
+            {
+                let (finisher, ranged) = match &last {
+                    Action::Attack { unit, .. } => (*unit, false),
+                    Action::Ranged { unit, .. } => (*unit, true),
+                    _ => unreachable!("friendly volley only retains direct ground attacks"),
+                };
+                let mut after_third = after_second.speculative_clone();
+                if after_third.apply(pid, &last).is_err() || after_third.units.contains_key(&victim)
+                {
+                    continue;
+                }
+                let finish_score = Self::tactical_attack_value_owned(
+                    after_second.speculative_clone(),
+                    pid,
+                    finisher,
+                    &last,
+                    plan,
+                ) - self.base.attack_threshold(&after_second, finisher, target)
+                    + self
+                        .base
+                        .tactical_action_bonus(&after_second, finisher, target, ranged);
+                if !finish_score.is_finite() || finish_score <= 0.0 {
+                    continue;
+                }
+                let score = middle_score + finish_score;
+                let key = (middle, order, finisher, last_order);
+                let better = best_chain.as_ref().is_none_or(|(old, old_key, _)| {
+                    score.total_cmp(old).is_gt() || (score.total_cmp(old).is_eq() && key < *old_key)
+                });
+                if better {
+                    best_chain = Some((score, key, after_third));
+                }
+            }
+        }
+        let (_, (middle, _, finisher, _), after_third) = best_chain?;
         let reply = Self::forcing_reply_penalty_from_position(
             self.work_pool.as_ref(),
-            &after_second,
+            &after_third,
             pid,
-            &[uid, finisher],
+            &[uid, middle, finisher],
         );
-        Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply))
+        Some((
+            self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+            reply,
+        ))
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -25974,7 +26305,7 @@ impl AdvancedAi {
         // teammate's finishing blow.  Revisit only a few strongest candidates
         // with the bounded friendly-volley extension, then replace that reply
         // price with the exact reply after both friendly actions.
-        if self.base.tactical_strategy
+        if (self.base.tactical_strategy || self.coordinated_finish)
             && group
                 .as_ref()
                 .is_some_and(|orders| orders.posture == ForcePosture::Engage)

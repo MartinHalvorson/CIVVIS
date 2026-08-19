@@ -255,6 +255,11 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_every_lane",
     "advanced_builder_survey",
     "advanced_unit_efficiency",
+    // A wonder's missing prerequisite buildings/districts are credited with a
+    // share of the wonder's own production score, so valued wonders become
+    // reachable instead of never offered. Reserved matrix seed 32000000; one
+    // pre-registered run.
+    "advanced_wonder_reach",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -278,10 +283,13 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_hut_collection",
     "advanced_without_explore_commit",
     "advanced_without_village_seeking",
+    "advanced_without_legal_candidates",
     "advanced_price_suzerainty",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
+    "advanced_coordinated_finish",
+    "advanced_single_finisher_volley",
     "strategic_cheap",
     "strategic_score",
     "strategic_doctrine",
@@ -847,6 +855,8 @@ define_arm_kinds! {
     AdvancedExpansionPayback => "advanced_expansion_payback",
     AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedCoordinatedFinish => "advanced_coordinated_finish",
+    AdvancedSingleFinisherVolley => "advanced_single_finisher_volley",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
@@ -894,6 +904,7 @@ define_arm_kinds! {
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
+    AdvancedWonderReach => "advanced_wonder_reach",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -907,6 +918,7 @@ define_arm_kinds! {
     AdvancedWithoutHutCollection => "advanced_without_hut_collection",
     AdvancedWithoutExploreCommit => "advanced_without_explore_commit",
     AdvancedWithoutVillageSeeking => "advanced_without_village_seeking",
+    AdvancedWithoutLegalCandidates => "advanced_without_legal_candidates",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -3267,6 +3279,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_hut_collection();
             Box::new(ai)
         }
+        // Production with the base military picker's engine-legality screen
+        // withheld: attack candidates are once again proposed on distance
+        // alone, so a refused order can win the argmax and shadow the legal
+        // runner-up (519 authoritative refusals in one censused deployment
+        // game). The withholding twin for
+        // `BasicAi::legal_tactical_candidates`, shipped on in
+        // `promoted_policy_envoy`.
+        "advanced_without_legal_candidates" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_legal_tactical_candidates();
+            Box::new(ai)
+        }
         "advanced_without_explore_commit" => {
             let mut ai = AdvancedAi::new();
             ai.disable_explore_commit();
@@ -3326,6 +3350,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_fortify_idle_units" => {
             let mut ai = AdvancedAi::new();
             ai.enable_fortify_idle_units();
+            Box::new(ai)
+        }
+        // A wonder blocked only by missing buildings/districts prices those
+        // prerequisites with a share of its own wonder-arm score, so the
+        // build order can walk toward wonders it values instead of waiting
+        // to qualify by accident. Reserved matrix seed 32000000.
+        "advanced_wonder_reach" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_wonder_prereq_reach();
             Box::new(ai)
         }
         // Price the promoted open-water rule by taking it back out. The
@@ -3531,6 +3564,28 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_joint_tactics" => {
             let mut ai = AdvancedAi::new();
             ai.joint_tactics = true;
+            Box::new(ai)
+        }
+        // The friendly-volley extension on the production controller without
+        // the rest of the closed war-half bundle: an engaged force credits a
+        // setup shot whose defender a teammate — or, when no lone teammate
+        // can, a pair of them — then finishes. Paired against `advanced` this
+        // prices coordinated finishing and nothing else; the bundle the
+        // volley used to travel in was removed on a composite gate (#1589)
+        // that never priced this part.
+        "advanced_coordinated_finish" => {
+            let mut ai = AdvancedAi::new();
+            ai.coordinated_finish = true;
+            Box::new(ai)
+        }
+        // The treatment above with the two-finisher chain withheld: a volley
+        // only credits a setup shot when ONE teammate can finish the
+        // defender. Paired against `advanced_coordinated_finish` this
+        // isolates the three-blow group kill and nothing else.
+        "advanced_single_finisher_volley" => {
+            let mut ai = AdvancedAi::new();
+            ai.coordinated_finish = true;
+            ai.volley_chain = false;
             Box::new(ai)
         }
         // The denial ablation on the weights the deployment actually plays.
@@ -4443,6 +4498,8 @@ impl ArmKind {
             Self::AdvancedExpansionPayback => &["expansion-payback"],
             Self::AdvancedCoupledExpansion => &["coupled-expansion"],
             Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedCoordinatedFinish => &["coordinated-finish"],
+            Self::AdvancedSingleFinisherVolley => &["coordinated-finish", "single-finisher-volley"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
@@ -4490,6 +4547,7 @@ impl ArmKind {
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
+            Self::AdvancedWonderReach => &["wonder-prereq-reach"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4503,6 +4561,7 @@ impl ArmKind {
             Self::AdvancedWithoutHutCollection => &["hut-collection-withheld"],
             Self::AdvancedWithoutExploreCommit => &["explore-commit-withheld"],
             Self::AdvancedWithoutVillageSeeking => &["village-seeking-withheld"],
+            Self::AdvancedWithoutLegalCandidates => &["legal-candidate-screen-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
@@ -5001,6 +5060,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
+        "advanced_wonder_reach" => (Vec::new(), "advanced_wonder_reach"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -5013,6 +5073,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_governor_recovery" => (Vec::new(), "advanced_without_governor_recovery"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_hut_collection" => (Vec::new(), "advanced_without_hut_collection"),
+        "advanced_without_legal_candidates" => (Vec::new(), "advanced_without_legal_candidates"),
         "advanced_without_explore_commit" => (Vec::new(), "advanced_without_explore_commit"),
         "advanced_without_village_seeking" => (Vec::new(), "advanced_without_village_seeking"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
@@ -5020,6 +5081,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
         "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
+        "advanced_coordinated_finish" => (Vec::new(), "advanced_coordinated_finish"),
+        "advanced_single_finisher_volley" => (Vec::new(), "advanced_single_finisher_volley"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -6176,6 +6239,82 @@ mod tests {
     /// and an hour later `dc6f661e` — "Promote strategic_deep: pre-registered
     /// PASS at 300 maps" — added it to `BUILTIN_AIS` and did not take the first
     /// entry out. Nothing looked, because nothing was looking.
+    /// ⚠⚠ TWO CHANGES CLAIMED THE SAME LEDGER VERSION ON THE SAME EVENING.
+    ///
+    /// #2079 and #2070 both re-pinned the frozen anchor and both set
+    /// `ELO_PROTOCOL_VERSION = 15`, for two independent changes to what
+    /// `advanced_v1` plays. `collaboration-policy` caught the *line* collision
+    /// because they edit the same lines — but only because they do. Nothing
+    /// checked the thing that actually matters: that a version number names one
+    /// ruleset.
+    ///
+    /// The anchor pins are self-guarding, because
+    /// `advanced_v1_plays_the_same_game_it_always_did` recomputes them from the
+    /// merged tree and a stale value fails. The version is not: a merge that
+    /// keeps either side's `15` is green, and two different rulesets then share
+    /// a ledger identity — which is the one thing the version exists to
+    /// prevent.
+    ///
+    /// So the changelog above this constant is checked instead. Its entries are
+    /// the record of what each version means, and three properties make a
+    /// duplicate impossible to land quietly: every version is named once, the
+    /// numbering has no gaps, and the newest entry is the version the code
+    /// actually reports.
+    #[test]
+    fn every_ledger_version_is_named_exactly_once_and_the_newest_is_current() {
+        let source = include_str!("elo.rs");
+        let versions: Vec<u32> = source
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("/// **v")?
+                    .split_once(' ')
+                    .map(|(number, _)| number)
+                    .and_then(|number| number.parse().ok())
+            })
+            .collect();
+        // A census that reports nothing is a broken census, not an empty
+        // changelog: this constant has carried its history since v5.
+        assert!(
+            versions.len() >= 10,
+            "found only {} version entries; the scrape broke rather than \
+             finding an undocumented ledger",
+            versions.len()
+        );
+
+        let mut seen: BTreeMap<u32, usize> = BTreeMap::new();
+        for version in &versions {
+            *seen.entry(*version).or_default() += 1;
+        }
+        let twice: Vec<u32> = seen
+            .iter()
+            .filter(|(_, count)| **count > 1)
+            .map(|(version, _)| *version)
+            .collect();
+        assert!(
+            twice.is_empty(),
+            "these ledger versions are documented more than once, so two rulesets share one \
+             identity and rows under them cannot be told apart: {twice:?}"
+        );
+
+        let lowest = *seen.keys().next().expect("at least one version");
+        let highest = *seen.keys().next_back().expect("at least one version");
+        let missing: Vec<u32> = (lowest..=highest)
+            .filter(|v| !seen.contains_key(v))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these ledger versions are between the first and last documented one and are \
+             described nowhere, so what changed under them is unrecoverable: {missing:?}"
+        );
+
+        assert_eq!(
+            highest, ELO_PROTOCOL_VERSION,
+            "the newest documented version is v{highest} and the code reports \
+             v{ELO_PROTOCOL_VERSION}; a bump without an entry leaves a ruleset nobody can \
+             describe, and an entry without a bump leaves rows filed under the old one"
+        );
+    }
+
     #[test]
     fn no_agent_name_is_registered_twice() {
         let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -6367,6 +6506,8 @@ mod tests {
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
+                "advanced_coordinated_finish",
+                "advanced_single_finisher_volley",
                 "advanced",
                 "fog_honest",
                 "advanced_belief_pressure",
@@ -6445,6 +6586,7 @@ mod tests {
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
+                "advanced_wonder_reach",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
@@ -6456,6 +6598,7 @@ mod tests {
                 "advanced_without_builder_floor",
                 "advanced_without_settler_deadline",
                 "advanced_without_hut_collection",
+                "advanced_without_legal_candidates",
                 "advanced_without_explore_commit",
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
