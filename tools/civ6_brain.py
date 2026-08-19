@@ -50,13 +50,35 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
     run TEXT NOT NULL, turn INTEGER NOT NULL, seq INTEGER NOT NULL,
     kind TEXT NOT NULL, subject INTEGER, verb TEXT, x INTEGER, y INTEGER,
+    frame INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (run, turn, seq)
 );
 CREATE TABLE IF NOT EXISTS ready (
     run TEXT NOT NULL, turn INTEGER NOT NULL, count INTEGER NOT NULL,
+    frame INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (run, turn)
 );
 """
+
+# A mid-turn combat frame's rows share the turn's primary key space with the
+# opening board's; frame N's rows sit at seq FRAME_SEQ_STRIDE*N + i, so a
+# database created before the `frame` column existed (see `migrate_frames`)
+# keeps its (run, turn, seq) key and never collides.
+FRAME_SEQ_STRIDE = 10_000
+
+
+def migrate_frames(conn: sqlite3.Connection) -> None:
+    """Add the `frame` column to a database that predates combat frames.
+
+    `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a resumed
+    run's database would lack the column the mod filters on. ALTER TABLE ADD
+    COLUMN with a default is the whole migration; the primary keys stay.
+    """
+    for table in ("orders", "ready"):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "frame" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN frame INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
 
 # A fixed, boring sequence whose only job is to prove an order was actuated.
 STUB_RESEARCH = ["TECH_ANIMAL_HUSBANDRY", "TECH_MINING", "TECH_BRONZE_WORKING"]
@@ -69,6 +91,7 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     conn.commit()
+    migrate_frames(conn)
     return conn
 
 
@@ -631,18 +654,28 @@ class Decider:
 
 
 def write_turn(conn: sqlite3.Connection, run: str, turn: int,
-               rows: list[tuple]) -> int:
-    conn.execute("DELETE FROM orders WHERE run = ? AND turn = ?", (run, turn))
+               rows: list[tuple], frame: int = 0) -> int:
+    """Write one answer — the turn's opening board (frame 0) or a mid-turn
+    combat frame's (frame N) — and signal it complete.
+
+    A frame's rows replace only that frame's; the `ready` row is one per turn
+    and names the newest frame answered, which is the one the mod is waiting
+    on (an earlier frame's answer was consumed before the next frame opened).
+    """
+    conn.execute("DELETE FROM orders WHERE run = ? AND turn = ? AND frame = ?",
+                 (run, turn, frame))
+    base = FRAME_SEQ_STRIDE * frame
     conn.executemany(
-        "INSERT OR REPLACE INTO orders (run, turn, seq, kind, subject, verb, x, y) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        [(run, turn, i, k, s, v, x, y) for i, (k, s, v, x, y) in enumerate(rows)],
+        "INSERT OR REPLACE INTO orders (run, turn, seq, kind, subject, verb, x, y, frame) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        [(run, turn, base + i, k, s, v, x, y, frame)
+         for i, (k, s, v, x, y) in enumerate(rows)],
     )
     conn.commit()
     # LAST, and in its own commit: this is the mod's signal that the turn above is
     # complete. Any other order lets a partial turn be actuated.
-    conn.execute("INSERT OR REPLACE INTO ready (run, turn, count) VALUES (?,?,?)",
-                 (run, turn, len(rows)))
+    conn.execute("INSERT OR REPLACE INTO ready (run, turn, count, frame) VALUES (?,?,?,?)",
+                 (run, turn, len(rows), frame))
     conn.commit()
     return len(rows)
 
@@ -946,6 +979,9 @@ def main() -> int:
     # already-served turns.  That makes a restarted brain retain the Firaxis history
     # the fresh-board decider necessarily loses.
     seen_governments: set[str] = set()
+    # (turn, frame) pairs already answered this session; frames are never
+    # recovered across a restart — a frame's board is gone with the turn.
+    served_frames: set[tuple[int, int]] = set()
     while time.time() < deadline:
         if not events.exists():
             time.sleep(0.5)
@@ -970,7 +1006,12 @@ def main() -> int:
             if current_government is not None and str(current_government).strip():
                 seen_governments.add(str(current_government).strip())
             turn = int(event.get("turn", -1))
-            if turn < 0 or turn in served:
+            # A mid-turn combat frame re-plans the same turn on a newer board:
+            # frame 0 is the opening board and is served once; frame N is
+            # served once too, keyed apart, and never counts as the turn's
+            # opening answer.
+            frame = int(event.get("frame", 0) or 0)
+            if turn < 0 or (frame == 0 and turn in served) or (frame > 0 and (turn, frame) in served_frames):
                 continue
             runtime = updater.take_ready() if updater is not None else None
             if runtime is not None:
@@ -1004,7 +1045,10 @@ def main() -> int:
                     if decider is not None:
                         decider.use_runtime(binary)
                     updater.start()
-            served.add(turn)
+            if frame == 0:
+                served.add(turn)
+            else:
+                served_frames.add((turn, frame))
             started = time.time()
             if args.mode == "stub":
                 rows = stub_orders(event)
@@ -1039,8 +1083,8 @@ def main() -> int:
             if len(rows) != before:
                 print(f"[brain] turn {turn}: bisect dropped {before - len(rows)} "
                       f"of {before} orders", flush=True)
-            count = write_turn(conn, run_tag, turn, rows)
-            print(f"[brain] turn {turn}: {count} orders in "
+            count = write_turn(conn, run_tag, turn, rows, frame)
+            print(f"[brain] turn {turn}{f' frame {frame}' if frame else ''}: {count} orders in "
                   f"{time.time() - started:.2f}s", flush=True)
         time.sleep(0.1)
     if decider is not None:

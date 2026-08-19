@@ -145,6 +145,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
     "live_without_idle_walkers_close_the_pipeline",
+    "live_without_barbarian_walls_one_tier",
     "live_without_settler_guard_holds",
     "live_without_expansion_pantheon",
     "live_without_expansion_hall",
@@ -422,6 +423,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "civilian-rescue",
     "district-building-chain",
     "idle-walkers-close-the-pipeline",
+    "barbarian-walls-one-tier",
     "settler-guard-holds",
     "expansion-pantheon",
     "expansion-hall",
@@ -630,6 +632,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -698,6 +701,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -856,6 +860,7 @@ define_arm_kinds! {
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     LiveWithoutIdleWalkersCloseThePipeline => "live_without_idle_walkers_close_the_pipeline",
+    LiveWithoutBarbarianWallsOneTier => "live_without_barbarian_walls_one_tier",
     LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
     LiveWithoutExpansionHall => "live_without_expansion_hall",
@@ -4472,6 +4477,7 @@ impl ArmKind {
             Self::LiveWithoutIdleWalkersCloseThePipeline => {
                 live_without("idle-walkers-close-the-pipeline")
             }
+            Self::LiveWithoutBarbarianWallsOneTier => live_without("barbarian-walls-one-tier"),
             Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
             Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
