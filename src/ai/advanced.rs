@@ -22259,10 +22259,12 @@ impl AdvancedAi {
                 // that caught it had to cross-check orders.sqlite to learn
                 // the why-log cannot be trusted on foundings. A Decision
                 // line now asserts an applied action, never an intention.
+                // ⚠ Priced BEFORE the apply, for the reason in the city branch.
+                let worth = self.settle_value(g, pid, current);
                 let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
                 if founded {
                     think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
-                           "the site is worth {:.1}", self.settle_value(g, pid, current); current);
+                           "the site is worth {:.1}", worth; current);
                 } else {
                     think!(self.journal(), Expansion, Detail, "Founding refused at {current:?}";
                            "the engine would not take the capital here"; current);
@@ -22504,12 +22506,27 @@ impl AdvancedAi {
                 return false;
             }
             self.settler_targets.remove(&uid);
-            // ⚠ Journal AFTER the engine answers; see the capital branch.
+            // ⚠ Price the site BEFORE the engine answers. `settle_value` reads
+            // the ground the settler is standing on, and founding changes that
+            // ground: the growth forecast that carries `growth_readiness` now
+            // runs over a worked city centre. Measured on live Chieftain run
+            // `civvis-20260819T041034Z`, the value logged after the apply is
+            // ANTI-CORRELATED with the city it became — Ravenna (-3.1) and
+            // Aquileia (-1.4) are the seat's two best non-capital cities at
+            // 14.2 and 13.1 science, while the one site that priced positive
+            // (+2.2) became Lugdunum at 2.25. A study reading those numbers
+            // concludes the seat settles bad ground and is wrong; the wide
+            // opening is measured (#554: 23.0% -> 52.3% win rate) and being
+            // picky about sites cost 41 Elo as `city_target_floor`.
+            //
+            // The APPLY still gates the line — see the capital branch: a
+            // Decision asserts an applied action, never an intention.
+            let worth = self.settle_value(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
                 think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
                        "the site is worth {:.1}; the empire holds {} cities and wants {}",
-                       self.settle_value(g, pid, current),
+                       worth,
                        g.player_city_ids(pid).len(),
                        self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             } else {
