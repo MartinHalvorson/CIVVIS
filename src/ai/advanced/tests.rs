@@ -7079,7 +7079,11 @@ fn live_nobel_peace_proposes_an_alliance_without_waiting_for_its_cadence() {
     };
 
     let (mut ordinary, plan) = board();
-    assert_ne!(ordinary.turn % 12, 0, "the fixture must miss the usual cadence");
+    assert_ne!(
+        ordinary.turn % 12,
+        0,
+        "the fixture must miss the usual cadence"
+    );
     propose(&mut ordinary, &plan);
     assert!(
         ordinary.pending_deals.is_empty(),
