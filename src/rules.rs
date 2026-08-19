@@ -3349,9 +3349,14 @@ mod tests {
         // score, and is unlocked by the host's World Congress effect rather
         // than a tree node. Native CIVVIS games do not surface it; live
         // mirrors do only while the authoritative tracker names World Games.
+        // Moved again by the real Gathering Storm International Space Station
+        // project. `PROJECT_TRAIN_ASTRONAUTS` costs 200 Production in a
+        // Spaceport, grants 30 competition score, and follows the same
+        // host-only availability rule while the authoritative tracker names
+        // the Space Station competition.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:a5f2fb4757d83b55"
+            "fnv1a64:277427216f052d8b"
         );
     }
 
@@ -3996,7 +4001,7 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 26);
+        assert_eq!(rules.projects.len(), 27);
         let athletes = rules
             .projects
             .get(&crate::name!("train_athletes"))
@@ -4008,6 +4013,18 @@ mod tests {
         );
         assert_eq!(athletes.competition_score, 50.0);
         assert!(athletes.repeatable);
+        let astronauts = rules
+            .projects
+            .get(&crate::name!("train_astronauts"))
+            .expect("the Gathering Storm International Space Station project is modeled");
+        assert_eq!(astronauts.cost, 200.0);
+        assert_eq!(astronauts.district.as_deref(), Some("spaceport"));
+        assert_eq!(
+            astronauts.host_competition.as_deref(),
+            Some("EMERGENCY_SPACE_STATION")
+        );
+        assert_eq!(astronauts.competition_score, 30.0);
+        assert!(astronauts.repeatable);
         // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.
