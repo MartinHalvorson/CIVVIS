@@ -5054,6 +5054,89 @@ fn live_nobel_peace_prices_monarchy_renaissance_wall_favor() {
     );
 }
 
+/// Nobel Peace scores Favor generated during the competition. A city-state
+/// suzerainty is a +1 Favor-per-turn source, so when the free Envoys already
+/// in hand can secure one this turn it must beat a normally better-aligned
+/// city-state. Other Nobel types and a Peace clock too short for next-turn
+/// Favor retain the ordinary allocation.
+#[test]
+fn live_nobel_peace_envoys_price_an_affordable_suzerainty_favor_stream() {
+    let board = || {
+        let mut game = Game::new_full(2, 32, 24, 5_419, 250, 2, false);
+        let minors: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert_eq!(minors.len(), 2, "the fixture needs two city-states");
+        for minor in minors.iter().copied() {
+            game.record_contact(0, minor);
+        }
+        // Contact may grant its own discovery Envoy. This test prices only
+        // the three Envoys the player is choosing between now.
+        game.players[0].envoys.clear();
+        game.players[0].envoys_free = 3;
+        let peace_target = minors[0];
+        let science_target = minors[1];
+        game.players[peace_target].civ = "Cahokia".to_string();
+        game.players[science_target].civ = "Hattusa".to_string();
+        // Hattusa is the ordinary Science favorite but eleven Envoys away
+        // from a takeover. Cahokia is the one current three-Envoy route to a
+        // new Favor source, so a live Peace clock must change the choice.
+        game.players[1].envoys = vec![(science_target, 10)];
+        (game, peace_target, science_target)
+    };
+
+    let (mut ordinary, peace_target, science_target) = board();
+    AdvancedAi::new().advanced_envoys(&mut ordinary, 0, GrandStrategy::Science, None);
+    assert_eq!(ordinary.envoys_at(0, peace_target), 0);
+    assert_eq!(ordinary.envoys_at(0, science_target), 3);
+
+    let (mut wrong_nobel, peace_target, science_target) = board();
+    wrong_nobel.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: wrong_nobel.turn + 30,
+        ours: 0.0,
+        leader: 30.0,
+    }]);
+    AdvancedAi::new().advanced_envoys(&mut wrong_nobel, 0, GrandStrategy::Science, None);
+    assert_eq!(wrong_nobel.envoys_at(0, peace_target), 0);
+    assert_eq!(wrong_nobel.envoys_at(0, science_target), 3);
+
+    let (mut peace, peace_target, science_target) = board();
+    peace.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: peace.turn + 30,
+        ours: 0.0,
+        leader: 30.0,
+    }]);
+    AdvancedAi::new().advanced_envoys(&mut peace, 0, GrandStrategy::Science, None);
+    assert_eq!(
+        peace.envoys_at(0, peace_target),
+        3,
+        "the current pool reaches a live Favor source immediately"
+    );
+    assert_eq!(peace.suzerain_of(peace_target), Some(0));
+    assert_eq!(peace.envoys_at(0, science_target), 0);
+    assert_eq!(peace.players[0].envoys_free, 0);
+
+    let (mut expiring, peace_target, science_target) = board();
+    expiring.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: expiring.turn + 1,
+        ours: 0.0,
+        leader: 30.0,
+    }]);
+    AdvancedAi::new().advanced_envoys(&mut expiring, 0, GrandStrategy::Science, None);
+    assert_eq!(
+        expiring.envoys_at(0, peace_target),
+        0,
+        "a suzerainty whose Favor starts after the clock receives no stale score"
+    );
+    assert_eq!(expiring.envoys_at(0, science_target), 3);
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
