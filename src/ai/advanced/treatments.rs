@@ -161,4 +161,5 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
+    ("apostle_promotion_by_role", "apostle-promotion-by-role", AdvancedAi::enable_apostle_promotion_by_role),
 ];
