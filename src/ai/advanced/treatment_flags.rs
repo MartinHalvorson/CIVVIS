@@ -1070,6 +1070,7 @@ impl AdvancedAi {
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
         self.enable_joint_tactics();
+        self.enable_joint_reach_lines();
         // ⚠ The live seat plays under an assigned lane (`--victory science`),
         // and `victory_denial` stands down entirely for a targeted seat — so
         // five of the twelve runs the seat was LEADING on 2026-08-16/17 ended
@@ -1308,6 +1309,7 @@ impl AdvancedAi {
     pub fn enable_joint_tactics(&mut self) {
         self.joint_tactics = true;
         self.joint_tactics_forced_off = false;
+        self.joint_reach_lines = true;
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -1320,6 +1322,21 @@ impl AdvancedAi {
     pub fn disable_joint_tactics(&mut self) {
         self.joint_tactics = false;
         self.joint_tactics_forced_off = true;
+    }
+
+    /// The joint search's approach lines from the engine's exact reach flood
+    /// (`Game::approach_reach`, `docs/TACTICS.md` §17). On by default wherever
+    /// the joint search runs; this pair exists so the live bridge can price
+    /// the lines by taking them out (`live_without_joint_reach_lines`) and the
+    /// bench can seat the geometric portfolio by name
+    /// (`advanced_joint_tactics_geometric`).
+    pub fn enable_joint_reach_lines(&mut self) {
+        self.joint_reach_lines = true;
+    }
+
+    /// See [`AdvancedAi::enable_joint_reach_lines`].
+    pub fn disable_joint_reach_lines(&mut self) {
+        self.joint_reach_lines = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
