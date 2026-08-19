@@ -1191,3 +1191,12 @@ the paired means on identical seeds.
 The frozen `advanced_v1` anchor never runs the joint search and is untouched;
 the arena `advanced` and the live bridge pick this up automatically. See
 `docs/LIVE_TACTICS.md` §7 for the program this belongs to.
+
+**Withholdable.** The reach lines are the live treatment `joint-reach-lines`
+(`AdvancedAi::joint_reach_lines`, `live_without_joint_reach_lines`) and the
+bench arm `advanced_joint_tactics_geometric` seats the joint search with the
+pre-§17 portfolio — the two-step block kept verbatim under the withhold — so
+the pair `advanced_joint_tactics` v `advanced_joint_tactics_geometric` prices
+the lines and nothing else: cavalry cell, 300 seeds, block 7,200,000,
+**+59.0 ± 17.1** (sign p = 0.0023), and the geometric arm against stock
+`advanced` reproduces the pre-change figure exactly (+398.0 ± 21.4).

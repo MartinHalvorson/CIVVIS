@@ -8722,7 +8722,10 @@ end;
 -- remember it, so the combat this strike produces can carry it.
 CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
 	if CivvisFrames ~= nil then CivvisFrames.noteStrike(); end
-	local preview = CivvisLedger.preview(unit, verb, x, y);
+	-- `StrikePreview = false` keeps the host's combat simulation out of the
+	-- turn entirely; the strike is still recorded, without a prediction.
+	local preview = nil;
+	if cfg.StrikePreview ~= false then preview = CivvisLedger.preview(unit, verb, x, y); end
 	local kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?");
 	local hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0);
 	CivvisLedger.pending[tostring(subject)] = {

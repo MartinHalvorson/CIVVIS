@@ -506,7 +506,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # stands that close — a held unit stays held. See docs/LIVE_TACTICS.md.
         "OrderQueue": args.order_queue,
         "OrderQueueMaxTicks": args.order_queue_max_ticks,
+        "ExploreGuard": args.explore_guard,
         "ExploreGuardRadius": args.explore_guard_radius,
+        # The ledger's per-strike host preview (`CombatManager.SimulateAttackInto`)
+        # is one host call per strike; this switch exists so a run can be played
+        # without it if the call ever proves unsafe, and so the ledger can say
+        # whether it ran.
+        "StrikePreview": args.strike_preview,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -3029,6 +3035,15 @@ def _play(args: argparse.Namespace) -> int:
             "EnvoyConsider": args.envoy_consider,
             "ProbeCitizens": args.probe_citizens,
             "CampusSpecialist": args.campus_specialist,
+            # The live-tactics program's mod-side switches (docs/LIVE_TACTICS.md
+            # §9). Each is an A/B axis: a row that does not say which were on
+            # cannot be compared with one that does.
+            "OrderQueue": args.order_queue,
+            "ExploreGuard": args.explore_guard,
+            "CapMovesToReach": args.cap_moves_to_reach,
+            "CancelQueuedPaths": args.cancel_queued_paths,
+            "CombatFrames": args.combat_frames,
+            "StrikePreview": args.strike_preview,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -3347,9 +3362,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--order-queue-max-ticks", type=int, default=240,
                     help="ticks the turn is held for queued unit orders before the "
                          "rest are refused as queue_stalled")
+    ap.add_argument("--no-explore-guard", dest="explore_guard",
+                    action="store_false", default=True,
+                    help="hand every unordered combat unit to explore automation, "
+                         "even one standing beside a hostile (the pre-guard rule)")
     ap.add_argument("--explore-guard-radius", type=int, default=4,
                     help="an unordered combat unit this close to a visible hostile "
                          "or an at-war city is held, not handed to explore automation")
+    ap.add_argument("--no-strike-preview", dest="strike_preview",
+                    action="store_false", default=True,
+                    help="do not ask the host for its combat preview before a strike "
+                         "(the ledger's `strike` events then carry no prediction)")
     ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
                     action="store_false", default=True,
                     help="send a MOVE_TO's whole destination even when the host's path "

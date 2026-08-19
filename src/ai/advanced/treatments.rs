@@ -50,6 +50,7 @@ pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 /// a slice supports unchanged.
 pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
+    ("joint_reach_lines", "joint-reach-lines", AdvancedAi::disable_joint_reach_lines),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
     ("siege_muster", "siege-muster", AdvancedAi::disable_siege_muster),

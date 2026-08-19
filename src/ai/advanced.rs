@@ -3667,6 +3667,15 @@ pub struct AdvancedAi {
     /// means what its paired measurement says.
     joint_tactics_forced_off: bool,
 
+    /// The joint search offers approach lines from the engine's exact reach
+    /// flood (`Game::approach_reach`), not just the adjacent step. On by
+    /// default wherever the joint search runs; withholdable as the live
+    /// treatment `joint-reach-lines` (`live_without_joint_reach_lines`) and
+    /// as the bench arm `advanced_joint_tactics_geometric`, so its effect
+    /// can be priced on the arena, the bench and the live ladder alike.
+    /// `docs/TACTICS.md` §17 carries the measurement.
+    pub joint_reach_lines: bool,
+
     /// Admit the friendly-volley extension without the rest of the closed
     /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
     /// and left production with that bundle's removal (#1589, +38 for the
@@ -4587,6 +4596,7 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
+            joint_reach_lines: true,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -28424,7 +28434,10 @@ impl AdvancedAi {
     /// search played it, starting from the position the search started from,
     /// so the seeded combat rolls land exactly as they were evaluated.
     fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
-        let search = super::tactics::JointTactics::default();
+        let search = super::tactics::JointTactics {
+            reach_lines: self.joint_reach_lines,
+            ..super::tactics::JointTactics::default()
+        };
         // ★★★★ A BOUND GUARD IS NOT AN ATTACKER. See
         // `settler_stack_discipline`: the joint plan spent the settler's guard
         // on a strike one tile away, and whether the host executed it or not
