@@ -537,6 +537,15 @@ impl AdvancedAi {
         self.siege_is_progress = false;
     }
 
+    /// See [`Self::projected_stock_denial`].
+    pub fn enable_projected_stock_denial(&mut self) {
+        self.projected_stock_denial = true;
+    }
+
+    pub fn disable_projected_stock_denial(&mut self) {
+        self.projected_stock_denial = false;
+    }
+
     /// See [`Self::stock_denial_lead_time`].
     pub fn enable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = true;
@@ -995,6 +1004,13 @@ impl AdvancedAi {
         // Four of the five stolen games above were Culture; the general 90
         // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
         self.enable_stock_denial_lead_time();
+        // ⚠ And the stock bar must fire BEFORE the last Congress, not at it.
+        // The first game on the repaired economy (231407Z) crossed the bar at
+        // ~t221; the final Congress sat at t222 with nothing reading urgent
+        // when its ballot was priced, and Egypt won Culture at t232. The
+        // projection carries the recorded slope fifteen turns forward and
+        // feeds the same gate. See `projected_stock_denial`.
+        self.enable_projected_stock_denial();
         // These host-facing controls used to be applied by `civvis_orders`
         // after this bundle. They belong here: `live` and every
         // `live_without_*` arm must construct the controller that deployment
