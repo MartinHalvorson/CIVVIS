@@ -12866,8 +12866,7 @@ impl BasicAi {
                 }
                 if spec.is_melee_capable()
                     && distance == 1
-                    && (!self.legal_tactical_candidates
-                        || g.melee_order_is_legal(pid, uid, pos))
+                    && (!self.legal_tactical_candidates || g.melee_order_is_legal(pid, uid, pos))
                 {
                     modes.push((
                         false,
@@ -18849,7 +18848,10 @@ mod tests {
         let (mut g, archer, blocked, clear, _, _) = build();
         let mut ai = BasicAi::new();
         ai.military_step(&mut g, 0, archer);
-        assert_eq!(g.units[&blocked].hp, 5, "no shot can reach the walled target");
+        assert_eq!(
+            g.units[&blocked].hp, 5,
+            "no shot can reach the walled target"
+        );
         assert_eq!(g.units[&clear].hp, 100, "the legal shot was shadowed");
 
         // The screened candidate set: the doomed candidate never enters the
@@ -18858,7 +18860,10 @@ mod tests {
         let mut ai = BasicAi::new();
         ai.legal_tactical_candidates = true;
         assert!(ai.military_step(&mut g, 0, archer));
-        assert_eq!(g.units[&blocked].hp, 5, "the walled target still cannot be hit");
+        assert_eq!(
+            g.units[&blocked].hp, 5,
+            "the walled target still cannot be hit"
+        );
         assert!(
             g.units[&clear].hp < 100,
             "the legal shot is taken instead of being shadowed"
