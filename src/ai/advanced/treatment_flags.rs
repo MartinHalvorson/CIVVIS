@@ -1000,6 +1000,10 @@ impl AdvancedAi {
         // it by t150 and stops settling at t116 under an assigned lane. See
         // `land_grab`.
         self.enable_land_grab();
+        // And the pipeline stops paying for walkers while one already out
+        // has nowhere to go — nineteen Settlers for nine cities on run
+        // civvis-20260819T000800Z. See `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
         // And the pantheon is the one that founds a city, bought with the
         // Faith card the portfolio used to throw away at the first civic
         // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
@@ -1241,6 +1245,9 @@ impl AdvancedAi {
         // And never paying for a Settler the march will refuse to land. See
         // `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And not paying for another while one out has nowhere to go. See
+        // `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
         // And a stacked guard holds, and only one that can hold counts. See
         // `settler_guard_holds`.
         self.enable_settler_guard_holds();
@@ -1661,6 +1668,15 @@ impl AdvancedAi {
     pub fn disable_land_grab(&mut self) {
         self.land_grab = false;
         self.base.land_grab = false;
+    }
+
+    /// See [`Self::idle_walkers_close_the_pipeline`].
+    pub fn enable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = true;
+    }
+
+    pub fn disable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = false;
     }
 
     /// Take the pantheon that founds a city and keep the Faith card that buys
