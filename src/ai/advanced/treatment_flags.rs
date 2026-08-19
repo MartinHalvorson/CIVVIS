@@ -958,6 +958,12 @@ impl AdvancedAi {
         self.enable_tally_culture();
         // And the buildings that chain hangs off. See `culture_building_debt`.
         self.enable_culture_building_debt();
+        // And every specialty district's own buildings, whatever the lane —
+        // eight Campuses and six Theater Squares stood empty to turn 205 on
+        // run civvis-20260819T000800Z while the queue bought Builders, Baths
+        // and Harbors over a Library priced at 23. See
+        // `district_building_chain`.
+        self.enable_district_building_chain();
         // And the coverage that price alone never bought. See
         // `culture_coverage`.
         self.enable_culture_coverage();
@@ -1594,6 +1600,16 @@ impl AdvancedAi {
 
     pub fn disable_culture_building_debt(&mut self) {
         self.culture_building_debt = false;
+    }
+
+    /// Make every specialty district owe its own buildings, whatever the
+    /// lane. See `district_building_chain`.
+    pub fn enable_district_building_chain(&mut self) {
+        self.district_building_chain = true;
+    }
+
+    pub fn disable_district_building_chain(&mut self) {
+        self.district_building_chain = false;
     }
 
     /// Treat a Theater Square, rather than any Great Work slot, as the

@@ -142,6 +142,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_spy_mission_patience",
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
+    "live_without_district_building_chain",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -411,6 +412,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "spy-mission-patience",
     "settler-site-agreement",
     "civilian-rescue",
+    "district-building-chain",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -572,6 +574,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // native `do_spy_mission` sets `spy.mission` and legality already
     // debounces, so the repair cannot fire there.
     "spy-mission-patience",
+    // Prices the Settler seat's tally for the buildings inside the districts
+    // it already stands, against Firaxis rivals who fill every one; the
+    // native lanes keep their bred building debts.
+    "district-building-chain",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -817,6 +823,7 @@ define_arm_kinds! {
     LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
+    LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4396,6 +4403,7 @@ impl ArmKind {
             Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
+            Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
