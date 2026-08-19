@@ -4908,6 +4908,152 @@ fn live_nobel_peace_prices_favor_buildings_only_before_its_deadline() {
     );
 }
 
+/// Monarchy's Star Fort modifier is not stored on Renaissance Walls itself:
+/// the engine grants its Favor from the government to every completed member
+/// of that building family.  Nobel Peace must price that generated stream for
+/// both the generic building and Georgia's Tsikhe replacement, but no earlier
+/// wall tier or other government can claim it.
+#[test]
+fn live_nobel_peace_prices_monarchy_renaissance_wall_favor() {
+    let mut game = Game::new(2, 32, 24, 5_418, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.turn = 180;
+    game.players[0].government = Some("monarchy".to_string());
+    game.players[0].techs.insert(crate::name!("siege_tactics"));
+    game.cities
+        .get_mut(&city)
+        .expect("capital")
+        .buildings
+        .extend([crate::name!("walls"), crate::name!("medieval_walls")]);
+    let wall_hp = game.city_max_wall_hp(&game.cities[&city]);
+    game.cities.get_mut(&city).expect("capital").wall_hp = wall_hp;
+    // Keep this defensive building inside Nobel Peace's short clock without
+    // changing its real cost or prerequisite chain.
+    game.observed_city_yield_adjustments.insert(
+        city,
+        Yields {
+            production: 120.0,
+            ..Yields::default()
+        },
+    );
+    let renaissance_walls = Item::Building {
+        building: crate::name!("renaissance_walls"),
+    };
+    assert!(game.can_produce(0, city, &renaissance_walls));
+    assert_eq!(
+        game.rules.buildings[&crate::name!("renaissance_walls")]
+            .effects
+            .get("diplomatic_favor"),
+        None,
+        "the source is Monarchy's Star Fort modifier, not a field on the wall"
+    );
+    assert_eq!(
+        game.gov_effects(0).walled_city_diplomatic_favor,
+        2.0,
+        "the fixture uses Monarchy's real +2 Favor-per-wall-per-turn modifier"
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.refresh_research_weight(&game);
+    let counts = ai.counts(&game, 0);
+    let baseline = ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts);
+    let medieval_walls = Item::Building {
+        building: crate::name!("medieval_walls"),
+    };
+    let medieval_baseline = ai.production_value(&game, 0, city, &medieval_walls, &plan, &counts);
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    assert_eq!(
+        ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts),
+        baseline,
+        "Nobel Literature must not claim Monarchy's generated Favor"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    let peace = ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts);
+    assert!(
+        peace > baseline + 50.0,
+        "a timely Monarchy wall must close the Nobel Peace race: {peace} vs {baseline}"
+    );
+    assert_eq!(
+        ai.production_value(&game, 0, city, &medieval_walls, &plan, &counts),
+        medieval_baseline,
+        "the earlier wall tier must not claim Monarchy's Star Fort Favor"
+    );
+
+    game.players[0].government = Some("merchant_republic".to_string());
+    let other_government_peace =
+        ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts);
+    game.replace_host_competitions(Vec::new());
+    let other_government_baseline =
+        ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts);
+    assert_eq!(
+        other_government_peace, other_government_baseline,
+        "another government must not borrow Monarchy's wall Favor"
+    );
+
+    game.players[0].government = Some("monarchy".to_string());
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: game.turn + 1,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    assert_eq!(
+        ai.production_value(&game, 0, city, &renaissance_walls, &plan, &counts),
+        baseline,
+        "a wall that cannot generate Favor before the deadline receives no stale score"
+    );
+
+    game.players[0].civ = "Georgia".to_string();
+    let tsikhe = Item::Building {
+        building: crate::name!("tsikhe"),
+    };
+    assert!(game.can_produce(0, city, &tsikhe));
+    assert!(
+        game.building_is_family(crate::name!("tsikhe"), crate::name!("renaissance_walls")),
+        "Tsikhe is the real Renaissance Walls replacement the engine checks"
+    );
+    let tsikhe_baseline = ai.production_value(&game, 0, city, &tsikhe, &plan, &counts);
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    let tsikhe_peace = ai.production_value(&game, 0, city, &tsikhe, &plan, &counts);
+    assert!(
+        tsikhe_peace > tsikhe_baseline + 50.0,
+        "the Tsikhe replacement must receive the same Nobel Peace Favor score: {tsikhe_peace} vs {tsikhe_baseline}"
+    );
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
