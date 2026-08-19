@@ -236,4 +236,3 @@ covers the channel and the migration; the mirror tests cover
 `attacks_remaining`. Turn it on for one live run (`--combat-frames 1`) and
 read `combat_frame`, `combat_frame_timeout`, `orders.frame`, and the ledger's
 strikes-landed and exchange ratio against a run without it.
-
