@@ -75,7 +75,7 @@ local function eventField(line, key)
 end
 
 DealDirection = { OUTGOING = "outgoing", INCOMING = "incoming" }
-DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements" }
+DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements", GREATWORK = "greatwork" }
 -- Real values, not the _G stub: the buy arm compares an incoming item's
 -- subtype against `DealAgreementTypes.OPEN_BORDERS`, and the stub would hand
 -- back a fresh table on every read so nothing could ever match.
@@ -100,6 +100,13 @@ GameInfo = {
 		return resourceRows[key]
 	end }),
 	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true } },
+	-- Indexable by NAME (the sell arm's `want.name` lookup) and by the
+	-- description id a possible-items entry carries (`ForTypeDescriptionID`),
+	-- the way the shipped deal screen reads the same table both ways.
+	GreatWorks = (function()
+		local poe = { GreatWorkType = "GREATWORK_POE_1", Index = 61 }
+		return { GREATWORK_POE_1 = poe, [61] = poe }
+	end)(),
 }
 Game = {
 	GetLocalPlayer = function() return 7 end,
@@ -192,6 +199,16 @@ local function fixture(opts)
 		GetPossibleDealItems = function(pid, subject, kind, deal)
 			call("possible")
 			local out = {}
+			if kind == DealItemTypes.GREATWORK then
+				-- `opts.possibleWorks` is a list of {ForType = instance,
+				-- ForTypeDescriptionID = GameInfo.GreatWorks index}.
+				for _, entry in ipairs(opts.possibleWorks or {}) do
+					out[#out + 1] = { ForType = entry.ForType,
+						ForTypeDescriptionID = entry.ForTypeDescriptionID,
+						IsValid = entry.IsValid ~= false }
+				end
+				return out
+			end
 			for name, max in pairs(opts.possible or {}) do
 				out[#out + 1] = { ForType = resourceRows[name].Index, MaxAmount = max, IsValid = true }
 			end
@@ -488,6 +505,78 @@ ok, why = sellOrder(7, 3, invalidPlayer, 70, "RESOURCE_DYES=1", 30)
 check("an invalid package is refused", ok, false)
 check("an invalid package is named", why, "invalid_deal")
 check("an invalid package sends nothing", invalid.sends, nil)
+
+-- ─── the work sale ──────────────────────────────────────────────────────────
+-- A placed Great Work goes into the deal the way the shipped screen's own
+-- click puts it there (`OnClickAvailableGreatWork`): SubType carries the
+-- `GameInfo.GreatWorks` row, ValueType the work INSTANCE, no amount and no
+-- duration. The ask registers the instance under a `GREATWORK:` key and the
+-- handler counts the item's PRESENCE as its quantity — a work's GetAmount is
+-- zero, and matching that zero against the offered 1 declined every sale in
+-- the first draft of this arm.
+reset()
+local workAsk, workAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+ok, why = sellOrder(7, 3, workAskPlayer, 70, "GREATWORK_POE_1=1", 50)
+check("a work ask is submitted", ok, true)
+check("a work ask says asked", why, "sell_asked")
+local workItem = itemOfKind(workAsk, DealItemTypes.GREATWORK)
+check("the work item is ours", workItem and workItem.owner, 7)
+check("the work item carries the instance", workItem and workItem.valueType, 4009)
+check("the work item carries its database row", workItem and workItem.subType, 61)
+check("the pending ask keys the instance", trade.pending[3].gave["GREATWORK:4009"], 1)
+check("the work offer names the work", eventField(lastEvent("deal_offer"), "gave"), "GREATWORK_POE_1=1")
+
+-- The rival returns exactly the work — amount 0, as the engine reports items
+-- with no quantity — against gold at the floor: accepted.
+local workAnswer = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4009 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 140 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair work answer is accepted", workAnswer.sends and workAnswer.sends[1][1], "accepted")
+check("the work close is in the ledger", eventField(lastEvent("deal_closed"), "gold"), "140")
+
+-- Below the floor the work stays home.
+reset()
+local workLowAsk, workLowAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+sellOrder(7, 3, workLowAskPlayer, 80, "GREATWORK_POE_1=1", 50)
+local workLow = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4009 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 20 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a lowball on a work is not accepted", workLow.sends, nil)
+check("a lowball on a work settles the ask", trade.pending[3], nil)
+
+-- A different work instance on our side is not what was offered.
+reset()
+local workSwapAsk, workSwapAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+sellOrder(7, 3, workSwapAskPlayer, 90, "GREATWORK_POE_1=1", 50)
+local workSwap = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4010 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 140 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a swapped work is declined", workSwap.sends, nil)
+check("the swap mismatch is in the ledger", eventField(lastEvent("deal_declined"), "matches"), "false")
+
+-- A work the database does not know is a named refusal; one the engine will
+-- not put in a deal right now is nothing tradeable.
+reset()
+local workUnknown, workUnknownPlayer = fixture({})
+ok, why = sellOrder(7, 3, workUnknownPlayer, 90, "GREATWORK_NOT_A_WORK=1", 50)
+check("an unknown work is refused", ok, false)
+check("an unknown work is named", why, "unknown_great_work:GREATWORK_NOT_A_WORK")
+reset()
+local workNone, workNonePlayer = fixture({ possibleWorks = {} })
+ok, why = sellOrder(7, 3, workNonePlayer, 90, "GREATWORK_POE_1=1", 50)
+check("a work the engine withholds is nothing tradeable", why, "nothing_tradeable")
 
 -- ─── guards ─────────────────────────────────────────────────────────────────
 reset()
