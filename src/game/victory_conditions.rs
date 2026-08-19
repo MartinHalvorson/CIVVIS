@@ -3634,6 +3634,17 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
         "the score the project declares is the score it pays"
     );
 
+    // ⚠ And a Great Person scores nothing here. The Space Station counts a
+    // project; only the World's Fair counts people, and a scorer that ignored
+    // which competition was running would pay the wrong race.
+    let project_only = game.competition.as_ref().unwrap().scores[&owner];
+    game.score_great_person_competition(owner);
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&owner],
+        project_only,
+        "recruiting a Great Person must not score a project-scored competition"
+    );
+
     // And the clock running out pays first place.
     let before = game.players[owner].dvp;
     game.turn = ends;
@@ -3713,11 +3724,15 @@ fn a_competition_is_offered_only_where_its_project_could_be_built() {
         "an Industrial Zone with no power plant in it cannot decommission one"
     );
     game.open_native_competition();
-    assert!(
-        game.competition.is_none(),
-        "a competition nobody can score in must not be seated: it pays no one \\
-         and spends the lockout"
+    assert_ne!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS"),
+        "a competition nobody can score in must not be seated: it pays no one          and spends the lockout"
     );
+    // The World's Fair *is* seatable here -- every empire recruits Great
+    // People, so there is no ground to hold. Clear it so the check below is
+    // about Climate Accords becoming offerable, not about which came first.
+    game.competition = None;
 
     // Give it something to decommission and it becomes offerable.
     game.cities
@@ -3730,5 +3745,43 @@ fn a_competition_is_offered_only_where_its_project_could_be_built() {
     assert_eq!(
         game.competition.as_ref().map(|c| c.kind.as_str()),
         Some("EMERGENCY_CLIMATE_ACCORDS")
+    );
+}
+
+/// The World's Fair counts Great People, and it is the one an empire can
+/// always enter.
+#[test]
+fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
+    let mut game = game_with_capitals(3, 63_000, 400);
+    game.native_competitions = true;
+
+    // No Spaceport and no power plant anywhere, so the other two are not
+    // offerable — and the lane still gets a competition.
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_WORLDS_FAIR"),
+        "the World's Fair needs no ground to hold, which is why it is the one \
+         that can recur from the first congress"
+    );
+
+    let owner = game.cities.values().next().unwrap().owner;
+    let running = game.competition.as_ref().unwrap();
+    let before = running.scores.get(&owner).copied();
+    assert_eq!(before, None, "nobody has scored yet");
+
+    // Recruiting one scores one, whatever the class: the shipped
+    // `EmergencyScoreSources` rows give every class `ScoreAmount="1"`.
+    game.score_great_person_competition(owner);
+    game.score_great_person_competition(owner);
+    assert_eq!(game.competition.as_ref().unwrap().scores[&owner], 2.0);
+
+    let dvp = game.players[owner].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[owner].dvp - dvp,
+        1,
+        "Gathering Storm pays the World's Fair winner one Diplomatic Victory Point"
     );
 }

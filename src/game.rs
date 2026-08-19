@@ -2854,6 +2854,24 @@ pub struct HostCompetition {
     pub leader: f64,
 }
 
+/// What a competition counts.
+///
+/// ⚠ The shipped `EmergencyScoreSources` table names more than these two —
+/// Nobel Peace scores from Favor, and Send Aid from gold, a project, being at
+/// war and a carbon footprint. Favor is not modelled here because it accrues at
+/// seven sites including congress *refunds*, and deciding which of those count
+/// as favor "earned" is a rule this repository does not have — the kind of
+/// invention that put Vanilla belief values into a Gathering Storm ruleset in
+/// #2049. The aid requests trigger on a random event and on a war rather than
+/// on the congress, so they need a trigger before they need a score.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CompetitionScoring {
+    /// A project completed in a city, worth its `competition_score`.
+    Project,
+    /// A Great Person recruited, worth one point whatever the class.
+    GreatPeople,
+}
+
 /// A scored competition CIVVIS runs itself, rather than observing on a host.
 ///
 /// ★★★★★ THE DIPLOMATIC LANE'S LARGEST SOURCE. Gathering Storm pays a
@@ -13670,6 +13688,7 @@ impl Game {
         self.players[pid].gpp.insert("merchant".to_string(), 0.0);
         self.retired_great_people.insert(id.clone());
         self.players[pid].great_people.push(id);
+        self.score_great_person_competition(pid);
         *self.players[pid]
             .gp_claimed
             .entry("merchant".to_string())
@@ -13955,6 +13974,7 @@ impl Game {
         self.retired_great_people.insert(id.clone());
         self.note(pid, "People", format!("recruited {}", spec.name), None);
         self.players[pid].great_people.push(id);
+        self.score_great_person_competition(pid);
         *self.players[pid]
             .gp_claimed
             .entry(kind.to_string())
@@ -31110,9 +31130,17 @@ impl Game {
     /// Gathering Storm ruleset in #2049. World's Fair and the Nobel prizes
     /// score from Great People rather than a project, and the aid requests
     /// trigger on a random event and a war, not on the congress.
-    const NATIVE_COMPETITIONS: &'static [(&'static str, i64)] = &[
-        ("EMERGENCY_SPACE_STATION", 1),
-        ("EMERGENCY_CLIMATE_ACCORDS", 2),
+    const NATIVE_COMPETITIONS: &'static [(&'static str, i64, CompetitionScoring)] = &[
+        ("EMERGENCY_SPACE_STATION", 1, CompetitionScoring::Project),
+        ("EMERGENCY_CLIMATE_ACCORDS", 2, CompetitionScoring::Project),
+        // ★★★★★ THE ONE THAT RECURS. The other two need a Spaceport and a
+        // power plant to decommission, so they land around turns 180 and 200
+        // and a 250-turn game sees three Diplomatic Victory Points. The World's
+        // Fair scores one per Great Person an empire earns — the shipped
+        // `EmergencyScoreSources` rows give every class `ScoreAmount="1"` — so
+        // every empire can score in it from the first congress, which is what
+        // the lane needs and what the other two cannot give it.
+        ("EMERGENCY_WORLDS_FAIR", 1, CompetitionScoring::GreatPeople),
     ];
 
     /// Seat a competition if one may run and an empire could score in it.
@@ -31126,7 +31154,7 @@ impl Game {
             .filter(|player| self.victory_eligible(player.id))
             .map(|player| player.id)
             .collect();
-        let Some((kind, _)) = Self::NATIVE_COMPETITIONS.iter().find(|(kind, _)| {
+        let Some((kind, _, _)) = Self::NATIVE_COMPETITIONS.iter().find(|(kind, _, _)| {
             self.competition_lockout_until
                 .get(*kind)
                 .is_none_or(|until| self.turn >= *until)
@@ -31148,6 +31176,14 @@ impl Game {
     /// needs. The project's own `district` is the requirement, so this asks the
     /// data rather than a hand-written era.
     fn can_score_competition(&self, pid: usize, kind: &str) -> bool {
+        if Self::NATIVE_COMPETITIONS
+            .iter()
+            .any(|(name, _, scoring)| *name == kind && *scoring == CompetitionScoring::GreatPeople)
+        {
+            // Every empire recruits Great People, so there is no ground to
+            // hold and nothing to gate on.
+            return true;
+        }
         self.rules.projects.iter().any(|(_, spec)| {
             if spec.competition_score <= 0.0 || !spec.host_competition_kinds().any(|k| k == kind) {
                 return false;
@@ -31170,6 +31206,31 @@ impl Game {
         })
     }
 
+    /// One point to this empire if a Great-People competition is running.
+    ///
+    /// The shipped `EmergencyScoreSources` rows give the World's Fair one point
+    /// per Great Person of *every* class, so the class does not matter and the
+    /// count does.
+    fn score_great_person_competition(&mut self, pid: usize) {
+        let turn = self.turn;
+        let scoring = self
+            .competition
+            .as_ref()
+            .filter(|running| running.ends > turn)
+            .and_then(|running| {
+                Self::NATIVE_COMPETITIONS
+                    .iter()
+                    .find(|(kind, _, _)| *kind == running.kind)
+                    .map(|(_, _, scoring)| *scoring)
+            });
+        if scoring != Some(CompetitionScoring::GreatPeople) {
+            return;
+        }
+        if let Some(running) = self.competition.as_mut() {
+            *running.scores.entry(pid).or_insert(0.0) += 1.0;
+        }
+    }
+
     /// Close a finished competition, paying its winner what Gathering Storm
     /// pays: the Diplomatic Victory Point, and the Favor beside it.
     ///
@@ -31185,8 +31246,8 @@ impl Game {
         }
         let award = Self::NATIVE_COMPETITIONS
             .iter()
-            .find(|(kind, _)| *kind == running.kind)
-            .map(|(_, points)| *points)
+            .find(|(kind, _, _)| *kind == running.kind)
+            .map(|(_, points, _)| *points)
             .unwrap_or(0);
         let kind = running.kind.clone();
         let until = self.turn + self.standard_duration(60);
