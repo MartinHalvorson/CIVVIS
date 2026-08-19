@@ -865,6 +865,129 @@ mod tests {
         assert!(!game.unit_can_traverse(galley, frontier));
     }
 
+    /// ★★★★★ A coast revealed to the horizon walled the fleet in. The land
+    /// prior is grown from revealed land and stops at every revealed tile, so
+    /// the fog beyond a city's three rings of charted water was reached from
+    /// nothing: no ship could plan toward it, and the naval recon arm read the
+    /// sea as finished. Live run `civvis-20260818T225716Z`: t169, Ostia coastal
+    /// since t44, Cartography in hand, no hull ever built, 559 of 3404 plots
+    /// seen. The sea now grows its own prior from revealed water; ships read
+    /// it, the land army does not, and the arm sees water left to chart.
+    #[test]
+    fn the_fog_beyond_charted_water_is_the_seas_frontier() {
+        let center = crate::hex::offset_to_axial(10, 10);
+        let mut plots = vec![plot(10, 10, "TERRAIN_GRASS")];
+        for y in 0..20 {
+            for x in 0..20 {
+                let d = crate::hex::distance(crate::hex::offset_to_axial(x, y), center);
+                if (1..=3).contains(&d) {
+                    plots.push(plot(x, y, "TERRAIN_COAST"));
+                }
+            }
+        }
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 44,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots,
+        }]);
+        let mut game = rebuild_game(&snapshot, 4, 7);
+        game.players[0].techs.insert(crate::name!("sailing"));
+        apply_explored(&mut game, &snapshot);
+        let city = game.place_city(0, center, None);
+        assert!(crate::ai::BasicAi::empire_is_coastal(&game, 0));
+
+        // Before the sea prior existed this is where every live game stood: no
+        // frontier at the water's edge, so nothing anywhere for a ship to seek.
+        assert!(
+            !crate::ai::BasicAi::unseen_water_remains(&game, 0),
+            "a bare reconstruction has no sea frontier"
+        );
+
+        grow_frontier(&mut game, &snapshot, 2);
+        let mut fog_by_ring: std::collections::BTreeMap<i32, Vec<crate::Pos>> = Default::default();
+        for (pos, tile) in &game.map.tiles {
+            if game.rules.is_unknown(tile) {
+                fog_by_ring
+                    .entry(crate::hex::distance(*pos, center))
+                    .or_default()
+                    .push(*pos);
+            }
+        }
+        // Two rings beyond the charted water carry the sea prior; the land
+        // prior reaches nothing, because every neighbour of the island is
+        // revealed water and the growth never crosses revealed ground.
+        for ring in [4, 5] {
+            for pos in &fog_by_ring[&ring] {
+                let tile = &game.map.tiles[pos];
+                assert!(
+                    tile.assumed_navigable,
+                    "ring {ring} {pos:?} is the sea's frontier"
+                );
+                assert!(
+                    !tile.assumed_traversable,
+                    "ring {ring} {pos:?} is not land's"
+                );
+                assert!(!game.rules.is_passable(tile), "the land prior is untouched");
+            }
+        }
+        for pos in &fog_by_ring[&6] {
+            assert!(
+                !game.map.tiles[pos].assumed_navigable,
+                "depth 2 stops at ring 5"
+            );
+        }
+        let edge = fog_by_ring[&4][0];
+        let shore = game
+            .nbrs(edge)
+            .into_iter()
+            .find(|pos| game.rules.is_water(&game.map.tiles[pos]))
+            .expect("ring 4 touches the charted coast");
+        let galley = game.spawn_test_unit("galley", 0, shore);
+        let warrior = game.spawn_test_unit("warrior", 0, shore);
+        assert!(
+            game.unit_can_traverse(galley, edge),
+            "a ship may plan toward the fog beyond charted water"
+        );
+        assert!(
+            !game.unit_can_traverse(warrior, edge),
+            "the land army may not — `come_ashore` keeps it dry, and fog with no \
+             domain must not smuggle it back to sea"
+        );
+
+        // And the arm that buys the empire's naval eye sees water left to chart.
+        assert!(crate::ai::BasicAi::unseen_water_remains(&game, 0));
+        assert!(
+            crate::ai::BasicAi::naval_recon_ship_can_chart(&game, 0, galley),
+            "the galley on the shore can chart from where it stands"
+        );
+        game.remove_unit(galley);
+        let mut ai = crate::ai::BasicAi::default();
+        ai.enable_naval_recon();
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&game, 0),
+            "with no hull afloat and fog past the coast, the sea scout is the missing arm"
+        );
+        assert!(
+            ai.best_naval_recon(&game, 0, city).is_some(),
+            "the coastal city can lay the hull down"
+        );
+
+        // A refresh of the authoritative terrain keeps the separately owned
+        // prior; a save round-trips it; depth 0 clears it.
+        apply_terrain(&mut game, &snapshot);
+        assert!(game.map.tiles[&edge].assumed_navigable);
+        let saved = serde_json::to_string(&game).expect("the mirror game saves");
+        let loaded: crate::game::Game =
+            serde_json::from_str(&saved).expect("the mirror game reloads");
+        assert!(loaded.map.tiles[&edge].assumed_navigable);
+        grow_frontier(&mut game, &snapshot, 0);
+        assert!(!game.map.tiles[&edge].assumed_navigable);
+        assert!(!crate::ai::BasicAi::unseen_water_remains(&game, 0));
+        assert!(!ai.naval_recon_is_the_missing_arm(&game, 0));
+    }
+
     #[test]
     fn a_revealed_but_untranslatable_terrain_is_still_unknown_underneath() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -7916,6 +8039,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 continue;
             };
             tile.assumed_traversable = false;
+            tile.assumed_navigable = false;
             let resolved = plot.t.as_deref().and_then(|name| match vocab.terrain(name) {
                 Resolved::Known(value) => Some(value),
                 Resolved::Excluded(_) | Resolved::Unknown(_) => None,
@@ -12035,6 +12159,24 @@ const GREAT_PERSON_UNIQUES: &[&str] = &["UNIT_COMANDANTE_GENERAL"];
 /// The bounded flag means only "it is reasonable to try going there." The tile remains
 /// `unknown`, carries no yields, and makes no land/water claim; both land and naval
 /// explorers may test it. Each tile becomes real terrain only when revealed.
+///
+/// ★★★★★ THE SEA HAD NO FRONTIER, AND THE FLEET NEVER SAILED. The prior above is grown
+/// from revealed LAND only, and it stops at every revealed tile — so on a coast the
+/// seat has looked out over (a city sees its water three tiles out), the fog beyond
+/// that water is reached from no land tile at all and stays `assumed_traversable =
+/// false`. `Game::class_can_traverse` then answers "no" for a ship, `exploration_goal`
+/// finds it nothing to sail toward, `naval_recon_can_chart_from` finds no fog at the
+/// water's edge, and `BasicAi::naval_recon_is_the_missing_arm` reads the world as
+/// charted. Measured across every live run of 2026-08-18 (25 runs, up to 251 turns
+/// each): the sea-scout reservation fired ZERO times, ships built for the navy floor
+/// "stand down; going nowhere" within a few turns, and run `civvis-20260818T225716Z`
+/// reached t169 with 559 of 3404 plots revealed, two of five rivals met, and not one
+/// hull ever laid down — Cartography and Square Rigging in hand.
+///
+/// So the sea gets its own prior: `assumed_navigable`, grown the same bounded way
+/// from revealed WATER, read by ships alone (`come_ashore` keeps the land army out of
+/// the water and could not do so for fog that has no domain yet if it shared the land
+/// flag). Both flags may sit on one tile.
 pub(crate) fn grow_frontier(
     game: &mut crate::game::Game,
     snapshot: &Snapshot,
@@ -12045,12 +12187,20 @@ pub(crate) fn grow_frontier(
     for tile in game.map.tiles.values_mut() {
         if tile.terrain == "unknown" {
             tile.assumed_traversable = false;
+            tile.assumed_navigable = false;
         }
     }
     if depth == 0 {
         return;
     }
+    grow_frontier_from(game, snapshot, depth, false);
+    grow_frontier_from(game, snapshot, depth, true);
+}
 
+/// One domain's half of [`grow_frontier`]: seed from the revealed tiles of that
+/// domain (`water` selects revealed water, else revealed land) and mark the
+/// matching prior on the unknown tiles reached within `depth` rings.
+fn grow_frontier_from(game: &mut crate::game::Game, snapshot: &Snapshot, depth: u32, water: bool) {
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
     // Grown one ring at a time so depth means "tiles beyond what we have seen",
@@ -12062,7 +12212,9 @@ pub(crate) fn grow_frontier(
     // 25 -> 109 across 64 turns, `met = 1`, and **zero** rival cities ever seen —
     // so the army had nothing to attack and domination was unreachable. The
     // heuristic path, which hands scouts to AUTOMATE_EXPLORE, had 468 by t190.
-    let mut land: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
+    // `seen` is the seed set — revealed land, or revealed passable water — and then
+    // every unknown tile the growth has already claimed.
+    let mut seen: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
     for y in 0..height {
         for x in 0..width {
             if !snapshot.is_revealed((x, y)) {
@@ -12072,14 +12224,18 @@ pub(crate) fn grow_frontier(
             if game
                 .map
                 .get(pos)
-                .map(|tile| !game.rules.is_unknown(tile) && !game.rules.is_water(tile))
+                .map(|tile| {
+                    !game.rules.is_unknown(tile)
+                        && game.rules.is_water(tile) == water
+                        && (!water || game.rules.is_passable(tile))
+                })
                 .unwrap_or(false)
             {
-                land.insert(pos);
+                seen.insert(pos);
             }
         }
     }
-    let mut edge: Vec<crate::Pos> = land.iter().copied().collect();
+    let mut edge: Vec<crate::Pos> = seen.iter().copied().collect();
     for _ in 0..depth {
         let mut next_edge: Vec<crate::Pos> = Vec::new();
         for pos in &edge {
@@ -12089,14 +12245,18 @@ pub(crate) fn grow_frontier(
                     continue;
                 }
                 // Never mark ground the seat has actually seen as speculative.
-                if snapshot.is_revealed((nx, ny)) || land.contains(&neighbour) {
+                if snapshot.is_revealed((nx, ny)) || seen.contains(&neighbour) {
                     continue;
                 }
                 if let Some(tile) = game.map.tiles.get_mut(&neighbour) {
                     debug_assert_eq!(tile.terrain.as_str(), "unknown");
-                    tile.assumed_traversable = true;
+                    if water {
+                        tile.assumed_navigable = true;
+                    } else {
+                        tile.assumed_traversable = true;
+                    }
                 }
-                land.insert(neighbour);
+                seen.insert(neighbour);
                 next_edge.push(neighbour);
             }
         }
@@ -12105,7 +12265,6 @@ pub(crate) fn grow_frontier(
         }
         edge = next_edge;
     }
-
 }
 
 /// Every site Civilization VI has refused to found a city on, in AXIAL coordinates.
