@@ -8463,6 +8463,13 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 							key = "FAVOR";
 						elseif kind == DealItemTypes.RESOURCES then
 							key = "RESOURCES:" .. tostring(item:GetValueType());
+						elseif kind == DealItemTypes.GREATWORK then
+							-- Matched by the work INSTANCE the sale offered.
+							-- A work has no amount — its presence is its
+							-- quantity, and 0 here would fail the match
+							-- against the `1` the ask registered.
+							key = "GREATWORK:" .. tostring(item:GetValueType());
+							amount = 1;
 						else
 							key = "OTHER:" .. tostring(kind);
 						end
@@ -9189,6 +9196,49 @@ local function applyOrder(player, pid, row, turn)
 							text[#text + 1] = "FAVOR=" .. tostring(amount);
 						else
 							pcall(function() deal:RemoveItemByID(item:GetID()); end);
+						end
+					end
+				elseif string.find(want.name, "^GREATWORK_") ~= nil then
+					-- A placed Great Work, sold to seat the idle person its
+					-- departure makes room for (see `append_work_sale_order`
+					-- on the CIVVIS side). The item contract is the shipped
+					-- screen's own click, `DiplomacyDealView.lua`
+					-- `OnClickAvailableGreatWork`: the possible-items entry
+					-- carries the work INSTANCE as `ForType` and its
+					-- `GameInfo.GreatWorks` row as `ForTypeDescriptionID`;
+					-- the deal item takes SubType(description) THEN
+					-- ValueType(instance), no amount and no duration — a
+					-- work's presence is its quantity.
+					if try(function()
+						return GameInfo.GreatWorks[want.name];
+					end, nil) == nil then
+						return false, "unknown_great_work:" .. want.name, {}, "";
+					end
+					local possibleWorks = try(function()
+						return DealManager.GetPossibleDealItems(
+							pid, subject, DealItemTypes.GREATWORK, deal);
+					end, nil) or {};
+					local forType, descId = nil, nil;
+					for _, entry in ipairs(possibleWorks) do
+						local desc = try(function()
+							return GameInfo.GreatWorks[entry.ForTypeDescriptionID];
+						end, nil);
+						if desc ~= nil and desc.GreatWorkType == want.name
+								and entry.IsValid ~= false then
+							forType, descId = entry.ForType, entry.ForTypeDescriptionID;
+						end
+					end
+					if forType ~= nil then
+						local item = deal:AddItemOfType(DealItemTypes.GREATWORK, pid);
+						if item ~= nil then
+							item:SetSubType(descId);
+							item:SetValueType(forType);
+							if try(function() return item:IsValid(); end, true) then
+								gave["GREATWORK:" .. tostring(forType)] = 1;
+								text[#text + 1] = want.name .. "=1";
+							else
+								pcall(function() deal:RemoveItemByID(item:GetID()); end);
+							end
 						end
 					end
 				else
