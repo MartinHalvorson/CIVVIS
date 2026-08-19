@@ -10657,17 +10657,12 @@ impl AdvancedAi {
                     .get("diplomatic_favor_per_turn")
                     .copied()
                     .unwrap_or(0.0);
-                (self.nobel_peace_favor_score_value(g, pid, favor_per_turn, 0.0)
-                    > f64::EPSILON)
+                (self.nobel_peace_favor_score_value(g, pid, favor_per_turn, 0.0) > f64::EPSILON)
                     .then_some((name.as_str(), favor_per_turn))
             })
             .collect();
-        nobel_peace_direct_favor_cards.sort_by(|left, right| {
-            right
-                .1
-                .total_cmp(&left.1)
-                .then_with(|| left.0.cmp(right.0))
-        });
+        nobel_peace_direct_favor_cards
+            .sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
         let nobel_peace_direct_favor_cards: Vec<&str> = nobel_peace_direct_favor_cards
             .into_iter()
             .map(|(card, _)| card)
