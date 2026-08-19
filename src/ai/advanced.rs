@@ -8924,11 +8924,20 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let world_fair_score = gpp_awards
-            .values()
-            .copied()
-            .filter(|award| award.is_finite() && *award > f64::EPSILON)
-            .sum::<f64>();
+        let host_competition_gpp_scores = [
+            (
+                "EMERGENCY_WORLDS_FAIR",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_WORLDS_FAIR"),
+            ),
+            (
+                "EMERGENCY_NOBEL_PRIZE_LITERATURE",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_LITERATURE"),
+            ),
+            (
+                "EMERGENCY_NOBEL_PRIZE_PHYSICS",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_PHYSICS"),
+            ),
+        ];
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -9071,19 +9080,42 @@ impl AdvancedAi {
                 value = value.min(PROJECT_BEHIND_BUILDINGS_CAP);
             }
         }
-        // The World Fair counts each Great Person point as competition score,
-        // including the completion awards above. That payoff is immediate and
-        // host-authoritative, so it must remain outside the normal "build the
+        // Firaxis scores these competitions from the completion awards above:
+        // World Fair accepts every GPP class, Nobel Literature accepts the
+        // culture classes, and Nobel Physics accepts the STEM classes. This
+        // immediate host payoff must remain outside the normal "build the
         // Library first" cap: a competition that ends before the building is
         // complete cannot be resumed later.
         value
-            + self.host_competition_score_value(
-                g,
-                pid,
-                "EMERGENCY_WORLDS_FAIR",
-                world_fair_score,
-                turns,
-            )
+            + host_competition_gpp_scores
+                .into_iter()
+                .map(|(kind, score)| self.host_competition_score_value(g, pid, kind, score, turns))
+                .sum::<f64>()
+    }
+
+    /// Firaxis's EmergencyScoreSources award one score per Great Person point:
+    /// every class at the World's Fair, culture classes for Nobel Literature,
+    /// and STEM classes for Nobel Physics. Nobel Peace instead scores Favor,
+    /// so a production project's GPP award must not invent a score there.
+    fn host_competition_gpp_score(gpp_awards: &BTreeMap<String, f64>, kind: &str) -> f64 {
+        let score = |classes: &[&str]| {
+            classes
+                .iter()
+                .filter_map(|class| gpp_awards.get(*class))
+                .copied()
+                .filter(|award| award.is_finite() && *award > f64::EPSILON)
+                .sum()
+        };
+        match kind {
+            "EMERGENCY_WORLDS_FAIR" => gpp_awards
+                .values()
+                .copied()
+                .filter(|award| award.is_finite() && *award > f64::EPSILON)
+                .sum(),
+            "EMERGENCY_NOBEL_PRIZE_LITERATURE" => score(&["writer", "artist", "musician"]),
+            "EMERGENCY_NOBEL_PRIZE_PHYSICS" => score(&["engineer", "merchant", "scientist"]),
+            _ => 0.0,
+        }
     }
 
     /// Price one host-reported competition score gain against its deadline and
