@@ -716,6 +716,19 @@ is `basic_evolved`. Direct evaluation refuses degraded artifacts by default;
 The matrix also uses sample-size-independent profile seeds, so extending a
 prefix preserves both profiles' earlier maps.
 
+`--stop-when-decisive` (opt-in, off by default) ends a run at the first
+scheduling chunk on which the promotion gate reads `PASS` or `RETAIN` instead
+of playing every preregistered pair; in `--matrix` mode each profile child
+stops on its own verdict. The gate's verdict rests on the anytime-valid betting
+evidence and the betting interval, which hold under optional stopping by
+construction, so the verdict is unchanged; the sign test and the retired Wilson
+interval assume a fixed sample, and a stopped run says so on its report and
+prints how many of the preregistered pairs it played. The recorded crossings
+(maps 42–134 on runs of 120–400 pairs) put the saving at 0–70% of an
+evaluation's wall. Screening runs and NoRegression tripwires are where it
+belongs; a run whose sign test or Wilson line will be cited should keep the
+default.
+
 The next strength experiment should target a distinct bottleneck, not retest
 this promoted bundle under a new name. Preserve the evaluator controls above
 for regression diagnosis and measure any candidate on fresh, independently

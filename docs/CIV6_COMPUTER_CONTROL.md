@@ -238,6 +238,49 @@ every decision it is waiting on and publishes it through
    again.
 3. When nothing is blocking, `UI.RequestAction(ActionTypes.ACTION_ENDTURN)`.
 
+### Unit orders are sequenced per unit (2026-08-19)
+
+`UnitManager.RequestOperation` returns before the unit has moved, so a list
+like `MOVE_TO a; RANGE_ATTACK t` applied in one callback aims the shot from
+where the unit *stood*. The bridge answered that for two weeks by sending a
+unit's walk and deferring every later order to the next turn — which turned
+every planned move-then-strike into a move (7 melee attacks against 1,546
+`MOVE_TO` in 188 turns of war on run `civvis-20260803T005930Z`).
+
+The mod now keeps a **per-unit order queue** (`CivvisQueue`). `applyOrders`
+issues the first order for each unit at once and queues the rest; a queued
+order is issued once the earlier one has settled — the unit stands where the
+move was aimed, or has no movement left, or the host's own `UnitMoveComplete`
+/ `UnitOperationDeactivated` fired for it, or a grace period ran out — and
+every one still passes `CanStartOperation`. Refusals are named:
+`queue_no_moves`, `queue_stalled`, `queue_prior_refused`, `unit_gone:<id>`,
+`queue_turn_over`. `settleTurn` holds the turn while a queue is pending,
+bounded by `OrderQueueMaxTicks`; a wedged operation costs decision quality,
+never progress. A settler's refused `FOUND_CITY` is retried behind its walk.
+The `seat` event advertises `order_queue`, and `civvis_orders` sends a unit's
+whole sequence only when it does. `orders` gains `queued` and
+`explore_guarded`; a per-turn `orders_queue` event carries `applied`,
+`refused`, `refusals`, `strikes_planned`, `strikes_landed` and `waited`.
+`--no-order-queue` restores the one-order-per-unit rule for an A/B.
+
+Two related rules: an unmentioned combat unit within `ExploreGuardRadius` of
+a visible hostile combat unit or an at-war city is held rather than handed to
+`UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
+`Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
+
+### The tactical ledger (2026-08-19)
+
+The mod writes the combat record the host already knows (`CivvisLedger`):
+`strike` before every ATTACK / RANGE_ATTACK with the host's own preview
+(`CombatManager.SimulateAttackInto`, the shipped UnitPanel's combat preview);
+`combat` at `CombatVisEnd` with attacker, defender, hit points read back at
+Begin and End, damage both ways, kills, the `UnitDamageChanged` deltas seen
+while the combat was open, and the strike's preview joined on; `unit_lost`
+for our units leaving the map (last known kind, treasury); `city_occupation`
+when a city changes hands. Hostile and rival units carry the host's unit id.
+`tools/civ6_tactics_ledger.py <run-dir>` turns a run into the arrival,
+combat, roster and hover ledger; see `docs/LIVE_TACTICS.md` §5.
+
 ### Production and envoy handoffs are host-timed
 
 The Rust bridge still sends ordinary `produce` orders immediately. When the

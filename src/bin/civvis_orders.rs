@@ -862,6 +862,11 @@ impl HostMoveRefusals {
         state: &civvis::mirror::StateSnapshot,
         frontier_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
     ) {
+        // A sequenced turn can carry a second MOVE_TO for the same unit, planned
+        // from where an earlier act leaves it. Only the FIRST is judged against
+        // the unit's exported position next turn; the second would read a unit
+        // that walked, struck and walked on as "never moved".
+        let mut recorded = std::collections::BTreeSet::new();
         for order in orders {
             if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
                 continue;
@@ -869,6 +874,9 @@ impl HostMoveRefusals {
             let (Some(unit), Some(dest)) = (order.subject, order.pos) else {
                 continue;
             };
+            if !recorded.insert(unit) {
+                continue;
+            }
             let Some(from) = state
                 .units
                 .iter()
@@ -976,7 +984,25 @@ fn defer_host_peace_retries(
 /// chose the tile it strikes from, and a MOVE_TO onto the defender would let the
 /// host pathfinder pick another; the finishing-volley code above already collapses
 /// approach+blow where it has proved the line on a private board.
-fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
+///
+/// ★★★★★ AND THAT DEFERRAL WAS THE PRICE OF EVERY STRIKE THAT FOLLOWS A STEP.
+/// The joint tactical search's lines are `[Move, Attack]` (`src/ai/tactics.rs`),
+/// the friendly volley's are move-then-shoot, and the mover's own step onto a
+/// firing tile is followed by the shot it opened — and every one of those
+/// arrived here as a walk plus a follow-up, and left as a walk. Measured on
+/// run civvis-20260803T005930Z: 7 melee ATTACK orders against 1,546 MOVE_TO
+/// in 188 turns of war; 622 of 1,787 military unit-turns hovering 2–4 hexes
+/// from a target. The unit stepped into contact and stood there, unstruck,
+/// for the enemy's whole turn.
+///
+/// With `sequenced` — the run's `seat` event says `order_queue: true`, i.e.
+/// the mod that will apply these rows keeps a per-unit queue (`CivvisQueue`)
+/// and issues each later order once the earlier one has arrived — the walk
+/// still folds into one `MOVE_TO`, and every order after it now rides along
+/// in sequence instead of waiting a turn. Against an older mod the behaviour
+/// is byte-identical to before: a capability the sender assumes and the
+/// receiver lacks is how an accepted order becomes a silent no-op.
+fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
     let mut kept: std::collections::BTreeMap<i64, (usize, bool)> =
@@ -1004,6 +1030,12 @@ fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
+                } else if sequenced {
+                    // The mod queues this behind the unit's earlier orders and
+                    // issues it once they have settled. A move after an act is
+                    // its own host order, not part of the opening walk.
+                    *open = false;
+                    out.push(order);
                 } else {
                     // A command that must see the unit where the walk ends, or a
                     // move after such a command. Next frame.
@@ -1014,6 +1046,19 @@ fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
         }
     }
     (out, deferred, coalesced)
+}
+
+/// Unit orders that follow an earlier order for the same unit in this turn's
+/// list — the ones the mod's per-unit queue will hold until that earlier order
+/// has settled. Zero on an unsequenced turn by construction.
+fn sequenced_unit_followups(orders: &[Order]) -> usize {
+    let mut seen = std::collections::BTreeSet::new();
+    orders
+        .iter()
+        .filter(|order| order.kind == "unit")
+        .filter_map(|order| order.subject)
+        .filter(|unit| !seen.insert(*unit))
+        .count()
 }
 
 /// The first unrevealed step in each walk that reaches the host boundary.
@@ -1909,6 +1954,20 @@ fn append_next_production_hints(
     ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> usize {
     let mut hinted = 0;
+    // ★★★★★ THE HINT NEVER FIRED, IN ANY RECORDED GAME. `planned_game` is the
+    // board the agent has already TAKEN ITS TURN ON, and `take_turn` ends with
+    // `EndTurn`, so `current` is the next seat; `preview_live_production`
+    // clones that board and asks `advanced_production` to fill the cleared
+    // queue, and every `Produce` it tries comes back "not your turn". The
+    // preview answered `None` on every call, and the deferred hint — the one
+    // thing that stops the mod's hand-written ladder from answering the
+    // production prompt itself — was emitted zero times across the whole
+    // 2026-08-16..19 ladder (0 `produce_next` orders, 0 `build_hint` events,
+    // 70–174 ladder `build` picks per game, ~85% of them displaced by
+    // CIVVIS's own order on the following turn). Give the preview a board on
+    // which it is still this seat's turn: a throwaway copy, never applied.
+    let mut preview_board = planned_game.clone();
+    preview_board.current = 0;
     for city in &state.cities {
         if !host_production_finishes_this_turn(city)
             || orders
@@ -1920,7 +1979,7 @@ fn append_next_production_hints(
         let Some(cid) = mirror_state.cid_of.get(&city.id).copied() else {
             continue;
         };
-        let Some(item) = ai.preview_live_production(planned_game, 0, cid) else {
+        let Some(item) = ai.preview_live_production(&preview_board, 0, cid) else {
             continue;
         };
         let Some(name) = civ6_live_build_name(&item, planned_game) else {
@@ -3008,14 +3067,23 @@ fn decide(
     // into one host operation. `HostMoveRefusals` uses it only if Firaxis then
     // leaves the unit exactly where it started.
     let first_unknown_steps = first_unknown_coalesced_steps(&orders, snapshot);
+    let sequenced = state.seat.order_queue;
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths(orders);
+        coalesce_unit_paths(orders, sequenced);
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
     }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
+    }
+    if sequenced {
+        // How many orders now ride the mod's per-unit queue instead of waiting
+        // a turn — the number the queue exists to move off zero.
+        let followups = sequenced_unit_followups(&orders);
+        if followups > 0 {
+            note_bits.push(format!("sequenced_unit_followups={followups}"));
+        }
     }
 
     let host_frontier_probes =
@@ -3403,6 +3471,18 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("FORTIFY".to_string()),
+            pos: None,
+        }),
+        // ★★★ PILLAGE WAS DECIDED AND DROPPED. `doctrine_action` has light
+        // cavalry pillage before routine combat and the role basics let heavy
+        // cavalry pillage as a fallback (`docs/TACTICS.md` §8); the bridge had
+        // no arm for it, so on the live seat those units did nothing instead.
+        // The host operation is parameterless — the unit pillages the tile it
+        // stands on — and the mod resolves `UNITOPERATION_PILLAGE` by name.
+        Action::Pillage { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("PILLAGE".to_string()),
             pos: None,
         }),
         Action::UpgradeUnit { unit } => civ6_of.get(unit).map(|civ6| Order {
@@ -5763,7 +5843,7 @@ mod tests {
         let probes = first_unknown_coalesced_steps(&planned, &snapshot);
         assert_eq!(probes.get(&900), Some(&(8, 5)));
 
-        let (orders, deferred, coalesced) = coalesce_unit_paths(planned);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(planned, false);
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 2);
         assert_eq!(orders[0].pos, Some((9, 5)), "the host still gets the full walk");
@@ -5934,6 +6014,61 @@ mod tests {
         // an unnamed refusal is the exact failure this key exists to end.
         let missing = mirror.game.units.keys().copied().max().unwrap_or(0) + 1_000;
         assert_eq!(self_tile_move_key(&mirror, missing), "self_tile_move");
+    }
+
+    /// ★★★★★ THE DEFERRED PRODUCTION HINT NEVER FIRED IN ANY RECORDED GAME.
+    /// `append_next_production_hints` previews the next build on the board the
+    /// agent has already taken its turn on — and `take_turn` ends with
+    /// `EndTurn`, so `current` has moved to the next seat and every `Produce`
+    /// the preview tries is refused "not your turn". Zero `produce_next` orders
+    /// across the 2026-08-16..19 ladder; 70–174 mod-ladder `build` picks per
+    /// game answered the production prompt instead, ~85% displaced by CIVVIS's
+    /// own order one turn later. The preview must run on a board where it is
+    /// still this seat's turn.
+    #[test]
+    fn the_next_production_hint_survives_the_seat_having_ended_its_turn() {
+        let (snapshot, mut state) = production_board();
+        // The exported city finishes its Warrior this turn.
+        state.cities[0].production = 8.0;
+        state.cities[0].production_cost = 40.0;
+        state.cities[0].production_progress = 36.0;
+        state.cities[0].production_turns = 1.0;
+        assert!(host_production_finishes_this_turn(&state.cities[0]));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let mut planned = mirror.game.clone();
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        // The agent takes its turn on the planning board, exactly as `decide`
+        // does, and the board's seat moves on.
+        ai.take_turn(&mut planned, 0);
+        assert_ne!(
+            planned.current, 0,
+            "precondition: the seat has ended its turn"
+        );
+
+        let mut orders = Vec::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let hinted =
+            append_next_production_hints(&ai, &planned, &mirror, &state, &mut orders, &mut ours);
+        assert_eq!(
+            hinted,
+            1,
+            "the finishing city gets a hint: {:?}",
+            orders.iter().map(Order::to_json).collect::<Vec<_>>()
+        );
+        let hint = orders
+            .iter()
+            .find(|order| order.kind == "produce_next")
+            .expect("a produce_next order");
+        assert_eq!(hint.subject, Some(7));
+        assert!(hint.verb.as_deref().is_some_and(|v| !v.is_empty()));
+        assert!(
+            ours.get(&7)
+                .is_some_and(|value| value.starts_with(DEFERRED_PRODUCTION_PREFIX)),
+            "the lease is remembered until the host consumes it: {ours:?}"
+        );
+        // And the preview never touched the caller's board.
+        assert_ne!(planned.current, 0);
     }
 
     #[test]
@@ -6823,6 +6958,39 @@ mod tests {
         assert_eq!(repair.pos, None);
     }
 
+    /// `Action::Pillage` was decided by the doctrine layer and dropped by the
+    /// bridge; it now crosses as the parameterless host operation.
+    #[test]
+    fn a_pillage_crosses_as_the_parameterless_host_operation() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            units: vec![StateUnit {
+                id: 77,
+                kind: "UNIT_HORSEMAN".to_string(),
+                x: 5,
+                y: 5,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let unit = *mirror.uid_of.get(&77).expect("the Horseman is mirrored");
+
+        let pillage =
+            translate(&Action::Pillage { unit }, &mirror, &state).expect("the pillage crosses");
+        assert_eq!(pillage.kind, "unit");
+        assert_eq!(pillage.subject, Some(77));
+        assert_eq!(pillage.verb.as_deref(), Some("PILLAGE"));
+        assert_eq!(pillage.pos, None);
+    }
+
     #[test]
     fn contracted_promotion_names_expand_to_the_firaxis_database_ids() {
         assert_eq!(
@@ -7247,17 +7415,20 @@ mod tests {
 
     #[test]
     fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(42, "MOVE_TO", Some((4, 5))),
-            unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
-            unit_order(99, "FORTIFY", None),
-            Order {
-                kind: "research",
-                subject: None,
-                verb: Some("TECH_WRITING".to_string()),
-                pos: None,
-            },
-        ]);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(42, "MOVE_TO", Some((4, 5))),
+                unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
+                unit_order(99, "FORTIFY", None),
+                Order {
+                    kind: "research",
+                    subject: None,
+                    verb: Some("TECH_WRITING".to_string()),
+                    pos: None,
+                },
+            ],
+            false,
+        );
 
         assert_eq!(deferred, 1);
         assert_eq!(coalesced, 0);
@@ -7273,15 +7444,21 @@ mod tests {
     /// asked for the WHOLE walk, or it spends every turn on the first hex.
     #[test]
     fn a_units_planned_walk_becomes_one_move_to_its_furthest_hex() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(7, "MOVE_TO", Some((10, 10))),
-            unit_order(7, "MOVE_TO", Some((11, 10))),
-            unit_order(7, "MOVE_TO", Some((12, 11))),
-            unit_order(7, "FOUND_CITY", None),
-        ]);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(7, "MOVE_TO", Some((10, 10))),
+                unit_order(7, "MOVE_TO", Some((11, 10))),
+                unit_order(7, "MOVE_TO", Some((12, 11))),
+                unit_order(7, "FOUND_CITY", None),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 2, "two later steps folded into the first");
-        assert_eq!(deferred, 1, "the founding still waits for the arrival frame");
+        assert_eq!(
+            deferred, 1,
+            "the founding still waits for the arrival frame"
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].subject, Some(7));
         assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
@@ -7292,12 +7469,15 @@ mod tests {
     /// was planned from where the act leaves the unit, so it waits like the act.
     #[test]
     fn a_move_after_an_act_is_not_folded_into_the_walk() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(3, "MOVE_TO", Some((1, 1))),
-            unit_order(3, "MOVE_TO", Some((2, 1))),
-            unit_order(3, "RANGE_ATTACK", Some((4, 1))),
-            unit_order(3, "MOVE_TO", Some((1, 1))),
-        ]);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+                unit_order(3, "MOVE_TO", Some((2, 1))),
+                unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 1);
         assert_eq!(deferred, 2);
@@ -7309,12 +7489,15 @@ mod tests {
     /// defender, and a unit whose first order is the strike sends only the strike.
     #[test]
     fn a_melee_strike_terminates_the_walk_and_leads_alone_when_first() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(5, "MOVE_TO", Some((8, 8))),
-            unit_order(5, "ATTACK", Some((9, 8))),
-            unit_order(6, "ATTACK", Some((9, 8))),
-            unit_order(6, "MOVE_TO", Some((9, 8))),
-        ]);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(5, "MOVE_TO", Some((8, 8))),
+                unit_order(5, "ATTACK", Some((9, 8))),
+                unit_order(6, "ATTACK", Some((9, 8))),
+                unit_order(6, "MOVE_TO", Some((9, 8))),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 0);
         assert_eq!(deferred, 2);
@@ -7331,20 +7514,23 @@ mod tests {
     /// host executes sequentially — is preserved.
     #[test]
     fn interleaved_units_fold_independently_and_keep_their_batch_slots() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(1, "MOVE_TO", Some((0, 1))),
-            unit_order(2, "MOVE_TO", Some((5, 5))),
-            unit_order(1, "MOVE_TO", Some((0, 2))),
-            Order {
-                kind: "produce",
-                subject: Some(65_536),
-                verb: Some("UNIT_SETTLER".to_string()),
-                pos: None,
-            },
-            unit_order(2, "MOVE_TO", Some((6, 5))),
-            unit_order(2, "MOVE_TO", Some((7, 5))),
-            unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
-        ]);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(1, "MOVE_TO", Some((0, 1))),
+                unit_order(2, "MOVE_TO", Some((5, 5))),
+                unit_order(1, "MOVE_TO", Some((0, 2))),
+                Order {
+                    kind: "produce",
+                    subject: Some(65_536),
+                    verb: Some("UNIT_SETTLER".to_string()),
+                    pos: None,
+                },
+                unit_order(2, "MOVE_TO", Some((6, 5))),
+                unit_order(2, "MOVE_TO", Some((7, 5))),
+                unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 3);
         assert_eq!(deferred, 1);
@@ -7352,6 +7538,73 @@ mod tests {
         assert_eq!((orders[0].subject, orders[0].pos), (Some(1), Some((0, 2))));
         assert_eq!((orders[1].subject, orders[1].pos), (Some(2), Some((7, 5))));
         assert_eq!(orders[2].kind, "produce");
+    }
+
+    /// (subject, verb, position) of one host order, for asserting a sequence.
+    type Sequenced<'a> = (Option<i64>, &'a str, Option<(i32, i32)>);
+
+    /// With a queueing mod (`seat.order_queue`), the walk still folds into one
+    /// MOVE_TO and every later order for that unit rides along in sequence —
+    /// the strike after the step, the fortify after the strike, a move after an
+    /// act as its own order — instead of waiting a turn.
+    #[test]
+    fn a_sequenced_turn_keeps_every_followup_behind_the_folded_walk() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+                unit_order(3, "MOVE_TO", Some((2, 1))),
+                unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+                unit_order(3, "FORTIFY", None),
+                unit_order(5, "MOVE_TO", Some((8, 8))),
+                unit_order(5, "ATTACK", Some((9, 8))),
+                unit_order(5, "MOVE_TO", Some((8, 7))),
+                unit_order(6, "ATTACK", Some((9, 8))),
+            ],
+            true,
+        );
+
+        assert_eq!(deferred, 0, "nothing waits for the next frame");
+        assert_eq!(coalesced, 1, "only the contiguous walk folds");
+        let sequence: Vec<Sequenced<'_>> = orders
+            .iter()
+            .map(|order| {
+                (
+                    order.subject,
+                    order.verb.as_deref().unwrap_or(""),
+                    order.pos,
+                )
+            })
+            .collect();
+        assert_eq!(
+            sequence,
+            vec![
+                (Some(3), "MOVE_TO", Some((2, 1))),
+                (Some(3), "RANGE_ATTACK", Some((4, 1))),
+                (Some(3), "FORTIFY", None),
+                (Some(5), "MOVE_TO", Some((8, 8))),
+                (Some(5), "ATTACK", Some((9, 8))),
+                (Some(5), "MOVE_TO", Some((8, 7))),
+                (Some(6), "ATTACK", Some((9, 8))),
+            ]
+        );
+        assert_eq!(sequenced_unit_followups(&orders), 4);
+    }
+
+    /// The same list against a mod without the queue is exactly the old
+    /// behaviour: the capability decides, not the wish.
+    #[test]
+    fn without_the_capability_the_followups_still_wait() {
+        let list = || {
+            vec![
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+                unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+            ]
+        };
+        let (orders, deferred, _) = coalesce_unit_paths(list(), false);
+        assert_eq!((orders.len(), deferred), (1, 1));
+        let (orders, deferred, _) = coalesce_unit_paths(list(), true);
+        assert_eq!((orders.len(), deferred), (2, 0));
+        assert_eq!(sequenced_unit_followups(&orders), 1);
     }
 
     #[test]
@@ -8136,7 +8389,11 @@ mod tests {
             Some("work_sale_hold:no_starved_person")
         );
         let mut activatable = state.clone();
-        activatable.units[0].great_person.as_mut().unwrap().can_activate = true;
+        activatable.units[0]
+            .great_person
+            .as_mut()
+            .unwrap()
+            .can_activate = true;
         assert_eq!(
             append_work_sale_order(&activatable, &mut held),
             Some("work_sale_hold:no_starved_person")

@@ -96,6 +96,12 @@
       "completion_loyalty": 20
     }
   },
+  "train_athletes": {
+    "cost": 200,
+    "host_competition": "EMERGENCY_WORLD_GAMES",
+    "competition_score": 50,
+    "repeatable": true
+  },
   "repair_outer_defenses": {
     "cost": 1,
     "repeatable": true

@@ -143,6 +143,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_spy_mission_patience",
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
+    "live_without_district_building_chain",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -153,6 +154,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
+    "advanced_congress_banks_decided",
     "advanced_pantheon_board",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
@@ -413,6 +415,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "spy-mission-patience",
     "settler-site-agreement",
     "civilian-rescue",
+    "district-building-chain",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -577,6 +580,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // native `do_spy_mission` sets `spy.mission` and legality already
     // debounces, so the repair cannot fire there.
     "spy-mission-patience",
+    // Prices the Settler seat's tally for the buildings inside the districts
+    // it already stands, against Firaxis rivals who fill every one; the
+    // native lanes keep their bred building debts.
+    "district-building-chain",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -823,6 +830,7 @@ define_arm_kinds! {
     LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
+    LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -845,6 +853,7 @@ define_arm_kinds! {
     AdvancedCongressCounter => "advanced_congress_counter",
     AdvancedCongressCounterHard => "advanced_congress_counter_hard",
     AdvancedCongressVotes => "advanced_congress_votes",
+    AdvancedCongressBanksDecided => "advanced_congress_banks_decided",
     AdvancedPantheonBoard => "advanced_pantheon_board",
     AdvancedCounterInLane => "advanced_counter_in_lane",
     AdvancedCounterStandDown => "advanced_counter_stand_down",
@@ -1147,7 +1156,22 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// measured — the justification is that two definitions of the same thing
 /// disagreed, not a demonstrated gain. Rows before and after v15 are not
 /// comparable in any game where an improvement was pillaged.
-pub const ELO_PROTOCOL_VERSION: u32 = 15;
+///
+/// **v16 (2026-08-18) — Barbarian Scouts now report a sighted city, and each
+/// reported outpost raises one finite, difficulty-shaped raiding party.** The
+/// old phase let unreported camps add globally capped, unassigned units, so a
+/// distant camp could consume the force a successful Scout had earned. The
+/// corrected world rule keeps the Scout home while its report is active,
+/// retains each raider's source camp, and ends the alert after the party has
+/// formed.
+///
+/// This is a shared native-world rule with no controller gate: it changes what
+/// every participant faces before and during their turns. The frozen anchor
+/// therefore moves from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
+/// 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v15 and v16 rows are not
+/// comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 16;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -2684,6 +2708,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_congress_votes" => {
             let mut ai = AdvancedAi::new();
             ai.congress_counter_votes = true;
+            Box::new(ai)
+        }
+        // The free Diplomatic Victory Point on a resolution that is already
+        // settled. `advanced` answers one with the same opposition it would
+        // cast against a live vote, backed by the treasury when the plan is
+        // Diplomacy -- a ballot that cannot change the result, forfeits the
+        // point the host pays for predicting it, and is not refunded on the
+        // occasions it happens to win. This arm takes the point and stakes
+        // only the free first vote.
+        "advanced_congress_banks_decided" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_banks_a_decided_vote = true;
             Box::new(ai)
         }
         // The pantheon read from the land instead of from a fixed order. The
@@ -4403,6 +4439,7 @@ impl ArmKind {
             Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
+            Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4468,6 +4505,7 @@ impl ArmKind {
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
             Self::AdvancedCongressCounter => &["congress-counter-target"],
             Self::AdvancedCongressVotes => &["congress-counter-votes"],
+            Self::AdvancedCongressBanksDecided => &["congress-banks-a-decided-vote"],
             Self::AdvancedPantheonBoard => &["pantheon-reads-the-board"],
             Self::AdvancedCongressCounterHard => {
                 &["congress-counter-target", "congress-counter-votes"]
@@ -5082,6 +5120,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_congress_counter" => (Vec::new(), "advanced_congress_counter"),
         "advanced_congress_votes" => (Vec::new(), "advanced_congress_votes"),
         "advanced_congress_counter_hard" => (Vec::new(), "advanced_congress_counter_hard"),
+        "advanced_congress_banks_decided" => (Vec::new(), "advanced_congress_banks_decided"),
         "advanced_pantheon_board" => (Vec::new(), "advanced_pantheon_board"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
@@ -6518,6 +6557,7 @@ mod tests {
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",
+                "advanced_congress_banks_decided",
                 "advanced_pantheon_board",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",
@@ -6897,6 +6937,10 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
+            // The Settler seat's tally for the buildings inside its
+            // districts, against Firaxis rivals who fill every one; the
+            // native lanes keep their bred building debts.
+            "district_building_chain",
         ];
         // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
         // scrape reads the controller's whole text so a further split cannot
