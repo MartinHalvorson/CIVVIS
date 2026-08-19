@@ -240,6 +240,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
     "advanced_without_civilian_rescue",
+    "advanced_envelope_own_moves",
     "advanced_without_adjacent_camp_clear",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
@@ -918,6 +919,7 @@ define_arm_kinds! {
     AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
     AdvancedWithoutCivilianRescue => "advanced_without_civilian_rescue",
+    AdvancedEnvelopeOwnMoves => "advanced_envelope_own_moves",
     AdvancedWithoutAdjacentCampClear => "advanced_without_adjacent_camp_clear",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
@@ -3455,6 +3457,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_civilian_rescue();
             Box::new(ai)
         }
+        // The hostile-envelope table kept across the seat's own unit moves —
+        // the 2× the exact cache of #2103 cannot buy. Priced against stock
+        // `advanced` before it is promoted, because its reports differ.
+        "advanced_envelope_own_moves" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_envelope_cache_across_own_moves();
+            Box::new(ai)
+        }
         // Withhold the adjacent camp clear so its promotion is priced: the
         // current controller ships it ON, and only the frozen anchor lacks it.
         "advanced_without_adjacent_camp_clear" => {
@@ -4572,6 +4582,7 @@ impl ArmKind {
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
             Self::AdvancedWithoutCivilianRescue => &["civilian-rescue-withheld"],
+            Self::AdvancedEnvelopeOwnMoves => &["envelope-cache-across-own-moves"],
             Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
@@ -5088,6 +5099,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
         }
         "advanced_without_civilian_rescue" => (Vec::new(), "advanced_without_civilian_rescue"),
+        "advanced_envelope_own_moves" => (Vec::new(), "advanced_envelope_own_moves"),
         "advanced_without_adjacent_camp_clear" => {
             (Vec::new(), "advanced_without_adjacent_camp_clear")
         }
@@ -6618,6 +6630,7 @@ mod tests {
                 "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
                 "advanced_without_civilian_rescue",
+                "advanced_envelope_own_moves",
                 "advanced_without_adjacent_camp_clear",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
