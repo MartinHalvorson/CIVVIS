@@ -97,6 +97,44 @@ class TermTakesTheBrainWithIt(unittest.TestCase):
             "the handler must let atexit — and so stop_brain — run",
         )
 
+    def test_term_also_runs_the_finally_that_stops_the_game_and_frees_the_lock(self):
+        """The orphan and the stale lock are ONE bug, and this fix clears both.
+
+        `main` is `try: return _play(args) finally: launcher.stop();
+        gamelock.release()`. A default SIGTERM skips that `finally` as surely as
+        it skips atexit, so a TERMed harness left Civilization VI advancing AND
+        the game lock held AND a brain running. That pair is what blocked the
+        16:46 and 19:00 starts on 2026-08-19: "another run holds the game" with
+        nothing actually playing.
+
+        SystemExit is an exception, so it unwinds through `finally` first and
+        reaches atexit after — game stopped, lock released, brain stopped, in
+        that order. (Raised by the sibling session running the same ladder.)
+        """
+        import subprocess
+        script = (
+            "import atexit, os, signal, sys\n"
+            "d = sys.argv[1]\n"
+            "signal.signal(signal.SIGTERM,\n"
+            "  lambda s, f: (_ for _ in ()).throw(SystemExit(128 + s)))\n"
+            "atexit.register(lambda: open(os.path.join(d, 'brain'), 'w').write('stopped'))\n"
+            "try:\n"
+            "    os.kill(os.getpid(), signal.SIGTERM)\n"
+            "    import time; time.sleep(5)\n"
+            "finally:\n"
+            "    open(os.path.join(d, 'game'), 'w').write('stopped')\n"
+            "    open(os.path.join(d, 'lock'), 'w').write('released')\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run([sys.executable, "-c", script, tmp],
+                           capture_output=True, timeout=30)
+            for name, what in (("game", "launcher.stop()"),
+                               ("lock", "gamelock.release()"),
+                               ("brain", "atexit stop_brain")):
+                self.assertTrue(
+                    os.path.exists(os.path.join(tmp, name)),
+                    f"a TERMed harness must still reach {what}")
+
     def test_the_harness_installs_the_handler(self):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn("signal.signal(signal.SIGTERM", source,
