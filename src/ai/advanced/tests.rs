@@ -5762,6 +5762,199 @@ fn diplomatic_congress_spends_the_full_affordable_online_bank() {
     assert_eq!(game.players[0].diplomatic_favor, 40.0);
 }
 
+/// A settled resolution is answered with the free vote that predicts it.
+///
+/// The shipped ballot is `A:0` here and worth 1,000 to the scorer — the
+/// Diplomacy plan naming itself for World Leader — while the field has already
+/// put nine votes on `A:2` and only this empire has a ballot left to cast with
+/// one vote of Favor behind it. Nothing `advanced` can do changes the result,
+/// so the opposition buys nothing and forfeits the Diplomatic Victory Point
+/// `resolve_congress` pays for naming the winner exactly. The stake matters as
+/// much as the choice: a *winning* ballot is not refunded, and the Diplomacy
+/// plan would otherwise have pushed the whole treasury behind it.
+#[test]
+fn a_settled_congress_vote_is_joined_for_the_free_point() {
+    use crate::game::{CongressResolution, CongressSession};
+
+    let mut game = Game::new(3, 24, 16, 79, 80, 0);
+    // Five votes of Favor in hand, so the stake this empire *would* have laid
+    // is visibly larger than the free one -- with an empty treasury both paths
+    // cast a single vote and the test could not see the difference.
+    game.players[0].diplomatic_favor = 100.0;
+    let mut ballots = BTreeMap::new();
+    ballots.insert(1, ("A:2".to_string(), 5u32));
+    ballots.insert(2, ("A:2".to_string(), 4u32));
+    game.congress = Some(CongressSession {
+        convened: 0,
+        closes: 5,
+        resolutions: vec![CongressResolution {
+            id: "world_leader".to_string(),
+            title: "Diplomatic Victory".to_string(),
+            choices: vec![
+                "A:0".to_string(),
+                "B:0".to_string(),
+                "A:1".to_string(),
+                "B:1".to_string(),
+                "A:2".to_string(),
+                "B:2".to_string(),
+            ],
+            ballots,
+        }],
+    });
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    let mut shipped = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    let mut shipped_game = game.clone();
+    shipped.advanced_diplomacy(&mut shipped_game, 0, &plan);
+    assert_eq!(
+        shipped_game.congress.as_ref().unwrap().resolutions[0].ballots[&0],
+        ("A:0".to_string(), 5),
+        "shipped should still cast the opposition that cannot land, at full stake"
+    );
+
+    let mut banking = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    banking.congress_banks_a_decided_vote = true;
+    let mut banking_game = game.clone();
+    banking.advanced_diplomacy(&mut banking_game, 0, &plan);
+    assert_eq!(
+        banking_game.congress.as_ref().unwrap().resolutions[0].ballots[&0],
+        ("A:2".to_string(), 1),
+        "a decided resolution should be predicted exactly, on the free vote"
+    );
+    assert_eq!(
+        banking_game.players[0].diplomatic_favor, 100.0,
+        "the first vote on any ballot is free, so the treasury is untouched"
+    );
+    assert_eq!(
+        shipped_game.players[0].diplomatic_favor, 0.0,
+        "and shipped spent all of it on a ballot that changed nothing"
+    );
+}
+
+/// And a resolution that is *not* settled is still opposed.
+///
+/// One ballot of five votes stands, but two majors have yet to vote and hold
+/// between them six votes of Favor — enough to carry an outcome that currently
+/// has none. Calling that decided is what would make the join expensive
+/// instead of free, so the slack every outstanding ballot could still buy is
+/// the whole guard: drop it and this empire hands its World Leader vote to a
+/// rival over a five-vote lead it could have beaten itself.
+#[test]
+fn an_open_congress_vote_is_still_opposed() {
+    use crate::game::{CongressResolution, CongressSession};
+
+    let mut game = Game::new(3, 24, 16, 79, 80, 0);
+    game.players[0].diplomatic_favor = 100.0;
+    game.players[2].diplomatic_favor = 0.0;
+    let mut ballots = BTreeMap::new();
+    ballots.insert(1, ("A:2".to_string(), 5u32));
+    game.congress = Some(CongressSession {
+        convened: 0,
+        closes: 5,
+        resolutions: vec![CongressResolution {
+            id: "world_leader".to_string(),
+            title: "Diplomatic Victory".to_string(),
+            choices: vec![
+                "A:0".to_string(),
+                "B:0".to_string(),
+                "A:1".to_string(),
+                "B:1".to_string(),
+                "A:2".to_string(),
+                "B:2".to_string(),
+            ],
+            ballots,
+        }],
+    });
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    let mut banking = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    banking.congress_banks_a_decided_vote = true;
+    banking.advanced_diplomacy(&mut game, 0, &plan);
+    assert_eq!(
+        game.congress.as_ref().unwrap().resolutions[0].ballots[&0],
+        ("A:0".to_string(), 5),
+        "an open vote keeps its own ballot and the plan's full stake"
+    );
+}
+
+/// A major that has not voted yet keeps the resolution open on its own.
+///
+/// Here the leading ballot is the one this empire wanted anyway, so its own
+/// stake cannot be what settles the question — the three votes already on
+/// `A:0` lead, and the only reason the answer is still open is the five votes
+/// of Favor sitting in an empire that has not cast anything. Drop the rivals'
+/// outstanding votes from the bound and this reads as decided, the stake
+/// collapses to the single free vote, and the ballot this empire actually
+/// needed to win goes in at one vote against a field that can still bring
+/// five.
+#[test]
+fn an_outstanding_rival_ballot_keeps_a_vote_open() {
+    use crate::game::{CongressResolution, CongressSession};
+
+    let mut game = Game::new(3, 24, 16, 79, 80, 0);
+    game.players[0].diplomatic_favor = 100.0;
+    game.players[2].diplomatic_favor = 100.0;
+    let mut ballots = BTreeMap::new();
+    ballots.insert(1, ("A:0".to_string(), 3u32));
+    game.congress = Some(CongressSession {
+        convened: 0,
+        closes: 5,
+        resolutions: vec![CongressResolution {
+            id: "world_leader".to_string(),
+            title: "Diplomatic Victory".to_string(),
+            choices: vec![
+                "A:0".to_string(),
+                "B:0".to_string(),
+                "A:1".to_string(),
+                "B:1".to_string(),
+                "A:2".to_string(),
+                "B:2".to_string(),
+            ],
+            ballots,
+        }],
+    });
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    let mut banking = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    banking.congress_banks_a_decided_vote = true;
+    banking.advanced_diplomacy(&mut game, 0, &plan);
+    assert_eq!(
+        game.congress.as_ref().unwrap().resolutions[0].ballots[&0],
+        ("A:0".to_string(), 5),
+        "a vote a rival can still move is contested at the plan's full stake"
+    );
+}
+
+/// The treatment is off in the shipped controller.
+#[test]
+fn banking_a_decided_congress_vote_is_a_treatment() {
+    assert!(!AdvancedAi::new().congress_banks_a_decided_vote);
+}
+
 #[test]
 fn congress_strategy_contests_leaders_and_predicts_competitions() {
     let mut game = Game::new_full(3, 24, 16, 780, 200, 0, false);
