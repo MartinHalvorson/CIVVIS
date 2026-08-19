@@ -1868,8 +1868,16 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<BTreeSet<Pos>>)>;
 /// An enemy's reach can only change if something *inside that reach* changed,
 /// so each envelope carries a key over its own neighbourhood instead.
 struct EnemyEnvelope {
-    key: u64,
     reach: std::sync::Arc<BTreeSet<Pos>>,
+}
+
+/// The board the per-enemy envelopes were last measured against.
+struct EnvelopeBoard {
+    /// Map epoch, war count and the city fingerprint. Any of these moving is
+    /// treated as "everything changed": they are rare and global.
+    stamp: (u64, usize, u64),
+    /// Every unit's place, spec and owner — what `in_enemy_zoc_for` reads.
+    units: HashMap<u32, (Pos, u32, usize)>,
 }
 
 #[derive(Clone)]
@@ -2390,9 +2398,12 @@ pub struct BasicAi {
     /// the key, so a worker that has applied an action recomputes.
     attack_envelope_cache:
         std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
-    /// Per enemy, its last envelope and the neighbourhood key it belongs to.
-    /// Consulted only when the board key missed. See [`EnemyEnvelope`].
+    /// Per enemy, its last envelope. Consulted only when the board key missed,
+    /// and reused when [`Self::envelope_board_delta`] says nothing inside that
+    /// enemy's radius moved. See [`EnemyEnvelope`].
     enemy_envelope_cache: std::sync::Arc<std::sync::Mutex<HashMap<u32, EnemyEnvelope>>>,
+    /// The board those envelopes were measured against. See [`EnvelopeBoard`].
+    envelope_board: std::sync::Arc<std::sync::Mutex<Option<EnvelopeBoard>>>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -4181,6 +4192,7 @@ impl BasicAi {
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4491,6 +4503,7 @@ impl BasicAi {
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4824,66 +4837,84 @@ impl BasicAi {
         strides + 1 + g.unit_attack_range(uid).max(1)
     }
 
-    /// A key over everything inside `uid`'s reach bound that `attack_reach`
-    /// reads. Equal keys mean an equal envelope for this one enemy.
+    /// Everything that moved, appeared or changed spec since the last board
+    /// this controller was asked about, as the tiles those changes touched.
     ///
-    /// ⚠ Air units are deliberately absent: `attack_reach` centres their disk
-    /// on `air_operation_origin`, not on the unit's tile, so a key built
-    /// around the tile would be looking at the wrong neighbourhood. They are
-    /// cheap (a disk, not a flow field) and are simply recomputed.
-    fn enemy_envelope_key(g: &Game, uid: u32) -> Option<u64> {
-        let unit = g.units.get(&uid)?;
-        if g.rules.units[unit.kind].domain.as_deref() == Some("air") {
-            return None;
+    /// ★★★★★ THE HASH THIS REPLACES WAS 7.1% OF THE MAIN THREAD. Keying each
+    /// envelope on a hash of its own neighbourhood is exact, but it costs a
+    /// sweep of every unit and city *per enemy, per ask* — and on the profile
+    /// after #2151 that sweep cost almost as much as the recomputes it saved.
+    ///
+    /// A board delta answers the same question far more cheaply. An enemy's
+    /// envelope depends only on the map, the war ledger, the cities, and the
+    /// units within [`Self::envelope_reach_bound`] of it. If none of those
+    /// changed since the previous ask, an envelope that was right then is
+    /// still right now — so the reuse test becomes "did any changed tile land
+    /// inside my radius", over a change list that is usually one unit long
+    /// because the caller has stepped one unit and asked again.
+    ///
+    /// ⚠ The induction only holds while this is refreshed on *every* ask.
+    /// `None` means "assume everything changed", which is what a first ask, a
+    /// map edit, a war, or any city change returns.
+    fn envelope_board_delta(&self, g: &Game) -> Option<Vec<Pos>> {
+        let mut previous = self
+            .envelope_board
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let cities = Self::envelope_city_fingerprint(g);
+        let stamp = (g.map.tiles.epoch(), g.wars.len(), cities);
+        let mut current: HashMap<u32, (Pos, u32, usize)> = HashMap::with_capacity(g.units.len());
+        for unit in g.units.values() {
+            current.insert(unit.id, (unit.pos, unit.kind.id(), unit.owner));
         }
-        let bound = Self::envelope_reach_bound(g, uid);
+        let delta = match previous.as_ref() {
+            Some(prior) if prior.stamp == stamp => {
+                let mut touched = Vec::new();
+                for (id, now) in &current {
+                    match prior.units.get(id) {
+                        Some(before) if before == now => {}
+                        Some(before) => {
+                            touched.push(before.0);
+                            touched.push(now.0);
+                        }
+                        None => touched.push(now.0),
+                    }
+                }
+                for (id, before) in &prior.units {
+                    if !current.contains_key(id) {
+                        touched.push(before.0);
+                    }
+                }
+                Some(touched)
+            }
+            _ => None,
+        };
+        *previous = Some(EnvelopeBoard {
+            stamp,
+            units: current,
+        });
+        delta
+    }
+
+    /// The cities as `attack_reach` sees them: identity, owner and place.
+    fn envelope_city_fingerprint(g: &Game) -> u64 {
         const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
         const PRIME: u64 = 0x0000_0100_0000_01b3;
         let mut hash = OFFSET;
-        let mut mix = |value: u64| {
-            for byte in value.to_le_bytes() {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(PRIME);
+        for city in g.cities.values() {
+            for value in [
+                u64::from(city.id),
+                city.owner as u64,
+                city.pos.0 as u64,
+                city.pos.1 as u64,
+            ] {
+                for byte in value.to_le_bytes() {
+                    hash ^= u64::from(byte);
+                    hash = hash.wrapping_mul(PRIME);
+                }
             }
-        };
-        mix(g.map.tiles.epoch());
-        mix(g.wars.len() as u64);
-        // The enemy's own place and spec, stated rather than left to fall out
-        // of the neighbourhood sweep below including it at distance zero. The
-        // reuse is only sound because these are here, so they are written here.
-        mix(unit.pos.0 as u64);
-        mix(unit.pos.1 as u64);
-        mix(u64::from(unit.kind.id()));
-        mix(unit.formation as u64);
-        mix(u64::from(unit.zoc_stopped));
-        // Ordered by id so equal neighbourhoods hash equal whatever the map
-        // iteration order is.
-        let mut near: Vec<&crate::game::Unit> = g
-            .units
-            .values()
-            .filter(|other| g.wdist(other.pos, unit.pos) <= bound)
-            .collect();
-        near.sort_unstable_by_key(|other| other.id);
-        for other in near {
-            mix(u64::from(other.id));
-            mix(other.owner as u64);
-            mix(other.pos.0 as u64);
-            mix(other.pos.1 as u64);
-            mix(u64::from(other.kind.id()));
         }
-        let mut cities: Vec<&crate::game::City> = g
-            .cities
-            .values()
-            .filter(|city| g.wdist(city.pos, unit.pos) <= bound)
-            .collect();
-        cities.sort_unstable_by_key(|city| city.id);
-        for city in cities {
-            mix(u64::from(city.id));
-            mix(city.owner as u64);
-            mix(city.pos.0 as u64);
-            mix(city.pos.1 as u64);
-        }
-        Some(hash)
+        hash
     }
 
     fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
@@ -4891,6 +4922,7 @@ impl BasicAi {
             .enemy_envelope_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let delta = self.envelope_board_delta(g);
         let out: AttackEnvelopes = g
             .units
             .values()
@@ -4903,10 +4935,18 @@ impl BasicAi {
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
             })
             .filter_map(|unit| {
-                let key = Self::enemy_envelope_key(g, unit.id);
-                if let Some(key) = key {
-                    if let Some(entry) = store.get(&unit.id) {
-                        if entry.key == key {
+                // ⚠ Air units are never reused: `attack_reach` centres their
+                // disk on `air_operation_origin`, not the unit's tile, so a
+                // radius around the tile watches the wrong ground. They are a
+                // disk, not a flow field, and cost little to redo.
+                let reusable = g.rules.units[unit.kind].domain.as_deref() != Some("air");
+                if reusable {
+                    if let (Some(delta), Some(entry)) = (delta.as_ref(), store.get(&unit.id)) {
+                        let bound = Self::envelope_reach_bound(g, unit.id);
+                        if delta
+                            .iter()
+                            .all(|touched| g.wdist(*touched, unit.pos) > bound)
+                        {
                             return (!entry.reach.is_empty())
                                 .then(|| (unit.id, std::sync::Arc::clone(&entry.reach)));
                         }
@@ -4914,11 +4954,10 @@ impl BasicAi {
                 }
                 let reach: std::sync::Arc<BTreeSet<Pos>> =
                     std::sync::Arc::new(g.attack_reach(unit.id).into_iter().collect());
-                if let Some(key) = key {
+                if reusable {
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
-                            key,
                             reach: std::sync::Arc::clone(&reach),
                         },
                     );
@@ -23455,6 +23494,87 @@ mod attack_envelope_key_tests {
             }
         }
         assert!(checked > 100, "only {checked} tiles were checked");
+    }
+
+    /// The board delta names every tile a change touched, and gives up
+    /// entirely on the changes it does not track.
+    ///
+    /// ★★★★★ TESTED HERE BECAUSE IT CANNOT BE TESTED ABOVE. The reuse gate is
+    /// only sound if the delta is complete, and two of its halves are
+    /// unreachable from a whole-board fixture: a unit stepping *out* of an
+    /// enemy's radius (its new tile is outside, so only the tile it left says
+    /// anything happened), and a map, war or city change. Planted defects in
+    /// both survived `a_warm_envelope_cache_answers_what_a_cold_one_computes`,
+    /// because with shipped units an own unit's move never changes an enemy's
+    /// envelope at all — see that test's own note. So the delta is pinned
+    /// directly.
+    #[test]
+    fn the_board_delta_reports_every_tile_a_change_touched() {
+        let mut game = Game::new_full(2, 24, 16, 5_150, 300, 0, false);
+        let ai = BasicAi::new();
+        assert!(
+            ai.envelope_board_delta(&game).is_none(),
+            "a first ask has no previous board and must assume everything changed"
+        );
+        assert_eq!(
+            ai.envelope_board_delta(&game),
+            Some(Vec::new()),
+            "an unchanged board touches no tile"
+        );
+
+        let uid = game.player_unit_ids(0).into_iter().next().unwrap();
+        let from = game.units[&uid].pos;
+        let to = game.nbrs(from).into_iter().next().unwrap();
+        game.units.get_mut(&uid).unwrap().pos = to;
+        let moved = ai
+            .envelope_board_delta(&game)
+            .expect("a move is not wholesale");
+        assert!(
+            moved.contains(&from),
+            "the tile a unit LEFT must be reported: its zone of control was there \
+             and is not any more, and the tile it arrived on may be outside the \
+             radius that cared"
+        );
+        assert!(
+            moved.contains(&to),
+            "the tile a unit arrived on must be reported"
+        );
+
+        let spawned = game.spawn_test_unit("warrior", 0, from);
+        let born = ai
+            .envelope_board_delta(&game)
+            .expect("a spawn is not wholesale");
+        assert!(born.contains(&from), "a new unit's tile must be reported");
+
+        game.units.remove(&spawned);
+        let died = ai
+            .envelope_board_delta(&game)
+            .expect("a death is not wholesale");
+        assert!(
+            died.contains(&from),
+            "a removed unit's last tile must be reported"
+        );
+
+        // The global changes the delta does not track individually. (The war
+        // ledger is the third and takes the same path -- `stamp` carries
+        // `wars.len()` -- but a fixture cannot open one without the engine's
+        // private declaration path, so the two that can be reached stand for
+        // it.)
+        let city = game.found_city_for(0, from, None);
+        assert!(
+            ai.envelope_board_delta(&game).is_none(),
+            "a new city must fall back to recomputing everything"
+        );
+        game.cities.get_mut(&city).unwrap().owner = 1;
+        assert!(
+            ai.envelope_board_delta(&game).is_none(),
+            "a city changing hands must fall back to recomputing everything"
+        );
+        game.map.tiles.get_mut(&from).unwrap().road = 5;
+        assert!(
+            ai.envelope_board_delta(&game).is_none(),
+            "a map edit must fall back to recomputing everything"
+        );
     }
 
     /// A warm per-enemy cache answers exactly what a cold one computes.

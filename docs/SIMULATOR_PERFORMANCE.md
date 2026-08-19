@@ -1055,3 +1055,54 @@ comment so the next reader does not repeat it.
 held before #2148. **It has not been re-profiled** — the standing rule in this
 file is to re-profile after every landed win, and that is the next step here,
 not a claim this one makes.
+
+## 2026-08-19 (re-profile) — the key that saved the recomputes became the cost
+
+#2151 landed and, per the standing rule at the top of this file, was
+re-profiled. Same workload, `ci` profile, 6,423 main-thread samples:
+
+| symbol | before #2148 | after #2151 |
+| --- | ---: | ---: |
+| `enemy_attack_envelopes` | 74.9% | 55.6% |
+| `attack_reach` | 73.2% | 42.0% |
+| `enemy_envelope_key` | — | **7.1%** |
+| `safe_healing_step` | 1.4% | 2.6% |
+
+The win landed. But hashing each enemy's neighbourhood costs a sweep of every
+unit and city *per enemy, per ask*, and that sweep had become 7.1% of the main
+thread on its own.
+
+Two changes, measured separately against the same merge-base:
+
+1. **Stop sorting a table that is already in order.** `Units` wraps a
+   `BTreeMap` keyed by id and `Game::cities` is one, so `values()` already
+   arrives in id order; the first cut collected each into a `Vec` and sorted it
+   anyway. Hashing in place: **−2.53%**.
+2. **Replace the hash with a board delta.** An enemy's envelope depends on the
+   map, the wars, the cities and the units within its radius. If none of those
+   changed since the previous ask, an envelope that was right then is right
+   now — so the reuse test becomes "did any changed tile land inside my
+   radius", over a change list that is usually one unit long because the caller
+   has stepped one unit and asked again. This removes `enemy_envelope_key`
+   entirely: **−11.03%, −12.01%, −10.39%** on three paired batches.
+
+Reports agree on every paired seed and the anchor passes unchanged at 17,482
+decisions and `0x8162_c919_b83c_40df`.
+
+⚠ The induction only holds while the delta is refreshed on **every** ask, and
+`None` — "assume everything changed" — is what a first ask, a map edit, a war
+or any city change returns.
+
+### Where the tests had to move, and why
+
+`a_warm_envelope_cache_answers_what_a_cold_one_computes` catches a reuse gate
+that always reuses, and **nothing else**. Planted defects that dropped the tile
+a moved unit *left*, that skipped the wholesale fallback, and that ignored a
+removed unit all survived it — because with shipped units an own unit's move
+never changes an enemy's envelope at all, so a whole-board fixture cannot
+reach those paths. `the_board_delta_reports_every_tile_a_change_touched` tests
+`envelope_board_delta` directly and refuses all three.
+
+That is the general lesson from this pair of changes: when the observable
+behaviour is provably unchanged, the test has to move down to the invariant
+that makes it unchanged, not stay at the behaviour.
