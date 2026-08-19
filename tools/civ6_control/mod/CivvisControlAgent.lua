@@ -14136,24 +14136,24 @@ local function onPlayerDefeat(player, defeat, eventID)
 	});
 end
 
--- ★★★★★ JOIN THE AID REQUEST BEFORE TRYING TO WIN IT.
+-- ★★★★★ JOIN A SCORABLE WORLD CRISIS BEFORE TRYING TO WIN IT.
 --
--- The bridge already knows how to take an Aid Request's first-place score: a
--- Send Aid project, or the bounded direct-Gold finisher.  Both paths require
+-- The bridge already knows how to take an Aid Request's first-place score and
+-- Climate Accords' power-plant decommission score. Both paths require
 -- membership, while the prior controller merely let the World Crisis prompt
 -- wait for a person. Firaxis's own WorldCrisisPopup handles
 -- `Events.EmergencyAvailable` by issuing this exact ACCEPT_EMERGENCY operation
--- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE.  Take that same operation,
--- but only for the two humanitarian competitions we can actually score. Other
--- emergencies can create wars or commit production that this event has not
--- priced, so they remain untouched.
+-- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE. Take that same operation,
+-- but only for competitions with a priced path in the bridge. Other emergencies
+-- can create wars or commit production that this event has not priced, so they
+-- remain untouched.
 --
 -- This is a bare global for the offline regression and because the main chunk
 -- is at its local-register ceiling. `peaceAsked` is the existing turn-scoped
 -- submission ledger; a string key prevents a synchronous repeat of this event
 -- from submitting a second accept before the host updates MemberIDs.
 CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
-	if finished or cfg.Play == false or cfg.AutoJoinAidRequests == false then return; end
+	if finished or cfg.Play == false then return; end
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local target = tonumber(targetPlayerID);
 	local emergency = tonumber(emergencyType);
@@ -14161,26 +14161,42 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 		return GameInfo.EmergencyAlliances[emergency];
 	end, nil) or nil;
 	local kind = definition and tostring(definition.EmergencyType or "") or "";
+	local aid = kind == "EMERGENCY_SEND_AID" or kind == "EMERGENCY_SEND_MILITARY_AID";
+	local climate = kind == "EMERGENCY_CLIMATE_ACCORDS";
+	if not climate and cfg.AutoJoinAidRequests == false then return; end
+	if climate and cfg.AutoJoinClimateAccords == false then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 	local function report(reason, submitted)
-		emit("aid_emergency_join", {
+		emit(climate and "climate_accords_join" or "aid_emergency_join", {
 			turn = turn, target = target or -1,
 			emergency = kind ~= "" and kind or tostring(emergencyType or ""),
 			submitted = submitted and true or false, reason = reason,
 		});
 	end
-	if pid == nil or pid < 0 or target == nil or target < 0
-			or emergency == nil then
+	if pid == nil or pid < 0 or target == nil or emergency == nil then
 		report("invalid_event", false);
 		return;
 	end
-	if kind ~= "EMERGENCY_SEND_AID" and kind ~= "EMERGENCY_SEND_MILITARY_AID" then
+	if not aid and not climate then
 		report("not_aid_request", false);
 		return;
 	end
-	if target == pid then
-		report("target_is_local", false);
-		return;
+	if climate then
+		-- Climate Accords has NoTarget=true. The shipped popup sends -1 through
+		-- PARAM_OTHER_PLAYER; a real player ID would be a mismatched event.
+		if target ~= -1 then
+			report("unexpected_target", false);
+			return;
+		end
+	else
+		if target < 0 then
+			report("invalid_event", false);
+			return;
+		end
+		if target == pid then
+			report("target_is_local", false);
+			return;
+		end
 	end
 
 	-- Match the shipped popup's tracker lookup before issuing anything. An old
@@ -14212,21 +14228,23 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 		end
 	end
 
-	-- Firaxis gives both Aid Request types an empty member-requirement set: the
-	-- project route can score even when we have not met the recipient, or when
-	-- it is not a major civilization. Do not accidentally impose the direct-Gold
-	-- deal's stricter contact/major gates here. War is different: the shipped
-	-- score sources deduct 30 (ordinary Aid) or 200 (military Aid) while at war,
-	-- so decline that actively losing membership.
-	local player = try(function() return Players[pid]; end, nil);
-	local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil);
-	if diplomacy == nil then
-		report("no_diplomacy", false);
-		return;
-	end
-	if try(function() return diplomacy:IsAtWarWith(target); end, false) then
-		report("at_war", false);
-		return;
+	if aid then
+		-- Firaxis gives both Aid Request types an empty member-requirement set: the
+		-- project route can score even when we have not met the recipient, or when
+		-- it is not a major civilization. Do not accidentally impose the direct-Gold
+		-- deal's stricter contact/major gates here. War is different: the shipped
+		-- score sources deduct 30 (ordinary Aid) or 200 (military Aid) while at war,
+		-- so decline that actively losing membership.
+		local player = try(function() return Players[pid]; end, nil);
+		local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil);
+		if diplomacy == nil then
+			report("no_diplomacy", false);
+			return;
+		end
+		if try(function() return diplomacy:IsAtWarWith(target); end, false) then
+			report("at_war", false);
+			return;
+		end
 	end
 
 	local otherParam = try(function() return PlayerOperations.PARAM_OTHER_PLAYER; end);
@@ -14236,7 +14254,8 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 		report("api_unavailable", false);
 		return;
 	end
-	local key = "aid_join:" .. kind .. ":" .. target;
+	local key = climate and ("climate_join:" .. kind)
+		or ("aid_join:" .. kind .. ":" .. target);
 	if turn >= 0 and peaceAsked[key] == turn then
 		report("duplicate", false);
 		return;
