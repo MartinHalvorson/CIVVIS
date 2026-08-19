@@ -2035,7 +2035,10 @@ mod tests {
         let spent = mirror.uid_of[&11];
         let fresh = mirror.uid_of[&12];
         let unreported = mirror.uid_of[&13];
-        assert_eq!(mirror.game.units[&spent].moves_left, 0.0, "the host already walked it");
+        assert_eq!(
+            mirror.game.units[&spent].moves_left, 0.0,
+            "the host already walked it"
+        );
         assert_eq!(
             mirror.game.units[&fresh].moves_left,
             mirror.game.unit_max_moves(fresh)
@@ -2053,7 +2056,10 @@ mod tests {
         next.units[0].moves = 2.0;
         next.units[1].moves = 1.0;
         mirror.sync(&snapshot, &next, 0);
-        assert_eq!(mirror.game.units[&spent].moves_left, mirror.game.unit_max_moves(spent));
+        assert_eq!(
+            mirror.game.units[&spent].moves_left,
+            mirror.game.unit_max_moves(spent)
+        );
         assert_eq!(mirror.game.units[&fresh].moves_left, 1.0);
     }
 
@@ -3880,10 +3886,32 @@ mod tests {
         let plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
-                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None, rt: None, rp: false,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: if (x, y) == (3, 3) {
+                        0
+                    } else if (x, y) == (11, 11) {
+                        3
+                    } else {
+                        -1
+                    },
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -3954,10 +3982,32 @@ mod tests {
         let plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
-                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None, rt: None, rp: false,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: if (x, y) == (3, 3) {
+                        0
+                    } else if (x, y) == (11, 11) {
+                        3
+                    } else {
+                        -1
+                    },
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -7705,9 +7755,26 @@ mod tests {
         let mut plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: -1, w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None, rt: None, rp: false,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: -1,
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -16684,7 +16751,12 @@ impl LiveMirror {
         // standalone CIVVIS ruleset grants them two walking moves.
         let observed: std::collections::BTreeMap<i64, &StateUnit> =
             state.units.iter().map(|unit| (unit.id, unit)).collect();
-        for (uid, civ6) in rebuilt.unit_ids.iter().map(|(uid, civ6)| (*uid, *civ6)).collect::<Vec<_>>() {
+        for (uid, civ6) in rebuilt
+            .unit_ids
+            .iter()
+            .map(|(uid, civ6)| (*uid, *civ6))
+            .collect::<Vec<_>>()
+        {
             let allowance = mirror_unit_moves_for(
                 &game,
                 uid,
