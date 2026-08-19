@@ -10396,3 +10396,56 @@ recon quartet), 6p 74×46, 9 CS, online, 250t:
 Wins lean for on both seeds with the interval through zero; the unit-count
 proxy did not replicate. Ships OFF as a priced entrant; a matrix run is the
 next step if the axis is re-opened.
+
+## The bare `ai_eval` default is not the recorded profile, and it reversed a result (2026-08-19)
+
+Every profile in this file names its board — `6p 74×46, 9 CS, online, 250t`, and the
+`74x46 / 6 players = 567 tiles per player` rationale. **`ai_eval` invoked without
+`--players/--width/--height/--speed` does not give you that board**, and the difference is
+large enough to flip a treatment's measured direction. Recording it because nothing here
+says so, and the bare form is the obvious thing to reach for.
+
+Measured against the live Chieftain ladder at **turn 150**, all Chieftain, 150 turns:
+
+| profile | cities | **dist** | build | **tech** |
+|---|---|---|---|---|
+| bare default (no board flags) | 5.25 | **5.9** | 13.6 | **15.6** |
+| `--speed online --players 10` only | 1.10 | **2.4** | 6.1 | **8.1** |
+| `--speed online --players 10 --width 74 --height 46` | 8.70 | **19.4** | 44.2 | **34.0** |
+| **live lane** `civvis-20260819T092530Z` | 5 | **19** | 28 | **38** |
+| **live lane** `civvis-20260819T074452Z` | 6 | **17** | 24 | **36** |
+
+The bare default runs **~3× short on districts and ~2× short on tech** at the same turn. Note
+the middle row: raising `--players` WITHOUT the map size is worse than leaving both alone —
+ten seats on a default-sized board is far more crowded than Civ 6's small map, and every
+economy number collapses.
+
+### Why it matters: the same treatment, opposite directions
+
+`live` vs `live_without_district_building_chain`, the treatment that exists to get a standing
+specialty district its own buildings:
+
+| profile | build (ON) | build (OFF) | reading |
+|---|---|---|---|
+| bare default, 30 pairs | 13.6 | 14.1 | treated arm LOWER — "no measurable benefit" |
+| calibrated 10p 74×46, 10 pairs | **44.2** | 40.9 | treated arm ~8% HIGHER |
+
+Same treatment, same binary, opposite sign. On the bare default the seat holds ~6 districts,
+so a treatment that fires only when a standing district lacks its buildings rarely gets the
+chance to act; the live seat holds ~19. The null was the board, not the behaviour. (n=10 pairs
+on the calibrated row — direction only, no paired verdict; ~15 min per read at that map size
+against ~2 min on the default.)
+
+### Practice
+
+- Name the board in every result, as the rest of this file does.
+- Before trusting a verdict, read the per-arm stats line (`grep -A 3 "seat-win% score cities"`)
+  and check `cities/dist/build/tech` against a live run at the same turn. If the regime the
+  treatment needs is not present, the verdict is inert whichever way it lands.
+- Three separate versions of that trap in one session: this one; the default profile never
+  producing a **science or diplomatic** victory (89 of 120 games religious), so win-rate reads
+  say nothing for those lanes; and `--victories science` at 150 turns returning
+  `no winner 10`, because a science win is not reachable at that horizon.
+- For **live-lane** questions specifically, the ladder plays 10 majors on Civ 6's small map, so
+  `--players 10 --width 74 --height 46 --speed online` tracks it; the house `6p` profile is the
+  right one for comparisons against everything else recorded here.
