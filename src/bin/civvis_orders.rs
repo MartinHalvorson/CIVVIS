@@ -8205,7 +8205,11 @@ mod tests {
             Some("work_sale_hold:no_starved_person")
         );
         let mut activatable = state.clone();
-        activatable.units[0].great_person.as_mut().unwrap().can_activate = true;
+        activatable.units[0]
+            .great_person
+            .as_mut()
+            .unwrap()
+            .can_activate = true;
         assert_eq!(
             append_work_sale_order(&activatable, &mut held),
             Some("work_sale_hold:no_starved_person")
