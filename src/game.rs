@@ -16618,6 +16618,13 @@ impl Game {
         value
     }
 
+    /// Favor one active city-state suzerainty generates at the start of a
+    /// major civilization's turn. Országház multiplies this source, so every
+    /// consumer of a prospective suzerainty reads the same rate as upkeep.
+    pub(crate) fn suzerain_diplomatic_favor_per_turn(&self, pid: usize) -> f64 {
+        1.0 + self.empire_wonder_effect(pid, "suzerain_diplomatic_favor_pct") / 100.0
+    }
+
     #[cfg(test)]
     /// `MOMENT_BARBARIAN_CAMP_DESTROYED` is available from Ancient through
     /// Medieval. Keep this compatibility accessor for clients while deriving
@@ -42026,8 +42033,7 @@ impl Game {
             .filter(|alliance| alliance.ends > turn)
             .map(|alliance| alliance.level as f64)
             .sum::<f64>();
-        let suzerain_multiplier =
-            1.0 + self.empire_wonder_effect(pid, "suzerain_diplomatic_favor_pct") / 100.0;
+        let suzerain_multiplier = self.suzerain_diplomatic_favor_per_turn(pid);
         let buildings = self.empire_building_sum(pid, |building| {
             building
                 .effects
