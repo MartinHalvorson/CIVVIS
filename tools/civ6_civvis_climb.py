@@ -313,9 +313,39 @@ def teardown(expected_tag: str | None = None) -> bool:
 RUNNING_GAME_PATTERN = r"MacOS/Civ6_Exe|/civ6_play\.py|/civ6_brain\.py"
 
 
+def _is_really_the_game(pid: str) -> bool:
+    """Is this pid the game or the harness, or just a shell that names one?
+
+    `pgrep -f` matches the whole command line, so ANY process that merely
+    mentions `civ6_play.py` counts — including a diagnostic shell, an editor, a
+    `grep`, or another agent session's command. That is not hypothetical: on
+    2026-08-19 the lane lost two separate windows to it. A leftover Claude shell
+    carrying `civ6_play|civ6_brain` in a `grep` pattern sat for nine minutes and
+    every attempt died with "something already holds the game; refusing to stop
+    an unowned run" — while the lock file was empty, no harness ran and Civ 6
+    was down. It happened again an hour later from a DIFFERENT agent session's
+    shell, which this process had no business killing.
+
+    `civvis-game-supervisor.sh` already solved this for its own scan: `ps -o
+    comm` is truncated on macOS, so it reads lsof's first `txt` mapping, which
+    is the real executable. Same test here. A pid we cannot resolve is treated
+    as real — refusing to touch an unproven game is the safe direction, and it
+    is what the caller's "refusing to stop an unowned run" already does.
+    """
+    executable = run(["lsof", "-a", "-p", pid, "-d", "txt", "-Fn"])
+    for line in executable.splitlines():
+        if not line.startswith("n"):
+            continue
+        path = line[1:]
+        # The game itself, or a Python interpreter running the harness.
+        return "Civ6" in path or Path(path).name.lower().startswith("python")
+    return True
+
+
 def busy() -> str | None:
     out = run(["pgrep", "-f", RUNNING_GAME_PATTERN])
-    return out.strip() or None
+    real = [pid for pid in out.split() if _is_really_the_game(pid)]
+    return " ".join(real) or None
 
 
 def _detach(cmd: list[str], log_path: Path, what: str) -> None:

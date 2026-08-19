@@ -24,6 +24,57 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_civvis_climb as climb
 
 
+class BusyOnlyCountsARealGame(unittest.TestCase):
+    """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
+
+    Twice on 2026-08-19 the lane stalled on this: a leftover agent shell whose
+    argv carried `civ6_play|civ6_brain` (from a grep) made every attempt die
+    with "something already holds the game; refusing to stop an unowned run",
+    while the lock file was empty, no harness ran and Civ 6 was down. The second
+    time the shell belonged to a DIFFERENT agent session, which this process
+    must not kill. Verify the executable instead, exactly as
+    `civvis-game-supervisor.sh` already does for its own scan.
+    """
+
+    def _lsof(self, path):
+        return f"p1\nftxt\nn{path}\n"
+
+    def test_a_shell_that_merely_names_the_harness_is_not_a_game(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242\n",                       # pgrep hit
+            self._lsof("/bin/zsh"),          # ... but it is a shell
+        ]):
+            self.assertIsNone(climb.busy(),
+                              "a shell carrying the name in its argv is not a game")
+
+    def test_the_python_harness_still_counts(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242\n",
+            self._lsof("/Library/Frameworks/Python.framework/Versions/3.9/.../Python"),
+        ]):
+            self.assertEqual(climb.busy(), "4242")
+
+    def test_the_game_itself_still_counts(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "77\n",
+            self._lsof("/Users/x/Steam/common/Sid Meier's Civilization VI/Civ6.app/Content"),
+        ]):
+            self.assertEqual(climb.busy(), "77")
+
+    def test_an_unresolvable_pid_is_treated_as_real(self):
+        """Refusing to touch an unproven game is the safe direction."""
+        with mock.patch.object(climb, "run", side_effect=["9\n", ""]):
+            self.assertEqual(climb.busy(), "9")
+
+    def test_a_real_game_survives_a_shell_in_the_same_sweep(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242 77\n",
+            self._lsof("/bin/zsh"),
+            self._lsof("/Users/x/Civ6.app/Contents/MacOS/Civ6_Exe"),
+        ]):
+            self.assertEqual(climb.busy(), "77")
+
+
 class MirrorFreshnessTests(unittest.TestCase):
     def test_follower_output_path_reads_lsof_file_field(self):
         mirror_log = climb.MIRROR_FOLLOW_LOG
