@@ -31272,10 +31272,10 @@ impl Game {
                 if self.players[pid].is_barbarian {
                     return false;
                 }
-                if spec
-                    .host_competition
-                    .as_deref()
-                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                if spec.requires_host_competition()
+                    && !spec
+                        .host_competition_kinds()
+                        .any(|kind| self.host_competition(pid, kind).is_some())
                 {
                     return false;
                 }
