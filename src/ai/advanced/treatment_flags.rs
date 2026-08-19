@@ -1841,6 +1841,13 @@ impl AdvancedAi {
         self.base.civilian_rescue = false;
     }
 
+    /// Keep the hostile-envelope table across this seat's own unit moves —
+    /// evaluator arm `advanced_envelope_own_moves`. See
+    /// `BasicAi::envelope_cache_across_own_moves`.
+    pub fn enable_envelope_cache_across_own_moves(&mut self) {
+        self.base.enable_envelope_cache_across_own_moves();
+    }
+
     /// Stop pricing a Firaxis barbarian scout as a threat. See
     /// `barbarian_scouts_are_scouts`.
     pub fn enable_barbarian_scouts_are_scouts(&mut self) {

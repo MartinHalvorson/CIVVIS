@@ -59,7 +59,7 @@
     "withholdable": 59
   },
   "derived": {
-    "eval_only_count": 235,
+    "eval_only_count": 236,
     "firaxis_only_count": 29,
     "live_bridge_count": 88,
     "native_engine_repair_count": 59,
@@ -236,7 +236,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 235,
+      "declared_count": 236,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -418,6 +418,7 @@
         "advanced_camp_bounty",
         "advanced_without_barbarian_scouts_are_scouts",
         "advanced_without_civilian_rescue",
+        "advanced_envelope_own_moves",
         "advanced_without_adjacent_camp_clear",
         "advanced_engine_faith_price",
         "advanced_maintenance_deck",
