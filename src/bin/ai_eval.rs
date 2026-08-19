@@ -16,7 +16,7 @@ use std::process::Command;
 ///
 /// Listed so `--city-states 0`, which is the default, cannot silently turn one
 /// of them into a null. Add an arm here when its axis needs a minor to exist.
-const MINOR_DEPENDENT_ARMS: [&str; 7] = [
+const MINOR_DEPENDENT_ARMS: [&str; 8] = [
     "advanced_diplomatic_opening",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
@@ -30,6 +30,11 @@ const MINOR_DEPENDENT_ARMS: [&str; 7] = [
     // terminal score. Both 400-pair runs that decided this flag ships off were
     // hand-rolled `ai_eval` lines, which is the path that defaults to zero.
     "advanced_price_suzerainty",
+    // Added with the arm itself (#2185). It turns on `diplomatic_opening` and
+    // `price_the_suzerainty` together, and both halves reach the board only
+    // through a minor: the opening requires a met, unclaimed city-state and
+    // the prize is scored inside the envoy placement loop.
+    "advanced_diplomacy_lane",
 ];
 
 /// Arms measured to complete so rarely at the deployment profile that a margin
