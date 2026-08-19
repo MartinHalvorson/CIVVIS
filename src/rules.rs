@@ -877,6 +877,11 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
+    /// Building families this project consumes on completion. Firaxis uses
+    /// this for Climate Accords: every decommissioning project spends the
+    /// matching power plant rather than becoming an infinite score source.
+    #[serde(default)]
+    pub consumes_buildings: Vec<String>,
     /// A host-tracked competition that must currently be active before this
     /// project is legal. These projects use Firaxis's `UnlocksFromEffect`
     /// rather than a normal tech or civic gate, so they must never appear in a
@@ -3378,9 +3383,13 @@ mod tests {
         // `PROJECT_SEND_AID` costs 200 Production, grants 200 competition
         // score, and is available through either the ordinary or military Aid
         // Request effect instead of any tech or civic gate.
+        // Moved again by the Climate Accords decommissioning projects. Each
+        // costs 400 Production in an Industrial Zone, grants 100 score while
+        // the host tracks Climate Accords, and consumes its coal, oil, or
+        // nuclear power plant rather than being repeatable in one city.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:b554a9ad89283c85"
+            "fnv1a64:4a13f9d738011d59"
         );
     }
 
@@ -4025,7 +4034,7 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 28);
+        assert_eq!(rules.projects.len(), 31);
         let aid = rules
             .projects
             .get(&crate::name!("send_aid"))
@@ -4037,6 +4046,32 @@ mod tests {
         );
         assert_eq!(aid.competition_score, 200.0);
         assert!(aid.repeatable);
+        for (project, power_plant) in [
+            ("decommission_coal_power_plant", "coal_power_plant"),
+            ("decommission_oil_power_plant", "oil_power_plant"),
+            ("decommission_nuclear_power_plant", "nuclear_power_plant"),
+        ] {
+            let decommission = rules
+                .projects
+                .get(project)
+                .expect("the Gathering Storm Climate Accords project is modeled");
+            assert_eq!(decommission.cost, 400.0, "{project} costs 400 Production");
+            assert_eq!(decommission.district.as_deref(), Some("industrial_zone"));
+            assert_eq!(
+                decommission.host_competition.as_deref(),
+                Some("EMERGENCY_CLIMATE_ACCORDS")
+            );
+            assert_eq!(
+                decommission
+                    .consumes_buildings
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                [power_plant]
+            );
+            assert_eq!(decommission.competition_score, 100.0);
+            assert!(decommission.repeatable);
+        }
         let athletes = rules
             .projects
             .get(&crate::name!("train_athletes"))
@@ -4195,7 +4230,11 @@ mod tests {
                     "{id} requires missing project {prerequisite}"
                 );
             }
-            for building in &spec.requires_buildings {
+            for building in spec
+                .requires_buildings
+                .iter()
+                .chain(&spec.consumes_buildings)
+            {
                 assert!(
                     rules.buildings.contains_key(building),
                     "{id} requires missing building {building}"
