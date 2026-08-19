@@ -1610,10 +1610,21 @@ mod tests {
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), genes.len(), "a gene tag is repeated");
-        // Firaxis-only flags are excluded by construction, not by luck.
+        // Firaxis-only flags are excluded by construction, not by luck —
+        // unless a `PRODUCTION_OPT_INS` row names one on purpose. That table
+        // is an author's statement that the flag acts on a native board
+        // (`joint-tactics`: the bridge turns the joint search on, but
+        // `advanced_joint_tactics` is production plus that flag and the
+        // arena runs it every day); a repair reaches the genome only through
+        // `ENGINE_REPAIR_TREATMENTS`, which still excludes every host-only tag.
+        let opted_in: Vec<&str> = civvis::ai::PRODUCTION_OPT_INS
+            .iter()
+            .map(|(_, tag, _)| *tag)
+            .collect();
         for gene in &genes {
             assert!(
-                !civvis::elo::FIRAXIS_ONLY_TREATMENTS.contains(&gene.tag),
+                !civvis::elo::FIRAXIS_ONLY_TREATMENTS.contains(&gene.tag)
+                    || opted_in.contains(&gene.tag),
                 "{} is host-only and would screen as noise",
                 gene.tag
             );
