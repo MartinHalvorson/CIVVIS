@@ -1344,7 +1344,19 @@ impl AdvancedAi {
     }
 
     /// Let a stalled settler found where it stands. Evaluator arm
-    /// `advanced_settler_founds_when_stalled`; off in production.
+    /// `advanced_settler_founds_when_stalled`; off in the native production
+    /// controller.
+    ///
+    /// ⚠ **Not off in the live bridge.** `enable_stranded_settler_discount`
+    /// sets the same flag as part of its bundle, and `enable_live_bridge`
+    /// calls that — so a live seat DOES found where it stands, and this
+    /// explicit enabler is only how an evaluator seats the behaviour on a
+    /// native arm. Reading "off in production" here and stopping cost a study
+    /// on 2026-08-19 a false conclusion: `founds_where_it_stands` opens with
+    /// `if !self.settler_founds_when_stalled`, so the flag looks like the
+    /// reason that path fires rarely on the live ladder. It is not — the flag
+    /// is on, and `g.can_found_city` refusing the tile a walker happens to be
+    /// standing on is what usually ends it.
     pub fn enable_settler_founds_when_stalled(&mut self) {
         self.settler_founds_when_stalled = true;
     }
