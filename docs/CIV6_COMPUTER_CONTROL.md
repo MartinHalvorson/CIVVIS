@@ -268,6 +268,19 @@ a visible hostile combat unit or an at-war city is held rather than handed to
 `UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
 `Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
 
+### The tactical ledger (2026-08-19)
+
+The mod writes the combat record the host already knows (`CivvisLedger`):
+`strike` before every ATTACK / RANGE_ATTACK with the host's own preview
+(`CombatManager.SimulateAttackInto`, the shipped UnitPanel's combat preview);
+`combat` at `CombatVisEnd` with attacker, defender, hit points read back at
+Begin and End, damage both ways, kills, the `UnitDamageChanged` deltas seen
+while the combat was open, and the strike's preview joined on; `unit_lost`
+for our units leaving the map (last known kind, treasury); `city_occupation`
+when a city changes hands. Hostile and rival units carry the host's unit id.
+`tools/civ6_tactics_ledger.py <run-dir>` turns a run into the arrival,
+combat, roster and hover ledger; see `docs/LIVE_TACTICS.md` §5.
+
 ### Production and envoy handoffs are host-timed
 
 The Rust bridge still sends ordinary `produce` orders immediately. When the
