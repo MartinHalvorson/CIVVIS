@@ -192,6 +192,15 @@ impl AdvancedAi {
         self.base.enable_explore_commit();
     }
 
+    /// See [`crate::ai::BasicAi::veto_guided_recon`].
+    pub fn enable_veto_guided_recon(&mut self) {
+        self.base.veto_guided_recon = true;
+    }
+
+    pub fn disable_veto_guided_recon(&mut self) {
+        self.base.veto_guided_recon = false;
+    }
+
     /// A city losing hitpoints is besieged, whatever the fog says. See
     /// `BasicAi::garrison_under_fire` for the t115 measurement.
     pub fn enable_garrison_under_fire(&mut self) {
@@ -1019,6 +1028,11 @@ impl AdvancedAi {
         self.enable_host_settler_pop();
         self.enable_explore_dead_targets();
         self.enable_explore_commit();
+        // ⚠ And the committed walk must know which fog is HOLDING A SETTLER:
+        // run 20260819T004405Z kept three eyes alive and still collected 213
+        // unexplored-ground refusals, because no explorer ever aimed at the
+        // vetoed disks. See `BasicAi::veto_guided_recon`.
+        self.enable_veto_guided_recon();
         self.enable_bank_envoys();
         // And a Spy order the host is still running is not re-sent every
         // turn: the rebuilt mirror cannot see a running operation, so the

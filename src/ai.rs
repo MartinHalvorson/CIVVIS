@@ -69,6 +69,13 @@ const EXPLORE_STUCK_TURNS: u32 = 2;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
+/// How long a settler veto's unexplored-ground refusal stays an open
+/// question for exploration, and how many such questions are kept. Long
+/// enough for a scout to march there; short enough that a question the
+/// empire stopped asking (the site fell to a rival, the settler died)
+/// cannot steer recon forever. See `veto_guided_recon`.
+const FRONTIER_QUESTION_TURNS: u32 = 30;
+const FRONTIER_QUESTION_CAP: usize = 8;
 /// How many turns a committed exploration goal is held before it is chosen
 /// afresh, if it is not reached, revealed or written off first. See
 /// `BasicAi::explore_commit`.
@@ -2291,6 +2298,26 @@ pub struct BasicAi {
     /// Per unit: the committed exploration goal and the turn it was chosen.
     /// See `explore_commit`.
     explore_goal: RefCell<HashMap<u32, (Pos, u32)>>,
+    /// Whether exploration answers the settler veto's open questions first.
+    ///
+    /// ★★★★ THE EYES WERE ALIVE AND THE VETO STAYED DARK. Run
+    /// civvis-20260819T004405Z was the first with the rebuilt land eye
+    /// (#2080): three scouts alive t80-t120 against the old zero — and the
+    /// loyalty forecast still refused settler candidates **213 times** for
+    /// the same unexplored-ground reason, because `exploration_goal` ranks
+    /// fog by reveal value and distance and never knows which fog is
+    /// HOLDING A SETTLER. The empire finished 8 cities, idle_settler 70,
+    /// −921. With this on, a candidate that would light the nine-tile disk
+    /// of a veto-refused settle site outranks every other candidate; all
+    /// other filters (commitment separation, threats, dead targets) apply
+    /// unchanged. Off for ordinary and frozen controllers; live-bridge
+    /// treatment `veto-guided-recon`.
+    pub(crate) veto_guided_recon: bool,
+    /// Settle sites the loyalty forecast refused for unexplored ground,
+    /// with the turn each record expires. Written by the advanced settler
+    /// loop at refusal time; read by `exploration_goal`. Bounded: pruned on
+    /// write, capped at `FRONTIER_QUESTION_CAP` sites.
+    pub(crate) frontier_questions: RefCell<Vec<(Pos, u32)>>,
     /// Walk an exploring unit onto a tribal village it can see and reach this
     /// turn before it marches past toward fog. This pickup shipped inside
     /// `tactical_strategy` (#1386) and left production with the 2026-08-14
@@ -3942,6 +3969,8 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
+            veto_guided_recon: false,
+            frontier_questions: RefCell::new(Vec::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -4229,6 +4258,8 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
+            veto_guided_recon: false,
+            frontier_questions: RefCell::new(Vec::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -12092,12 +12123,53 @@ impl BasicAi {
             }
             radius += 1;
         }
+        // Fog that is HOLDING A SETTLER outranks fog that is merely dark.
+        // See `veto_guided_recon`: a candidate inside the nine-tile disk the
+        // loyalty veto asked about answers a question the empire is already
+        // paying for. Expired questions are ignored rather than pruned here —
+        // this borrow is read-only and the writer prunes on insert.
+        let answers_veto = |pos: Pos| -> bool {
+            self.veto_guided_recon
+                && self
+                    .frontier_questions
+                    .borrow()
+                    .iter()
+                    .any(|(site, expiry)| *expiry > g.turn && g.wdist(pos, *site) <= 9)
+        };
+        // The ring walk above only reaches `lookahead` past the first fog, and
+        // a vetoed site can sit far beyond it — the very reason it is dark.
+        // When no candidate in the window answers a live question, the
+        // question disks' own fog joins the candidate list under the same
+        // filters, so a distant question can still win the ranking below.
+        if self.veto_guided_recon && !candidates.iter().any(|pos| answers_veto(*pos)) {
+            let questions = self.frontier_questions.borrow();
+            for (site, expiry) in questions.iter() {
+                if *expiry <= g.turn {
+                    continue;
+                }
+                for pos in g.wdisk(*site, 9) {
+                    if !g.players[pid].explored.contains(&pos)
+                        && g.map.tiles.contains_key(&pos)
+                        && !dead.contains(&pos)
+                        && g.unit_can_traverse(uid, pos)
+                        && (!dry_only || g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile)))
+                        && !reserved
+                            .iter()
+                            .any(|held| g.wdist(pos, *held) <= EXPLORE_COMMIT_SEPARATION)
+                        && !threatened(pos)
+                    {
+                        candidates.push(pos);
+                    }
+                }
+            }
+        }
         let chosen = if self.explore_commit {
             // The most revealing goal, and among those the one farthest from
             // home: the walk sweeps outward and along the frontier instead of
             // hugging the fringe nearest the unit. See `explore_commit`.
             candidates.into_iter().max_by_key(|target| {
                 (
+                    answers_veto(*target),
                     Self::frontier_reveal_value(g, pid, uid, *target),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
