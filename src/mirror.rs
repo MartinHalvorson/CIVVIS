@@ -9185,6 +9185,16 @@ pub struct StateActivationPlot {
     pub y: i32,
     #[serde(default)]
     pub distance: i32,
+    /// Whether the host knows a compatible empty Great Work slot stands on
+    /// this exact tile. The engine's highlight names a cultural person's
+    /// districts whether or not a slot is free, so this is the difference
+    /// between a destination and a wedge: `Some(true)` = a matching empty
+    /// slot is here, `Some(false)` = one of our districts with no such slot
+    /// (eleven people stood on one of these for a whole run), `None` =
+    /// unknown — a wonder tile, a non-slot-consuming class, or an export
+    /// from an older control mod. `None` must never be read as either claim.
+    #[serde(default)]
+    pub slot_open: Option<bool>,
 }
 
 /// One active outgoing trade route as Civilization VI reports it.
@@ -17984,6 +17994,7 @@ mod host_fact_tests {
                 x: 8,
                 y: 5,
                 distance: 2,
+                ..StateActivationPlot::default()
             });
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(
@@ -18008,7 +18019,12 @@ mod host_fact_tests {
             required_district: None,
             charges: 0,
             can_activate,
-            activation_plots: vec![StateActivationPlot { x: 25, y: 23, distance: 0 }],
+            activation_plots: vec![StateActivationPlot {
+                x: 25,
+                y: 23,
+                distance: 0,
+                ..StateActivationPlot::default()
+            }],
             empty_slots,
         };
         let mut state = StateSnapshot {
