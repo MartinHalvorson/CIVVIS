@@ -83,6 +83,10 @@ const TACTICAL_VOLLEY_CANDIDATE_LIMIT: usize = 3;
 /// been checked in deterministic unit order, more choices buy little tactical
 /// signal while multiplying the clone-heavy hot path.
 const TACTICAL_VOLLEY_FINISHER_LIMIT: usize = 8;
+/// Second finishers tried per middle blow when no lone teammate can complete
+/// the kill.  The chain only runs in that no-single-finisher case, so this
+/// bounds a branch that is idle in the common two-blow engagement.
+const TACTICAL_VOLLEY_SECOND_FINISHER_LIMIT: usize = 4;
 /// The opening shot earns one and a half ordinary kill bonuses when it lets a
 /// teammate finish the same defender.  The actual kill remains priced by the
 /// finisher's exact exchange; this bonus only corrects the first unit's
@@ -3379,6 +3383,26 @@ pub struct AdvancedAi {
     /// means what its paired measurement says.
     joint_tactics_forced_off: bool,
 
+    /// Admit the friendly-volley extension without the rest of the closed
+    /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
+    /// and left production with that bundle's removal (#1589, +38 for the
+    /// composite) — but a composite gate never prices its parts, so this flag
+    /// reaches the one part this goal is about: a force finishing a defender
+    /// together.  Off by default and off for the frozen anchors; the
+    /// `advanced_coordinated_finish` evaluator arm is the treatment that
+    /// prices it against stock `advanced`.
+    pub coordinated_finish: bool,
+
+    /// Extend the friendly volley to a pair of finishers when no lone
+    /// teammate can complete the kill, so an enemy two sound blows from death
+    /// is still a group target for 2–3 units.  Inert wherever the volley
+    /// layer itself is off (`tactical_strategy` and [`Self::coordinated_finish`]
+    /// both unset — Basic, the frozen `advanced_v1` anchor, and today's stock
+    /// production controller); the `advanced_single_finisher_volley`
+    /// evaluator arm withholds only this chain from the treatment to price it
+    /// separately.
+    pub volley_chain: bool,
+
     /// Units this turn's joint plan already reached a decision for, including
     /// the ones it decided should not attack. Their greedy attack selection is
     /// suppressed so a declined trade is not immediately re-taken by the
@@ -4242,6 +4266,8 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
+            coordinated_finish: false,
+            volley_chain: true,
             tactics_resolved: BTreeSet::new(),
             tactics_withdrawn: BTreeSet::new(),
             tactics_plans: 0,
@@ -24773,14 +24799,19 @@ impl AdvancedAi {
         )
     }
 
-    /// Find a direct, two-unit kill that the normal per-unit evaluator cannot
+    /// Find a direct group kill that the normal per-unit evaluator cannot
     /// see as one line.  The first unit still needs to choose a sound exact
-    /// attack; this only credits it when a surviving teammate in the same
-    /// engaged force can legally remove that *same* defender immediately.
+    /// attack; this only credits it when surviving teammates in the same
+    /// engaged force can legally remove that *same* defender immediately —
+    /// one finisher when one blow is enough, and behind [`Self::volley_chain`]
+    /// a pair of finishers when the defender needs three blows in all.  A
+    /// single finisher is always preferred: the chain is searched only when
+    /// no lone teammate can complete the kill, so the deeper case never
+    /// spends a third unit a second could have saved.
     ///
     /// The bounded extension deliberately excludes movement, cities, and
     /// quiet follow-ups.  It fixes the harmful ordering assumption that the
-    /// enemy replies between two friendly shots without reopening the removed
+    /// enemy replies between friendly shots without reopening the removed
     /// portfolio search or its performance cost.
     fn friendly_volley_extension(
         &self,
@@ -24791,7 +24822,7 @@ impl AdvancedAi {
         group: &ForceGroup,
         plan: &StrategicPlan,
     ) -> Option<(f64, f64)> {
-        if !self.base.tactical_strategy
+        if !(self.base.tactical_strategy || self.coordinated_finish)
             || group.posture != ForcePosture::Engage
             || group.units.len() < 2
         {
@@ -24863,14 +24894,161 @@ impl AdvancedAi {
                 best = Some((finish_score, finisher, order, after_second));
             }
         }
-        let (_, finisher, _, after_second) = best?;
+        if let Some((_, finisher, _, after_second)) = best {
+            let reply = Self::forcing_reply_penalty_from_position(
+                self.work_pool.as_ref(),
+                &after_second,
+                pid,
+                &[uid, finisher],
+            );
+            return Some((
+                self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+                reply,
+            ));
+        }
+        if !self.volley_chain {
+            return None;
+        }
+
+        // No lone teammate can finish the wounded defender — search a bounded
+        // pair of finishers instead, so an enemy two sound blows from death is
+        // still a group target.  The same enumeration as above supplies the
+        // middle blow; each candidate middle blow that leaves the defender
+        // standing is extended by the teammates who can then remove it.  Both
+        // blows must clear their own exact-exchange bar, so the chain changes
+        // which target the force converges on, not how cheaply it will trade.
+        let followups: Vec<Action> = Self::forcing_attacks_to(&after_first, pid, target, None)
+            .into_iter()
+            .filter(|followup| match followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. } => {
+                    *unit != uid && group.units.contains(unit)
+                }
+                _ => false,
+            })
+            .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
+            .collect();
+        // A healthy defender pays this branch nothing: unless the two
+        // heaviest remaining blows can plausibly cover the survivor's health
+        // at the engine's mean damage — with headroom for the roll spread and
+        // for modifiers this arithmetic does not see — there is no three-blow
+        // kill to find and the clone enumeration below never starts.
+        {
+            let survivor = &after_first.units[&victim];
+            let defence = crate::game::effective_strength(
+                after_first.unit_strength(survivor, true),
+                survivor.hp,
+            );
+            let mut mean_blows: Vec<f64> = followups
+                .iter()
+                .filter_map(|followup| {
+                    let (shooter, ranged) = match followup {
+                        Action::Attack { unit, .. } => (*unit, false),
+                        Action::Ranged { unit, .. } => (*unit, true),
+                        _ => return None,
+                    };
+                    let attacker = after_first.units.get(&shooter)?;
+                    let attack = if ranged {
+                        after_first.unit_ranged_attack_strength(attacker)
+                    } else {
+                        after_first.unit_strength(attacker, false)
+                    };
+                    let attack = crate::game::effective_strength(attack, attacker.hp);
+                    Some((30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0))
+                })
+                .collect();
+            mean_blows.sort_by(|a, b| b.total_cmp(a));
+            let heaviest_pair: f64 = mean_blows.iter().take(2).sum();
+            if heaviest_pair * 1.5 < survivor.hp as f64 {
+                return None;
+            }
+        }
+        // Score, then (middle, middle order, finisher, finisher order) as the
+        // deterministic tie-break, then the finished position the reply is
+        // priced against.
+        type ChainCandidate = (f64, (u32, usize, u32, usize), Game);
+        let mut best_chain: Option<ChainCandidate> = None;
+        for (order, followup) in followups.into_iter().enumerate() {
+            let (middle, ranged) = match &followup {
+                Action::Attack { unit, .. } => (*unit, false),
+                Action::Ranged { unit, .. } => (*unit, true),
+                _ => unreachable!("friendly volley only retains direct ground attacks"),
+            };
+            let mut after_second = after_first.speculative_clone();
+            if after_second.apply(pid, &followup).is_err()
+                || !after_second.units.contains_key(&victim)
+            {
+                continue;
+            }
+            let middle_score = Self::tactical_attack_value_owned(
+                after_first.speculative_clone(),
+                pid,
+                middle,
+                &followup,
+                plan,
+            ) - self.base.attack_threshold(&after_first, middle, target)
+                + self
+                    .base
+                    .tactical_action_bonus(&after_first, middle, target, ranged);
+            if !middle_score.is_finite() || middle_score <= 0.0 {
+                continue;
+            }
+            for (last_order, last) in Self::forcing_attacks_to(&after_second, pid, target, None)
+                .into_iter()
+                .filter_map(|last| match &last {
+                    Action::Attack { unit, .. } | Action::Ranged { unit, .. }
+                        if *unit != uid && *unit != middle && group.units.contains(unit) =>
+                    {
+                        Some(last)
+                    }
+                    _ => None,
+                })
+                .take(TACTICAL_VOLLEY_SECOND_FINISHER_LIMIT)
+                .enumerate()
+            {
+                let (finisher, ranged) = match &last {
+                    Action::Attack { unit, .. } => (*unit, false),
+                    Action::Ranged { unit, .. } => (*unit, true),
+                    _ => unreachable!("friendly volley only retains direct ground attacks"),
+                };
+                let mut after_third = after_second.speculative_clone();
+                if after_third.apply(pid, &last).is_err() || after_third.units.contains_key(&victim)
+                {
+                    continue;
+                }
+                let finish_score = Self::tactical_attack_value_owned(
+                    after_second.speculative_clone(),
+                    pid,
+                    finisher,
+                    &last,
+                    plan,
+                ) - self.base.attack_threshold(&after_second, finisher, target)
+                    + self
+                        .base
+                        .tactical_action_bonus(&after_second, finisher, target, ranged);
+                if !finish_score.is_finite() || finish_score <= 0.0 {
+                    continue;
+                }
+                let score = middle_score + finish_score;
+                let key = (middle, order, finisher, last_order);
+                let better = best_chain.as_ref().is_none_or(|(old, old_key, _)| {
+                    score.total_cmp(old).is_gt() || (score.total_cmp(old).is_eq() && key < *old_key)
+                });
+                if better {
+                    best_chain = Some((score, key, after_third));
+                }
+            }
+        }
+        let (_, (middle, _, finisher, _), after_third) = best_chain?;
         let reply = Self::forcing_reply_penalty_from_position(
             self.work_pool.as_ref(),
-            &after_second,
+            &after_third,
             pid,
-            &[uid, finisher],
+            &[uid, middle, finisher],
         );
-        Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply))
+        Some((
+            self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+            reply,
+        ))
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -26127,7 +26305,7 @@ impl AdvancedAi {
         // teammate's finishing blow.  Revisit only a few strongest candidates
         // with the bounded friendly-volley extension, then replace that reply
         // price with the exact reply after both friendly actions.
-        if self.base.tactical_strategy
+        if (self.base.tactical_strategy || self.coordinated_finish)
             && group
                 .as_ref()
                 .is_some_and(|orders| orders.posture == ForcePosture::Engage)

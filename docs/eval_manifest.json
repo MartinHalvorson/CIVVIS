@@ -40,7 +40,7 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 222,
+    "eval_only_count": 224,
     "firaxis_only_count": 24,
     "live_bridge_count": 79,
     "native_engine_repair_count": 55,
@@ -209,7 +209,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 222,
+      "declared_count": 224,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -408,6 +408,8 @@
         "advanced_without_unit_tactics",
         "advanced_league_top",
         "advanced_joint_tactics",
+        "advanced_coordinated_finish",
+        "advanced_single_finisher_volley",
         "strategic_cheap",
         "strategic_score",
         "strategic_doctrine",

@@ -288,6 +288,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
+    "advanced_coordinated_finish",
+    "advanced_single_finisher_volley",
     "strategic_cheap",
     "strategic_score",
     "strategic_doctrine",
@@ -853,6 +855,8 @@ define_arm_kinds! {
     AdvancedExpansionPayback => "advanced_expansion_payback",
     AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedCoordinatedFinish => "advanced_coordinated_finish",
+    AdvancedSingleFinisherVolley => "advanced_single_finisher_volley",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
@@ -3547,6 +3551,28 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.joint_tactics = true;
             Box::new(ai)
         }
+        // The friendly-volley extension on the production controller without
+        // the rest of the closed war-half bundle: an engaged force credits a
+        // setup shot whose defender a teammate — or, when no lone teammate
+        // can, a pair of them — then finishes. Paired against `advanced` this
+        // prices coordinated finishing and nothing else; the bundle the
+        // volley used to travel in was removed on a composite gate (#1589)
+        // that never priced this part.
+        "advanced_coordinated_finish" => {
+            let mut ai = AdvancedAi::new();
+            ai.coordinated_finish = true;
+            Box::new(ai)
+        }
+        // The treatment above with the two-finisher chain withheld: a volley
+        // only credits a setup shot when ONE teammate can finish the
+        // defender. Paired against `advanced_coordinated_finish` this
+        // isolates the three-blow group kill and nothing else.
+        "advanced_single_finisher_volley" => {
+            let mut ai = AdvancedAi::new();
+            ai.coordinated_finish = true;
+            ai.volley_chain = false;
+            Box::new(ai)
+        }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
         // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
@@ -4457,6 +4483,8 @@ impl ArmKind {
             Self::AdvancedExpansionPayback => &["expansion-payback"],
             Self::AdvancedCoupledExpansion => &["coupled-expansion"],
             Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedCoordinatedFinish => &["coordinated-finish"],
+            Self::AdvancedSingleFinisherVolley => &["coordinated-finish", "single-finisher-volley"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
@@ -5038,6 +5066,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
         "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
+        "advanced_coordinated_finish" => (Vec::new(), "advanced_coordinated_finish"),
+        "advanced_single_finisher_volley" => (Vec::new(), "advanced_single_finisher_volley"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -6461,6 +6491,8 @@ mod tests {
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
+                "advanced_coordinated_finish",
+                "advanced_single_finisher_volley",
                 "advanced",
                 "fog_honest",
                 "advanced_belief_pressure",
