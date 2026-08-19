@@ -99,6 +99,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_war_patience",
     "live_without_deny_while_targeted",
     "live_without_stock_denial_lead_time",
+    "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -401,6 +402,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "deny-while-targeted",
     "stock-denial-lead-time",
+    "projected-stock-denial",
     "parallel-settlers",
     "host-settler-pop",
     "explore-dead-targets",
@@ -553,6 +555,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // t229-245); the native lanes end on their own clock and keep the
     // measured 90 bar until a native run says otherwise.
     "stock-denial-lead-time",
+    // Same steal record, same clock: the projection only widens the live
+    // seat's lead-time bar; native lanes keep the raw reading.
+    "projected-stock-denial",
     // These four react to host movement or host production semantics; native
     // CIVVIS has neither distinction, so the repair bundle must not imply
     // they are native engine changes.
@@ -774,6 +779,7 @@ define_arm_kinds! {
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
     LiveWithoutStockDenialLeadTime => "live_without_stock_denial_lead_time",
+    LiveWithoutProjectedStockDenial => "live_without_projected_stock_denial",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -4369,6 +4375,7 @@ impl ArmKind {
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
             Self::LiveWithoutStockDenialLeadTime => live_without("stock-denial-lead-time"),
+            Self::LiveWithoutProjectedStockDenial => live_without("projected-stock-denial"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -6889,6 +6896,7 @@ mod tests {
             "deny_while_targeted",
             // Same: priced on the live seat's steal record, not native play.
             "stock_denial_lead_time",
+            "projected_stock_denial",
             // Host movement and production semantics, not native engine
             // repairs. `explore_commit` is already set by production
             // Advanced, but stays in the live registry for full parity.
