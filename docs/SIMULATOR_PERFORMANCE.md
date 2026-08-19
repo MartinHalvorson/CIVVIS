@@ -1106,3 +1106,61 @@ reach those paths. `the_board_delta_reports_every_tile_a_change_touched` tests
 That is the general lesson from this pair of changes: when the observable
 behaviour is provably unchanged, the test has to move down to the invariant
 that makes it unchanged, not stay at the behaviour.
+
+## 2026-08-19 (third re-profile) — a tighter invalidation set, refused twice
+
+Re-profiled after #2155, as the rule at the top requires. 5,614 main-thread
+samples:
+
+| symbol | after #2151 | after #2155 |
+| --- | ---: | ---: |
+| `enemy_attack_envelopes` | 55.6% | 51.7% |
+| `attack_reach` | 42.0% | 47.9% |
+| `envelope_board_delta` | — | under 1% |
+
+The delta is cheap, so what remains is genuine recomputation. The obvious next
+step is a tighter invalidation set, and the obvious tighter set is exact on
+paper: other units enter `attack_reach` only through `in_enemy_zoc_for`, and
+zone of control only bites on a tile the unit can step onto, so an envelope
+should be sensitive to its own **movement flood dilated by one** — forty-odd
+tiles for a two-movement unit rather than the three hundred in a
+`4 × max_moves` disk.
+
+Implemented, it measured **−26.0% and −21.0%**. It is not shipped, because
+`tools/speed_ab.py` refused it: **ARMS DISAGREE on two of four seeds, in both
+batches.** The flood set is not a complete account of what an envelope reads.
+
+⚠ **The anchor passed throughout.** `advanced_v1_plays_the_same_game_it_always_did`
+reported 17,482 decisions and the same fingerprint at every stage of this
+work, including both refused versions. Its five profiles do not reach the
+divergent path; a 6-player 150-turn game does. The paired report hash is the
+stronger check of the two and neither substitutes for the other.
+
+Two leaks were found and fixed on the way, and both are holes in the **shipped**
+delta rather than in the experiment:
+
+- `can_enter_past` refuses a step onto a tile a hostile fighter is patrolling,
+  and finds that fighter by scanning **every unit in the world** — so the
+  blocker can sit arbitrarily far from the tile it blocks. The delta tracked
+  place, kind and owner, so starting or moving a patrol produced an *empty*
+  delta and every envelope was reused across it.
+- `is_at_war` consults `at_war` and, for a city-state, `suzerain_of`, which is
+  derived from every major's envoys. The stamp carried `wars.len()`, which an
+  envoy changing hands does not move.
+
+Neither fixed the disagreement, so a third leak remains unidentified. What the
+sequence establishes is the shape of the problem: **the delta's field set has
+been incomplete all along, and the generous radius was masking it** — almost
+any nearby unit moving invalidated anyway. That is now bounded rather than
+guessed: the delta tracks exactly the unit fields `attack_envelope_fingerprint`
+hashes, plus the patrol, and
+`the_delta_tracks_every_field_the_board_key_hashes` mutates each field and
+fails if the delta stops noticing one.
+
+### If you pick this up
+
+Do not re-derive the flood argument; it is correct as far as it goes and still
+insufficient. Find the third leak first, and the way to find it is a diverging
+seed: run seed 7311000 under both arms and diff the reports, rather than
+reasoning about what `attack_reach` reads. Two rounds of inspection found two
+real leaks and still missed one.
