@@ -507,6 +507,15 @@ def build_config(args: argparse.Namespace) -> dict:
         "OrderQueue": args.order_queue,
         "OrderQueueMaxTicks": args.order_queue_max_ticks,
         "ExploreGuardRadius": args.explore_guard_radius,
+        # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
+        # host path outran the turn was queued, and the host walked the unit
+        # along it at the start of the next turn before the brain could act. Now
+        # every MOVE_TO is sent as this turn's leg of the host's own path, and
+        # combat units that enter the turn with a queued path anyway are
+        # cancelled at turn start; the seat then advertises `moves_at_turn_start`
+        # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
+        "CapMovesToReach": args.cap_moves_to_reach,
+        "CancelQueuedPaths": args.cancel_queued_paths,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -3294,6 +3303,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-guard-radius", type=int, default=4,
                     help="an unordered combat unit this close to a visible hostile "
                          "or an at-war city is held, not handed to explore automation")
+    ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
+                    action="store_false", default=True,
+                    help="send a MOVE_TO's whole destination even when the host's path "
+                         "outruns the turn (the pre-board rule: the host queues the rest "
+                         "and walks it before the next frame)")
+    ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
+                    action="store_false", default=True,
+                    help="leave combat units' queued host paths in place at turn start")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")
