@@ -16,13 +16,25 @@ use std::process::Command;
 ///
 /// Listed so `--city-states 0`, which is the default, cannot silently turn one
 /// of them into a null. Add an arm here when its axis needs a minor to exist.
-const MINOR_DEPENDENT_ARMS: [&str; 6] = [
+const MINOR_DEPENDENT_ARMS: [&str; 8] = [
     "advanced_diplomatic_opening",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
     "advanced_envoy_economy",
     "advanced_policy_envoy_priority",
+    // Added 2026-08-19. `SUZERAIN_PRIZE` is scored only inside the envoy
+    // placement loop, over `g.can_send_envoy(pid, minor.id)`, so with no minor
+    // seated the arm is byte-identical to its control: 12 pairs at the stock
+    // 4p profile returned 0 favored / 12 neutral / 0 against on wins *and* on
+    // terminal score. Both 400-pair runs that decided this flag ships off were
+    // hand-rolled `ai_eval` lines, which is the path that defaults to zero.
+    "advanced_price_suzerainty",
+    // Added with the arm itself (#2185). It turns on `diplomatic_opening` and
+    // `price_the_suzerainty` together, and both halves reach the board only
+    // through a minor: the opening requires a met, unclaimed city-state and
+    // the prize is scored inside the envoy placement loop.
+    "advanced_diplomacy_lane",
 ];
 
 /// Arms measured to complete so rarely at the deployment profile that a margin
@@ -636,6 +648,54 @@ fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
 }
 
 /// One line telling the reader which of the two `INCONCLUSIVE`s this is.
+/// Enabled victory conditions this run produced but cannot resolve a change to.
+///
+/// Only the map-pairs holding a game the lane decided can turn on that lane, so
+/// it can move the paired score by at most `decided / pairs`. When that ceiling
+/// falls below the interval the run already reports, no treatment acting
+/// through the lane can be seen here — however large its true effect is.
+///
+/// Returns `(lane, games it decided, its ceiling in points)`, most bounded
+/// first. Lanes the profile never produced are left to the caller's separate
+/// "never produced" line, which is a different and stronger statement.
+fn unresolvable_lanes(
+    enabled: &str,
+    decided_by: &BTreeMap<String, usize>,
+    won_by_entrants: &BTreeMap<String, usize>,
+    pairs: usize,
+    half_width_points: f64,
+) -> Vec<(String, usize, f64)> {
+    if pairs == 0 {
+        return Vec::new();
+    }
+    let mut bounded: Vec<(String, usize, f64)> = enabled
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            let decided = decided_by.get(name).copied().unwrap_or(0);
+            if decided == 0 {
+                return None;
+            }
+            // Only a game an entrant WON can move the paired score. On a field
+            // profile a game the field takes is a draw for the pair, so a lane
+            // the entrants never win has a ceiling of zero however often the
+            // board produces it — which is the case this function existed to
+            // catch and originally got wrong.
+            let movable = won_by_entrants.get(name).copied().unwrap_or(0);
+            let ceiling = 100.0 * movable as f64 / pairs as f64;
+            (ceiling < half_width_points).then(|| (name.to_string(), decided, ceiling))
+        })
+        .collect();
+    bounded.sort_by(|left, right| {
+        left.2
+            .partial_cmp(&right.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(left.0.cmp(&right.0))
+    });
+    bounded
+}
+
 fn resolution_note(maps: usize, resolved: usize, seed: u64) -> String {
     if maps == 0 {
         return String::new();
@@ -2730,6 +2790,51 @@ here and any null is uninformative"
                 silent.join(", ")
             );
         }
+        // ★★★ PRODUCED IS NOT THE SAME AS MEASURABLE, AND THE LINE ABOVE ONLY
+        // CATCHES EXACTLY ZERO.
+        //
+        // A lane that decides two games in two hundred and forty passes the
+        // silence check and still cannot carry a win-rate read. Only the pairs
+        // holding one of those games can turn on the lane, so it can move the
+        // paired score by at most `decided / pairs` — and when that ceiling is
+        // below the interval this run already reports, the run cannot resolve
+        // a change to it however large the change is.
+        //
+        // This is arithmetic, not a tuned bar: the ceiling and the interval are
+        // both numbers the run has already computed. Measured on the 2026-08-19
+        // suzerainty round, where `diplomatic` decided 2 of 240 games with a
+        // half-width of ~5 points.
+        let half_width = (inference.high - inference.low) / 2.0 * 100.0;
+        let mut won_by_entrants: BTreeMap<String, usize> = BTreeMap::new();
+        for name in [a, b] {
+            for (lane, count) in &totals[name].victories {
+                *won_by_entrants.entry(lane.clone()).or_default() += count;
+            }
+        }
+        let unresolvable: Vec<String> = unresolvable_lanes(
+            &enabled_victories,
+            &game_victories,
+            &won_by_entrants,
+            pairs,
+            half_width,
+        )
+        .into_iter()
+        .map(|(name, decided, ceiling)| {
+            let won = won_by_entrants.get(&name).copied().unwrap_or(0);
+            format!(
+                "{name} decided {decided} of {total} games but an entrant won {won} of them, \
+                 so it can move the paired score by at most {ceiling:.1} points"
+            )
+        })
+        .collect();
+        if !unresolvable.is_empty() {
+            println!(
+                "⚠ produced but not resolvable here (interval half-width {half_width:.1} points): \
+                 {}. A treatment acting through one of those is bounded below this run's own \
+                 resolution, so neither a null nor a gain from it means anything",
+                unresolvable.join("; ")
+            );
+        }
     }
     // ★★★★★ NOTHING DIFFERED, WHICH IS NOT THE SAME AS PARITY.
     //
@@ -3173,6 +3278,93 @@ here and any null is uninformative"
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    /// A lane the profile produced twice in two hundred and forty games passes
+    /// the "never produced" check and still cannot carry a win-rate read. The
+    /// bound is arithmetic: only pairs holding a game the lane decided can turn
+    /// on it.
+    #[test]
+    fn a_lane_too_rare_to_move_the_score_is_named() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 2);
+        decided.insert("religious".to_string(), 54);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        // 120 pairs, interval half-width 5 points. Diplomacy tops out at
+        // 2/120 = 1.7 points and cannot be seen; religion tops out at 45.
+        let won = decided.clone();
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 5.0);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 2);
+        assert!(
+            (bounded[0].2 - 5.0 / 3.0).abs() < 1e-9,
+            "{:?}",
+            bounded[0].2
+        );
+
+        // A lane nobody produced belongs to the separate, stronger line.
+        assert!(
+            !unresolvable_lanes(enabled, &decided, &won, 120, 5.0)
+                .iter()
+                .any(|(name, ..)| name == "science"),
+            "never-produced lanes are reported by the silence check, not this one"
+        );
+
+        // Tighten the run and the same lane becomes resolvable.
+        assert!(unresolvable_lanes(enabled, &decided, &won, 120, 1.0).is_empty());
+        // A run with no pairs has no resolution to compare against.
+        assert!(unresolvable_lanes(enabled, &decided, &won, 0, 5.0).is_empty());
+    }
+
+    /// The contested board is the case that corrected this. It produced
+    /// `diplomatic` 29 times in 240 games — comfortably resolvable if you count
+    /// the games — while **neither entrant won one of them**: every single one
+    /// went to a scripted field seat, and a game the field wins is a draw for
+    /// the pair. The ceiling is therefore zero, not 24 points, and a diplomacy
+    /// treatment cannot be screened there by win rate however often the board
+    /// produces the lane.
+    #[test]
+    fn a_lane_only_the_field_ever_wins_cannot_move_the_score() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 29);
+        decided.insert("religious".to_string(), 108);
+        let mut won = BTreeMap::new();
+        won.insert("religious".to_string(), 108);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 3.7);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 29, "the games it decided are still reported");
+        assert_eq!(bounded[0].2, 0.0, "but none of them can move the pair");
+    }
+
+    /// The city-state guard is a list of strings, and lists of strings rot.
+    ///
+    /// Every name in it must still resolve to a real arm: a rename that left
+    /// the old spelling here would silently stop the warning for exactly the
+    /// class of arm the list exists to protect, and the failure mode is a
+    /// clean, meaningless null rather than an error.
+    #[test]
+    fn every_minor_dependent_arm_is_still_a_real_arm() {
+        for arm in MINOR_DEPENDENT_ARMS {
+            assert!(
+                builtin_arm(arm).is_some(),
+                "{arm} is listed as minor-dependent but is no longer a buildable arm"
+            );
+        }
+    }
+
+    /// `advanced_price_suzerainty` belongs on that list, and the reason is
+    /// mechanical: `SUZERAIN_PRIZE` is only ever scored inside the envoy
+    /// placement loop, which iterates city-states. Both 400-pair runs that
+    /// decided the flag ships off were hand-rolled `ai_eval` lines, and that
+    /// path defaults `--city-states` to zero.
+    #[test]
+    fn the_suzerainty_prize_is_guarded_as_minor_dependent() {
+        assert!(MINOR_DEPENDENT_ARMS.contains(&"advanced_price_suzerainty"));
+    }
 
     /// `--stop-when-decisive` ends a run only on a decisive gate: never under
     /// `PROMOTION_MIN_MAPS`, never on parity, and on either side once the
