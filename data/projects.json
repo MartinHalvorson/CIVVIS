@@ -102,6 +102,13 @@
     "competition_score": 50,
     "repeatable": true
   },
+  "train_astronauts": {
+    "cost": 200,
+    "district": "spaceport",
+    "host_competition": "EMERGENCY_SPACE_STATION",
+    "competition_score": 30,
+    "repeatable": true
+  },
   "repair_outer_defenses": {
     "cost": 1,
     "repeatable": true
