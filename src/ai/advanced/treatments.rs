@@ -111,3 +111,24 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
 ];
+
+/// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
+///
+/// `LIVE_TREATMENTS` names everything the live bridge ADDS to production, so a
+/// live behaviour can be withheld and priced. Nothing named what production
+/// itself adds — `promoted_policy_envoy` turns on a dozen behaviours that
+/// `configured` leaves off, and each has a `disable_*` twin and an
+/// `advanced_without_*` arm in `src/elo.rs`, but no table joined the three. The
+/// consequence is small and real: a tool that wants to run "the shipped agent,
+/// minus one promoted behaviour" has to be taught each name by hand, which is
+/// how `civvis_orders` came to carry 57 hand-written arms against 68 rows.
+///
+/// ⚠ This table is CORRECT, not COMPLETE: `production_bundle_rows_are_real`
+/// checks that every row names a behaviour `promoted_policy_envoy` actually
+/// turns on and that its withholding twin exists, and it does not require that
+/// every promoted behaviour appear. Claiming completeness would be a claim
+/// nothing checks. Add a row when a promotion needs to be withheld by name.
+#[rustfmt::skip]
+pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
+    ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
+];
