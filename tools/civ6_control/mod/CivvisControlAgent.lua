@@ -194,6 +194,10 @@ local function resolveActions()
 		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
+		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
+		-- so UnitPanel requests each directly with no parameters, like spreading.
+		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
+		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
 		-- NOT SEND. `Game::spies` -- the only structure `advanced_spies` and
 		-- `BasicAi::spies` iterate -- is empty for an entire live game, so a

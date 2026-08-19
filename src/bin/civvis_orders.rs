@@ -3469,6 +3469,15 @@ fn translate(
             verb: Some("ATTACK".to_string()),
             pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
         }),
+        // Religious combat uses the same native move-to-attacker route as a
+        // melee strike. The target is adjacent by the model's legal-action
+        // gate, while the host's MOVE_TO resolves the theological combat.
+        Action::TheologicalAttack { unit, target } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("ATTACK".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+        }),
         Action::Ranged { unit, target } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -3731,6 +3740,34 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("SPREAD_RELIGION".to_string()),
+            pos: None,
+        }),
+        // These are direct, parameterless entries in Firaxis' UnitOperations
+        // table, just like SPREAD_RELIGION. Evangelization remains separate:
+        // it opens an asynchronous belief-selection flow rather than applying
+        // an operation immediately.
+        Action::HealReligious { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("RELIGIOUS_HEAL".to_string()),
+            pos: None,
+        }),
+        Action::RemoveHeresy { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("REMOVE_HERESY".to_string()),
+            pos: None,
+        }),
+        Action::LaunchInquisition { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("LAUNCH_INQUISITION".to_string()),
+            pos: None,
+        }),
+        Action::ConvertBarbarians { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("CONVERT_BARBARIANS".to_string()),
             pos: None,
         }),
         // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
@@ -6953,7 +6990,7 @@ mod tests {
     }
 
     #[test]
-    fn religious_promotions_and_spreads_reach_firaxis_unit_orders() {
+    fn religious_unit_actions_reach_firaxis_unit_orders() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 93,
             width: 12,
@@ -6996,6 +7033,34 @@ mod tests {
         assert_eq!(spread.kind, "unit");
         assert_eq!(spread.subject, Some(91));
         assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+
+        let theological = translate(
+            &Action::TheologicalAttack {
+                unit,
+                target: civvis::hex::offset_to_axial(6, 5),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("theological combat crosses");
+        assert_eq!(theological.kind, "unit");
+        assert_eq!(theological.subject, Some(91));
+        assert_eq!(theological.verb.as_deref(), Some("ATTACK"));
+        assert_eq!(theological.pos, Some((6, 5)));
+
+        for (action, verb) in [
+            (Action::HealReligious { unit }, "RELIGIOUS_HEAL"),
+            (Action::RemoveHeresy { unit }, "REMOVE_HERESY"),
+            (Action::LaunchInquisition { unit }, "LAUNCH_INQUISITION"),
+            (Action::ConvertBarbarians { unit }, "CONVERT_BARBARIANS"),
+        ] {
+            let operation = translate(&action, &mirror, &state)
+                .expect("a direct religious operation crosses");
+            assert_eq!(operation.kind, "unit");
+            assert_eq!(operation.subject, Some(91));
+            assert_eq!(operation.verb.as_deref(), Some(verb));
+            assert_eq!(operation.pos, None);
+        }
 
         // ★★★ And the one order that touches an ENEMY religious unit. It used
         // to fall through this match's `_ => None` and be counted
