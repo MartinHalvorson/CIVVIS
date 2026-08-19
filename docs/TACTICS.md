@@ -1128,3 +1128,56 @@ The frozen anchors are untouched by construction (`legacy()` carries neither
 flag; the `ANCHOR_BEHAVIOUR_FNV` fingerprint passes unchanged), and stock
 `advanced` keeps today's behaviour unless the flag is promoted on the
 whole-game evidence above.
+
+## 17. Approach lines from the exact reach (2026-08-19)
+
+The one-step and two-step approach blocks of §9 walked rings by geometry:
+every step cost 1, a two-step line needed "strictly more than two" movement,
+and an intermediate tile beside a hostile was skipped by hand. Three things
+were wrong at once. A two-move unit on a road, or a three-move one over flat
+ground, reaches a firing tile two hexes out with movement to spare and got no
+line; a one-step line onto hills-and-woods was offered, refused when played,
+and stood the unit in contact unfortified; and a four-move horseman's third
+and fourth hexes did not exist at all — the mobility the closed-form reply
+already priced for the *enemy* (`enemy_batteries`, §9) was invisible for our
+own lines.
+
+**What changed.** `Game::approach_reach` is the engine's own movement flood
+with one difference from `reachable`: entering enemy zone of control still
+stops the walk, but the movement the unit keeps on arrival is reported rather
+than zeroed, because a unit that stops in a zone of control keeps its unused
+movement for the blow (`do_attack`, `do_ranged`, `can_pay_melee_entry`). The
+two-step block is gone; from two hexes out, a line is offered from every tile
+the unit reaches with movement left for the strike — for melee, enough to pay
+the defender's tile; for ranged, any — along the flood's own path, priced by
+the same prior as before less `APPROACH_STEP_TOLL` (4) per step. The one-step
+block stays (it also owns the handoff onto a teammate's tile, which no flood
+can express), siege stays grounded, and every line is still played through
+the engine at fitness time. Only tiles within the unit's range of a hostile
+unit, an at-war city or an unpillaged Encampment are scanned for strikes.
+
+**Screen** — 300 paired seeds a cell, block 7,200,000, `advanced_joint_tactics`
+v stock `advanced`, base (§16 tip) against this change:
+
+| composition | base | **this change** |
+|---|---:|---:|
+| combined arms | +365.9 ± 20.5 | +374.1 ± 20.9 |
+| ranged heavy | +498.8 ± 23.5 | +498.8 ± 23.5 |
+| with siege | +175.0 ± 25.6 | +173.9 ± 26.6 |
+| melee only | +57.0 ± 10.5 | +56.4 ± 10.4 |
+| **cavalry** `horseman,horseman,horseman,heavy_chariot,archer,archer` | +398.0 ± 21.4 (1.720 v 0.582) | **+476.2 ± 22.0** (1.879 v 0.532) |
+| **mounted medieval** `knight,knight,courser,crossbowman,crossbowman,pikeman` | +495.7 ± 49.6 (1.314 v 0.761) | **+590.2 ± 48.9** (1.384 v 0.722) |
+
+**Confirmation** — fresh block 7,300,000: cavalry +352.3 ± 20.0 → **+409.7 ±
+21.6** (exchange 1.651 → 1.744); mounted medieval +601.1 ± 50.6 → +622.1 ±
+48.5 (1.367 → 1.393); combined arms +372.8 ± 21.2 → +370.7 ± 21.5. The four
+foot compositions hold within one standard error on both blocks; the two
+mounted compositions — where the old geometry threw the third and fourth
+hexes away — gain on both. Sign tests are decisive on every cell either way
+(the search was already far ahead of the greedy rule); the delta is read from
+the paired means on identical seeds.
+
+The frozen `advanced_v1` anchor never runs the joint search and is untouched;
+the arena `advanced` and the live bridge pick this up automatically. See
+`docs/LIVE_TACTICS.md` §7 for the program this belongs to.
+

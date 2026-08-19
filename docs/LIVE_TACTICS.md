@@ -156,3 +156,18 @@ UI reads them, and both readings (hit-point readback and damage deltas) are
 recorded side by side so the first live run says which one is right. The
 offline regression (`combat_ledger_test.lua`) proves the events are shaped as
 the ledger tool expects.
+
+## 7. Step 3, first cut — the joint search reaches as far as the unit does
+
+The engagement-window planner grows in steps; this is the first: approach
+lines from the engine's exact reach flood instead of two hand-built steps
+(`docs/TACTICS.md` §17). Measured on `battle_bench` at 300 paired seeds a cell
+on two disjoint blocks: the four foot compositions hold within one standard
+error; the two mounted compositions gain (cavalry +398 → +476 and +352 → +410;
+mounted medieval +496 → +590 and +601 → +622), because a four-move unit's
+third and fourth hexes now exist for our own lines as they already did for
+the enemy's reply. Still ahead in this step: the window (units four-plus tiles
+out with no strike this turn), a second ply for set-up lines, expected-value
+combat for the host's rolls, and the city-assault terms the one-city arena
+regime measures.
+
