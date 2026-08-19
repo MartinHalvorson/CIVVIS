@@ -21880,18 +21880,17 @@ fn an_adjacent_empty_camp_is_cleared_instead_of_being_held_or_explored_past() {
     }
 }
 
-/// The adjacent camp clear ships default-ON, and this gate is the reason the
-/// v14 rating ledger survives it: `AdvancedAi::legacy()` — the frozen anchor
-/// whose fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins —
-/// must never see the treatment, exactly like `naval_recon`. The withhold arm
-/// `advanced_without_adjacent_camp_clear` prices it from the current
-/// controller instead.
+/// The adjacent camp clear ships default-ON, but this gate keeps the controller
+/// treatment outside `AdvancedAi::legacy()` — the frozen anchor whose
+/// fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins — exactly
+/// like `naval_recon`. A shared world rule may still own a protocol bump; this
+/// withhold arm prices the current-controller treatment instead.
 #[test]
 fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
     assert!(
         !AdvancedAi::legacy().adjacent_camp_clear(),
-        "the frozen anchor must keep playing the game it always played; \
-         re-pinning it starts a new ledger and is not this treatment's call"
+        "this controller treatment must stay outside the frozen anchor; an \
+         anchor move needs a protocol decision owned by the world rule"
     );
     assert!(AdvancedAi::new().adjacent_camp_clear());
     let mut withheld = AdvancedAi::new();
@@ -25562,7 +25561,9 @@ fn a_valued_wonder_credits_the_prerequisites_that_unblock_it() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25681,7 +25682,9 @@ fn a_refused_wonder_earns_its_prerequisites_nothing() {
         game.players[0].civ
     );
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25721,7 +25724,9 @@ fn a_built_wonder_stops_paying_its_prerequisites() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
