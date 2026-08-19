@@ -11,7 +11,7 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Evaluator-only agents | 228 |
+| Evaluator-only agents | 229 |
 | Live-bridge treatments | 82 |
 | Firaxis-only treatments | 27 |
 | Native engine-repair treatments | 55 |
