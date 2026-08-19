@@ -14785,11 +14785,7 @@ impl AdvancedAi {
                     .filter(|distance| *distance <= RELIGIOUS_HOME_WATCH)
                     .map(|distance| (distance, religion.to_owned()))
             })
-            .min_by(|left, right| {
-                left.0
-                    .cmp(&right.0)
-                    .then_with(|| left.1.cmp(&right.1))
-            })
+            .min_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)))
             .map(|(_, religion)| religion)
     }
 

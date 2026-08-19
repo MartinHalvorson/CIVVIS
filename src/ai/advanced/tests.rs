@@ -10625,17 +10625,17 @@ fn non_founder_buys_defense_before_an_approaching_rival_missionary_spreads() {
     }
 
     let capital_pos = game.cities[&capital].pos;
-    let approach = game
-        .wdisk(capital_pos, 4)
-        .into_iter()
-        .find(|position| {
-            game.wdist(*position, capital_pos) == 4
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-                && game.units_at(*position).is_empty()
-        })
-        .expect("the capital has a clear one-turn religious approach tile");
+    let approach =
+        game.wdisk(capital_pos, 4)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, capital_pos) == 4
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .expect("the capital has a clear one-turn religious approach tile");
     let rival = game.spawn_test_unit("missionary", 1, approach);
     game.units.get_mut(&rival).unwrap().religion = Some("Runaway Faith".to_string());
 
