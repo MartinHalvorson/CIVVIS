@@ -271,7 +271,7 @@ check("give-up named queue_stalled", (lastEvent("orders_queue") or ""):find("que
 reset()
 host.units[16] = { id = 16, kind = "UNIT_WARRIOR", x = 5, y = 5, moves = 2 }   -- near
 host.units[17] = { id = 17, kind = "UNIT_WARRIOR", x = 30, y = 30, moves = 2 } -- far
-host.contacts = { { id = 900, kind = "UNIT_BARBARIAN", x = 7, y = 5, moves = 2 } }
+host.contacts = { { id = 900, kind = "UNIT_WARRIOR", x = 7, y = 5, moves = 2 } }
 applyOrders(player, PID, 7, {})
 check("held soldier not explored", ops(16), "")
 check("far soldier explored", ops(17), "UNITOPERATION_AUTOMATE_EXPLORE")
