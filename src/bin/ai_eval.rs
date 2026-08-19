@@ -3174,7 +3174,6 @@ mod tests {
     use super::*;
     use civvis::rng::Rng;
 
-
     /// `--stop-when-decisive` ends a run only on a decisive gate: never under
     /// `PROMOTION_MIN_MAPS`, never on parity, and on either side once the
     /// anytime-valid evidence and the betting interval agree.
@@ -3182,26 +3181,31 @@ mod tests {
     fn early_stopping_waits_for_a_decisive_gate() {
         assert!(!early_stop_is_warranted(&[]));
         assert!(
-            !early_stop_is_warranted(&vec![1.0; PROMOTION_MIN_MAPS - 1]),
+            !early_stop_is_warranted(&[1.0; PROMOTION_MIN_MAPS - 1]),
             "insufficient maps never stop, however lopsided"
         );
         assert!(
-            !early_stop_is_warranted(&vec![0.5; 200]),
+            !early_stop_is_warranted(&[0.5; 200]),
             "parity never stops: the run plays out to its preregistered size"
         );
         assert!(
-            early_stop_is_warranted(&vec![1.0; 40]),
+            early_stop_is_warranted(&[1.0; 40]),
             "a challenger sweep stops on PASS"
         );
         assert!(
-            early_stop_is_warranted(&vec![0.0; 40]),
+            early_stop_is_warranted(&[0.0; 40]),
             "an incumbent sweep stops on RETAIN"
         );
-        let mixed: Vec<f64> = (0..60).map(|i| if i % 3 == 0 { 0.5 } else { 1.0 }).collect();
+        let mixed: Vec<f64> = (0..60)
+            .map(|i| if i % 3 == 0 { 0.5 } else { 1.0 })
+            .collect();
         assert!(early_stop_is_warranted(&mixed));
         // The verdict the stop reads is the gate's own verdict, not a new rule.
         assert_eq!(paired_inference(&mixed).verdict, PromotionVerdict::Promote);
-        assert_eq!(paired_inference(&vec![0.5; 200]).verdict, PromotionVerdict::Inconclusive);
+        assert_eq!(
+            paired_inference(&[0.5; 200]).verdict,
+            PromotionVerdict::Inconclusive
+        );
     }
 
     #[test]
