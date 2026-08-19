@@ -1,13 +1,27 @@
 //! Gathering Storm's random disasters: the intensity setting, the four storm
 //! systems, river floods, droughts and volcanic eruptions, and the way a
 //! warming world makes all of them more frequent and more severe.
-use super::{Drought, Game, Pos, Storm, DEFAULT_DISASTER_INTENSITY};
+use super::{Drought, Game, Item, Pos, Storm, DEFAULT_DISASTER_INTENSITY};
 use crate::name::Name;
 
 fn quiet_game() -> Game {
     // Disasters roll against a per-turn probability derived from `max_turns`,
     // so every test states the turn budget it is reasoning about.
     Game::new_full(2, 30, 18, 4242, 500, 0, false)
+}
+
+fn game_with_capitals() -> Game {
+    let mut game = quiet_game();
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    game
 }
 
 /// Drive whole game turns so the world-turn phases (including disasters) run.
@@ -88,6 +102,90 @@ fn intensity_zero_leaves_every_volcano_dormant_and_fires_nothing() {
     advance(&mut game, 30);
     assert!(game.storms.is_empty(), "no storms form with disasters off");
     assert!(game.droughts.is_empty(), "no droughts form with disasters off");
+}
+
+/// A player who actually loses population to a random disaster receives the
+/// aid target; other majors, never the target, may score the 200-point project.
+#[test]
+fn disaster_population_loss_seats_a_targeted_native_aid_request() {
+    let mut game = game_with_capitals();
+    let target = 0;
+    let member = 1;
+    let target_city = game.player_city_ids(target)[0];
+    let member_city = game.player_city_ids(member)[0];
+    let target_pos = game.cities[&target_city].pos;
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
+    game.cities.get_mut(&target_city).unwrap().pop = 3;
+
+    // The staged mechanism leaves an ordinary board alone.
+    game.disaster_population_loss(target_pos, 1);
+    assert!(game.competition.is_none());
+
+    game.native_competitions = true;
+    game.disaster_population_loss(target_pos, 1);
+    let running = game
+        .competition
+        .as_ref()
+        .expect("a disaster casualty seats the shipped Send Aid request");
+    assert_eq!(running.kind, "EMERGENCY_SEND_AID");
+    assert_eq!(running.target, Some(target));
+    assert_eq!(
+        running.ends,
+        game.turn + game.standard_duration(30),
+        "Send Aid's shipped duration is 30 turns"
+    );
+
+    assert!(
+        game.host_competition(member, "EMERGENCY_SEND_AID")
+            .is_some(),
+        "another major is a request member"
+    );
+    assert!(
+        game.host_competition(target, "EMERGENCY_SEND_AID")
+            .is_none(),
+        "the affected civilization receives aid rather than scoring it"
+    );
+    assert!(game.can_produce(member, member_city, &aid));
+    assert!(!game.can_produce(target, target_city, &aid));
+
+    assert!(game.complete_item(member, member_city, &aid));
+    let score = game.competition.as_ref().unwrap().scores[&member];
+    assert_eq!(
+        score, game.rules.projects["send_aid"].competition_score,
+        "the request uses the shipped 200-point Send Aid project"
+    );
+    assert!(
+        game.complete_item(target, target_city, &aid),
+        "the low-level completion path remains harmless when called directly"
+    );
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&member],
+        score,
+        "the aid target cannot manufacture a score through that direct path"
+    );
+
+    let before = game.players[member].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[member].dvp - before,
+        2,
+        "Gathering Storm pays an Aid Request's first-place member two Diplomatic Victory Points"
+    );
+    assert_eq!(
+        game.competition_lockout_until["EMERGENCY_SEND_AID"],
+        game.turn + game.standard_duration(30),
+        "Send Aid carries its own 30-turn lockout"
+    );
+
+    game.cities.get_mut(&target_city).unwrap().pop = 3;
+    game.disaster_population_loss(target_pos, 1);
+    assert!(
+        game.competition.is_none(),
+        "a second casualty cannot bypass the request's own lockout"
+    );
 }
 
 #[test]

@@ -2862,14 +2862,24 @@ pub struct HostCompetition {
 /// seven sites including congress *refunds*, and deciding which of those count
 /// as favor "earned" is a rule this repository does not have — the kind of
 /// invention that put Vanilla belief values into a Gathering Storm ruleset in
-/// #2049. The aid requests trigger on a random event and on a war rather than
-/// on the congress, so they need a trigger before they need a score.
+/// #2049. Native Send Aid seats from a random-disaster population loss and
+/// scores its existing project. Its other score sources, and the separate
+/// military-aid war trigger, remain outside the portion modelled here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CompetitionScoring {
     /// A project completed in a city, worth its `competition_score`.
     Project,
     /// A Great Person recruited, worth one point whatever the class.
     GreatPeople,
+}
+
+/// The event that seats a native scored competition.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NativeCompetitionTrigger {
+    /// The regular World Congress selects a scored competition.
+    Congress,
+    /// A player lost population to a random disaster.
+    RandomDisasterPopulationLoss,
 }
 
 /// The portion of a scored competition CIVVIS can faithfully seat itself.
@@ -2883,6 +2893,9 @@ struct NativeCompetitionSpec {
     kind: &'static str,
     diplomatic_victory_points: i64,
     scoring: CompetitionScoring,
+    trigger: NativeCompetitionTrigger,
+    duration: u32,
+    lockout: u32,
     minimum_world_era: usize,
     maximum_world_era: Option<usize>,
 }
@@ -2913,6 +2926,13 @@ pub struct Competition {
     pub kind: String,
     /// First turn on which the competition is no longer current.
     pub ends: u32,
+    /// The player a targeted aid request is helping, if it has one.
+    ///
+    /// A target is not an emergency member and therefore cannot access the
+    /// request's scoring project. Older saves held only no-target congress
+    /// competitions, so they deserialize as no target.
+    #[serde(default)]
+    pub target: Option<usize>,
     /// Score by player id. A seat that has scored nothing is absent.
     pub scores: BTreeMap<usize, f64>,
 }
@@ -17691,8 +17711,13 @@ impl Game {
         if self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity") > 0.0 {
             return;
         }
+        let owner = self.cities[&city_id].owner;
         let city = self.cities.get_mut(&city_id).unwrap();
+        let before = city.pop;
         city.pop = (city.pop - loss).max(1);
+        if city.pop < before {
+            self.open_native_aid_request(owner);
+        }
     }
 
     /// Tell whoever has something at stake on the tile what just happened to
@@ -31119,6 +31144,9 @@ impl Game {
             .as_ref()
             .filter(|running| running.kind == kind && running.ends > self.turn)
         {
+            if native.target == Some(pid) {
+                return None;
+            }
             let ours = native.scores.get(&pid).copied().unwrap_or(0.0);
             let leader = native.scores.values().copied().fold(0.0, f64::max);
             return Some(HostCompetition {
@@ -31145,13 +31173,16 @@ impl Game {
     ///
     /// The installed Gathering Storm emergency definitions gate World's Fair to
     /// Modern, World Games to Atomic+, Climate Accords to Information+, and
-    /// International Space Station to Future+. Nobel prizes and aid requests
-    /// still need score sources or triggers that CIVVIS does not model.
+    /// International Space Station to Future+. Nobel prizes and the remaining
+    /// aid-request score sources still need rules that CIVVIS does not model.
     const NATIVE_COMPETITIONS: &'static [NativeCompetitionSpec] = &[
         NativeCompetitionSpec {
             kind: "EMERGENCY_SPACE_STATION",
             diplomatic_victory_points: 1,
             scoring: CompetitionScoring::Project,
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
             minimum_world_era: 8,
             maximum_world_era: None,
         },
@@ -31159,6 +31190,9 @@ impl Game {
             kind: "EMERGENCY_CLIMATE_ACCORDS",
             diplomatic_victory_points: 2,
             scoring: CompetitionScoring::Project,
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
             minimum_world_era: 7,
             maximum_world_era: None,
         },
@@ -31166,6 +31200,9 @@ impl Game {
             kind: "EMERGENCY_WORLDS_FAIR",
             diplomatic_victory_points: 1,
             scoring: CompetitionScoring::GreatPeople,
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
             minimum_world_era: 5,
             maximum_world_era: Some(5),
         },
@@ -31173,7 +31210,20 @@ impl Game {
             kind: "EMERGENCY_WORLD_GAMES",
             diplomatic_victory_points: 1,
             scoring: CompetitionScoring::Project,
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
             minimum_world_era: 6,
+            maximum_world_era: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_SEND_AID",
+            diplomatic_victory_points: 2,
+            scoring: CompetitionScoring::Project,
+            trigger: NativeCompetitionTrigger::RandomDisasterPopulationLoss,
+            duration: 30,
+            lockout: 30,
+            minimum_world_era: 0,
             maximum_world_era: None,
         },
     ];
@@ -31196,7 +31246,8 @@ impl Game {
             .map(|player| player.id)
             .collect();
         let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
-            competition.offered_in_world_era(self.world_era)
+            competition.trigger == NativeCompetitionTrigger::Congress
+                && competition.offered_in_world_era(self.world_era)
                 && self
                     .competition_lockout_until
                     .get(competition.kind)
@@ -31209,7 +31260,43 @@ impl Game {
         };
         self.competition = Some(Competition {
             kind: competition.kind.to_string(),
-            ends: self.turn + self.standard_duration(29),
+            ends: self.turn + self.standard_duration(competition.duration),
+            target: None,
+            scores: BTreeMap::new(),
+        });
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// Seat Gathering Storm's Send Aid request when a random disaster costs a
+    /// major civilization population. Unlike congress competitions this is
+    /// targeted: the affected empire receives aid and cannot score in its own
+    /// request.
+    fn open_native_aid_request(&mut self, target: usize) {
+        if !self.native_competitions || self.competition.is_some() || !self.victory_eligible(target)
+        {
+            return;
+        }
+        let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
+            competition.trigger == NativeCompetitionTrigger::RandomDisasterPopulationLoss
+                && self
+                    .competition_lockout_until
+                    .get(competition.kind)
+                    .is_none_or(|until| self.turn >= *until)
+        }) else {
+            return;
+        };
+        let any_member_can_score = self
+            .players
+            .iter()
+            .filter(|player| player.id != target && self.victory_eligible(player.id))
+            .any(|player| self.can_score_competition(player.id, competition.kind));
+        if !any_member_can_score {
+            return;
+        }
+        self.competition = Some(Competition {
+            kind: competition.kind.to_string(),
+            ends: self.turn + self.standard_duration(competition.duration),
+            target: Some(target),
             scores: BTreeMap::new(),
         });
         self.query_memo.producible.borrow_mut().clear();
@@ -31264,7 +31351,11 @@ impl Game {
         if scoring != Some(CompetitionScoring::GreatPeople) {
             return;
         }
-        if let Some(running) = self.competition.as_mut() {
+        if let Some(running) = self
+            .competition
+            .as_mut()
+            .filter(|running| running.target != Some(pid))
+        {
             *running.scores.entry(pid).or_insert(0.0) += 1.0;
         }
     }
@@ -31282,11 +31373,13 @@ impl Game {
         if self.turn < running.ends {
             return;
         }
-        let award = Self::native_competition(&running.kind)
+        let spec = Self::native_competition(&running.kind).copied();
+        let award = spec
             .map(|competition| competition.diplomatic_victory_points)
             .unwrap_or(0);
         let kind = running.kind.clone();
-        let until = self.turn + self.standard_duration(60);
+        let until = self.turn
+            + self.standard_duration(spec.map(|competition| competition.lockout).unwrap_or(60));
         let best = running.scores.values().copied().fold(0.0, f64::max);
         let winners: Vec<usize> = running
             .scores
@@ -48058,6 +48151,7 @@ impl Game {
                 if spec.competition_score > 0.0 {
                     if let Some(running) = self.competition.as_mut() {
                         if running.ends > self.turn
+                            && running.target != Some(pid)
                             && spec
                                 .host_competition_kinds()
                                 .any(|kind| kind == running.kind)
