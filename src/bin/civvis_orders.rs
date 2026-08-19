@@ -1235,6 +1235,135 @@ fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
     Some(((asked * SALE_FLOOR_SHARE).ceil() as i32).max(SALE_FLOOR_MIN))
 }
 
+/// The gold-equivalent ABOVE which the host must NOT close a passage
+/// purchase, from what CIVVIS offered: lump gold plus per-turn gold at the
+/// same 25× factor, with headroom — the rival prices by its own book, and a
+/// passage the plan budgeted 60 for is still worth taking at 90 — but never
+/// above `BORDER_BUY_CEILING_MAX`, so a valuation gap cannot hand a rival the
+/// treasury. `None` unless the trade is exactly the shape this arm buys:
+/// their Open Borders, our gold, nothing else on either side.
+const BUY_CEILING_SHARE: f64 = 1.5;
+
+fn border_buy_ceiling(
+    offer: &civvis::game::DealItems,
+    request: &civvis::game::DealItems,
+) -> Option<i32> {
+    if !request.open_borders
+        || request.gold != 0.0
+        || request.gold_per_turn != 0.0
+        || !request.resources.is_empty()
+        || request.diplomatic_favor != 0.0
+        || !request.great_works.is_empty()
+        || !request.captured_spies.is_empty()
+        || !request.cities.is_empty()
+        || offer.open_borders
+        || !offer.resources.is_empty()
+        || offer.diplomatic_favor != 0.0
+        || !offer.great_works.is_empty()
+        || !offer.captured_spies.is_empty()
+        || !offer.cities.is_empty()
+        || !offer.gold.is_finite()
+        || !offer.gold_per_turn.is_finite()
+        || offer.gold < 0.0
+        || offer.gold_per_turn < 0.0
+    {
+        return None;
+    }
+    let offered = offer.gold + 25.0 * offer.gold_per_turn;
+    if offered <= 0.0 {
+        return None;
+    }
+    Some(((offered * BUY_CEILING_SHARE).ceil() as i32).min(BORDER_BUY_CEILING_MAX))
+}
+
+// ★★★★★ PASSAGE BOUGHT WHERE THE MAP IS SEALED. `Game::sealed_border_owners`
+// names the major seats whose fogged border the mirror must seal
+// (`closed_borders`) and how much ground each one accounts for. That seal is
+// the measured killer of exploration: one live run held a scout against
+// Kongo's invisible border for 74 turns, exploration flatlined at 8.3% of the
+// map, no rival city was ever observed, and a conquest plan ran forty turns
+// with no one to attack. Sealed ground is also the self-fulfilling half of
+// the settler veto — the ground stays unexplored because it is never entered.
+//
+// Open Borders is the peacetime key to that door, and the host sells it as an
+// ordinary deal. The engine's own quote lane (`quick_deals`) cannot decide
+// this on a mirrored board — it validates the PARTNER's Early Empire civic,
+// which the mirror does not model — so, like the favor sale above, the order
+// is composed here from the export's own facts: our civic list, our treasury,
+// the rival's exported war/borders state. The Lua arm asks the rival's own
+// price with EQUALIZE and closes only at or under the ceiling carried in `x`.
+//
+// One ask per cadence window, aimed at the seat sealing the most ground; the
+// mod's own cooldowns (`TradeRetryTurns`) meter re-asks after a refusal, and
+// the export's `open_borders` flag retires the trigger the moment the grant
+// exists — the mirror stops sealing that rival, `sealed_border_owners` drops
+// them, and this lane moves to the next-worst seal or goes quiet.
+const BORDER_BUY_MIN_SEALED: u32 = 6;
+const BORDER_BUY_GOLD_RESERVE: i64 = 60;
+const BORDER_BUY_CEILING_MIN: i32 = 30;
+const BORDER_BUY_CEILING_MAX: i32 = 180;
+const BORDER_BUY_CADENCE: u32 = 6;
+const BORDER_BUY_PHASE: u32 = 1;
+
+/// Why no passage-purchase order was appended this turn, for the note;
+/// `None` when one was. `sealed_by` is the mirrored board's
+/// `sealed_border_owners`; rival records are looked up by the mirror's own
+/// seating rule (majors take seats 1.. in export order, the same mapping
+/// `host_player_target` uses).
+fn append_border_buy_order(
+    sealed_by: &std::collections::BTreeMap<usize, u32>,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let worst = sealed_by
+        .iter()
+        .filter(|(_, count)| **count >= BORDER_BUY_MIN_SEALED)
+        .filter_map(|(seat, count)| {
+            state
+                .rivals
+                .get(seat.saturating_sub(1))
+                .map(|rival| (rival, *count))
+        })
+        .filter(|(rival, _)| !rival.at_war && rival.open_borders != Some(true))
+        .max_by_key(|(rival, count)| (*count, std::cmp::Reverse(rival.player)));
+    let Some((rival, _)) = worst else {
+        return Some("border_buy_hold:no_seal");
+    };
+    if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
+        return Some("border_buy_hold:cadence");
+    }
+    // The host refuses the agreement item itself without Early Empire on both
+    // sides; ours is in the export, theirs only the deal validation knows.
+    // Asking early costs a named `agreement_invalid` refusal, asking without
+    // our own civic is a guaranteed one — skip only the guaranteed case.
+    if !state
+        .civics
+        .iter()
+        .any(|civic| civic == "CIVIC_EARLY_EMPIRE")
+    {
+        return Some("border_buy_hold:no_civic");
+    }
+    let ceiling = (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    if ceiling < BORDER_BUY_CEILING_MIN {
+        return Some("border_buy_hold:treasury");
+    }
+    // One working deal per rival at a time is the mod's rule; a sale already
+    // heading to the same seat this turn would turn the buy into a named
+    // `buy_pending` refusal. Yield the turn — the cadence retries.
+    if orders.iter().any(|order| {
+        (order.kind == "sell" || order.kind == "buy") && order.subject == Some(rival.player as i64)
+    }) {
+        return Some("border_buy_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(rival.player as i64),
+        verb: Some("OPEN_BORDERS".to_string()),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 // ★★★★★ THE FAVOR BANK, SPENT ON THE PLAN THAT IS ACTUALLY RUNNING. Diplomatic
 // favor is votes at the World Congress and nothing else; on the live seat the
 // bank has read 200–420 at the end of every game measured, and the 2026-08-18
@@ -2539,6 +2668,17 @@ fn decide(
             }
         }
     }
+    match append_border_buy_order(&mirror_state.game.sealed_border_owners, state, &mut orders) {
+        None => note_bits.push("border_buy=1".to_string()),
+        Some(why) => {
+            // Only the holds that mean something is wrong on the ground: a
+            // seal standing while the treasury cannot meet the minimum ask,
+            // or while another deal holds the same rival's working deal.
+            if why == "border_buy_hold:treasury" || why == "border_buy_hold:deal_in_flight" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
     let sales = orders.iter().filter(|order| order.kind == "sell").count();
     if sales > 0 {
         note_bits.push(format!("sales={sales}"));
@@ -3435,21 +3575,32 @@ fn translate(
         // A sale the planner decided — surplus luxury copies, a strategic
         // block, a favor block — for the rival's gold. See `sale_verb`; the
         // floor rides in `x`, the Lua arm asks the rival's own valuation with
-        // EQUALIZE and closes only at or above it. Anything else in a `Trade`
-        // (a purchase, a Great Work, a city) stays skipped and named.
+        // EQUALIZE and closes only at or above it. The one purchase with an
+        // arm is Open Borders (`border_buy_ceiling`); anything else in a
+        // `Trade` (another purchase, a Great Work, a city, a mutual
+        // borders swap) stays skipped and named.
         Action::Trade {
             player,
             offer,
             request,
         } => {
-            let verb = sale_verb(offer)?;
-            let floor = sale_floor(request)?;
-            Some(Order {
-                kind: "sell",
-                subject: host_player_target(mirror_state, state, *player),
-                verb: Some(verb),
-                pos: Some((floor, 0)),
-            })
+            if let Some(verb) = sale_verb(offer) {
+                let floor = sale_floor(request)?;
+                Some(Order {
+                    kind: "sell",
+                    subject: host_player_target(mirror_state, state, *player),
+                    verb: Some(verb),
+                    pos: Some((floor, 0)),
+                })
+            } else {
+                let ceiling = border_buy_ceiling(offer, request)?;
+                Some(Order {
+                    kind: "buy",
+                    subject: host_player_target(mirror_state, state, *player),
+                    verb: Some("OPEN_BORDERS".to_string()),
+                    pos: Some((ceiling, 0)),
+                })
+            }
         }
         _ => None,
     }
@@ -7327,6 +7478,127 @@ mod tests {
     }
 
     #[test]
+    fn a_passage_purchase_crosses_as_a_buy_order_with_a_ceiling() {
+        use civvis::game::DealItems;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 90,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 90,
+            rivals: vec![StateRival {
+                player: 4,
+                civ: "CIVILIZATION_KONGO".to_string(),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        // Their Open Borders for our gold: the one purchase with an arm.
+        let buy = translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(DealItems {
+                    gold: 60.0,
+                    ..DealItems::default()
+                }),
+                request: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a passage purchase from a mapped rival translates");
+        assert_eq!(buy.kind, "buy");
+        assert_eq!(buy.subject, Some(4));
+        assert_eq!(buy.verb.as_deref(), Some("OPEN_BORDERS"));
+        // 60 offered, headroom of half again: the rival prices by its own book.
+        assert_eq!(buy.pos, Some((90, 0)));
+
+        // Per-turn gold rides the same 25× book, and the ceiling never
+        // crosses the cap however rich the offer.
+        let rich = translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(DealItems {
+                    gold: 200.0,
+                    gold_per_turn: 4.0,
+                    ..DealItems::default()
+                }),
+                request: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a rich passage purchase still translates");
+        assert_eq!(rich.pos, Some((BORDER_BUY_CEILING_MAX, 0)));
+
+        // A mutual swap is a different agreement and stays skipped, named.
+        assert!(translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+                request: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+
+        // Passage plus a luxury on either side is not this arm's shape.
+        let mut sweetened = DealItems {
+            gold: 60.0,
+            ..DealItems::default()
+        };
+        sweetened.resources.insert("dyes".to_string(), 1);
+        assert!(translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(sweetened),
+                request: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+
+        // A free ask carries no ceiling and does not cross.
+        assert!(translate(
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(DealItems::default()),
+                request: Box::new(DealItems {
+                    open_borders: true,
+                    ..DealItems::default()
+                }),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn purchases_and_other_deal_shapes_stay_untranslated() {
         use civvis::game::DealItems;
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -7545,6 +7817,112 @@ mod tests {
             Some("favor_hold:no_buyer")
         );
         assert!(held.is_empty());
+    }
+
+    #[test]
+    fn border_buys_aim_at_the_worst_seal() {
+        // The Kongo run's shape: two majors sealing ground, one of them worse,
+        // a third at war whose ground war already opens.
+        let state = StateSnapshot {
+            turn: 91, // 91 % 6 == 1, the lane's phase
+            gold: 200,
+            civics: vec![
+                "CIVIC_CODE_OF_LAWS".to_string(),
+                "CIVIC_EARLY_EMPIRE".to_string(),
+            ],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    at_war: true,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let sealed_by: std::collections::BTreeMap<usize, u32> =
+            [(1, 7), (2, 21), (3, 40)].into_iter().collect();
+
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &state, &mut orders),
+            None
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        // Seat 3 seals the most but is at war — war opens that ground by
+        // itself. Seat 2 (host player 4) is the worst peaceful seal.
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
+        // 200 gold − 60 reserve = 140, inside the cap.
+        assert_eq!(orders[0].pos, Some((140, 0)));
+
+        // A grant already in hand retires the trigger; the next-worst seal
+        // takes over.
+        let mut granted = state.clone();
+        granted.rivals[1].open_borders = Some(true);
+        let mut next = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &granted, &mut next),
+            None
+        );
+        assert_eq!(next[0].subject, Some(2));
+
+        // Small seals are not worth a deal window; no majors sealing, no ask.
+        let trivial: std::collections::BTreeMap<usize, u32> =
+            [(1, BORDER_BUY_MIN_SEALED - 1)].into_iter().collect();
+        let mut held = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&trivial, &state, &mut held),
+            Some("border_buy_hold:no_seal")
+        );
+        assert_eq!(
+            append_border_buy_order(&Default::default(), &state, &mut held),
+            Some("border_buy_hold:no_seal")
+        );
+
+        // Off the cadence, without the civic, or too poor to meet a minimum
+        // ask: held, with the seal still standing.
+        let mut off_cadence = state.clone();
+        off_cadence.turn = 92;
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &off_cadence, &mut held),
+            Some("border_buy_hold:cadence")
+        );
+        let mut no_civic = state.clone();
+        no_civic.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &no_civic, &mut held),
+            Some("border_buy_hold:no_civic")
+        );
+        let mut poor = state.clone();
+        poor.gold = 89; // 89 − 60 reserve = 29, one short of the minimum
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &poor, &mut held),
+            Some("border_buy_hold:treasury")
+        );
+        assert!(held.is_empty());
+
+        // A deal already heading to the same rival this turn holds the buy —
+        // the mod runs one working deal per rival at a time.
+        let mut in_flight = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &state, &mut in_flight),
+            Some("border_buy_hold:deal_in_flight")
+        );
+        assert_eq!(in_flight.len(), 1);
     }
 
     #[test]
