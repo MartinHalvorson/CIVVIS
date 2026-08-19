@@ -266,6 +266,19 @@ const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
 /// `AdvancedAi::live_wonder_race_scale`.
 const LIVE_WONDER_RACE_LATE_SCALE: f64 = 2.0;
 
+/// Share of a blocked wonder's own production score credited to the missing
+/// prerequisite that unblocks it, split across the prerequisites still
+/// missing. Half, not all: the prerequisite is an option on the wonder, not
+/// the wonder, and it must not outbid the wonder itself once both are
+/// producible. See `AdvancedAi::wonder_reach_credit`.
+const WONDER_REACH_SHARE: f64 = 0.5;
+
+/// A wonder more than this many construction steps away earns its
+/// prerequisites nothing: a two-step chain (Library, then an adjacent
+/// Campus) is a plan, a longer one is a fantasy the queue should not fund.
+/// See `AdvancedAi::wonder_reach_credit`.
+const WONDER_REACH_MAX_MISSING: usize = 2;
+
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
 /// See `AdvancedAi::amenity_district_path`.
@@ -1301,6 +1314,18 @@ struct TurnStartHostile {
     sea: bool,
 }
 
+/// One production menu's wonder-prerequisite credits: for each missing
+/// building/district family, a share of the best wonder score it would
+/// unblock in this city. See `AdvancedAi::wonder_reach_credit`.
+#[derive(Clone, Default)]
+struct WonderReachLedger {
+    pid: usize,
+    cid: u32,
+    turn: u32,
+    valid: bool,
+    credits: BTreeMap<Name, f64>,
+}
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -1321,6 +1346,11 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// Wonder-prerequisite credits for the city whose production menu is
+    /// being scored, rebuilt when the (player, city, turn) key moves on. The
+    /// menu scores every candidate consecutively, so one entry is enough;
+    /// `RefCell` for the same reason as `settlement_atlas`.
+    wonder_reach: RefCell<WonderReachLedger>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -2354,6 +2384,17 @@ pub struct AdvancedAi {
     /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
     /// written for.
     pub live_wonder_race: bool,
+    /// Price a wonder's missing prerequisites with a share of the wonder's
+    /// own production score, so a valued wonder the city cannot yet start
+    /// pulls its Library, Temple or Campus up the build order instead of
+    /// waiting for them to arrive by accident. The census behind #2061 found
+    /// the binding constraint on most lanes' wonders is the prerequisite
+    /// chain, not the valuation: `can_produce` never offers what the city
+    /// never qualified for. Scored through the `Item::Wonder` arm itself, so
+    /// a wonder the arm refuses earns its prerequisites nothing. Off by
+    /// default; evaluator arm `advanced_wonder_reach`.
+    /// See `wonder_reach_credit`.
+    pub wonder_prereq_reach: bool,
     /// Build the wonders the chosen victory actually needs.
     ///
     /// The wonder arm of `production_value` prices no `spec.effects` at all
@@ -3619,7 +3660,7 @@ impl Default for AdvancedAi {
 /// repository. `docs/ROADMAP.md` objective 5 names that as the case splitting
 /// does not answer and moving the data out does. See `advanced/treatments.rs`.
 mod treatments;
-pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_TREATMENTS};
+pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///
@@ -4084,6 +4125,7 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
+            wonder_reach: RefCell::new(WonderReachLedger::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -4156,6 +4198,7 @@ impl AdvancedAi {
             governor_in_recovery: true,
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
+            wonder_prereq_reach: false,
             strategic_wonders: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -7959,6 +8002,96 @@ impl AdvancedAi {
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
     fn live_wonder_race_lanes(city_count: usize) -> usize {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
+    /// What producing `item` is worth purely as a step toward wonders this
+    /// city cannot start yet: the `wonder_prereq_reach` treatment. Zero for
+    /// anything but a Building or District, and zero whenever the
+    /// `Item::Wonder` arm itself would refuse the wonder — the credit is a
+    /// share of that arm's own score, so every lane gate, era gate and
+    /// completion gate the arm applies keeps applying here. Returned in the
+    /// same normalized units as `production_value`'s result and added after
+    /// its normalizer: the credit is the wonder's discounted score, not a
+    /// property of the carrier's own cost.
+    fn wonder_reach_credit(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> f64 {
+        if !matches!(item, Item::Building { .. } | Item::District { .. }) {
+            return 0.0;
+        }
+        let credit_for = |credits: &BTreeMap<Name, f64>| {
+            credits
+                .iter()
+                .filter(|(family, _)| g.item_satisfies_wonder_prerequisite(item, **family))
+                .map(|(_, credit)| *credit)
+                .fold(0.0, f64::max)
+        };
+        {
+            let ledger = self.wonder_reach.borrow();
+            if ledger.valid && ledger.pid == pid && ledger.cid == cid && ledger.turn == g.turn {
+                return credit_for(&ledger.credits);
+            }
+        }
+        let credits = self.wonder_reach_credits(g, pid, cid, plan, counts);
+        let credit = credit_for(&credits);
+        *self.wonder_reach.borrow_mut() = WonderReachLedger {
+            pid,
+            cid,
+            turn: g.turn,
+            valid: true,
+            credits,
+        };
+        credit
+    }
+
+    /// Build one city's ledger: for every wonder blocked here only by
+    /// missing buildings/districts, score the wonder through the ordinary
+    /// `Item::Wonder` arm as if it had ground, and credit each missing
+    /// prerequisite family with `WONDER_REACH_SHARE` of that score split
+    /// across the missing steps. Families keep the best wonder they unblock,
+    /// not a sum — finishing a Library does not finish two wonders.
+    fn wonder_reach_credits(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> BTreeMap<Name, f64> {
+        let mut credits = BTreeMap::new();
+        let city_pos = g.cities[&cid].pos;
+        for wonder in g.rules.wonders.keys() {
+            let Some(missing) = g.wonder_missing_prerequisites(cid, wonder.as_str()) else {
+                continue;
+            };
+            if missing.is_empty() || missing.len() > WONDER_REACH_MAX_MISSING {
+                continue;
+            }
+            let hypothetical = Item::Wonder {
+                wonder: *wonder,
+                pos: city_pos,
+            };
+            let score = self.production_value(g, pid, cid, &hypothetical, plan, counts);
+            if score <= 0.0 {
+                continue;
+            }
+            let share = score * WONDER_REACH_SHARE / missing.len() as f64;
+            for group in missing {
+                for family in group {
+                    let entry = credits.entry(family).or_insert(0.0);
+                    if share > *entry {
+                        *entry = share;
+                    }
+                }
+            }
+        }
+        credits
     }
 
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
@@ -19090,7 +19223,17 @@ impl AdvancedAi {
         } else {
             1.0
         };
-        completion_discount * raw / (7.0 + turns.max(1.0))
+        let normalized = completion_discount * raw / (7.0 + turns.max(1.0));
+        if !self.wonder_prereq_reach {
+            return normalized;
+        }
+        // Added after the normalizer, in its units: the credit is a share of
+        // a wonder's already-normalized score, not a yield of the carrier —
+        // dividing it again by the carrier's build time would make a cheap
+        // Monument a better step toward the Great Library than the Library
+        // it requires. Refusals returned above and never reach this line, so
+        // a vetoed carrier cannot be resurrected by the wonder behind it.
+        normalized + self.wonder_reach_credit(g, pid, cid, item, plan, counts)
     }
 
     fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {

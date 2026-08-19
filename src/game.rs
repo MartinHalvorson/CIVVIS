@@ -5157,6 +5157,14 @@ pub struct Game {
     /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
     #[serde(default)]
     pub unseen_major_borders: BTreeSet<Pos>,
+    /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
+    /// id against its tile count in [`Game::closed_borders`]. The set alone
+    /// cannot answer the one question the passage-purchase lane asks: WHO to
+    /// buy Open Borders from. Written fresh beside `closed_borders` on a live
+    /// mirror and empty everywhere else; minors seal ground too but are never
+    /// recorded here, because their passage is suzerainty, not a deal.
+    #[serde(default)]
+    pub sealed_border_owners: BTreeMap<usize, u32>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -5597,6 +5605,7 @@ impl From<GameSer> for Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -6191,6 +6200,7 @@ impl Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -29994,6 +30004,72 @@ impl Game {
         }
         out.sort();
         out
+    }
+
+    /// The construction still standing between this city and a wonder: the
+    /// same building/district checks `wonder_sites` applies before it ever
+    /// looks at ground, reported as what is missing rather than as an empty
+    /// site list. Each inner group is a set of alternatives of which one
+    /// suffices (`requires_any_buildings`); `requires_buildings` and
+    /// `adjacent_district` contribute singleton groups. `None` means no
+    /// amount of construction here can open the wonder — already built
+    /// anywhere, tech/civic locked, host-refused in this city, or waiting on
+    /// a religion. An empty list means construction is not the blocker.
+    pub(crate) fn wonder_missing_prerequisites(
+        &self,
+        cid: u32,
+        wname: &str,
+    ) -> Option<Vec<Vec<Name>>> {
+        let city = &self.cities[&cid];
+        let spec = &self.rules.wonders[wname];
+        if self.wonder_built(wname)
+            || !self.unlocked(city.owner, &spec.tech, &spec.civic)
+            || self
+                .blocked_wonders
+                .get(&cid)
+                .is_some_and(|blocked| blocked.contains(&Name::new(wname)))
+            || (spec.founded_religion && self.players[city.owner].religion.is_none())
+            || (spec
+                .effects
+                .get("free_warrior_monks")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+                && self.players[city.owner].religion.is_none()
+                && self.city_religion(city).is_none())
+        {
+            return None;
+        }
+        let mut missing = Vec::new();
+        for required in &spec.requires_buildings {
+            if !self.city_has_building_family(city, *required) {
+                missing.push(vec![*required]);
+            }
+        }
+        if !spec.requires_any_buildings.is_empty()
+            && !spec
+                .requires_any_buildings
+                .iter()
+                .any(|required| self.city_has_building_family(city, *required))
+        {
+            missing.push(spec.requires_any_buildings.clone());
+        }
+        if let Some(required) = &spec.adjacent_district {
+            if required != "city_center" && !self.city_has_district_family(city, *required) {
+                missing.push(vec![*required]);
+            }
+        }
+        Some(missing)
+    }
+
+    /// Whether producing this item is one of the ways to satisfy a wonder
+    /// prerequisite family reported by `wonder_missing_prerequisites`.
+    pub(crate) fn item_satisfies_wonder_prerequisite(&self, item: &Item, family: Name) -> bool {
+        match item {
+            Item::Building { building } => self.building_is_family(*building, family),
+            Item::District { district, .. } => self.district_is_family(*district, family),
+            _ => false,
+        }
     }
 
     pub fn item_cost(&self, item: &Item) -> f64 {
