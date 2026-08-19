@@ -163,10 +163,10 @@ registrations.EmergencyAvailable(TARGET, TYPE)
 check("military Aid submits", #military.requests, 1)
 check("military Aid reports submitted", submitted(), true)
 
-local other = fixture({ kind = "EMERGENCY_WORLD_GAMES" })
+local other = fixture({ kind = "EMERGENCY_SPACE_STATION" })
 registrations.EmergencyAvailable(TARGET, TYPE)
-check("non-Aid never submits", #other.requests, 0)
-check("non-Aid does not touch tracker", other.trackerReads, 0)
+check("other competition never submits", #other.requests, 0)
+check("other competition does not touch tracker", other.trackerReads, 0)
 check("non-Aid is named", reason(), "not_aid_request")
 
 -- The event alone is not authority: the current emergency must match the

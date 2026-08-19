@@ -1,10 +1,10 @@
--- Offline regression for automatic Climate Accords membership.
+-- Offline regression for automatic World Games membership.
 --
--- CIVVIS must accept the target-free World Crisis before it begins, because
--- only members can score the bridge's 100-point power-plant decommission
--- projects. This invokes the actual callback registered by the control mod.
+-- Firaxis grants the 50-score Train Athletes project only to members of the
+-- target-free World Games. CIVVIS already models that score race, so exercise
+-- the actual emergency callback before the contest begins.
 --
--- Run: lua5.1 tools/civ6_control/mod/climate_accords_join_test.lua
+-- Run: lua5.1 tools/civ6_control/mod/world_games_join_test.lua
 
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 
@@ -29,6 +29,7 @@ Automation = { Log = function(line) logs[#logs + 1] = line end }
 UI = { DataError = function() end }
 CivvisControlConfig = {
 	Play = true, AutoJoinAidRequests = true, AutoJoinClimateAccords = true,
+	AutoJoinWorldsFair = true, AutoJoinWorldGames = true,
 }
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
@@ -52,12 +53,12 @@ local function check(name, got, want)
 	end
 end
 
-local PID, TYPE = 7, 83
-local nextTurn = 300
+local PID, TYPE = 7, 97
+local nextTurn = 500
 
 local function lastJoin()
 	for i = #logs, 1, -1 do
-		if logs[i]:find('"kind":"climate_accords_join"', 1, true) then
+		if logs[i]:find('"kind":"world_games_join"', 1, true) then
 			return logs[i]
 		end
 	end
@@ -94,15 +95,17 @@ local function fixture(opts)
 
 	CivvisControlConfig.Play = opts.play ~= false
 	CivvisControlConfig.AutoJoinAidRequests = opts.aidEnabled ~= false
+	CivvisControlConfig.AutoJoinClimateAccords = opts.climateEnabled ~= false
+	CivvisControlConfig.AutoJoinWorldsFair = opts.fairEnabled ~= false
 	if opts.defaultEnabled then
-		CivvisControlConfig.AutoJoinClimateAccords = nil
+		CivvisControlConfig.AutoJoinWorldGames = nil
 	else
-		CivvisControlConfig.AutoJoinClimateAccords = opts.enabled ~= false
+		CivvisControlConfig.AutoJoinWorldGames = opts.enabled ~= false
 	end
 	GameInfo = { EmergencyAlliances = {} }
 	if not opts.noDefinition then
 		GameInfo.EmergencyAlliances[opts.eventType or TYPE] = {
-			EmergencyType = opts.kind or "EMERGENCY_CLIMATE_ACCORDS",
+			EmergencyType = opts.kind or "EMERGENCY_WORLD_GAMES",
 		}
 	end
 	Game = {
@@ -118,15 +121,14 @@ local function fixture(opts)
 			}
 		end,
 	}
-	-- Climate Accords has no player target. An empty Players table proves that
-	-- joining it does not accidentally try to inspect Players[-1] or diplomacy.
+	-- World Games is target-free. It must not inspect Players[-1] or diplomacy.
 	Players = {}
 	PlayerOperations = {
 		PARAM_OTHER_PLAYER = "other",
 		PARAM_EMERGENCY_TYPE = "emergency",
 		ACCEPT_EMERGENCY = "accept",
 	}
-	if opts.noApi then PlayerOperations.ACCEPT_EMERGENCY = nil end
+	if opts.noApi then PlayerOperations.PARAM_EMERGENCY_TYPE = nil end
 	UI.RequestPlayerOperation = function(pid, operation, parameters)
 		state.requests[#state.requests + 1] = {
 			pid = pid, operation = operation, other = parameters.other,
@@ -139,28 +141,31 @@ local function fixture(opts)
 	return state
 end
 
--- Firaxis's target-free popup sends PARAM_OTHER_PLAYER=-1. A synchronous
--- re-publish sees the turn guard before MemberIDs has been refreshed.
+-- The native popup uses the same accept operation and no-target sentinel.
+-- A synchronous re-publish cannot submit a second request in the same turn.
 local good = fixture({ reenter = true })
 registrations.EmergencyAvailable(-1, TYPE)
-check("Climate Accords submits once", #good.requests, 1)
-check("Climate Accords uses local player", good.requests[1].pid, PID)
-check("Climate Accords uses accept operation", good.requests[1].operation, "accept")
-check("Climate Accords keeps no-target sentinel", good.requests[1].other, -1)
-check("Climate Accords keeps emergency type", good.requests[1].emergency, TYPE)
-check("Climate Accords checked exact tracker player", good.trackerPlayer, PID)
-check("Climate Accords reports submission, not membership", submitted(), true)
-check("Climate Accords submission reason", reason(), "submitted")
+check("World Games submits once", #good.requests, 1)
+check("World Games uses local player", good.requests[1].pid, PID)
+check("World Games uses accept operation", good.requests[1].operation, "accept")
+check("World Games keeps no-target sentinel", good.requests[1].other, -1)
+check("World Games keeps emergency type", good.requests[1].emergency, TYPE)
+check("World Games checked exact tracker player", good.trackerPlayer, PID)
+check("World Games reports submission, not membership", submitted(), true)
+check("World Games submission reason", reason(), "submitted")
 
--- Climate is independently default-on: an existing Aid opt-out cannot strand
--- its two-victory-point contest, and an absent new setting is equivalent to on.
-local defaultOn = fixture({ aidEnabled = false, defaultEnabled = true })
+-- The new setting defaults on and is independent of the earlier competition
+-- switches, so an existing opt-out cannot strand this athlete score race.
+local defaultOn = fixture({
+	aidEnabled = false, climateEnabled = false, fairEnabled = false,
+	defaultEnabled = true,
+})
 registrations.EmergencyAvailable(-1, TYPE)
-check("Climate defaults on independently of Aid", #defaultOn.requests, 1)
-check("Climate default-on reports submitted", submitted(), true)
+check("World Games defaults on independently", #defaultOn.requests, 1)
+check("World Games default-on reports submitted", submitted(), true)
 
--- The notification is only a hint. The live row must be present, unbegun, and
--- not already contain our membership; a player target is not Climate Accords.
+-- An availability event alone is never authority. The current tracker row
+-- must match, still require input, and not already contain our membership.
 for _, blocked in ipairs({
 	{ name = "missing tracker emergency", opts = { tracker = false }, why = "missing_emergency" },
 	{ name = "begun emergency", opts = { begun = true }, why = "already_begun" },
@@ -178,8 +183,8 @@ for _, blocked in ipairs({
 	check(blocked.name .. " is named", reason(), blocked.why)
 end
 
--- The feature defaults on but remains separately suppressible. A throwing
--- engine call clears the guard, making the next notification a real retry.
+-- An explicit opt-out and observer mode do not mutate the host. A thrown host
+-- request clears the turn guard so the next valid notification can retry.
 local disabled = fixture({ enabled = false })
 registrations.EmergencyAvailable(-1, TYPE)
 check("disabled controller does not submit", #disabled.requests, 0)
@@ -204,8 +209,8 @@ check("other competition never submits", #other.requests, 0)
 check("other competition does not touch tracker", other.trackerReads, 0)
 
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
-check("handler recognizes Climate Accords", src:find(
-	'kind == "EMERGENCY_CLIMATE_ACCORDS"', 1, true) ~= nil, true)
+check("handler recognizes World Games", src:find(
+	'kind == "EMERGENCY_WORLD_GAMES"', 1, true) ~= nil, true)
 check("handler retains Firaxis accept operation", src:find(
 	"PlayerOperations.ACCEPT_EMERGENCY", 1, true) ~= nil, true)
 
@@ -213,4 +218,4 @@ if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
 end
-print("all Climate Accords join checks passed")
+print("all World Games join checks passed")

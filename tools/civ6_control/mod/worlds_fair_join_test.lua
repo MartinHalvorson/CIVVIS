@@ -199,10 +199,10 @@ registrations.EmergencyAvailable(-1, TYPE)
 check("throwing host call can retry", #failed.requests, 2)
 check("retry after throw submits", submitted(), true)
 
-local other = fixture({ kind = "EMERGENCY_WORLD_GAMES" })
+local other = fixture({ kind = "EMERGENCY_SPACE_STATION" })
 registrations.EmergencyAvailable(-1, TYPE)
-check("unpriced competition never submits", #other.requests, 0)
-check("unpriced competition does not touch tracker", other.trackerReads, 0)
+check("other competition never submits", #other.requests, 0)
+check("other competition does not touch tracker", other.trackerReads, 0)
 
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
 check("handler recognizes World's Fair", src:find(
