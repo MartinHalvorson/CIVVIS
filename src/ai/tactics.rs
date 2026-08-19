@@ -621,12 +621,14 @@ impl JointTactics {
                         }
                         let role_bonus =
                             base.tactical_action_bonus_from(g, uid, to, target, ranged);
-                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
-                            + role_bonus
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus
                             - APPROACH_STEP_TOLL * steps;
                         let mut actions: Vec<Action> = path
                             .iter()
-                            .map(|step| Action::Move { unit: uid, to: *step })
+                            .map(|step| Action::Move {
+                                unit: uid,
+                                to: *step,
+                            })
                             .collect();
                         actions.push(action);
                         lines.push(Line {

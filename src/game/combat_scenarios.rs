@@ -1363,12 +1363,21 @@ fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there(
         let mut probe = g.clone();
         for step in path {
             probe
-                .apply(0, &Action::Move { unit: horse, to: *step })
+                .apply(
+                    0,
+                    &Action::Move {
+                        unit: horse,
+                        to: *step,
+                    },
+                )
                 .unwrap_or_else(|why| panic!("path to {to:?} refused at {step:?}: {why}"));
         }
         assert_eq!(probe.units[&horse].pos, *to);
     }
-    assert!(!reach.contains_key(&enemy_pos), "the enemy's own tile is no destination");
+    assert!(
+        !reach.contains_key(&enemy_pos),
+        "the enemy's own tile is no destination"
+    );
 
     // A foot soldier that ends its walk inside the zone of control keeps what
     // it has left for the attack (`zoc_stops_combatants…` proves the engine
@@ -1384,8 +1393,15 @@ fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there(
         .expect("a tile two out");
     let warrior = g.spawn_unit("warrior", 0, start);
     let reach = g.approach_reach(warrior);
-    let ring_tiles: Vec<Pos> = ring.iter().copied().filter(|r| reach.contains_key(r)).collect();
-    assert!(!ring_tiles.is_empty(), "a two-move warrior two out reaches the ring");
+    let ring_tiles: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|r| reach.contains_key(r))
+        .collect();
+    assert!(
+        !ring_tiles.is_empty(),
+        "a two-move warrior two out reaches the ring"
+    );
     for r in &ring_tiles {
         let (kept, path) = &reach[r];
         assert_eq!(path.len(), 1);
@@ -1395,8 +1411,11 @@ fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there(
             "the kept movement pays the defender's plains tile"
         );
     }
-    for (to, _) in &reach {
-        assert!(g.wdist(*to, start) <= 2, "{to:?} lies past a zone-of-control stop");
+    for to in reach.keys() {
+        assert!(
+            g.wdist(*to, start) <= 2,
+            "{to:?} lies past a zone-of-control stop"
+        );
     }
 }
 
