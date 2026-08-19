@@ -821,3 +821,93 @@ after it lands.** `naval_recon` went from absent to the largest cost in the
 simulator in one week, in code that passed a strength gate — which measures
 Elo, not tiles. Nothing in CI would ever have reported it. Re-profile after a
 batch of merges, not only after a performance change.
+
+## 2026-08-19 one promoted feature made every simulation six times slower
+
+⚠⚠ **THE STANDING RULE ABOVE FIRED WITHIN A DAY, AND NOTHING IN CI SAW IT.**
+`speed_ab.py`'s own shape — one 6-player 74×46 nine-city-state 150-turn Online
+game at `--jobs 1`, `ci` profile, seed 7311001 — measured on this host:
+
+| build | seconds per game |
+| --- | ---: |
+| `d3f624da` (2026-08-18 18:21Z, the commit before #2059) | **16.7** |
+| `b70c689b` (#2059 "Evacuate threatened units to safe healing ground") | **102.7** |
+| head `be44fa63` (2026-08-19 01:00Z) | 119.1 |
+| head with `precise_evacuation` forced off | 24.8 |
+
+So the flag #2059 turned on for `BasicAi::new()` — every city-state,
+barbarian and current `advanced` seat — owns ~95 of head's 119 seconds, and
+the forty other merges of the same evening own the remaining ~8. A `sample` of
+head, main thread, working samples: `retreat_step → enemy_attack_envelopes →
+Game::attack_reach` **33%**, `healing_step → safe_healing_step →
+evacuation_tile → evacuation_incoming_damage` **52%** (summed over every
+call site; the two overlap under `healing_step`).
+
+### What it was doing
+
+- `retreat_step` runs for **every military unit** of the seat on every turn,
+  before any withdrawal threshold, and starts by recomputing
+  `enemy_attack_envelopes` — one `attack_reach` flow field per visible enemy
+  military unit — for that unit alone. `unit_visible_to` answers `true` for
+  every non-stealth unit, so a barbarian seat priced the reach of every army
+  on the map, once per barbarian, every turn.
+- `safe_healing_step`, for every recovering unit, walked **all 3,404 tiles of
+  the map** and priced each with `evacuation_tile`: a defender strength on
+  that tile, the attack strength of every enemy whose envelope covers it, and
+  a scan of every hostile city with `is_at_war` per city per tile.
+  `suzerain_of` — a full envoy count per minor — was asked twice per tile
+  outside any memo scope. That is why `is_at_war`, `suzerain_of`,
+  `envoys_at` and `established_governor_at` were the top self-time leaves.
+
+### The repairs, both exact
+
+1. **Envelopes once per board.** `enemy_attack_envelopes` is memoized behind
+   `(turn, viewer, board fingerprint)`, where the fingerprint is FNV-1a over
+   every unit's identity, owner, place, health, movement and fighting state,
+   every city's identity, owner and place, the map epoch and the war ledger —
+   everything `attack_reach` reads, own units included because an own unit's
+   zone of control ends an enemy's move. A hit therefore returns what a
+   recompute would have, byte for byte. The cache is shared across controller
+   clones (`Arc<Mutex<…>>`), which is the whole win: `plan_general_unit_turn`
+   plans a batch of units on clones of one board, and the first per-clone
+   version of this cache — the obvious `RefCell` — was computed once per unit
+   and dropped with the clone, i.e. it did nothing (profiled, then replaced).
+2. **`safe_healing_step` decides safety by membership.** A tile's incoming
+   damage is zero exactly when it is a garrison district, or lies outside
+   every envelope and out of strike range of every hostile walled city and
+   encampment (each covering source contributes at least the clamp's floor of
+   one) — so the scan tests set membership computed once per call instead of
+   pricing 3,404 tiles, and reads its heal rates under a `query_memo` scope so
+   `suzerain_of` is answered once per minor.
+
+| seed | `main` (913b85d5) | with both repairs | reports |
+| --- | ---: | ---: | --- |
+| 7311000 | 136.2 s | 67.3 s | identical |
+| 7311001 | 147.0 s | 86.9 s | identical |
+
+Two-fold, byte-identical. Measured but **not shipped**: keying the envelope
+cache on enemy state only (own units left out) makes the same games 34 s and
+39 s — the serial paths (city-state and barbarian `military_step`,
+`advance_unit_serial`) then hit as well — but every report differs, because
+an own unit that steps out of an enemy's path widens that enemy's reach and
+the stale envelope does not see it. That is a behaviour change to #2059's
+policy and needs #2059's own gate, which the PR did not run; it is recorded
+here as the next 2× if the owner wants it.
+
+### What is left, and whose it is
+
+Even exact, the simulator is **four to five times slower than the day before
+#2059**: one full envelope computation per seat-turn is inherent to a design
+that prices the reach of *every* enemy on the map for *every* seat, and
+`retreat_step` runs its evacuation pricing for every unit before any
+threshold. The bounded fix is algorithmic — envelopes only for enemies within
+their maximum reach of any own unit or candidate tile, or the retreat check
+behind a cheap "is any envelope near this unit" test — and it changes which
+tiles a unit reads as threatened only where the answer was already zero, so
+it can be made exact too. It belongs to #2059's lane.
+
+The standing rule stands, sharpened: **a promoted feature is a performance
+event, and this one was a six-fold event that no strength gate could see.**
+`speed_ab.py` costs four minutes; a strength gate on a feature that
+multiplies game cost by six costs a day. Run the paired speed harness before
+promoting anything that adds a per-unit or per-tile pass.
