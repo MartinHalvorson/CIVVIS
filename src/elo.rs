@@ -1154,7 +1154,22 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// measured — the justification is that two definitions of the same thing
 /// disagreed, not a demonstrated gain. Rows before and after v15 are not
 /// comparable in any game where an improvement was pillaged.
-pub const ELO_PROTOCOL_VERSION: u32 = 15;
+///
+/// **v16 (2026-08-18) — Barbarian Scouts now report a sighted city, and each
+/// reported outpost raises one finite, difficulty-shaped raiding party.** The
+/// old phase let unreported camps add globally capped, unassigned units, so a
+/// distant camp could consume the force a successful Scout had earned. The
+/// corrected world rule keeps the Scout home while its report is active,
+/// retains each raider's source camp, and ends the alert after the party has
+/// formed.
+///
+/// This is a shared native-world rule with no controller gate: it changes what
+/// every participant faces before and during their turns. The frozen anchor
+/// therefore moves from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
+/// 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v15 and v16 rows are not
+/// comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 16;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
