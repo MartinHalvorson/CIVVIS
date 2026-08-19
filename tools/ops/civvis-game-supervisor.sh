@@ -38,6 +38,17 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
+# ⚠⚠ THIS NAME MUST BE A LEAGUE ENTRANT'S INTERNAL NAME (`g56-48`), NOT ITS
+# DISPLAY NAME. `civvis_orders --strategy` resolves against `strategy.name` in
+# the league snapshot; `WildCard9` is the display name of `g56-48`, and every
+# batch this service has started resolved it to NOTHING — the decider printed
+# "[genome] no strategy 'WildCard9'" and played the stock controller. The
+# ledger now records the genome actually played beside the name asked for
+# (`genome` / `strategy_requested` on each row), so the fallback is visible;
+# it is NOT changed here, because switching the live seat's genome is a
+# strength decision for the operator, not a side effect of a comment.
+# `auto` picks the league's strongest by conservative win bound; a `g*-*`
+# name pins one entrant.
 STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
