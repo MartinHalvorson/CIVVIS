@@ -5975,7 +5975,10 @@ mod tests {
         // The agent takes its turn on the planning board, exactly as `decide`
         // does, and the board's seat moves on.
         ai.take_turn(&mut planned, 0);
-        assert_ne!(planned.current, 0, "precondition: the seat has ended its turn");
+        assert_ne!(
+            planned.current, 0,
+            "precondition: the seat has ended its turn"
+        );
 
         let mut orders = Vec::new();
         let mut ours = std::collections::BTreeMap::new();
