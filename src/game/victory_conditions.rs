@@ -3648,8 +3648,16 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
         "Gathering Storm pays the Space Station's winner one Diplomatic Victory Point"
     );
     assert!(
-        game.competition_lockout_until > game.turn,
-        "a finished competition locks the next one out"
+        game.competition_lockout_until["EMERGENCY_SPACE_STATION"] > game.turn,
+        "a finished competition locks its own kind out"
+    );
+    assert!(
+        !game
+            .competition_lockout_until
+            .contains_key("EMERGENCY_CLIMATE_ACCORDS"),
+        "and locks out only its own kind: the shipped `LockoutTime` is a column \
+         on the emergency row, not a global clock, and one competition blocking \
+         every other seated two in a 250-turn game"
     );
 }
 
@@ -3672,5 +3680,55 @@ fn native_competitions_are_off_unless_a_game_turns_them_on() {
         "a seat that did not ask for native competitions must face the same \
          board it always did, or the frozen rating anchor moves without a \
          protocol bump"
+    );
+}
+
+/// A competition nobody can score in is not offered.
+///
+/// ★★★★★ THE FIRST TRACE SPENT A LOCKOUT ON NOTHING. Seating Climate Accords
+/// needs more than an Industrial Zone: its projects *decommission a power
+/// plant*, and an empire holding none cannot score a single point. The first
+/// run of the mechanism seated it on turn 100, closed it on 119 with an empty
+/// score table, and spent the sixty-turn lockout — while the whole 250-turn
+/// game seated two competitions and paid one point.
+///
+/// So eligibility asks for everything the scoring project consumes, not only
+/// the district it sits in.
+#[test]
+fn a_competition_is_offered_only_where_its_project_could_be_built() {
+    let mut game = game_with_capitals(3, 62_000, 400);
+    game.native_competitions = true;
+    game.world_era = 6;
+    let city = *game.cities.keys().next().expect("the fixture has a city");
+    let pos = game.cities[&city].pos;
+    let owner = game.cities[&city].owner;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("industrial_zone"), pos);
+
+    assert!(
+        !game.can_score_competition(owner, "EMERGENCY_CLIMATE_ACCORDS"),
+        "an Industrial Zone with no power plant in it cannot decommission one"
+    );
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "a competition nobody can score in must not be seated: it pays no one \\
+         and spends the lockout"
+    );
+
+    // Give it something to decommission and it becomes offerable.
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("coal_power_plant"));
+    assert!(game.can_score_competition(owner, "EMERGENCY_CLIMATE_ACCORDS"));
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS")
     );
 }

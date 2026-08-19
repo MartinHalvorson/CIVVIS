@@ -5311,10 +5311,14 @@ pub struct Game {
     /// `native_competitions` is set. See [`Competition`].
     #[serde(default)]
     pub competition: Option<Competition>,
-    /// First turn a new competition may be seated. Gathering Storm locks a
-    /// finished competition out for sixty turns.
+    /// First turn each competition kind may be seated again.
+    ///
+    /// ⚠ Per kind, because the shipped `LockoutTime` is a column on the
+    /// emergency row rather than a global clock. A single lockout let one
+    /// competition block every other for sixty turns, and a 250-turn game
+    /// seated two.
     #[serde(default)]
-    pub competition_lockout_until: u32,
+    pub competition_lockout_until: BTreeMap<String, u32>,
     /// Whether this game runs its own scored competitions.
     ///
     /// ⚠ Off by default and deliberately so. Turning it on changes what every
@@ -5578,7 +5582,7 @@ struct GameSer {
     #[serde(default)]
     competition: Option<Competition>,
     #[serde(default)]
-    competition_lockout_until: u32,
+    competition_lockout_until: BTreeMap<String, u32>,
     #[serde(default)]
     native_competitions: bool,
     #[serde(default)]
@@ -6352,7 +6356,7 @@ impl Game {
             active_congress_effects: Vec::new(),
             host_competitions: Vec::new(),
             competition: None,
-            competition_lockout_until: 0,
+            competition_lockout_until: BTreeMap::new(),
             native_competitions: false,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
@@ -31113,10 +31117,7 @@ impl Game {
 
     /// Seat a competition if one may run and an empire could score in it.
     fn open_native_competition(&mut self) {
-        if !self.native_competitions
-            || self.competition.is_some()
-            || self.turn < self.competition_lockout_until
-        {
+        if !self.native_competitions || self.competition.is_some() {
             return;
         }
         let majors: Vec<usize> = self
@@ -31126,9 +31127,12 @@ impl Game {
             .map(|player| player.id)
             .collect();
         let Some((kind, _)) = Self::NATIVE_COMPETITIONS.iter().find(|(kind, _)| {
-            majors
-                .iter()
-                .any(|pid| self.can_score_competition(*pid, kind))
+            self.competition_lockout_until
+                .get(*kind)
+                .is_none_or(|until| self.turn >= *until)
+                && majors
+                    .iter()
+                    .any(|pid| self.can_score_competition(*pid, kind))
         }) else {
             return;
         };
@@ -31148,12 +31152,21 @@ impl Game {
             if spec.competition_score <= 0.0 || !spec.host_competition_kinds().any(|k| k == kind) {
                 return false;
             }
-            let Some(district) = spec.district else {
-                return true;
-            };
-            self.cities
-                .values()
-                .any(|city| city.owner == pid && city.districts.contains_key(district))
+            // ⚠ The district is not the whole requirement. A decommissioning
+            // project also eats a power plant, and a competition offered to an
+            // empire that holds none is a competition nobody can score in: the
+            // first trace of this seated Climate Accords on turn 100 and closed
+            // it on 119 with no score at all, having spent the lockout.
+            self.cities.values().any(|city| {
+                city.owner == pid
+                    && spec
+                        .district
+                        .is_none_or(|district| city.districts.contains_key(district))
+                    && spec
+                        .consumes_buildings
+                        .iter()
+                        .all(|building| city.buildings.contains(&Name::new(building)))
+            })
         })
     }
 
@@ -31175,6 +31188,8 @@ impl Game {
             .find(|(kind, _)| *kind == running.kind)
             .map(|(_, points)| *points)
             .unwrap_or(0);
+        let kind = running.kind.clone();
+        let until = self.turn + self.standard_duration(60);
         let best = running.scores.values().copied().fold(0.0, f64::max);
         let winners: Vec<usize> = running
             .scores
@@ -31188,7 +31203,7 @@ impl Game {
             self.add_historic_moment(winner, "MOMENT_PLAYER_EARNED_DIPLOMATIC_VICTORY_POINT");
         }
         self.competition = None;
-        self.competition_lockout_until = self.turn + self.standard_duration(60);
+        self.competition_lockout_until.insert(kind, until);
         self.query_memo.producible.borrow_mut().clear();
     }
 
