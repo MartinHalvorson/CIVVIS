@@ -2426,6 +2426,22 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
+    /// Take the pantheon that founds a city. Civilization VI's Religious
+    /// Settlements grants a free Settler in the capital
+    /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
+    /// and Fertility Rites a free Builder — the engine models both
+    /// (`do_choose_pantheon`). The shipped prefix ranks Divine Spark first,
+    /// so the live seat took Divine Spark in 40 of 40 recorded 2026-08-17/19
+    /// runs (+1 Great Person point in districts it did not yet have) while
+    /// the same 12.5 Faith could have stood a Settler at ~t20 — a city ~t24
+    /// against a median third city at t38, and the capital's next 40–55
+    /// production freed. With this on the two founding pantheons lead the
+    /// prefix, in that order; every other rank is unchanged, and the board
+    /// term of `pantheon_reads_the_board` still adds on top. Set only through
+    /// `AdvancedAi::enable_expansion_pantheon` (the Civilization VI bridge);
+    /// native constructors and the frozen anchor keep the shipped order.
+    /// See `research_with_government` and `AdvancedAi::expansion_pantheon`.
+    pub(crate) expansion_pantheon: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -3973,6 +3989,7 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            expansion_pantheon: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -4004,6 +4021,13 @@ impl BasicAi {
     /// `--explain-settler` probe can play the same gate.
     pub fn enable_land_grab(&mut self) {
         self.land_grab = true;
+    }
+
+    /// Lead the pantheon prefix with the two that found a city (see
+    /// `expansion_pantheon`). The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_expansion_pantheon`.
+    pub fn enable_expansion_pantheon(&mut self) {
+        self.expansion_pantheon = true;
     }
 
     /// Give up an exploration target the host will not move the unit toward
@@ -4261,6 +4285,7 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
+            expansion_pantheon: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -5826,18 +5851,36 @@ impl BasicAi {
             // while only those six exist or while one of them is still free.
             // What changes is the case that used to have no answer at all: every
             // named pantheon taken, and the empire founding none.
-            let mut pantheons: Vec<String> = [
-                "divine_spark",
-                "fertility_rites",
-                "god_of_the_forge",
-                "religious_settlements",
-                "god_of_the_open_sky",
-                "god_of_the_sea",
-            ]
-            .into_iter()
-            .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
-            .map(str::to_string)
-            .collect();
+            // ★★★★ THE PANTHEON THAT FOUNDS A CITY LEADS THE PREFIX ON THE
+            // LIVE SEAT. See `expansion_pantheon`: Religious Settlements is a
+            // free Settler in the capital and Fertility Rites a free Builder,
+            // and Divine Spark — the shipped first choice, taken in 40 of 40
+            // recorded live runs — pays nothing until a district stands.
+            let prefix: &[&str] = if self.expansion_pantheon {
+                &[
+                    "religious_settlements",
+                    "fertility_rites",
+                    "divine_spark",
+                    "god_of_the_forge",
+                    "god_of_the_open_sky",
+                    "god_of_the_sea",
+                ]
+            } else {
+                &[
+                    "divine_spark",
+                    "fertility_rites",
+                    "god_of_the_forge",
+                    "religious_settlements",
+                    "god_of_the_open_sky",
+                    "god_of_the_sea",
+                ]
+            };
+            let mut pantheons: Vec<String> = prefix
+                .iter()
+                .copied()
+                .filter(|belief| g.rules.beliefs.pantheon.contains_key(*belief))
+                .map(str::to_string)
+                .collect();
             for belief in g.rules.beliefs.pantheon.keys() {
                 if !pantheons.contains(belief) {
                     pantheons.push(belief.clone());
@@ -13562,6 +13605,82 @@ mod tests {
         assert_eq!(
             treated_bare.players[0].pantheon.as_deref(),
             Some("divine_spark")
+        );
+    }
+
+    /// ★★★★ THE LIVE SEAT TAKES THE PANTHEON THAT FOUNDS A CITY. See
+    /// `expansion_pantheon`: Religious Settlements grants a Settler in the
+    /// capital and Fertility Rites a Builder, and the shipped prefix — Divine
+    /// Spark first — took Divine Spark in 40 of 40 recorded live runs. With
+    /// the flag on the founding pantheons lead; a Religious Settlements a
+    /// rival already holds (`Game::blocked_pantheons`, the mirror's read of a
+    /// `taken_BELIEF_*` refusal) falls to Fertility Rites; the shipped order
+    /// is untouched with the flag off.
+    #[test]
+    fn the_expansion_pantheon_founds_a_city_and_falls_to_the_next_when_taken() {
+        let board = |seed: u64| {
+            let mut game = Game::new_full(2, 30, 18, seed, 200, 0, false);
+            game.current = 0;
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            game.players[0].faith = 200.0;
+            game
+        };
+        let settlers = |game: &Game| {
+            game.player_unit_ids(0)
+                .into_iter()
+                .filter(|unit| game.units[unit].kind == "settler")
+                .count()
+        };
+
+        // Off: the shipped first choice, and no unit granted for it.
+        let mut shipped = BasicAi::new();
+        shipped.pursue_religion = true;
+        let mut bare = board(6_101);
+        shipped.research_with_government(&mut bare, 0, false, None);
+        assert_eq!(bare.players[0].pantheon.as_deref(), Some("divine_spark"));
+        assert_eq!(settlers(&bare), 0);
+
+        // On: the pantheon that founds a city, and the Settler it grants.
+        let mut live = BasicAi::new();
+        live.pursue_religion = true;
+        live.enable_expansion_pantheon();
+        let mut treated = board(6_101);
+        live.research_with_government(&mut treated, 0, false, None);
+        assert_eq!(
+            treated.players[0].pantheon.as_deref(),
+            Some("religious_settlements")
+        );
+        assert_eq!(
+            settlers(&treated),
+            1,
+            "the host grants a Settler in the capital"
+        );
+
+        // On, first choice held by a rival: the next founding pantheon, not
+        // the shipped list's first name.
+        let mut contested = board(6_101);
+        contested
+            .blocked_pantheons
+            .insert(crate::name!("religious_settlements"));
+        live.research_with_government(&mut contested, 0, false, None);
+        assert_eq!(
+            contested.players[0].pantheon.as_deref(),
+            Some("fertility_rites")
+        );
+        assert_eq!(settlers(&contested), 0);
+        assert_eq!(
+            contested
+                .player_unit_ids(0)
+                .into_iter()
+                .filter(|unit| contested.units[unit].kind == "builder")
+                .count(),
+            1,
+            "Fertility Rites grants a Builder"
         );
     }
 
