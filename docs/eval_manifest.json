@@ -1,7 +1,7 @@
 {
   "coverage": {
     "named": 33,
-    "never_named": 24,
+    "never_named": 25,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -14,6 +14,7 @@
       "garrison-walls": "live_without_garrison_walls",
       "housing-cards": "live_without_housing_cards",
       "housing-research": "live_without_housing_research",
+      "idle-walkers-close-the-pipeline": "live_without_idle_walkers_close_the_pipeline",
       "loyalty-rate-alarm": "live_without_loyalty_rate_alarm",
       "muster-at-command-radius": "live_without_muster_at_command_radius",
       "relief-targets-the-siege": "live_without_relief_targets_the_siege",
@@ -40,6 +41,7 @@
       "garrison-walls",
       "housing-cards",
       "housing-research",
+      "idle-walkers-close-the-pipeline",
       "loyalty-rate-alarm",
       "muster-at-command-radius",
       "relief-targets-the-siege",
@@ -54,14 +56,14 @@
       "war-reinforcement",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 57
+    "withholdable": 58
   },
   "derived": {
-    "eval_only_count": 233,
+    "eval_only_count": 234,
     "firaxis_only_count": 29,
-    "live_bridge_count": 86,
-    "native_engine_repair_count": 57,
-    "withholdable_live_count": 57
+    "live_bridge_count": 87,
+    "native_engine_repair_count": 58,
+    "withholdable_live_count": 58
   },
   "ladder": {
     "ahead": 6,
@@ -101,7 +103,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 25,
+      "declared_count": 26,
       "items": [
         "escort-unstick",
         "stacked-escort",
@@ -109,6 +111,7 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "idle-walkers-close-the-pipeline",
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
@@ -131,7 +134,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 57,
+      "declared_count": 58,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -171,6 +174,7 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "idle-walkers-close-the-pipeline",
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
@@ -230,7 +234,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 233,
+      "declared_count": 234,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -325,6 +329,7 @@
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
         "live_without_district_building_chain",
+        "live_without_idle_walkers_close_the_pipeline",
         "live_without_barbarian_walls_one_tier",
         "live_without_settler_guard_holds",
         "live_without_expansion_pantheon",
@@ -502,7 +507,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 86,
+      "declared_count": 87,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -585,6 +590,7 @@
         "settler-site-agreement",
         "civilian-rescue",
         "district-building-chain",
+        "idle-walkers-close-the-pipeline",
         "barbarian-walls-one-tier",
         "settler-guard-holds",
         "expansion-pantheon",

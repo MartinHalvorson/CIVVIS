@@ -2995,6 +2995,43 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
+    /// An idle walker closes the settler pipeline, and a site the walker
+    /// cannot reach stays retired.
+    ///
+    /// ★★★★ NINETEEN SETTLERS FOR NINE CITIES. Run civvis-20260819T000800Z
+    /// spent 1,620 production — 17% of everything it made — on Settlers;
+    /// three were captured, and five were alive at t195, fourteen to forty
+    /// turns old, parked inside a rival's border, one re-issuing the same
+    /// refused step onto a foreign Holy Site for 27 turns straight ("HELD
+    /// short … the next tile refuses it and nothing is standing there"),
+    /// while the loyalty veto refused every remaining target 130 times
+    /// ("beyond the empire's Loyalty reach on ground the seat has not
+    /// explored"). Cohort of the 13 post-land-grab games: 277 idle
+    /// settler-turns median, 1.4 Settlers built per city founded (wins 1.1).
+    ///
+    /// Three defects, one flag:
+    /// - the `land_grab` pipeline (`LAND_GRAB_PIPELINE_BASE + cities/3`
+    ///   walkers) never asked whether the walkers already out had anywhere
+    ///   to go, so it kept paying for new ones while old ones stood; the
+    ///   older `stalled_expansion` branch even OPENS a replacement seat for a
+    ///   blocked walker — right for the one-settler-at-a-time era it was
+    ///   written in, wrong once the pipeline is two or more. Under this flag
+    ///   any own walker idle for `SETTLER_REPLACEMENT_BLOCKED_TURNS` closes
+    ///   the pipeline until it moves, founds, or dies;
+    /// - a walker whose forecast refused every site returned without
+    ///   counting the turn, so it never read as idle at all. Now it does;
+    /// - `SETTLER_STALL_LIMIT` stalls retired the target into the ONE-slot
+    ///   `settler_avoid` for eight standard turns, and the walker re-picked
+    ///   the same site the moment it expired (the same single-slot weakness
+    ///   #1689 replaced on the loyalty path with `settler_dead_sites`). Now
+    ///   the stall path retires the site into the dead-site set for
+    ///   `SETTLER_DEAD_SITE_AVOID_TURNS` as well, and a walker idle for twice
+    ///   the replacement threshold with no target left tries to found where it
+    ///   stands before holding another turn.
+    ///
+    /// Live bundle and native repair (economy half): the pipeline and the
+    /// stall path are the engine's. Off for ordinary and frozen controllers.
+    pub idle_walkers_close_the_pipeline: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -4522,6 +4559,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
+            idle_walkers_close_the_pipeline: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -18304,6 +18342,11 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
+        // See `idle_walkers_close_the_pipeline`: a walker with nowhere to go
+        // is the pipeline's whole allowance until it moves, founds or dies.
+        if self.idle_walkers_close_the_pipeline && stalled_expansion && settlers > 0 {
+            return 0;
+        }
         if self.land_grab && city_count + settlers < desired_cities {
             // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
             // `land_grab`: two walkers from the first city, one more for
@@ -22214,6 +22257,15 @@ impl AdvancedAi {
                         }
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
+                        // See `idle_walkers_close_the_pipeline`: a site the
+                        // walker could not reach three turns running stays
+                        // retired for as long as a doomed one does.
+                        if self.idle_walkers_close_the_pipeline {
+                            self.settler_dead_sites.entry(uid).or_default().insert(
+                                target,
+                                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                            );
+                        }
                         self.settler_targets.remove(&uid);
                         self.settler_stalls.remove(&uid);
                     }
@@ -22359,6 +22411,21 @@ impl AdvancedAi {
             }
         });
         let Some(target) = target else {
+            // See `idle_walkers_close_the_pipeline`: a walker that found no
+            // site this turn is idle, and the pipeline reads that; one idle
+            // for twice the replacement threshold founds where it stands if
+            // the engine and the safety guard allow it, rather than holding
+            // for the rest of the game.
+            if self.idle_walkers_close_the_pipeline {
+                let idle = self.settler_blocked_turns.entry(uid).or_insert(0);
+                *idle += 1;
+                let idle = *idle;
+                if idle >= 2 * SETTLER_REPLACEMENT_BLOCKED_TURNS
+                    && self.founds_where_it_stands(g, pid, uid, current)
+                {
+                    return true;
+                }
+            }
             // Do not let a safe exhaustion fall through to `BasicAi`, which
             // cannot see `settler_dead_sites` and may select the very plot the
             // live forecast just retired. A later board can reveal a safe site
@@ -22602,6 +22669,13 @@ impl AdvancedAi {
                 }
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
+                // See `idle_walkers_close_the_pipeline`.
+                if self.idle_walkers_close_the_pipeline {
+                    self.settler_dead_sites.entry(uid).or_default().insert(
+                        target,
+                        g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                    );
+                }
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_closest.remove(&uid);
