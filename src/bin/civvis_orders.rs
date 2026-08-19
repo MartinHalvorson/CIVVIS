@@ -7054,8 +7054,8 @@ mod tests {
             (Action::LaunchInquisition { unit }, "LAUNCH_INQUISITION"),
             (Action::ConvertBarbarians { unit }, "CONVERT_BARBARIANS"),
         ] {
-            let operation = translate(&action, &mirror, &state)
-                .expect("a direct religious operation crosses");
+            let operation =
+                translate(&action, &mirror, &state).expect("a direct religious operation crosses");
             assert_eq!(operation.kind, "unit");
             assert_eq!(operation.subject, Some(91));
             assert_eq!(operation.verb.as_deref(), Some(verb));
