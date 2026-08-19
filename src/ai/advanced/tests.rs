@@ -7042,6 +7042,93 @@ fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
     assert!(proposal.friendship);
 }
 
+/// A new alliance is a +1 Favor-per-turn stream. Nobel Peace scores that
+/// stream on the host clock, so the ordinary twelve-turn proposal cadence must
+/// not delay a legal strategic alliance until the contest has already lost
+/// those points. Other Nobel kinds and a Peace clock too short for next-turn
+/// Favor retain the quiet cadence.
+#[test]
+fn live_nobel_peace_proposes_an_alliance_without_waiting_for_its_cadence() {
+    let board = || {
+        let mut game = Game::new_full(3, 24, 16, 7_842, 300, 0, false);
+        game.turn = 13;
+        for pid in 0..3 {
+            for other in pid + 1..3 {
+                game.record_contact(pid, other);
+            }
+        }
+        for player in game.players.iter_mut() {
+            player.civics.insert(crate::name!("civil_service"));
+            player.techs.insert(crate::name!("scientific_theory"));
+        }
+        game.players[1].techs.insert(crate::name!("radio"));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        (game, plan)
+    };
+    let propose = |game: &mut Game, plan: &StrategicPlan| {
+        AdvancedAi::targeting(VictoryTarget::Science)
+            .propose_strategic_alliance(game, 0, plan, None);
+    };
+
+    let (mut ordinary, plan) = board();
+    assert_ne!(ordinary.turn % 12, 0, "the fixture must miss the usual cadence");
+    propose(&mut ordinary, &plan);
+    assert!(
+        ordinary.pending_deals.is_empty(),
+        "outside a host Peace contest the ordinary cadence stays unchanged"
+    );
+
+    let (mut wrong_nobel, plan) = board();
+    wrong_nobel.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: wrong_nobel.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    propose(&mut wrong_nobel, &plan);
+    assert!(
+        wrong_nobel.pending_deals.is_empty(),
+        "Nobel Literature scores Great Person points, not the alliance Favor stream"
+    );
+
+    let (mut peace, plan) = board();
+    peace.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: peace.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    propose(&mut peace, &plan);
+    let proposal = peace
+        .pending_deals
+        .iter()
+        .find(|deal| deal.from == 0)
+        .expect("a live Peace clock must ask the ready ally now");
+    assert_eq!(proposal.alliance.as_deref(), Some("research"));
+    assert!(proposal.friendship);
+
+    let (mut expiring, plan) = board();
+    expiring.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: expiring.turn + 1,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    propose(&mut expiring, &plan);
+    assert!(
+        expiring.pending_deals.is_empty(),
+        "an alliance whose Favor starts after the deadline does not bypass cadence"
+    );
+}
+
 #[test]
 fn strategic_alliance_skips_an_unmet_major_and_reaches_a_known_one() {
     let mut game = Game::new_full(3, 24, 16, 783, 300, 0, false);
