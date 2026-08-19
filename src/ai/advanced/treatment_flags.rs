@@ -121,6 +121,21 @@ impl AdvancedAi {
         self.base.legal_tactical_candidates = false;
     }
 
+    /// Refuse a step onto any tile this unit has already stood on this turn.
+    ///
+    /// `enable_recorded_tactical_step` remembers one tile, which refuses
+    /// `A -> B -> A` and lets `A -> B -> C -> A` through. See
+    /// `BasicAi::whole_turn_backtrack_guard` for what that costs.
+    pub fn enable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = true;
+    }
+
+    /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
+    /// `LIVE_TREATMENTS`.
+    pub fn disable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -227,6 +242,15 @@ impl AdvancedAi {
 
     pub fn disable_garrison_walls(&mut self) {
         self.base.garrison_walls = false;
+    }
+
+    /// See `BasicAi::barbarian_walls_one_tier`.
+    pub fn enable_barbarian_walls_one_tier(&mut self) {
+        self.base.barbarian_walls_one_tier = true;
+    }
+
+    pub fn disable_barbarian_walls_one_tier(&mut self) {
+        self.base.barbarian_walls_one_tier = false;
     }
 
     /// Release an escort that is not walking its settler. See `escort_unstick`.
@@ -543,6 +567,15 @@ impl AdvancedAi {
         self.settler_site_agreement = false;
     }
 
+    /// See [`Self::settler_guard_holds`].
+    pub fn enable_settler_guard_holds(&mut self) {
+        self.settler_guard_holds = true;
+    }
+
+    pub fn disable_settler_guard_holds(&mut self) {
+        self.settler_guard_holds = false;
+    }
+
     /// See [`Self::siege_is_progress`].
     pub fn enable_siege_is_progress(&mut self) {
         self.siege_is_progress = true;
@@ -660,6 +693,9 @@ impl AdvancedAi {
         // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
         // steps recorded.
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         self.enable_bounded_recovery();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
@@ -697,6 +733,11 @@ impl AdvancedAi {
         // the culture lane and the fog hiding every attacker until adjacency.
         // See BasicAi::garrison_walls_item.
         self.enable_garrison_walls();
+        // And a raider ring buys ancient walls only: 40 medieval and
+        // renaissance walls "for nearby barbarian pressure" across 23 live
+        // games, against an enemy that cannot take a city. See
+        // `BasicAi::barbarian_walls_one_tier`.
+        self.enable_barbarian_walls_one_tier();
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();
@@ -977,6 +1018,10 @@ impl AdvancedAi {
         // it by t150 and stops settling at t116 under an assigned lane. See
         // `land_grab`.
         self.enable_land_grab();
+        // And the pipeline stops paying for walkers while one already out
+        // has nowhere to go — nineteen Settlers for nine cities on run
+        // civvis-20260819T000800Z. See `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
         // And the pantheon is the one that founds a city, bought with the
         // Faith card the portfolio used to throw away at the first civic
         // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
@@ -1065,6 +1110,11 @@ impl AdvancedAi {
         // 19 starts became 8 foundings on the first hostile map after the
         // land-grab pipeline. See `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And the guard on the settler's tile holds there, and only a guard
+        // that can hold counts — both settlers of civvis-20260819T025840Z were
+        // taken one tile outside Rome from a tile a warrior had just left.
+        // See `settler_guard_holds`.
+        self.enable_settler_guard_holds();
         // And a capturable civilian within reach is walked onto, never
         // watched from adjacency — and a settler in the barbarians' hands is
         // never declined. Run `civvis-20260818T222844Z` t27–t33: our own
@@ -1135,6 +1185,9 @@ impl AdvancedAi {
         self.enable_war_reinforcement();
         self.enable_come_ashore();
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.
@@ -1163,6 +1216,9 @@ impl AdvancedAi {
         self.enable_home_defense();
         self.enable_garrison_under_fire();
         self.enable_garrison_walls();
+        // And no wall tier above ancient against raiders that cannot capture.
+        // See `BasicAi::barbarian_walls_one_tier`.
+        self.enable_barbarian_walls_one_tier();
         // Tactical quality on the tile the unit actually stands on.
         self.enable_strike_opening();
         self.enable_ranged_needs_line_of_sight();
@@ -1210,6 +1266,12 @@ impl AdvancedAi {
         // And never paying for a Settler the march will refuse to land. See
         // `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And not paying for another while one out has nowhere to go. See
+        // `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
+        // And a stacked guard holds, and only one that can hold counts. See
+        // `settler_guard_holds`.
+        self.enable_settler_guard_holds();
         // The cheap half of a research city before the race in it. See
         // `buildings_before_projects`.
         self.enable_buildings_before_projects();
@@ -1629,6 +1691,15 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
+    /// See [`Self::idle_walkers_close_the_pipeline`].
+    pub fn enable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = true;
+    }
+
+    pub fn disable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = false;
+    }
+
     /// Take the pantheon that founds a city and keep the Faith card that buys
     /// it (see `expansion_pantheon`). Sets both halves: the strategic
     /// portfolio's God-King want, and `BasicAi`'s pantheon prefix.
@@ -1768,6 +1839,13 @@ impl AdvancedAi {
 
     pub fn disable_civilian_rescue(&mut self) {
         self.base.civilian_rescue = false;
+    }
+
+    /// Keep the hostile-envelope table across this seat's own unit moves —
+    /// evaluator arm `advanced_envelope_own_moves`. See
+    /// `BasicAi::envelope_cache_across_own_moves`.
+    pub fn enable_envelope_cache_across_own_moves(&mut self) {
+        self.base.enable_envelope_cache_across_own_moves();
     }
 
     /// Stop pricing a Firaxis barbarian scout as a threat. See

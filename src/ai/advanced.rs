@@ -2746,6 +2746,47 @@ pub struct AdvancedAi {
     /// forecast alone (`frontier_loyalty` is a live arm), so the repair is
     /// an engine repair with a wider live reading, not bridge semantics.
     pub settler_site_agreement: bool,
+    /// A stacked guard holds with its settler, and only a guard that can hold
+    /// counts as protection.
+    ///
+    /// ★★★★★ BOTH SETTLERS OF RUN civvis-20260819T025840Z WERE TAKEN ONE TILE
+    /// OUTSIDE ROME, EACH FROM A TILE A WARRIOR HAD JUST BEEN STANDING ON.
+    /// Rome (55,26) was ringed by Saka horsemen and horse archers from t17.
+    /// t21: the settler stepped from the city onto (54,25), where a warrior
+    /// stood — `settlement_tile_risk` prices any own military unit on the
+    /// destination as protection (×0.15) and the step read as safe. The
+    /// warrior then took its own turn: wounded, with hostiles adjacent, it
+    /// healed away into the city, and the settler stood alone two tiles from
+    /// a horse archer. t23: captured. t24: a fresh settler did the same onto
+    /// (54,25) with a warrior on it; t25: captured. Second city at t41, four
+    /// cities at t155, 194 against 620. The pattern is not new — "marching
+    /// alone is how the last two settlers were captured" is the journal's own
+    /// wording — and it is why `cities_at_60` is the ladder's best predictor.
+    ///
+    /// Two defects, one flag:
+    /// - the on-tile protection discount counted ANY own military unit,
+    ///   though only the settler's BOUND guard is held on the tile by
+    ///   `stacked_guard_step`; an unbound unit follows its own doctrine — and
+    ///   since #2059, its evacuation — and walks off. Under this flag a
+    ///   civilian's on-tile discount is the bound guard's alone, and only
+    ///   while that guard could hold: healthy (`STACKED_GUARD_MIN_HP`) and
+    ///   not outmatched by a visible hostile that can reach the tile
+    ///   (`effective_strength(hostile) > 1.5 × effective_strength(guard)` —
+    ///   the same bar `settlement_unit_step_toward_safe` uses for a
+    ///   formation leader). A pair of a Warrior and a Settler no longer walks
+    ///   out beside three horsemen because the Warrior "protects" it.
+    /// - the bound guard's own turn ran `healing_step` and `retreat_step`
+    ///   before `settler_escort_step`, so a wounded guard sharing its
+    ///   settler's tile evacuated and left the civilian in the open. Under
+    ///   this flag a bound guard standing on its settler's tile holds there
+    ///   ("Guard stands with its settler") before any healing or retreat; the
+    ///   settler decides for the pair, and its own guarded-here test uses the
+    ///   same "could hold" bar, so an outmatched pair retreats together and
+    ///   the guard follows.
+    ///
+    /// Live bundle and native repair (economy half): the rules are the
+    /// engine's, not the host's. Off for ordinary and frozen controllers.
+    pub settler_guard_holds: bool,
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
@@ -2954,6 +2995,43 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
+    /// An idle walker closes the settler pipeline, and a site the walker
+    /// cannot reach stays retired.
+    ///
+    /// ★★★★ NINETEEN SETTLERS FOR NINE CITIES. Run civvis-20260819T000800Z
+    /// spent 1,620 production — 17% of everything it made — on Settlers;
+    /// three were captured, and five were alive at t195, fourteen to forty
+    /// turns old, parked inside a rival's border, one re-issuing the same
+    /// refused step onto a foreign Holy Site for 27 turns straight ("HELD
+    /// short … the next tile refuses it and nothing is standing there"),
+    /// while the loyalty veto refused every remaining target 130 times
+    /// ("beyond the empire's Loyalty reach on ground the seat has not
+    /// explored"). Cohort of the 13 post-land-grab games: 277 idle
+    /// settler-turns median, 1.4 Settlers built per city founded (wins 1.1).
+    ///
+    /// Three defects, one flag:
+    /// - the `land_grab` pipeline (`LAND_GRAB_PIPELINE_BASE + cities/3`
+    ///   walkers) never asked whether the walkers already out had anywhere
+    ///   to go, so it kept paying for new ones while old ones stood; the
+    ///   older `stalled_expansion` branch even OPENS a replacement seat for a
+    ///   blocked walker — right for the one-settler-at-a-time era it was
+    ///   written in, wrong once the pipeline is two or more. Under this flag
+    ///   any own walker idle for `SETTLER_REPLACEMENT_BLOCKED_TURNS` closes
+    ///   the pipeline until it moves, founds, or dies;
+    /// - a walker whose forecast refused every site returned without
+    ///   counting the turn, so it never read as idle at all. Now it does;
+    /// - `SETTLER_STALL_LIMIT` stalls retired the target into the ONE-slot
+    ///   `settler_avoid` for eight standard turns, and the walker re-picked
+    ///   the same site the moment it expired (the same single-slot weakness
+    ///   #1689 replaced on the loyalty path with `settler_dead_sites`). Now
+    ///   the stall path retires the site into the dead-site set for
+    ///   `SETTLER_DEAD_SITE_AVOID_TURNS` as well, and a walker idle for twice
+    ///   the replacement threshold with no target left tries to found where it
+    ///   stands before holding another turn.
+    ///
+    /// Live bundle and native repair (economy half): the pipeline and the
+    /// stall path are the engine's. Off for ordinary and frozen controllers.
+    pub idle_walkers_close_the_pipeline: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -4466,6 +4544,7 @@ impl AdvancedAi {
             deny_leaders: true,
             spy_mission_patience: false,
             settler_site_agreement: false,
+            settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
@@ -4480,6 +4559,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
+            idle_walkers_close_the_pipeline: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -8882,11 +8962,20 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let world_fair_score = gpp_awards
-            .values()
-            .copied()
-            .filter(|award| award.is_finite() && *award > f64::EPSILON)
-            .sum::<f64>();
+        let host_competition_gpp_scores = [
+            (
+                "EMERGENCY_WORLDS_FAIR",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_WORLDS_FAIR"),
+            ),
+            (
+                "EMERGENCY_NOBEL_PRIZE_LITERATURE",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_LITERATURE"),
+            ),
+            (
+                "EMERGENCY_NOBEL_PRIZE_PHYSICS",
+                Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_PHYSICS"),
+            ),
+        ];
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -9029,19 +9118,42 @@ impl AdvancedAi {
                 value = value.min(PROJECT_BEHIND_BUILDINGS_CAP);
             }
         }
-        // The World Fair counts each Great Person point as competition score,
-        // including the completion awards above. That payoff is immediate and
-        // host-authoritative, so it must remain outside the normal "build the
+        // Firaxis scores these competitions from the completion awards above:
+        // World Fair accepts every GPP class, Nobel Literature accepts the
+        // culture classes, and Nobel Physics accepts the STEM classes. This
+        // immediate host payoff must remain outside the normal "build the
         // Library first" cap: a competition that ends before the building is
         // complete cannot be resumed later.
         value
-            + self.host_competition_score_value(
-                g,
-                pid,
-                "EMERGENCY_WORLDS_FAIR",
-                world_fair_score,
-                turns,
-            )
+            + host_competition_gpp_scores
+                .into_iter()
+                .map(|(kind, score)| self.host_competition_score_value(g, pid, kind, score, turns))
+                .sum::<f64>()
+    }
+
+    /// Firaxis's EmergencyScoreSources award one score per Great Person point:
+    /// every class at the World's Fair, culture classes for Nobel Literature,
+    /// and STEM classes for Nobel Physics. Nobel Peace instead scores Favor,
+    /// so a production project's GPP award must not invent a score there.
+    fn host_competition_gpp_score(gpp_awards: &BTreeMap<String, f64>, kind: &str) -> f64 {
+        let score = |classes: &[&str]| {
+            classes
+                .iter()
+                .filter_map(|class| gpp_awards.get(*class))
+                .copied()
+                .filter(|award| award.is_finite() && *award > f64::EPSILON)
+                .sum()
+        };
+        match kind {
+            "EMERGENCY_WORLDS_FAIR" => gpp_awards
+                .values()
+                .copied()
+                .filter(|award| award.is_finite() && *award > f64::EPSILON)
+                .sum(),
+            "EMERGENCY_NOBEL_PRIZE_LITERATURE" => score(&["writer", "artist", "musician"]),
+            "EMERGENCY_NOBEL_PRIZE_PHYSICS" => score(&["engineer", "merchant", "scientist"]),
+            _ => 0.0,
+        }
     }
 
     /// Price one host-reported competition score gain against its deadline and
@@ -18262,6 +18374,11 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
+        // See `idle_walkers_close_the_pipeline`: a walker with nowhere to go
+        // is the pipeline's whole allowance until it moves, founds or dies.
+        if self.idle_walkers_close_the_pipeline && stalled_expansion && settlers > 0 {
+            return 0;
+        }
         if self.land_grab && city_count + settlers < desired_cities {
             // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
             // `land_grab`: two walkers from the first city, one more for
@@ -20517,6 +20634,49 @@ impl AdvancedAi {
         self.settlement_tile_risk_with_support(g, pid, uid, pos, visible, true)
     }
 
+    /// Would `guard`, standing on `pos`, be broken by the first visible
+    /// hostile land unit that can reach it? The same bar
+    /// `settlement_unit_step_toward_safe` applies to a formation leader:
+    /// a reachable attacker at more than one and a half times the guard's
+    /// effective strength. See `settler_guard_holds`.
+    fn guard_outmatched_at(
+        &self,
+        g: &Game,
+        pid: usize,
+        guard: &crate::game::Unit,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> bool {
+        let defender = crate::game::effective_strength(g.unit_strength(guard, false), guard.hp);
+        g.units.values().any(|unit| {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.sees(visible, unit.pos)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                return false;
+            }
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                return false;
+            }
+            if self.barbarian_scouts_are_scouts
+                && g.players[unit.owner].is_barbarian
+                && spec.promotion_class == "recon"
+            {
+                return false;
+            }
+            let attack_range = if spec.has_ranged_attack() {
+                g.unit_attack_range(unit.id)
+            } else {
+                1
+            };
+            let attack_reach = attack_range + spec.moves.ceil() as i32;
+            let attacker = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            g.wdist(unit.pos, pos) <= attack_reach && attacker > defender * 1.5
+        })
+    }
+
     fn settlement_tile_risk_with_support(
         &self,
         g: &Game,
@@ -20555,26 +20715,39 @@ impl AdvancedAi {
                 self.settler_guards.get(&settler).is_some_and(|guard| {
                     g.units.get(guard).is_some_and(|guard| {
                         guard.owner == pid
-                            && guard.pos == settler_pos
+                            // See `settler_guard_holds`: the guard mirrors the
+                            // settler's step from its tile, or already stands
+                            // on the destination and holds there.
+                            && (guard.pos == settler_pos
+                                || (self.settler_guard_holds && guard.pos == pos))
                             && guard.hp >= STACKED_GUARD_MIN_HP
                             && g.rules.units[guard.kind].class == "military"
                             && !matches!(
                                 g.rules.units[guard.kind].domain.as_deref(),
                                 Some("sea" | "air")
                             )
+                            // See `settler_guard_holds`: a guard the first
+                            // hostile in reach would break is no protection.
+                            && (!self.settler_guard_holds
+                                || !self.guard_outmatched_at(g, pid, guard, pos, visible))
                     })
                 })
             });
+        // See `settler_guard_holds`: for a civilian only the bound guard counts —
+        // any other own unit on the tile follows its own doctrine and walks
+        // off, and that is how the settlers of civvis-20260819T025840Z were
+        // taken one tile outside their own capital.
         let nearby_escort = discount_support
             && (stacked_guard
-                || g.units.values().any(|unit| {
-                    unit.owner == pid
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.rules.units[unit.kind].domain.as_deref() != Some("air")
-                        && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
-                        && g.wdist(unit.pos, pos) <= escort_reach
-                        && (!civilian_mover || unit.hp >= STACKED_GUARD_MIN_HP)
-                }));
+                || ((!civilian_mover || !self.settler_guard_holds)
+                    && g.units.values().any(|unit| {
+                        unit.owner == pid
+                            && g.rules.units[unit.kind].class == "military"
+                            && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                            && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
+                            && g.wdist(unit.pos, pos) <= escort_reach
+                            && (!civilian_mover || unit.hp >= STACKED_GUARD_MIN_HP)
+                    })));
         // A civilian inside one of our own cities cannot be taken until the
         // city is.
         if civilian_mover && g.city_at(pos).is_some_and(|cid| g.cities[&cid].owner == pid) {
@@ -21922,11 +22095,29 @@ impl AdvancedAi {
         if self.stacked_escort && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
+            let visible_now = self
+                .settler_guard_holds
+                .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
                 || g.units_at(current).into_iter().any(|other| {
                     other != uid
                         && g.units.get(&other).is_some_and(|unit| {
-                            unit.owner == pid && g.rules.units[unit.kind].class == "military"
+                            unit.owner == pid
+                                && g.rules.units[unit.kind].class == "military"
+                                // See `settler_guard_holds`: only the bound
+                                // guard is held here, and only while it could
+                                // hold. Anyone else walks off; an outmatched
+                                // guard is broken and the settler taken.
+                                && (!self.settler_guard_holds
+                                    || (self.settler_guards.get(&uid) == Some(&other)
+                                        && unit.hp >= STACKED_GUARD_MIN_HP
+                                        && !self.guard_outmatched_at(
+                                            g,
+                                            pid,
+                                            unit,
+                                            current,
+                                            visible_now.as_ref().expect("computed under the flag"),
+                                        )))
                         })
                 });
             if !guarded_here {
@@ -22100,6 +22291,15 @@ impl AdvancedAi {
                         }
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
+                        // See `idle_walkers_close_the_pipeline`: a site the
+                        // walker could not reach three turns running stays
+                        // retired for as long as a doomed one does.
+                        if self.idle_walkers_close_the_pipeline {
+                            self.settler_dead_sites.entry(uid).or_default().insert(
+                                target,
+                                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                            );
+                        }
                         self.settler_targets.remove(&uid);
                         self.settler_stalls.remove(&uid);
                     }
@@ -22245,6 +22445,21 @@ impl AdvancedAi {
             }
         });
         let Some(target) = target else {
+            // See `idle_walkers_close_the_pipeline`: a walker that found no
+            // site this turn is idle, and the pipeline reads that; one idle
+            // for twice the replacement threshold founds where it stands if
+            // the engine and the safety guard allow it, rather than holding
+            // for the rest of the game.
+            if self.idle_walkers_close_the_pipeline {
+                let idle = self.settler_blocked_turns.entry(uid).or_insert(0);
+                *idle += 1;
+                let idle = *idle;
+                if idle >= 2 * SETTLER_REPLACEMENT_BLOCKED_TURNS
+                    && self.founds_where_it_stands(g, pid, uid, current)
+                {
+                    return true;
+                }
+            }
             // Do not let a safe exhaustion fall through to `BasicAi`, which
             // cannot see `settler_dead_sites` and may select the very plot the
             // live forecast just retired. A later board can reveal a safe site
@@ -22503,6 +22718,13 @@ impl AdvancedAi {
                 }
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
+                // See `idle_walkers_close_the_pipeline`.
+                if self.idle_walkers_close_the_pipeline {
+                    self.settler_dead_sites.entry(uid).or_default().insert(
+                        target,
+                        g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                    );
+                }
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_closest.remove(&uid);
@@ -26529,6 +26751,23 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
+        // See `settler_guard_holds`: a bound guard sharing its settler's tile
+        // holds there before it heals or retreats — leaving is what exposes
+        // the civilian, and the settler's own step decides for the pair.
+        if self.settler_guard_holds
+            && self.stacked_escort
+            && spec.class == "military"
+            && self.settler_guards.iter().any(|(settler, guard)| {
+                *guard == uid
+                    && g.units
+                        .get(settler)
+                        .is_some_and(|settler| settler.owner == pid && settler.pos == unit.pos)
+            })
+        {
+            if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;

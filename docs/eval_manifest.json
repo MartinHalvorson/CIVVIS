@@ -1,10 +1,11 @@
 {
   "coverage": {
-    "named": 33,
-    "never_named": 22,
+    "named": 34,
+    "never_named": 25,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
+      "barbarian-walls-one-tier": "live_without_barbarian_walls_one_tier",
       "blind-objective-strength": "live_without_blind_objective_strength",
       "blind-objective-units": "live_without_blind_objective_units",
       "campus-every-city": "live_without_campus_every_city",
@@ -13,9 +14,11 @@
       "garrison-walls": "live_without_garrison_walls",
       "housing-cards": "live_without_housing_cards",
       "housing-research": "live_without_housing_research",
+      "idle-walkers-close-the-pipeline": "live_without_idle_walkers_close_the_pipeline",
       "loyalty-rate-alarm": "live_without_loyalty_rate_alarm",
       "muster-at-command-radius": "live_without_muster_at_command_radius",
       "relief-targets-the-siege": "live_without_relief_targets_the_siege",
+      "settler-guard-holds": "live_without_settler_guard_holds",
       "settler-site-agreement": "live_without_settler_site_agreement",
       "siege-commitment": "live_without_siege_commitment",
       "siege-role": "live_without_siege_role",
@@ -29,6 +32,7 @@
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
+      "barbarian-walls-one-tier",
       "blind-objective-strength",
       "blind-objective-units",
       "campus-every-city",
@@ -37,9 +41,11 @@
       "garrison-walls",
       "housing-cards",
       "housing-research",
+      "idle-walkers-close-the-pipeline",
       "loyalty-rate-alarm",
       "muster-at-command-radius",
       "relief-targets-the-siege",
+      "settler-guard-holds",
       "settler-site-agreement",
       "siege-commitment",
       "siege-role",
@@ -50,14 +56,14 @@
       "war-reinforcement",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 55
+    "withholdable": 59
   },
   "derived": {
-    "eval_only_count": 231,
+    "eval_only_count": 236,
     "firaxis_only_count": 29,
-    "live_bridge_count": 84,
-    "native_engine_repair_count": 55,
-    "withholdable_live_count": 55
+    "live_bridge_count": 88,
+    "native_engine_repair_count": 59,
+    "withholdable_live_count": 59
   },
   "ladder": {
     "ahead": 6,
@@ -97,7 +103,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 24,
+      "declared_count": 26,
       "items": [
         "escort-unstick",
         "stacked-escort",
@@ -105,6 +111,8 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "idle-walkers-close-the-pipeline",
+        "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -126,12 +134,13 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 55,
+      "declared_count": 59,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -149,6 +158,7 @@
         "home-defense",
         "garrison-under-fire",
         "garrison-walls",
+        "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
         "recon-replacement",
@@ -165,6 +175,8 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "idle-walkers-close-the-pipeline",
+        "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -186,12 +198,13 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 31,
+      "declared_count": 33,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -209,6 +222,7 @@
         "home-defense",
         "garrison-under-fire",
         "garrison-walls",
+        "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
         "recon-replacement",
@@ -222,7 +236,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 231,
+      "declared_count": 236,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -294,6 +308,7 @@
         "live_without_live_trader_route_adapter",
         "live_without_live_religious_purchase_guard",
         "live_without_recorded_tactical_step",
+        "live_without_whole_turn_backtrack_guard",
         "live_without_strike_opening",
         "live_without_ranged_needs_line_of_sight",
         "live_without_one_launch_pad",
@@ -317,6 +332,9 @@
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
         "live_without_district_building_chain",
+        "live_without_idle_walkers_close_the_pipeline",
+        "live_without_barbarian_walls_one_tier",
+        "live_without_settler_guard_holds",
         "live_without_expansion_pantheon",
         "live_without_expansion_hall",
         "live_without_opening_settler_waits",
@@ -400,6 +418,7 @@
         "advanced_camp_bounty",
         "advanced_without_barbarian_scouts_are_scouts",
         "advanced_without_civilian_rescue",
+        "advanced_envelope_own_moves",
         "advanced_without_adjacent_camp_clear",
         "advanced_engine_faith_price",
         "advanced_maintenance_deck",
@@ -492,7 +511,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 84,
+      "declared_count": 88,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -501,6 +520,7 @@
         "home-defense",
         "loyalty-policy-defence",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "strike-opening",
         "bounded-recovery",
         "army-target-weighs-enemy",
@@ -575,6 +595,9 @@
         "settler-site-agreement",
         "civilian-rescue",
         "district-building-chain",
+        "idle-walkers-close-the-pipeline",
+        "barbarian-walls-one-tier",
+        "settler-guard-holds",
         "expansion-pantheon",
         "expansion-hall",
         "opening-settler-waits"

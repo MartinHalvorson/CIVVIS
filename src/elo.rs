@@ -121,6 +121,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_live_trader_route_adapter",
     "live_without_live_religious_purchase_guard",
     "live_without_recorded_tactical_step",
+    "live_without_whole_turn_backtrack_guard",
     "live_without_strike_opening",
     "live_without_ranged_needs_line_of_sight",
     "live_without_one_launch_pad",
@@ -144,6 +145,9 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
+    "live_without_idle_walkers_close_the_pipeline",
+    "live_without_barbarian_walls_one_tier",
+    "live_without_settler_guard_holds",
     "live_without_expansion_pantheon",
     "live_without_expansion_hall",
     "live_without_opening_settler_waits",
@@ -242,6 +246,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
     "advanced_without_civilian_rescue",
+    "advanced_envelope_own_moves",
     "advanced_without_adjacent_camp_clear",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
@@ -345,6 +350,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "home-defense",
     "loyalty-policy-defence",
     "recorded-tactical-step",
+    "whole-turn-backtrack-guard",
     "strike-opening",
     "bounded-recovery",
     "army-target-weighs-enemy",
@@ -419,6 +425,9 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
+    "idle-walkers-close-the-pipeline",
+    "barbarian-walls-one-tier",
+    "settler-guard-holds",
     "expansion-pantheon",
     "expansion-hall",
     "opening-settler-waits",
@@ -609,6 +618,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
+    "whole-turn-backtrack-guard",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -626,6 +636,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -646,6 +657,8 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "idle-walkers-close-the-pipeline",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -675,6 +688,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
+    "whole-turn-backtrack-guard",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -692,6 +706,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
+    "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
@@ -708,6 +723,8 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "idle-walkers-close-the-pipeline",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -824,6 +841,7 @@ define_arm_kinds! {
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
+    LiveWithoutWholeTurnBacktrackGuard => "live_without_whole_turn_backtrack_guard",
     LiveWithoutStrikeOpening => "live_without_strike_opening",
     LiveWithoutRangedNeedsLineOfSight => "live_without_ranged_needs_line_of_sight",
     LiveWithoutOneLaunchPad => "live_without_one_launch_pad",
@@ -847,6 +865,9 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
+    LiveWithoutIdleWalkersCloseThePipeline => "live_without_idle_walkers_close_the_pipeline",
+    LiveWithoutBarbarianWallsOneTier => "live_without_barbarian_walls_one_tier",
+    LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
     LiveWithoutExpansionHall => "live_without_expansion_hall",
     LiveWithoutOpeningSettlerWaits => "live_without_opening_settler_waits",
@@ -930,6 +951,7 @@ define_arm_kinds! {
     AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
     AdvancedWithoutCivilianRescue => "advanced_without_civilian_rescue",
+    AdvancedEnvelopeOwnMoves => "advanced_envelope_own_moves",
     AdvancedWithoutAdjacentCampClear => "advanced_without_adjacent_camp_clear",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
@@ -3467,6 +3489,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_civilian_rescue();
             Box::new(ai)
         }
+        // The hostile-envelope table kept across the seat's own unit moves —
+        // the 2× the exact cache of #2103 cannot buy. Priced against stock
+        // `advanced` before it is promoted, because its reports differ.
+        "advanced_envelope_own_moves" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_envelope_cache_across_own_moves();
+            Box::new(ai)
+        }
         // Withhold the adjacent camp clear so its promotion is priced: the
         // current controller ships it ON, and only the frozen anchor lacks it.
         "advanced_without_adjacent_camp_clear" => {
@@ -4436,6 +4466,7 @@ impl ArmKind {
             Self::LiveWithoutLiveTraderRouteAdapter => live_without("live-trader-route"),
             Self::LiveWithoutLiveReligiousPurchaseGuard => live_without("live-religious-purchase"),
             Self::LiveWithoutRecordedTacticalStep => live_without("recorded-tactical-step"),
+            Self::LiveWithoutWholeTurnBacktrackGuard => live_without("whole-turn-backtrack-guard"),
             Self::LiveWithoutStrikeOpening => live_without("strike-opening"),
             Self::LiveWithoutRangedNeedsLineOfSight => live_without("ranged-line-of-sight"),
             Self::LiveWithoutOneLaunchPad => live_without("one-launch-pad"),
@@ -4459,6 +4490,11 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
+            Self::LiveWithoutIdleWalkersCloseThePipeline => {
+                live_without("idle-walkers-close-the-pipeline")
+            }
+            Self::LiveWithoutBarbarianWallsOneTier => live_without("barbarian-walls-one-tier"),
+            Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
             Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
             Self::LiveWithoutOpeningSettlerWaits => live_without("opening-settler-waits"),
@@ -4586,6 +4622,7 @@ impl ArmKind {
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
             Self::AdvancedWithoutCivilianRescue => &["civilian-rescue-withheld"],
+            Self::AdvancedEnvelopeOwnMoves => &["envelope-cache-across-own-moves"],
             Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
@@ -5102,6 +5139,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
         }
         "advanced_without_civilian_rescue" => (Vec::new(), "advanced_without_civilian_rescue"),
+        "advanced_envelope_own_moves" => (Vec::new(), "advanced_envelope_own_moves"),
         "advanced_without_adjacent_camp_clear" => {
             (Vec::new(), "advanced_without_adjacent_camp_clear")
         }
@@ -6632,6 +6670,7 @@ mod tests {
                 "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
                 "advanced_without_civilian_rescue",
+                "advanced_envelope_own_moves",
                 "advanced_without_adjacent_camp_clear",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",

@@ -1824,6 +1824,68 @@ fn the_land_grab_pipeline_widens_with_the_empire() {
     assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(16, 3, 0), 1);
 }
 
+/// ★★★★ Nineteen Settlers for nine cities on run civvis-20260819T000800Z: the
+/// land-grab pipeline kept paying for walkers while five stood idle inside a
+/// rival's border. See `idle_walkers_close_the_pipeline`: a walker idle for
+/// `SETTLER_REPLACEMENT_BLOCKED_TURNS` closes the pipeline until it moves,
+/// founds or dies; the older `stalled_expansion` branch — which OPENS a
+/// replacement seat for a blocked walker — is what the flag overrides; the
+/// frozen and stock controllers never carry it.
+#[test]
+fn an_idle_walker_closes_the_land_grab_pipeline() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.idle_walkers_close_the_pipeline && live.land_grab && live.settlement_safety,
+        "the live seat carries the treatment beside the pipeline it governs"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_idle_walkers_close_the_pipeline();
+
+    // Nothing idle: the pipeline is the land grab's, both arms alike.
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    assert_eq!(withheld.settler_in_flight_allowed(16, 6, 2), 4);
+
+    // One walker blocked for the replacement threshold: the shipped arm keeps
+    // its four-wide pipeline (and, without the land grab, would open a
+    // replacement seat); the repaired one closes it.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    withheld
+        .settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    assert_eq!(
+        withheld.settler_in_flight_allowed(16, 6, 2),
+        4,
+        "withheld, an idle walker changes nothing under the land grab"
+    );
+    assert_eq!(
+        live.settler_in_flight_allowed(16, 6, 2),
+        0,
+        "an idle walker is the whole allowance"
+    );
+    // A walker one turn short of the threshold is still walking as far as
+    // the pipeline knows.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS - 1);
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    // And once it moves (the map entry cleared), the pipeline reopens.
+    live.settler_blocked_turns.clear();
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    // No walker out at all: nothing to be idle, whatever the map says.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    assert_eq!(
+        live.settler_in_flight_allowed(16, 6, 0),
+        4,
+        "a stale entry with no walker alive does not close the pipeline"
+    );
+
+    assert!(!AdvancedAi::new().idle_walkers_close_the_pipeline);
+    assert!(!AdvancedAi::legacy().idle_walkers_close_the_pipeline);
+}
+
 /// The land grab's window: a Settler must still repay before the turn
 /// limit, whatever the lane. Under an assigned lane the stock window shuts
 /// at `standard_duration(175)` — t116 Online — and run T104654Z then read
@@ -4669,6 +4731,83 @@ fn live_competitions_price_host_projects_and_worlds_fair_production() {
     assert!(
         boosted > baseline + 50.0,
         "a Campus project's Great Scientist points must close the live World's Fair race: {boosted} vs {baseline}"
+    );
+}
+
+/// Firaxis counts selected Great Person points in its Nobel competitions just
+/// as it counts every class for the World's Fair. A hosted Nobel Physics race
+/// should therefore pull a Scientist project, while Literature should pull a
+/// Writer/Artist/Musician project—and neither race may price the other class.
+#[test]
+fn live_nobel_competitions_price_only_matching_great_person_projects() {
+    let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.turn = 180;
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "theater_square");
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.refresh_research_weight(&game);
+    let scientist = Item::Project {
+        project: crate::name!("campus_research_grants"),
+    };
+    let literature = Item::Project {
+        project: crate::name!("theater_square_festival"),
+    };
+    assert!(game.can_produce(0, city, &scientist));
+    assert!(game.can_produce(0, city, &literature));
+    let counts = ai.counts(&game, 0);
+    let scientist_baseline = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let literature_baseline = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PHYSICS".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 10.0,
+    }]);
+    let physics_scientist = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let physics_literature = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+    assert!(
+        physics_scientist > scientist_baseline + 50.0,
+        "Nobel Physics must price a project's Great Scientist points: {physics_scientist} vs {scientist_baseline}"
+    );
+    assert_eq!(
+        physics_literature, literature_baseline,
+        "Nobel Physics must not claim Writer/Artist/Musician points"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 15.0,
+    }]);
+    let literature_scientist = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let literature_project = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+    assert_eq!(
+        literature_scientist, scientist_baseline,
+        "Nobel Literature must not claim Great Scientist points"
+    );
+    assert!(
+        literature_project > literature_baseline + 50.0,
+        "Nobel Literature must price Writer/Artist/Musician project points: {literature_project} vs {literature_baseline}"
     );
 }
 
@@ -18097,6 +18236,219 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     );
 }
 
+/// ★★★★★ Both settlers of civvis-20260819T025840Z were taken one tile outside
+/// Rome, each from a tile a warrior had just been standing on: the step was
+/// priced with any own military unit on the destination as protection (×0.15),
+/// the unbound warrior then took its own turn — wounded, hostiles adjacent — and
+/// healed away, and the civilian stood alone in a horse archer's reach. See
+/// `settler_guard_holds`: only the settler's bound guard counts as on-tile
+/// protection, and only while it could hold; an unbound unit, or a guard the
+/// first reachable hostile would break, is no discount at all.
+#[test]
+fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
+    let mut game = Game::new_full(2, 24, 16, 8_119, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The step under test: from the city onto an adjacent tile where an own
+    // warrior stands, with a hostile two tiles from that tile.
+    let step = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let raider_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(step, *position) == 2
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile two steps from the destination");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let bystander = game.spawn_test_unit("warrior", 0, step);
+    // A peer-strength hostile: a warrior does not break a warrior.
+    let raider = game.spawn_test_unit("warrior", 1, raider_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(raider_tile);
+    let visible = {
+        let ai = AdvancedAi::new();
+        ai.battlefront_visibility(&game, 0)
+    };
+    assert!(game.sees(&visible, raider_tile), "the raider is in sight");
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.settler_guard_holds && live.stacked_escort && live.settler_stack_discipline);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+
+    // An UNBOUND warrior on the destination: the old pricing discounts the
+    // capture risk to nothing; the repaired one prices the raider in full.
+    let old = withheld.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    let new = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        old <= SETTLER_STEP_RISK_LIMIT,
+        "precondition: the withheld pricing let the step through ({old})"
+    );
+    assert!(
+        new > SETTLER_STEP_RISK_LIMIT,
+        "an unbound unit on the tile is no protection: {new} must exceed the step limit"
+    );
+
+    // BOUND, healthy, and not outmatched: protection again — the guard
+    // mirrors the step from the settler's own tile.
+    game.units.get_mut(&bystander).unwrap().pos = source;
+    live.settler_guards.insert(settler, bystander);
+    let bound = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        bound <= SETTLER_STEP_RISK_LIMIT,
+        "a bound guard that can hold still protects the step: {bound}"
+    );
+
+    // BOUND but outmatched: a knight in reach breaks a warrior — the exact
+    // shape of the Saka horsemen against Rome's warriors — so no discount.
+    game.remove_unit(raider);
+    let _knight = game.spawn_test_unit("knight", 1, raider_tile);
+    let broken = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        broken > SETTLER_STEP_RISK_LIMIT,
+        "a guard the first hostile in reach would break is no protection: {broken}"
+    );
+
+    // Frozen and stock controllers never carry it.
+    assert!(!AdvancedAi::new().settler_guard_holds);
+    assert!(!AdvancedAi::legacy().settler_guard_holds);
+}
+
+/// The other half of `settler_guard_holds`: the bound guard's own turn ran
+/// `healing_step` before its escort duty, so a wounded guard sharing its
+/// settler's tile healed away and left the civilian in the open. Under the
+/// flag it holds there first.
+#[test]
+fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
+    let mut game = Game::new_full(2, 24, 16, 8_120, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The pair stands one tile outside the city; a hostile warrior is adjacent.
+    let field = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let hostile_tile =
+        game.nbrs(field)
+            .into_iter()
+            .find(|position| {
+                *position != source
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile beside the pair, away from the city");
+    let settler = game.spawn_test_unit("settler", 0, field);
+    let guard = game.spawn_test_unit("warrior", 0, field);
+    game.units.get_mut(&guard).unwrap().hp = 45;
+    let _hostile = game.spawn_test_unit("warrior", 1, hostile_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(hostile_tile);
+    let plan = stacked_escort_plan(&game);
+
+    let run = |ai: &mut AdvancedAi, game: &mut Game| {
+        ai.settler_guards.insert(settler, guard);
+        for unit in [settler, guard] {
+            if let Some(unit) = game.units.get_mut(&unit) {
+                unit.moves_left = 2.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+        }
+        ai.advanced_military_step_with_decline(game, 0, guard, &plan, false);
+        game.units[&guard].pos
+    };
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+    let mut game_without = game.clone();
+    let left_to = run(&mut withheld, &mut game_without);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let held_at = run(&mut live, &mut game);
+    assert_eq!(
+        held_at, field,
+        "the bound guard on its settler's tile holds there under the flag"
+    );
+    // The point of the test is the ORDER: withheld, the guard is free to heal
+    // away (and does, in this fixture, or at least is not pinned by the
+    // escort). Either way the flag's answer is the tile.
+    assert!(
+        left_to != field || withheld.settler_guards.get(&settler) == Some(&guard),
+        "fixture note: withheld arm moved to {left_to:?}"
+    );
+}
+
 #[test]
 fn a_settler_waits_for_its_guard_only_within_patience() {
     let (mut game, source, target) = stacked_escort_fixture();
@@ -26523,6 +26875,111 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     // Frozen and ordinary controllers never project.
     assert!(!AdvancedAi::new().projected_stock_denial);
     assert!(!AdvancedAi::legacy().projected_stock_denial);
+}
+
+/// Three mutually adjacent land tiles with nothing on them, and a unit with
+/// movement to spare, so a whole loop fits inside one turn.
+fn hex_triangle(game: &crate::game::Game) -> Option<[(i32, i32); 3]> {
+    let open = |pos: (i32, i32)| {
+        game.map
+            .get(pos)
+            .is_some_and(|tile| !game.rules.is_water(tile))
+            && game.units_at(pos).is_empty()
+    };
+    for (a, _) in game.map.tiles.iter() {
+        if !open(*a) {
+            continue;
+        }
+        for b in game.nbrs(*a) {
+            if !open(b) {
+                continue;
+            }
+            for c in game.nbrs(*a) {
+                if c != b && open(c) && game.wdist(b, c) == 1 {
+                    return Some([*a, b, c]);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `A -> B -> C -> A` is a wasted turn the shipped guard cannot see.
+///
+/// `recorded_tactical_step` remembers the single tile a unit just left, so it
+/// refuses `A -> B -> A` and passes a loop one hop longer. Measured over three
+/// 6-player 200-turn games, that is not a corner: the live bundle walks 329
+/// routes ending where they began and **191 of them are exactly this shape**,
+/// against 23 of the two-hop shape the shipped guard already covers.
+#[test]
+fn the_whole_turn_guard_refuses_a_three_hop_loop_that_the_shipped_one_allows() {
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    let [a, b, c] = hex_triangle(&game).expect("fixture offers three adjacent open land tiles");
+
+    for (guard, expected) in [(false, true), (true, false)] {
+        let mut board = game.clone();
+        let uid = board.spawn_test_unit("horseman", 0, a);
+        // Movement is not what is under test; terrain cost must not decide it.
+        board.units.get_mut(&uid).unwrap().moves_left = 12.0;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_recorded_tactical_step();
+        if guard {
+            ai.enable_whole_turn_backtrack_guard();
+        }
+
+        assert!(ai.base.path_move(&mut board, 0, uid, b), "step to B");
+        assert!(ai.base.path_move(&mut board, 0, uid, c), "step to C");
+        assert_eq!(
+            ai.base.path_move(&mut board, 0, uid, a),
+            expected,
+            "closing the loop back to the start, guard={guard}"
+        );
+        assert_eq!(
+            board.units[&uid].pos == a,
+            expected,
+            "and the unit is back where it began only when the loop was allowed"
+        );
+    }
+    let _ = &mut game;
+}
+
+/// The one-hop reversal stays refused with the wider guard on.
+///
+/// The wider rule has to *contain* the shipped one — a trail whose last entry
+/// is the tile being proposed is still a trail that contains it — or turning
+/// it on would trade one pathology for another.
+#[test]
+fn the_whole_turn_guard_still_refuses_the_immediate_reversal() {
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    let [a, b, _] = hex_triangle(&game).expect("fixture offers adjacent open land tiles");
+    for guard in [false, true] {
+        let mut board = game.clone();
+        let uid = board.spawn_test_unit("horseman", 0, a);
+        board.units.get_mut(&uid).unwrap().moves_left = 12.0;
+        let mut ai = AdvancedAi::new();
+        ai.enable_recorded_tactical_step();
+        if guard {
+            ai.enable_whole_turn_backtrack_guard();
+        }
+        assert!(ai.base.path_move(&mut board, 0, uid, b), "step to B");
+        assert!(
+            !ai.base.path_move(&mut board, 0, uid, a),
+            "stepping straight back is refused either way, guard={guard}"
+        );
+    }
+    let _ = &mut game;
+}
+
+/// The treatment is off in the shipped controller and on in the live bundle.
+#[test]
+fn the_whole_turn_guard_is_a_live_treatment() {
+    assert!(!AdvancedAi::new().base.whole_turn_backtrack_guard);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.whole_turn_backtrack_guard);
+    live.disable_whole_turn_backtrack_guard();
+    assert!(!live.base.whole_turn_backtrack_guard);
 }
 
 /// ★★★★ THE FAITH THAT BUYS THE PANTHEON IS ONE CARD, AND THE PLAN KEPT

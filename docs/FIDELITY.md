@@ -23,6 +23,28 @@ plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`
 `Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
 directly before changing any number.
 
+## Where the install is
+
+`python3 tools/civ6_fidelity.py` takes no arguments: `tools/civ6_env.py` is the
+one place that knows where Civilization VI lives, and every Civ VI tool asks
+it. Override with `--civ6`, `$CIV6_INSTALL` or `$CIV6_DIR`, naming either the
+install root or the assets directory inside the macOS app bundle.
+
+⚠ Until 2026-08-19 this audit carried its own list of four candidate installs
+and every one of them began `C:\` or `D:\`. This fleet runs on macOS, where
+the gameplay database is not at the install root at all — it is inside the
+signed bundle at `Civ6.app/Contents/Assets`. So the audit that checks we are
+modelling Gathering Storm rather than some other ruleset answered "install not
+found" on every machine that could have run it, and `tools/civ6_modifiers.py`,
+which imports the same resolver, answered the same. Neither was broken; neither
+had ever been asked a question it could answer. `civ6_env.ASSETS_SUBPATH` was
+already documented as "the path the fidelity audit wants" and nothing had wired
+it up.
+
+That gap has a cost on the record: #2049 read the compiled cache directly to
+get around this, bypassing the ruleset refusal, and shipped Vanilla belief
+values as Gathering Storm. #2050 retracted them the next day.
+
 ## Running the audit without an install
 
 `tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly

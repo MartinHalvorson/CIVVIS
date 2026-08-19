@@ -502,31 +502,42 @@ def render_status(manifest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+#: The artifacts this tool owns, relative to the repository root.
+#:
+#: One definition rather than two string literals per function, because
+#: `tools/civvis_collab.py` resolves a merge conflict in these files by
+#: regenerating them and has to be reading the same list the generator writes.
+#: A path added here reaches both the writer and the checker, or neither.
+GENERATED_OUTPUTS: tuple[str, ...] = (
+    "docs/eval_manifest.json",
+    "docs/EVAL_STATUS.md",
+)
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
+def rendered_outputs(manifest: dict[str, Any]) -> dict[str, str]:
+    """Every generated artifact's exact content, keyed by repo-relative path."""
+    return {
+        "docs/eval_manifest.json": canonical_json(manifest),
+        "docs/EVAL_STATUS.md": render_status(manifest),
+    }
+
+
 def write_outputs(repo: Path, manifest: dict[str, Any]) -> None:
-    (repo / "docs" / "eval_manifest.json").write_text(
-        canonical_json(manifest), encoding="utf-8"
-    )
-    (repo / "docs" / "EVAL_STATUS.md").write_text(
-        render_status(manifest), encoding="utf-8"
-    )
+    for name, content in rendered_outputs(manifest).items():
+        (repo / name).write_text(content, encoding="utf-8")
 
 
 def check_outputs(repo: Path, manifest: dict[str, Any]) -> int:
-    expected_json = canonical_json(manifest)
-    expected_status = render_status(manifest)
-    actual_json = (repo / "docs" / "eval_manifest.json").read_text(encoding="utf-8") \
-        if (repo / "docs" / "eval_manifest.json").exists() else None
-    actual_status = (repo / "docs" / "EVAL_STATUS.md").read_text(encoding="utf-8") \
-        if (repo / "docs" / "EVAL_STATUS.md").exists() else None
     failures = []
-    if actual_json != expected_json:
-        failures.append("docs/eval_manifest.json")
-    if actual_status != expected_status:
-        failures.append("docs/EVAL_STATUS.md")
+    for name, expected in rendered_outputs(manifest).items():
+        path = repo / name
+        actual = path.read_text(encoding="utf-8") if path.exists() else None
+        if actual != expected:
+            failures.append(name)
     if failures:
         print("stale generated evaluation outputs: " + ", ".join(failures), file=sys.stderr)
         print("run: python3 tools/eval_manifest.py --write", file=sys.stderr)
