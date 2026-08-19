@@ -297,6 +297,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_village_seeking",
     "advanced_without_legal_candidates",
     "advanced_price_suzerainty",
+    "advanced_diplomacy_lane",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
@@ -982,6 +983,7 @@ define_arm_kinds! {
     AdvancedWithoutVillageSeeking => "advanced_without_village_seeking",
     AdvancedWithoutLegalCandidates => "advanced_without_legal_candidates",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
+    AdvancedDiplomacyLane => "advanced_diplomacy_lane",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -3334,6 +3336,45 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_price_the_suzerainty();
             Box::new(ai)
         }
+        // ★★★ THE DIPLOMATIC LANE NEEDS A REASON AND ITS FUEL, AND EVERY ARM
+        // BEFORE THIS ONE SUPPLIED EXACTLY ONE OF THEM.
+        //
+        // `victory_focus` scores Diplomacy `dvp * 5 + suzerain * 6` and every
+        // other lane prospectively — Science floors at 25, Religion at 46 once
+        // an opening is viable. Diplomacy alone is scored on what the seat has
+        // already banked, so its argmax input is a self-fulfilling zero and the
+        // lane takes 0.2% of observed player-turns.
+        //
+        // `diplomatic_opening` answers that with Religion's own opening figure,
+        // and its screen read 42.5% — the entry's own reading is that the dose
+        // "buys a dose too small to help and possibly large enough to hurt, by
+        // pulling seats out of Expansion into a lane whose resource — envoys —
+        // the census measures at 0.00 unspent".
+        //
+        // `price_the_suzerainty` answers the other half. It doubles held
+        // suzerainties, 0.3 to 0.7, and measured +22 then +3 on disjoint seeds.
+        // Re-run 2026-08-19 with all six victories enabled — both recorded runs
+        // had diplomatic victory switched off — it produced the lane's first
+        // self-play completions, 2 against the control's 0 in 240 games, while
+        // the lane's occupancy stayed at 0.2%. Fuel, and still no reason to
+        // enter.
+        //
+        // Neither closes the loop alone. The opening puts the seat in the lane
+        // through the final `victory.strategy` branch of `assess`; the prize
+        // converts its envoys into suzerainties; the suzerainties raise the
+        // retrospective score toward the `progress >= 65` gate that keeps the
+        // seat there. This arm exists to measure that loop, not either half.
+        //
+        // ⚠ Minor-dependent, like both of its halves: with no city-state
+        // seated it is byte-identical to `advanced`. It belongs in
+        // `MINOR_DEPENDENT_ARMS` in `src/bin/ai_eval.rs`, which #2183 is
+        // editing; whichever of the two merges second adds the row.
+        "advanced_diplomacy_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.diplomatic_opening = true;
+            ai.enable_price_the_suzerainty();
+            Box::new(ai)
+        }
         "advanced_settlement_gap_target" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settlement_gap_target();
@@ -4681,6 +4722,14 @@ impl ArmKind {
             Self::AdvancedWithoutVillageSeeking => &["village-seeking-withheld"],
             Self::AdvancedWithoutLegalCandidates => &["legal-candidate-screen-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
+            // Both axes, deliberately. `docs/eval/README.md` records the rule
+            // this has to satisfy — a composite gate licenses the composite and
+            // never its parts — and declaring both is what makes a promotion
+            // here unable to be read as a promotion of either half.
+            Self::AdvancedDiplomacyLane => &[
+                "diplomatic-lane-prospective",
+                "suzerainty-priced-into-envoy-placement",
+            ],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -5197,6 +5246,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_village_seeking" => (Vec::new(), "advanced_without_village_seeking"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
+        "advanced_diplomacy_lane" => (Vec::new(), "advanced_diplomacy_lane"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
         "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
@@ -6726,6 +6776,7 @@ mod tests {
                 "advanced_without_explore_commit",
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
+                "advanced_diplomacy_lane",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these six differ
                 // from `advanced` only in the victory lane they are handed.

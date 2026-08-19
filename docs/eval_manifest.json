@@ -57,7 +57,7 @@
     "withholdable": 59
   },
   "derived": {
-    "eval_only_count": 238,
+    "eval_only_count": 239,
     "firaxis_only_count": 30,
     "live_bridge_count": 89,
     "native_engine_repair_count": 59,
@@ -261,7 +261,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 238,
+      "declared_count": 239,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -469,6 +469,7 @@
         "advanced_without_village_seeking",
         "advanced_without_legal_candidates",
         "advanced_price_suzerainty",
+        "advanced_diplomacy_lane",
         "advanced_without_unit_tactics",
         "advanced_league_top",
         "advanced_joint_tactics",
