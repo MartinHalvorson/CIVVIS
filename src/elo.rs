@@ -146,6 +146,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_district_building_chain",
     "live_without_barbarian_walls_one_tier",
     "live_without_expansion_pantheon",
+    "live_without_expansion_hall",
+    "live_without_opening_settler_waits",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -420,6 +422,8 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "district-building-chain",
     "barbarian-walls-one-tier",
     "expansion-pantheon",
+    "expansion-hall",
+    "opening-settler-waits",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -592,6 +596,12 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // for it, bought with the one Faith card the live capital has; the
     // native lanes keep the shipped prefix and the bred policy weights.
     "expansion-pantheon",
+    // Prices the Settler seat's plaza building for the land grab; the native
+    // lanes keep their bred building prices.
+    "expansion-hall",
+    // Holds the opening book's Settler for the host's population floor; the
+    // native book keeps its bred slot.
+    "opening-settler-waits",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -843,6 +853,8 @@ define_arm_kinds! {
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     LiveWithoutBarbarianWallsOneTier => "live_without_barbarian_walls_one_tier",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
+    LiveWithoutExpansionHall => "live_without_expansion_hall",
+    LiveWithoutOpeningSettlerWaits => "live_without_opening_settler_waits",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4454,6 +4466,8 @@ impl ArmKind {
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
             Self::LiveWithoutBarbarianWallsOneTier => live_without("barbarian-walls-one-tier"),
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
+            Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
+            Self::LiveWithoutOpeningSettlerWaits => live_without("opening-settler-waits"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -6959,6 +6973,12 @@ mod tests {
             // against a host that grants a Settler for it; the native lanes
             // keep the shipped prefix and the bred policy weights.
             "expansion_pantheon",
+            // The Settler seat's plaza building for the land grab; the
+            // native lanes keep their bred building prices.
+            "expansion_hall",
+            // The host's Settler floor is what the book slot trips over; the
+            // native book keeps its bred behaviour.
+            "opening_settler_waits",
         ];
         // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
         // scrape reads the controller's whole text so a further split cannot
