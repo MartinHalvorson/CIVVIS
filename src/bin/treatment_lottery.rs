@@ -19,8 +19,9 @@
 //! - It is an unbiased estimate of the factor's average main effect over the
 //!   mixture the lottery draws — at `--density 0.5` that is an agent missing
 //!   about half its bundle, NOT the deployment point. The repo's own ledger
-//!   shows components of one constructor at −41 and +30 Elo, so interactions
-//!   are real here; a lottery signal licenses a single-flag confirmation arm
+//!   shows components of one constructor at −41 Elo (#1504, matrix PASS) and
+//!   +30 Elo (60/95, p=0.0061; the #1568 sweep), so interactions are real
+//!   here; a lottery signal licenses a single-flag confirmation arm
 //!   (`live_without_<tag>` / a withholding round), never a ship decision.
 //! - A null is bounded by the fires-check, same as everywhere else: a factor
 //!   whose branch never executes at this profile prices at exactly zero, and

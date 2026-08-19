@@ -42,8 +42,10 @@ round. The two tiers answer different objections:
 - What the composite objection still gets: the lottery's estimand is the
   factor's effect averaged over the drawn mixture — at density 0.5, over
   agents missing a random half of the bundle — **not** its effect at the
-  deployment point. Interactions are real here (one constructor held a −41
-  and a +30 Elo component at the same time), so a lottery signal licenses a
+  deployment point. Interactions are real here — the #1568 sweep of
+  `promoted_policy_envoy` found `city_target_floor` at −41 Elo (matrix PASS,
+  removed in #1504) and `settler_commit` at +30 Elo (60/95 direction,
+  p=0.0061) inside the same constructor — so a lottery signal licenses a
   single-flag confirmation arm (`live_without_<tag>`, or a withholding round
   at the deployment shape); it never licenses a ship decision by itself.
 
