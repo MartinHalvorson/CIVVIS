@@ -3478,3 +3478,94 @@ fn religions_convert_all_owned_holy_sites_and_temples_require_shrines() {
     assert_eq!(g.cities[&first].pressure[&religion], 1_000.0);
     assert_eq!(g.cities[&second].pressure[&religion], 1_000.0);
 }
+
+/// Every Gathering Storm source of a Diplomatic Victory Point, and nothing
+/// else.
+///
+/// ★★★★★ THE LANE WE LOSE TO IS THE LANE WE BARELY MODEL. Of the 74 live games
+/// stolen by a rival's victory, **41 are diplomatic** — and CIVVIS's own
+/// diplomacy lane almost never completes: the contested screen produced 2
+/// diplomatic victories in 120 games and 3 in 60
+/// (`docs/eval/2026-08-18-the-promotion-matrix-can-see-the-lanes-the-front-line-loses-.md`).
+///
+/// The shipped database names exactly six modifiers that adjust
+/// `DIPLOMATIC_VICTORY_POINTS`, and the threshold is 20
+/// (`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`):
+///
+/// | source | amount |
+/// |---|---|
+/// | `WC_RES_DIPLOVICTORY`, injected into every congress from the Modern era | ±2 |
+/// | `BUILDING_MAHABODHI_TEMPLE` | 2 |
+/// | `BUILDING_POTALA_PALACE` | 1 |
+/// | `BUILDING_STATUE_LIBERTY` | 4 |
+/// | `CIVIC_GLOBAL_WARMING_MITIGATION` | 1 |
+/// | `TECH_SEASTEADS` | 1 |
+///
+/// ⚠⚠ ALL SIX ARE MODELLED, AND THIS TEST EXISTS BECAUSE THAT WAS NOT OBVIOUS.
+/// The tech and the civic are not in `techs.json` or `civics.json` — they are
+/// in `tree_effects.json`, the overlay `Rules::load` folds in with
+/// `add_effects`. Looking only at the first two files makes them appear
+/// missing, and *adding* them there does not replace the overlay, it **sums**
+/// with it: an attempt to "fix" this shipped 2 points where Gathering Storm
+/// grants 1, on both nodes, and this assertion is what caught it.
+///
+/// ⚠ Nothing else would have. `civ6_fidelity.py` reports zero divergent fields
+/// with the doubled values in place, because it does not audit tree-node
+/// effects; `civvis_inert.py` reports zero unconsumed keys, because the key was
+/// consumed either way. The amounts below are read from the shipped
+/// `ModifierArguments` and are the only check on them.
+///
+/// So the diplomatic lane is not starved of *sources*. It is starved of
+/// *reach*: the same evidence file records **31 of 32** diplomatic games
+/// finishing no qualifying wonder at all — Mahabodhi needs a founded religion,
+/// a Holy Site and a Temple beside a forest tile; the Statue of Liberty needs a
+/// Harbor and Civil Engineering — and the tech and civic that need no such
+/// chain are Future-era, worth one point each.
+#[test]
+fn every_shipped_source_of_a_diplomatic_victory_point_is_modelled() {
+    let rules = crate::rules::Rules::shipped();
+    let from_wonders: Vec<(&str, f64)> = rules
+        .wonders
+        .iter()
+        .filter_map(|(name, spec)| {
+            spec.effects
+                .get("diplomatic_victory_points")
+                .map(|amount| (name.as_str(), *amount))
+        })
+        .collect();
+    let from_tree: Vec<(&str, f64)> = rules
+        .techs
+        .iter()
+        .map(|(name, spec)| (name, &spec.effects))
+        .chain(
+            rules
+                .civics
+                .iter()
+                .map(|(name, spec)| (name, &spec.effects)),
+        )
+        .filter_map(|(name, effects)| {
+            effects
+                .get("diplomatic_victory_points")
+                .map(|amount| (name.as_str(), *amount))
+        })
+        .collect();
+
+    let mut all: Vec<(&str, f64)> = from_wonders.into_iter().chain(from_tree).collect();
+    all.sort_by(|left, right| left.0.cmp(right.0));
+    assert_eq!(
+        all,
+        vec![
+            ("global_warming_mitigation", 1.0),
+            ("mahabodhi_temple", 2.0),
+            ("potala_palace", 1.0),
+            ("seasteads", 1.0),
+            ("statue_of_liberty", 4.0),
+        ],
+        "the shipped database names six modifiers adjusting DIPLOMATIC_VICTORY_POINTS; \
+         five are content and the sixth is the World Congress resolution. A source \
+         added or dropped here is a change to how a Diplomatic victory is won"
+    );
+    // And the congress half, which is not content: the resolution is injected
+    // into every session from the Modern era, worth ±2 to its target.
+    assert_eq!(DIPLOMATIC_VICTORY_POINTS, 20);
+}
