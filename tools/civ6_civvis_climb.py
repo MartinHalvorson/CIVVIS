@@ -360,9 +360,9 @@ def ensure_popup_clear() -> None:
     a question needs an ANSWER, so only a held click on the dialogue button resolves
     it. That is the case the mod structurally cannot reach.
 
-    2.5s rather than the 6s default: the operator watches this window, and six
-    seconds of a leader portrait over the map is the difference they notice. The
-    tool's own guards make a tight interval safe — it refuses to click unless
+    0.25s while a screen covers the map: the operator watches this window, and
+    a leader portrait must not sit over it for seconds. The tool's own guards
+    make a tight interval safe — it refuses to click unless
     Civilization VI is frontmost AND the map is positively covered AND the harness
     has already recorded a turn, so it cannot touch the setup screens.
     """
@@ -392,7 +392,7 @@ def ensure_popup_clear() -> None:
               flush=True)
         return
     _detach(
-        [sys.executable, "-u", str(clearer), "--interval", "2.5",
+        [sys.executable, "-u", str(clearer), "--interval", "0.25",
          "--runs", str(RUN_ROOT), "--log", str(RUN_ROOT.parent / "popup_clear.log")],
         RUN_ROOT.parent / "popup_clear.log", "popups",
     )
@@ -1202,6 +1202,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + [
          "--announcement-seconds", "0.05",
          "--era-announcement-seconds", "0.05",
+         "--dialogue-seconds", "0.25",
          "--civvis-decides",
          "--civvis-bin", str(orders_bin),
          "--civvis-victory", args.victory,

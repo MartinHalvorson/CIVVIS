@@ -84,6 +84,12 @@ class MirrorFreshnessTests(unittest.TestCase):
         )
 
 
+class PopupBackstopWiringTests(unittest.TestCase):
+    def test_climb_starts_the_popup_backstop_on_a_quarter_second_cadence(self):
+        source = Path(climb.__file__).read_text()
+        self.assertIn('"--interval", "0.25"', source)
+
+
 class TeardownOwnershipTests(unittest.TestCase):
     """The ladder must never clean up a run whose ownership it cannot prove."""
 
@@ -1544,6 +1550,12 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         cmd = climb.play_command(self._play_args(), "t",
                                  Path("orders.sqlite"), Path("civvis_orders"))
         self.assertNotIn("--no-peace-deterrence", cmd)
+
+    def test_every_attempt_bakes_the_fast_dialogue_timer(self):
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--dialogue-seconds")
+        self.assertEqual(cmd[at + 1], "0.25")
 
     def test_a_congress_control_batch_reaches_the_play_command(self):
         cmd = climb.play_command(

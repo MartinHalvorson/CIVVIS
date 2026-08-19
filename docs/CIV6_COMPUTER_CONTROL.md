@@ -309,6 +309,12 @@ long enough to read, short enough not to sit through), and then ends exactly
 the way its own close button ends it. Nothing about the announcement changes:
 what it says, when it fires, what it locks. Only who finishes it.
 
+Diplomacy conversations and trade offers are treated as blockers rather than
+readable announcements. They use `DialogueSeconds` (0.25 by default, capped at
+2 seconds), wait for their opening fade to become actionable, then answer or
+close through the shipped handler. A guarded macOS backstop polls a covered
+game window every 250 ms for the rare screen the Lua context cannot dismiss.
+
 Three things about how it is wired are worth keeping:
 
 - **One file serves every screen.** Each `ReplaceUIScript` in

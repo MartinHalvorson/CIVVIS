@@ -34,6 +34,12 @@ local cfg = CivvisControlConfig or {};
 -- read" is a judgement about the person watching, not a fact about the game.
 local SECONDS = tonumber(cfg.AnnouncementSeconds) or 1.0;
 
+-- Dialogue is a blocker, not a readable announcement. Keep the configured
+-- value bounded even when an older launcher or a hand-written config supplies
+-- something slower. The pixel backstop uses the same budget independently.
+local MAX_DIALOGUE_SECONDS = 2.0;
+local DIALOGUE_SECONDS = tonumber(cfg.DialogueSeconds) or 0.25;
+
 -- Era screens get a shorter clock than the rest. They are the most frequent
 -- interruption in a long game and carry the least the agent needs to read, and
 -- at Online speed an era can turn over every twenty turns or so.
@@ -105,7 +111,7 @@ if END_SCREENS[NAME] then SECONDS = END_SECONDS; end
 -- seconds before the desktop fallback even began.
 if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
 		or NAME == "EspionagePopup" or NAME == "EspionageEscape" then
-	SECONDS = math.min(SECONDS, tonumber(cfg.DialogueSeconds) or 0.25);
+	SECONDS = math.min(SECONDS, math.max(0, DIALOGUE_SECONDS), MAX_DIALOGUE_SECONDS);
 	DESKTOP_AFTER = 4;
 end
 if SECONDS < 0 then SECONDS = 0; end
@@ -363,6 +369,21 @@ local function endScreen(attempt)
 			and pcall(function() OnRefuseDeal(true); end) then
 		return true;
 	end
+	-- A leader question is the one dialogue that cannot be dismissed by closing
+	-- the view: the pending request reopens it. The first CloseFocusedState rung
+	-- handles cinema/overview screens; if the view is still present on the next
+	-- settled tick, answer the request negatively instead of spending fourteen
+	-- 250ms rungs getting there. The session ID is deliberately required so this
+	-- cannot turn an unrelated action-view screen into a response.
+	if NAME == "DiplomacyActionView"
+			and (attempt or 1) >= 2 and (attempt or 1) <= 3
+			and type(OnSelectConversationDiplomacyStatement) == "function"
+			and ms_ActiveSessionID ~= nil
+			and pcall(function()
+				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
+			end) then
+		return true;
+	end
 	if (attempt or 1) <= 6 and type(CloseFocusedState) == "function"
 			and pcall(function() CloseFocusedState(true); end) then
 		return true;
@@ -491,6 +512,7 @@ else
 	-- Long enough not to hammer it, short enough that the map comes back on its
 	-- own if whatever held it goes away.
 	local RETRY_SECONDS = 30.0;
+	local DIALOGUE_READY_RETRY_SECONDS = 0.05;
 
 	-- What "up" means. Everywhere else it is the context not being hidden, the
 	-- same test the shipped popup manager uses. InGamePopup is *pushed as a
@@ -500,6 +522,28 @@ else
 	local function isUp()
 		if NAME == "InGamePopup" then return dialogIsAnnouncement; end
 		return not ContextPtr:IsHidden();
+	end
+
+	-- The shipped diplomacy contexts are visible before they can accept an
+	-- action. During the opening fade the view mode is still being constructed;
+	-- calling its handlers then is a successful Lua call that does nothing. The
+	-- old timer counted those no-ops as failures, reached GIVE_UP_AFTER in about
+	-- one second, and then waited RETRY_SECONDS. Wait without consuming a rung.
+	-- This is intentionally conservative: if a control is absent or its state
+	-- cannot be read, the normal closer remains the fallback.
+	local function dialogueReady()
+		if NAME == "DiplomacyActionView" and Controls ~= nil
+				and Controls.BlackFadeAnim ~= nil then
+			local stopped = false;
+			local readable = pcall(function() stopped = Controls.BlackFadeAnim:IsStopped(); end);
+			if readable and not stopped then return false; end
+		elseif NAME == "DiplomacyDealView" and Controls ~= nil
+				and Controls.TradePanelFade ~= nil then
+			local stopped = false;
+			local readable = pcall(function() stopped = Controls.TradePanelFade:IsStopped(); end);
+			if readable and not stopped then return false; end
+		end
+		return true;
 	end
 
 	local function tick(fDTime)
@@ -519,6 +563,13 @@ else
 		remaining = remaining - dt;
 		shown = shown + dt;
 		if remaining > 0 then return; end
+		if (NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView")
+				and not dialogueReady() then
+			-- Keep the elapsed screen time for telemetry, but do not consume a
+			-- closer rung while the shipped controls are still transitioning.
+			remaining = DIALOGUE_READY_RETRY_SECONDS;
+			return;
+		end
 
 		-- Re-armed before the close, not after: a screen with more
 		-- announcements queued behind it stays up, and the next one is owed
