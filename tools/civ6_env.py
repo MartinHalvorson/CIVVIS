@@ -39,30 +39,59 @@ NESTED_USER_DIR = LEGACY_USER_DIR / "Firaxis Games/Sid Meier's Civilization VI"
 INSTALL_CANDIDATES = (
     SUPPORT / "Steam/steamapps/common/Sid Meier's Civilization VI",
     Path("/Applications/Sid Meier's Civilization VI"),
+    # Windows, where a second Steam library is the common case. Carried here
+    # rather than in each tool: `civ6_fidelity.py` shipped a Windows-only list
+    # of its own and could not find an install on any machine in this fleet.
+    Path(r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI"),
+    Path(r"C:\Program Files\Steam\steamapps\common\Sid Meier's Civilization VI"),
+    Path(r"D:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI"),
+    Path(r"E:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI"),
 )
+
+#: Environment variables that name an install, most specific first. Two names
+#: are honoured because two were already in use -- `civ6_fidelity.py` and
+#: `civ6_type_names.py` documented `$CIV6_DIR` while everything else used
+#: `$CIV6_INSTALL` -- and silently dropping either would break whatever is
+#: already exporting it.
+INSTALL_ENV_VARS = ("CIV6_INSTALL", "CIV6_DIR")
 
 # Where the shipped rules database lives inside the macOS app bundle. The
 # fidelity audit wants this path, not the bundle root.
 ASSETS_SUBPATH = "Civ6.app/Contents/Assets"
 
+#: The directory whose presence proves a path is a gameplay-database root.
+GAMEPLAY_DATA = "Base/Assets/Gameplay/Data"
+
 
 def install_dir(explicit: str | os.PathLike | None = None) -> Path:
     """The installation root (the directory holding ``Civ6.app``)."""
-    for candidate in filter(None, [explicit, os.environ.get("CIV6_INSTALL")]):
+    named = [explicit, *(os.environ.get(name) for name in INSTALL_ENV_VARS)]
+    for candidate in filter(None, named):
         path = Path(candidate)
         if path.is_dir():
             return path
     for path in INSTALL_CANDIDATES:
         if path.is_dir():
             return path
-    raise SystemExit("Civilization VI install not found; set $CIV6_INSTALL")
+    raise SystemExit(
+        "Civilization VI install not found; set $"
+        + " or $".join(INSTALL_ENV_VARS)
+    )
 
 
 def assets_dir(explicit: str | os.PathLike | None = None) -> Path:
-    """The gameplay-database root that ``civ6_fidelity.py`` audits against."""
+    """The gameplay-database root that ``civ6_fidelity.py`` audits against.
+
+    A path that is *already* the assets root resolves to itself, so ``--civ6``
+    keeps working whether it names the install or the bundle interior: an
+    explicit directory is what ``install_dir`` returns, and an assets root has
+    no ``Civ6.app`` nested inside it to descend into. An earlier draft of this
+    added a branch for that case; a planted defect proved the branch changed
+    no answer, so it is a comment instead of code.
+    """
     root = install_dir(explicit)
     nested = root / ASSETS_SUBPATH
-    return nested if (nested / "Base/Assets/Gameplay/Data").is_dir() else root
+    return nested if (nested / GAMEPLAY_DATA).is_dir() else root
 
 
 def user_dir() -> Path:
