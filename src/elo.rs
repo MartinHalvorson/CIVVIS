@@ -6206,7 +6206,9 @@ mod tests {
 
         let lowest = *seen.keys().next().expect("at least one version");
         let highest = *seen.keys().next_back().expect("at least one version");
-        let missing: Vec<u32> = (lowest..=highest).filter(|v| !seen.contains_key(v)).collect();
+        let missing: Vec<u32> = (lowest..=highest)
+            .filter(|v| !seen.contains_key(v))
+            .collect();
         assert!(
             missing.is_empty(),
             "these ledger versions are between the first and last documented one and are \
