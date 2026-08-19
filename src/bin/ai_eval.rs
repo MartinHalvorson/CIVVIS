@@ -3297,7 +3297,11 @@ mod tests {
         assert_eq!(bounded.len(), 1, "{bounded:?}");
         assert_eq!(bounded[0].0, "diplomatic");
         assert_eq!(bounded[0].1, 2);
-        assert!((bounded[0].2 - 5.0 / 3.0).abs() < 1e-9, "{:?}", bounded[0].2);
+        assert!(
+            (bounded[0].2 - 5.0 / 3.0).abs() < 1e-9,
+            "{:?}",
+            bounded[0].2
+        );
 
         // A lane nobody produced belongs to the separate, stronger line.
         assert!(
