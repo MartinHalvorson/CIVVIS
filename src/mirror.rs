@@ -11772,6 +11772,7 @@ const UNIT_KEYS: &[&str] = &[
     "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
     "player", "moves", "xp", "level", "promotions", "build_charges", "spread_charges",
     "religion", "fortified", "fortify_turns", "formation_count", "great_person",
+    "queued_dest", "embarked",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
