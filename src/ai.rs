@@ -4760,11 +4760,9 @@ impl BasicAi {
             mix(unit.owner as u64);
             mix(unit.pos.0 as u64);
             mix(unit.pos.1 as u64);
-            mix(unit.hp as u64);
-            mix(unit.moves_left.to_bits());
-            mix(unit.attacks_left as u64);
+            mix(u64::from(unit.kind.id()));
             mix(unit.formation as u64);
-            mix(u64::from(unit.fortified) | (u64::from(unit.zoc_stopped) << 1));
+            mix(u64::from(unit.zoc_stopped));
         }
         mix(g.cities.len() as u64);
         for city in g.cities.values() {
@@ -23214,5 +23212,74 @@ mod apostle_promotion_tests {
                 "a preference branch repeats a promotion"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod attack_envelope_key_tests {
+    use super::*;
+    use crate::game::Game;
+
+    /// The envelope key moves for exactly the board changes `attack_reach`
+    /// can see, and for no others.
+    ///
+    /// ★★★★★ THIS IS THE WHOLE PERFORMANCE CLAIM, AS A TEST. `attack_reach`
+    /// is a *next-turn* envelope: it flows from `unit_max_moves`, never
+    /// `moves_left`, and `flow_past` relaxes the stacking layer so other units
+    /// reach it only through `in_enemy_zoc_for` — owner, kind, religion and
+    /// promotions, never health, movement or attacks. Hashing health, movement
+    /// and attacks anyway made every attack, every fortify and every spent
+    /// movement point a cache miss that recomputed one flow field per visible
+    /// enemy, and a `sample` of head put `enemy_attack_envelopes` at 74.9% of
+    /// the main thread.
+    ///
+    /// ⚠ The negative half is the one that decays. If a future reach rule
+    /// starts reading a unit's health or remaining movement, the key must gain
+    /// it back and this test is where that argument has to be had.
+    #[test]
+    fn the_envelope_key_ignores_state_no_reach_rule_reads() {
+        let mut game = Game::new_full(2, 24, 16, 4_242, 300, 0, false);
+        let position = game.player_unit_ids(0).into_iter().next().unwrap();
+        let position = game.units[&position].pos;
+        let uid = game.spawn_test_unit("warrior", 0, position);
+        let key = |g: &Game| BasicAi::attack_envelope_fingerprint(g, None);
+        let before = key(&game);
+
+        for (field, apply) in [
+            (
+                "hp",
+                (|u: &mut crate::game::Unit| u.hp -= 7) as fn(&mut crate::game::Unit),
+            ),
+            ("moves_left", |u: &mut crate::game::Unit| u.moves_left = 0.0),
+            ("attacks_left", |u: &mut crate::game::Unit| {
+                u.attacks_left = 0
+            }),
+            ("fortified", |u: &mut crate::game::Unit| {
+                u.fortified = !u.fortified
+            }),
+        ] {
+            let mut board = game.clone();
+            apply(board.units.get_mut(&uid).unwrap());
+            assert_eq!(
+                key(&board),
+                before,
+                "{field} does not change any enemy's next-turn reach, so it must \
+                 not invalidate the envelope cache"
+            );
+        }
+
+        // And the positive half: what reach does read still moves the key.
+        let mut moved = game.clone();
+        let step = moved.nbrs(position).into_iter().next().unwrap();
+        moved.units.get_mut(&uid).unwrap().pos = step;
+        assert_ne!(key(&moved), before, "a unit's tile is its zone of control");
+
+        let mut upgraded = game.clone();
+        upgraded.units.get_mut(&uid).unwrap().kind = crate::name!("swordsman");
+        assert_ne!(
+            key(&upgraded),
+            before,
+            "the spec decides whether a unit exerts zone of control at all"
+        );
     }
 }
