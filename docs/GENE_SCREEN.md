@@ -13,6 +13,39 @@ target/ci/gene_screen --pairs 300 --anchor-pairs 20 --jobs 8 --out screen.jsonl
 target/ci/gene_screen --analyze screen.jsonl [more.jsonl ...]  # re-read, merge, re-table
 ```
 
+## ⚠ Overlap with `treatment_lottery`, and what should happen about it
+
+`src/bin/treatment_lottery.rs` + `docs/TREATMENT_LOTTERY.md` landed on `main`
+while this was in review, from another session, with **the same goal**: draw a
+random withhold-vector per game, average marginally, price every treatment at
+once, keep a per-game JSONL ledger. Neither knew about the other. This is
+recorded here rather than quietly shipped beside it, because two tools for one
+job is exactly the duplication `AGENTS.md` guards against.
+
+**The substantive difference is the control arm.**
+
+| | `treatment_lottery` | `gene_screen` |
+|---|---|---|
+| arm 2 of a pair | the **full bundle**, same seed and seat | the **exact complement genome**, same seed and seat |
+| balance | in expectation, over the batch | **exact, inside every single pair** — each factor is on in exactly one arm |
+| interactions | not recoverable | **free**, from the pair sums (see above) |
+| outcomes | delta on win / score share | both, with 95% intervals, an MDE-at-80%-power line, and a family-wise bar |
+| extras | fires-check (`moved`) | anchors, regime census, religion instrumentation, `--victories`, `--randomize-civs`, OLS over the sign matrix |
+
+A foldover is the classical refinement of exactly this design, and the exact
+per-pair balance is not a nicety: it is what removes the drawn vector's chance
+imbalance from every factor's estimate, and it is the *reason* the interactions
+fall out of the sums for free.
+
+**Recommendation: one tool, not two.** The cheapest consolidation is to move the
+complement arm into `treatment_lottery` — it is a one-line change to what its
+control plays — and then port the analysis layer (intervals, resolution line,
+interactions, anchors, census) onto its ledger. Whichever name survives is a
+call for whoever owns the eval lane, not for either author to make unilaterally;
+`AGENTS.md` says a semantic conflict goes to coordination rather than to a
+silent resolution. Until then this file and `docs/TREATMENT_LOTTERY.md` should
+both point at each other.
+
 ## Why a screen and not fifty-seven arms
 
 The repository's existing instrument is the withholding arm: `live` against
