@@ -1336,11 +1336,14 @@ fn append_border_buy_order(
     // sides; ours is in the export, theirs only the deal validation knows.
     // Asking early costs a named `agreement_invalid` refusal, asking without
     // our own civic is a guaranteed one — skip only the guaranteed case.
-    if !state.civics.iter().any(|civic| civic == "CIVIC_EARLY_EMPIRE") {
+    if !state
+        .civics
+        .iter()
+        .any(|civic| civic == "CIVIC_EARLY_EMPIRE")
+    {
         return Some("border_buy_hold:no_civic");
     }
-    let ceiling = (state.gold - BORDER_BUY_GOLD_RESERVE)
-        .min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    let ceiling = (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
     if ceiling < BORDER_BUY_CEILING_MIN {
         return Some("border_buy_hold:treasury");
     }
@@ -1348,8 +1351,7 @@ fn append_border_buy_order(
     // heading to the same seat this turn would turn the buy into a named
     // `buy_pending` refusal. Yield the turn — the cadence retries.
     if orders.iter().any(|order| {
-        (order.kind == "sell" || order.kind == "buy")
-            && order.subject == Some(rival.player as i64)
+        (order.kind == "sell" || order.kind == "buy") && order.subject == Some(rival.player as i64)
     }) {
         return Some("border_buy_hold:deal_in_flight");
     }
@@ -2666,11 +2668,7 @@ fn decide(
             }
         }
     }
-    match append_border_buy_order(
-        &mirror_state.game.sealed_border_owners,
-        state,
-        &mut orders,
-    ) {
+    match append_border_buy_order(&mirror_state.game.sealed_border_owners, state, &mut orders) {
         None => note_bits.push("border_buy=1".to_string()),
         Some(why) => {
             // Only the holds that mean something is wrong on the ground: a
@@ -7853,7 +7851,10 @@ mod tests {
             [(1, 7), (2, 21), (3, 40)].into_iter().collect();
 
         let mut orders = Vec::new();
-        assert_eq!(append_border_buy_order(&sealed_by, &state, &mut orders), None);
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &state, &mut orders),
+            None
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "buy");
         // Seat 3 seals the most but is at war — war opens that ground by
@@ -7868,7 +7869,10 @@ mod tests {
         let mut granted = state.clone();
         granted.rivals[1].open_borders = Some(true);
         let mut next = Vec::new();
-        assert_eq!(append_border_buy_order(&sealed_by, &granted, &mut next), None);
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &granted, &mut next),
+            None
+        );
         assert_eq!(next[0].subject, Some(2));
 
         // Small seals are not worth a deal window; no majors sealing, no ask.
