@@ -1909,6 +1909,20 @@ fn append_next_production_hints(
     ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> usize {
     let mut hinted = 0;
+    // ★★★★★ THE HINT NEVER FIRED, IN ANY RECORDED GAME. `planned_game` is the
+    // board the agent has already TAKEN ITS TURN ON, and `take_turn` ends with
+    // `EndTurn`, so `current` is the next seat; `preview_live_production`
+    // clones that board and asks `advanced_production` to fill the cleared
+    // queue, and every `Produce` it tries comes back "not your turn". The
+    // preview answered `None` on every call, and the deferred hint — the one
+    // thing that stops the mod's hand-written ladder from answering the
+    // production prompt itself — was emitted zero times across the whole
+    // 2026-08-16..19 ladder (0 `produce_next` orders, 0 `build_hint` events,
+    // 70–174 ladder `build` picks per game, ~85% of them displaced by
+    // CIVVIS's own order on the following turn). Give the preview a board on
+    // which it is still this seat's turn: a throwaway copy, never applied.
+    let mut preview_board = planned_game.clone();
+    preview_board.current = 0;
     for city in &state.cities {
         if !host_production_finishes_this_turn(city)
             || orders
@@ -1920,7 +1934,7 @@ fn append_next_production_hints(
         let Some(cid) = mirror_state.cid_of.get(&city.id).copied() else {
             continue;
         };
-        let Some(item) = ai.preview_live_production(planned_game, 0, cid) else {
+        let Some(item) = ai.preview_live_production(&preview_board, 0, cid) else {
             continue;
         };
         let Some(name) = civ6_live_build_name(&item, planned_game) else {
@@ -5934,6 +5948,61 @@ mod tests {
         // an unnamed refusal is the exact failure this key exists to end.
         let missing = mirror.game.units.keys().copied().max().unwrap_or(0) + 1_000;
         assert_eq!(self_tile_move_key(&mirror, missing), "self_tile_move");
+    }
+
+    /// ★★★★★ THE DEFERRED PRODUCTION HINT NEVER FIRED IN ANY RECORDED GAME.
+    /// `append_next_production_hints` previews the next build on the board the
+    /// agent has already taken its turn on — and `take_turn` ends with
+    /// `EndTurn`, so `current` has moved to the next seat and every `Produce`
+    /// the preview tries is refused "not your turn". Zero `produce_next` orders
+    /// across the 2026-08-16..19 ladder; 70–174 mod-ladder `build` picks per
+    /// game answered the production prompt instead, ~85% displaced by CIVVIS's
+    /// own order one turn later. The preview must run on a board where it is
+    /// still this seat's turn.
+    #[test]
+    fn the_next_production_hint_survives_the_seat_having_ended_its_turn() {
+        let (snapshot, mut state) = production_board();
+        // The exported city finishes its Warrior this turn.
+        state.cities[0].production = 8.0;
+        state.cities[0].production_cost = 40.0;
+        state.cities[0].production_progress = 36.0;
+        state.cities[0].production_turns = 1.0;
+        assert!(host_production_finishes_this_turn(&state.cities[0]));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let mut planned = mirror.game.clone();
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        // The agent takes its turn on the planning board, exactly as `decide`
+        // does, and the board's seat moves on.
+        ai.take_turn(&mut planned, 0);
+        assert_ne!(
+            planned.current, 0,
+            "precondition: the seat has ended its turn"
+        );
+
+        let mut orders = Vec::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let hinted =
+            append_next_production_hints(&ai, &planned, &mirror, &state, &mut orders, &mut ours);
+        assert_eq!(
+            hinted,
+            1,
+            "the finishing city gets a hint: {:?}",
+            orders.iter().map(Order::to_json).collect::<Vec<_>>()
+        );
+        let hint = orders
+            .iter()
+            .find(|order| order.kind == "produce_next")
+            .expect("a produce_next order");
+        assert_eq!(hint.subject, Some(7));
+        assert!(hint.verb.as_deref().is_some_and(|v| !v.is_empty()));
+        assert!(
+            ours.get(&7)
+                .is_some_and(|value| value.starts_with(DEFERRED_PRODUCTION_PREFIX)),
+            "the lease is remembered until the host consumes it: {ours:?}"
+        );
+        // And the preview never touched the caller's board.
+        assert_ne!(planned.current, 0);
     }
 
     #[test]
