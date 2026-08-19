@@ -3488,9 +3488,19 @@ fn religions_convert_all_owned_holy_sites_and_temples_require_shrines() {
 /// diplomatic victories in 120 games and 3 in 60
 /// (`docs/eval/2026-08-18-the-promotion-matrix-can-see-the-lanes-the-front-line-loses-.md`).
 ///
-/// The shipped database names exactly six modifiers that adjust
-/// `DIPLOMATIC_VICTORY_POINTS`, and the threshold is 20
-/// (`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`):
+/// ⚠ **CORRECTION.** This comment first said the shipped database names
+/// *six* modifiers adjusting `DIPLOMATIC_VICTORY_POINTS`. It names **ten**.
+/// The search that found six matched `MODIFIER_PLAYER_ADJUST_DIPLOMATIC_VICTORY_POINTS`
+/// and missed `MODIFIER_EMERGENCY_PLAYERS_ADJUST_DIPLOMATIC_VICTORY_POINTS`,
+/// which is how a scored competition pays its winner. Searching for one
+/// spelling of a thing and concluding the list is complete is the mistake, and
+/// it is the second time in two days that a "complete" claim about this lane
+/// has been wrong.
+///
+/// The threshold is 20 (`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`).
+/// The seven **content** sources are below; the three competition sources are
+/// in `no_native_competition_awards_a_diplomatic_victory_point`, because they
+/// are engine, not data — and because CIVVIS has none of them.
 ///
 /// | source | amount |
 /// |---|---|
@@ -3568,4 +3578,92 @@ fn every_shipped_source_of_a_diplomatic_victory_point_is_modelled() {
     // And the congress half, which is not content: the resolution is injected
     // into every session from the Modern era, worth ±2 to its target.
     assert_eq!(DIPLOMATIC_VICTORY_POINTS, 20);
+}
+
+/// A native game awards no Diplomatic Victory Point for a scored competition,
+/// and that is why its diplomatic lane cannot finish.
+///
+/// ★★★★★ THE LANE IS NOT RARE, IT IS UNREACHABLE. Live, **41 of 209 terminal
+/// games end in a rival's diplomatic victory — 19.6%**. On the contested
+/// screen, CIVVIS produces **2 in 120 — 1.7%**. Twelve-fold, and the cause is
+/// structural rather than tactical.
+///
+/// Gathering Storm pays a Diplomatic Victory Point to the *first-place*
+/// finisher of seven scored competitions and aid requests, through
+/// `MODIFIER_EMERGENCY_PLAYERS_ADJUST_DIPLOMATIC_VICTORY_POINTS`:
+///
+/// | award | amount | competitions |
+/// |---|---|---|
+/// | `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+/// | `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
+/// | `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
+///
+/// Those recur for the whole second half of a game. **CIVVIS has none of them
+/// natively**: a competition exists only while a live host names one
+/// (`Game::replace_host_competitions`, and every competition project in
+/// `projects.json` is gated on `host_competition`). The live bridge is
+/// unaffected — it mirrors the host's own `dvp` — but every *evaluation* runs
+/// natively, so:
+///
+/// - the congress resolution, ±2 from the Modern era, is very nearly the whole
+///   of a 20-point victory;
+/// - the three wonders are worth 7 and are effectively unreachable — **31 of 32**
+///   diplomatic games finish none;
+/// - the civic and the technology are worth 1 each and sit in the Future era.
+///
+/// So a native empire has no route to 20, and no treatment can give it one.
+/// **Every native measurement of a diplomatic-denial treatment has been
+/// measuring a lane that cannot complete**, which is a stronger statement than
+/// "the screen produces no diplomatic victories" and explains it.
+///
+/// ⚠ This test asserts the gap rather than a fix, and it should fail the day
+/// scored competitions become native. When it does, delete it and put the
+/// award beside the congress one in `resolve_congress` — first place only, at
+/// the amounts above, and *not* on the mirrored path, where the host has
+/// already counted them.
+#[test]
+fn no_native_competition_awards_a_diplomatic_victory_point() {
+    let source = include_str!("../game.rs");
+    let awards: Vec<&str> = source
+        .lines()
+        .filter(|line| line.contains(".dvp +=") || line.contains(".dvp -="))
+        .map(str::trim)
+        .collect();
+    assert_eq!(
+        awards,
+        vec![
+            // The congress: +1 for predicting a resolution exactly, and the
+            // Diplomatic Victory resolution's +2 to its target. (Its -2 is a
+            // `saturating_sub` and so is not in this list.)
+            "self.players[*voter].dvp += 1;",
+            "self.players[target].dvp += 2;",
+            // A technology or civic node, and a wonder.
+            "self.players[pid].dvp += effects",
+            "self.players[pid].dvp += effect(\"diplomatic_victory_points\") as i64;",
+        ],
+        "the engine's Diplomatic Victory Point awards changed; the lane's \
+         arithmetic is in this test's comment and needs rereading"
+    );
+    // Every competition project is host-gated, so none of them can pay.
+    let projects: serde_json::Value =
+        serde_json::from_str(include_str!("../../data/projects.json")).unwrap();
+    let mut competition_projects = 0;
+    for (name, spec) in projects.as_object().expect("projects.json is an object") {
+        let scores = spec.get("competition_score").is_some();
+        if !scores {
+            continue;
+        }
+        competition_projects += 1;
+        assert!(
+            spec.get("host_competition").is_some() || spec.get("host_competitions").is_some(),
+            "{name} scores a competition without a host naming one; if competitions \
+             have become native, this test's premise is gone and its comment says \
+             what to do"
+        );
+    }
+    assert!(
+        competition_projects >= 3,
+        "only {competition_projects} competition projects were found, so this \
+         check is looking at the wrong thing"
+    );
 }
