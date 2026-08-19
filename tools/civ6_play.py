@@ -879,6 +879,12 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     click_at(int(x + w * fx), int(y + h * fy))
 
 
+#: Waits between the setup screenshot's attempts. Escalating, because the
+#: failure it covers is a load spike: the flat 1.0 s retry it replaces sampled
+#: the same spike twice and lost two ladder attempts on 2026-08-19.
+SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0)
+
+
 def screenshot(path: Path) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
     log cannot describe it; the shot is what says which row was hit.
@@ -892,19 +898,33 @@ def screenshot(path: Path) -> bool:
     source, so every caller inherits the cover; a shot that still fails is
     reported loudly and the caller's own "not readable this attempt" retry
     handles it as an ordinary unreadable poll.
+
+    ⚠ One retry was NOT enough. On 2026-08-19 the launches
+    `civvis-20260819T054539Z` and `civvis-20260819T054713Z` both died on that
+    same `OCRUnavailable`, inside the window where a 2252-test
+    `cargo test --lib` run saturated this host; `...T054901Z`, started after
+    the load fell away, set up normally. Two captures a second apart sample
+    one spike twice. The backoff below spreads four captures over five
+    seconds instead of losing a ninety-minute attempt to a load transient,
+    and says so in the log when it needs more than one — a lane that reports
+    "the host is loaded" is a lane whose NO GAME can be read without guessing.
     """
-    for attempt in (1, 2):
+    for attempt in range(1, len(SHOT_BACKOFF_SECONDS) + 2):
         subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
                        capture_output=True)
         try:
             if path.stat().st_size > 0:
+                if attempt > 1:
+                    print(f"[shot] screencapture needed {attempt} attempts for "
+                          f"{path.name}; the host is loaded", flush=True)
                 return True
         except OSError:
             pass
-        if attempt == 1:
-            time.sleep(1.0)
-    print(f"[shot] screencapture wrote nothing for {path.name} after a retry; "
-          "treating this poll as unreadable", flush=True)
+        if attempt <= len(SHOT_BACKOFF_SECONDS):
+            time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
+    print(f"[shot] screencapture wrote nothing for {path.name} after "
+          f"{len(SHOT_BACKOFF_SECONDS) + 1} attempts; treating this poll as "
+          "unreadable", flush=True)
     return False
 
 

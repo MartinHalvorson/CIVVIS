@@ -1,6 +1,6 @@
 {
   "coverage": {
-    "named": 33,
+    "named": 34,
     "never_named": 25,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
@@ -56,14 +56,14 @@
       "war-reinforcement",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 58
+    "withholdable": 59
   },
   "derived": {
-    "eval_only_count": 235,
+    "eval_only_count": 236,
     "firaxis_only_count": 29,
-    "live_bridge_count": 87,
-    "native_engine_repair_count": 58,
-    "withholdable_live_count": 58
+    "live_bridge_count": 88,
+    "native_engine_repair_count": 59,
+    "withholdable_live_count": 59
   },
   "ladder": {
     "ahead": 6,
@@ -134,12 +134,13 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 58,
+      "declared_count": 59,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -197,12 +198,13 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 32,
+      "declared_count": 33,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -234,7 +236,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 235,
+      "declared_count": 236,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -306,6 +308,7 @@
         "live_without_live_trader_route_adapter",
         "live_without_live_religious_purchase_guard",
         "live_without_recorded_tactical_step",
+        "live_without_whole_turn_backtrack_guard",
         "live_without_strike_opening",
         "live_without_ranged_needs_line_of_sight",
         "live_without_one_launch_pad",
@@ -508,7 +511,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 87,
+      "declared_count": 88,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -517,6 +520,7 @@
         "home-defense",
         "loyalty-policy-defence",
         "recorded-tactical-step",
+        "whole-turn-backtrack-guard",
         "strike-opening",
         "bounded-recovery",
         "army-target-weighs-enemy",
