@@ -110,6 +110,7 @@ not a silent omission.
 | `--genes a,b,c` | tags or field names | screen only these; the rest are held at the baseline |
 | `--baseline` | `repairs` (default) / `stock` | what un-screened engine repairs are held at: on (the `advanced_synergy` bundle) or off (production `advanced`) |
 | `--field` | `advanced` (default) / `repairs` | the other majors: production `advanced`, or the native repair bundle |
+| `--victories a,b,…` | all six by default | restrict the victory lanes, because **the regime decides which genes can act at all**. `--victories domination,score` gives the 31 war and siege genes a game that does not end by conversion at turn 149. Same spelling and same parser as `civvis --victories` |
 | `--randomize-civs` | off by default | shuffle every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game unless this is on |
 
 ## Profile and cost
@@ -141,6 +142,50 @@ Interactions (epistasis), subgroup tables (by seat, victory type, map), and a
 fitted logistic are all re-analyses of these rows and never need a game
 replayed. `--analyze` refuses to merge files written at different profiles or
 gene orders — a merged table would mix two experiments.
+
+## Interactions — the other half of every pair
+
+```sh
+target/ci/gene_screen --analyze screen.jsonl --interactions --top 20
+```
+
+A foldover splits the evidence in two, and the main table uses one half. Write
+the outcome as `y = μ + Σβᵢxᵢ + Σγᵢⱼxᵢxⱼ` with `x ∈ {−1,+1}`; the second arm is
+the exact complement, so every `xᵢ` flips:
+
+- the **difference** `y(g) − y(ḡ)` keeps `2βᵢxᵢ` and **cancels every two-factor
+  term** (`xᵢxⱼ − (−xᵢ)(−xⱼ) = 0`). That cancellation is why the main-effect
+  table is clean — de-aliasing main effects from interactions is the classical
+  reason to run a foldover at all.
+- the **sum** `y(g) + y(ḡ)` cancels every main effect and keeps `2γᵢⱼxᵢxⱼ`.
+
+So the interactions were never missing from these games; they sat in the half of
+each pair the difference throws away, and reading them needs **no game
+replayed**. Each `γᵢⱼ` is estimated marginally (57 genes have 1,596 two-factor
+terms; no affordable run fits them jointly), and the printed figure is **how
+much more one gene is worth when the other is on**.
+
+⚠ The headline is a **count against an expectation**, not the top rows. 1,596
+tests throw ~73 flags at |z| ≥ 2 with nothing whatever going on. The first
+297-pair run printed *72 against 73 expected, 0 past the family-wise bar* — the
+layer was indistinguishable from noise, and the tool says so in those words.
+Two consequences worth keeping: at this size **no pairwise coupling among the
+repairs is visible**, and any table of "top interactions" printed without that
+line would read as a dozen findings every time it ran.
+
+⚠ The map effect does **not** cancel in the sum the way it does in the
+difference (a pair's sum is twice its map's difficulty plus the interaction
+terms), so interactions are far noisier than main effects from the same run.
+
+## Instrumentation: how a game was lost, not only that it was
+
+Every row also carries `founded_religion`, `foreign_faith_cities` (our own
+cities flying somebody else's faith at the end), `faith` still banked,
+`inquisition` (whether the Inquisitor gate was ever unlocked), `techs` and
+`military`. The table prints a **religion census** from them, because two
+thirds of native games end by conversion and the rows previously could not say
+one thing about how the losing seat stood in that race — including the
+diagnostic split over the games actually lost to a rival's religion.
 
 ## What the first run taught (2026-08-18, 4p 60×38 Online-250, 300 pairs)
 

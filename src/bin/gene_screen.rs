@@ -182,6 +182,36 @@ struct Row {
     cities: usize,
     alive: bool,
     secs: f64,
+    /// ★ WHY THE SEAT LOST, NOT ONLY THAT IT DID. The first 300-pair run's
+    /// census said 66% of native games end by RELIGIOUS conversion at a median
+    /// of turn 149 — the single largest failure mode on the board — and the
+    /// rows could not say one thing about how the losing seat stood in that
+    /// race. These fields are the cheapest possible answer, all end-of-game
+    /// reads, and they turn "lost to religion" into a diagnosis: did it found
+    /// a faith at all, how many of its own cities were flying a foreign one at
+    /// the end, was the faith banked rather than spent, and had it ever
+    /// unlocked the Inquisitor.
+    ///
+    /// `#[serde(default)]` on every one of them, so a file written before they
+    /// existed still analyses.
+    #[serde(default)]
+    founded_religion: bool,
+    /// Our cities whose MAJORITY religion is somebody else's faith.
+    #[serde(default)]
+    foreign_faith_cities: usize,
+    /// Faith still in the bank at the end. A seat losing the conversion race
+    /// with a thousand faith unspent is a spending defect, not a race it could
+    /// not have run.
+    #[serde(default)]
+    faith: f64,
+    /// Whether an Inquisition was ever launched — the gate that has to fall
+    /// before an Inquisitor can be bought at all.
+    #[serde(default)]
+    inquisition: bool,
+    #[serde(default)]
+    techs: usize,
+    #[serde(default)]
+    military: f64,
 }
 
 /// The first line of the JSONL file: the gene order every genome string is
@@ -363,6 +393,16 @@ fn play(
     let total: i64 = scores.values().sum();
     let score = scores.get(&seat).copied().unwrap_or(0);
     let rank = 1 + scores.values().filter(|&&other| other > score).count();
+    let religion = game.players[seat].religion.clone();
+    let foreign_faith_cities = game
+        .player_city_ids(seat)
+        .iter()
+        .filter_map(|cid| game.cities.get(cid))
+        .filter(|city| {
+            game.city_religion(city)
+                .is_some_and(|faith| Some(faith) != religion.as_deref())
+        })
+        .count();
     Row {
         kind: kind.to_string(),
         pair,
@@ -384,6 +424,15 @@ fn play(
         cities: game.player_city_ids(seat).len(),
         alive: game.players[seat].alive,
         secs: started.elapsed().as_secs_f64(),
+        founded_religion: religion.is_some(),
+        foreign_faith_cities,
+        faith: game.players[seat].faith,
+        inquisition: game.players[seat]
+            .counters
+            .get("inquisition")
+            .is_some_and(|launched| *launched > 0),
+        techs: game.players[seat].techs.len(),
+        military: game.military_power(seat),
     }
 }
 
@@ -997,6 +1046,58 @@ fn print_table(header: &Header, rows: &[Row]) {
             100.0 * rate(&off),
             100.0 * share(&off)
         );
+    }
+    {
+        // The religion census: how the treated seat stood in the race that
+        // decides two thirds of these games. Printed only when the rows carry
+        // it, so a file written before the instrumentation still analyses.
+        let played: Vec<&Row> = rows
+            .iter()
+            .filter(|row| row.kind == "game" || row.kind == "anchor")
+            .collect();
+        let instrumented = played
+            .iter()
+            .any(|row| row.founded_religion || row.faith > 0.0 || row.techs > 0);
+        if instrumented && !played.is_empty() {
+            let n = played.len() as f64;
+            let founded = played.iter().filter(|row| row.founded_religion).count();
+            let lost_to_faith: Vec<&&Row> = played
+                .iter()
+                .filter(|row| !row.win && row.victory == "religious")
+                .collect();
+            let mean = |rows: &[&&Row], f: fn(&Row) -> f64| {
+                if rows.is_empty() {
+                    0.0
+                } else {
+                    rows.iter().map(|row| f(row)).sum::<f64>() / rows.len() as f64
+                }
+            };
+            println!(
+                "religion census: founded a faith in {:.0}% of games · inquisition launched in {:.0}% · \
+                 own cities under a foreign faith at the end {:.1} of {:.1} · faith left banked {:.0}",
+                100.0 * founded as f64 / n,
+                100.0 * played.iter().filter(|row| row.inquisition).count() as f64 / n,
+                played.iter().map(|row| row.foreign_faith_cities as f64).sum::<f64>() / n,
+                played.iter().map(|row| row.cities as f64).sum::<f64>() / n,
+                played.iter().map(|row| row.faith).sum::<f64>() / n,
+            );
+            if !lost_to_faith.is_empty() {
+                println!(
+                    "  of the {} games lost to a rival's religion: {:.0}% had founded one of our own, \
+                     {:.1} of {:.1} cities had flipped, {:.0} faith was still banked",
+                    lost_to_faith.len(),
+                    100.0
+                        * lost_to_faith
+                            .iter()
+                            .filter(|row| row.founded_religion)
+                            .count() as f64
+                        / lost_to_faith.len() as f64,
+                    mean(&lost_to_faith, |row| row.foreign_faith_cities as f64),
+                    mean(&lost_to_faith, |row| row.cities as f64),
+                    mean(&lost_to_faith, |row| row.faith),
+                );
+            }
+        }
     }
     if estimates.is_empty() {
         println!("no screened genes with complete pairs");
@@ -1686,6 +1787,12 @@ mod tests {
                     cities: 0,
                     alive: true,
                     secs: 0.0,
+                    founded_religion: false,
+                    foreign_faith_cities: 0,
+                    faith: 0.0,
+                    inquisition: false,
+                    techs: 0,
+                    military: 0.0,
                 });
             }
         }
@@ -1776,6 +1883,12 @@ mod tests {
                         cities: 0,
                         alive: true,
                         secs: 0.0,
+                        founded_religion: false,
+                        foreign_faith_cities: 0,
+                        faith: 0.0,
+                        inquisition: false,
+                        techs: 0,
+                        military: 0.0,
                     });
                 }
                 pair += 1;
@@ -1842,6 +1955,12 @@ mod tests {
             cities: 9,
             alive: true,
             secs: 12.5,
+            founded_religion: true,
+            foreign_faith_cities: 2,
+            faith: 310.5,
+            inquisition: false,
+            techs: 40,
+            military: 820.0,
         };
         let text = serde_json::to_string(&row).unwrap();
         let back: Row = serde_json::from_str(&text).unwrap();
