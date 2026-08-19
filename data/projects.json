@@ -96,6 +96,15 @@
       "completion_loyalty": 20
     }
   },
+  "send_aid": {
+    "cost": 200,
+    "host_competitions": [
+      "EMERGENCY_SEND_AID",
+      "EMERGENCY_SEND_MILITARY_AID"
+    ],
+    "competition_score": 200,
+    "repeatable": true
+  },
   "train_athletes": {
     "cost": 200,
     "host_competition": "EMERGENCY_WORLD_GAMES",
