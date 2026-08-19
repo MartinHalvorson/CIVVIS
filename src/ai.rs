@@ -1871,13 +1871,44 @@ struct EnemyEnvelope {
     reach: std::sync::Arc<BTreeSet<Pos>>,
 }
 
+/// One unit, in exactly the terms an envelope can notice.
+#[derive(PartialEq, Eq)]
+struct EnvelopeUnit {
+    pos: Pos,
+    kind: u32,
+    owner: usize,
+    formation: u8,
+    zoc_stopped: bool,
+    patrol: Option<Pos>,
+}
+
 /// The board the per-enemy envelopes were last measured against.
 struct EnvelopeBoard {
-    /// Map epoch, war count and the city fingerprint. Any of these moving is
-    /// treated as "everything changed": they are rare and global.
-    stamp: (u64, usize, u64),
-    /// Every unit's place, spec and owner — what `in_enemy_zoc_for` reads.
-    units: HashMap<u32, (Pos, u32, usize)>,
+    /// Map epoch, the belligerence fingerprint and the city fingerprint. Any
+    /// of these moving is treated as "everything changed": they are rare and
+    /// global.
+    stamp: (u64, u64, u64),
+    /// Every field of a unit that the board key hashes, plus the tile it is
+    /// flying a patrol over.
+    ///
+    /// ★★★★★ THE DELTA MUST NOT BE WEAKER THAN THE KEY IT STANDS IN FOR.
+    /// `attack_envelope_fingerprint` decides whether *any* envelope may be
+    /// reused and hashes place, owner, kind, formation and `zoc_stopped`; this
+    /// decides which *individual* envelopes may be, and shipped tracking only
+    /// place, kind and owner. A unit forming a corps without moving therefore
+    /// produced an **empty** delta and every envelope was reused across it.
+    /// The two are now the same field set by construction, which
+    /// `the_delta_tracks_every_field_the_board_key_hashes` holds them to.
+    ///
+    /// ⚠ The patrol is the one field the board key does *not* hash, and it
+    /// belongs here because `can_enter_past` refuses a step onto a
+    /// tile a hostile fighter is patrolling, and it finds that fighter by
+    /// scanning **every unit in the world** — so the blocker can sit
+    /// arbitrarily far from the tile it blocks, and starting or moving a
+    /// patrol changes an envelope without the unit moving at all. Tracking
+    /// only place, spec and owner let that change produce an *empty* delta, so
+    /// every envelope was reused across it.
+    units: HashMap<u32, EnvelopeUnit>,
 }
 
 #[derive(Clone)]
@@ -4861,11 +4892,24 @@ impl BasicAi {
             .envelope_board
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let cities = Self::envelope_city_fingerprint(g);
-        let stamp = (g.map.tiles.epoch(), g.wars.len(), cities);
-        let mut current: HashMap<u32, (Pos, u32, usize)> = HashMap::with_capacity(g.units.len());
+        let stamp = (
+            g.map.tiles.epoch(),
+            Self::envelope_belligerence_fingerprint(g),
+            Self::envelope_city_fingerprint(g),
+        );
+        let mut current: HashMap<u32, EnvelopeUnit> = HashMap::with_capacity(g.units.len());
         for unit in g.units.values() {
-            current.insert(unit.id, (unit.pos, unit.kind.id(), unit.owner));
+            current.insert(
+                unit.id,
+                EnvelopeUnit {
+                    pos: unit.pos,
+                    kind: unit.kind.id(),
+                    owner: unit.owner,
+                    formation: unit.formation,
+                    zoc_stopped: unit.zoc_stopped,
+                    patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
+                },
+            );
         }
         let delta = match previous.as_ref() {
             Some(prior) if prior.stamp == stamp => {
@@ -4874,15 +4918,21 @@ impl BasicAi {
                     match prior.units.get(id) {
                         Some(before) if before == now => {}
                         Some(before) => {
-                            touched.push(before.0);
-                            touched.push(now.0);
+                            touched.push(before.pos);
+                            touched.push(now.pos);
+                            touched.extend(before.patrol);
+                            touched.extend(now.patrol);
                         }
-                        None => touched.push(now.0),
+                        None => {
+                            touched.push(now.pos);
+                            touched.extend(now.patrol);
+                        }
                     }
                 }
                 for (id, before) in &prior.units {
                     if !current.contains_key(id) {
-                        touched.push(before.0);
+                        touched.push(before.pos);
+                        touched.extend(before.patrol);
                     }
                 }
                 Some(touched)
@@ -4894,6 +4944,47 @@ impl BasicAi {
             units: current,
         });
         delta
+    }
+
+    /// Who is at war with whom, as `attack_reach` sees it.
+    ///
+    /// ★★★★★ `wars.len()` WAS NOT ENOUGH AND THE HOLE IS NOT ACADEMIC.
+    /// `flow_past` reaches other units only through `in_enemy_zoc_for`, which
+    /// asks `is_at_war` — and `is_at_war` consults `at_war` *and*, for a
+    /// city-state, `suzerain_of`, which is derived from every major's envoys.
+    /// An envoy changes hands with no unit moving, no city changing and no
+    /// entry added to `wars`, and it can flip a whole city-state's belligerence
+    /// and therefore its zone of control.
+    ///
+    /// ⚠ Found by `tools/speed_ab.py` refusing a tighter invalidation set:
+    /// with a generous radius this was masked, because almost any nearby unit
+    /// moving invalidated anyway. `advanced_v1_plays_the_same_game_it_always_did`
+    /// passed throughout — the anchor's five profiles do not move an envoy in
+    /// a way that matters.
+    fn envelope_belligerence_fingerprint(g: &Game) -> u64 {
+        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const PRIME: u64 = 0x0000_0100_0000_01b3;
+        let mut hash = OFFSET;
+        let mut mix = |value: u64| {
+            for byte in value.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(PRIME);
+            }
+        };
+        mix(g.wars.len() as u64);
+        for (left, right) in &g.at_war {
+            mix(*left as u64);
+            mix(*right as u64);
+        }
+        for player in g.players.iter() {
+            if player.is_minor && !player.is_barbarian {
+                mix(player.id as u64);
+                mix(g
+                    .suzerain_of(player.id)
+                    .map_or(u64::MAX, |seat| seat as u64));
+            }
+        }
+        hash
     }
 
     /// The cities as `attack_reach` sees them: identity, owner and place.
@@ -23496,6 +23587,61 @@ mod attack_envelope_key_tests {
         assert!(checked > 100, "only {checked} tiles were checked");
     }
 
+    /// The delta notices every unit field the board key hashes.
+    ///
+    /// ★★★★★ THE TWO ARE ONE INVARIANT AND THEY DRIFTED. The board key decides
+    /// whether *any* envelope may be reused; the delta decides which
+    /// *individual* ones may be. The delta shipped tracking three of the five
+    /// unit fields the key hashes, so a unit forming a corps or being stopped
+    /// by zone of control without moving produced an empty delta and every
+    /// envelope was reused across it.
+    ///
+    /// ⚠ This compares behaviour, not source: it mutates one field at a time
+    /// and asks whether each notices. A field added to the key and forgotten
+    /// here fails, which is the drift that happened.
+    #[test]
+    fn the_delta_tracks_every_field_the_board_key_hashes() {
+        let base = Game::new_full(2, 24, 16, 7_007, 300, 0, false);
+        let uid = base.player_unit_ids(0).into_iter().next().unwrap();
+        type Edit = (&'static str, fn(&mut crate::game::Unit));
+        let edits: Vec<Edit> = vec![
+            ("formation", |u| u.formation = u.formation.wrapping_add(1)),
+            ("zoc_stopped", |u| u.zoc_stopped = !u.zoc_stopped),
+            ("owner", |u| u.owner = 1),
+            ("kind", |u| u.kind = crate::name!("swordsman")),
+            ("air_patrol_pos", |u| {
+                u.air_patrol = true;
+                u.air_patrol_pos = Some((0, 0));
+            }),
+        ];
+        for (field, edit) in edits {
+            let ai = BasicAi::new();
+            let mut game = base.clone();
+            assert!(
+                ai.envelope_board_delta(&game).is_none(),
+                "{field}: first ask"
+            );
+            assert_eq!(
+                ai.envelope_board_delta(&game),
+                Some(Vec::new()),
+                "{field}: an unchanged board"
+            );
+            let key_before = BasicAi::attack_envelope_fingerprint(&game, None);
+            edit(game.units.get_mut(&uid).unwrap());
+            let key_after = BasicAi::attack_envelope_fingerprint(&game, None);
+            let delta = ai.envelope_board_delta(&game);
+            let noticed = delta.as_ref().is_none_or(|touched| !touched.is_empty());
+            if key_before != key_after {
+                assert!(
+                    noticed,
+                    "the board key hashes {field} and the delta reported nothing, \
+                     so every envelope would be reused across a change the key \
+                     itself calls significant"
+                );
+            }
+        }
+    }
+
     /// The board delta names every tile a change touched, and gives up
     /// entirely on the changes it does not track.
     ///
@@ -23553,6 +23699,27 @@ mod attack_envelope_key_tests {
         assert!(
             died.contains(&from),
             "a removed unit's last tile must be reported"
+        );
+
+        // A patrol is the one thing an envelope notices that the *board key*
+        // does not hash, so `the_delta_tracks_every_field_the_board_key_hashes`
+        // cannot reach it. `can_enter_past` refuses a step onto a tile a
+        // hostile fighter is patrolling and finds that fighter by scanning
+        // every unit in the world, so starting one changes envelopes without
+        // the unit moving at all.
+        let patrolled = game.nbrs(from).into_iter().next().unwrap();
+        {
+            let flier = game.units.get_mut(&uid).unwrap();
+            flier.air_patrol = true;
+            flier.air_patrol_pos = Some(patrolled);
+        }
+        let flying = ai
+            .envelope_board_delta(&game)
+            .expect("starting a patrol is not wholesale");
+        assert!(
+            flying.contains(&patrolled),
+            "the tile a fighter began patrolling must be reported: a step onto it \
+             is now refused, and the fighter itself may be nowhere near it"
         );
 
         // The global changes the delta does not track individually. (The war
