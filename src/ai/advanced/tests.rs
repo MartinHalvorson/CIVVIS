@@ -27202,3 +27202,76 @@ fn every_great_person_class_is_recruitable_to_the_information_era() {
         );
     }
 }
+
+#[test]
+fn a_founding_is_priced_on_the_ground_the_settler_stood_on() {
+    // "the site is worth N" is the INPUT to the settling decision, not a
+    // reading of the city it became. `settle_value` scores the work radius,
+    // and founding rewrites that radius — the growth forecast behind
+    // `growth_readiness` then runs over a worked city centre.
+    //
+    // Priced after the apply, the number inverts: on live Chieftain run
+    // `civvis-20260819T041034Z` the two sites logged most negative (-3.1,
+    // -1.4) became Ravenna and Aquileia, the seat's best non-capital cities
+    // at 14.2 and 13.1 science, while the single site that logged positive
+    // (+2.2) became Lugdunum at 2.25. A study reading that log concludes the
+    // seat settles bad ground — the opposite of what it did.
+    let mut game = Game::new(2, 24, 16, 7, 80, 0);
+    for unit in game
+        .player_unit_ids(0)
+        .into_iter()
+        .chain(game.player_unit_ids(1))
+    {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    let mut candidates: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    candidates.sort_unstable();
+    let start = candidates[0];
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let site = candidates
+        .into_iter()
+        .find(|p| {
+            game.units.get_mut(&settler).unwrap().pos = *p;
+            game.can_found_city(settler)
+        })
+        .expect("the fixture map offers foundable ground");
+    game.units.get_mut(&settler).unwrap().pos = site;
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let before = live.settle_value(&game, 0, site);
+    let journal = crate::reasoning::Journal::recording();
+    live.attach_journal(journal.handle());
+    assert!(
+        live.advanced_settler_step(&mut game, 0, settler),
+        "the settler acts on ground it can found on"
+    );
+    assert!(
+        game.cities.values().any(|c| c.owner == 0 && c.pos == site),
+        "and the city exists"
+    );
+    let after = live.settle_value(&game, 0, site);
+    // Without this the test proves nothing: if founding did not move the
+    // number, both orderings would log the same value.
+    assert_ne!(
+        format!("{before:.1}"),
+        format!("{after:.1}"),
+        "founding must change what settle_value reads, or this fixture \
+         cannot tell the two orderings apart"
+    );
+    let said: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|t| format!("{} | {}", t.headline, t.detail))
+        .collect();
+    let line = said
+        .iter()
+        .find(|line| line.contains("the site is worth"))
+        .unwrap_or_else(|| panic!("the founding is journalled; journal {said:#?}"));
+    assert!(
+        line.contains(&format!("the site is worth {before:.1}")),
+        "the journal prices the ground the settler stood on ({before:.1}), \
+         not the city it became ({after:.1}); got {line}"
+    );
+}

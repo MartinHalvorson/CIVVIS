@@ -8899,6 +8899,49 @@ local function applyOrder(player, pid, row, turn)
 		return true, concession, "submitted";
 	end
 
+	-- Send the exact Gold amount a final-turn Aid Request needs through the
+	-- ordinary deal surface.  Expansion2's emergency manager listens to normal
+	-- deal Gold items for `EMERGENCY_SEND_AID` and
+	-- `EMERGENCY_SEND_MILITARY_AID`; this is intentionally a one-way gift, not
+	-- an EQUALIZE ask or a deal-screen session.  A partial gift is worse than no
+	-- gift here: Rust asked for the smallest amount that takes first place, so
+	-- if the host's current treasury or item limit cannot meet it we submit
+	-- nothing and leave the competition score unchanged.
+	local function submitAidGift(subject, asked)
+		if DealManager.HasPendingDeal(pid, subject) then
+			return false, 0, "pending";
+		end
+		local amount = math.max(0, math.floor(asked or 0));
+		if amount <= 0 then return false, 0, "no_amount"; end
+		local balance = try(function()
+			return player:GetTreasury():GetGoldBalance();
+		end, 0) or 0;
+		if balance < amount then return false, 0, "unaffordable"; end
+		DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		if deal == nil then return false, 0, "no_working_deal"; end
+		local gift = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+		if gift == nil then return false, 0, "no_gold_item"; end
+		gift:SetDuration(0);
+		local maximum = tonumber(try(function() return gift:GetMaxAmount(); end, 0)) or 0;
+		if maximum < amount then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_limit";
+		end
+		gift:SetAmount(amount);
+		if not try(function() return gift:IsValid(); end, false) then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_invalid";
+		end
+		deal:Validate();
+		if not deal:IsValid() then return false, 0, "invalid_deal"; end
+		-- The same direct normal-offer call as Firaxis's deal UI and the peace
+		-- submitter above.  The recipient's acceptance and the score change are
+		-- observed in later host exports; this return value says only submitted.
+		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		return true, amount, "submitted";
+	end
+
 	-- A city that is already taking fire cannot wait for the strategic planner to
 	-- notice the same fact on its next board. Return only engine-visible enemies;
 	-- the damage read is the fallback for the turn an attack has already landed.
@@ -9397,6 +9440,61 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
+	-- Requests: a completed `PROJECT_SEND_AID` gives 200, and every Gold gift
+	-- to the emergency target gives one. The Rust side sends this arm only when
+	-- the latter is the exact bounded amount that would take the lead before
+	-- the event closes. We still prove every diplomacy precondition against the
+	-- host: a stale mirrored target, a war, a city-state, or another working
+	-- trade may never become an unguarded deal.
+	--
+	-- Unlike `sell` and `buy`, this must use `PROPOSED`, not `EQUALIZE`: there
+	-- is no price to negotiate and a foreign counter-offer would not be the
+	-- specific one-way gift the emergency listener scores. `aid_gift_request`
+	-- records a submission, never an imagined acceptance or victory point.
+	if kind == "aid_gift" then
+		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID" then
+			return false, "aid_gift_unknown_emergency";
+		end
+		if subject < 0 or subject == pid then return false, "aid_gift_target_unmapped"; end
+		local amount = math.max(0, math.floor(x or 0));
+		if amount <= 0 then return false, "aid_gift_no_amount"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "aid_gift_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "aid_gift_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "aid_gift_not_major";
+		end
+		local trade = CivvisTrade;
+		if trade.pending[subject] ~= nil then
+			return false, "aid_gift_trade_pending";
+		end
+		local key = "aid_gift:" .. verb .. ":" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.AidGiftRetryTurns or 2) then
+			return false, "aid_gift_cooldown";
+		end
+		local ran, submitted, paid, reason = pcall(submitAidGift, subject, amount);
+		if not ran then
+			submitted, paid, reason = false, 0, "throw";
+		end
+		-- A pending normal offer is already in the host. Keep it from being
+		-- rebuilt on the next frame; a declined one can retry while the small
+		-- finish window still exists.
+		if submitted or reason == "pending" then peaceAsked[key] = turn; end
+		emit("aid_gift_request", {
+			turn = turn, target = subject, emergency = verb, amount = amount,
+			paid = paid, submitted = submitted and true or false,
+			reason = reason, threw = reason == "throw",
+		});
+		return submitted, submitted and "aid_gift_submitted" or reason;
 	end
 
 	-- ★★★★★ SURPLUS SOLD FOR GOLD, AT THE RIVAL'S OWN PRICE. `verb` is what
@@ -14038,6 +14136,147 @@ local function onPlayerDefeat(player, defeat, eventID)
 	});
 end
 
+-- ★★★★★ JOIN A SCORABLE WORLD CRISIS BEFORE TRYING TO WIN IT.
+--
+-- The bridge already knows how to take an Aid Request's first-place score and
+-- Climate Accords' power-plant decommission score. Both paths require
+-- membership, while the prior controller merely let the World Crisis prompt
+-- wait for a person. Firaxis's own WorldCrisisPopup handles
+-- `Events.EmergencyAvailable` by issuing this exact ACCEPT_EMERGENCY operation
+-- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE. Take that same operation,
+-- but only for competitions with a priced path in the bridge. Other emergencies
+-- can create wars or commit production that this event has not priced, so they
+-- remain untouched.
+--
+-- This is a bare global for the offline regression and because the main chunk
+-- is at its local-register ceiling. `peaceAsked` is the existing turn-scoped
+-- submission ledger; a string key prevents a synchronous repeat of this event
+-- from submitting a second accept before the host updates MemberIDs.
+CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
+	if finished or cfg.Play == false then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local target = tonumber(targetPlayerID);
+	local emergency = tonumber(emergencyType);
+	local definition = emergency ~= nil and try(function()
+		return GameInfo.EmergencyAlliances[emergency];
+	end, nil) or nil;
+	local kind = definition and tostring(definition.EmergencyType or "") or "";
+	local aid = kind == "EMERGENCY_SEND_AID" or kind == "EMERGENCY_SEND_MILITARY_AID";
+	local climate = kind == "EMERGENCY_CLIMATE_ACCORDS";
+	if not climate and cfg.AutoJoinAidRequests == false then return; end
+	if climate and cfg.AutoJoinClimateAccords == false then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local function report(reason, submitted)
+		emit(climate and "climate_accords_join" or "aid_emergency_join", {
+			turn = turn, target = target or -1,
+			emergency = kind ~= "" and kind or tostring(emergencyType or ""),
+			submitted = submitted and true or false, reason = reason,
+		});
+	end
+	if pid == nil or pid < 0 or target == nil or emergency == nil then
+		report("invalid_event", false);
+		return;
+	end
+	if not aid and not climate then
+		report("not_aid_request", false);
+		return;
+	end
+	if climate then
+		-- Climate Accords has NoTarget=true. The shipped popup sends -1 through
+		-- PARAM_OTHER_PLAYER; a real player ID would be a mismatched event.
+		if target ~= -1 then
+			report("unexpected_target", false);
+			return;
+		end
+	else
+		if target < 0 then
+			report("invalid_event", false);
+			return;
+		end
+		if target == pid then
+			report("target_is_local", false);
+			return;
+		end
+	end
+
+	-- Match the shipped popup's tracker lookup before issuing anything. An old
+	-- availability notification is not authority to join a different emergency.
+	local crises = try(function()
+		return Game.GetEmergencyManager():GetEmergencyInfoTable(pid);
+	end, nil);
+	local live = nil;
+	if type(crises) == "table" then
+		for _, crisis in ipairs(crises) do
+			if crisis.EmergencyType == emergency and tonumber(crisis.TargetID) == target then
+				live = crisis;
+				break;
+			end
+		end
+	end
+	if live == nil then
+		report("missing_emergency", false);
+		return;
+	end
+	if live.HasBegun == true then
+		report("already_begun", false);
+		return;
+	end
+	for _, member in ipairs(live.MemberIDs or {}) do
+		if tonumber(member) == pid then
+			report("already_member", false);
+			return;
+		end
+	end
+
+	if aid then
+		-- Firaxis gives both Aid Request types an empty member-requirement set: the
+		-- project route can score even when we have not met the recipient, or when
+		-- it is not a major civilization. Do not accidentally impose the direct-Gold
+		-- deal's stricter contact/major gates here. War is different: the shipped
+		-- score sources deduct 30 (ordinary Aid) or 200 (military Aid) while at war,
+		-- so decline that actively losing membership.
+		local player = try(function() return Players[pid]; end, nil);
+		local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil);
+		if diplomacy == nil then
+			report("no_diplomacy", false);
+			return;
+		end
+		if try(function() return diplomacy:IsAtWarWith(target); end, false) then
+			report("at_war", false);
+			return;
+		end
+	end
+
+	local otherParam = try(function() return PlayerOperations.PARAM_OTHER_PLAYER; end);
+	local typeParam = try(function() return PlayerOperations.PARAM_EMERGENCY_TYPE; end);
+	local accept = try(function() return PlayerOperations.ACCEPT_EMERGENCY; end);
+	if otherParam == nil or typeParam == nil or accept == nil then
+		report("api_unavailable", false);
+		return;
+	end
+	local key = climate and ("climate_join:" .. kind)
+		or ("aid_join:" .. kind .. ":" .. target);
+	if turn >= 0 and peaceAsked[key] == turn then
+		report("duplicate", false);
+		return;
+	end
+	local parameters = {};
+	parameters[otherParam] = target;
+	parameters[typeParam] = emergency;
+	-- Set the one-turn guard before the engine call: RequestPlayerOperation can
+	-- publish synchronously. A Lua exception clears it so a later valid event
+	-- can still retry; a normal return is only a submitted operation, not a
+	-- claimed membership or score change.
+	if turn >= 0 then peaceAsked[key] = turn; end
+	local submitted = pcall(function()
+		UI.RequestPlayerOperation(pid, accept, parameters);
+	end);
+	if not submitted and turn >= 0 and peaceAsked[key] == turn then
+		peaceAsked[key] = nil;
+	end
+	report(submitted and "submitted" or "throw", submitted);
+end;
+
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
 	for name, handler in pairs({
@@ -14051,6 +14290,7 @@ function Initialize()
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,

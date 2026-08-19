@@ -1433,16 +1433,31 @@ const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
 const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
 
-/// Whether the plan in force means to cast its favor: a Diplomacy strategy or
-/// an assigned diplomatic lane. `plan` is the plan report's
-/// `(strategy, victory_target)`; no plan at all holds too.
+/// Whether the plan in force can still spend its favor. Only a seat with no
+/// plan report holds now; every plan sells its surplus above `FAVOR_RESERVE`.
+///
+/// ⚠ A Diplomacy strategy or an assigned diplomatic lane used to hold every
+/// point, on the reading that each one is a vote CIVVIS means to cast. **It
+/// cannot cast them.** The first vote on a resolution is free — the cost
+/// ladder a ballot reports starts `{index 0, cost 0}`, then 4, 12, 24 — so
+/// favor buys only EXTRA votes, and the host has never honoured
+/// `PARAM_WORLD_CONGRESS_VOTES > 1` through the mod's path. The comment above
+/// `FAVOR_RESERVE` already recorded that the ballot's favor spend never
+/// registers; this is the policy catching up with it.
+///
+/// Measured on run `civvis-20260819T054901Z`, a full Chieftain game to t222:
+/// the plan read `victory=Some("diplomatic")` on 119 turns, so nothing sold;
+/// **0 of 7** purchased-vote ballots registered; and the seat ended holding
+/// **566 favor** with 3 diplomatic victory points against Germany's 20, losing
+/// to that rival's diplomatic victory. Every one of those points was banked
+/// for a purchase that cannot happen.
+///
+/// `FAVOR_RESERVE` still stands for the emergency ballot, so this frees the
+/// surplus rather than the bank. If the multi-vote purchase is ever fixed in
+/// the game core, revisit this: the holding was correct reasoning about a
+/// mechanism that does not work, not a mistake about what favor is for.
 fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
-    match plan {
-        None => true,
-        Some((strategy, victory_target)) => {
-            strategy == "diplomacy" || victory_target == Some("diplomatic")
-        }
-    }
+    plan.is_none()
 }
 
 /// Drop the planner's own favor sales when the plan means to cast that favor.
@@ -1471,11 +1486,10 @@ fn append_favor_sale_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
+    // `plan_keeps_favor` now answers only this, so the diplomacy branch that
+    // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
-    }
-    if plan_keeps_favor(plan) {
-        return Some("favor_hold:diplomacy_plan");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
@@ -1645,6 +1659,131 @@ fn append_work_sale_order(
         verb: Some(format!("{}=1", work.kind)),
         pos: Some((WORK_SALE_FLOOR, 0)),
     });
+    None
+}
+
+// ★★★★★ AN AID LEAD THAT CANNOT WAIT FOR PRODUCTION.  Firaxis's
+// `EMERGENCY_SEND_AID` and `EMERGENCY_SEND_MILITARY_AID` score sources award
+// one point for each Gold gift to the emergency target; first place pays two
+// Diplomatic Victory points.  `PROJECT_SEND_AID` contributes 200 of those
+// points at completion. When no currently queued project can finish before the
+// final production window closes, a normal one-way Gold deal can close an
+// already-visible gap immediately, provided the target accepts it.
+//
+// This is deliberately a finish-line fallback, not a treasury-to-score
+// conversion.  It acts only in the final three host turns, keeps 100 Gold for
+// ordinary emergency purchases, and will never spend more score than the
+// official project gives.  The current tracker—not a guessed opponent total—
+// sets the exact amount required to move strictly ahead.
+const AID_GIFT_FINISH_WINDOW: i64 = 3;
+const AID_GIFT_GOLD_RESERVE: i64 = 100;
+const AID_GIFT_SCORE_MAX: i64 = 200;
+
+fn aid_request_kind(kind: &str) -> bool {
+    matches!(
+        kind.trim(),
+        "EMERGENCY_SEND_AID" | "EMERGENCY_SEND_MILITARY_AID"
+    )
+}
+
+/// The smallest integral gift that puts our tracker score strictly above every
+/// finite score Firaxis currently reports.  `None` says the host has not given
+/// an authoritative enough board, or the gap exceeds the bounded fallback.
+fn aid_gift_needed_score(emergency: &civvis::mirror::StateEmergency) -> Option<i64> {
+    let ours = emergency.ours.score.filter(|score| score.is_finite())?;
+    let leader = emergency
+        .scores
+        .iter()
+        .map(|entry| entry.score)
+        .filter(|score| score.is_finite())
+        .fold(ours, f64::max);
+    let needed = (leader - ours).floor() + 1.0;
+    if !needed.is_finite() || needed < 1.0 || needed > AID_GIFT_SCORE_MAX as f64 {
+        return None;
+    }
+    Some(needed as i64)
+}
+
+/// A host-reported Send Aid project already reaches the current emergency's
+/// deadline.  The production estimate is authoritative only when finite and
+/// non-negative; an omitted or unknown estimate must not suppress a finish-line
+/// gift on a guess.  Both humanitarian emergency kinds use `PROJECT_SEND_AID`.
+fn aid_project_finishes_by_deadline(
+    state: &civvis::mirror::StateSnapshot,
+    emergency: &civvis::mirror::StateEmergency,
+) -> bool {
+    let deadline = emergency.turns_left as f64;
+    state.cities.iter().any(|city| {
+        city.producing.as_deref() == Some("PROJECT_SEND_AID")
+            && city.production_turns.is_finite()
+            && city.production_turns >= 0.0
+            && city.production_turns <= deadline + f64::EPSILON
+    })
+}
+
+/// Append the direct Gold fallback for an Aid Request that can be won before
+/// it closes.  The target must be a currently exported peaceful major: that
+/// means the Lua side has a met player id it can validate rather than a guessed
+/// emergency recipient.  Existing sales and border purchases to that target
+/// yield to a point-winning gift; a war, peace, or delegation order does not,
+/// because it changes the diplomatic state the gift relies upon.
+fn append_aid_gift_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let Some(emergencies) = state.emergencies.as_ref() else {
+        return Some("aid_gift_hold:no_tracker");
+    };
+    let spendable = state.gold.saturating_sub(AID_GIFT_GOLD_RESERVE);
+    let candidate = emergencies
+        .iter()
+        .filter(|emergency| {
+            aid_request_kind(&emergency.kind)
+                && emergency.begun
+                && emergency.turns_left >= 0
+                && emergency.turns_left <= AID_GIFT_FINISH_WINDOW
+                && emergency.ours.member
+                && emergency.target >= 0
+                && !aid_project_finishes_by_deadline(state, emergency)
+        })
+        .filter_map(|emergency| {
+            let amount = aid_gift_needed_score(emergency)?;
+            if amount > spendable {
+                return None;
+            }
+            let target_is_peaceful_met_major = state
+                .rivals
+                .iter()
+                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war);
+            target_is_peaceful_met_major.then_some((emergency, amount))
+        })
+        // If rare overlapping Aid Requests are both finishable, bank the
+        // earliest deadline; the lower exact spend is the deterministic tie
+        // breaker, then the actual host recipient id.
+        .min_by_key(|(emergency, amount)| (emergency.turns_left, *amount, emergency.target));
+    let Some((emergency, amount)) = candidate else {
+        return Some("aid_gift_hold:no_finishable_lead");
+    };
+    let target = emergency.target;
+    if orders.iter().any(|order| {
+        order.subject == Some(target) && matches!(order.kind, "war" | "peace" | "delegation")
+    }) {
+        return Some("aid_gift_hold:diplomacy_conflict");
+    }
+    // A one-working-deal-per-rival host cannot carry an ordinary trade and the
+    // finish-line gift together.  The gift is already affordable and converts
+    // directly into a two-DVP first-place attempt, so it has priority over an
+    // unrelated sale or passage purchase to the same recipient this frame.
+    orders.retain(|order| !(order.subject == Some(target) && matches!(order.kind, "sell" | "buy")));
+    orders.insert(
+        0,
+        Order {
+            kind: "aid_gift",
+            subject: Some(target),
+            verb: Some(emergency.kind.trim().to_string()),
+            pos: Some((amount as i32, 0)),
+        },
+    );
     None
 }
 
@@ -2999,6 +3138,17 @@ fn decide(
         }
     } else {
         note_bits.push("plan=none".to_string());
+    }
+
+    match append_aid_gift_order(state, &mut orders) {
+        None => note_bits.push("aid_gift=1".to_string()),
+        // This is the one active hold worth keeping beside the decision: an
+        // emergency was finishable, but another order in this exact batch
+        // changes the target's diplomatic state first.
+        Some("aid_gift_hold:diplomacy_conflict") => {
+            note_bits.push("aid_gift_hold:diplomacy_conflict".to_string());
+        }
+        Some(_) => {}
     }
 
     let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state);
@@ -5257,9 +5407,9 @@ mod tests {
 
     use super::*;
     use civvis::mirror::{
-        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGovernor,
-        StateGreatPerson, StateGreatWork, StateMinor, StateRival, StateSnapshot, StateTradeRoute,
-        StateUnit, TilesChunk,
+        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateEmergency,
+        StateEmergencyOurs, StateEmergencyScore, StateGovernor, StateGreatPerson, StateGreatWork,
+        StateMinor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
     #[test]
@@ -8169,7 +8319,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_favor_sells_on_every_plan_but_diplomacy() {
+    fn idle_favor_sells_on_every_plan_that_reports_one() {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
         // twenty-point win, one at war with us.
@@ -8213,17 +8363,26 @@ mod tests {
         assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=150"));
         assert_eq!(orders[0].pos, Some((150, 0)));
 
-        // A Diplomacy plan holds every point, whether the strategy or the
-        // assigned lane says so.
+        // A Diplomacy plan sells its surplus too: the favor it was holding
+        // buys only EXTRA votes, and those never register. Run
+        // civvis-20260819T054901Z banked 566 points to t222 and cast none of
+        // them, losing to the rival diplomatic victory it was saving for.
+        for diplomatic in [
+            Some(("diplomacy", None)),
+            Some(("expansion", Some("diplomatic"))),
+        ] {
+            let mut sold = Vec::new();
+            assert_eq!(
+                append_favor_sale_order(diplomatic, &state, &mut sold),
+                None,
+                "the diplomatic lane no longer banks what it cannot cast"
+            );
+            assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
+            assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
+        }
+
+        // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
-        assert_eq!(
-            append_favor_sale_order(Some(("diplomacy", None)), &state, &mut held),
-            Some("favor_hold:diplomacy_plan")
-        );
-        assert_eq!(
-            append_favor_sale_order(Some(("expansion", Some("diplomatic"))), &state, &mut held),
-            Some("favor_hold:diplomacy_plan")
-        );
         assert_eq!(
             append_favor_sale_order(None, &state, &mut held),
             Some("favor_hold:no_plan")
@@ -8283,13 +8442,18 @@ mod tests {
         ];
         assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
         assert_eq!(planner.len(), 2);
+        // The diplomacy plan lets the planner's own quote stand now: those ten
+        // points were held as "two votes at the next session", and the next
+        // session cannot take them.
         assert_eq!(
             hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
-            1
+            0
         );
+        assert_eq!(planner.len(), 2);
+        // A seat with no plan report still holds: unknown intent is not licence.
+        assert_eq!(hold_planner_favor_sales(None, &mut planner), 1);
         assert_eq!(planner.len(), 1);
         assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
-        assert_eq!(hold_planner_favor_sales(None, &mut planner), 0);
 
         // Nobody eligible: every met rival at war or already near the win.
         let mut nobody = state.clone();
@@ -8454,6 +8618,179 @@ mod tests {
         assert_eq!(append_work_sale_order(&lone, &mut only), None);
         assert_eq!(only[0].subject, Some(2));
         assert!(held.is_empty());
+    }
+
+    #[test]
+    fn final_aid_request_gold_gift_takes_an_affordable_first_place_without_raiding_the_bank() {
+        let aid = StateEmergency {
+            kind: "EMERGENCY_SEND_AID".to_string(),
+            target: 4,
+            turns_left: AID_GIFT_FINISH_WINDOW,
+            begun: true,
+            scores: vec![StateEmergencyScore {
+                player: 2,
+                score: 200.0,
+                tier: Some(1),
+            }],
+            ours: StateEmergencyOurs {
+                member: true,
+                score: Some(50.0),
+                tier: Some(2),
+            },
+        };
+        let state = StateSnapshot {
+            // 251 - the 100 reserve is exactly the 151 score needed to pass
+            // the 200-point leader from our 50.
+            gold: 251,
+            emergencies: Some(vec![aid]),
+            rivals: vec![StateRival {
+                player: 4,
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        // An ordinary deal for the emergency target would consume the sole
+        // working-deal slot. The DVP attempt gets it instead; a different
+        // rival's passage request stays intact.
+        let mut orders = vec![
+            Order {
+                kind: "sell",
+                subject: Some(4),
+                verb: Some("RESOURCE_DYES=1".to_string()),
+                pos: Some((30, 0)),
+            },
+            Order {
+                kind: "buy",
+                subject: Some(8),
+                verb: Some("OPEN_BORDERS".to_string()),
+                pos: Some((90, 0)),
+            },
+        ];
+        assert_eq!(append_aid_gift_order(&state, &mut orders), None);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].kind, "aid_gift", "the gift goes first");
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(orders[0].verb.as_deref(), Some("EMERGENCY_SEND_AID"));
+        assert_eq!(orders[0].pos, Some((151, 0)), "one point past first");
+        assert_eq!(orders[1].subject, Some(8), "other rivals keep their deal");
+    }
+
+    #[test]
+    fn aid_gifts_require_a_live_authoritative_finish_line_and_safe_recipient() {
+        let emergency = || StateEmergency {
+            kind: "EMERGENCY_SEND_MILITARY_AID".to_string(),
+            target: 4,
+            turns_left: 2,
+            begun: true,
+            scores: vec![StateEmergencyScore {
+                player: 2,
+                score: 100.0,
+                tier: Some(1),
+            }],
+            ours: StateEmergencyOurs {
+                member: true,
+                score: Some(50.0),
+                tier: Some(2),
+            },
+        };
+        let state = StateSnapshot {
+            gold: 300,
+            emergencies: Some(vec![emergency()]),
+            rivals: vec![StateRival {
+                player: 4,
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut orders = Vec::new();
+        assert_eq!(append_aid_gift_order(&state, &mut orders), None);
+        assert_eq!(orders[0].pos, Some((51, 0)));
+
+        // A real host queue already delivering the same 200-point project by
+        // the deadline is worth more than a redundant treasury spend. Unknown
+        // or late estimates do not suppress the finish-line fallback.
+        let mut queued = state.clone();
+        queued.cities = vec![StateCity {
+            producing: Some("PROJECT_SEND_AID".to_string()),
+            production_turns: 2.0,
+            ..StateCity::default()
+        }];
+        let mut no_order = Vec::new();
+        assert_eq!(
+            append_aid_gift_order(&queued, &mut no_order),
+            Some("aid_gift_hold:no_finishable_lead")
+        );
+        assert!(no_order.is_empty());
+        queued.cities[0].production_turns = 3.0;
+        assert_eq!(append_aid_gift_order(&queued, &mut no_order), None);
+        assert_eq!(
+            no_order[0].kind, "aid_gift",
+            "a project that misses the deadline cannot suppress a gift"
+        );
+
+        // The tracker is the authorization. A same-shaped World Games score,
+        // a pre-begin event, a non-member, an old/finished event, or an event
+        // with more than the official 200-project gap can never spend gold.
+        let mutations: [fn(&mut StateEmergency); 7] = [
+            |event: &mut StateEmergency| event.kind = "EMERGENCY_WORLD_GAMES".to_string(),
+            |event: &mut StateEmergency| event.begun = false,
+            |event: &mut StateEmergency| event.ours.member = false,
+            |event: &mut StateEmergency| event.turns_left = -1,
+            |event: &mut StateEmergency| event.turns_left = AID_GIFT_FINISH_WINDOW + 1,
+            |event: &mut StateEmergency| event.scores[0].score = 251.0,
+            |event: &mut StateEmergency| event.ours.score = None,
+        ];
+        for mutate in mutations {
+            let mut blocked = state.clone();
+            mutate(blocked.emergencies.as_mut().unwrap().first_mut().unwrap());
+            let mut no_order = Vec::new();
+            assert_eq!(
+                append_aid_gift_order(&blocked, &mut no_order),
+                Some("aid_gift_hold:no_finishable_lead")
+            );
+            assert!(no_order.is_empty());
+        }
+
+        // The 100-Gold reserve and a known peaceful major recipient are both
+        // hard guards.  No amount inferred from the tracker overrides either.
+        let mut poor = state.clone();
+        poor.gold = 150; // only 50 spendable, one short of the 51 gift
+        let mut no_order = Vec::new();
+        assert_eq!(
+            append_aid_gift_order(&poor, &mut no_order),
+            Some("aid_gift_hold:no_finishable_lead")
+        );
+        let mut unknown_target = state.clone();
+        unknown_target.rivals.clear();
+        assert_eq!(
+            append_aid_gift_order(&unknown_target, &mut no_order),
+            Some("aid_gift_hold:no_finishable_lead")
+        );
+        let mut war_target = state.clone();
+        war_target.rivals[0].at_war = true;
+        assert_eq!(
+            append_aid_gift_order(&war_target, &mut no_order),
+            Some("aid_gift_hold:no_finishable_lead")
+        );
+
+        // A peace, delegation, or war instruction names a different
+        // diplomatic transition and has priority over a one-way Gold deal;
+        // retaining it proves the fallback never silently changes that plan.
+        for kind in ["peace", "delegation", "war"] {
+            let planned = Order {
+                kind,
+                subject: Some(4),
+                verb: Some("OTHER_DIPLOMACY".to_string()),
+                pos: None,
+            };
+            let mut conflict = vec![planned];
+            assert_eq!(
+                append_aid_gift_order(&state, &mut conflict),
+                Some("aid_gift_hold:diplomacy_conflict")
+            );
+            assert_eq!(conflict.len(), 1);
+            assert_eq!(conflict[0].kind, kind);
+        }
     }
 
     #[test]
