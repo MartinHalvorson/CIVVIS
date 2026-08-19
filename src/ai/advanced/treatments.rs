@@ -131,6 +131,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
     ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
     ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
+    ("expansion_hall", "expansion-hall", AdvancedAi::disable_expansion_hall),
     ("opening_settler_waits", "opening-settler-waits", AdvancedAi::disable_opening_settler_waits),
 ];
 
