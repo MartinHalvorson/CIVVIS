@@ -1835,3 +1835,163 @@ class AManagedJobThatFailsToLoadSaysSo(unittest.TestCase):
         self.assertIn("bootout", order)
         self.assertLess(order.index("bootout"), order.index("bootstrap"),
                         "the teardown has to be waited out first")
+
+
+class GeneratedDocumentMergeTests(unittest.TestCase):
+    """`ship` resolves a generated-document conflict and nothing else."""
+
+    def git(self, repo, *args):
+        return subprocess.run(
+            ("git", "-C", str(repo), *args),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def repo_with_generator(self, root):
+        """A repo whose `docs/generated.txt` is the sorted union of `arms/`."""
+        self.git(root.parent, "init", "--initial-branch=main", str(root))
+        self.git(root, "config", "user.email", "merge@example.invalid")
+        self.git(root, "config", "user.name", "Merge Test")
+        (root / "tools").mkdir()
+        (root / "docs").mkdir()
+        (root / "arms").mkdir()
+        (root / "tools" / "gen.py").write_text(
+            "import sys\n"
+            "from pathlib import Path\n"
+            "root = Path(__file__).resolve().parent.parent\n"
+            "arms = sorted(p.name for p in (root / 'arms').iterdir())\n"
+            "want = ''.join(name + '\\n' for name in arms)\n"
+            "out = root / 'docs' / 'generated.txt'\n"
+            "if '--check' in sys.argv:\n"
+            "    sys.exit(0 if out.read_text() == want else 1)\n"
+            "out.write_text(want)\n",
+            encoding="utf-8",
+        )
+        (root / "arms" / "base").write_text("", encoding="utf-8")
+        (root / "docs" / "generated.txt").write_text("base\n", encoding="utf-8")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-m", "seed")
+
+    def diverge(self, root):
+        """Two branches that each register an arm, so the generated file collides."""
+        self.git(root, "checkout", "-b", "task")
+        (root / "arms" / "mine").write_text("", encoding="utf-8")
+        (root / "docs" / "generated.txt").write_text("base\nmine\n", encoding="utf-8")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-m", "mine")
+        self.git(root, "checkout", "main")
+        (root / "arms" / "theirs").write_text("", encoding="utf-8")
+        (root / "docs" / "generated.txt").write_text("base\ntheirs\n", encoding="utf-8")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-m", "theirs")
+        self.git(root, "checkout", "task")
+
+    def registry(self):
+        return {"docs/generated.txt": ("tools/gen.py", "--write")}
+
+    def test_a_generated_only_conflict_is_resolved_by_regenerating_both_sides(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.repo_with_generator(root)
+            self.diverge(root)
+            merged = subprocess.run(
+                ("git", "-C", str(root), "merge", "--no-edit", "main"),
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(merged.returncode, 0, "the fixture must actually conflict")
+            with patch.dict(collab.REGENERATED_ON_MERGE, self.registry(), clear=True):
+                conflicted = collab.regenerable_conflicts(root)
+                self.assertEqual(conflicted, ["docs/generated.txt"])
+                collab.resolve_by_regenerating(root, conflicted)
+            self.git(root, "commit", "--no-edit")
+            # Both registrations survive: the resolution is the generator's
+            # output over the merged sources, not either branch's file.
+            self.assertEqual(
+                (root / "docs" / "generated.txt").read_text(encoding="utf-8"),
+                "base\nmine\ntheirs\n",
+            )
+            self.assertEqual(self.git(root, "diff", "--name-only", "--diff-filter=U"), "")
+
+    def test_a_conflict_touching_anything_else_is_left_to_the_author(self):
+        """⚠ The whole safety argument: regenerating over a conflicted *source*
+        would publish one side's arms and call it a merge."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.repo_with_generator(root)
+            self.git(root, "checkout", "-b", "task")
+            (root / "arms" / "mine").write_text("", encoding="utf-8")
+            (root / "docs" / "generated.txt").write_text("base\nmine\n", encoding="utf-8")
+            (root / "tools" / "gen.py").write_text("# mine\n", encoding="utf-8")
+            self.git(root, "add", "-A")
+            self.git(root, "commit", "-m", "mine")
+            self.git(root, "checkout", "main")
+            (root / "arms" / "theirs").write_text("", encoding="utf-8")
+            (root / "docs" / "generated.txt").write_text("base\ntheirs\n", encoding="utf-8")
+            (root / "tools" / "gen.py").write_text("# theirs\n", encoding="utf-8")
+            self.git(root, "add", "-A")
+            self.git(root, "commit", "-m", "theirs")
+            self.git(root, "checkout", "task")
+            subprocess.run(
+                ("git", "-C", str(root), "merge", "--no-edit", "main"),
+                capture_output=True,
+                text=True,
+            )
+            unmerged = self.git(root, "diff", "--name-only", "--diff-filter=U").split("\n")
+            self.assertIn("tools/gen.py", unmerged)
+            with patch.dict(collab.REGENERATED_ON_MERGE, self.registry(), clear=True):
+                self.assertEqual(
+                    collab.regenerable_conflicts(root),
+                    [],
+                    "a source conflict must disable the automatic resolution entirely",
+                )
+
+    def test_a_clean_tree_offers_nothing_to_resolve(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.repo_with_generator(root)
+            with patch.dict(collab.REGENERATED_ON_MERGE, self.registry(), clear=True):
+                self.assertEqual(collab.regenerable_conflicts(root), [])
+
+    def test_the_registry_covers_every_artifact_the_generator_owns(self):
+        """Discovered, not listed: a third artifact cannot be added to
+        `eval_manifest.py` and quietly left out of the merge resolver."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import eval_manifest
+
+        self.assertEqual(
+            sorted(collab.REGENERATED_ON_MERGE),
+            sorted(eval_manifest.GENERATED_OUTPUTS),
+        )
+        self.assertTrue(eval_manifest.GENERATED_OUTPUTS)
+
+    def test_settle_finishes_a_generated_only_conflict(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.repo_with_generator(root)
+            self.diverge(root)
+            subprocess.run(
+                ("git", "-C", str(root), "merge", "--no-edit", "main"),
+                capture_output=True,
+                text=True,
+            )
+            with patch.dict(collab.REGENERATED_ON_MERGE, self.registry(), clear=True):
+                collab.settle_merge_conflict(root, "conflict in docs/generated.txt")
+            self.assertEqual(self.git(root, "diff", "--name-only", "--diff-filter=U"), "")
+            self.assertEqual(
+                (root / "docs" / "generated.txt").read_text(encoding="utf-8"),
+                "base\nmine\ntheirs\n",
+            )
+            # The merge is committed, not left staged for somebody else to find.
+            self.assertEqual(self.git(root, "status", "--porcelain"), "")
+
+    def test_settle_re_raises_anything_it_may_not_touch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.repo_with_generator(root)
+            with patch.dict(collab.REGENERATED_ON_MERGE, self.registry(), clear=True):
+                with self.assertRaises(collab.CommandError) as raised:
+                    collab.settle_merge_conflict(root, "CONFLICT in src/game.rs")
+            self.assertIn("resolve this task worktree", str(raised.exception))
+            self.assertIn("src/game.rs", str(raised.exception))
