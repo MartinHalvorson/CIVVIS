@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import textwrap
+import shutil
 import sys
 import tempfile
 import time
@@ -2212,6 +2213,52 @@ def latest_autosave(directory: Path = AUTOSAVE_DIR,
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+# The staged-resume stem. One fixed name: at most one staged file ever exists,
+# the Load Game row label is a constant the reader has already proven on, and
+# nothing accumulates in the save folder across resumes.
+RESUME_STAGED_STEM = "civvis-resume"
+
+
+def stage_resume_save(load_save: Path,
+                      single_dir: Path | None = None) -> Path:
+    """An autosave copied where the Load Game list shows it unfiltered.
+
+    ★★★★ THE AUTOSAVES FILTER IS A GAMBLE THE RESUME KEPT LOSING. Firaxis's
+    Load Game list opens on the manual saves in ``Saves/Single`` and shows the
+    ``Single/auto`` rotation only while its "Autosaves" checkbox is ticked —
+    and that checkbox is a tiny top-right label the screen reader misses at
+    the operator layout's scale. Both freeze-resumes of 2026-08-19 died
+    exactly there ("Load Game is not visible yet", then ``AutoSave_0062`` "is
+    not visible; refusing to select a row", 0 turns each) — the second one
+    costing a live t139 game at 75 % of the leader and climbing. The manual
+    recovery of 2026-08-16 already proved the alternative: a save COPIED into
+    ``Saves/Single`` (``resume-autosave-0189.Civ6Save``) sits in the default
+    list with no filter to tick.
+
+    So stage the save instead of driving the filter: copy it beside the
+    manual saves under the constant stem ``civvis-resume`` and select that
+    row. A save that already lives outside the autosave rotation is returned
+    untouched — a caller naming a manual save meant that exact row. A copy
+    that fails falls back to the original path, which leaves the old
+    filter-ticking path in force rather than trading a weak resume for none.
+    """
+    destination_dir = single_dir if single_dir is not None else AUTOSAVE_DIR.parent
+    try:
+        if load_save.parent.resolve() != (destination_dir / "auto").resolve():
+            return load_save
+    except OSError:
+        return load_save
+    staged = destination_dir / f"{RESUME_STAGED_STEM}{load_save.suffix}"
+    try:
+        shutil.copy2(load_save, staged)
+    except OSError as error:
+        print(f"could not stage {load_save.name} as {staged.name}: {error}; "
+              "falling back to the Autosaves filter", file=sys.stderr)
+        return load_save
+    print(f"staged {load_save.name} as {staged.name} in the manual save list")
+    return staged
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -2226,7 +2273,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                                     still_loading=still_loading)
 
     patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
-    save_label = Path(args.load_save).stem
+    # See `stage_resume_save`: an autosave is copied into the manual list so
+    # no filter stands between the reader and its row.
+    save_path = stage_resume_save(Path(args.load_save))
+    save_label = save_path.stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
