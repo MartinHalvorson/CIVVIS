@@ -57,9 +57,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 227,
-    "firaxis_only_count": 26,
-    "live_bridge_count": 81,
+    "eval_only_count": 228,
+    "firaxis_only_count": 27,
+    "live_bridge_count": 82,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -226,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 227,
+      "declared_count": 228,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -459,7 +459,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 26,
+      "declared_count": 27,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -491,7 +491,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 81,
+      "declared_count": 82,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -563,11 +563,11 @@
         "deny-while-targeted",
         "stock-denial-lead-time",
         "projected-stock-denial",
-        "veto-guided-recon",
         "parallel-settlers",
         "host-settler-pop",
         "explore-dead-targets",
         "explore-commit",
+        "veto-guided-recon",
         "bank-envoys",
         "land-grab",
         "siege-is-progress",
