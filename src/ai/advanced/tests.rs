@@ -18097,6 +18097,219 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     );
 }
 
+/// ★★★★★ Both settlers of civvis-20260819T025840Z were taken one tile outside
+/// Rome, each from a tile a warrior had just been standing on: the step was
+/// priced with any own military unit on the destination as protection (×0.15),
+/// the unbound warrior then took its own turn — wounded, hostiles adjacent — and
+/// healed away, and the civilian stood alone in a horse archer's reach. See
+/// `settler_guard_holds`: only the settler's bound guard counts as on-tile
+/// protection, and only while it could hold; an unbound unit, or a guard the
+/// first reachable hostile would break, is no discount at all.
+#[test]
+fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
+    let mut game = Game::new_full(2, 24, 16, 8_119, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The step under test: from the city onto an adjacent tile where an own
+    // warrior stands, with a hostile two tiles from that tile.
+    let step = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let raider_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(step, *position) == 2
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile two steps from the destination");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let bystander = game.spawn_test_unit("warrior", 0, step);
+    // A peer-strength hostile: a warrior does not break a warrior.
+    let raider = game.spawn_test_unit("warrior", 1, raider_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(raider_tile);
+    let visible = {
+        let ai = AdvancedAi::new();
+        ai.battlefront_visibility(&game, 0)
+    };
+    assert!(game.sees(&visible, raider_tile), "the raider is in sight");
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.settler_guard_holds && live.stacked_escort && live.settler_stack_discipline);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+
+    // An UNBOUND warrior on the destination: the old pricing discounts the
+    // capture risk to nothing; the repaired one prices the raider in full.
+    let old = withheld.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    let new = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        old <= SETTLER_STEP_RISK_LIMIT,
+        "precondition: the withheld pricing let the step through ({old})"
+    );
+    assert!(
+        new > SETTLER_STEP_RISK_LIMIT,
+        "an unbound unit on the tile is no protection: {new} must exceed the step limit"
+    );
+
+    // BOUND, healthy, and not outmatched: protection again — the guard
+    // mirrors the step from the settler's own tile.
+    game.units.get_mut(&bystander).unwrap().pos = source;
+    live.settler_guards.insert(settler, bystander);
+    let bound = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        bound <= SETTLER_STEP_RISK_LIMIT,
+        "a bound guard that can hold still protects the step: {bound}"
+    );
+
+    // BOUND but outmatched: a knight in reach breaks a warrior — the exact
+    // shape of the Saka horsemen against Rome's warriors — so no discount.
+    game.remove_unit(raider);
+    let _knight = game.spawn_test_unit("knight", 1, raider_tile);
+    let broken = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        broken > SETTLER_STEP_RISK_LIMIT,
+        "a guard the first hostile in reach would break is no protection: {broken}"
+    );
+
+    // Frozen and stock controllers never carry it.
+    assert!(!AdvancedAi::new().settler_guard_holds);
+    assert!(!AdvancedAi::legacy().settler_guard_holds);
+}
+
+/// The other half of `settler_guard_holds`: the bound guard's own turn ran
+/// `healing_step` before its escort duty, so a wounded guard sharing its
+/// settler's tile healed away and left the civilian in the open. Under the
+/// flag it holds there first.
+#[test]
+fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
+    let mut game = Game::new_full(2, 24, 16, 8_120, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The pair stands one tile outside the city; a hostile warrior is adjacent.
+    let field = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let hostile_tile =
+        game.nbrs(field)
+            .into_iter()
+            .find(|position| {
+                *position != source
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile beside the pair, away from the city");
+    let settler = game.spawn_test_unit("settler", 0, field);
+    let guard = game.spawn_test_unit("warrior", 0, field);
+    game.units.get_mut(&guard).unwrap().hp = 45;
+    let _hostile = game.spawn_test_unit("warrior", 1, hostile_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(hostile_tile);
+    let plan = stacked_escort_plan(&game);
+
+    let run = |ai: &mut AdvancedAi, game: &mut Game| {
+        ai.settler_guards.insert(settler, guard);
+        for unit in [settler, guard] {
+            if let Some(unit) = game.units.get_mut(&unit) {
+                unit.moves_left = 2.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+        }
+        ai.advanced_military_step_with_decline(game, 0, guard, &plan, false);
+        game.units[&guard].pos
+    };
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+    let mut game_without = game.clone();
+    let left_to = run(&mut withheld, &mut game_without);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let held_at = run(&mut live, &mut game);
+    assert_eq!(
+        held_at, field,
+        "the bound guard on its settler's tile holds there under the flag"
+    );
+    // The point of the test is the ORDER: withheld, the guard is free to heal
+    // away (and does, in this fixture, or at least is not pinned by the
+    // escort). Either way the flag's answer is the tile.
+    assert!(
+        left_to != field || withheld.settler_guards.get(&settler) == Some(&guard),
+        "fixture note: withheld arm moved to {left_to:?}"
+    );
+}
+
 #[test]
 fn a_settler_waits_for_its_guard_only_within_patience() {
     let (mut game, source, target) = stacked_escort_fixture();

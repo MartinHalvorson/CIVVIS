@@ -516,6 +516,15 @@ def build_config(args: argparse.Namespace) -> dict:
         # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
         "CapMovesToReach": args.cap_moves_to_reach,
         "CancelQueuedPaths": args.cancel_queued_paths,
+        # ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A DIE. With
+        # `CombatFrames` ≥ 1 the mod re-exports the board once the opening
+        # orders and their queue have settled on a turn that issued a strike, and
+        # the brain re-plans the SAME turn on it (`frame` on the state event; a
+        # unit that struck shows `attacks_remaining` 0). Default OFF until a live
+        # run has been read: it is a second round trip per contact turn, with its
+        # own short poll budget and no fallback. See docs/LIVE_TACTICS.md §8.
+        "CombatFrames": args.combat_frames,
+        "CombatFramePolls": args.combat_frame_polls,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -3031,6 +3040,24 @@ def _play(args: argparse.Namespace) -> int:
             run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
+        # And which GENOME decided it. `--civvis-strategy` is forwarded to
+        # `civvis_orders --strategy` by name, and a name the league snapshot
+        # does not carry under that spelling falls back to the stock controller
+        # with one line in why.log; the supervisor's default (`WildCard9`, a
+        # display name) has done exactly that on every row since it was
+        # written. Both halves go on the record so asked and played can be
+        # compared on the ledger instead of in a log excavation.
+        genome = civ6_ladder.decider_genome(run_dir / "why.log")
+        if genome is not None:
+            summary["genome"] = genome
+            requested = (args.civvis_strategy or "").strip()
+            summary["strategy_requested"] = requested or None
+            if (requested and requested.lower() not in ("", "auto", "stock", "none")
+                    and genome.get("strategy") == "stock"):
+                print(f"⚠ --civvis-strategy {requested!r} did not resolve in the "
+                      f"decider's league snapshot; this run played the STOCK "
+                      f"genome ({genome.get('source')}). The ledger row records "
+                      f"both.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
@@ -3311,6 +3338,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
                     action="store_false", default=True,
                     help="leave combat units' queued host paths in place at turn start")
+    ap.add_argument("--combat-frames", type=int, default=0,
+                    help="mid-turn combat frames per turn: after the opening orders "
+                         "settle on a turn that issued a strike, re-export the board "
+                         "and let CIVVIS re-plan the same turn (0 = off)")
+    ap.add_argument("--combat-frame-polls", type=int, default=20,
+                    help="polls to wait for a combat frame's answer before the frame "
+                         "is abandoned by name and the turn ends")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")

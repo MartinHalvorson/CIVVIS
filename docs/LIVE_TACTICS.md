@@ -202,3 +202,51 @@ the mirror tests (`host_routes_land_on_the_engines_ladder`,
 runs should be read for `move_capped` / `move_no_reach` on `orders`,
 `queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
 did-not-move share (12.5 % before).
+
+## 7. Step 3, first cut — the joint search reaches as far as the unit does
+
+The engagement-window planner grows in steps; this is the first: approach
+lines from the engine's exact reach flood instead of two hand-built steps
+(`docs/TACTICS.md` §17). Measured on `battle_bench` at 300 paired seeds a cell
+on two disjoint blocks: the four foot compositions hold within one standard
+error; the two mounted compositions gain (cavalry +398 → +476 and +352 → +410;
+mounted medieval +496 → +590 and +601 → +622), because a four-move unit's
+third and fourth hexes now exist for our own lines as they already did for
+the enemy's reply. Still ahead in this step: the window (units four-plus tiles
+out with no strike this turn), a second ply for set-up lines, expected-value
+combat for the host's rolls, and the city-assault terms the one-city arena
+regime measures.
+
+## 8. Step 1, second cut — the mid-turn combat frame (flag-gated, default off)
+
+**What was wrong.** The whole turn is planned once, on the opening board,
+with the engine's own rolls; the host's roll differs (it has left "sure"
+kills alive at 1, 3, 6, 8, 16 and 20 HP), and the next export is next turn.
+Nothing could react to what the first volley actually did.
+
+**Mechanism.** With `CombatFrames ≥ 1` (`--combat-frames N`; default **0**),
+once the opening orders and their per-unit queue have settled on a turn that
+issued a strike, the mod (`CivvisFrames`) exports the board again stamped
+`frame: 1` (`combat_frame` event), re-arms the handshake, and waits — with its
+own short budget (`CombatFramePolls`, 20) and no stale answer and no fallback
+ladder; past it the frame is abandoned by name (`combat_frame_timeout`) and
+the turn ends as before. The brain (`civ6_brain.py`) answers a `state` with
+`frame ≥ 1` for a turn it has already served: it asks the decider for the same
+turn again — the decider reads the newest state for that turn, which is the
+frame — and writes the answer beside the opening board's (`orders.frame`,
+`ready.frame`; a database from before the column is migrated in place). The
+mod's readers select by frame and treat a channel without the column as frame
+0. On a frame `applyOrders` hands no unit to explore automation and writes no
+`turn` record. Units export `attacks_remaining`; under `moves_at_turn_start`
+the mirror starts a unit with the host's count, so a frame's re-plan spends no
+strike twice (and its movement is the host's, from step 2).
+
+**Not measured; deliberately off.** A second round trip per contact turn is a
+second place for the loop to wedge, and the round trip is the one thing the
+offline harness cannot exercise. `combat_frame_test.lua` drives the frame
+handshake, the frame-aware readers (with and without the column), the
+no-explore / no-turn-record rules and the default-off; `test_civ6_brain.py`
+covers the channel and the migration; the mirror tests cover
+`attacks_remaining`. Turn it on for one live run (`--combat-frames 1`) and
+read `combat_frame`, `combat_frame_timeout`, `orders.frame`, and the ledger's
+strikes-landed and exchange ratio against a run without it.
