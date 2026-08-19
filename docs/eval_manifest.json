@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 31,
-    "never_named": 25,
+    "named": 33,
+    "never_named": 23,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -24,9 +24,7 @@
       "stacked-escort": "live_without_stacked_escort",
       "stranded-settler-discount": "live_without_stranded_settler_discount",
       "suzerain-cards": "live_without_suzerain_cards",
-      "war-economy": "live_without_war_economy",
       "war-reinforcement": "live_without_war_reinforcement",
-      "wide-map-capacity": "live_without_wide_map_capacity",
       "wonder-ring-settle-value": "live_without_wonder_ring_settle_value"
     },
     "never_named_treatments": [
@@ -51,17 +49,15 @@
       "stacked-escort",
       "stranded-settler-discount",
       "suzerain-cards",
-      "war-economy",
       "war-reinforcement",
-      "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
     "withholdable": 56
   },
   "derived": {
-    "eval_only_count": 231,
-    "firaxis_only_count": 28,
-    "live_bridge_count": 84,
+    "eval_only_count": 232,
+    "firaxis_only_count": 29,
+    "live_bridge_count": 85,
     "native_engine_repair_count": 56,
     "withholdable_live_count": 56
   },
@@ -230,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 231,
+      "declared_count": 232,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -327,6 +323,7 @@
         "live_without_district_building_chain",
         "live_without_idle_walkers_close_the_pipeline",
         "live_without_expansion_pantheon",
+        "live_without_expansion_hall",
         "live_without_opening_settler_waits",
         "basic_evolved",
         "advanced_policy_live_control",
@@ -466,7 +463,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 28,
+      "declared_count": 29,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -495,11 +492,12 @@
         "spy-mission-patience",
         "district-building-chain",
         "expansion-pantheon",
+        "expansion-hall",
         "opening-settler-waits"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 84,
+      "declared_count": 85,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -584,6 +582,7 @@
         "district-building-chain",
         "idle-walkers-close-the-pipeline",
         "expansion-pantheon",
+        "expansion-hall",
         "opening-settler-waits"
       ]
     }

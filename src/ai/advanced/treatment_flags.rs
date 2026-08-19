@@ -40,6 +40,21 @@ use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// Promote an Apostle for the job the empire has rather than for the
+    /// largest number on the card. Off in production; opted into by name
+    /// (`victory_eval --with apostle-promotion-by-role`, `gene_screen`). See
+    /// [`crate::ai::BasicAi::apostle_promotion_by_role`] for the units mismatch
+    /// that makes the shipped ranking a constant.
+    pub fn enable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = true;
+    }
+
+    /// The twin of `enable_apostle_promotion_by_role`, so an arm that opted in
+    /// can put it back.
+    pub fn disable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = false;
+    }
+
     /// Enable the narrow Trader adaptation required by a live Civilization VI
     /// export.  Native tournament games leave this disabled.
     pub fn enable_live_trader_route_adapter(&mut self) {
@@ -972,6 +987,11 @@ impl AdvancedAi {
         // where Religious Settlements is a free Settler at ~t20. See
         // `expansion_pantheon`.
         self.enable_expansion_pantheon();
+        // And the plaza the seat builds by t29–57 in every game gets the one
+        // building the land grab is made of — a free Builder in every new
+        // city, +50% Settlers — instead of standing empty to turn 250. See
+        // `expansion_hall`.
+        self.enable_expansion_hall();
         // And the book's own Settler slot survives the host's population
         // floor: half the recorded openings burned it and ordered the first
         // Settler four turns later. See `opening_settler_waits`.
@@ -1636,6 +1656,15 @@ impl AdvancedAi {
     pub fn disable_expansion_pantheon(&mut self) {
         self.expansion_pantheon = false;
         self.base.expansion_pantheon = false;
+    }
+
+    /// Price the Ancestral Hall for the land grab (see `expansion_hall`).
+    pub fn enable_expansion_hall(&mut self) {
+        self.expansion_hall = true;
+    }
+
+    pub fn disable_expansion_hall(&mut self) {
+        self.expansion_hall = false;
     }
 
     /// Hold the opening book's Settler slot for the host's population floor

@@ -132,6 +132,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
     ("idle_walkers_close_the_pipeline", "idle-walkers-close-the-pipeline", AdvancedAi::disable_idle_walkers_close_the_pipeline),
     ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
+    ("expansion_hall", "expansion-hall", AdvancedAi::disable_expansion_hall),
     ("opening_settler_waits", "opening-settler-waits", AdvancedAi::disable_opening_settler_waits),
 ];
 
@@ -164,4 +165,5 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
+    ("apostle_promotion_by_role", "apostle-promotion-by-role", AdvancedAi::enable_apostle_promotion_by_role),
 ];

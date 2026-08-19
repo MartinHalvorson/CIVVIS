@@ -3034,6 +3034,35 @@ pub struct AdvancedAi {
     /// keep the shipped prefix and the bred policy weights. Off for ordinary
     /// and frozen controllers.
     pub expansion_pantheon: bool,
+    /// The Government Plaza's Ancestral Hall, priced for the land grab.
+    ///
+    /// ★★★★ THE PLAZA STANDS EMPTY IN EVERY RECORDED GAME. Over the 35
+    /// recorded 2026-08-18/19 runs a Government Plaza COMPLETES at t29–57 in
+    /// every one — often in a satellite (Cumae, Ostia, Antium, Aquileia,
+    /// Puteoli, Ravenna) — and **no tier-1 plaza building is ever built**, to
+    /// turn 250. Both routes price it at nothing: it carries no yields
+    /// (`yield_value` 0), the plaza is not a `specialty` district (no chain
+    /// debt), and the baseline's cheapest-first sort never reaches a
+    /// 150-cost building while a Monument or Granary is on offer. The Ancestral
+    /// Hall's two effects are exactly the land grab's currency and both are
+    /// modelled (`Game::settler_production_pct`, `free_builder_new_city`):
+    /// +50% Production toward Settlers in the city that holds it, and **a free
+    /// Builder in every city founded afterwards** — three charges the day a
+    /// city is founded, empire-wide, wherever the plaza stands.
+    ///
+    /// With this on, while the land grab is still `EXPANSION_HALL_FULL_SHORTFALL`
+    /// seats short of its target (scaled down linearly below that), a
+    /// non-wonder building carrying `free_builder_new_city` is owed
+    /// `EXPANSION_HALL_BUILDER_VALUE` and one carrying `settler_production_pct`
+    /// `EXPANSION_HALL_SETTLER_VALUE`, in the strategic route's own raw units
+    /// (a Settler ~1500, a Library ~900). Nothing else moves: the plaza's own
+    /// placement, the Settler arm, and every other building keep their prices,
+    /// and the engine's `excludes` still keeps the tier-1 buildings mutually
+    /// exclusive. Firaxis-only, beside `land_grab`: it prices a Settler seat's
+    /// expansion against Firaxis rivals who out-settle us late; the native
+    /// lanes keep their bred building prices. Off for ordinary and frozen
+    /// controllers.
+    pub expansion_hall: bool,
     /// The opening book's Settler waits for the host's population floor
     /// instead of burning its slot. See `BasicAi::opening_settler_waits` for
     /// the measurement (the `SCOUT,BUILDER,SETTLER…` half of the recorded
@@ -3781,6 +3810,20 @@ const CULTURE_BUILDING_DEBT: f64 = 190.0;
 /// from a median 23 to the Theater-Square/Campus band (50–90) and stays
 /// under Settlers (92–164), Spies (116–236), repairs and wonders.
 const DISTRICT_BUILDING_CHAIN_DEBT: f64 = 480.0;
+/// What the land grab pays, raw, for a building that gives every newly
+/// founded city a free Builder (`free_builder_new_city`: the Ancestral Hall),
+/// at full seat shortfall. Beside a Settler at ~1500 and a first-chain
+/// building's 480 debt: a Builder is 25 production on Online and every seat
+/// still short of the target is a city that would start with one. See
+/// `AdvancedAi::expansion_hall`.
+const EXPANSION_HALL_BUILDER_VALUE: f64 = 700.0;
+/// What the land grab pays, raw, for `settler_production_pct` in the city
+/// that holds it, at full seat shortfall — the same city's next Settlers at
+/// two-thirds the turns. See `AdvancedAi::expansion_hall`.
+const EXPANSION_HALL_SETTLER_VALUE: f64 = 500.0;
+/// The seat shortfall at which the hall is worth its full price; fewer seats
+/// short scale it down linearly. See `AdvancedAi::expansion_hall`.
+const EXPANSION_HALL_FULL_SHORTFALL: f64 = 6.0;
 /// Each building of the family the city already holds discounts the next
 /// one's debt by this factor: the University is owed less than the Library,
 /// the Research Lab less again.
@@ -4476,6 +4519,7 @@ impl AdvancedAi {
             land_grab: false,
             idle_walkers_close_the_pipeline: false,
             expansion_pantheon: false,
+            expansion_hall: false,
             opening_settler_waits: false,
             tally_culture: false,
             culture_building_debt: false,
@@ -19088,10 +19132,39 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // See `expansion_hall`: the Ancestral Hall's free Builder in
+                    // every new city and +50% Settlers, priced while the land
+                    // grab is still short of seats.
+                    let expansion_hall = if self.expansion_hall && self.land_grab && !spec.wonder {
+                        let seats_short = self
+                            .settlement_target(plan)
+                            .saturating_sub(city_count + counts.settlers)
+                            as f64;
+                        let scale = (seats_short / EXPANSION_HALL_FULL_SHORTFALL).clamp(0.0, 1.0);
+                        let free_builder = spec
+                            .effects
+                            .get("free_builder_new_city")
+                            .copied()
+                            .unwrap_or(0.0)
+                            .clamp(0.0, 1.0);
+                        let settler_pct = spec
+                            .effects
+                            .get("settler_production_pct")
+                            .copied()
+                            .unwrap_or(0.0)
+                            .clamp(0.0, 50.0)
+                            / 50.0;
+                        scale
+                            * (free_builder * EXPANSION_HALL_BUILDER_VALUE
+                                + settler_pct * EXPANSION_HALL_SETTLER_VALUE)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + chain_debt
                         + culture_debt
                         + research_debt
+                        + expansion_hall
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0 + regional_amenity_reach)
                         + great_work_slots
@@ -19768,14 +19841,19 @@ impl AdvancedAi {
                                 250.0
                             }
                         }
-                        _ if spec.host_competition.is_some() => {
-                            let value = self.host_competition_score_value(
-                                g,
-                                pid,
-                                spec.host_competition.as_deref().unwrap(),
-                                spec.competition_score,
-                                turns,
-                            );
+                        _ if spec.requires_host_competition() => {
+                            let value = spec
+                                .host_competition_kinds()
+                                .map(|kind| {
+                                    self.host_competition_score_value(
+                                        g,
+                                        pid,
+                                        kind,
+                                        spec.competition_score,
+                                        turns,
+                                    )
+                                })
+                                .fold(0.0, f64::max);
                             // A host-unlocked project that cannot complete
                             // before the current competition expires is not a
                             // neutral fallback: letting it win a tie would
@@ -27387,11 +27465,41 @@ impl AdvancedAi {
     }
 
     fn advanced_promotions(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        // Computed at most once a turn, and only if an Apostle actually has a
+        // promotion to take: it walks every city and every unit on the board.
+        // See [`crate::ai::BasicAi::apostle_promotion_by_role`].
+        let mut apostle_preference: Option<&'static [&'static str]> = None;
         for uid in g.player_unit_ids(pid) {
             if self.promotion_heal_is_wasted(g, uid) {
                 continue;
             }
             let promotions = g.available_promotions(uid);
+            let apostle = self.base.apostle_promotion_by_role
+                && g.units.get(&uid).is_some_and(|unit| {
+                    g.rules
+                        .units
+                        .get(&unit.kind)
+                        .is_some_and(|spec| spec.promotion_class == "religious_apostle")
+                });
+            if apostle {
+                let ranked = *apostle_preference
+                    .get_or_insert_with(|| self.base.apostle_promotion_preference(g, pid));
+                if let Some(promotion) = ranked
+                    .iter()
+                    .find_map(|want| promotions.iter().find(|name| **name == **want).copied())
+                {
+                    let _ = g.apply(
+                        pid,
+                        &Action::Promote {
+                            unit: uid,
+                            promotion: Name::new(&promotion),
+                        },
+                    );
+                    continue;
+                }
+                // An offer out of a modded ruleset naming none of the nine
+                // falls through to the shipped scorer below.
+            }
             let choice = promotions.into_iter().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)
                     .partial_cmp(&self.promotion_value(g, b, strategy))

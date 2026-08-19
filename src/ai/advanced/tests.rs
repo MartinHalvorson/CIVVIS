@@ -4591,12 +4591,12 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
-/// Host World Congress competitions move the diplomatic race outside the
-/// ordinary Congress ballot. The exact score table must therefore make the
-/// World Games project legal and compelling, while the World's Fair rewards
+/// Host competitions move the diplomatic race outside the ordinary Congress
+/// ballot. The exact score table must therefore make World Games and either
+/// Aid Request project legal and compelling, while the World's Fair rewards
 /// the Great Person points existing district projects already produce.
 #[test]
-fn live_competitions_price_world_games_and_worlds_fair_production() {
+fn live_competitions_price_host_projects_and_worlds_fair_production() {
     let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
     let settler = game
         .player_unit_ids(0)
@@ -4622,6 +4622,9 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     let athlete = Item::Project {
         project: crate::name!("train_athletes"),
     };
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
     let granary = Item::Building {
         building: crate::name!("granary"),
     };
@@ -4629,6 +4632,10 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     assert!(
         !game.can_produce(0, city, &athlete),
         "the host-only project cannot escape into a native menu"
+    );
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "the shared Aid Request project cannot escape into a native menu"
     );
 
     game.replace_host_competitions(vec![crate::game::HostCompetition {
@@ -4660,6 +4667,53 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     game.replace_host_competitions(Vec::new());
     assert!(!game.can_produce(0, city, &athlete));
     assert!(ai.production_value(&game, 0, city, &athlete, &plan, &counts) < -1_000.0);
+
+    // Firaxis grants the same 200-point Send Aid project for either kind of
+    // request. Each individual host kind must make it legal and compelling;
+    // treating the plural rules row as an AND would silently lose one aid
+    // emergency.
+    for kind in ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"] {
+        game.replace_host_competitions(vec![crate::game::HostCompetition {
+            kind: kind.to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        }]);
+        assert!(
+            game.can_produce(0, city, &aid),
+            "{kind} grants the shared Send Aid project"
+        );
+        let aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+        assert!(
+            aid_value > granary_value,
+            "the 200-point Send Aid project must outrank ordinary infrastructure during {kind}: {aid_value} vs {granary_value}"
+        );
+    }
+    game.replace_host_competitions(vec![
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_AID".to_string(),
+            ends: game.turn + 1,
+            ours: 0.0,
+            leader: 200.0,
+        },
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_MILITARY_AID".to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        },
+    ]);
+    let best_live_aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+    assert!(
+        best_live_aid_value > granary_value,
+        "when both kinds are active, the viable military request must win over an expiring ordinary request: {best_live_aid_value} vs {granary_value}"
+    );
+    game.replace_host_competitions(Vec::new());
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "with neither aid emergency live the shared project is withdrawn"
+    );
+    assert!(ai.production_value(&game, 0, city, &aid, &plan, &counts) < -1_000.0);
 
     install_ai_test_district(&mut game, city, "campus");
     let grants = Item::Project {
@@ -26600,4 +26654,102 @@ fn the_expansion_pantheon_keeps_god_king_until_the_pantheon_is_founded() {
     assert!(!AdvancedAi::new().expansion_pantheon);
     assert!(!AdvancedAi::legacy().expansion_pantheon);
     assert!(!AdvancedAi::new().base.expansion_pantheon);
+}
+
+/// ★★★★ THE PLAZA STANDS EMPTY IN EVERY RECORDED GAME. See
+/// `AdvancedAi::expansion_hall`: a Government Plaza completes at t29–57 in
+/// all 35 recorded 2026-08-18/19 runs and no tier-1 plaza building is ever
+/// built, because the Ancestral Hall has no yields, its district is not
+/// `specialty`, and its two effects — a free Builder in every new city, +50%
+/// Settlers — were priced at nothing. With the flag on the land grab pays for
+/// them while it is still short of seats, and nothing when it is not; ordinary
+/// and frozen controllers keep the zero.
+#[test]
+fn the_expansion_hall_is_priced_while_the_land_grab_is_short_of_seats() {
+    let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    // A completed Government Plaza in the capital, the way the recorded games
+    // hold one by t29–57.
+    let plaza = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != game.cities[&city].pos
+                && game.map.tiles[position].district.is_none()
+                && !game.map.tiles[position].terrain.contains("ocean")
+                && !game.map.tiles[position].terrain.contains("coast")
+                && !game.map.tiles[position].terrain.contains("mountain")
+        })
+        .expect("a land tile for the plaza");
+    game.map.tiles.get_mut(&plaza).unwrap().district = Some(crate::name!("government_plaza"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("government_plaza"), plaza);
+    let hall = Item::Building {
+        building: crate::name!("ancestral_hall"),
+    };
+    let audience = Item::Building {
+        building: crate::name!("audience_chamber"),
+    };
+    let plan = |desired_cities: usize| StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    // Off: nothing prices the hall's effects.
+    let control = AdvancedAi::new();
+    let counts = control.counts(&game, 0);
+    let unpriced = control.production_value(&game, 0, city, &hall, &plan(16), &counts);
+
+    // On, with the land grab short of seats: the hall is owed the Builder in
+    // every new city and the faster Settlers, and the Audience Chamber —
+    // neither effect — is not.
+    let mut live = AdvancedAi::new();
+    live.enable_land_grab();
+    live.enable_expansion_hall();
+    let counts = live.counts(&game, 0);
+    let priced = live.production_value(&game, 0, city, &hall, &plan(16), &counts);
+    let chamber = live.production_value(&game, 0, city, &audience, &plan(16), &counts);
+    // `production_value` normalises by (7 + turns to build), so the raw 1200
+    // reads as 1200 / (7 + turns) here; the shape, not the figure, is asserted.
+    assert!(
+        priced > unpriced + 10.0,
+        "fifteen seats short pays the full hall: {priced} against {unpriced}"
+    );
+    assert!(
+        (chamber - unpriced).abs() < 1.0,
+        "the Audience Chamber carries neither effect: {chamber} against {unpriced}"
+    );
+    // On, but the land grab has its seats: back to the unpriced building.
+    let satisfied = live.production_value(&game, 0, city, &hall, &plan(1), &counts);
+    assert!(
+        (satisfied - unpriced).abs() < 1.0,
+        "no seats short, nothing owed: {satisfied} against {unpriced}"
+    );
+    // Half the shortfall, half the price.
+    let half = live.production_value(&game, 0, city, &hall, &plan(4), &counts);
+    let ratio = (half - unpriced) / (priced - unpriced);
+    assert!(
+        (0.45..=0.55).contains(&ratio),
+        "three seats short pays half of the full hall: {half} against {priced} ({ratio:.2})"
+    );
+
+    // Frozen and ordinary controllers never carry the flag.
+    assert!(!AdvancedAi::new().expansion_hall);
+    assert!(!AdvancedAi::legacy().expansion_hall);
 }
