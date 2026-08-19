@@ -23,6 +23,55 @@ plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`
 `Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
 directly before changing any number.
 
+## Diplomatic Victory Points
+
+The lane that steals most of our live games is the one whose sources are
+smallest and least visible. **41 of the 74 live losses to a rival's victory are
+diplomatic**, and CIVVIS's own diplomacy lane almost never completes — 2
+diplomatic victories in 120 contested games, 3 in 60.
+
+The shipped database names exactly **six** modifiers that adjust
+`DIPLOMATIC_VICTORY_POINTS`, against a threshold of 20
+(`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`):
+
+| source | amount | where CIVVIS keeps it |
+|---|---:|---|
+| `WC_RES_DIPLOVICTORY`, injected into every congress from the Modern era | ±2 | `resolve_congress`, gated on `world_era >= 5` |
+| `BUILDING_MAHABODHI_TEMPLE` | 2 | `wonders.json` |
+| `BUILDING_POTALA_PALACE` | 1 | `wonders.json` |
+| `BUILDING_STATUE_LIBERTY` | 4 | `wonders.json` |
+| `CIVIC_GLOBAL_WARMING_MITIGATION` | 1 | **`tree_effects.json`** |
+| `TECH_SEASTEADS` | 1 | **`tree_effects.json`** |
+
+All six are modelled, and the congress injection matches the shipped
+`InjectionOnly="true" EarliestEra="ERA_MODERN"`.
+
+⚠ **The last two are not in `techs.json` or `civics.json`.** They are in
+`tree_effects.json`, the overlay `Rules::load` folds in with `add_effects`.
+Looking only at the first two files makes them appear missing, and *adding*
+them there does not replace the overlay — it **sums** with it. That is not
+hypothetical: an attempt to add them shipped 2 points where Gathering Storm
+grants 1, on both nodes.
+
+⚠⚠ **Nothing in the toolchain would have caught that.**
+`tools/civ6_fidelity.py` reports zero divergent fields with the doubled values
+in place, because it does not audit tree-node effects at all;
+`tools/civvis_inert.py` reports zero unconsumed keys, because the key is
+consumed either way. `every_shipped_source_of_a_diplomatic_victory_point_is_modelled`
+is the only check on these amounts, and it exists because it caught that
+mistake. **Tree-node effects are an unaudited surface** — the audit's zero
+divergences say nothing about them.
+
+### So the lane is not starved of sources
+
+It is starved of *reach*. `docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md`
+records **31 of 32** diplomatic games finishing no qualifying wonder: Mahabodhi
+needs a founded religion, a Holy Site and a Temple beside a forest tile; the
+Statue of Liberty needs a Harbor and Civil Engineering. The two sources that
+need no such chain are Future-era and worth one point each. That leaves the
+congress, at ±2 from the Modern era, as very nearly the whole of a 20-point
+victory — which is why the lane completes about twice in a hundred games.
+
 ## Where the install is
 
 `python3 tools/civ6_fidelity.py` takes no arguments: `tools/civ6_env.py` is the
