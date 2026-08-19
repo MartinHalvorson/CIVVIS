@@ -932,3 +932,70 @@ event, and this one was a six-fold event that no strength gate could see.**
 `speed_ab.py` costs four minutes; a strength gate on a feature that
 multiplies game cost by six costs a day. Run the paired speed harness before
 promoting anything that adds a per-unit or per-tile pass.
+
+## 2026-08-19 — the envelope key hashed three fields no reach rule reads
+
+`sample` on head, `civvis simulate --seed 7311001 --jobs 1 --players 6 --turns
+150 --width 74 --height 46 --city-states 9 --speed online`, `ci` profile,
+9,053 main-thread samples:
+
+| symbol | samples | share of main thread |
+| --- | ---: | ---: |
+| `healing_step` | 7,034 | 77.7% |
+| `retreat_step` | 6,917 | 76.4% |
+| `enemy_attack_envelopes` | 6,778 | **74.9%** |
+| `attack_reach` (the leaf) | 6,629 | 73.2% |
+| `safe_healing_step` | 130 | 1.4% |
+
+The envelope cache from #2059's repair is exact and does work — `safe_healing_step`,
+which that repair rewrote, is down to noise. What remained was the *key*.
+`attack_envelope_fingerprint` hashed every unit's `hp`, `moves_left`,
+`attacks_left` and `fortified`, and no reach rule reads any of them:
+`attack_reach` flows from `unit_max_moves`, never `moves_left`, and `flow_past`
+relaxes the stacking layer so other units reach it only through
+`in_enemy_zoc_for` — owner, kind, religion, promotions. So every attack, every
+fortify and every spent movement point was a cache miss that recomputed one
+flow field per visible enemy.
+
+The key now hashes id, owner, place, **kind**, formation and `zoc_stopped`.
+`kind` is new and closes a hole rather than opening one: an upgraded unit
+changes the spec `exerts_zoc` reads, at the same tile, and the old key saw that
+only because an upgrade also happens to spend movement.
+
+Paired, `tools/speed_ab.py`, `ci` profile, 6p 74×46 150t online, `--jobs 1`:
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 173.09 s ← noise floor, one binary against itself | 172.95 s | −0.08% |
+| 7311000–03 | 169.77 s | 160.60 s | **−5.40%** |
+| 7311010–13 | 161.71 s | 154.89 s | **−4.21%** |
+
+Reports agree on every paired seed — the harness refuses a speed claim
+otherwise — and `advanced_v1_plays_the_same_game_it_always_did` passes
+unchanged at 17,482 decisions and `0x8162_c919_b83c_40df`, so not one decision
+moved across the five anchor profiles. `the_envelope_key_ignores_state_no_reach_rule_reads`
+pins both halves of the claim.
+
+### What is left, and it is most of it
+
+**This takes 5% of a 75% hotspot.** The key still hashes every unit's *place*,
+correctly — an own unit's zone of control really does end an enemy's move — so
+a serial path that moves a unit between two asks still recomputes every enemy's
+`attack_reach`. Movement is the common case, which is why the remaining cost is
+what it is.
+
+The bounded fix is per-enemy locality, and it has to be built more carefully
+than the note above this section suggested. That note proposed computing
+"envelopes only for enemies within maximum reach of any own unit"; that is
+**not exact**, because `safe_healing_step` unions *every* envelope and scans
+the whole map, so a distant enemy's envelope legitimately excludes a distant
+healing tile. The exact route is to keep computing every enemy's envelope but
+cache each one on a key covering only what can change it — that enemy's own
+state plus the units and cities within its maximum reach — so a move forty
+tiles away is a hit rather than a recompute. Bounding "maximum reach" needs the
+minimum step cost the route rules allow, not one tile per movement point.
+
+⚠ Promotions are still absent from the key and `exerts_zoc` reads
+`promotion_effect(u, "zone_of_control")`. A promotion granting ZOC to a unit
+standing still is invisible to it. Pre-existing, named here rather than
+silently carried.
