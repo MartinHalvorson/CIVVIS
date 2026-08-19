@@ -2372,7 +2372,12 @@ pub struct BasicAi {
     /// Measured 2026-08-19 (`speed_ab.py` shape, `ci`, one game): 67 s → 34 s
     /// and 87 s → 39 s beside the exact key, on a controller whose reports
     /// therefore differ. Evaluator arm `advanced_envelope_own_moves` prices
-    /// it; off in production until the gate has answered.
+    /// it, and the gate has answered: `--matrix --pairs 40` RETAINED the
+    /// exact key — parity on the fieldless profiles, but 43.8 % on the
+    /// contested one (11 of 80 games against 21, twelve maps to two, sign
+    /// p = 0.013). Off in production; the arm stays so the exact algorithmic
+    /// route (see docs/SIMULATOR_PERFORMANCE.md, 2026-08-19) can be measured
+    /// against it.
     envelope_cache_across_own_moves: bool,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would

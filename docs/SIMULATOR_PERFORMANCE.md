@@ -898,6 +898,23 @@ the stale envelope does not see it. That is a behaviour change to #2059's
 policy and needs #2059's own gate, which the PR did not run; it is recorded
 here as the next 2× if the owner wants it.
 
+**Gated the same night, and the answer is no — as a shortcut.** The enemy-only
+key is now an evaluator arm, `advanced_envelope_own_moves`
+(`BasicAi::enable_envelope_cache_across_own_moves`, off in production), so
+the trade can be priced instead of argued: `ai_eval
+advanced_envelope_own_moves advanced --matrix --pairs 40 --stop-when-decisive`
+returned **RETAIN advanced**. Compact-standard 50.6 % (INCONCLUSIVE, no
+regression); deployment-online 50.0 %, 9 sweeps each way; deployment-contested
+— the profile with `live_target_*` seats in the field, the one that looks most
+like the ladder — **43.8 %, 11 of 80 games won against 21, twelve maps to two
+by direction, exact sign p = 0.013**. A stale envelope is not free: in a
+contested game the own unit that just moved changes the enemy's reach that
+the next unit's retreat, healing and settling decisions read, and reading the
+old reach loses ground. The 2× stays on the table only through the exact
+algorithmic route above (envelopes for enemies within reach of own units,
+recomputed when *those* enemies or *those* own units move), never through
+staleness. The arm remains so that route can be measured against it.
+
 ### What is left, and whose it is
 
 Even exact, the simulator is **four to five times slower than the day before
