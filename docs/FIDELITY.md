@@ -159,6 +159,28 @@ a rule the shipped data does not state, and inventing one is the #2049 mistake.
 It is also the only Nobel that pays a point at all — Literature and Physics are
 commented out of `EmergencyRewards`.
 
+### The target, with the number that was missing
+
+The ladder's stolen-lane census now reports the turn each lane landed on, and
+that changes what "close the diplomatic lane" means:
+
+| stolen lane | n | earliest | median | latest |
+|---|---:|---:|---:|---:|
+| **diplomatic** | **49** | **202** | **234** | 247 |
+| culture | 27 | 145 | 221 | 245 |
+| religious | 5 | 75 | 170 | 233 |
+
+⚠ **A rival's diplomatic victory has never landed before turn 202.** It is a
+photo finish against the 250-turn limit, so the lane's whole budget is roughly
+the Modern era to turn 240 — and a native game producing no diplomatic victory
+*before* turn 200 is not evidence of anything. Only games that run to the limit
+can show it, which is also why a small sample cannot: this measurement needs
+games near 250 turns, not more games of any length.
+
+⚠ The count in earlier notes was **41**; it is 49 as the ladder has grown. A
+count with no window beside it is what four iterations of work on this lane were
+aimed at.
+
 ⚠ **Three to five points a game is not twenty.** The two project-scored competitions need
 late prerequisites — a Spaceport, a power plant to decommission — so they land
 around turn 180 and 200 and the lane still does not complete. The recurrence
