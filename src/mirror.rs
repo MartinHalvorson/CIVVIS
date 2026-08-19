@@ -9200,6 +9200,11 @@ pub struct StateEmergencyOurs {
 pub struct StateEmergency {
     #[serde(default, rename = "type")]
     pub kind: String,
+    /// Firaxis's emergency recipient.  Aid Requests award score when this
+    /// civilization receives a normal Gold deal, so the live bridge needs the
+    /// host player id rather than merely the competition's leaderboard.
+    #[serde(default = "minus_one_i64")]
+    pub target: i64,
     /// Firaxis uses a negative value once the tracker entry is complete; zero
     /// remains an active final-turn opportunity.
     #[serde(default = "minus_one_i64")]
@@ -18430,6 +18435,7 @@ mod host_fact_tests {
             "turn": 182,
             "emergencies": [{
                 "type": "EMERGENCY_WORLD_GAMES",
+                "target": 2,
                 "turns_left": 8,
                 "begun": true,
                 "scores": [
@@ -18445,6 +18451,7 @@ mod host_fact_tests {
             "the recognized tracker must not be filed as discarded schema: {:?}",
             state.schema_gaps
         );
+        assert_eq!(state.emergencies.as_ref().unwrap()[0].target, 2);
         state.cities.push(StateCity {
             id: 1,
             name: "Rome".to_string(),

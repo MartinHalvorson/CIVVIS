@@ -8899,6 +8899,49 @@ local function applyOrder(player, pid, row, turn)
 		return true, concession, "submitted";
 	end
 
+	-- Send the exact Gold amount a final-turn Aid Request needs through the
+	-- ordinary deal surface.  Expansion2's emergency manager listens to normal
+	-- deal Gold items for `EMERGENCY_SEND_AID` and
+	-- `EMERGENCY_SEND_MILITARY_AID`; this is intentionally a one-way gift, not
+	-- an EQUALIZE ask or a deal-screen session.  A partial gift is worse than no
+	-- gift here: Rust asked for the smallest amount that takes first place, so
+	-- if the host's current treasury or item limit cannot meet it we submit
+	-- nothing and leave the competition score unchanged.
+	local function submitAidGift(subject, asked)
+		if DealManager.HasPendingDeal(pid, subject) then
+			return false, 0, "pending";
+		end
+		local amount = math.max(0, math.floor(asked or 0));
+		if amount <= 0 then return false, 0, "no_amount"; end
+		local balance = try(function()
+			return player:GetTreasury():GetGoldBalance();
+		end, 0) or 0;
+		if balance < amount then return false, 0, "unaffordable"; end
+		DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		if deal == nil then return false, 0, "no_working_deal"; end
+		local gift = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+		if gift == nil then return false, 0, "no_gold_item"; end
+		gift:SetDuration(0);
+		local maximum = tonumber(try(function() return gift:GetMaxAmount(); end, 0)) or 0;
+		if maximum < amount then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_limit";
+		end
+		gift:SetAmount(amount);
+		if not try(function() return gift:IsValid(); end, false) then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_invalid";
+		end
+		deal:Validate();
+		if not deal:IsValid() then return false, 0, "invalid_deal"; end
+		-- The same direct normal-offer call as Firaxis's deal UI and the peace
+		-- submitter above.  The recipient's acceptance and the score change are
+		-- observed in later host exports; this return value says only submitted.
+		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		return true, amount, "submitted";
+	end
+
 	-- A city that is already taking fire cannot wait for the strategic planner to
 	-- notice the same fact on its next board. Return only engine-visible enemies;
 	-- the damage read is the fallback for the turn an attack has already landed.
@@ -9397,6 +9440,61 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
+	-- Requests: a completed `PROJECT_SEND_AID` gives 200, and every Gold gift
+	-- to the emergency target gives one. The Rust side sends this arm only when
+	-- the latter is the exact bounded amount that would take the lead before
+	-- the event closes. We still prove every diplomacy precondition against the
+	-- host: a stale mirrored target, a war, a city-state, or another working
+	-- trade may never become an unguarded deal.
+	--
+	-- Unlike `sell` and `buy`, this must use `PROPOSED`, not `EQUALIZE`: there
+	-- is no price to negotiate and a foreign counter-offer would not be the
+	-- specific one-way gift the emergency listener scores. `aid_gift_request`
+	-- records a submission, never an imagined acceptance or victory point.
+	if kind == "aid_gift" then
+		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID" then
+			return false, "aid_gift_unknown_emergency";
+		end
+		if subject < 0 or subject == pid then return false, "aid_gift_target_unmapped"; end
+		local amount = math.max(0, math.floor(x or 0));
+		if amount <= 0 then return false, "aid_gift_no_amount"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "aid_gift_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "aid_gift_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "aid_gift_not_major";
+		end
+		local trade = CivvisTrade;
+		if trade.pending[subject] ~= nil then
+			return false, "aid_gift_trade_pending";
+		end
+		local key = "aid_gift:" .. verb .. ":" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.AidGiftRetryTurns or 2) then
+			return false, "aid_gift_cooldown";
+		end
+		local ran, submitted, paid, reason = pcall(submitAidGift, subject, amount);
+		if not ran then
+			submitted, paid, reason = false, 0, "throw";
+		end
+		-- A pending normal offer is already in the host. Keep it from being
+		-- rebuilt on the next frame; a declined one can retry while the small
+		-- finish window still exists.
+		if submitted or reason == "pending" then peaceAsked[key] = turn; end
+		emit("aid_gift_request", {
+			turn = turn, target = subject, emergency = verb, amount = amount,
+			paid = paid, submitted = submitted and true or false,
+			reason = reason, threw = reason == "throw",
+		});
+		return submitted, submitted and "aid_gift_submitted" or reason;
 	end
 
 	-- ★★★★★ SURPLUS SOLD FOR GOLD, AT THE RIVAL'S OWN PRICE. `verb` is what
