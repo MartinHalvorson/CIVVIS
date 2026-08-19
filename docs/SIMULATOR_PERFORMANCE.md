@@ -999,3 +999,59 @@ minimum step cost the route rules allow, not one tile per movement point.
 `promotion_effect(u, "zone_of_control")`. A promotion granting ZOC to a unit
 standing still is invisible to it. Pre-existing, named here rather than
 silently carried.
+
+## 2026-08-19 (later) — an envelope is recomputed only when its own neighbourhood moved
+
+#2148 tightened the board-wide envelope key to what reach reads and took 5%.
+The remaining 70% was the key's *granularity*: it moves whenever any unit
+moves, so a serial path that steps one own unit recomputed an `attack_reach`
+flow field for every visible enemy on the map.
+
+Each envelope now carries its own key, over the units and cities within
+`envelope_reach_bound` of that enemy. The board key stays as the fast path; on
+a board-key miss, each enemy is asked separately and only those whose
+neighbourhood changed are recomputed.
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 166.23 s | 98.02 s | **−41.04%** |
+| 7311010–13 | 156.47 s | 92.07 s | **−41.16%** |
+| 7311020–23 | 148.39 s | 87.95 s | **−40.73%** |
+
+Reports agree on every paired seed, and
+`advanced_v1_plays_the_same_game_it_always_did` passes unchanged at 17,482
+decisions and `0x8162_c919_b83c_40df`.
+
+### The radius, and why it is what it is
+
+`envelope_reach_bound` is `4 × max_moves + 1 + max(1, attack_range)`. The 4 is
+`1 / 0.25`: terrain defaults to 1 MP and every feature that declares a cost
+adds 1, so an off-route step never costs less than 1, and the only discounts
+are the route ladder's — 0.75 Industrial, 0.5 Modern, 0.25 Railroad, the floor.
+`envelope_reach_bound_matches_the_shipped_route_ladder` pins that floor against
+the shipped data, and `the_reach_bound_covers_every_tile_attack_reach_returns`
+runs the real `attack_reach` over every military kind and checks no tile it
+returns lies outside the radius.
+
+⚠ Air units are excluded and always recompute: `attack_reach` centres their
+disk on `air_operation_origin`, not the unit's tile, so a key built around the
+tile would watch the wrong neighbourhood. They are a disk, not a flow field.
+
+### ⚠ What the attempt to test this the obvious way found
+
+A fixture that searches for a tile where moving an own unit changes an enemy's
+envelope **finds none, at any distance, for any shipped unit kind**. A
+two-movement unit's flood is spent by the time zone of control could bite, and
+cavalry ignore incoming zone of control outright. That is a large part of why
+this cache wins as much as it does — and it means no fixture can tell a
+one-tile radius from a ten-tile one, so the radius is defended by the bound
+test above rather than by a placement search. A first draft of the warm-versus-cold
+test passed against a planted radius of 1; it is recorded in the test's own
+comment so the next reader does not repeat it.
+
+### What is left
+
+`enemy_attack_envelopes` should now be well under the 74.9% of main thread it
+held before #2148. **It has not been re-profiled** — the standing rule in this
+file is to re-profile after every landed win, and that is the next step here,
+not a claim this one makes.
