@@ -232,6 +232,46 @@ fn main() {
                 .join(",")
         );
     }
+    // The complement of `--without`: an off-by-default production arm can be
+    // seated by name, so the targeted regime it exists for can be measured
+    // before any promotion question is asked. Rows come from
+    // `PRODUCTION_OPT_INS`; repeat the flag to enable more than one.
+    let opted_in: Vec<civvis::ai::LiveTreatment> = {
+        let mut rows = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            if arg != "--with" {
+                continue;
+            }
+            let Some(name) = args.get(index + 1) else {
+                eprintln!("--with requires a treatment name");
+                std::process::exit(2);
+            };
+            match civvis::ai::PRODUCTION_OPT_INS
+                .iter()
+                .find(|(field, tag, _)| field == name || tag == name)
+            {
+                Some(row) => rows.push(*row),
+                None => {
+                    eprintln!("unknown opt-in {name:?}; known names:");
+                    for (field, tag, _) in civvis::ai::PRODUCTION_OPT_INS.iter() {
+                        eprintln!("  {tag} ({field})");
+                    }
+                    std::process::exit(2);
+                }
+            }
+        }
+        rows
+    };
+    if !opted_in.is_empty() {
+        println!(
+            "opting in: {}",
+            opted_in
+                .iter()
+                .map(|(_, tag, _)| *tag)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
     let mut failures = 0;
     let mut winners: BTreeMap<&'static str, BTreeSet<usize>> = BTreeMap::new();
     let started = Instant::now();
@@ -254,6 +294,9 @@ fn main() {
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
             for ai in ais.iter_mut() {
                 for treatment in &withheld {
+                    (treatment.2)(ai);
+                }
+                for treatment in &opted_in {
                     (treatment.2)(ai);
                 }
             }
