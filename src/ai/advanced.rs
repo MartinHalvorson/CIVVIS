@@ -13656,21 +13656,12 @@ impl AdvancedAi {
     /// the next turn; divide that one concrete stream across the ordinary
     /// Envoys still required, which keeps every step toward the same immediate
     /// outcome valuable without inventing future Influence or Envoys.
-    fn nobel_peace_suzerain_score_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        envoys_needed: i64,
-    ) -> i64 {
+    fn nobel_peace_suzerain_score_value(&self, g: &Game, pid: usize, envoys_needed: i64) -> i64 {
         if envoys_needed <= 0 || g.players[pid].envoys_free < envoys_needed {
             return 0;
         }
-        (self.nobel_peace_favor_score_value(
-            g,
-            pid,
-            g.suzerain_diplomatic_favor_per_turn(pid),
-            1.0,
-        ) / envoys_needed as f64)
+        (self.nobel_peace_favor_score_value(g, pid, g.suzerain_diplomatic_favor_per_turn(pid), 1.0)
+            / envoys_needed as f64)
             .round() as i64
     }
 
@@ -13765,13 +13756,12 @@ impl AdvancedAi {
                     // suzerainty census looks like from the inside. This term
                     // rises as the seat closes on the floor (180, then 90, then
                     // 180 at one away) instead of falling.
-                    let suzerain_prize = if self.price_the_suzerainty
-                        && g.suzerain_of(minor.id) != Some(pid)
-                    {
-                        SUZERAIN_PRIZE / needed
-                    } else {
-                        0
-                    };
+                    let suzerain_prize =
+                        if self.price_the_suzerainty && g.suzerain_of(minor.id) != Some(pid) {
+                            SUZERAIN_PRIZE / needed
+                        } else {
+                            0
+                        };
                     let nobel_peace_suzerain_prize = if g.suzerain_of(minor.id) != Some(pid) {
                         self.nobel_peace_suzerain_score_value(g, pid, needed)
                     } else {
