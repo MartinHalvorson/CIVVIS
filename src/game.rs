@@ -5161,6 +5161,14 @@ pub struct Game {
     /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
     #[serde(default)]
     pub unseen_major_borders: BTreeSet<Pos>,
+    /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
+    /// id against its tile count in [`Game::closed_borders`]. The set alone
+    /// cannot answer the one question the passage-purchase lane asks: WHO to
+    /// buy Open Borders from. Written fresh beside `closed_borders` on a live
+    /// mirror and empty everywhere else; minors seal ground too but are never
+    /// recorded here, because their passage is suzerainty, not a deal.
+    #[serde(default)]
+    pub sealed_border_owners: BTreeMap<usize, u32>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -5607,6 +5615,7 @@ impl From<GameSer> for Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
@@ -6203,6 +6212,7 @@ impl Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
