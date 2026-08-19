@@ -2706,6 +2706,32 @@ impl BasicAi {
         })
     }
 
+    /// Whether there is still water this empire has not seen — the sea's
+    /// "somewhere left to go", read by the production arm and by the
+    /// explorer roster alike.
+    ///
+    /// ★★★★★ ON THE LIVE SEAT THIS WAS FALSE FOR THE WHOLE GAME, EVERY GAME.
+    /// The original test — a water tile outside `explored` — describes a
+    /// native board, where the whole map exists and `explored` is the part
+    /// of it the seat has looked at. The Civilization VI mirror has no such
+    /// tile: it writes only revealed plots, `explored` IS the revealed set,
+    /// and everything else is `unknown` terrain, which is not water. So the
+    /// naval recon arm was dead on the seat it was built for — 25 live runs
+    /// on 2026-08-18, zero sea-scout reservations, zero hulls in a 169-turn
+    /// game with Cartography — while its tests, all on native boards, stayed
+    /// green. Unseen water on a mirror is the fog at the edge of charted
+    /// water: an `unknown` tile the mirror's frontier growth has marked
+    /// `assumed_navigable`. Native boards never set that flag, so their
+    /// answer is exactly the old one. See `mirror::grow_frontier`.
+    pub(crate) fn unseen_water_remains(g: &Game, pid: usize) -> bool {
+        g.map.tiles.iter().any(|(pos, tile)| {
+            (g.rules.is_unknown(tile) && tile.assumed_navigable)
+                || (!g.players[pid].explored.contains(pos)
+                    && g.rules.is_passable(tile)
+                    && g.rules.is_water(tile))
+        })
+    }
+
     /// Whether this civilization's naval units can cross Ocean tiles. This
     /// mirrors the sea portion of `Game::traversal_class`: a Galley penned
     /// behind deep water before Cartography has not found an open route.
@@ -2811,9 +2837,9 @@ impl BasicAi {
             if !charts_something {
                 charts_something = !g.players[pid].explored.contains(&pos)
                     || g.nbrs(pos).into_iter().any(|neighbor| {
-                        g.map.get(neighbor).is_some_and(|tile| {
-                            g.rules.is_unknown(tile) && g.rules.is_passable(tile)
-                        })
+                        g.map
+                            .get(neighbor)
+                            .is_some_and(|tile| Self::is_sea_frontier(g, tile))
                     });
             }
             if tiles >= NAVAL_RECON_MIN_WATERWAY_TILES && reaches_open_water && charts_something {
@@ -2865,11 +2891,19 @@ impl BasicAi {
             && waterway.iter().any(|pos| {
                 !g.players[pid].explored.contains(pos)
                     || g.nbrs(*pos).into_iter().any(|neighbor| {
-                        g.map.get(neighbor).is_some_and(|tile| {
-                            g.rules.is_unknown(tile) && g.rules.is_passable(tile)
-                        })
+                        g.map
+                            .get(neighbor)
+                            .is_some_and(|tile| Self::is_sea_frontier(g, tile))
                     })
             })
+    }
+
+    /// An `unknown` tile a ship may plan toward: the mirror's frontier, in
+    /// either of its priors. The land prior counts too, as it always has —
+    /// the frontier makes no land/water claim — and the sea prior is the one
+    /// a coast revealed to the horizon otherwise never gets.
+    fn is_sea_frontier(g: &Game, tile: &crate::world::Tile) -> bool {
+        g.rules.is_unknown(tile) && (g.rules.is_passable(tile) || tile.assumed_navigable)
     }
 
     /// Whether a city can launch a naval scout into water that can still
@@ -7549,12 +7583,7 @@ impl BasicAi {
         if !self.naval_recon || self.minor || self.barb {
             return false;
         }
-        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
-            !g.players[pid].explored.contains(pos)
-                && g.rules.is_passable(tile)
-                && g.rules.is_water(tile)
-        });
-        if !water_left {
+        if !Self::unseen_water_remains(g, pid) {
             return false;
         }
         let naval_eyes = g

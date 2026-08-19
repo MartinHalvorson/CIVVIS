@@ -15769,15 +15769,25 @@ impl Game {
                     .unwrap_or(0.0)
                     > 0.0
             });
-        if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
-            return false;
-        }
         // A mirror frontier is an invitation to discover the tile, not a claim
         // that it is land or water. Until the host reveals it, either movement
         // domain may plan toward it; the next authoritative sync replaces the
         // unknown with its real terrain before subsequent orders are chosen.
+        //
+        // The land prior (`assumed_traversable`) is grown from revealed land
+        // and read by every domain — it is what `is_passable` answers for an
+        // unknown tile; the sea prior (`assumed_navigable`) is grown from
+        // revealed water and read by ships alone, here, ahead of the
+        // passability test that would otherwise refuse it. Without the second
+        // one a coast revealed to the horizon walls the fleet in: the fog
+        // beyond it is reached from no land tile, so no ship can plan toward
+        // it, and the empire's naval eye has nowhere to look. See
+        // `mirror::grow_frontier`.
         if self.rules.is_unknown(tile) {
-            return tile.assumed_traversable;
+            return tile.assumed_traversable || (class.sea && tile.assumed_navigable);
+        }
+        if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
+            return false;
         }
         let water = self.rules.is_water(tile);
         if water && tile.terrain == "ocean" && !class.ocean {
