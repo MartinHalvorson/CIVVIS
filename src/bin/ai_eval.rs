@@ -643,6 +643,47 @@ fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
 }
 
 /// One line telling the reader which of the two `INCONCLUSIVE`s this is.
+/// Enabled victory conditions this run produced but cannot resolve a change to.
+///
+/// Only the map-pairs holding a game the lane decided can turn on that lane, so
+/// it can move the paired score by at most `decided / pairs`. When that ceiling
+/// falls below the interval the run already reports, no treatment acting
+/// through the lane can be seen here — however large its true effect is.
+///
+/// Returns `(lane, games it decided, its ceiling in points)`, most bounded
+/// first. Lanes the profile never produced are left to the caller's separate
+/// "never produced" line, which is a different and stronger statement.
+fn unresolvable_lanes(
+    enabled: &str,
+    decided_by: &BTreeMap<String, usize>,
+    pairs: usize,
+    half_width_points: f64,
+) -> Vec<(String, usize, f64)> {
+    if pairs == 0 {
+        return Vec::new();
+    }
+    let mut bounded: Vec<(String, usize, f64)> = enabled
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            let decided = decided_by.get(name).copied().unwrap_or(0);
+            if decided == 0 {
+                return None;
+            }
+            let ceiling = 100.0 * decided as f64 / pairs as f64;
+            (ceiling < half_width_points).then(|| (name.to_string(), decided, ceiling))
+        })
+        .collect();
+    bounded.sort_by(|left, right| {
+        left.2
+            .partial_cmp(&right.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(left.0.cmp(&right.0))
+    });
+    bounded
+}
+
 fn resolution_note(maps: usize, resolved: usize, seed: u64) -> String {
     if maps == 0 {
         return String::new();
@@ -2737,6 +2778,39 @@ here and any null is uninformative"
                 silent.join(", ")
             );
         }
+        // ★★★ PRODUCED IS NOT THE SAME AS MEASURABLE, AND THE LINE ABOVE ONLY
+        // CATCHES EXACTLY ZERO.
+        //
+        // A lane that decides two games in two hundred and forty passes the
+        // silence check and still cannot carry a win-rate read. Only the pairs
+        // holding one of those games can turn on the lane, so it can move the
+        // paired score by at most `decided / pairs` — and when that ceiling is
+        // below the interval this run already reports, the run cannot resolve
+        // a change to it however large the change is.
+        //
+        // This is arithmetic, not a tuned bar: the ceiling and the interval are
+        // both numbers the run has already computed. Measured on the 2026-08-19
+        // suzerainty round, where `diplomatic` decided 2 of 240 games with a
+        // half-width of ~5 points.
+        let half_width = (inference.high - inference.low) / 2.0 * 100.0;
+        let unresolvable: Vec<String> =
+            unresolvable_lanes(&enabled_victories, &game_victories, pairs, half_width)
+                .into_iter()
+                .map(|(name, decided, ceiling)| {
+                    format!(
+                        "{name} decided {decided} of {total} games, so it can move the paired \
+                         score by at most {ceiling:.1} points"
+                    )
+                })
+                .collect();
+        if !unresolvable.is_empty() {
+            println!(
+                "⚠ produced but not resolvable here (interval half-width {half_width:.1} points): \
+                 {}. A treatment acting through one of those is bounded below this run's own \
+                 resolution, so neither a null nor a gain from it means anything",
+                unresolvable.join("; ")
+            );
+        }
     }
     // ★★★★★ NOTHING DIFFERED, WHICH IS NOT THE SAME AS PARITY.
     //
@@ -3180,6 +3254,39 @@ here and any null is uninformative"
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    /// A lane the profile produced twice in two hundred and forty games passes
+    /// the "never produced" check and still cannot carry a win-rate read. The
+    /// bound is arithmetic: only pairs holding a game the lane decided can turn
+    /// on it.
+    #[test]
+    fn a_lane_too_rare_to_move_the_score_is_named() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 2);
+        decided.insert("religious".to_string(), 54);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        // 120 pairs, interval half-width 5 points. Diplomacy tops out at
+        // 2/120 = 1.7 points and cannot be seen; religion tops out at 45.
+        let bounded = unresolvable_lanes(enabled, &decided, 120, 5.0);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 2);
+        assert!((bounded[0].2 - 5.0 / 3.0).abs() < 1e-9, "{:?}", bounded[0].2);
+
+        // A lane nobody produced belongs to the separate, stronger line.
+        assert!(
+            !unresolvable_lanes(enabled, &decided, 120, 5.0)
+                .iter()
+                .any(|(name, ..)| name == "science"),
+            "never-produced lanes are reported by the silence check, not this one"
+        );
+
+        // Tighten the run and the same lane becomes resolvable.
+        assert!(unresolvable_lanes(enabled, &decided, 120, 1.0).is_empty());
+        // A run with no pairs has no resolution to compare against.
+        assert!(unresolvable_lanes(enabled, &decided, 0, 5.0).is_empty());
+    }
 
     /// The city-state guard is a list of strings, and lists of strings rot.
     ///
