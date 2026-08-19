@@ -90,6 +90,11 @@ def trajectory(rows: Sequence[dict], every: int) -> list[dict]:
             "turn": turn,
             "score": row.get("score") or 0,
             "best_rival": best_rival(row),
+            # ⚠ Whether anyone had been MET. `best_rival` is 0 both when every
+            # rival is on nothing and when none is visible, and rendering the
+            # second as a gap of +117 shows a commanding lead over an empty
+            # board — the same false signal this report exists to remove.
+            "rival_seen": bool(row.get("rivals")),
             "cities": len(row.get("cities") or []),
             "techs": len(row.get("techs") or []),
             "science": round(row.get("science") or 0),
@@ -253,9 +258,13 @@ def render(data: dict) -> str:
     lines.append(f"  {'turn':>5} {'us':>6} {'best':>6} {'gap':>6} "
                  f"{'cities':>7} {'techs':>6} {'sci':>5} {'cul':>5}")
     for row in data["trajectory"]:
-        gap = row["score"] - row["best_rival"]
-        lines.append(f"  {row['turn']:>5} {row['score']:>6} {row['best_rival']:>6} "
-                     f"{gap:>+6} {row['cities']:>7} {row['techs']:>6} "
+        if row.get("rival_seen"):
+            best = f"{row['best_rival']:>6}"
+            gap = f"{row['score'] - row['best_rival']:>+6}"
+        else:
+            best, gap = f"{'—':>6}", f"{'—':>6}"
+        lines.append(f"  {row['turn']:>5} {row['score']:>6} {best} "
+                     f"{gap} {row['cities']:>7} {row['techs']:>6} "
                      f"{row['science']:>5} {row['culture']:>5}")
     ball = data["ballots"]
     if ball["verdicts"]:

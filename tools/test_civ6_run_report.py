@@ -100,6 +100,30 @@ class WinBandTest(unittest.TestCase):
         self.assertIn("turn 60 not reached", rr.render(data))
 
 
+class UnmetRivalTest(unittest.TestCase):
+    """A rival nobody has met is not a rival on nothing."""
+
+    def test_an_unmet_rival_renders_as_a_dash_not_a_commanding_lead(self) -> None:
+        """`best_rival` is 0 in both cases and the difference is the whole point.
+
+        Observed against a live run: turn 50 showed `117  0  +117`, a crushing
+        lead over an empty board, because no civilization had been contacted
+        yet. The report exists to remove exactly that kind of false signal.
+        """
+        with TemporaryDirectory() as raw:
+            run = write_run(Path(raw), [
+                {"turn": 50, "score": 117, "cities": [{}], "techs": []},
+                state(75, 200, rival=260, cities=6),
+            ])
+            data = rr.report(run, 25)
+        rendered = rr.render(data)
+        self.assertNotIn("+117", rendered)
+        self.assertIn("—", rendered)
+        by_turn = {r["turn"]: r for r in data["trajectory"]}
+        self.assertFalse(by_turn[50]["rival_seen"])
+        self.assertTrue(by_turn[75]["rival_seen"])
+
+
 class BallotTest(unittest.TestCase):
     """The row that exists because the seat's own report was wrong."""
 
