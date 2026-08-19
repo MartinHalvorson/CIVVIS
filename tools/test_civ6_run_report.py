@@ -74,6 +74,31 @@ class CrossoverTest(unittest.TestCase):
 
 
 class WinBandTest(unittest.TestCase):
+    def test_a_seat_that_trailed_and_recovered_says_FOR_GOOD_not_never_behind(self) -> None:
+        """The line has to survive being read next to its own trajectory.
+
+        Live run `civvis-20260819T102134Z` trailed -74 at t100 and led +189 by
+        t225. `crossover` correctly returns None — the lead was never lost for
+        good — but a bare "never lost the lead" reads as "never trailed" and
+        contradicts the table printed directly beneath it. It misled the author
+        of this tool into nearly filing a defect against it.
+        """
+        rows = [state(50, 120, rival=119), state(100, 299, rival=373),
+                state(150, 611, rival=589), state(225, 1161, rival=972)]
+        self.assertIsNone(rr.crossover(rows), "the lead was regained, so no crossover")
+        data = {"run": "civvis-20260819T102134Z", "turns": 225, "cities_at_60": 4,
+                "in_win_band": True, "crossover": rr.crossover(rows),
+                "ending": {"last_turn": 225, "victory": None},
+                "trajectory": rr.trajectory(rows, 50),
+                "ballots": {"verdicts": 0, "multi_vote_ballots": 0,
+                            "multi_vote_registered": 0},
+                "settler": {"holds": 0, "sites": []}}
+        line = [l for l in rr.render(data).splitlines()
+                if "never lost the lead" in l]
+        self.assertTrue(line, "the no-crossover line is still printed")
+        self.assertIn("for good", line[0],
+                      "and it says FOR GOOD, so it cannot be read as 'never trailed'")
+
     def test_cities_at_sixty_is_read_from_the_last_turn_at_or_below_sixty(self) -> None:
         with TemporaryDirectory() as raw:
             run = write_run(Path(raw), [state(50, 10, rival=1, cities=4),

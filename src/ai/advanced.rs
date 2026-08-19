@@ -19131,15 +19131,24 @@ impl AdvancedAi {
                         0.0
                     };
                     // Nobel Peace is the one host competition that pays for
-                    // this building effect directly: every point of Favor the
+                    // this building's Favor stream directly: every point the
                     // completed building generates before its deadline is one
-                    // competition point.  The helper is host-scoped, so native
-                    // games and every other competition retain this exact
-                    // building valuation.
+                    // competition point.  Most sources live on the building
+                    // itself, but Monarchy's Star Fort modifier is attached to
+                    // the Renaissance Walls family, which includes Tsikhe.
+                    // The helper is host-scoped, so native games and every
+                    // other competition retain this exact building valuation.
+                    let monarchy_wall_favor =
+                        if g.building_is_family(building, crate::name!("renaissance_walls")) {
+                            g.gov_effects(pid).walled_city_diplomatic_favor
+                        } else {
+                            0.0
+                        };
                     let nobel_peace_favor = self.nobel_peace_favor_score_value(
                         g,
                         pid,
-                        spec.effects.get("diplomatic_favor").copied().unwrap_or(0.0),
+                        spec.effects.get("diplomatic_favor").copied().unwrap_or(0.0)
+                            + monarchy_wall_favor,
                         turns,
                     );
                     let wartime_infrastructure_debt = if self.victory_planning
