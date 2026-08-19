@@ -97,6 +97,15 @@ impl AdvancedAi {
         self.base.recorded_tactical_step = true;
     }
 
+    /// Withholding twin for the base military picker's engine-legality
+    /// candidate screen (`BasicAi::legal_tactical_candidates`), which
+    /// production enables in `promoted_policy_envoy`. Only the
+    /// `advanced_without_legal_candidates` arm calls this, so the axis stays
+    /// measurable after shipping.
+    pub fn disable_legal_tactical_candidates(&mut self) {
+        self.base.legal_tactical_candidates = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
