@@ -2997,6 +2997,14 @@ pub struct AdvancedAi {
     /// keep the shipped prefix and the bred policy weights. Off for ordinary
     /// and frozen controllers.
     pub expansion_pantheon: bool,
+    /// The opening book's Settler waits for the host's population floor
+    /// instead of burning its slot. See `BasicAi::opening_settler_waits` for
+    /// the measurement (the `SCOUT,BUILDER,SETTLER…` half of the recorded
+    /// openings orders its first Settler at t9–13 and founds city 2 at t19–24,
+    /// against t5–8 and t15–19 when the slot plays). Firaxis-only: the host's
+    /// Settler floor is what the slot trips over; the native book keeps its
+    /// bred behaviour. Off for ordinary and frozen controllers.
+    pub opening_settler_waits: bool,
     /// Price a point of culture at the lane's price of a point of science.
     ///
     /// ★★★★ THE TALLY PAYS THREE FOR A CIVIC AND TWO FOR A TECH, AND THE
@@ -4430,6 +4438,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             expansion_pantheon: false,
+            opening_settler_waits: false,
             tally_culture: false,
             culture_building_debt: false,
             district_building_chain: false,
@@ -29022,6 +29031,10 @@ impl AdvancedAi {
         // or threatened-city queue.
         self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, true);
 
+        // The opening book's held Settler takes the capital's queue the turn
+        // the city reaches the host's floor, whether or not the book is still
+        // in play. See `opening_settler_waits`.
+        self.base.play_pending_book_settler(g, pid);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
