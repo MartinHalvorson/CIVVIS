@@ -10582,12 +10582,7 @@ fn non_founder_buys_adopted_faith_missionaries_to_defend_home() {
         .unwrap_or(0.0);
     game.units.get_mut(&missionary).unwrap().pos = converted_pos;
     game.units.get_mut(&missionary).unwrap().moves_left = 4.0;
-    assert!(AdvancedAi::new().advanced_missionary_step(
-        &mut game,
-        0,
-        missionary,
-        false
-    ));
+    assert!(AdvancedAi::new().advanced_missionary_step(&mut game, 0, missionary, false));
     assert!(
         game.cities[&converted_capital]
             .pressure
