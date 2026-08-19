@@ -119,6 +119,31 @@ be inventing a rule.
 
 ⚠ **Nothing is paid on the mirrored path** — a host has already counted its own.
 
+### What it does, measured
+
+`civvis simulate --native-competitions`, seed 41000, 6 players, 250 turns:
+
+| | competitions seated | scored | Diplomatic Victory Points paid |
+|---|---:|---:|---:|
+| first cut | 2 | 1 of 2 | 1 |
+| after the two repairs below | 2 | **2 of 2** | **3** |
+
+The first cut had two defects that only a trace showed. **Eligibility asked for
+the district and not what the project consumes**, so Climate Accords was seated
+on turn 100 for an empire with an Industrial Zone and no power plant, closed on
+119 with an empty score table, and spent its lockout for nothing. And **the
+lockout was global**, so that empty competition blocked every other kind for
+sixty turns — but the shipped `LockoutTime` is a column on the emergency row,
+so it is per kind.
+
+⚠ **Three points a game is not twenty.** Both competitions CIVVIS can seat need
+late prerequisites — a Spaceport, a power plant to decommission — so they land
+around turn 180 and 200 and the lane still does not complete. The recurrence
+that would make it complete is in the five types not modelled: World's Fair and
+the three Nobel prizes score from Great People rather than a project, and the
+two aid requests trigger on a random event and on a war. **That is the next
+work, and it is what the single protocol bump should wait for.**
+
 **It is off by default and that is the point.** Turning it on changes what every
 participant faces, which moves the frozen rating anchor; with the flag off the
 anchor is unchanged at 17,482 decisions. Promoting it is a protocol event and

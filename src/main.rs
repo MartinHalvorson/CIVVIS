@@ -858,6 +858,14 @@ fn main() {
                 arg(&args, "--seed", 0) as u64,
                 setup::TurnStructure::Sequential,
             ));
+            // ⚠ Set here rather than carried in `GameOptions`, deliberately.
+            // This is a staged rules mechanism, not a setup-screen choice: it
+            // ships off, and either becomes unconditional on promotion — at
+            // which point the flag and this line both go — or is removed.
+            // Threading it through every `GameOptions` construction would be
+            // churn in four files that promotion has to undo. See
+            // `Game::native_competitions`.
+            g.native_competitions = args.iter().any(|a| a == "--native-competitions");
             // The two regimes want opposite parallelism. Sequential seats
             // cannot deliberate concurrently, so `--jobs` feeds the clone-
             // heavy WorkPool frontiers inside one seat's turn, whose measured
@@ -2362,7 +2370,7 @@ fn main() {
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--force-strategy NAME] [--ai-pool best1|best2|best3|best5|all] [--resume checkpoint.json] [--strict] \
+                      [--native-competitions] [--spectate] [--supervised] [--force-strategy NAME] [--ai-pool best1|best2|best3|best5|all] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
