@@ -1849,5 +1849,74 @@ class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
                       source)
 
 
+class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
+    """★ The Load Game list opens on the manual saves and hides the autosave
+    rotation behind a filter checkbox the screen reader misses at the operator
+    layout's scale. Both freeze-resumes of 2026-08-19 died there, 0 turns each
+    — one of them costing a live t139 game at 75 % of the leader. The staged
+    copy in ``Saves/Single`` is the row the default list already shows, as the
+    manual recovery of 2026-08-16 (``resume-autosave-0189.Civ6Save``) proved."""
+
+    def _dirs(self, base):
+        single = Path(base) / "Single"
+        (single / "auto").mkdir(parents=True)
+        return single
+
+    def test_an_autosave_is_staged_under_the_constant_stem(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            source = single / "auto" / "AutoSave_0062.Civ6Save"
+            source.write_bytes(b"save-bytes")
+            staged = civ6_play.stage_resume_save(source, single_dir=single)
+            self.assertEqual(staged, single / "civvis-resume.Civ6Save")
+            self.assertEqual(staged.read_bytes(), b"save-bytes")
+            # and the source stays where the rotation owns it
+            self.assertTrue(source.is_file())
+
+    def test_a_second_resume_overwrites_rather_than_accumulates(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            first = single / "auto" / "AutoSave_0010.Civ6Save"
+            first.write_bytes(b"one")
+            second = single / "auto" / "AutoSave_0020.Civ6Save"
+            second.write_bytes(b"two")
+            civ6_play.stage_resume_save(first, single_dir=single)
+            staged = civ6_play.stage_resume_save(second, single_dir=single)
+            self.assertEqual(staged.read_bytes(), b"two")
+            saves = [p.name for p in single.iterdir() if p.is_file()]
+            self.assertEqual(saves, ["civvis-resume.Civ6Save"])
+
+    def test_a_manual_save_is_the_row_the_caller_meant(self):
+        """A --load-save naming a save outside the rotation is not rewritten:
+        the operator asked for that exact row."""
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            manual = single / "my-regression.Civ6Save"
+            manual.write_bytes(b"manual")
+            self.assertEqual(
+                civ6_play.stage_resume_save(manual, single_dir=single), manual)
+            self.assertFalse((single / "civvis-resume.Civ6Save").exists())
+
+    def test_a_failed_copy_falls_back_to_the_filter_path(self):
+        """Weak resume beats no resume: the original path keeps the old
+        Autosaves-filter attempt in force."""
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            source = single / "auto" / "AutoSave_0062.Civ6Save"
+            source.write_bytes(b"save-bytes")
+            with mock.patch.object(civ6_play.shutil, "copy2",
+                                   side_effect=OSError("disk full")):
+                self.assertEqual(
+                    civ6_play.stage_resume_save(source, single_dir=single),
+                    source)
+
+    def test_bootstrap_reads_the_staged_stem_not_the_autosave_name(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("save_path = stage_resume_save(Path(args.load_save))", source)
+        self.assertIn("save_label = save_path.stem", source)
+        self.assertNotIn("save_label = Path(args.load_save).stem", source)
+
+
 if __name__ == "__main__":
     unittest.main()
