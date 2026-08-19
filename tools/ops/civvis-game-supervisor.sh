@@ -72,6 +72,14 @@ EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # when this knob is set, so the default has exactly one home and this file does
 # not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
 VICTORY=${CIVVIS_VICTORY:-}
+# ⚠⚠ ONE EXPANSION PER WORD IN THE INVOCATION BELOW. zsh does not word-split an
+# unquoted `${VAR:+--flag "$VAR"}`: with the knob set it reaches the climb as
+# ONE argument, `--victory science`, which argparse rejects as "unrecognized
+# arguments" and the cycle plays no turns. The victory form had never been
+# exercised (no host had set the knob); the abandon floor was, on 2026-08-19
+# at 17:00Z, and four starts in a row played nothing. So the flag and its
+# value are two expansions, `${VAR:+--flag} ${VAR:+"$VAR"}`, each one word or
+# none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
 # The floor under a game's expected win rate, below which the harness stops
 # playing it out (`civ6_play.ABANDON_CELLS`: the ladder's own measured table;
 # 0/34 of the live games that were under three quarters of the best rival's
@@ -407,8 +415,8 @@ while true; do
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
-      ${VICTORY:+--victory "$VICTORY"} \
-      ${ABANDON_BELOW:+--abandon-below-win-rate "$ABANDON_BELOW"} \
+      ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
+      ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,
