@@ -16,13 +16,20 @@ use std::process::Command;
 ///
 /// Listed so `--city-states 0`, which is the default, cannot silently turn one
 /// of them into a null. Add an arm here when its axis needs a minor to exist.
-const MINOR_DEPENDENT_ARMS: [&str; 6] = [
+const MINOR_DEPENDENT_ARMS: [&str; 7] = [
     "advanced_diplomatic_opening",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
     "advanced_envoy_economy",
     "advanced_policy_envoy_priority",
+    // Added 2026-08-19. `SUZERAIN_PRIZE` is scored only inside the envoy
+    // placement loop, over `g.can_send_envoy(pid, minor.id)`, so with no minor
+    // seated the arm is byte-identical to its control: 12 pairs at the stock
+    // 4p profile returned 0 favored / 12 neutral / 0 against on wins *and* on
+    // terminal score. Both 400-pair runs that decided this flag ships off were
+    // hand-rolled `ai_eval` lines, which is the path that defaults to zero.
+    "advanced_price_suzerainty",
 ];
 
 /// Arms measured to complete so rarely at the deployment profile that a margin
@@ -3173,6 +3180,32 @@ here and any null is uninformative"
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    /// The city-state guard is a list of strings, and lists of strings rot.
+    ///
+    /// Every name in it must still resolve to a real arm: a rename that left
+    /// the old spelling here would silently stop the warning for exactly the
+    /// class of arm the list exists to protect, and the failure mode is a
+    /// clean, meaningless null rather than an error.
+    #[test]
+    fn every_minor_dependent_arm_is_still_a_real_arm() {
+        for arm in MINOR_DEPENDENT_ARMS {
+            assert!(
+                builtin_arm(arm).is_some(),
+                "{arm} is listed as minor-dependent but is no longer a buildable arm"
+            );
+        }
+    }
+
+    /// `advanced_price_suzerainty` belongs on that list, and the reason is
+    /// mechanical: `SUZERAIN_PRIZE` is only ever scored inside the envoy
+    /// placement loop, which iterates city-states. Both 400-pair runs that
+    /// decided the flag ships off were hand-rolled `ai_eval` lines, and that
+    /// path defaults `--city-states` to zero.
+    #[test]
+    fn the_suzerainty_prize_is_guarded_as_minor_dependent() {
+        assert!(MINOR_DEPENDENT_ARMS.contains(&"advanced_price_suzerainty"));
+    }
 
     /// `--stop-when-decisive` ends a run only on a decisive gate: never under
     /// `PROMOTION_MIN_MAPS`, never on parity, and on either side once the
