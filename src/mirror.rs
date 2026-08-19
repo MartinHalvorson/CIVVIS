@@ -2182,7 +2182,10 @@ mod tests {
         };
         let mirror = LiveMirror::new(&snapshot, &plain, 4, 1, 250, 0);
         let uid = mirror.uid_of[&21];
-        assert_eq!(mirror.game.units[&uid].attacks_left, 1, "no capability: the fresh-turn allowance");
+        assert_eq!(
+            mirror.game.units[&uid].attacks_left, 1,
+            "no capability: the fresh-turn allowance"
+        );
 
         let trusted = StateSnapshot {
             turn: 8,
@@ -2196,7 +2199,10 @@ mod tests {
         };
         let mut mirror = LiveMirror::new(&snapshot, &trusted, 4, 1, 250, 0);
         let uid = mirror.uid_of[&21];
-        assert_eq!(mirror.game.units[&uid].attacks_left, 0, "the host says it already struck");
+        assert_eq!(
+            mirror.game.units[&uid].attacks_left, 0,
+            "the host says it already struck"
+        );
         let mut next = trusted;
         next.turn = 9;
         next.frame = 0;
@@ -2205,7 +2211,10 @@ mod tests {
         assert_eq!(mirror.game.units[&uid].attacks_left, 1);
         next.units = units(None);
         mirror.sync(&snapshot, &next, 0);
-        assert_eq!(mirror.game.units[&uid].attacks_left, 1, "an older export means the allowance");
+        assert_eq!(
+            mirror.game.units[&uid].attacks_left, 1,
+            "an older export means the allowance"
+        );
     }
 
     #[test]
