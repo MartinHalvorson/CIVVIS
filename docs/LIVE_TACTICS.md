@@ -282,4 +282,3 @@ step 3 is `battle_bench --a advanced_joint_tactics --b
 advanced_joint_tactics_geometric` (cavalry cell, 300 seeds, block 7,200,000:
 **+59.0 ± 17.1**, sign p = 0.0023), and `tactics_bench` seats both arms on the
 arena regimes.
-
