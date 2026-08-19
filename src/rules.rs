@@ -877,6 +877,18 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
+    /// A World Congress competition that must currently be active on the
+    /// authoritative host before this project is legal.  These projects use
+    /// Firaxis's `UnlocksFromEffect` rather than a normal tech or civic gate,
+    /// so they must never appear in a native CIVVIS production menu.
+    #[serde(default)]
+    pub host_competition: Option<String>,
+    /// Competition points the host awards when this project completes.  Kept
+    /// in the rules row beside the exact project cost, rather than in an AI
+    /// name switch, so another host-unlocked competition can use the same
+    /// legal-production and valuation path.
+    #[serde(default)]
+    pub competition_score: f64,
     #[serde(default)]
     pub repeatable: bool,
     /// Per-turn yield conversion percentages while this project is active.
