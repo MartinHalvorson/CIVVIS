@@ -32727,13 +32727,7 @@ impl Game {
                 .as_ref()
                 .filter(|session| self.turn < session.closes)
             {
-                let max_votes = if p.diplomatic_favor >= 30.0 {
-                    3
-                } else if p.diplomatic_favor >= 10.0 {
-                    2
-                } else {
-                    1
-                };
+                let max_votes = self.congress_affordable_votes(pid);
                 for resolution in &congress.resolutions {
                     if resolution.ballots.contains_key(&pid) {
                         continue;
@@ -42758,9 +42752,36 @@ impl Game {
         choice.split_once(':').unwrap_or(("A", choice))
     }
 
-    fn congress_vote_cost(votes: u32) -> f64 {
+    /// The host's Online-speed ballot table is (2k(k + 1)), where (k)
+    /// counts paid votes: a thirteen-vote ballot costs 312 Favor. That is
+    /// deliberately not the generic 50%-of-Standard curve (which would be
+    /// 390), so keep the observed live rule explicit rather than silently
+    /// treating it as ordinary production scaling.
+    fn congress_paid_vote_cost_factor(&self) -> f64 {
+        match self.game_speed {
+            GameSpeed::Online => 2.0,
+            _ => 5.0,
+        }
+    }
+
+    fn congress_vote_cost(&self, votes: u32) -> f64 {
         let paid_votes = votes.saturating_sub(1) as f64;
-        5.0 * paid_votes * (paid_votes + 1.0)
+        self.congress_paid_vote_cost_factor() * paid_votes * (paid_votes + 1.0)
+    }
+
+    /// The most votes a player can purchase with its present Favor. One vote
+    /// is free, and the quadratic inversion keeps the action-space boundary
+    /// identical to the spend/refund curve above.
+    pub(crate) fn congress_affordable_votes(&self, pid: usize) -> u32 {
+        let favor = self
+            .players
+            .get(pid)
+            .map(|player| player.diplomatic_favor)
+            .unwrap_or_default()
+            .max(0.0);
+        let factor = self.congress_paid_vote_cost_factor();
+        let paid_votes = ((1.0 + 4.0 * favor / factor).sqrt() - 1.0) / 2.0;
+        paid_votes.floor().clamp(0.0, (u32::MAX - 1) as f64) as u32 + 1
     }
 
     fn emergency_resolution_id(id: u32) -> String {
@@ -43045,6 +43066,7 @@ impl Game {
         if votes == 0 {
             return Err("at least one vote is required".into());
         }
+        let favor_cost = self.congress_vote_cost(votes);
         let emergency_voters = self
             .emergency_proposal_for_resolution(resolution)
             .map(|proposal| (proposal.target, proposal.eligible.clone()));
@@ -43080,9 +43102,7 @@ impl Game {
         }
 
         // Every civilization receives its first vote; additional votes cost
-        // 10, then 20, then 30 Favor, matching Gathering Storm's escalating
-        // diplomatic-vote cost.
-        let favor_cost = Self::congress_vote_cost(votes);
+        // an escalating amount of Favor on the active game-speed curve.
         if self.players[pid].diplomatic_favor + f64::EPSILON < favor_cost {
             return Err("not enough Diplomatic Favor".into());
         }
@@ -43112,7 +43132,7 @@ impl Game {
                     .resolutions
                     .iter()
                     .filter_map(|resolution| resolution.ballots.get(&player.id))
-                    .map(|(_, votes)| Self::congress_vote_cost(*votes))
+                    .map(|(_, votes)| self.congress_vote_cost(*votes))
                     .sum::<f64>();
                 (player.id, player.diplomatic_favor + committed)
             })
@@ -43131,7 +43151,7 @@ impl Game {
                         if available <= f64::EPSILON {
                             0.0
                         } else {
-                            Self::congress_vote_cost(*votes) / available
+                            self.congress_vote_cost(*votes) / available
                         }
                     })
                     .max_by(f64::total_cmp)
@@ -43176,7 +43196,7 @@ impl Game {
             // Exact predictions earn the stock +1 Diplomatic Victory Point.
             for (voter, (choice, votes)) in &resolution.ballots {
                 let (outcome, target) = Self::congress_choice_parts(choice);
-                let cost = Self::congress_vote_cost(*votes);
+                let cost = self.congress_vote_cost(*votes);
                 if outcome != winning_outcome {
                     self.players[*voter].diplomatic_favor += cost;
                 } else if target != winning_target {
@@ -43499,7 +43519,7 @@ impl Game {
         for (voter, (choice, votes)) in &resolution.ballots {
             let supported = Self::congress_choice_parts(choice) == ("A", "support");
             if supported != passed {
-                self.players[*voter].diplomatic_favor += Self::congress_vote_cost(*votes);
+                self.players[*voter].diplomatic_favor += self.congress_vote_cost(*votes);
             }
         }
         if !passed

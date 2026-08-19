@@ -5483,6 +5483,49 @@ fn explicit_non_diplomatic_targets_do_not_score_congress_points() {
 }
 
 #[test]
+fn diplomatic_congress_spends_the_full_affordable_online_bank() {
+    use crate::game::{CongressResolution, CongressSession};
+    use crate::setup::GameSpeed;
+
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    game.game_speed = GameSpeed::Online;
+    game.players[0].diplomatic_favor = 352.0;
+    game.congress = Some(CongressSession {
+        convened: 0,
+        closes: 5,
+        resolutions: vec![CongressResolution {
+            id: "world_leader".to_string(),
+            title: "Diplomatic Victory".to_string(),
+            choices: vec![
+                "A:0".to_string(),
+                "B:0".to_string(),
+                "A:1".to_string(),
+                "B:1".to_string(),
+            ],
+            ballots: BTreeMap::new(),
+        }],
+    });
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    AdvancedAi::targeting(VictoryTarget::Diplomacy).advanced_diplomacy(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.congress.as_ref().unwrap().resolutions[0].ballots[&0].1,
+        13,
+        "the diplomatic plan should use the host-affordable ballot"
+    );
+    assert_eq!(game.players[0].diplomatic_favor, 40.0);
+}
+
+#[test]
 fn congress_strategy_contests_leaders_and_predicts_competitions() {
     let mut game = Game::new_full(3, 24, 16, 780, 200, 0, false);
     game.players[0].dvp = 10;
