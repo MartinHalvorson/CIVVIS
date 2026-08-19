@@ -79,6 +79,102 @@ DEFAULT_CIVVIS_VICTORY = "diplomatic"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
+
+# ★★★ WHEN A GAME IS LOST, SAY SO AND STOP PLAYING IT. Operator request
+# 2026-08-19: "ok to abandon games early if expected win rate <5%". The ladder
+# plays 250-turn Online games at about 1.5 h each, and the games it loses it
+# loses EARLY and then plays out: of the 48 live games that reached a terminal
+# result by 2026-08-19 (7 wins), 34 were under three quarters of the best
+# rival's score for five consecutive turns at or after turn 120, and NONE of
+# those 34 won — 3,700 game-turns, nine hours of host time per batch of
+# twelve, spent on results that were already written. The wins' own low-water
+# marks after turn 120 were 0.87 and 0.88 of the rival's score (both Chieftain
+# wins of 08-18/08-19), so the 0.75 line is a tenth below the worst comeback
+# the ladder has ever staged.
+#
+# The expected win rate is read from a table of such cells, each carrying the
+# wins and games it was measured on, as the Laplace estimate (wins+1)/(games+2)
+# — a finite-sample rate that cannot claim zero from zero wins and grows toward
+# 1/2 as the evidence thins, so a cell too thin to trust never clears a 5 %
+# floor by itself. A cell is (turn floor, score-ratio ceiling, wins, games):
+# the rule matches a turn at or after the floor whose own score is under the
+# ceiling times the best rival's. Where several match, the thinnest estimate
+# (the best-evidenced zero) decides.
+#
+# ⚠ This table is MEASURED, not chosen, and it is only as good as the games it
+# was fitted on (Settler and Chieftain, diplomatic and untargeted lanes).
+# Re-fit it when the ladder climbs or the seat's comeback shape changes; the
+# script is in the test file beside it. Abandoning is the harness's decision
+# and is recorded as one (`reason: "abandoned"` with the estimate that fired),
+# never as a stall, a wedge or a defeat.
+ABANDON_CELLS: tuple[tuple[int, float, int, int], ...] = (
+    # turn floor, ratio ceiling, wins, games — fitted 2026-08-19 on the 48
+    # terminal live games (7 wins); five consecutive turns under the ceiling
+    (100, 0.60, 0, 25),
+    (120, 0.75, 0, 34),
+)
+# Consecutive agent turns under the floor before the run is abandoned: a
+# single-turn dip (a city lost and retaken, a score swing on a rival's wonder)
+# must not end a game that the next five turns would have carried.
+ABANDON_PATIENCE = 5
+
+
+def expected_win_rate(turn: int, score: int | None,
+                      rival_best: int | None) -> float | None:
+    """The ladder's own estimate of this game still being won, or None.
+
+    None when the standing is unreadable or no measured cell matches: a game
+    that is level, ahead, or early is not predicted here at all — the table
+    only speaks where it has counted games, and it has counted no comebacks.
+    """
+    if score is None or rival_best is None or rival_best <= 0 or turn is None:
+        return None
+    ratio = score / rival_best
+    estimates = [
+        (wins + 1) / (games + 2)
+        for floor, ceiling, wins, games in ABANDON_CELLS
+        if turn >= floor and ratio < ceiling
+    ]
+    return min(estimates) if estimates else None
+
+
+def abandon_reading(state: dict, event: dict, floor: float) -> dict | None:
+    """Fold one agent turn into the abandonment count; the verdict when it fires.
+
+    Counts consecutive agent turns whose expected win rate sits under `floor`
+    (a distinct turn counted once; an agent may report a turn twice) and
+    returns the record to carry in the summary once `ABANDON_PATIENCE` such
+    turns have passed. A readable turn back over the floor — or outside every
+    measured cell — resets the count; a turn without a standing neither counts
+    nor resets, and is not the turn of record — silence is not recovery.
+    """
+    if floor <= 0 or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    if turn is None or turn == state.get("abandon_last_turn"):
+        return None
+    score, rival_best = event.get("score"), event.get("rival_best")
+    if score is None or rival_best is None or rival_best <= 0:
+        return None
+    state["abandon_last_turn"] = turn
+    estimate = expected_win_rate(turn, score, rival_best)
+    if estimate is None or estimate >= floor:
+        # Readable and outside every hopeless cell, or inside one the floor
+        # does not reach: a recovery, whichever way it happened.
+        state["abandon_streak"] = 0
+        return None
+    state["abandon_streak"] = state.get("abandon_streak", 0) + 1
+    if state["abandon_streak"] < ABANDON_PATIENCE:
+        return None
+    return {
+        "turn": turn,
+        "score": event.get("score"),
+        "rival_best": event.get("rival_best"),
+        "expected_win_rate": round(estimate, 4),
+        "floor": floor,
+        "consecutive_turns": state["abandon_streak"],
+    }
+
 DEFAULT_CIVVIS_STRATEGY = ""
 
 # Every objective `civvis_orders --victory` accepts, in the spelling its enum
@@ -2508,6 +2604,12 @@ def summary_reason(state: dict, reason: str) -> str:
         return "wrong_game_modes"
     if state.get("seat") and not state.get("configured"):
         return "wrong_game_configuration"
+    # The harness's own decision to stop is an ending too, and it must be
+    # legible as one: an abandoned game filed as `stopped` is a wedge in the
+    # ledger's eyes. Only the loop's own stop is overwritten — a game that
+    # exited or stalled in the same poll keeps that reason.
+    if state.get("abandoned") and reason == "stopped":
+        return "abandoned"
     return reason
 
 
@@ -2785,6 +2887,19 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        # And OUR decision that the game is lost, once the operator has set a
+        # floor under the expected win rate. See `ABANDON_CELLS`.
+        if kind == "turn":
+            verdict = abandon_reading(state, event, args.abandon_below_win_rate)
+            if verdict is not None:
+                state["abandoned"] = verdict
+                print(f"[abandon] turn {verdict['turn']}: score "
+                      f"{verdict['score']} against the best rival's "
+                      f"{verdict['rival_best']} for {verdict['consecutive_turns']} "
+                      f"turns — expected win rate {verdict['expected_win_rate']:.1%} "
+                      f"is under the {verdict['floor']:.0%} floor; stopping the "
+                      "game rather than playing it out", flush=True)
+                return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
         # seat event rather than at the end.
@@ -2975,6 +3090,9 @@ def _play(args: argparse.Namespace) -> int:
         # run with the wrong modes is: it never played the game being measured.
         # An UNREADABLE ruleset is neither -- see `summary_reason`.
         "reason": summary_reason(state, reason),
+        # The verdict that ended an abandoned run: the turn, the standing, the
+        # estimate and the floor it fell under. None for every other ending.
+        "abandoned": state.get("abandoned"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -3180,6 +3298,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="write requested map/game seeds for civ6_seed_check; does not "
                          "make the real-Civ6 world reproducible")
     ap.add_argument("--max-turns", type=int, default=150)
+    ap.add_argument("--abandon-below-win-rate", type=float, default=0.0,
+                    help="stop a run once the ladder's measured expected win "
+                         "rate (see ABANDON_CELLS) has sat under this floor "
+                         "for ABANDON_PATIENCE consecutive turns; 0 (the "
+                         "default) plays every game out. Operator request "
+                         "2026-08-19: 0.05")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if

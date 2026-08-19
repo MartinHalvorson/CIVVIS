@@ -74,7 +74,11 @@ absent from this table have never been completed by anyone here.
 
 `outcome` is what the game did, not what the harness saw last.
 `defeat` means this controller was eliminated and the game said so;
-`stopped`, `stalled` and `timeout` mean nobody won and nobody lost.
+`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;
+`abandoned` means the harness stopped a game whose measured expected
+win rate had sat under the operator's floor for five turns
+(`civ6_play.py --abandon-below-win-rate`), a loss it chose not to
+play out.
 A ledger that cannot tell defeat from a wedge cannot be used to
 compare anything, and until `defeat` existed here the two were the
 same row.
