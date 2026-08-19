@@ -46,6 +46,103 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class TermTakesTheBrainWithIt(unittest.TestCase):
+    """A TERMed harness must not leak the brain that blocks the next game.
+
+    `civ6_play` cleans up through `atexit.register(stop_brain)`, and **atexit
+    does not run on SIGTERM** — CPython's default disposition terminates the
+    process outright. TERM is the ordinary way this harness is stopped (the
+    supervisor's teardown sends it), so every such stop leaked a brain.
+
+    That is not a tidy-up nicety: the climb's `busy()` counts any live
+    `civ6_brain.py` as a running game, so the next attempt dies on "something
+    already holds the game; refusing to stop an unowned run" while the lock file
+    is empty and Civilization VI is down. Measured 2026-08-19 — an orphan sat
+    for 29 minutes and failed every launch in that window.
+    """
+
+    SCRIPT = (
+        "import atexit, os, signal, sys\n"
+        "marker = sys.argv[1]\n"
+        "atexit.register(lambda: open(marker, 'w').write('cleaned'))\n"
+        "{handler}"
+        "os.kill(os.getpid(), signal.SIGTERM)\n"
+        "import time; time.sleep(5)\n"
+    )
+
+    def _run(self, handler: str) -> bool:
+        """Did the atexit cleanup run before the process died to SIGTERM?"""
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = os.path.join(tmp, "marker")
+            subprocess.run(
+                [sys.executable, "-c", self.SCRIPT.format(handler=handler), marker],
+                capture_output=True, timeout=30,
+            )
+            return os.path.exists(marker)
+
+    def test_the_default_disposition_skips_atexit(self):
+        """The bug, demonstrated: without a handler the cleanup never runs."""
+        self.assertFalse(
+            self._run(""),
+            "if atexit ran on a default SIGTERM this fix would be unnecessary",
+        )
+
+    def test_raising_systemexit_from_the_handler_runs_atexit(self):
+        """The fix: SystemExit returns to the normal shutdown path."""
+        handler = ("signal.signal(signal.SIGTERM,\n"
+                   "  lambda s, f: (_ for _ in ()).throw(SystemExit(128 + s)))\n")
+        self.assertTrue(
+            self._run(handler),
+            "the handler must let atexit — and so stop_brain — run",
+        )
+
+    def test_term_also_runs_the_finally_that_stops_the_game_and_frees_the_lock(self):
+        """The orphan and the stale lock are ONE bug, and this fix clears both.
+
+        `main` is `try: return _play(args) finally: launcher.stop();
+        gamelock.release()`. A default SIGTERM skips that `finally` as surely as
+        it skips atexit, so a TERMed harness left Civilization VI advancing AND
+        the game lock held AND a brain running. That pair is what blocked the
+        16:46 and 19:00 starts on 2026-08-19: "another run holds the game" with
+        nothing actually playing.
+
+        SystemExit is an exception, so it unwinds through `finally` first and
+        reaches atexit after — game stopped, lock released, brain stopped, in
+        that order. (Raised by the sibling session running the same ladder.)
+        """
+        import subprocess
+        script = (
+            "import atexit, os, signal, sys\n"
+            "d = sys.argv[1]\n"
+            "signal.signal(signal.SIGTERM,\n"
+            "  lambda s, f: (_ for _ in ()).throw(SystemExit(128 + s)))\n"
+            "atexit.register(lambda: open(os.path.join(d, 'brain'), 'w').write('stopped'))\n"
+            "try:\n"
+            "    os.kill(os.getpid(), signal.SIGTERM)\n"
+            "    import time; time.sleep(5)\n"
+            "finally:\n"
+            "    open(os.path.join(d, 'game'), 'w').write('stopped')\n"
+            "    open(os.path.join(d, 'lock'), 'w').write('released')\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run([sys.executable, "-c", script, tmp],
+                           capture_output=True, timeout=30)
+            for name, what in (("game", "launcher.stop()"),
+                               ("lock", "gamelock.release()"),
+                               ("brain", "atexit stop_brain")):
+                self.assertTrue(
+                    os.path.exists(os.path.join(tmp, name)),
+                    f"a TERMed harness must still reach {what}")
+
+    def test_the_harness_installs_the_handler(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn("signal.signal(signal.SIGTERM", source,
+                      "civ6_play must catch TERM so its brain is stopped")
+        self.assertIn("atexit.register(stop_brain)", source,
+                      "and the cleanup it returns to must still be registered")
+
+
 class Civ6PlayTest(unittest.TestCase):
     def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,

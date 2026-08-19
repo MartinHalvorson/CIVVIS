@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import signal
 import json
 import os
 import subprocess
@@ -2684,6 +2685,26 @@ def _play(args: argparse.Namespace) -> int:
     # Covers KeyboardInterrupt and unexpected exceptions between the explicit
     # cleanup sites below. Calling it again after a normal run is harmless.
     atexit.register(stop_brain)
+
+    # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
+    # terminates the process outright, so `stop_brain` above never fires and the
+    # brain outlives the harness — and an orphaned brain is not harmless. The
+    # climb's `busy()` counts any live `civ6_brain.py` as a running game, so the
+    # NEXT attempt dies on "something already holds the game; refusing to stop an
+    # unowned run" while the lock file is empty and Civilization VI is down.
+    # Measured 2026-08-19: a brain from run civvis-20260819T162342Z was still
+    # alive 29 minutes after its game had gone, and every launch in that window
+    # failed that way until it was killed by hand.
+    #
+    # TERM is the ordinary way this process is stopped — the supervisor's own
+    # teardown sends it ("requesting clean stop"), so this is the common path,
+    # not an edge case. Raising SystemExit hands control back to the normal
+    # shutdown, which runs the atexit handler above; 143 is the conventional
+    # 128+SIGTERM status.
+    def _terminate(signum, _frame):  # noqa: ANN001 - signal handler signature
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _terminate)
 
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
