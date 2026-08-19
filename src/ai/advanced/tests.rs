@@ -4811,6 +4811,103 @@ fn live_nobel_competitions_price_only_matching_great_person_projects() {
     );
 }
 
+/// Nobel Peace is unlike the other Nobel competitions: its score source is
+/// Favor generated during the competition.  A live seat that can finish the
+/// Foreign Ministry in time must therefore value its +3-per-turn stream, but
+/// no unrelated competition or already-expired Peace contest may borrow it.
+#[test]
+fn live_nobel_peace_prices_favor_buildings_only_before_its_deadline() {
+    let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.turn = 180;
+    install_ai_test_district(&mut game, city, "government_plaza");
+    game.cities
+        .get_mut(&city)
+        .expect("capital")
+        .buildings
+        .push(crate::name!("ancestral_hall"));
+    // Keep the fixture inside Nobel Peace's short clock without changing the
+    // Foreign Ministry's real cost or its prerequisite chain.
+    game.observed_city_yield_adjustments.insert(
+        city,
+        Yields {
+            production: 120.0,
+            ..Yields::default()
+        },
+    );
+    let foreign_ministry = Item::Building {
+        building: crate::name!("foreign_ministry"),
+    };
+    assert!(
+        game.can_produce(0, city, &foreign_ministry),
+        "the completed Plaza and its first tier unlock Foreign Ministry"
+    );
+    assert_eq!(
+        game.rules.buildings[&crate::name!("foreign_ministry")]
+            .effects
+            .get("diplomatic_favor"),
+        Some(&3.0),
+        "the fixture uses the host's real +3 Favor-per-turn source"
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.refresh_research_weight(&game);
+    let counts = ai.counts(&game, 0);
+    let baseline = ai.production_value(&game, 0, city, &foreign_ministry, &plan, &counts);
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    assert_eq!(
+        ai.production_value(&game, 0, city, &foreign_ministry, &plan, &counts),
+        baseline,
+        "Nobel Literature scores Great Person points, not generated Favor"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    let peace = ai.production_value(&game, 0, city, &foreign_ministry, &plan, &counts);
+    assert!(
+        peace > baseline + 50.0,
+        "a timely +3 Favor stream must close the Nobel Peace race: {peace} vs {baseline}"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: game.turn + 1,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    assert_eq!(
+        ai.production_value(&game, 0, city, &foreign_ministry, &plan, &counts),
+        baseline,
+        "a building that cannot generate Favor before the deadline receives no stale score"
+    );
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
