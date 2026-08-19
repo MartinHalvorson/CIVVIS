@@ -65,6 +65,64 @@ def _rust_string(value: str) -> str:
 LADDER_TERMINAL_TURNS = 248
 
 
+def withholding_arms(
+    repo: Path, registered: list[str], withholdable: set[str] | None = None
+) -> dict[str, str]:
+    """Published tag -> the evaluator arm that withholds it, looked up not guessed.
+
+    ⚠⚠ THERE IS NO RULE, AND BOTH OBVIOUS ONES ARE WRONG SOMEWHERE. This was
+    `live_without_{tag.replace('-', '_')}`, which names an arm that does not
+    exist for `ranged-line-of-sight` — its arm is
+    `live_without_ranged_needs_line_of_sight`, after the flag. Deriving from the
+    flag instead is wrong the other way: `army-target-weighs-enemy` sets
+    `army_target_weighs_the_enemy` and its arm is
+    `live_without_army_target_weighs_enemy`, after the tag.
+
+    So each tag's arm is whichever candidate `EVAL_ONLY_AIS` actually contains,
+    and a tag with neither is an error rather than a guess. That matters twice
+    over: `docs/EVAL_STATUS.md` publishes this list as the debt roadmap
+    objective 3 asks the fleet to work through, and the evidence search below
+    looks for the arm name as one of its spellings — so a wrong guess both
+    prints a name nobody can run and over-counts the debt by missing a round
+    that used the real one.
+    """
+    source = (repo / "src" / "ai" / "advanced" / "treatments.rs").read_text(encoding="utf-8")
+    rows = re.findall(
+        r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::disable_([a-z0-9_]+)\s*\)',
+        source,
+    )
+    if not rows:
+        raise ValueError(
+            "src/ai/advanced/treatments.rs yielded no LIVE_TREATMENTS rows; the scrape "
+            "broke rather than finding an empty table"
+        )
+    known = set(registered)
+    arms: dict[str, str] = {}
+    unrunnable = []
+    for _name, tag, disabler in rows:
+        # ⚠ Only the withholdable tags. `LIVE_TREATMENTS` also carries rows
+        # that are not in `LIVE_BRIDGE_TREATMENTS` — `strategic-wonders` is
+        # one — and those correctly have no `live_without_*` arm. Checking
+        # every row instead raised on them, and "fixing" that by registering
+        # an arm broke three tests that know better:
+        # `each_live_without_arm_holds_exactly_one_treatment_off` refuses an
+        # arm whose treatment is not a live-bridge treatment.
+        if withholdable is not None and tag not in withholdable:
+            continue
+        candidates = [f"live_without_{tag.replace('-', '_')}", f"live_without_{disabler}"]
+        arm = next((candidate for candidate in candidates if candidate in known), None)
+        if arm is None:
+            unrunnable.append(f"{tag} (tried {', '.join(candidates)})")
+        else:
+            arms[tag] = arm
+    if unrunnable:
+        raise ValueError(
+            "these withholdable treatments have no evaluator arm, so the debt list would "
+            "name something nobody can run: " + "; ".join(unrunnable)
+        )
+    return arms
+
+
 def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     source = (repo / "src" / "elo.rs").read_text(encoding="utf-8")
     found: dict[str, dict[str, Any]] = {}
@@ -235,7 +293,12 @@ def read_evidence(repo: Path) -> str:
     return "\n".join(parts)
 
 
-def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[str, Any]:
+def bundle_coverage(
+    live: list[str],
+    firaxis: set[str],
+    evidence: str,
+    arms: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """How much of the shipped live-bridge bundle the ledger has ever discussed.
 
     ⚠⚠ THE COUNT THIS PUBLISHES IS "NEVER NAMED", AND THAT IS DELIBERATELY THE
@@ -269,7 +332,10 @@ def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[s
     named, never = [], []
     for tag in withholdable:
         flag = tag.replace("-", "_")
-        spellings = (tag, flag, f"live_without_{flag}")
+        arm = (arms or {}).get(tag, f"live_without_{flag}")
+        # The arm is the fourth spelling and the only one that is authoritative
+        # for a tag published shorter than its flag.
+        spellings = (tag, flag, f"live_without_{flag}", arm)
         found = any(spelling in evidence for spelling in spellings)
         (named if found else never).append(tag)
     return {
@@ -277,6 +343,10 @@ def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[s
         "named": len(named),
         "never_named": len(never),
         "never_named_treatments": sorted(never),
+        "never_named_arms": {
+            tag: (arms or {}).get(tag, f"live_without_{tag.replace('-', '_')}")
+            for tag in sorted(never)
+        },
     }
 
 
@@ -302,7 +372,16 @@ def build_manifest(repo: Path) -> dict[str, Any]:
                 [item for item in live if item not in firaxis]
             ),
         },
-        "coverage": bundle_coverage(live, firaxis, read_evidence(repo)),
+        "coverage": bundle_coverage(
+            live,
+            firaxis,
+            read_evidence(repo),
+            withholding_arms(
+                repo,
+                registry["EVAL_ONLY_AIS"]["items"],
+                {tag for tag in live if tag not in firaxis},
+            ),
+        ),
         "ladder": read_ladder(repo),
     }
 
@@ -397,7 +476,8 @@ def render_status(manifest: dict[str, Any]) -> str:
     ]
     if coverage["never_named_treatments"]:
         lines.append("".join(
-            f"`{tag}`, " for tag in coverage["never_named_treatments"]
+            f"`{tag}` (`{coverage['never_named_arms'][tag]}`), "
+            for tag in coverage["never_named_treatments"]
         ).rstrip(", "))
     else:
         lines.append("_None — every withholdable treatment has been named._")

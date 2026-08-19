@@ -2803,6 +2803,154 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     assert!(!AdvancedAi::legacy().naval_recon());
 }
 
+/// ★★★★★ THE ARM WAS DEAD ON THE SEAT IT WAS BUILT FOR. Every test above
+/// runs on a native board, where the whole sea exists and `explored` is the
+/// part of it the seat has looked at. The Civilization VI mirror writes only
+/// the plots the host revealed, `explored` IS that set, and the rest of the
+/// world is `unknown` terrain — not water — so "a water tile outside
+/// `explored`" was false on every live turn of every live game: 25 runs on
+/// 2026-08-18, zero sea-scout reservations, and run `civvis-20260818T225716Z`
+/// at t169 with Cartography and Square Rigging in hand, a coastal Ostia since
+/// t44, 559 of 3404 plots seen, two of five rivals met, and NO SHIP EVER
+/// BUILT. On a mirrored board the arm now reads the sea's frontier — the fog
+/// the mirror grows past charted water — reserves the hull, and sails it.
+#[test]
+fn on_a_mirrored_board_the_sea_scout_arm_reads_the_fog_past_charted_water() {
+    use crate::mirror::{apply_explored, grow_frontier, rebuild_game, Snapshot, TilesChunk};
+    let center = crate::hex::offset_to_axial(12, 10);
+    let mut plots = Vec::new();
+    for y in 0..24 {
+        for x in 0..24 {
+            let here = crate::hex::offset_to_axial(x, y);
+            let d = crate::hex::distance(here, center);
+            let terrain = match d {
+                0..=1 => "TERRAIN_GRASS",
+                2..=4 => "TERRAIN_COAST",
+                _ => continue,
+            };
+            plots.push(serde_json::json!({"x": x, "y": y, "t": terrain}));
+        }
+    }
+    let chunk: TilesChunk = serde_json::from_value(serde_json::json!({
+        "turn": 44, "width": 24, "height": 24, "chunk": 1, "plots": plots,
+    }))
+    .expect("the fixture chunk parses like a mod export");
+    let snapshot = Snapshot::from_chunks(&[chunk]);
+    let mut game = rebuild_game(&snapshot, 4, 7);
+    // The rebuilt board keeps the generated seats' opening units; the mirror
+    // proper replaces them with the host's roster. Clear them so the only
+    // hostile in sight is the one this fixture places, which is none.
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    apply_explored(&mut game, &snapshot);
+    game.players[0].techs.insert(crate::name!("sailing"));
+    // The city stands on the island's rim, its centre touching the coast.
+    let rim = game
+        .nbrs(center)
+        .into_iter()
+        .min()
+        .expect("the island has a rim");
+    let city = game.place_city(0, rim, None);
+    assert!(crate::ai::BasicAi::empire_is_coastal(&game, 0));
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    // The Firaxis order adapter commits explorers to fog goals; run under
+    // its shipped settings so the held goal can be read back.
+    live.enable_explore_commit();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    // The board as every live game saw it: no frontier at the water's edge.
+    // Nothing reads as unseen water, so nothing is missing and nothing sails.
+    assert!(
+        !live.base.naval_recon_is_the_missing_arm(&game, 0),
+        "with no sea frontier the world reads as charted — the live seat's dead gate"
+    );
+    let shore = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| game.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .max_by_key(|pos| (crate::hex::distance(*pos, center), *pos))
+        .expect("the island has charted coast");
+    let galley = game.spawn_test_unit("galley", 0, shore);
+    assert!(live.naval_explorer(&game, 0).is_empty());
+    game.remove_unit(galley);
+
+    // The mirror grows the sea's prior past the charted water.
+    grow_frontier(&mut game, &snapshot, 6);
+    assert!(crate::ai::BasicAi::unseen_water_remains(&game, 0));
+    assert!(
+        live.base.naval_recon_is_the_missing_arm(&game, 0),
+        "fog past the coast and no hull afloat: the sea scout is the missing arm"
+    );
+    live.reserve_idle_naval_recon(&mut game, 0, &plan);
+    assert!(
+        matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if game.rules.units[unit].domain.as_deref() == Some("sea")
+        ),
+        "the idle coastal city lays the hull down: {:?}",
+        game.cities[&city].queue
+    );
+
+    // And a hull on the shore is the empire's explorer, sailing for the fog.
+    let galley = game.spawn_test_unit("galley", 0, shore);
+    assert_eq!(live.naval_explorer(&game, 0), vec![galley]);
+    assert!(
+        !live.base.naval_recon_is_the_missing_arm(&game, 0),
+        "one eye afloat completes the peacetime arm"
+    );
+    // At peace — no major at war, no raider at home — which is the path that
+    // never sailed a ship before: `BasicAi::military_step`'s enemy list holds
+    // the barbarian seat on every turn, so it took the hull to
+    // `peacetime_step` at war, where a non-Recon unit never explores.
+    let journal = crate::reasoning::Journal::recording();
+    live.attach_journal(journal.handle());
+    let plan = live.assess(&game, 0);
+    let before = game.units[&galley].pos;
+    let explored_before = game.players[0].explored.len();
+    assert!(
+        live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
+        "the explorer acts"
+    );
+    let after = game.units[&galley].pos;
+    assert!(
+        after != before || game.players[0].explored.len() > explored_before,
+        "it sailed toward the fog at peace ({before:?} -> {after:?})"
+    );
+    let goal = live
+        .base
+        .explore_goal
+        .borrow()
+        .get(&galley)
+        .map(|(goal, _)| *goal);
+    let said: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|t| format!("{} | {}", t.headline, t.detail))
+        .collect();
+    let goal = goal.unwrap_or_else(|| {
+        panic!("the committed explorer holds a goal; {before:?} -> {after:?}, journal {said:#?}")
+    });
+    let tile = &game.map.tiles[&goal];
+    assert!(
+        game.rules.is_unknown(tile) && tile.assumed_navigable,
+        "and the goal is the sea's frontier, not charted water: {goal:?}"
+    );
+}
+
 #[test]
 fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
     let mut game = Game::new_full(2, 30, 18, 71_003, 100, 0, false);
@@ -5480,6 +5628,49 @@ fn explicit_non_diplomatic_targets_do_not_score_congress_points() {
     assert!(diplomacy_game.congress.as_ref().unwrap().resolutions[0]
         .ballots
         .contains_key(&0));
+}
+
+#[test]
+fn diplomatic_congress_spends_the_full_affordable_online_bank() {
+    use crate::game::{CongressResolution, CongressSession};
+    use crate::setup::GameSpeed;
+
+    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    game.game_speed = GameSpeed::Online;
+    game.players[0].diplomatic_favor = 352.0;
+    game.congress = Some(CongressSession {
+        convened: 0,
+        closes: 5,
+        resolutions: vec![CongressResolution {
+            id: "world_leader".to_string(),
+            title: "Diplomatic Victory".to_string(),
+            choices: vec![
+                "A:0".to_string(),
+                "B:0".to_string(),
+                "A:1".to_string(),
+                "B:1".to_string(),
+            ],
+            ballots: BTreeMap::new(),
+        }],
+    });
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    AdvancedAi::targeting(VictoryTarget::Diplomacy).advanced_diplomacy(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.congress.as_ref().unwrap().resolutions[0].ballots[&0].1,
+        13,
+        "the diplomatic plan should use the host-affordable ballot"
+    );
+    assert_eq!(game.players[0].diplomatic_favor, 40.0);
 }
 
 #[test]
@@ -25764,4 +25955,100 @@ fn the_missing_land_eye_claims_one_idle_queue() {
         !is_recon(&charted, capital) && !is_recon(&charted, second),
         "a charted world reserves nothing"
     );
+}
+
+/// ★★★ A STOCK LANE'S PRESSURE ACCELERATES, AND THE BAR READ IT TOO LATE TO
+/// VOTE. The first game on the repaired economy (civvis-20260818T231407Z,
+/// 16 cities against the best rival's 9) crossed `STOCK_DENIAL_BAR` at ~t221;
+/// the game's last Congress sat at t222 with nothing reading urgent when the
+/// ballot was priced, and Egypt won Culture at t232. Across the four
+/// measurable culture losses the projection moves the first crossing from
+/// 3/7/12/37 turns of lead to 12/12/15/66. The projection can only raise a
+/// reading — a receding leader clamps to the raw number — and it feeds the
+/// stock clause alone.
+#[test]
+fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
+    let game = Game::new_full(2, 20, 14, 71_131, 30, 0, false);
+    let rising = VictoryFocus {
+        strategy: GrandStrategy::Culture,
+        progress: 60,
+    };
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.projected_stock_denial,
+        "the live seat carries the treatment"
+    );
+    assert!(
+        live.stock_denial_lead_time,
+        "the projection rides the lead-time bar"
+    );
+
+    // No history yet: a projection from a single reading is noise, so the
+    // raw bar rules and 60 is not urgent.
+    assert!(!live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // Eight turns of the measured Egypt ramp (~2.4/turn): 60 projected
+    // fifteen turns forward clears the bar with a Congress still to come.
+    live.stock_pressure_history.insert(
+        1,
+        (0..=8)
+            .map(|i| (100 + i, 41 + (i as i32) * 12 / 5))
+            .collect(),
+    );
+    assert!(live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // A flat or receding leader clamps to the raw reading: not urgent.
+    live.stock_pressure_history
+        .insert(1, (0..=8).map(|i| (100 + i, 60 - (i as i32))).collect());
+    assert!(!live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // The raw bar itself is untouched: 78 stays urgent with any history.
+    let at_bar = VictoryFocus {
+        strategy: GrandStrategy::Culture,
+        progress: STOCK_DENIAL_BAR,
+    };
+    assert!(live.victory_pressure_is_urgent(&game, 1, at_bar));
+
+    // Non-stock lanes never read the projection: Science at 60 with the
+    // steepest ramp on record stays non-urgent.
+    live.stock_pressure_history
+        .insert(1, (0..=8).map(|i| (100 + i, 40 + (i as i32) * 6)).collect());
+    let science = VictoryFocus {
+        strategy: GrandStrategy::Science,
+        progress: 60,
+    };
+    assert!(!live.victory_pressure_is_urgent(&game, 1, science));
+
+    // The withhold arm restores the raw bar exactly.
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_projected_stock_denial();
+    withheld.stock_pressure_history.insert(
+        1,
+        (0..=8)
+            .map(|i| (100 + i, 41 + (i as i32) * 12 / 5))
+            .collect(),
+    );
+    assert!(!withheld.victory_pressure_is_urgent(&game, 1, rising));
+
+    // The published withhold row reaches the same flag.
+    let (field, name, disable) = super::treatments::LIVE_TREATMENTS
+        .iter()
+        .find(|(field, _, _)| *field == "projected_stock_denial")
+        .copied()
+        .expect("the treatment is published");
+    assert_eq!(name, "projected-stock-denial");
+    let mut via_row = AdvancedAi::new();
+    via_row.enable_live_bridge();
+    disable(&mut via_row);
+    assert!(
+        !via_row.projected_stock_denial,
+        "{field} row disables the flag"
+    );
+
+    // Frozen and ordinary controllers never project.
+    assert!(!AdvancedAi::new().projected_stock_denial);
+    assert!(!AdvancedAi::legacy().projected_stock_denial);
 }
