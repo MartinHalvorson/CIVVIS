@@ -25562,7 +25562,9 @@ fn a_valued_wonder_credits_the_prerequisites_that_unblock_it() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25681,7 +25683,9 @@ fn a_refused_wonder_earns_its_prerequisites_nothing() {
         game.players[0].civ
     );
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25721,7 +25725,9 @@ fn a_built_wonder_stops_paying_its_prerequisites() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
