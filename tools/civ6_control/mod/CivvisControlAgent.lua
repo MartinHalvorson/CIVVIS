@@ -194,6 +194,10 @@ local function resolveActions()
 		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
+		-- This begins the Apostle's native belief-selection prompt. The order
+		-- handler keeps CIVVIS's selected belief and completes that prompt with
+		-- the same ADD_BELIEF player operation the shipped ReligionScreen uses.
+		"UNITOPERATION_EVANGELIZE_BELIEF",
 		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
 		-- so UnitPanel requests each directly with no parameters, like spreading.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
@@ -3937,12 +3941,11 @@ local GOVERNOR_ORDER = {
 	"GOVERNOR_THE_CARDINAL",
 };
 
--- The last founding this agent asked the host for, kept until the host either
--- confirms it or is caught not doing it. `UI.RequestPlayerOperation` is
--- asynchronous, so nothing on the requesting frame can tell success from a
--- silent no-op -- and a silent no-op here costs the Great Prophet AND the
--- religion. See the `kind == "religion"` handler.
-local pendingReligionFounding = nil;
+-- The last founding or Apostle enhancement this agent asked the host for,
+-- kept until the next export confirms it or catches its failure. Both paths
+-- cross asynchronous player operations, so a `pcall` verdict only means that
+-- the request did not throw; it cannot prove the host applied the choice.
+local pendingReligionChoice = nil;
 
 -- Which city each appointed governor was posted to, kept across turns. The engine
 -- has query methods for this but their names differ between builds, and guessing
@@ -4730,6 +4733,10 @@ local CIVVIS_OWNED_BLOCKERS = {
 	--
 	ENDTURN_BLOCKING_PANTHEON = true,
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
+	-- An Apostle's EVANGELIZE_BELIEF operation raises this prompt. The pending
+	-- order stores the exact CIVVIS choice, and `answerBlocker` supplies it
+	-- instead of allowing a generic chooser to race the operation.
+	ENDTURN_BLOCKING_BELIEF = true,
 	-- ★★★ IT APPEARED. The note that stood here said this name was deliberately
 	-- left out "though CIVVIS issues `government` orders too: it did not appear
 	-- in this run, so adding it would be reasoning rather than measurement" —
@@ -4774,6 +4781,7 @@ CivvisAnswersPrompt = {
 	ENDTURN_BLOCKING_PRODUCTION = "produce",
 	ENDTURN_BLOCKING_PANTHEON = "pantheon",
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = "policy_deck",
+	ENDTURN_BLOCKING_BELIEF = "unit",
 	ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE = "government",
 };
 
@@ -4809,6 +4817,23 @@ end
 
 local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	local name = blockerName(blocker);
+	-- Firaxis's UnitPanel starts the Apostle operation, then ReligionScreen
+	-- confirms the selected belief with ADD_BELIEF. Keep those two asynchronous
+	-- steps together through a pending record so the exact CIVVIS choice reaches
+	-- the prompt and a non-throwing request is still verified by exportState.
+	if name == "ENDTURN_BLOCKING_BELIEF"
+			and pendingReligionChoice ~= nil
+			and pendingReligionChoice.mode == "evangelize" then
+		if pendingReligionChoice.add_requested then return "civvis_complete"; end
+		local params = {};
+		params[PlayerOperations.PARAM_BELIEF_TYPE] = pendingReligionChoice.belief_hash;
+		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+		end);
+		if ok then pendingReligionChoice.add_requested = true; end
+		return ok and "evangelize_belief" or nil;
+	end
 	-- A CIVVIS pass is a complete decision for the mirrored state it received.
 	-- Firaxis can finish production or research later in the same turn and raise
 	-- another prompt, but answering that prompt with the hand-written ladder
@@ -6878,35 +6903,72 @@ local function exportState(player, pid, turn, frame)
 		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
 	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
 		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
-	-- ★ SAY SO WHEN THE FOUNDING DID NOT TAKE. The request reports `applied`
-	-- because nothing threw; only the turn AFTER can read whether a religion
-	-- exists. Across 24 live runs the answer was always "no religion, and the
-	-- Prophet is gone too", and nothing in the log said so.
-	if pendingReligionFounding ~= nil then
+	-- ★ SAY SO WHEN A RELIGIOUS CHOICE DID NOT TAKE. The request reports
+	-- `applied` because nothing threw; only the turn AFTER can read whether the
+	-- player's own religion carries the selected belief or exists at all.
+	if pendingReligionChoice ~= nil then
 		local now = try(function() return Game.GetCurrentGameTurn(); end, 0) or 0;
-		if religionCreated >= 0 then
+		if pendingReligionChoice.mode == "evangelize" then
+			local enhanced = false;
+			for _, religion in ipairs(try(function()
+				return Game.GetReligion():GetReligions();
+			end, {}) or {}) do
+				if religion.Founder == pid then
+					for _, beliefIndex in ipairs(religion.Beliefs or {}) do
+						if beliefIndex == pendingReligionChoice.belief_index then
+							enhanced = true;
+							break;
+						end
+					end
+				end
+				if enhanced then break; end
+			end
+			if enhanced then
+				emit("religion_enhanced", {
+					player = pid,
+					turn = now,
+					requested_turn = pendingReligionChoice.turn,
+					unit = pendingReligionChoice.unit,
+					belief = pendingReligionChoice.belief,
+				});
+				pendingReligionChoice = nil;
+			elseif now > pendingReligionChoice.turn then
+				emit("religion_enhancement_failed", {
+					player = pid,
+					turn = now,
+					requested_turn = pendingReligionChoice.turn,
+					unit = pendingReligionChoice.unit,
+					belief = pendingReligionChoice.belief,
+					belief_taken = try(function()
+						return Game.GetReligion():IsInSomeReligion(
+							pendingReligionChoice.belief_index);
+					end, false),
+				});
+				pendingReligionChoice = nil;
+			end
+		elseif religionCreated >= 0 then
 			emit("religion_founded", {
 				player = pid,
 				turn = now,
-				requested_turn = pendingReligionFounding.turn,
-				religion = pendingReligionFounding.religion,
-				follower = pendingReligionFounding.follower,
-				founder = pendingReligionFounding.founder,
+				requested_turn = pendingReligionChoice.turn,
+				religion = pendingReligionChoice.religion,
+				follower = pendingReligionChoice.follower,
+				founder = pendingReligionChoice.founder,
 			});
-			pendingReligionFounding = nil;
-		elseif now > pendingReligionFounding.turn then
+			pendingReligionChoice = nil;
+		elseif now > pendingReligionChoice.turn then
 			emit("religion_founding_failed", {
 				player = pid,
 				turn = now,
-				requested_turn = pendingReligionFounding.turn,
-				religion = pendingReligionFounding.religion,
+				requested_turn = pendingReligionChoice.turn,
+				religion = pendingReligionChoice.religion,
 				-- The two facts that separate the failure modes: whether the
 				-- Prophet survived, and whether the slot is still open.
 				founding_unit_left = prophet_pending,
 				religions_founded = #(try(function()
 					return Game.GetReligion():GetReligions(); end, {}) or {}),
 			});
-			pendingReligionFounding = nil;
+			pendingReligionChoice = nil;
 		end
 	end
 	local founded_religion = nil;
@@ -10263,7 +10325,8 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		local ok = okFound and okFollower and okFounder and okOperation;
 		if ok then
-			pendingReligionFounding = {
+			pendingReligionChoice = {
+				mode = "found",
 				turn = Game.GetCurrentGameTurn(),
 				religion = religion.ReligionType,
 				follower = followerName,
@@ -11428,6 +11491,36 @@ local function applyOrder(player, pid, row, turn)
 				UnitManager.RequestCommand(unit, hash, params);
 			end);
 			return ok, ok and verb or "throw";
+		end
+		local beliefName = string.match(tostring(verb), "^EVANGELIZE_BELIEF:(.+)$");
+		if beliefName ~= nil then
+			if pendingReligionChoice ~= nil then return false, "religion_choice_pending"; end
+			local belief, resolved = resolveType(GameInfo.Beliefs, beliefName);
+			if belief == nil then return false, "unknown_belief_" .. beliefName; end
+			local playerReligion = try(function() return player:GetReligion(); end);
+			if playerReligion == nil then return false, "no_religion_api"; end
+			if try(function() return playerReligion:GetReligionTypeCreated(); end, -1) < 0 then
+				return false, "religion_not_founded";
+			end
+			local gameReligion = try(function() return Game.GetReligion(); end);
+			if gameReligion == nil then return false, "no_game_religion"; end
+			if try(function() return gameReligion:IsInSomeReligion(belief.Index); end, true) then
+				return false, "taken_" .. resolved;
+			end
+			-- The operation itself opens the selection prompt; the blocker handler
+			-- above supplies the selected belief only after that native state exists.
+			local started = operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {});
+			if not started then return false, "cannot_evangelize_" .. resolved; end
+			pendingReligionChoice = {
+				mode = "evangelize",
+				turn = turn,
+				unit = subject,
+				belief = resolved,
+				belief_index = belief.Index,
+				belief_hash = belief.Hash,
+				add_requested = false,
+			};
+			return true, "EVANGELIZE_BELIEF:" .. resolved;
 		end
 		-- A spy mission is an operation aimed at a CITY PLOT, exactly as
 		-- Firaxis' own EspionagePopup issues it: PARAM_X/PARAM_Y then

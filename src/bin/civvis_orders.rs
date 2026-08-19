@@ -3742,6 +3742,19 @@ fn translate(
             verb: Some("SPREAD_RELIGION".to_string()),
             pos: None,
         }),
+        // Evangelization opens Firaxis's native belief prompt. Carry the
+        // exact belief CIVVIS selected with the Apostle so the control mod can
+        // start that operation and answer the resulting prompt without
+        // substituting a heuristic choice.
+        Action::EvangelizeBelief { unit, belief } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some(format!(
+                "EVANGELIZE_BELIEF:BELIEF_{}",
+                belief.as_str().to_ascii_uppercase()
+            )),
+            pos: None,
+        }),
         // These are direct, parameterless entries in Firaxis' UnitOperations
         // table, just like SPREAD_RELIGION. Evangelization remains separate:
         // it opens an asynchronous belief-selection flow rather than applying
@@ -7033,6 +7046,23 @@ mod tests {
         assert_eq!(spread.kind, "unit");
         assert_eq!(spread.subject, Some(91));
         assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+
+        let evangelize = translate(
+            &Action::EvangelizeBelief {
+                unit,
+                belief: civvis::name!("holy_order"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the Apostle belief choice crosses");
+        assert_eq!(evangelize.kind, "unit");
+        assert_eq!(evangelize.subject, Some(91));
+        assert_eq!(
+            evangelize.verb.as_deref(),
+            Some("EVANGELIZE_BELIEF:BELIEF_HOLY_ORDER")
+        );
+        assert_eq!(evangelize.pos, None);
 
         let theological = translate(
             &Action::TheologicalAttack {

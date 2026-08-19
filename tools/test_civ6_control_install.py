@@ -989,7 +989,7 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         # And the request cannot report success on its own say-so: a pcall
         # verdict is "did not throw", so the next turn has to check.
-        self.assertIn("pendingReligionFounding", handler)
+        self.assertIn("pendingReligionChoice", handler)
         self.assertIn("religion_founding_failed", source)
         self.assertIn("religion_founded", source)
 
@@ -1026,6 +1026,36 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('local hash = OP["UNITOPERATION_" .. verb];', handler)
         self.assertIn("return operate(unit, hash, {}), verb;", handler)
 
+    def test_apostle_belief_choice_uses_native_prompt_and_verifies_the_result(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split('if kind == "unit" then', 1)[1].split(
+            'return false, "unknown_kind_"', 1
+        )[0]
+        blocker = source.split("local function answerBlocker", 1)[1].split(
+            "-- The hand-written answer", 1
+        )[0]
+        exporter = source.split("local function exportState", 1)[1].split(
+            "local founded_religion = nil;", 1
+        )[0]
+
+        self.assertIn('"UNITOPERATION_EVANGELIZE_BELIEF"', source)
+        self.assertIn('"^EVANGELIZE_BELIEF:(.+)$"', handler)
+        self.assertIn(
+            'operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {})', handler
+        )
+        self.assertLess(
+            handler.index('operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {})'),
+            handler.index("pendingReligionChoice = {"),
+            "the Apostle operation must create the native prompt before its belief is sent",
+        )
+        self.assertIn("ENDTURN_BLOCKING_BELIEF = true", source)
+        self.assertIn('ENDTURN_BLOCKING_BELIEF = "unit"', source)
+        self.assertIn('name == "ENDTURN_BLOCKING_BELIEF"', blocker)
+        self.assertIn("PlayerOperations.ADD_BELIEF", blocker)
+        self.assertIn("pendingReligionChoice.belief_hash", blocker)
+        self.assertIn("religion_enhanced", exporter)
+        self.assertIn("religion_enhancement_failed", exporter)
+
     def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         handler = source.split("local blocker = currentBlocker(pid);", 1)[1].split(
@@ -1047,12 +1077,15 @@ class ProtectedInstallTest(unittest.TestCase):
         handler = source.split("local function answerBlocker", 1)[1].split(
             "local function dismissBlocker", 1
         )[0]
-        completed = handler.index('return "civvis_complete";')
+        generic = handler.split(
+            "-- A CIVVIS pass is a complete decision for the mirrored state it received.", 1
+        )[1]
+        completed = generic.index('return "civvis_complete";')
         residual = handler.index("residualAnswers[name]")
 
-        self.assertLess(completed, residual)
-        self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", handler[:completed])
-        self.assertIn('awaiting.source == "civvis"', handler[:completed])
+        self.assertLess(handler.index(generic) + completed, residual)
+        self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", generic[:completed])
+        self.assertIn('awaiting.source == "civvis"', generic[:completed])
         self.assertIn("driveProduction(player, turn, true)", handler[residual:])
 
     def test_empty_civvis_order_batch_completes_without_legacy_fallback(self) -> None:
