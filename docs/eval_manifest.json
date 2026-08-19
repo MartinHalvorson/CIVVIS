@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 31,
-    "never_named": 24,
+    "named": 33,
+    "never_named": 22,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -23,9 +23,7 @@
       "stacked-escort": "live_without_stacked_escort",
       "stranded-settler-discount": "live_without_stranded_settler_discount",
       "suzerain-cards": "live_without_suzerain_cards",
-      "war-economy": "live_without_war_economy",
       "war-reinforcement": "live_without_war_reinforcement",
-      "wide-map-capacity": "live_without_wide_map_capacity",
       "wonder-ring-settle-value": "live_without_wonder_ring_settle_value"
     },
     "never_named_treatments": [
@@ -49,9 +47,7 @@
       "stacked-escort",
       "stranded-settler-discount",
       "suzerain-cards",
-      "war-economy",
       "war-reinforcement",
-      "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
     "withholdable": 55
