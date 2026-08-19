@@ -616,6 +616,18 @@ impl JointTactics {
                             // The blow itself pays the defender's tile.
                             continue;
                         }
+                        // ⚠ Units, not walls. Reaching a city's ring from three
+                        // hexes out to strike the CITY is a piecemeal assault
+                        // the closed-form reply under-prices (a bombardment
+                        // every turn, walls that absorb the blow): screened on
+                        // the one-city arena regime, admitting these lines
+                        // measured −4.6 points against `basic` at 480 games
+                        // while the no-city regimes held. City and Encampment
+                        // strikes keep the one-step block and the mover; the
+                        // reach lines exist for the enemy's units.
+                        if g.city_at(target).is_some() || g.encampment_at(target).is_some() {
+                            continue;
+                        }
                         if !seen.insert((to, target, ranged)) {
                             continue;
                         }

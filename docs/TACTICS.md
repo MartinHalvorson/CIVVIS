@@ -1156,6 +1156,17 @@ can express), siege stays grounded, and every line is still played through
 the engine at fitness time. Only tiles within the unit's range of a hostile
 unit, an at-war city or an unpillaged Encampment are scanned for strikes.
 
+**Units, not walls.** The first cut let a reach line strike a *city* too, and
+the one-city arena regime said no: `tactics_bench --only capture --games 480`
+read `advanced` v `basic` at **70.8 %** against the base binary's 75.4 % (the
+no-city regimes held within a point) — reaching a city's ring from three hexes
+out to strike the city is a piecemeal assault the closed-form reply
+under-prices (a bombardment every turn, walls that absorb the blow). Reach
+lines therefore target units only; city and Encampment strikes keep the
+one-step block and the mover. With that exclusion the capture regime reads
+**75.4 %** — the base figure exactly — and the mounted gains below are kept
+(cavalry +469.4, mounted medieval +588.6 on the screen block).
+
 **Screen** — 300 paired seeds a cell, block 7,200,000, `advanced_joint_tactics`
 v stock `advanced`, base (§16 tip) against this change:
 
