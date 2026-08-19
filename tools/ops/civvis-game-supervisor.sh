@@ -405,10 +405,24 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
+  # ⚠ SPLIT the flag from its value. This script is `#!/bin/zsh`, and zsh does
+  # NOT word-split an unquoted parameter expansion the way bash does, so the
+  # bash idiom `${VAR:+--flag "$VAR"}` arrives as ONE argv entry:
+  #
+  #   zsh  % set -- ${V:+--flag "$V"}        ->  argc=1  arg1=[--flag 0.05]
+  #   bash $ set -- ${V:+--flag "$V"}        ->  argc=2  arg1=[--flag]
+  #   both   set -- ${V:+--flag} ${V:+"$V"}  ->  argc=2  arg1=[--flag]
+  #
+  # It cost the ladder an afternoon on 2026-08-19: the climb died on
+  # `unrecognized arguments: --abandon-below-win-rate 0.05` before playing a
+  # turn — 57 batches burned in ten-second retries across two backoff windows,
+  # each "NO CONCLUSION IS AVAILABLE FROM THIS BATCH", while the flag was
+  # plainly listed in the climb's own `--help`. Two expansions, one word each:
+  # empty stays empty, and a value with spaces stays a single argument.
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
-      ${VICTORY:+--victory "$VICTORY"} \
-      ${ABANDON_BELOW:+--abandon-below-win-rate "$ABANDON_BELOW"} \
+      ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
+      ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,

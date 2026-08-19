@@ -106,10 +106,23 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
             + offenders))
 
     def test_the_installed_supervisor_can_state_an_objective(self):
-        """It could not, which is why its objective was whatever it inherited."""
+        """It could not, which is why its objective was whatever it inherited.
+
+        ⚠ This used to pin the SPELLING `${VICTORY:+--victory "$VICTORY"}`, and
+        that spelling is broken under this script's own `#!/bin/zsh`: zsh does
+        not word-split an unquoted parameter expansion, so the pair arrives as
+        ONE argv entry and the climb dies on `unrecognized arguments` before
+        playing a turn. Pinning it meant a test REQUIRED the bug, and fixing
+        the supervisor turned this red. Assert that the objective is passed and
+        that it is passed as separate words — never one exact spelling.
+        """
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
-        self.assertIn('${VICTORY:+--victory "$VICTORY"}', source)
+        self.assertIn("--victory", source,
+                      "the supervisor must pass the lane it was given")
+        self.assertNotIn('${VICTORY:+--victory "$VICTORY"}', source,
+                         "that expansion is a single argv entry under zsh; "
+                         "split the flag from its value")
 
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()

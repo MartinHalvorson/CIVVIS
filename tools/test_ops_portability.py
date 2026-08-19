@@ -100,6 +100,43 @@ class ServicesRunWhereTheyAreInstalled(unittest.TestCase):
 
 
 class LegacyDebtOnlyFalls(unittest.TestCase):
+    def test_zsh_scripts_build_optional_flags_as_arrays(self):
+        """`${VAR:+--flag "$VAR"}` is a bash idiom that LIES under zsh.
+
+        zsh does not word-split an unquoted parameter expansion, so the whole
+        thing arrives as ONE argv entry:
+
+            zsh  % set -- ${V:+--flag "$V"}   ->  argc=1  arg1=[--flag 0.05]
+            bash $ set -- ${V:+--flag "$V"}   ->  argc=2  arg1=[--flag]
+
+        Every `tools/ops` script here is `#!/bin/zsh`. On 2026-08-19 that cost
+        the ladder its whole afternoon: the supervisor passed
+        `${ABANDON_BELOW:+--abandon-below-win-rate "$ABANDON_BELOW"}` and the
+        climb died on `unrecognized arguments: --abandon-below-win-rate 0.05`
+        before playing a turn — 57 batches burned in ten-second retries across
+        two backoff windows, each logging "NO CONCLUSION IS AVAILABLE FROM THIS
+        BATCH", while the flag was plainly listed in the climb's own `--help`.
+        Build optional arguments as arrays; they expand one word per element
+        under both shells.
+        """
+        offenders = []
+        for path in sorted(OPS.glob("*.sh")):
+            if not path.read_text(errors="replace").startswith("#!/bin/zsh"):
+                continue
+            for number, line in enumerate(
+                    path.read_text(errors="replace").splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                # A conditional expansion whose replacement holds whitespace is
+                # the broken shape; `${VAR:+--flag}` alone is one word and fine.
+                for hit in re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*:\+[^}]*\s[^}]*\}", line):
+                    offenders.append(f"{path.name}:{number}: {hit}")
+        self.assertEqual(
+            offenders, [],
+            "these expand to a SINGLE argv entry under zsh; use an array "
+            "(`A=(); [[ -n \"$V\" ]] && A+=(--flag \"$V\"); cmd \"${A[@]}\"):\n  "
+            + "\n  ".join(offenders))
+
     def test_no_script_gains_a_hardcoded_home(self):
         for name, allowed in sorted(LEGACY_DEBT.items()):
             path = OPS / name
