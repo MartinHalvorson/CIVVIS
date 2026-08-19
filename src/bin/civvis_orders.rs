@@ -896,13 +896,16 @@ impl HostMoveRefusals {
         }
     }
 
-    /// Take the proved-unwalkable plots off the mirror's speculative frontier.
+    /// Take the proved-unwalkable plots off the mirror's speculative frontier —
+    /// both domains' priors, since the refusal came from whichever unit was sent
+    /// and the plot is dead for the sea's scout as much as the land's.
     fn apply(&self, mirror: &mut civvis::mirror::LiveMirror) {
         for &(x, y) in &self.dead {
             let pos = civvis::hex::offset_to_axial(x, y);
             if let Some(tile) = mirror.game.map.tiles.get_mut(&pos) {
                 if tile.terrain == "unknown" {
                     tile.assumed_traversable = false;
+                    tile.assumed_navigable = false;
                 }
             }
         }
@@ -1476,6 +1479,126 @@ fn append_favor_sale_order(
         subject: Some(buyer.player as i64),
         verb: Some(format!("FAVOR={amount}")),
         pos: Some((amount * FAVOR_GOLD_FLOOR_PER_POINT, 0)),
+    });
+    None
+}
+
+// ★★★★★ THE WORK SOLD TO SEAT THE PERSON. A cultural Great Person whose
+// `empty_slots` reads zero is out of space by the host's own count: every
+// compatible slot in the empire holds a work, and #2086's driver rightly
+// stands them still while the needs machinery builds more. But capacity is
+// bounded (one Amphitheater per city, one Museum per Theater), the person
+// produces NOTHING while parked, and Firaxis trades placed Great Works as
+// ordinary deal items. So sell ONE placed work of the starved class's own
+// object kind to a rich rival at the rival's own valuation: the treasury —
+// zero for 103 of 245 turns on measured runs — gets the gold, the freed slot
+// re-fills with the idle person's fresh work, and the empire ends with the
+// same works standing plus the price of one. The order rides the `sell` arm
+// exactly as favor does; the mod's cooldowns meter refusals.
+const WORK_SALE_CADENCE: u32 = 6;
+const WORK_SALE_PHASE: u32 = 5;
+const WORK_SALE_FLOOR: i32 = 50;
+
+/// The Great Work object types a slot-consuming class produces — the Rust
+/// copy of the control mod's `CivvisGreatWorks.CLASS_OBJECTS` (there is no
+/// `GREATWORKOBJECT_ART`; Artists create these four). `None` for classes
+/// that do not consume slots.
+fn class_sale_objects(class: &str) -> Option<&'static [&'static str]> {
+    match class {
+        "GREAT_PERSON_CLASS_WRITER" => Some(&["GREATWORKOBJECT_WRITING"]),
+        "GREAT_PERSON_CLASS_MUSICIAN" => Some(&["GREATWORKOBJECT_MUSIC"]),
+        "GREAT_PERSON_CLASS_ARTIST" => Some(&[
+            "GREATWORKOBJECT_SCULPTURE",
+            "GREATWORKOBJECT_PORTRAIT",
+            "GREATWORKOBJECT_LANDSCAPE",
+            "GREATWORKOBJECT_RELIGIOUS",
+        ]),
+        _ => None,
+    }
+}
+
+/// Why no work-sale order was appended this turn, for the note; `None` when
+/// one was.
+fn append_work_sale_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    // The trigger is the person, not the treasury: a slot consumer the host
+    // says cannot activate anywhere. `empty_slots == Some(0)` is honest since
+    // #2086 — `None` (an older mod) must NOT trigger a sale on a guess.
+    let starved = state
+        .units
+        .iter()
+        .filter_map(|unit| unit.great_person.as_ref())
+        .filter(|person| !person.can_activate && person.empty_slots == Some(0))
+        .filter_map(|person| person.class.as_deref().and_then(class_sale_objects))
+        .next();
+    let Some(objects) = starved else {
+        return Some("work_sale_hold:no_starved_person");
+    };
+    if state.turn % WORK_SALE_CADENCE != WORK_SALE_PHASE {
+        return Some("work_sale_hold:cadence");
+    }
+    // One placed work the starved person could replace. Any placed work of
+    // the class's own object kind frees a slot that accepted it; base works
+    // of one kind carry near-identical yields, so the first is as good as
+    // any and the choice stays deterministic.
+    let work = state
+        .cities
+        .iter()
+        .flat_map(|city| city.great_works.iter().flatten())
+        .find(|work| !work.kind.is_empty() && objects.contains(&work.object.as_str()));
+    let Some(work) = work else {
+        // Starved with nothing of its own kind placed: the slots holding the
+        // empire's works are all foreign kinds (or palace-only), and only
+        // building capacity can help. The needs machinery's case, not ours.
+        return Some("work_sale_hold:no_matching_work");
+    };
+    // The richest met major at peace — the favor sale's buyer rule — except
+    // the culture front-runner when there is any other choice: our losses
+    // are 27-of-71 culture steals, and a Great Work in that rival's museum
+    // is tourism for them twice over.
+    let candidates: Vec<&civvis::mirror::StateRival> =
+        state.rivals.iter().filter(|rival| !rival.at_war).collect();
+    let top_culture = candidates
+        .iter()
+        .max_by(|left, right| {
+            left.culture
+                .partial_cmp(&right.culture)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|rival| rival.player);
+    let buyer = candidates
+        .iter()
+        .filter(|rival| candidates.len() == 1 || Some(rival.player) != top_culture)
+        .max_by(|left, right| {
+            let gold = |rival: &civvis::mirror::StateRival| {
+                if rival.gold.is_finite() {
+                    rival.gold
+                } else {
+                    0.0
+                }
+            };
+            gold(left)
+                .partial_cmp(&gold(right))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.player.cmp(&left.player))
+        });
+    let Some(buyer) = buyer else {
+        return Some("work_sale_hold:no_buyer");
+    };
+    // One working deal per rival at a time is the mod's rule; see the border
+    // buy's identical yield.
+    if orders.iter().any(|order| {
+        (order.kind == "sell" || order.kind == "buy") && order.subject == Some(buyer.player as i64)
+    }) {
+        return Some("work_sale_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "sell",
+        subject: Some(buyer.player as i64),
+        verb: Some(format!("{}=1", work.kind)),
+        pos: Some((WORK_SALE_FLOOR, 0)),
     });
     None
 }
@@ -2693,6 +2816,17 @@ fn decide(
             // seal standing while the treasury cannot meet the minimum ask,
             // or while another deal holds the same rival's working deal.
             if why == "border_buy_hold:treasury" || why == "border_buy_hold:deal_in_flight" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
+    match append_work_sale_order(state, &mut orders) {
+        None => note_bits.push("work_sale=1".to_string()),
+        Some(why) => {
+            // The holds worth a glance: a starved person whose kind has no
+            // placed work to free (only building capacity can seat them), or
+            // nobody at peace to sell to.
+            if why == "work_sale_hold:no_matching_work" || why == "work_sale_hold:no_buyer" {
                 note_bits.push(why.to_string());
             }
         }
@@ -5034,9 +5168,9 @@ mod tests {
 
     use super::*;
     use civvis::mirror::{
-        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
-        StateGovernor, StateMinor, StateRival, StateSnapshot, StateTradeRoute, StateUnit,
-        TilesChunk,
+        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGovernor,
+        StateGreatPerson, StateGreatWork, StateMinor, StateRival, StateSnapshot, StateTradeRoute,
+        StateUnit, TilesChunk,
     };
 
     #[test]
@@ -7902,6 +8036,157 @@ mod tests {
             append_favor_sale_order(science, &nobody, &mut held),
             Some("favor_hold:no_buyer")
         );
+        assert!(held.is_empty());
+    }
+
+    /// The out-of-space fallback: a Writer the host counts ZERO compatible
+    /// empty slots for triggers the sale of one placed writing work — to the
+    /// richest peaceful rival that is not the culture front-runner — so the
+    /// freed slot seats the idle person and the treasury gets the price.
+    #[test]
+    fn a_slot_starved_writer_sells_a_placed_writing_work() {
+        let starved_writer = StateUnit {
+            id: 90,
+            kind: "UNIT_GREAT_WRITER".to_string(),
+            great_person: Some(StateGreatPerson {
+                class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
+                can_activate: false,
+                empty_slots: Some(0),
+                ..StateGreatPerson::default()
+            }),
+            ..StateUnit::default()
+        };
+        let works_city = StateCity {
+            great_works: Some(vec![
+                StateGreatWork {
+                    kind: "GREATWORK_YING_1".to_string(),
+                    object: "GREATWORKOBJECT_LANDSCAPE".to_string(),
+                    ..StateGreatWork::default()
+                },
+                StateGreatWork {
+                    kind: "GREATWORK_POE_1".to_string(),
+                    object: "GREATWORKOBJECT_WRITING".to_string(),
+                    ..StateGreatWork::default()
+                },
+            ]),
+            ..StateCity::default()
+        };
+        let state = StateSnapshot {
+            turn: 143, // 143 % 6 == 5, the lane's phase
+            units: vec![starved_writer],
+            cities: vec![works_city],
+            rivals: vec![
+                // The culture front-runner is also the richest: skipped, our
+                // losses are culture steals and a work in their museum is
+                // their tourism twice over.
+                StateRival {
+                    player: 2,
+                    gold: 1500.0,
+                    culture: 90.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    gold: 800.0,
+                    culture: 30.0,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    gold: 900.0,
+                    culture: 20.0,
+                    at_war: true,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let mut orders = Vec::new();
+        assert_eq!(append_work_sale_order(&state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "sell");
+        assert_eq!(
+            orders[0].subject,
+            Some(4),
+            "not the culture leader, not the war"
+        );
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("GREATWORK_POE_1=1"),
+            "the writing work, not the landscape the writer cannot replace"
+        );
+        assert_eq!(orders[0].pos, Some((WORK_SALE_FLOOR, 0)));
+
+        // Off the cadence: hold, whoever is starved.
+        let mut off = state.clone();
+        off.turn = 144;
+        let mut held = Vec::new();
+        assert_eq!(
+            append_work_sale_order(&off, &mut held),
+            Some("work_sale_hold:cadence")
+        );
+
+        // `None` slots — an older mod that cannot count — is not starvation;
+        // neither is a person the host says can activate right now.
+        let mut unknown = state.clone();
+        unknown.units[0].great_person.as_mut().unwrap().empty_slots = None;
+        assert_eq!(
+            append_work_sale_order(&unknown, &mut held),
+            Some("work_sale_hold:no_starved_person")
+        );
+        let mut activatable = state.clone();
+        activatable.units[0].great_person.as_mut().unwrap().can_activate = true;
+        assert_eq!(
+            append_work_sale_order(&activatable, &mut held),
+            Some("work_sale_hold:no_starved_person")
+        );
+
+        // A starved Merchant is not a slot consumer and never triggers.
+        let mut merchant = state.clone();
+        merchant.units[0].great_person.as_mut().unwrap().class =
+            Some("GREAT_PERSON_CLASS_MERCHANT".to_string());
+        assert_eq!(
+            append_work_sale_order(&merchant, &mut held),
+            Some("work_sale_hold:no_starved_person")
+        );
+
+        // No placed work of the starved kind: only building capacity helps.
+        let mut bare = state.clone();
+        bare.cities[0].great_works = Some(vec![StateGreatWork {
+            kind: "GREATWORK_YING_1".to_string(),
+            object: "GREATWORKOBJECT_LANDSCAPE".to_string(),
+            ..StateGreatWork::default()
+        }]);
+        assert_eq!(
+            append_work_sale_order(&bare, &mut held),
+            Some("work_sale_hold:no_matching_work")
+        );
+
+        // A deal already heading to the buyer's seat yields the turn.
+        let mut busy = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("RESOURCE_DYES=1".to_string()),
+            pos: Some((30, 0)),
+        }];
+        assert_eq!(
+            append_work_sale_order(&state, &mut busy),
+            Some("work_sale_hold:deal_in_flight")
+        );
+        assert_eq!(busy.len(), 1);
+
+        // The culture leader is still a buyer when they are the ONLY buyer.
+        let mut lone = state.clone();
+        lone.rivals = vec![StateRival {
+            player: 2,
+            gold: 1500.0,
+            culture: 90.0,
+            ..StateRival::default()
+        }];
+        let mut only = Vec::new();
+        assert_eq!(append_work_sale_order(&lone, &mut only), None);
+        assert_eq!(only[0].subject, Some(2));
         assert!(held.is_empty());
     }
 
