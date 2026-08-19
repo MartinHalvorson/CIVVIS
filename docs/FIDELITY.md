@@ -96,8 +96,36 @@ structural, not tactical: a native empire has no route to 20 and no treatment
 can give it one, so every native measurement of a diplomatic-denial treatment
 has been measuring a lane that cannot complete.
 
-`no_native_competition_awards_a_diplomatic_victory_point` pins the gap and is
-written to fail the day competitions become native.
+### The mechanism, off by default
+
+`Game::native_competitions` runs them. A congress seats one
+(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own), a completed
+scoring project adds the `competition_score` it declares, and the clock running
+out pays first place its Diplomatic Victory Point and 25 Favor. A native
+competition presents through the same accessor a mirrored one does, so the
+production catalog and the AI's valuation needed no change at all.
+
+⚠ **Two of the seven, and the two are not a preference.** A competition is
+offered only where our own data says an empire could score in it, and the
+scoring project is what says so — Space Station needs a Spaceport, Climate
+Accords an Industrial Zone. World Games' project declares *no* prerequisite, so
+nothing in the data says when it may start and choosing an era would be
+inventing one; World's Fair and the Nobel prizes score from Great People rather
+than a project; the two aid requests trigger on a random event and on a war,
+not on the congress.
+
+⚠ **Ties pay nobody.** A tie has no first place and inventing a tiebreak would
+be inventing a rule.
+
+⚠ **Nothing is paid on the mirrored path** — a host has already counted its own.
+
+**It is off by default and that is the point.** Turning it on changes what every
+participant faces, which moves the frozen rating anchor; with the flag off the
+anchor is unchanged at 17,482 decisions. Promoting it is a protocol event and
+should happen **once**, with the remaining five competitions in place, rather
+than twice. What that needs next: a `--native-competitions` switch on
+`simulate`, and an evaluator arm, so the rule can be priced before it is
+promoted. Until then only an embedder that sets the field can reach it.
 
 ### The content sources are not the problem
 
