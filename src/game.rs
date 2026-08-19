@@ -23868,26 +23868,34 @@ impl Game {
     /// Those facts belong to the controller deciding which visible enemies
     /// matter. The returned order is stable for explainers and tests.
     pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
+        self.attack_reach_from_flood(uid).0
+    }
+
+    /// `attack_reach`, and the tiles the unit walked to get there.
+    pub(crate) fn attack_reach_from_flood(&self, uid: u32) -> (Vec<Pos>, Vec<Pos>) {
         let Some(unit) = self.units.get(&uid) else {
-            return vec![];
+            return (vec![], vec![]);
         };
         let spec = &self.rules.units[unit.kind];
         if spec.class != "military" || (!spec.is_melee_capable() && !spec.has_ranged_attack()) {
-            return vec![];
+            return (vec![], vec![]);
         }
 
         if spec.domain.as_deref() == Some("air") {
             let origin = self.air_operation_origin(uid);
-            return self
-                .wdisk(origin, self.unit_attack_range(uid))
-                .into_iter()
-                .filter(|target| *target != origin && self.map.tiles.contains_key(target))
-                .collect();
+            return (
+                self.wdisk(origin, self.unit_attack_range(uid))
+                    .into_iter()
+                    .filter(|target| *target != origin && self.map.tiles.contains_key(target))
+                    .collect(),
+                vec![],
+            );
         }
 
         let start = unit.pos;
         let max_moves = self.unit_max_moves(uid);
         let positions = self.flow_past(uid, start, max_moves, true);
+        let flood: Vec<Pos> = positions.keys().copied().collect();
         let mut targets = BTreeSet::new();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
@@ -23925,7 +23933,7 @@ impl Game {
                 }
             }
         }
-        targets.into_iter().collect()
+        (targets.into_iter().collect(), flood)
     }
 
     /// Every legal single step inside this turn's remaining movement, as
