@@ -54,14 +54,16 @@
 //!
 //! - **Portfolio.** Each engaged unit gets a short list of candidate *lines* —
 //!   an attack from where it stands, a step onto an adjacent tile followed by
-//!   the attack that step opens, a movement-only *withdrawal* out of the
-//!   enemy's strike envelope, or the empty line that declines. A step may
-//!   also land on an engaged teammate's tile — a *handoff*, legal only once
-//!   the teammate has vacated it, which the order permutation arranges and
-//!   the engine enforces. Lines are generated geometrically (no clones) and
-//!   pruned to the best few by a closed-form damage prior; withdrawals are
-//!   appended after that pruning so a retreat never costs the portfolio a
-//!   shot.
+//!   the attack that step opens, an approach along the engine's own reach
+//!   flood (`Game::approach_reach`: real step costs, zone of control, the
+//!   flood's path) to any tile the unit reaches with movement left for a
+//!   blow, a movement-only *withdrawal* out of the enemy's strike envelope,
+//!   or the empty line that declines. A step may also land on an engaged
+//!   teammate's tile — a *handoff*, legal only once the teammate has vacated
+//!   it, which the order permutation arranges and the engine enforces. Lines
+//!   are generated without clones and pruned to the best few by a
+//!   closed-form damage prior; withdrawals are appended after that pruning
+//!   so a retreat never costs the portfolio a shot.
 //! - **Genome.** A choice of line per unit, plus a permutation giving the order
 //!   they are played in. Evolving the order is what fixes defect 3; the choice
 //!   vector is what fixes defects 2 and 4.
@@ -427,6 +429,35 @@ impl JointTactics {
             .filter(|uid| !excluded.contains(uid) && Self::engagement_candidate(g, **uid))
             .map(|uid| g.units[uid].pos)
             .collect();
+        // Everything a line can strike: hostile military units, at-war cities
+        // and their unpillaged Encampments. The reach block filters each
+        // unit's flood against the tiles within its range of one of these
+        // before paying for a strike scan.
+        let hostile_targets: Vec<Pos> = {
+            let mut targets: Vec<Pos> = g
+                .units
+                .values()
+                .filter(|other| {
+                    other.owner != pid
+                        && g.is_at_war(pid, other.owner)
+                        && g.rules.units[other.kind].class == "military"
+                })
+                .map(|other| other.pos)
+                .collect();
+            for city in g.cities.values() {
+                if city.owner == pid || !g.is_at_war(pid, city.owner) {
+                    continue;
+                }
+                targets.push(city.pos);
+                targets.extend(
+                    city.owned_tiles
+                        .iter()
+                        .copied()
+                        .filter(|pos| g.encampment_at(*pos).is_some()),
+                );
+            }
+            targets
+        };
         let mut built: Vec<Portfolio> = Vec::new();
         for uid in g.player_unit_ids(pid) {
             if excluded.contains(&uid) || !Self::engagement_candidate(g, uid) {
@@ -454,6 +485,14 @@ impl JointTactics {
             let siege_grounded = spec.siege;
 
             let first_ring = g.nbrs(unit.pos);
+            // Every tile within this unit's range of a hostile military unit or
+            // an at-war city or encampment: the only tiles an approach line
+            // can strike from. Computed once per unit; the reach block below
+            // filters its flood against it before scanning for strikes.
+            let firing_tiles: BTreeSet<Pos> = hostile_targets
+                .iter()
+                .flat_map(|target| g.wdisk(*target, range))
+                .collect();
             let hostile_adjacent = |pos: Pos| -> bool {
                 g.nbrs(pos).into_iter().any(|n| {
                     g.unit_ids_at(n).iter().any(|oid| {
@@ -523,69 +562,93 @@ impl JointTactics {
                 }
             }
 
-            // Two steps, then the attack the second step opens. This is what
-            // gives a two-move unit its real reach: the one-step block above
-            // only ever fights what is already at arm's length, so a fight
-            // two tiles out is invisible to the whole search and the unit
-            // stands off while the per-unit mover hovers. Bounded the same
-            // way as one step — geometric generation, no clones, the engine
-            // refuses what is actually illegal when the line is played.
+            // ★★★★ APPROACHES FROM THE EXACT REACH, NOT TWO HAND-BUILT STEPS.
             //
-            // The intermediate tile is filtered against known hostile
-            // adjacency: a first step into a zone of control forfeits the
-            // second, so nearly every such line dies at evaluation and only
-            // dilutes the portfolio. (Cavalry that ignores ZOC loses a
-            // through-the-ring flank to this filter; it keeps every
-            // around-the-ring one, which is the common case.)
+            // The block this replaces walked two rings by geometry: every step
+            // cost 1, the blow needed "strictly more than two" movement, and
+            // an intermediate tile beside a hostile was skipped by hand. Three
+            // things were wrong at once. A two-move unit on a road, or a
+            // three-move one over flat ground, reaches a firing tile two hexes
+            // out with movement to spare and got no line; a one-step line
+            // onto hills-and-woods (three movement) was offered, refused when
+            // played, and stood the unit in contact unfortified; and a
+            // four-move horseman's third and fourth hexes did not exist at all
+            // — the mobility the closed-form reply already priced for the
+            // *enemy* (`enemy_batteries`: an m-move melee unit strikes from m
+            // tiles) was invisible for our own lines.
             //
-            // ⚠ STRICTLY MORE than two movement: the blow itself needs
-            // movement left — `do_attack` and `do_ranged` both refuse a unit
-            // at 0.0 — so for a two-move unit every two-step line is a
-            // suicide walk that arrives, is refused, and stands in contact
-            // unfortified. Measured: admitting them moved the melee-only
-            // bench from −7.6 to −32.6 (p = 0.0005); this gate is what keeps
-            // the reach for three-plus-move units without re-buying that.
-            if unit.moves_left > 2.0 && !siege_grounded {
+            // `Game::approach_reach` is the engine's own flood: real step
+            // costs (terrain, hills, woods, rivers, roads, embarking), the
+            // paid-up-front rule, zone of control stopping the walk but not
+            // the blow, and the flood's own path for each tile. A line is
+            // offered from every tile the unit reaches with movement left for
+            // the strike — for melee, enough to pay the defender's tile
+            // (`can_pay_melee_entry`'s test); for ranged, any at all — and
+            // priced by the same prior as before, discounted `APPROACH_STEP_TOLL`
+            // per step so a nearer firing tile wins ties. Adjacent tiles keep
+            // the one-step block above (it also owns the handoff onto a
+            // teammate's tile, which no flood can express); this block starts
+            // at two hexes out. Siege stays grounded. Every line is still
+            // played through the engine at fitness time, which refuses what
+            // this reading got wrong.
+            if unit.moves_left > 0.0 && !siege_grounded {
                 let mut seen: BTreeSet<(Pos, Pos, bool)> = BTreeSet::new();
-                for to1 in first_ring.iter().copied() {
-                    let Some(handoff) = plannable_step(to1) else {
-                        continue;
-                    };
-                    if hostile_adjacent(to1) {
+                for (to, (kept, path)) in g.approach_reach(uid) {
+                    if kept <= 0.0 || path.len() < 2 || g.wdist(unit.pos, to) < 2 {
                         continue;
                     }
-                    for to2 in g.nbrs(to1) {
-                        if to2 == unit.pos || first_ring.contains(&to2) {
+                    // Only tiles from which something hostile is in range are
+                    // worth the strike scan; the reach flood is cheap, the
+                    // per-tile scan is not.
+                    if !firing_tiles.contains(&to) {
+                        continue;
+                    }
+                    let Some(tile) = g.map.get(to) else {
+                        continue;
+                    };
+                    if !g.rules.is_passable(tile) || g.rules.is_water(tile) != sea {
+                        continue;
+                    }
+                    let steps = path.len() as f64;
+                    for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
+                        let ranged = matches!(action, Action::Ranged { .. });
+                        if !ranged && kept + 1e-9 < g.step_cost_for(uid, to, target) {
+                            // The blow itself pays the defender's tile.
                             continue;
                         }
-                        let Some(tile) = g.map.get(to2) else {
-                            continue;
-                        };
-                        if !g.rules.is_passable(tile) || g.rules.is_water(tile) != sea {
+                        // ⚠ Units, not walls. Reaching a city's ring from three
+                        // hexes out to strike the CITY is a piecemeal assault
+                        // the closed-form reply under-prices (a bombardment
+                        // every turn, walls that absorb the blow): screened on
+                        // the one-city arena regime, admitting these lines
+                        // measured −4.6 points against `basic` at 480 games
+                        // while the no-city regimes held. City and Encampment
+                        // strikes keep the one-step block and the mover; the
+                        // reach lines exist for the enemy's units.
+                        if g.city_at(target).is_some() || g.encampment_at(target).is_some() {
                             continue;
                         }
-                        for (target, action) in Self::strikes_from(g, pid, uid, to2, range) {
-                            let ranged = matches!(action, Action::Ranged { .. });
-                            if !seen.insert((to2, target, ranged)) {
-                                continue;
-                            }
-                            let role_bonus =
-                                base.tactical_action_bonus_from(g, uid, to2, target, ranged);
-                            let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
-                                + role_bonus
-                                - 8.0
-                                - if handoff { HANDOFF_DISCOUNT } else { 0.0 };
-                            lines.push(Line {
-                                prior,
-                                toll: base.attack_threshold(g, uid, target) + wounded_margin
-                                    - role_bonus,
-                                actions: vec![
-                                    Action::Move { unit: uid, to: to1 },
-                                    Action::Move { unit: uid, to: to2 },
-                                    action,
-                                ],
-                            });
+                        if !seen.insert((to, target, ranged)) {
+                            continue;
                         }
+                        let role_bonus =
+                            base.tactical_action_bonus_from(g, uid, to, target, ranged);
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus
+                            - APPROACH_STEP_TOLL * steps;
+                        let mut actions: Vec<Action> = path
+                            .iter()
+                            .map(|step| Action::Move {
+                                unit: uid,
+                                to: *step,
+                            })
+                            .collect();
+                        actions.push(action);
+                        lines.push(Line {
+                            prior,
+                            toll: base.attack_threshold(g, uid, target) + wounded_margin
+                                - role_bonus,
+                            actions,
+                        });
                     }
                 }
             }
@@ -1288,6 +1351,12 @@ const MAX_WITHDRAW_LINES: usize = 2;
 /// little, because when it does play it is usually the rotation that keeps a
 /// wounded unit's tile in the line instead of thinning it.
 const HANDOFF_DISCOUNT: f64 = 6.0;
+
+/// Prior discount per step of an approach line built from the exact reach
+/// flood, so a nearer firing tile wins a tie: the one-step block charged 4
+/// for its step and the old two-step block 8 for two, and this keeps that
+/// slope for the third and fourth hexes a mounted unit can now reach.
+const APPROACH_STEP_TOLL: f64 = 4.0;
 
 #[cfg(test)]
 mod tests {
