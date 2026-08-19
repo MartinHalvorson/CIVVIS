@@ -282,3 +282,68 @@ step 3 is `battle_bench --a advanced_joint_tactics --b
 advanced_joint_tactics_geometric` (cavalry cell, 300 seeds, block 7,200,000:
 **+59.0 ± 17.1**, sign p = 0.0023), and `tactics_bench` seats both arms on the
 arena regimes.
+
+## 10. Step 4, first cut — arrive together (`arrival-waves`, opt-in, off)
+
+Item 4 asked for an army plan with per-unit ETAs, a go/no-go on the muster
+ring, a siege as ring → walls → capture, and wounded rotation. Reading the
+controller before writing any of it: most of that already exists, behind
+names this document had not connected to it. The pre-war ETA and go/no-go
+are `WarPlan` (`war_package_status`: `staged_bodies`, `fourth_one_turn_away`
+from `war_staging_route_for_unit`) and `campaign_staged_for_war` (three
+bodies on the 3..=5 ring, a melee capturer, local strength ≥ 1.05); the
+ring and the walls are the joint evaluator's own terms (a melee blow on a
+city is worth +520 only at ≤ 40 hp with the wall down, `tactics.rs`
+`strike_prior`; wall damage is priced at 1.35×); the ring is `rush_siege_step`
+for a rush and `siege_role` / `siege_tracks_wall` / `siege_commitment` /
+`siege_is_progress` for a campaign; wounded rotation is the per-unit
+`withdraw_hp` recovery step and the group `Recover` posture. All of those
+are live-bridge treatments already and all of them are in the screen below.
+
+What was **not** there is the one mechanism the recorded evidence actually
+names: reinforcements that reach an engaged front one at a time.
+`wartime_reinforcement_step` walks the standing-still rear to the objective's
+ring, and the turn a marcher comes inside `command_radius` of the front it
+joins that clique and takes its orders — for an `Engage` / `Advance` front,
+that is walking into the fight alone with whatever strength it brought. The
+live ledger's shape for this is the 73 of 231 combat losses taken at a
+>30-point strength gap.
+
+**`arrival-waves`** (`AdvancedAi::arrival_waves`; `enable_` / `disable_`;
+`PRODUCTION_OPT_INS` row, so `gene_screen` screens it and `victory_eval
+--with arrival-waves` seats it): a unit that marched as a rear reinforcement
+last turn and now stands in an engaging clique, out of contact (no enemy
+within 2), **holds where it stands, fortified**, until `ARRIVAL_WAVE_SIZE`
+(2) such arrivals stand within `ARRIVAL_WAVE_RADIUS` (6, the clique radius)
+of each other, or it has waited `ARRIVAL_WAVE_PATIENCE_TURNS` (3). The whole
+wave is then released in one turn. Decided once per force-group rebuild
+(`plan_arrival_waves`, at the end of `rebuild_force_groups`), idempotent
+within a turn (a release forgets the march, so the rebuild after an attack
+cannot re-hold the unit), dropped the moment the unit is in contact or its
+group stops engaging. A held unit still counts in its group — its strength is
+in the front's `local_strength_ratio` and its presence in `readiness` — so a
+front too weak to advance may clear the floor the turn the wave stands
+beside it, and then the whole group goes.
+
+- **Census** (`StrategyCensus`): `arrival_wave_holds` (units held, once per
+  hold), `arrival_wave_releases` (units released as a wave of ≥ 2),
+  `arrival_wave_lone` (released alone on patience). `civvis soak` prints
+  `ARRIVAL_WAVES held= in_wave= alone=` when any fired. Measured on six 4p
+  60×38 domination/score games with the native repair bundle plus the flag
+  on seat 0: 0–27 held, 0–12 in a wave, 0–11 alone per game — it fires, and
+  roughly half of the arrivals it holds do find company inside three turns.
+- **Off everywhere by default**, including the bridge: the recorded rule for
+  this layer is that standing-still postures are load-bearing and four
+  earlier attempts to choreograph a siege each measured worse, so this one
+  is priced before it is promoted. Its first price is the
+  `domination,score` gene screen of 2026-08-19 (`docs/eval/`), where it is a
+  gene beside the fifty-nine war and siege repairs it would choreograph.
+- Tests: `arrival_waves_hold_a_lone_fresh_reinforcement_short_of_an_engaged_front`,
+  `arrival_waves_release_a_pair_together`,
+  `arrival_waves_release_a_lone_arrival_when_patience_runs_out`,
+  `arrival_waves_drop_the_hold_once_in_contact`.
+
+Still open from item 4 after this: nothing of it is bridge-enabled, and the
+siege flags it would choreograph remain, as §3 says, unmeasured on the live
+seat — the first live runs with the order queue (seven had run by 11:21Z on
+2026-08-19, on another machine) have not been read.

@@ -8,7 +8,7 @@ with this on than off?*
 
 ```sh
 cargo build --profile ci --bin gene_screen
-target/ci/gene_screen --list                                # the 57 genes, in bit order
+target/ci/gene_screen --list                                # the genes, in bit order (64 on 2026-08-19)
 target/ci/gene_screen --pairs 300 --anchor-pairs 20 --jobs 8 --out screen.jsonl
 target/ci/gene_screen --analyze screen.jsonl [more.jsonl ...]  # re-read, merge, re-table
 ```
@@ -131,8 +131,13 @@ tables**, never listed by hand:
   bundle in the host regime is a different instrument (`tools/civ6_treatment_census.py`, the ladder).
 - `civvis::ai::PRODUCTION_TREATMENTS` — what production itself turns on
   (`strategic-wonders`); on in both baselines.
-- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms (`wonder-prereq-reach`);
-  the gene *on* means enabling it.
+- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms (`wonder-prereq-reach`,
+  `apostle-promotion-by-role`, `joint-tactics`, `arrival-waves`); the gene *on*
+  means enabling it. `joint-tactics` is the one `FIRAXIS_ONLY` tag that is not
+  host-only at all — `advanced_joint_tactics` is production plus that flag, and
+  `docs/TACTICS.md` §6 left its whole-game effect inconclusive — so it is
+  listed as an opt-in and screened like one. `arrival-waves` is item 4 of
+  `docs/LIVE_TACTICS.md` (§10), off everywhere until screened.
 
 A treatment added to any of those tables reaches the genome without touching
 `gene_screen.rs`; an engine repair with no `LIVE_TREATMENTS` row is a panic,
