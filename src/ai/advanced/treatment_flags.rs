@@ -121,6 +121,21 @@ impl AdvancedAi {
         self.base.legal_tactical_candidates = false;
     }
 
+    /// Refuse a step onto any tile this unit has already stood on this turn.
+    ///
+    /// `enable_recorded_tactical_step` remembers one tile, which refuses
+    /// `A -> B -> A` and lets `A -> B -> C -> A` through. See
+    /// `BasicAi::whole_turn_backtrack_guard` for what that costs.
+    pub fn enable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = true;
+    }
+
+    /// Withholding twin for `enable_whole_turn_backtrack_guard`. See
+    /// `LIVE_TREATMENTS`.
+    pub fn disable_whole_turn_backtrack_guard(&mut self) {
+        self.base.whole_turn_backtrack_guard = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -678,6 +693,9 @@ impl AdvancedAi {
         // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
         // steps recorded.
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         self.enable_bounded_recovery();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
@@ -1000,6 +1018,10 @@ impl AdvancedAi {
         // it by t150 and stops settling at t116 under an assigned lane. See
         // `land_grab`.
         self.enable_land_grab();
+        // And the pipeline stops paying for walkers while one already out
+        // has nowhere to go — nineteen Settlers for nine cities on run
+        // civvis-20260819T000800Z. See `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
         // And the pantheon is the one that founds a city, bought with the
         // Faith card the portfolio used to throw away at the first civic
         // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
@@ -1163,6 +1185,9 @@ impl AdvancedAi {
         self.enable_war_reinforcement();
         self.enable_come_ashore();
         self.enable_recorded_tactical_step();
+        // And a three-hop loop back to the start is no better than a two-hop
+        // one. See `whole_turn_backtrack_guard`.
+        self.enable_whole_turn_backtrack_guard();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.
@@ -1241,6 +1266,9 @@ impl AdvancedAi {
         // And never paying for a Settler the march will refuse to land. See
         // `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And not paying for another while one out has nowhere to go. See
+        // `idle_walkers_close_the_pipeline`.
+        self.enable_idle_walkers_close_the_pipeline();
         // And a stacked guard holds, and only one that can hold counts. See
         // `settler_guard_holds`.
         self.enable_settler_guard_holds();
@@ -1661,6 +1689,15 @@ impl AdvancedAi {
     pub fn disable_land_grab(&mut self) {
         self.land_grab = false;
         self.base.land_grab = false;
+    }
+
+    /// See [`Self::idle_walkers_close_the_pipeline`].
+    pub fn enable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = true;
+    }
+
+    pub fn disable_idle_walkers_close_the_pipeline(&mut self) {
+        self.idle_walkers_close_the_pipeline = false;
     }
 
     /// Take the pantheon that founds a city and keep the Faith card that buys

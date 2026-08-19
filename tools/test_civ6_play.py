@@ -1173,8 +1173,37 @@ class ScreenshotFailureTests(unittest.TestCase):
              patch.object(civ6_play.time, "sleep") as sleep:
             landed = civ6_play.screenshot(Path(temporary) / "missing.png")
         self.assertFalse(landed)
-        self.assertEqual(run.call_count, 2, "the capture is retried once")
-        sleep.assert_called_once()
+        self.assertEqual(run.call_count, len(civ6_play.SHOT_BACKOFF_SECONDS) + 1,
+                         "every backoff step is spent before giving up")
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         list(civ6_play.SHOT_BACKOFF_SECONDS),
+                         "and it waits longer each time")
+
+    def test_the_capture_rides_out_a_spike_that_outlasts_one_retry(self) -> None:
+        """The 2026-08-19 failure: two captures a second apart sample one spike
+        twice, and the launch dies. A shot that lands on the third attempt is
+        the whole point of the backoff."""
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.time, "sleep"):
+            path = Path(temporary) / "late.png"
+            attempts = []
+
+            def spike(cmd, **_):
+                attempts.append(1)
+                if len(attempts) >= 3:
+                    path.write_bytes(b"x")
+
+            with patch.object(civ6_play.subprocess, "run", side_effect=spike):
+                self.assertTrue(civ6_play.screenshot(path),
+                                "the shot that lands late still counts")
+        self.assertEqual(len(attempts), 3)
+
+    def test_the_backoff_escalates_and_is_bounded(self) -> None:
+        """Escalating, because a flat retry samples one spike twice; bounded,
+        because a poll that sleeps forever is worse than an unreadable one."""
+        steps = civ6_play.SHOT_BACKOFF_SECONDS
+        self.assertEqual(list(steps), sorted(steps), "each wait is longer")
+        self.assertLess(sum(steps), 10.0, "and the whole schedule stays short")
 
     def test_a_capture_that_lands_is_true_first_try(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

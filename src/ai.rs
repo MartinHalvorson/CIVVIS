@@ -2267,6 +2267,23 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Refuse a step back onto **any** tile this unit has already stood on
+    /// this turn, not merely the one it just left.
+    ///
+    /// ★★★★★ THE SHIPPED GUARD IS ONE STEP DEEP AND THE LOOPS ARE THREE.
+    /// `recorded_tactical_step` remembers a single previous tile, so `A -> B ->
+    /// A` is refused and `A -> B -> C -> A` is not. Measured over three
+    /// 6-player 200-turn games, the `live` bundle walks 329 routes that end on
+    /// the tile they began: **23** are the two-hop shape the shipped guard
+    /// covers and **294** are three hops or more. Every one of them spends a
+    /// unit's whole turn to arrive nowhere, and on the Civilization VI bridge
+    /// the wasted step is also a dropped order.
+    ///
+    /// Off for native tournament games, whose recorded ladders replay
+    /// move-for-move, and off for the frozen anchor. On for the live bridge
+    /// and for the native repair bundle — a loop back to the start is a wasted
+    /// turn in either engine, so this is not a Firaxis semantic.
+    whole_turn_backtrack_guard: bool,
     /// Drop attack candidates the engine will refuse — invisible target, no
     /// line of sight, wrong melee domain, unpayable entry cost — before they
     /// are scored, so a doomed order cannot win the argmax and shadow a legal
@@ -2357,7 +2374,11 @@ pub struct BasicAi {
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
-    last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// Per unit: the turn, and every tile it has stepped *from* during that
+    /// turn, in order. The last entry is the step it just took, which is all
+    /// the shipped reversal guard reads; the rest of the trail is what
+    /// [`BasicAi::whole_turn_backtrack_guard`] reads.
+    last_path_step_from: RefCell<HashMap<u32, (u32, Vec<Pos>)>>,
     /// Give up an exploration target the host will not move the unit toward.
     ///
     /// ★★★★ AN ACCEPTED MOVE THAT NEVER MOVES IS INVISIBLE TO EVERY DETECTOR.
@@ -2602,7 +2623,7 @@ pub(crate) struct BasicUnitPlanState {
     patrol_target: Option<Pos>,
     settler_target: Option<Pos>,
     memory: Option<UnitMemory>,
-    last_path_step: Option<(u32, Pos)>,
+    last_path_step: Option<(u32, Vec<Pos>)>,
     patrol_posts: HashMap<String, Vec<Pos>>,
 }
 
@@ -4093,6 +4114,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
@@ -4400,6 +4422,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
@@ -5357,7 +5380,7 @@ impl BasicAi {
             patrol_target: self.patrol_targets.get(&uid).copied(),
             settler_target: self.settler_targets.get(&uid).copied(),
             memory: self.unit_memory(uid),
-            last_path_step: self.last_path_step_from.borrow().get(&uid).copied(),
+            last_path_step: self.last_path_step_from.borrow().get(&uid).cloned(),
             patrol_posts: self.patrol_posts.clone(),
         }
     }
@@ -10772,12 +10795,26 @@ impl BasicAi {
                 return false;
             }
         }
-        let reverses_last_step = self
-            .last_path_step_from
-            .borrow()
-            .get(&uid)
-            .is_some_and(|(turn, previous)| *turn == g.turn && *previous == to);
-        if reverses_last_step {
+        // Shipped: only the step just taken is remembered, so `A -> B -> A` is
+        // refused. With `whole_turn_backtrack_guard` on, every tile walked
+        // this turn is remembered, which is what refuses the longer loops --
+        // `A -> B -> C -> A` and up -- that a one-deep memory cannot see.
+        // `allow_livelock_retread` still overrides both: a proven livelock
+        // escape has to be allowed back through the pocket it came from.
+        let whole_turn = self.whole_turn_backtrack_guard && !allow_livelock_retread;
+        let revisits_this_turn =
+            self.last_path_step_from
+                .borrow()
+                .get(&uid)
+                .is_some_and(|(turn, trail)| {
+                    *turn == g.turn
+                        && if whole_turn {
+                            trail.contains(&to)
+                        } else {
+                            trail.last() == Some(&to)
+                        }
+                });
+        if revisits_this_turn {
             return false;
         }
         // The same refusal over the unit's last several turns rather than its
@@ -10798,9 +10835,14 @@ impl BasicAi {
         if g.apply(pid, &movement).is_err() {
             return false;
         }
-        self.last_path_step_from
-            .borrow_mut()
-            .insert(uid, (g.turn, from));
+        {
+            let mut trails = self.last_path_step_from.borrow_mut();
+            let entry = trails.entry(uid).or_insert((g.turn, Vec::new()));
+            if entry.0 != g.turn {
+                *entry = (g.turn, Vec::new());
+            }
+            entry.1.push(from);
+        }
         true
     }
 
