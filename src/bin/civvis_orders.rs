@@ -3085,6 +3085,15 @@ fn decide(
             note_bits.push(format!("sequenced_unit_followups={followups}"));
         }
     }
+    if state.seat.moves_at_turn_start {
+        // Units the host had already walked before this frame — planned with
+        // what they have left, not with a fresh turn. Zero is the healthy
+        // reading once every MOVE_TO is capped to the turn's reach.
+        let short = mirror_state.units_short_of_movement();
+        if short > 0 {
+            note_bits.push(format!("moves_short={short}"));
+        }
+    }
 
     let host_frontier_probes =
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
@@ -9064,6 +9073,8 @@ mod tests {
             d: None,
             dc: None,
             wo: None,
+            rt: None,
+            rp: false,
         }
     }
 

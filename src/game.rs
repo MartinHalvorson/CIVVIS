@@ -5031,6 +5031,22 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: BTreeSet<Name>,
+    /// Pantheon beliefs a HOST has already granted to another player, for the same
+    /// reasons and with the same emptiness in an ordinary game as
+    /// [`Game::blocked_city_sites`].
+    ///
+    /// The mirror seats no rival pantheons — the export lists founded religions
+    /// only (`Game.GetReligion():GetReligions()` minus the pantheon rows), so
+    /// `do_choose_pantheon`'s "belief already taken" check sees only our own. A
+    /// first choice a rival holds is refused by the mod as `taken_BELIEF_<X>`, and
+    /// nothing carried that back: the same belief would be re-derived from the same
+    /// board next turn, and after two sightings the mod's own blocker fallback
+    /// picks the FIRST untaken pantheon in database order (Dance of the Aurora on
+    /// the recorded runs). Harvested from the refusal stream by the mirror
+    /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
+    /// `AdvancedAi::expansion_pantheon` for the choice this protects.
+    #[serde(default)]
+    pub blocked_pantheons: BTreeSet<Name>,
     /// Districts a HOST ruleset will not place, per city, for the same reasons and
     /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -5643,6 +5659,7 @@ impl From<GameSer> for Game {
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
@@ -6242,6 +6259,7 @@ impl Game {
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
@@ -12085,6 +12103,7 @@ impl Game {
             .players
             .iter()
             .any(|p| p.pantheon.as_deref() == Some(belief))
+            || self.blocked_pantheons.contains(&Name::new(belief))
         {
             return Err("belief already taken".into());
         }
@@ -31352,10 +31371,10 @@ impl Game {
                 if self.players[pid].is_barbarian {
                     return false;
                 }
-                if spec
-                    .host_competition
-                    .as_deref()
-                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                if spec.requires_host_competition()
+                    && !spec
+                        .host_competition_kinds()
+                        .any(|kind| self.host_competition(pid, kind).is_some())
                 {
                     return false;
                 }

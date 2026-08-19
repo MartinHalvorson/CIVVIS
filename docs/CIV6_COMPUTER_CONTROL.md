@@ -268,6 +268,22 @@ a visible hostile combat unit or an at-war city is held rather than handed to
 `UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
 `Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
 
+### A move is this turn's leg (2026-08-19)
+
+`UNITOPERATION_MOVE_TO` takes a destination and the host paths to it across
+as many turns as it needs — and walks the unit along the rest at the start of
+the next turn, before `beginTurn` exports. The board then planned movement
+the unit no longer had. The mod (`CivvisBoard`) now sends every `MOVE_TO` as
+the furthest plot on the host's own path (`GetMoveToPathEx`) that the unit
+reaches this turn, refuses by name a move whose first step is already next
+turn (`move_no_moves_this_turn`), never caps a melee ATTACK, and cancels
+combat units' queued paths at turn start (`UNITCOMMAND_CANCEL`;
+`queued_paths` reports the count). Units export `queued_dest` and
+`embarked`; tiles export `rt` (route type) and `rp` (pillaged). The `seat`
+event advertises `moves_at_turn_start`, and only then does the mirror trust
+the export's `moves`. `--no-cap-moves-to-reach` / `--no-cancel-queued-paths`
+restore the old rules for an A/B. See `docs/LIVE_TACTICS.md` §6.
+
 ### The tactical ledger (2026-08-19)
 
 The mod writes the combat record the host already knows (`CivvisLedger`):

@@ -209,10 +209,41 @@ pub struct Plot {
     /// sea-level rise cannot reach.
     #[serde(default = "minus_one")]
     pub cl: i32,
+    /// Route standing here (`Plot:GetRouteType`), e.g. `ROUTE_ANCIENT_ROAD`.
+    /// Roads were never exported and the mirror wrote `tile.road = 0`
+    /// everywhere, so every march was priced across roadless ground. Absent
+    /// on an older export and where no route stands.
+    #[serde(default)]
+    pub rt: Option<String>,
+    /// Whether that route is pillaged (`Plot:IsRoutePillaged`); a pillaged
+    /// road pays no movement.
+    #[serde(default)]
+    pub rp: bool,
 }
 
 fn minus_one() -> i32 {
     -1
+}
+
+/// The engine's route ladder for a host route name: 0 none, 1 Ancient,
+/// 2 Medieval, 3 Industrial, 4 Modern, 5 Railroad (`world.rs`). A route the
+/// host names and this ladder does not know reads as the Ancient road — the
+/// honest floor for "there is a road here".
+pub fn route_level(name: Option<&str>, pillaged: bool) -> u8 {
+    let Some(name) = name.map(str::trim).filter(|name| !name.is_empty()) else {
+        return 0;
+    };
+    if pillaged {
+        return 0;
+    }
+    match name {
+        "ROUTE_ANCIENT_ROAD" => 1,
+        "ROUTE_MEDIEVAL_ROAD" => 2,
+        "ROUTE_INDUSTRIAL_ROAD" => 3,
+        "ROUTE_MODERN_ROAD" => 4,
+        "ROUTE_RAILROAD" => 5,
+        _ => 1,
+    }
 }
 
 /// A `tiles` event: one chunk of the revealed map.
@@ -381,6 +412,8 @@ mod tests {
             d: None,
             dc: None,
             wo: None,
+            rt: None,
+            rp: false,
         }
     }
 
@@ -1336,6 +1369,92 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A pantheon a rival holds is already in the stream as `taken_BELIEF_<X>`
+    /// — the mod's `pantheon` handler writes it when `IsInSomePantheon` says so
+    /// — and until now nothing read it: the mirror seats no rival pantheons, so
+    /// the same first choice was re-derived from the same board next turn and,
+    /// after two sightings, the mod's blocker fallback chose the first untaken
+    /// belief in database order. See `Game::blocked_pantheons` and
+    /// `AdvancedAi::expansion_pantheon`.
+    #[test]
+    fn the_hosts_taken_pantheons_are_read_from_the_refusals_it_already_writes() {
+        let dir = std::env::temp_dir().join(format!("civvis-pantheon-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"orders","turn":18,"refusals":{"taken_BELIEF_RELIGIOUS_SETTLEMENTS":1,"MOVE_TO":4}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":19,"refusals":{"taken_BELIEF_RELIGIOUS_SETTLEMENTS":1,"taken_NOT_A_BELIEF":1}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":20,"refusals":{"taken_BELIEF_NOT_A_REAL_PANTHEON":1,"pantheon_already_founded":1}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":40,"refusals":{"taken_BELIEF_FERTILITY_RITES":1}}"#,
+                "
+",
+            ),
+        )
+        .expect("write events");
+
+        let names = refused_pantheons(&path);
+        assert!(names.contains("BELIEF_RELIGIOUS_SETTLEMENTS"));
+        assert!(names.contains("BELIEF_FERTILITY_RITES"));
+        assert_eq!(
+            names.len(),
+            3,
+            "each distinct belief once, however many turns it spans; a `taken_` reason              that is not a belief is not one: {names:?}"
+        );
+        // Bounded by turn, the way every per-turn state read asks for it.
+        assert!(
+            !refused_pantheons_through(&path, Some(30)).contains("BELIEF_FERTILITY_RITES"),
+            "a refusal on turn 40 is not known on turn 30"
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let blocked = blocked_pantheons_from(&names, &rules);
+        assert!(blocked.contains(&Name::new("religious_settlements")));
+        assert!(blocked.contains(&Name::new("fertility_rites")));
+        assert_eq!(
+            blocked.len(),
+            2,
+            "a belief CIVVIS does not model is DROPPED, not inserted under a name that              matches nothing"
+        );
+
+        // And the board refuses what the host refused, so the chooser moves on.
+        let mut game = crate::game::Game::new_full(2, 30, 18, 6_101, 200, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .unwrap();
+        game.players[0].faith = 200.0;
+        game.blocked_pantheons = blocked;
+        assert!(game
+            .apply(
+                0,
+                &crate::game::Action::ChoosePantheon {
+                    belief: Name::new("religious_settlements"),
+                },
+            )
+            .is_err());
+        assert!(game
+            .apply(
+                0,
+                &crate::game::Action::ChoosePantheon {
+                    belief: Name::new("divine_spark"),
+                },
+            )
+            .is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// ★★★★ The wonder half of `build_no_plot` was being DROPPED ON THE FLOOR.
     ///
     /// The mod emits a refused district under the event's `district` key and a
@@ -1711,6 +1830,8 @@ mod tests {
                 d: None,
                 dc: None,
                 wo: None,
+                rt: None,
+                rp: false,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -1885,6 +2006,147 @@ mod tests {
             recon.game.players[3].civ, "Scythia",
             "Firaxis player id 3 is translation metadata, not the CIVVIS entity owner"
         );
+    }
+
+    #[test]
+    fn host_routes_land_on_the_engines_ladder() {
+        assert_eq!(route_level(None, false), 0);
+        assert_eq!(route_level(Some(""), false), 0);
+        assert_eq!(route_level(Some("ROUTE_ANCIENT_ROAD"), false), 1);
+        assert_eq!(route_level(Some("ROUTE_MEDIEVAL_ROAD"), false), 2);
+        assert_eq!(route_level(Some("ROUTE_INDUSTRIAL_ROAD"), false), 3);
+        assert_eq!(route_level(Some("ROUTE_MODERN_ROAD"), false), 4);
+        assert_eq!(route_level(Some("ROUTE_RAILROAD"), false), 5);
+        // A route the ladder does not name is still a road; a pillaged one pays nothing.
+        assert_eq!(route_level(Some("ROUTE_SOMETHING_NEW"), false), 1);
+        assert_eq!(route_level(Some("ROUTE_MEDIEVAL_ROAD"), true), 0);
+    }
+
+    /// Roads were never exported and the board wrote `road = 0` everywhere;
+    /// a plot that names its route now carries it, and an older export
+    /// without `rt` still reads roadless.
+    #[test]
+    fn exported_routes_reach_the_board() {
+        let mut roaded = plot(3, 3, "TERRAIN_GRASS");
+        roaded.rt = Some("ROUTE_MEDIEVAL_ROAD".to_string());
+        let mut pillaged = plot(4, 3, "TERRAIN_GRASS");
+        pillaged.rt = Some("ROUTE_ANCIENT_ROAD".to_string());
+        pillaged.rp = true;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![roaded, pillaged, plot(5, 3, "TERRAIN_GRASS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 8,
+            ..StateSnapshot::default()
+        };
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let at = |x, y| mirror.game.map.tiles[&crate::hex::offset_to_axial(x, y)].road;
+        assert_eq!(at(3, 3), 2, "a medieval road on the engine's ladder");
+        assert_eq!(at(4, 3), 0, "a pillaged road pays no movement");
+        assert_eq!(at(5, 3), 0, "no route, no road");
+    }
+
+    /// The export's `moves` is trusted only when the seat says the mod reads
+    /// it at the start of the turn and keeps the host from spending it first;
+    /// otherwise every unit keeps its full allowance exactly as before.
+    #[test]
+    fn exported_movement_is_trusted_only_with_the_seat_capability() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let units = || {
+            vec![
+                StateUnit {
+                    id: 11,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 3,
+                    y: 3,
+                    moves: 0.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 12,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 4,
+                    y: 3,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 13,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 5,
+                    y: 3,
+                    moves: -1.0,
+                    ..StateUnit::default()
+                },
+            ]
+        };
+        let plain = StateSnapshot {
+            turn: 8,
+            units: units(),
+            ..StateSnapshot::default()
+        };
+        let mirror = LiveMirror::new(&snapshot, &plain, 4, 1, 250, 0);
+        for civ6 in [11, 12, 13] {
+            let uid = mirror.uid_of[&civ6];
+            assert_eq!(
+                mirror.game.units[&uid].moves_left,
+                mirror.game.unit_max_moves(uid),
+                "without the capability unit {civ6} keeps its full allowance"
+            );
+        }
+        assert_eq!(mirror.units_short_of_movement(), 0);
+
+        let trusted = StateSnapshot {
+            turn: 8,
+            units: units(),
+            seat: Seat {
+                moves_at_turn_start: true,
+                ..Seat::default()
+            },
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &trusted, 4, 1, 250, 0);
+        let spent = mirror.uid_of[&11];
+        let fresh = mirror.uid_of[&12];
+        let unreported = mirror.uid_of[&13];
+        assert_eq!(
+            mirror.game.units[&spent].moves_left, 0.0,
+            "the host already walked it"
+        );
+        assert_eq!(
+            mirror.game.units[&fresh].moves_left,
+            mirror.game.unit_max_moves(fresh)
+        );
+        assert_eq!(
+            mirror.game.units[&unreported].moves_left,
+            mirror.game.unit_max_moves(unreported),
+            "a negative export is 'not reported', not zero"
+        );
+        assert_eq!(mirror.units_short_of_movement(), 1);
+
+        // The persistent path (`sync`) reads the same truth each turn.
+        let mut next = trusted;
+        next.turn = 9;
+        next.units[0].moves = 2.0;
+        next.units[1].moves = 1.0;
+        mirror.sync(&snapshot, &next, 0);
+        assert_eq!(
+            mirror.game.units[&spent].moves_left,
+            mirror.game.unit_max_moves(spent)
+        );
+        assert_eq!(mirror.game.units[&fresh].moves_left, 1.0);
     }
 
     #[test]
@@ -3710,10 +3972,32 @@ mod tests {
         let plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
-                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: if (x, y) == (3, 3) {
+                        0
+                    } else if (x, y) == (11, 11) {
+                        3
+                    } else {
+                        -1
+                    },
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -3784,10 +4068,32 @@ mod tests {
         let plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
-                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: if (x, y) == (3, 3) {
+                        0
+                    } else if (x, y) == (11, 11) {
+                        3
+                    } else {
+                        -1
+                    },
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -7298,6 +7604,8 @@ mod tests {
                         d: None,
                         dc: None,
                         wo: None,
+                        rt: None,
+                        rp: false,
                     })
                 })
                 .collect(),
@@ -7366,6 +7674,8 @@ mod tests {
                         d: None,
                         dc: None,
                         wo: None,
+                        rt: None,
+                        rp: false,
                     })
                 })
                 .collect(),
@@ -7531,9 +7841,26 @@ mod tests {
         let mut plots: Vec<Plot> = (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
-                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
-                    o: -1, w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, dc: None, wo: None,
+                    x,
+                    y,
+                    im: None,
+                    t: Some("TERRAIN_GRASS".to_string()),
+                    f: None,
+                    r: None,
+                    o: -1,
+                    w: false,
+                    i: false,
+                    fw: false,
+                    rv: 0,
+                    ri: false,
+                    ct: None,
+                    cl: -1,
+                    p: false,
+                    d: None,
+                    dc: None,
+                    wo: None,
+                    rt: None,
+                    rp: false,
                 })
             })
             .collect();
@@ -7758,6 +8085,8 @@ mod tests {
                         d: None,
                         dc: None,
                         wo: None,
+                        rt: None,
+                        rp: false,
                     })
                 })
                 .collect(),
@@ -8079,6 +8408,9 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             if tile.improvement.is_some() {
                 tile.pillaged = plot.p;
             }
+            // The host's road, on the engine's own ladder. An older export
+            // carries no `rt` and reads 0, exactly what the mirror wrote before.
+            tile.road = route_level(plot.rt.as_deref(), plot.rp);
         }
     }
     // `place_city` initially claims its complete first ring. When part of that
@@ -9236,6 +9568,18 @@ pub struct StateUnit {
     /// question on its own — keep it for fidelity checks and diagnostics.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
+    /// Where a multi-turn host path will carry this unit at the start of its
+    /// NEXT turn (`UnitManager.GetQueuedDestination`), in offset coordinates.
+    /// A unit with one enters the next turn having already spent movement on
+    /// it before the brain can act; the mod cancels combat units' queued
+    /// paths at turn start and caps every MOVE_TO to the turn's reach, so on a
+    /// current mod this is empty. Absent on an older export.
+    #[serde(default)]
+    pub queued_dest: Option<(i32, i32)>,
+    /// Whether the unit is embarked (`Unit:IsEmbarked`). Absent on an older
+    /// export; the mirror then infers it from standing on water.
+    #[serde(default)]
+    pub embarked: Option<bool>,
     /// Exact host experience and promotion state. Option distinguishes an older
     /// archive that never exported the facts from a level-one unit with none.
     #[serde(default)]
@@ -10193,6 +10537,12 @@ pub struct StateSnapshot {
     /// ruleset is in hand; see [`refused_policies`].
     #[serde(default)]
     pub refused_policy_names: std::collections::BTreeSet<String>,
+    /// Pantheon beliefs Civilization VI refused as already taken by another
+    /// player, as its OWN names, harvested from the `taken_<BELIEF>` refusal
+    /// reasons already in the stream. Translated where the ruleset is in hand;
+    /// see [`refused_pantheons`] and `Game::blocked_pantheons`.
+    #[serde(default)]
+    pub refused_pantheons: std::collections::BTreeSet<String>,
     /// Districts Civilization VI refused to place, by ITS city id, from
     /// `build_no_plot`. Mapped onto CIVVIS cities where `city_ids` is in hand; see
     /// [`refused_districts`].
@@ -11142,6 +11492,14 @@ pub struct Seat {
     /// (older mod) reads `false`, which is the conservative behaviour.
     #[serde(default)]
     pub order_queue: bool,
+    /// The mod caps every MOVE_TO to the turn's reach and cancels combat
+    /// units' queued paths at turn start, so `StateUnit::moves` is read at the
+    /// start of the seat's turn and means "movement available this turn".
+    /// Only then does the mirror trust it (see `mirror_unit_moves_for`);
+    /// absent (older mod), every unit keeps its full allowance exactly as
+    /// before, because the export's `moves` has misled twice in the past.
+    #[serde(default)]
+    pub moves_at_turn_start: bool,
 }
 
 /// See [`Seat::victories`]. Each checkbox is independently optional so one
@@ -11503,9 +11861,30 @@ const CITY_KEYS: &[&str] = &[
 ];
 
 const UNIT_KEYS: &[&str] = &[
-    "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
-    "player", "moves", "xp", "level", "promotions", "build_charges", "spread_charges",
-    "religion", "fortified", "fortify_turns", "formation_count", "great_person",
+    "id",
+    "kind",
+    "type",
+    "base",
+    "class",
+    "x",
+    "y",
+    "hp",
+    "combat",
+    "ranged",
+    "player",
+    "moves",
+    "xp",
+    "level",
+    "promotions",
+    "build_charges",
+    "spread_charges",
+    "religion",
+    "fortified",
+    "fortify_turns",
+    "formation_count",
+    "great_person",
+    "queued_dest",
+    "embarked",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -11782,6 +12161,7 @@ pub fn state_from_events(
         state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
+        state.refused_pantheons = refused_pantheons_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
@@ -13489,6 +13869,71 @@ fn refused_policies_through(
 }
 
 
+/// The pantheon beliefs Civilization VI refused as already taken by another
+/// player, as its own `BELIEF_*` names, harvested from the `taken_<BELIEF>`
+/// refusal reasons in the `orders` events. Same shape as [`refused_policies`]:
+/// the mod's `pantheon` handler answers `taken_BELIEF_<X>` when
+/// `IsInSomePantheon` says a rival holds it, and until this nothing read it back
+/// — the mirror seats no rival pantheons, so the same belief was re-derived from
+/// the same board next turn. See `Game::blocked_pantheons`.
+pub fn refused_pantheons(path: &std::path::Path) -> std::collections::BTreeSet<String> {
+    refused_pantheons_through(path, None)
+}
+
+fn refused_pantheons_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<String> {
+    let mut refused: std::collections::BTreeSet<String> = Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("taken_BELIEF_") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if turn.is_some_and(|limit| {
+            event
+                .get("turn")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+                > limit as u64
+        }) {
+            continue;
+        }
+        let Some(reasons) = event.get("refusals").and_then(|r| r.as_object()) else {
+            continue;
+        };
+        for reason in reasons.keys() {
+            let Some(civ6) = reason.strip_prefix("taken_") else {
+                continue;
+            };
+            if civ6.starts_with("BELIEF_") {
+                refused.insert(civ6.to_string());
+            }
+        }
+    }
+    refused
+}
+
+/// The host's taken pantheons as CIVVIS spells them, dropping any it does not
+/// model — an unmatched entry would filter nothing while making the set look
+/// populated, the same care as [`blocked_policies_from`].
+fn blocked_pantheons_from(
+    names: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    names
+        .iter()
+        .filter_map(|civ6| civvis_belief_name(rules, civ6))
+        .filter(|name| rules.beliefs.pantheon.contains_key(name.as_str()))
+        .map(|name| Name::new(&name))
+        .collect()
+}
+
 /// A Civilization VI production type name as a CIVVIS queue [`Item`].
 ///
 /// ⚠ Returns None rather than guessing. A wrong item would tell CIVVIS a city is
@@ -15053,6 +15498,7 @@ pub fn rebuild_from_state(
     game.blocked_improvement_sites = state.refused_improves.clone();
     game.blocked_trade_routes = state.refused_trade_routes.clone();
     game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
+    game.blocked_pantheons = blocked_pantheons_from(&state.refused_pantheons, &game.rules);
     // ⚠ Wired after `city_ids` below would be too late for the rebuild, so this is
     // filled in at the end of the function where both are in hand.
 
@@ -16420,7 +16866,50 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     game.unit_max_moves(uid)
 }
 
+/// The movement a mirrored unit starts its turn with.
+///
+/// The full allowance ([`mirror_unit_moves`]) unless the run's `seat` event
+/// says the mod reads `moves` at the start of the seat's turn and keeps the
+/// host from spending it beforehand (`moves_at_turn_start`: every MOVE_TO
+/// capped to the turn's reach, combat units' queued paths cancelled). Then the
+/// export's `moves` is the truth and the board takes `min(allowance, moves)`
+/// — a unit the host already walked this turn is planned as it stands, not
+/// as if it had a fresh turn. Measured on the recorded runs before this:
+/// 12.5 % of MOVE_TOs did not move at all, and the plan built on the moves
+/// they did not have.
+fn mirror_unit_moves_for(
+    game: &crate::game::Game,
+    uid: u32,
+    observed: Option<&StateUnit>,
+    trust_moves: bool,
+) -> f64 {
+    let allowance = mirror_unit_moves(game, uid);
+    if !trust_moves {
+        return allowance;
+    }
+    match observed {
+        Some(unit) if unit.moves >= 0.0 => allowance.min(unit.moves),
+        _ => allowance,
+    }
+}
+
 impl LiveMirror {
+    /// Our units that start this frame with less than their full allowance —
+    /// the host walked them (a queued path, an automation) before the brain
+    /// could act. Only meaningful when the seat trusts `moves`
+    /// (`Seat::moves_at_turn_start`); zero is the healthy reading once every
+    /// MOVE_TO is capped to the turn's reach.
+    pub fn units_short_of_movement(&self) -> usize {
+        self.game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &self.game.units[uid];
+                unit.moves_left + 1e-9 < self.game.unit_max_moves(*uid)
+            })
+            .count()
+    }
+
     pub fn new(
         snapshot: &Snapshot,
         state: &StateSnapshot,
@@ -16429,8 +16918,7 @@ impl LiveMirror {
         max_turns: u32,
         frontier_depth: u32,
     ) -> LiveMirror {
-        let rebuilt =
-            rebuild_from_state(snapshot, state, players, seed, max_turns, frontier_depth);
+        let rebuilt = rebuild_from_state(snapshot, state, players, seed, max_turns, frontier_depth);
         let mut uid_of = std::collections::BTreeMap::new();
         for (uid, civ6) in &rebuilt.unit_ids {
             uid_of.insert(*civ6, *uid);
@@ -16440,8 +16928,20 @@ impl LiveMirror {
         // decision, so movement normalization cannot live only in `sync`. In
         // particular, Civ VI traders travel only through TradeRoute, while the
         // standalone CIVVIS ruleset grants them two walking moves.
-        for uid in rebuilt.unit_ids.keys().copied().collect::<Vec<_>>() {
-            let allowance = mirror_unit_moves(&game, uid);
+        let observed: std::collections::BTreeMap<i64, &StateUnit> =
+            state.units.iter().map(|unit| (unit.id, unit)).collect();
+        for (uid, civ6) in rebuilt
+            .unit_ids
+            .iter()
+            .map(|(uid, civ6)| (*uid, *civ6))
+            .collect::<Vec<_>>()
+        {
+            let allowance = mirror_unit_moves_for(
+                &game,
+                uid,
+                observed.get(&civ6).copied(),
+                state.seat.moves_at_turn_start,
+            );
             if let Some(live) = game.units.get_mut(&uid) {
                 live.moves_left = allowance;
             }
@@ -16621,6 +17121,9 @@ impl LiveMirror {
         // retired, and the set is rebuilt from the whole event log each time.
         let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);
         self.game.blocked_policies.extend(retired);
+        // And a pantheon a rival holds stays held.
+        let taken = blocked_pantheons_from(&state.refused_pantheons, &self.game.rules);
+        self.game.blocked_pantheons.extend(taken);
         let refused = blocked_districts_from(
             &state.refused_districts,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
@@ -16914,7 +17417,12 @@ impl LiveMirror {
                         // CIVVIS then orders a unit that really cannot move,
                         // `canOperate` refuses it in the mod and it is counted — a
                         // wasted order, not a silent paralysis.
-                        let allowance = mirror_unit_moves(&self.game, uid);
+                        let allowance = mirror_unit_moves_for(
+                            &self.game,
+                            uid,
+                            Some(unit),
+                            state.seat.moves_at_turn_start,
+                        );
                         if let Some(live) = self.game.units.get_mut(&uid) {
                             live.moves_left = allowance;
                             live.acted = false;
@@ -17815,6 +18323,8 @@ mod host_fact_tests {
             d: None,
             dc: None,
             wo: None,
+            rt: None,
+            rp: false,
         }
     }
 
