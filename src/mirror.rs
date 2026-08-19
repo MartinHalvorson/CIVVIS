@@ -6928,6 +6928,104 @@ mod tests {
     }
 
     #[test]
+    fn a_bought_open_borders_grant_unseals_the_rival_ground() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(5, 7, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        assert!(
+            mirror.game.closed_borders.contains(&theirs),
+            "without a grant the fogged border stays sealed — the premise of the lane"
+        );
+        assert_eq!(
+            mirror.game.sealed_border_owners.get(&1).copied(),
+            Some(2),
+            "the seal must name its owner and its size, or the buy lane cannot \
+             know whom to pay: seat 1 seals both exported plots"
+        );
+
+        // The host reports the purchase: this rival now grants us Open
+        // Borders. The next sync must stop sealing exactly the ground the
+        // seat just paid to cross, and the shopping list must go quiet so
+        // the lane never pays the same rival twice.
+        state.rivals[0].open_borders = Some(true);
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout survives the sync");
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "an explicit grant opens the border: sealing ground the seat just \
+             bought passage through would waste exactly what it paid for"
+        );
+        assert!(
+            mirror.game.can_move(scout, theirs),
+            "the bought passage must be walkable on the planning board, or the \
+             gold buys a fact the planner never uses"
+        );
+        assert!(
+            mirror.game.sealed_border_owners.is_empty(),
+            "a granted rival leaves the shopping list, got {:?}",
+            mirror.game.sealed_border_owners
+        );
+
+        // And a lapsed agreement re-seals on the next export, the same
+        // assigned-not-extended rule as war and the seal itself.
+        state.rivals[0].open_borders = Some(false);
+        state.turn = 14;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.closed_borders.contains(&theirs),
+            "a lapsed grant must not leave the border open forever"
+        );
+        assert_eq!(
+            mirror.game.sealed_border_owners.get(&1).copied(),
+            Some(2),
+            "a lapsed grant puts the rival back on the shopping list"
+        );
+    }
+
+    #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 4,
@@ -9231,6 +9329,13 @@ pub struct StateRival {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// Whether this rival currently grants OUR seat Open Borders — the shipped
+    /// overview's "received" direction (`HasOpenBordersFrom`). The import
+    /// records the grant on the mirrored seat and stops sealing that rival's
+    /// fogged border while it holds, so a passage the seat just bought is
+    /// ground the planner can actually use. `None` on an older export.
+    #[serde(default)]
+    pub open_borders: Option<bool>,
     /// How many technologies this rival has finished, or `-1` if the host
     /// could not be asked.
     ///
@@ -15278,6 +15383,18 @@ pub fn rebuild_from_state(
         if rival.can_declare && !rival.at_war {
             game.players[0].denounced_until.insert(owner, game.turn + 1);
         }
+        // The host's own "received Open Borders" answer, assigned rather than
+        // extended: the flag is re-read from every export, so an agreement
+        // that lapses on the host closes the mirrored grant on the next
+        // import. Two turns of validity is enough to outlive this board —
+        // the next export writes it again or removes it.
+        if rival.open_borders == Some(true) {
+            game.players[owner]
+                .open_borders_until
+                .insert(0, game.turn + 2);
+        } else {
+            game.players[owner].open_borders_until.remove(&0);
+        }
         for city in &rival.cities {
             if let Some(cid) = plant_city(&mut game, owner, city) {
                 if city.id > 0 {
@@ -15584,6 +15701,9 @@ fn apply_territory(
     // than any Civilization VI city can own (five tiles), so the plot belongs
     // to one still in the fog. See [`crate::game::Game::unseen_major_borders`].
     let mut unseen_major: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // Who seals how much, majors only — the passage-purchase lane's shopping
+    // list. See [`crate::game::Game::sealed_border_owners`].
+    let mut sealed_by: std::collections::BTreeMap<usize, u32> = Default::default();
     let is_major = |seat: usize| {
         game.players
             .get(seat)
@@ -15685,8 +15805,22 @@ fn apply_territory(
                 // live case it exists for. Sealing ground we could in truth have
                 // crossed costs a peacetime shortcut; not sealing it cost 74
                 // turns of a scout re-sending one blocked step.
-                if !game.is_at_war(0, seat) {
+                //
+                // An EXPLICIT grant is a different fact from a default: when
+                // the export says this rival granted us Open Borders (the
+                // import above wrote it onto the seat), the host itself will
+                // let our units through, so sealing would waste exactly the
+                // passage the buy lane just paid for.
+                let granted = game
+                    .players
+                    .get(seat)
+                    .and_then(|p| p.open_borders_until.get(&0))
+                    .is_some_and(|until| *until > game.turn);
+                if !game.is_at_war(0, seat) && !granted {
                     sealed.insert(pos);
+                    if is_major(seat) {
+                        *sealed_by.entry(seat).or_insert(0) += 1;
+                    }
                 }
                 // Nor ours to count as territory — see the arm above.
                 assign.push((pos, None));
@@ -15720,6 +15854,7 @@ fn apply_territory(
     // into view so the ordinary gate takes over — stops being sealed next turn.
     game.closed_borders = sealed;
     game.unseen_major_borders = unseen_major;
+    game.sealed_border_owners = sealed_by;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
@@ -16824,6 +16959,18 @@ impl LiveMirror {
                 self.game.players[0].denounced_until.insert(owner, self.game.turn + 1);
             } else {
                 self.game.players[0].denounced_until.remove(&owner);
+            }
+            // The host's "received Open Borders" answer, applied the same way
+            // `at_war` is: assigned from every export, so a lapsed agreement
+            // closes the mirrored grant on the next sync. The border-sealing
+            // pass reads this grant to stop sealing a rival whose passage the
+            // seat just bought.
+            if rival.open_borders == Some(true) {
+                self.game.players[owner]
+                    .open_borders_until
+                    .insert(0, self.game.turn + 2);
+            } else {
+                self.game.players[owner].open_borders_until.remove(&0);
             }
             for city in &rival.cities {
                 if !snapshot.is_revealed((city.x, city.y)) {

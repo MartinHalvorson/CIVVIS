@@ -6319,6 +6319,16 @@ local function exportState(player, pid, turn)
 					return Game.GetEras():HasHeroicGoldenAge(otherId);
 				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				-- Whether this rival currently grants OUR seat Open Borders —
+				-- the shipped overview's "received" direction
+				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
+				-- mirror unseals the rival's fogged border while this holds,
+				-- so a passage the `buy` arm just bought is ground the
+				-- planner can actually route through; it also retires the
+				-- purchase trigger, so the seat never pays twice.
+				open_borders = try(function()
+					return diplomacy:HasOpenBordersFrom(otherId);
+				end, nil),
 				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
 				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
 				-- failing that it denounces and waits five turns for a Formal War. That
@@ -8413,12 +8423,17 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local incoming = try(function()
 		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, fromPlayer);
 	end, nil);
-	-- Read both sides. `theirs` is what the rival puts up; only gold counts
-	-- and anything else marks the answer foreign. `mine` is what the answer
-	-- says we give, matched against the offer by Firaxis type, value and
-	-- amount, so an equalizer that touched our side cannot slip a bigger
-	-- block or a different item through the accept.
+	-- Read both sides. On a SALE `theirs` is what the rival puts up; only
+	-- gold counts and anything else marks the answer foreign. `mine` is what
+	-- the answer says we give, matched against the offer by Firaxis type,
+	-- value and amount, so an equalizer that touched our side cannot slip a
+	-- bigger block or a different item through the accept. On a BUY the
+	-- directions flip: their side must hold exactly the Open Borders
+	-- agreement asked for (anything else is foreign, their gold included),
+	-- and our side must hold gold and nothing else, totalled into `pay`.
+	local buying = pending ~= nil and pending.direction == "buy";
 	local gold, gpt, foreign, mine, offered = 0, 0, 0, {}, 0;
+	local borders, payGold, payGpt = 0, 0, 0;
 	local mineText = {};
 	if incoming ~= nil then
 		pcall(function()
@@ -8428,28 +8443,43 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 				local duration = item:GetDuration() or 0;
 				local amount = item:GetAmount() or 0;
 				if from == fromPlayer then
-					if kind == DealItemTypes.GOLD then
+					if kind == DealItemTypes.GOLD and not buying then
 						if duration == 0 then gold = gold + amount; else gpt = gpt + amount; end
+					elseif buying and kind == DealItemTypes.AGREEMENTS
+							and DealAgreementTypes ~= nil
+							and try(function() return item:GetSubType(); end, nil)
+								== DealAgreementTypes.OPEN_BORDERS then
+						borders = borders + 1;
 					else
 						foreign = foreign + 1;
 					end
 				else
-					local key;
-					if kind == DealItemTypes.FAVOR then
-						key = "FAVOR";
-					elseif kind == DealItemTypes.RESOURCES then
-						key = "RESOURCES:" .. tostring(item:GetValueType());
+					if buying and kind == DealItemTypes.GOLD then
+						if duration == 0 then payGold = payGold + amount; else payGpt = payGpt + amount; end
+						mineText[#mineText + 1] = "GOLD=" .. tostring(amount) .. "x" .. tostring(duration);
 					else
-						key = "OTHER:" .. tostring(kind);
+						local key;
+						if kind == DealItemTypes.FAVOR then
+							key = "FAVOR";
+						elseif kind == DealItemTypes.RESOURCES then
+							key = "RESOURCES:" .. tostring(item:GetValueType());
+						else
+							key = "OTHER:" .. tostring(kind);
+						end
+						mine[key] = (mine[key] or 0) + amount;
+						mineText[#mineText + 1] = key .. "=" .. tostring(amount) .. "x" .. tostring(duration);
 					end
-					mine[key] = (mine[key] or 0) + amount;
-					mineText[#mineText + 1] = key .. "=" .. tostring(amount) .. "x" .. tostring(duration);
 				end
 			end
 		end);
 	end
 	local matches = pending ~= nil;
-	if pending ~= nil then
+	if buying then
+		-- The answer must be the agreement asked for and a price, nothing
+		-- else in either direction — a counter that slips another item onto
+		-- our side or keeps the agreement off theirs is walked away from.
+		matches = borders == 1 and next(mine) == nil;
+	elseif pending ~= nil then
 		for key, amount in pairs(pending.gave or {}) do
 			offered = offered + 1;
 			if mine[key] ~= amount then matches = false; end
@@ -8459,18 +8489,28 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		end
 	end
 	local worth = gold + gpt * 25;
+	local pay = payGold + payGpt * 25;
 	local session = try(function()
 		return DiplomacyManager.FindOpenSessionID(pid, fromPlayer);
 	end, nil);
-	local closable = pending ~= nil and matches and foreign == 0 and offered > 0
-		and worth >= (pending.floor or 0)
-		and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
+	local closable;
+	if buying then
+		closable = matches and foreign == 0
+			and pay <= (pending.ceiling or 0)
+			and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
+	else
+		closable = pending ~= nil and matches and foreign == 0 and offered > 0
+			and worth >= (pending.floor or 0)
+			and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
+	end
 	emit("deal_response", {
 		turn = turn, from = fromPlayer, action = action,
-		gold = gold, gold_per_turn = gpt, worth = worth, foreign = foreign,
+		direction = buying and "buy" or "sell",
+		gold = gold, gold_per_turn = gpt, worth = worth, pay = pay, foreign = foreign,
 		ours = table.concat(mineText, ","),
 		asked = pending ~= nil, asked_turn = pending and pending.turn or nil,
-		floor = pending and pending.floor or nil, matches = matches,
+		floor = pending and pending.floor or nil,
+		ceiling = pending and pending.ceiling or nil, matches = matches,
 		session = session ~= nil and session or -1,
 		closable = closable,
 	});
@@ -8481,7 +8521,9 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);
 		emit("deal_declined", {
 			turn = turn, from = fromPlayer, action = action, worth = worth,
-			floor = pending.floor, matches = matches, foreign = foreign,
+			direction = buying and "buy" or "sell", pay = pay,
+			floor = pending.floor, ceiling = pending.ceiling,
+			matches = matches, foreign = foreign,
 		});
 		return;
 	end
@@ -8493,7 +8535,9 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	end);
 	emit("deal_closed", {
 		turn = turn, from = fromPlayer, gold = gold, gold_per_turn = gpt, worth = worth,
-		floor = pending.floor, gave = pending.verb, sent = (ok and sent) and true or false,
+		direction = buying and "buy" or "sell", pay = pay,
+		floor = pending.floor, ceiling = pending.ceiling,
+		gave = pending.verb, sent = (ok and sent) and true or false,
 		threw = not ok,
 	});
 end
@@ -9216,6 +9260,110 @@ local function applyOrder(player, pid, row, turn)
 			gave = gaveText, threw = reason == "throw",
 		});
 		return submitted, submitted and "sell_asked" or reason;
+	end
+
+	-- ★★★★★ PASSAGE BOUGHT AT THE RIVAL'S OWN PRICE. The mirror image of the
+	-- sale above, for the one purchase with a measured case: Open Borders,
+	-- the peacetime key to a sealed border (one live run held a scout against
+	-- Kongo's invisible border for 74 turns and explored 8.3% of the map).
+	-- `verb` names the agreement — OPEN_BORDERS is the only one this arm
+	-- buys — and `x` is the gold-equivalent ceiling (lump plus 25× per-turn)
+	-- ABOVE which the answer is declined. Built the way the shipped screen
+	-- adds an agreement (DiplomacyDealView.lua `OnClickAvailableAgreement`):
+	-- one AGREEMENTS item FROM the rival, subtype OPEN_BORDERS, the standard
+	-- thirty turns; then EQUALIZE, and `CivvisOnIncomingDeal` closes only when
+	-- the rival's own balance asks gold at or under the ceiling. Same
+	-- cooldowns and same one-working-deal-per-rival rule as the sale lane —
+	-- `CivvisTrade.pending`/`asked` are shared deliberately, because the host
+	-- holds ONE outgoing working deal per rival and a second ask would clear
+	-- the first mid-flight.
+	if kind == "buy" then
+		if verb ~= "OPEN_BORDERS" then return false, "buy_unknown_item"; end
+		if subject < 0 then return false, "buy_target_unmapped"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "buy_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "buy_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "buy_not_major";
+		end
+		if try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
+			return false, "buy_already_open";
+		end
+		local trade = CivvisTrade;
+		local pending = trade.pending[subject];
+		if pending ~= nil then
+			if (turn - (pending.turn or turn)) < (cfg.TradeResponseTurns or 2) then
+				return false, "buy_pending";
+			end
+			trade.pending[subject] = nil;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
+		end
+		if try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
+			return false, "buy_host_pending";
+		end
+		local asked = trade.asked[subject];
+		if asked ~= nil and (turn - asked) < (cfg.TradeRetryTurns or 3) then
+			return false, "buy_cooldown";
+		end
+		local ceiling = math.max(0, math.floor(x or 0));
+		if ceiling <= 0 then return false, "buy_no_ceiling"; end
+		local ran, submitted, reason = pcall(function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			if deal == nil then return false, "no_working_deal"; end
+			-- The agreement rides FROM the rival: they grant, we pay. A
+			-- ruleset without the agreement type has nothing to buy here.
+			if DealAgreementTypes == nil or DealAgreementTypes.OPEN_BORDERS == nil then
+				return false, "no_agreement_type";
+			end
+			local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, subject);
+			if item == nil then return false, "no_agreement_item"; end
+			item:SetSubType(DealAgreementTypes.OPEN_BORDERS);
+			item:SetDuration(30);
+			if not try(function() return item:IsValid(); end, true) then
+				pcall(function() deal:RemoveItemByID(item:GetID()); end);
+				return false, "agreement_invalid";
+			end
+			deal:Validate();
+			if not deal:IsValid() then return false, "invalid_deal"; end
+			-- Registered BEFORE the ask goes out — see the sale arm above.
+			trade.pending[subject] = {
+				turn = turn, ceiling = ceiling, direction = "buy", verb = "OPEN_BORDERS",
+			};
+			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			return true, "asked";
+		end);
+		if not ran then
+			submitted, reason = false, "throw";
+		end
+		if submitted then
+			trade.asked[subject] = turn;
+		elseif trade.pending[subject] ~= nil and trade.pending[subject].turn == turn
+				and trade.pending[subject].direction == "buy" then
+			-- The ask itself threw after registering; nothing is in flight.
+			trade.pending[subject] = nil;
+		end
+		if not submitted and (reason == "no_agreement_type" or reason == "no_agreement_item"
+				or reason == "agreement_invalid" or reason == "invalid_deal") then
+			-- The engine will not sell passage here right now — usually a
+			-- missing Early Empire on one side; do not re-ask every turn for
+			-- the same answer.
+			trade.asked[subject] = turn;
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
+		end
+		emit("deal_offer", {
+			turn = turn, target = subject, verb = "OPEN_BORDERS", direction = "buy",
+			ceiling = ceiling,
+			submitted = submitted and true or false, reason = reason,
+			threw = reason == "throw",
+		});
+		return submitted, submitted and "buy_asked" or reason;
 	end
 
 	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
