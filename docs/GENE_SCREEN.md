@@ -187,23 +187,29 @@ thirds of native games end by conversion and the rows previously could not say
 one thing about how the losing seat stood in that race — including the
 diagnostic split over the games actually lost to a rival's religion.
 
-## What the first run taught (2026-08-18, 4p 60×38 Online-250, 300 pairs)
+## What the first run taught (2026-08-19, 4p 60×38 Online-250, 300 pairs + 20 anchors)
 
-Recorded in full in `docs/eval/2026-08-19-gene-screen-random-genome-factorial-screen.md`.
-The parts that change how the tool is read:
+Recorded in full in
+`docs/eval/2026-08-19-gene-screen-random-genome-factorial-screen.md`. The parts
+that change how the tool is read:
 
-- **Native 4p games are a religion race.** Two thirds ended by conversion,
-  median t149, a third before t150. The 31 war/siege genes sit at ~0 win Δ
-  because the game is over before a siege matters — a regime fact, not a
-  measurement of the repairs. Screen a war repair in a regime that lets wars
-  happen (`--field repairs`, more seats, victories restricted) or read an
-  outcome that fires earlier than "won".
-- **Score share carries the signal, win rate barely moves.** At 260 pairs the
-  win Δ resolved ±7 pp and share ±1.6 pp; the two hard results
-  (`governor-every-lane` −3.8 pp share, `war-economy` −2.7 pp) had win Δs of
-  −0.4 and −5.8. `wide-map-capacity` bought +2.7 cities and ~+100 score per
-  game and **no wins**: city count does not convert in this regime.
+- **Native 4p games are a religion race.** 65% ended by conversion, median
+  t148, a third before t150. The 31 war/siege genes sit at ~0 win Δ because the
+  game is over before a siege matters — a fact about the regime, not a
+  measurement of the repairs. Use `--victories` to give them a game.
+- **Score share carries the signal; win rate barely moves.** ±1.50 pp against
+  ±7.0 pp from identical games. All three results past the family-wise bar were
+  on the share axis and two were invisible on the win axis
+  (`governor-every-lane` −4.02 pp at z −8.34 with a win Δ of −1.3 pp).
+- **The bundle buys cities it does not convert.** All-on against all-off over
+  20 anchor pairs: **+3.45 cities (z +7.0)**, wins −20 pp but with an interval
+  spanning zero. `wide-map-capacity` alone shows the same shape — +2.89 pp
+  share at z +5.7, no win gain.
+- **The interaction layer was noise**: 72 flags at |z| ≥ 2 against 73 expected.
 - **Fixed seating is a confound for the field.** See `--randomize-civs`.
+- The screen reproduced a known result from a new instrument:
+  `governor-every-lane` here, `advanced_every_lane` at −62/−95 Elo in
+  `docs/EVAL.md`.
 
 ## What it is not
 
