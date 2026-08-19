@@ -1555,11 +1555,8 @@ fn append_work_sale_order(
     // the culture front-runner when there is any other choice: our losses
     // are 27-of-71 culture steals, and a Great Work in that rival's museum
     // is tourism for them twice over.
-    let candidates: Vec<&civvis::mirror::StateRival> = state
-        .rivals
-        .iter()
-        .filter(|rival| !rival.at_war)
-        .collect();
+    let candidates: Vec<&civvis::mirror::StateRival> =
+        state.rivals.iter().filter(|rival| !rival.at_war).collect();
     let top_culture = candidates
         .iter()
         .max_by(|left, right| {
@@ -5168,8 +5165,8 @@ mod tests {
 
     use super::*;
     use civvis::mirror::{
-        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
-        StateGovernor, StateGreatWork, StateMinor, StateRival, StateSnapshot, StateTradeRoute,
+        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGovernor,
+        StateGreatPerson, StateGreatWork, StateMinor, StateRival, StateSnapshot, StateTradeRoute,
         StateUnit, TilesChunk,
     };
 
@@ -8106,7 +8103,11 @@ mod tests {
         assert_eq!(append_work_sale_order(&state, &mut orders), None);
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
-        assert_eq!(orders[0].subject, Some(4), "not the culture leader, not the war");
+        assert_eq!(
+            orders[0].subject,
+            Some(4),
+            "not the culture leader, not the war"
+        );
         assert_eq!(
             orders[0].verb.as_deref(),
             Some("GREATWORK_POE_1=1"),
