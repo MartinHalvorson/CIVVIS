@@ -30,6 +30,10 @@ const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
 /// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
 /// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
 const CITY_MAX_HP: i32 = 200;
+/// A rival Missionary or Apostle within four hexes can reach a home city and
+/// spread on its next turn. This is the same one-turn approach window the
+/// religious promotion chooser watches before a city has taken pressure.
+const RELIGIOUS_HOME_WATCH: i32 = 4;
 /// A city the controller knows exists but has never seen is not evidence of an
 /// unwalled outpost.  This is the fog-honest floor used until a City Center
 /// sighting supplies real wall and combat values.  One wall tier is enough to
@@ -14748,7 +14752,45 @@ impl AdvancedAi {
                 }
             }
         }
-        None
+
+        // A non-founder can only buy a defender from a city whose current
+        // majority is not the invading faith. Waiting for the first pressure
+        // tick can therefore remove the last supplier before this pass runs.
+        // A religious unit already in its one-turn approach window is the
+        // visible, bounded earlier warning: preserve an adopted-faith
+        // Missionary while that city can still provide it.
+        let home = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .map(|city| (city.pos, g.city_religion(city).map(str::to_owned)))
+            .collect::<Vec<_>>();
+        g.units
+            .values()
+            .filter_map(|unit| {
+                if unit.owner == pid || g.rules.units[unit.kind].class != "religious" {
+                    return None;
+                }
+                let religion = unit.religion.as_deref()?;
+                if !rival_faith(religion) {
+                    return None;
+                }
+                home.iter()
+                    // A unit reinforcing the city's existing faith is not a
+                    // conversion threat. A city with no majority still needs
+                    // the warning because it can be converted next turn.
+                    .filter(|(_, majority)| majority.as_deref() != Some(religion))
+                    .map(|(pos, _)| g.wdist(*pos, unit.pos))
+                    .min()
+                    .filter(|distance| *distance <= RELIGIOUS_HOME_WATCH)
+                    .map(|distance| (distance, religion.to_owned()))
+            })
+            .min_by(|left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            })
+            .map(|(_, religion)| religion)
     }
 
     /// Home religious defense for civilizations whose grand strategy is NOT

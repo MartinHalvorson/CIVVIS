@@ -10596,6 +10596,68 @@ fn non_founder_buys_adopted_faith_missionaries_to_defend_home() {
 }
 
 #[test]
+fn non_founder_buys_defense_before_an_approaching_rival_missionary_spreads() {
+    let mut game = Game::new_full(3, 42, 24, 7_625, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    let capital = game.player_city_ids(0)[0];
+    let adopted_city = found_test_city(&mut game, 0);
+    install_test_holy_site(&mut game, adopted_city);
+    game.current = 0;
+    game.turn = 150;
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].faith = 600.0;
+    game.players[1].religion = Some("Runaway Faith".to_string());
+    for city in [capital, adopted_city] {
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pressure
+            .insert("Neighbor Faith".to_string(), 1_000.0);
+    }
+
+    let capital_pos = game.cities[&capital].pos;
+    let approach = game
+        .wdisk(capital_pos, 4)
+        .into_iter()
+        .find(|position| {
+            game.wdist(*position, capital_pos) == 4
+                && game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+                && game.units_at(*position).is_empty()
+        })
+        .expect("the capital has a clear one-turn religious approach tile");
+    let rival = game.spawn_test_unit("missionary", 1, approach);
+    game.units.get_mut(&rival).unwrap().religion = Some("Runaway Faith".to_string());
+
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        ai.home_conversion_threat(&game, 0).as_deref(),
+        Some("Runaway Faith"),
+        "the approaching rival must trigger defense before it adds pressure"
+    );
+    ai.religious_defense(&mut game, 0, "Runaway Faith");
+
+    let defender = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "missionary")
+        .expect("the still-adopted Holy Site must buy the early defender");
+    assert_eq!(defender.religion.as_deref(), Some("Neighbor Faith"));
+    assert_eq!(defender.pos, game.cities[&adopted_city].pos);
+    assert!(game.players[0].faith < 600.0);
+}
+
+#[test]
 fn apostle_launches_inquisition_before_evangelizing_when_core_is_lost() {
     let mut game = Game::new_full(2, 30, 18, 7_623, 200, 0, false);
     for pid in 0..2 {
