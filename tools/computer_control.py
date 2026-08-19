@@ -99,6 +99,24 @@ KNOWN_MODALS = {
     "UserNotificationCenter": {
         "matches": (),
         "safe_buttons": ("OK", "Cancel", "Close"),
+        # A permission prompt offers only Allow / Don’t Allow, so none of the
+        # buttons above is present.  Measured 2026-08-19: Chrome’s local-network
+        # request sat over a recorded verification game until a human cleared it.
+        # Declining is safe where granting never is — macOS keeps the choice in
+        # System Settings, so a wrong decline is one click to undo.
+        #
+        # But denial is gated on the text rather than applied to every prompt of
+        # this owner: a denied file-access request would cut the lane off from
+        # its own run artifacts and leave nothing on screen to say why.  An
+        # unlisted prompt is censused and kept, which is what puts it in front of
+        # an operator.
+        "deny_buttons": ("Don’t Allow", "Don't Allow"),
+        "deny_matches": (
+            "find devices on local networks",
+            "to use your location",
+            "would like to send you notifications",
+            "wants to use bluetooth",
+        ),
     },
     # The admin-auth sheet ("Finder wants to make changes", Touch ID / password).
     # Measured 2026-08-07: asking Finder to move a SYMLINK into the protected
@@ -327,9 +345,16 @@ def choose_dismissal(modal: dict) -> "str | None":
     spec = KNOWN_MODALS.get(modal.get("owner", ""))
     if spec is None:
         return None
+    buttons = modal.get("buttons") or []
     for name in spec["safe_buttons"]:
-        if name in (modal.get("buttons") or []):
+        if name in buttons:
             return name
+    patterns = spec.get("deny_matches") or ()
+    text = (modal.get("text") or "").lower()
+    if patterns and any(p.lower() in text for p in patterns):
+        for name in spec.get("deny_buttons") or ():
+            if name in buttons:
+                return name
     return None
 
 
