@@ -226,6 +226,8 @@ local function resolveActions()
 		-- of those sightings already have one of our military units within two
 		-- tiles, against 12,708 rival religious-unit sightings to our 590.
 		"UNITCOMMAND_CONDEMN_HERETIC",
+		-- Cancels a unit's queued path; see CivvisBoard.cancelQueuedPaths.
+		"UNITCOMMAND_CANCEL",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -469,6 +471,10 @@ local function survey()
 		-- as before. A capability the sender assumes and the receiver lacks is
 		-- how an accepted order becomes a silent no-op.
 		order_queue = cfg.OrderQueue ~= false,
+		-- Every MOVE_TO capped to this turn's leg and combat units' queued
+		-- paths cancelled at turn start, so `moves` at export means movement
+		-- available this turn and the mirror may trust it. See CivvisBoard.
+		moves_at_turn_start = cfg.CapMovesToReach ~= false,
 	});
 
 	if cfg.SurveyEnums then
@@ -6185,6 +6191,15 @@ local function exportState(player, pid, turn)
 			formation_count = try(function()
 				return unit:GetFormationUnitCount();
 			end, 1),
+			-- Where a queued host path will carry the unit at its next turn
+			-- start (nil when none), and whether it is embarked. See CivvisBoard.
+			queued_dest = try(function()
+				local index = UnitManager.GetQueuedDestination(unit);
+				if index == nil then return nil; end
+				local plot = Map.GetPlotByIndex(index);
+				return plot and { plot:GetX(), plot:GetY() } or nil;
+			end, nil),
+			embarked = try(function() return unit:IsEmbarked(); end, nil),
 			great_person = greatPerson,
 		};
 	end);
@@ -7784,6 +7799,15 @@ local function exportTiles(player, pid, turn)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★★ THE ROAD. Never exported; the mirror wrote `road = 0`
+						-- everywhere and priced every march across roadless ground.
+						-- Sent by name (`GameInfo.Routes`), nil where none stands.
+						rt = try(function()
+							local route = plot:GetRouteType();
+							if route == nil or route < 0 then return nil; end
+							return typeName("Routes", "RouteType", route);
+						end, nil),
+						rp = try(function() return plot:IsRoutePillaged() and true or nil; end, nil),
 						-- ★★★★ WHAT STANDS ON THE OTHER CIVILIZATIONS' GROUND. A rival
 						-- city record is name, size, health, walls and capital; its
 						-- districts and wonders were never exported, so a rival's
@@ -10724,6 +10748,24 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "MOVE_TO" or verb == "ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
+			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
+			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
+			-- The row's own x/y are rewritten so the queue expects the capped
+			-- plot; the original destination rides in `move_capped`.
+			if verb == "MOVE_TO" and cfg.CapMovesToReach ~= false then
+				local capped, why = CivvisBoard.capToTurn(unit, x, y);
+				if capped == false then
+					CivvisBoard.stats.no_reach = CivvisBoard.stats.no_reach + 1;
+					return false, "move_" .. tostring(why);
+				elseif capped ~= nil then
+					CivvisBoard.stats.capped = CivvisBoard.stats.capped + 1;
+					emit("move_capped", { turn = turn, unit = subject,
+					                      want = { x, y }, sent = { capped.x, capped.y },
+					                      turns = capped.turns });
+					x, y = capped.x, capped.y;
+					row.x, row.y = x, y;
+				end
+			end
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
@@ -11889,6 +11931,93 @@ CivvisQueue.inContact = function(pid, unit, turn)
 	return false;
 end;
 
+-- --------------------------------------------------------- host-grounded board
+--
+-- ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. `mirror_unit_moves`
+-- handed every mirrored unit its full allowance every turn, because the
+-- export's `moves` had misled twice — and it misled because the host had
+-- already spent the movement before the brain could act: a `MOVE_TO` whose
+-- host path ran longer than CIVVIS priced was QUEUED, and the host walked the
+-- unit along it at the start of the next turn, before `beginTurn` exports.
+-- Turn 31 of run civvis-20260730T120107Z: 7 of 8 units at `moves: 0` at the
+-- start of the turn. Measured across the recorded runs: 12.5 % of MOVE_TOs
+-- did not move at all, most of them with movement showing at export.
+--
+-- Two rules make `moves` mean "movement available this turn", and the `seat`
+-- event says so (`moves_at_turn_start`) so the mirror may trust it:
+--   * every MOVE_TO is CAPPED to the furthest plot on the host's own path that
+--     the unit reaches THIS turn (`UnitManager.GetMoveToPathEx(unit, dest)`
+--     gives `plots` and `turns`; the shipped WorldInput draws the same path);
+--     a walk that would take two turns is sent as its first turn's leg, and
+--     the brain re-plans the rest from the real position next turn — no path
+--     is left queued to walk the unit somewhere stale;
+--   * combat units that enter the turn with a queued destination anyway (an
+--     older order, the fallback ladder, explore automation) get
+--     `UNITCOMMAND_CANCEL` at turn start, so the brain owns them from the next
+--     turn on. Civilians keep theirs: a settler's long walk is exactly what a
+--     queued path is for.
+-- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
+-- host and the board disagreed. One bare global table (200-local ceiling).
+CivvisBoard = { stats = { capped = 0, no_reach = 0 } };
+
+CivvisBoard.reset = function()
+	CivvisBoard.stats = { capped = 0, no_reach = 0 };
+end;
+
+-- The furthest plot on the host's path to (x, y) that `unit` reaches this
+-- turn. Returns nil when the whole path lands this turn (no cap), false and a
+-- reason when the unit cannot take even the first step, or the capped plot.
+CivvisBoard.capToTurn = function(unit, x, y)
+	local path = try(function()
+		return UnitManager.GetMoveToPathEx(unit, Map.GetPlotIndex(x, y));
+	end, nil);
+	if path == nil or path.plots == nil or path.turns == nil then return nil; end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	if n <= 1 then return nil; end
+	local last = tonumber(path.turns[n]);
+	if last == nil or last <= 1 then return nil; end
+	local reach = nil;
+	for i = 2, n do
+		local t = tonumber(path.turns[i]);
+		if t ~= nil and t <= 1 then reach = path.plots[i]; end
+	end
+	if reach == nil then return false, "no_moves_this_turn"; end
+	local plot = try(function() return Map.GetPlotByIndex(reach); end, nil);
+	if plot == nil then return nil; end
+	local cx = tonumber(try(function() return plot:GetX(); end, nil));
+	local cy = tonumber(try(function() return plot:GetY(); end, nil));
+	if cx == nil or cy == nil then return nil; end
+	return { x = cx, y = cy, turns = last };
+end;
+
+-- Cancel queued paths on combat units at the start of our turn, and report
+-- how many units entered the turn with one at all.
+CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
+	local found, cancelled = 0, 0;
+	eachUnit(player, function(unit)
+		local queued = try(function() return UnitManager.GetQueuedDestination(unit); end, nil);
+		if queued == nil then return; end
+		found = found + 1;
+		local combat = try(function()
+			local row = GameInfo.Units[unit:GetUnitType()];
+			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
+		end, false) == true;
+		if not combat then return; end
+		local hash = CMD["UNITCOMMAND_CANCEL"];
+		if hash == nil then return; end
+		local ok = try(function()
+			return UnitManager.CanStartCommand(unit, hash, false, true) == true;
+		end, false);
+		if ok and pcall(function() UnitManager.RequestCommand(unit, hash); end) then
+			cancelled = cancelled + 1;
+		end
+	end);
+	if found > 0 then
+		emit("queued_paths", { turn = turn, found = found, cancelled = cancelled });
+	end
+end;
+
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
@@ -12149,6 +12278,11 @@ local function applyOrders(player, pid, turn, rows)
 		-- Unmentioned combat units kept off the explore automation because a
 		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
 		explore_guarded = guarded,
+		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
+		-- refused because the unit could not take even the first step this
+		-- turn. See CivvisBoard.
+		move_capped = CivvisBoard.stats.capped,
+		move_no_reach = CivvisBoard.stats.no_reach,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -12403,6 +12537,8 @@ local function beginTurn(player, pid, turn)
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
 	warTarget = findWarTarget(player, pid);
+	CivvisBoard.reset();
+	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.

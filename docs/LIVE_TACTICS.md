@@ -156,3 +156,49 @@ UI reads them, and both readings (hit-point readback and damage deltas) are
 recorded side by side so the first live run says which one is right. The
 offline regression (`combat_ledger_test.lua`) proves the events are shaped as
 the ledger tool expects.
+
+## 6. Step 2 — a host-grounded board (movement, roads, queued paths)
+
+**What was wrong.** `mirror_unit_moves` handed every mirrored unit its full
+allowance every turn, because the export's `moves` had misled twice — and it
+misled because the host had already spent the movement before the brain
+could act: a `MOVE_TO` whose host path outran the turn was *queued*, and the
+host walked the unit along it at the start of the next turn, before
+`beginTurn` exports (turn 31 of run `civvis-20260730T120107Z`: 7 of 8 units at
+`moves: 0` at the start of the turn). Roads were never exported and the board
+wrote `road = 0` everywhere, so every march was priced across roadless ground.
+
+**Mechanism.** The mod (`CivvisBoard`):
+- caps every `MOVE_TO` to the furthest plot on the host's own path that the
+  unit reaches *this* turn (`UnitManager.GetMoveToPathEx` — `plots` and
+  per-plot `turns`, the shipped WorldInput's own path); a walk that would
+  take two turns is sent as its first turn's leg and the brain re-plans the
+  rest from the real position next turn, so no path is left queued to walk
+  the unit somewhere stale; a move whose first step is already next turn is
+  refused by name (`move_no_moves_this_turn`); a melee ATTACK (a `MOVE_TO`
+  onto the defender) is never capped; the row's own destination is rewritten
+  so the per-unit queue expects the capped plot; counted as `move_capped` /
+  `move_no_reach` on the `orders` event and detailed in `move_capped` events;
+- cancels combat units' queued host paths at turn start
+  (`UNITCOMMAND_CANCEL`; civilians keep theirs — a settler's long walk is what
+  a queued path is for) and reports `queued_paths {found, cancelled}`;
+- exports each unit's `queued_dest` and `embarked`, and each tile's route
+  (`rt`, by name from `GameInfo.Routes`) and `rp` (pillaged);
+- advertises `moves_at_turn_start` on the `seat` event.
+
+The mirror maps `rt` onto the engine's route ladder (`route_level`: Ancient 1
+… Railroad 5, a pillaged road 0) and, **only when the seat advertises
+`moves_at_turn_start`**, starts each unit with `min(allowance, moves)` —
+`mirror_unit_moves_for` — on both the fresh-board and the persistent path;
+against an older mod every unit keeps its full allowance exactly as before.
+`moves_short=N` in the decide note counts units the host had already walked
+before the frame; zero is the healthy reading once every move is capped.
+
+**Not measured yet.** Offline: `host_board_test.lua` (cap, refuse, attack
+uncapped, queue expectation follows the cap, cancel only combat units) and
+the mirror tests (`host_routes_land_on_the_engines_ladder`,
+`exported_routes_reach_the_board`,
+`exported_movement_is_trusted_only_with_the_seat_capability`). The first live
+runs should be read for `move_capped` / `move_no_reach` on `orders`,
+`queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
+did-not-move share (12.5 % before).
