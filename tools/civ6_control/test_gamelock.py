@@ -178,6 +178,41 @@ class ExplicitOperatorHalt(unittest.TestCase):
         self.assertIsNotNone(description)
         self.assertIn("unreadable explicit operator halt marker", description)
 
+    def test_halt_status_answers_only_the_explicit_marker(self) -> None:
+        """A live holder that drives no run is a standing hold, not a halt.
+
+        `--hold-status` deliberately reports both; `--halt-status` is what a
+        process that will STOP something must ask, because the standing half is
+        the few-second window between attempts (see the interactive host).
+        """
+        env = {**os.environ,
+               "CIVVIS_OPERATOR_HALT_FILE": str(gamelock.OPERATOR_HALT),
+               "CIVVIS_GAME_LOCK_DIR": str(gamelock.LOCK)}
+        cli = [sys.executable, str(Path(gamelock.__file__))]
+        # Nothing halted, nothing held: both answer no.
+        self.assertEqual(
+            subprocess.run(cli + ["--halt-status"], env=env,
+                           capture_output=True, text=True, timeout=5).returncode, 1)
+        # A live holder under a tag nobody drives: standing hold yes, halt no.
+        self.assertTrue(gamelock.acquire("civvis-test-orphan-tag"))
+        try:
+            standing = subprocess.run(cli + ["--hold-status"], env=env,
+                                      capture_output=True, text=True, timeout=5)
+            self.assertEqual(standing.returncode, 0, standing.stderr)
+            self.assertIn("no harness is driving", standing.stdout)
+            halt = subprocess.run(cli + ["--halt-status"], env=env,
+                                  capture_output=True, text=True, timeout=5)
+            self.assertEqual(halt.returncode, 1,
+                             f"a standing hold is not an operator halt: {halt.stdout}")
+        finally:
+            gamelock.release()
+        # The explicit marker: both answer yes.
+        gamelock.request_operator_halt("maintenance")
+        halt = subprocess.run(cli + ["--halt-status"], env=env,
+                              capture_output=True, text=True, timeout=5)
+        self.assertEqual(halt.returncode, 0, halt.stderr)
+        self.assertIn("explicitly halted", halt.stdout)
+
     def test_hold_status_cli_has_a_machine_readable_exit_code(self) -> None:
         gamelock.request_operator_halt("maintenance")
         result = subprocess.run(

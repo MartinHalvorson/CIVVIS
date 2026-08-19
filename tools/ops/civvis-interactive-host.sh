@@ -35,12 +35,22 @@ hold_status() {
   # A missing or unreadable lock helper must not turn an explicit halt into a
   # fresh game.  Treat an inspection failure as a hold until an operator can
   # resolve it, while the normal no-hold answer remains exit 1.
+  #
+  # ⚠⚠ THIS ASKS FOR THE EXPLICIT, DURABLE HALT AND NOTHING ELSE. It used to
+  # ask `--hold-status`, whose answer also covers a lock whose live holder
+  # drives no run — a state the batch loop passes through for a few seconds
+  # between one attempt's exit and the next attempt's launch. Polled every five
+  # seconds, that read as "operator halt active", this host stopped its own
+  # supervisor, and the batch loop and the game under it died with it: four
+  # games on 2026-08-18/19 ended at t18/t44/t72/t83 as `game exited` within
+  # seconds of such a line in this log. Stopping the machine is the operator's
+  # marker's job; a standing hold is a report for the keeper, not an order.
   if [[ ! -f "$GAMELOCK" ]]; then
     print -r -- "cannot inspect operator halt: missing $GAMELOCK"
     return 0
   fi
   local output="" rc=0
-  output=$("$GAMELOCK_PYTHON" "$GAMELOCK" --hold-status 2>&1)
+  output=$("$GAMELOCK_PYTHON" "$GAMELOCK" --halt-status 2>&1)
   rc=$?
   case "$rc" in
     0) print -r -- "$output"; return 0 ;;
