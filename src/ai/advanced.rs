@@ -184,6 +184,67 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// What finishing the game outright is worth to [`AdvancedAi::strategic_wonder_value`],
+/// in the raw units `production_value` normalises by `(7 + turns)`. Every
+/// discrete victory currency is priced as its share of this one number: one of
+/// the twenty `DIPLOMATIC_VICTORY_POINTS` is a twentieth of it, one tech is one
+/// tech of the tree.
+///
+/// Calibrated against the two builds the same function already prices — a
+/// Settler carries ~1 560 raw and a Library ~960 — so that a wonder delivering
+/// a fifth of the win condition (the Statue of Liberty's four diplomatic
+/// points) reads ~2 800 and outbids both in a city that can finish it, while
+/// one point of the same currency reads 700 and outbids neither.
+const STRATEGIC_WONDER_VICTORY_VALUE: f64 = 14_000.0;
+
+/// The lane value a wonder must reach before `strategic_wonders` opens a
+/// production lane for it, sat just under the ~960 raw a Library carries: a
+/// wonder that moves the win by less than an ordinary building moves the
+/// economy is not a strategic wonder, and the arm's `-10_000` refusal stands.
+const STRATEGIC_WONDER_MIN_VALUE: f64 = 900.0;
+
+/// ★★★★ AND IT MUST RETURN THAT VALUE IN PROPORTION TO WHAT IT COSTS. A flat
+/// floor buys a victory point at any price: the Potala Palace is 1 060
+/// production for **one** of the twenty a diplomatic victory needs, and it
+/// cleared a flat 900 on that one point alone. The first measurement said so —
+/// `victory_eval --target diplomatic --games 24 --players 6 --turns 250
+/// --speed online --start-seed 24000000` completed the lane 16/24 with the arm
+/// against 19/24 with `--without strategic-wonders`, on the lane whose whole
+/// motivation was that seven of its twenty points are wonders.
+///
+/// So the floor scales: a wonder must return at least this much lane value per
+/// point of production cost. A Library is ~960 raw for 90 production, or ~10.7
+/// per point, so 2.0 asks a wonder for a fifth of a Library's density in pure
+/// victory currency **on top of** the yields the arm already pays it for. The
+/// Mahabodhi Temple returns 3.5, the Statue of Liberty 2.3, and the Potala
+/// Palace 1.2 — which is the discrimination the measurement asked for.
+const STRATEGIC_WONDER_VALUE_PER_COST: f64 = 2.0;
+
+/// A unit a wonder puts on the map for free — the Statue of Zeus' Archers, a
+/// Mahabodhi Apostle, a Meenakshi Guru. The same 380 the `Item::Building` arm
+/// pays for `free_heavy_cavalry` in the Conquest lane, because it is the same
+/// thing bought the same way.
+const STRATEGIC_WONDER_FREE_UNIT: f64 = 380.0;
+
+/// A permanent empire-wide policy slot, priced at what the `Item::Building`
+/// arm pays for a `governor_titles` point: both are one permanent slot the
+/// empire fills once and keeps.
+const STRATEGIC_WONDER_POLICY_SLOT: f64 = 520.0;
+
+/// One point of tourism per turn, to a Culture lane. Derived rather than
+/// tuned: `victory_eval`'s completed culture games finish at ~30 000 lifetime
+/// tourism for ~100 visiting tourists, so a point of tourism per turn held over
+/// a hundred-turn tail is ~a third of a tourist against a ~100-tourist target —
+/// a third of a percent of the win, or ~47 of `STRATEGIC_WONDER_VICTORY_VALUE`.
+/// Doubled, because these are multipliers on a base that grows with the empire
+/// rather than a flat addition that does not.
+const STRATEGIC_WONDER_TOURISM_RATE: f64 = 95.0;
+
+/// What an envoy is worth to a Diplomacy lane, mirroring the literal the
+/// `Item::Building` arm already uses there — the same envoy bought a different
+/// way is the same envoy. `ENVOY_PRODUCTION_VALUE` is the other lanes' price.
+const DIPLOMATIC_ENVOY_PRODUCTION_VALUE: f64 = 300.0;
+
 /// Rings around a settle site inside which a rival major's owned tiles read as
 /// a provocation. See `AdvancedAi::foreign_border_pressure`.
 const FOREIGN_BORDER_RADIUS: i32 = 3;
@@ -2330,6 +2391,18 @@ pub struct AdvancedAi {
     /// default; evaluator arm `advanced_wonder_reach`.
     /// See `wonder_reach_credit`.
     pub wonder_prereq_reach: bool,
+    /// Build the wonders the chosen victory actually needs.
+    ///
+    /// The wonder arm of `production_value` prices no `spec.effects` at all
+    /// and refuses every wonder outside a Culture plan, a Score target or an
+    /// untargeted Egypt/China. Seven of the twenty points a diplomatic victory
+    /// needs are wonders, and the Diplomacy-targeted agent may not build one.
+    /// This prices a wonder's effects in the lane's own currency and opens a
+    /// production lane when the answer clears `STRATEGIC_WONDER_MIN_VALUE`,
+    /// under the same development guards the live race uses.
+    ///
+    /// See `AdvancedAi::strategic_wonder_value` for the derivation.
+    pub strategic_wonders: bool,
     /// Let the third city come before the Prophet on the live seat.
     ///
     /// ★★★★ EVERY LIVE GAME READS `Grand strategy: religion` FROM TURN 19–26.
@@ -3563,7 +3636,7 @@ impl Default for AdvancedAi {
 /// repository. `docs/ROADMAP.md` objective 5 names that as the case splitting
 /// does not answer and moving the data out does. See `advanced/treatments.rs`.
 mod treatments;
-pub use treatments::LIVE_TREATMENTS;
+pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_TREATMENTS};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///
@@ -3777,6 +3850,36 @@ impl AdvancedAi {
         // `hut_collection` above only grabs one inside the current turn's
         // reach. `advanced_without_village_seeking` prices the withhold.
         ai.base.village_seeking = true;
+        // Build the wonders the chosen victory actually needs — the wonder arm
+        // priced no `spec.effects` at all, which the Building arm beside it has
+        // done since it was written. See `strategic_wonder_value` for the
+        // derivation; `advanced_without_strategic_wonders` prices the withhold.
+        //
+        // ⚠⚠ SHIPPED AS A REPAIR, NOT AS A STRENGTH WIN, AND THE DISTINCTION IS
+        // MEASURED. The 200-pair deployment screen
+        // (`advanced` vs `advanced_without_strategic_wonders`, seed 28000000)
+        // returned **all 200 maps byte-identical** — the arm keys off the lane
+        // the agent plays for and the deployed native agent is untargeted, so
+        // it has no chosen victory to work backwards from. Production is
+        // provably unchanged; the targeted agents the ladder runs are what this
+        // reaches, and there it regresses no lane over ~480 paired
+        // `victory_eval` games on three seed streams.
+        //
+        // ★★★★★ AND THE FINDING THAT OUTRANKS THE CHANGE: over 32 250-turn
+        // games a Diplomacy-targeted agent finishes a wonder in **one** of them
+        // with this arm and none without it, while a Culture agent finishes
+        // three in a single game. Seven of the twenty points a diplomatic
+        // victory needs are wonders, and they are not being declined on price —
+        // the Mahabodhi Temple needs a founded religion, a Holy Site and a
+        // Temple, and the Statue of Liberty needs a Harbor and Civil
+        // Engineering. A diplomatic empire builds those once in 32 games, so
+        // `can_produce` never offers the wonder and this valuation is never
+        // consulted. 31 of the 53 wonders name an `adjacent_district` at all —
+        // harbor 6, campus 4, holy_site 4 — so for most of the table the
+        // binding constraint is the district, not the price, and that is a
+        // different piece of work.
+        // Recorded in docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md.
+        ai.enable_strategic_wonders();
         // The reconnaissance quartet the live bridge has carried since its
         // repair era: rebuild a lost scout (`recon_is_the_missing_arm` was
         // dead code natively without `recon_replacement`), slip a threatened
@@ -3804,6 +3907,15 @@ impl AdvancedAi {
         // a unit that cannot act. `advanced_without_barbarian_scouts_are_scouts`
         // prices the withhold.
         ai.enable_barbarian_scouts_are_scouts();
+        // A capturable civilian within reach is taken by walking onto it,
+        // and a settler in the barbarians' hands is never declined. On the
+        // live seat (`civvis-20260818T222844Z` t27–t33) our own captured
+        // settler walked unguarded past four units for seven turns: the two
+        // that stood adjacent were frozen by the duplicate-settler guard,
+        // and the pursuer parked *beside* it every turn — the tile a ranged
+        // attack wants, and the engine rejects attacks on an undefended
+        // civilian. `advanced_without_civilian_rescue` prices the withhold.
+        ai.enable_civilian_rescue();
         ai
     }
 
@@ -3949,6 +4061,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.precise_evacuation = false;
         // The frozen rating anchor must keep playing the game it always
         // played: the adjacent camp clear is default-ON everywhere current,
         // and this line is the gate that keeps it away from the anchor so
@@ -4062,6 +4175,7 @@ impl AdvancedAi {
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             wonder_prereq_reach: false,
+            strategic_wonders: false,
             expansion_before_prophet: false,
             no_elective_war: false,
             recon_flight: false,
@@ -7952,6 +8066,265 @@ impl AdvancedAi {
             }
         }
         credits
+    }
+
+    /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
+    ///
+    /// Worked backwards from the win condition rather than forwards from the
+    /// build menu. The `Item::Wonder` arm of `production_value` prices a
+    /// wonder's yields, housing, Amenities, great-work slots and great-person
+    /// points — and **nothing in `spec.effects`**, which is where every wonder
+    /// that decides a victory keeps its payload. The `Item::Building` arm has
+    /// priced `effects` since it was written; the wonder arm never did.
+    ///
+    /// The consequence is not a mispricing, it is a refusal. `lane_opens` is
+    /// true only for a Culture plan, a Score target, or an untargeted Egypt or
+    /// China, so every other agent takes the `-10_000` sentinel on every
+    /// wonder in the game. Read the data against that:
+    ///
+    /// * `DIPLOMATIC_VICTORY_POINTS` is 20, and three wonders grant seven of
+    ///   them outright — Statue of Liberty 4, Mahabodhi Temple 2, Potala
+    ///   Palace 1. **Thirty-five percent of a diplomatic victory sits in the
+    ///   build menu and the Diplomacy-targeted agent may not touch it**, while
+    ///   `docs/CIV6_LADDER.md`'s census of 199 terminal host events has a
+    ///   rival taking that same lane 41 times — the single largest way this
+    ///   project loses a live game.
+    /// * Science is the lane `victory_eval` completes least often, and Oxford
+    ///   University (+20% city science, two free techs), Amundsen-Scott (+20%
+    ///   empire science, +10% empire production) and Ruhr Valley (+20% city
+    ///   production, which is what the space projects are actually made of)
+    ///   are refused by the same line.
+    ///
+    /// So this prices `spec.effects` **in the lane's own currency**, and the
+    /// caller opens a lane when the answer clears `STRATEGIC_WONDER_MIN_VALUE`.
+    /// Two pricing rules, no third:
+    ///
+    /// 1. **A discrete victory currency is priced as its share of the win.**
+    ///    `STRATEGIC_WONDER_VICTORY_VALUE` is what finishing the game is worth
+    ///    in these units, so a diplomatic victory point is a twentieth of it
+    ///    and a free tech is one tech of the tree. Nothing is invented: the
+    ///    denominators are the engine's own victory constants.
+    /// 2. **A rate effect is converted to the flat yield it is equivalent to**,
+    ///    then run through the same `yield_value(..) * 45.0` the arm already
+    ///    applies to `spec.yields`. A +20% science multiplier on a city making
+    ///    30 science is worth exactly what `"science": 6` in the data would be
+    ///    worth, so it is priced as that and needs no constant of its own.
+    ///
+    /// Rule 2 is why the value is city-specific and turn-specific: Oxford in
+    /// the empire's research city and Oxford in a two-population border town
+    /// are not the same build, and the arm as written could not tell them
+    /// apart. It is also self-limiting — a multiplier on an empire that makes
+    /// nothing prices at nothing, so a wrecked or infant empire keeps building
+    /// what it needs instead of chasing a wonder it cannot use.
+    ///
+    /// ⚠ Deliberately NOT priced: an effect the lane does not need. A Religion
+    /// plan gets nothing here for Oxford's beakers beyond what `spec.yields`
+    /// already pays it. The point is to open a lane for the wonders that
+    /// finish the game this agent is playing for — not to make every wonder
+    /// attractive to everyone, which is the failure mode the `-10_000` line
+    /// was protecting against and still protects against.
+    fn strategic_wonder_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        spec: &crate::rules::WonderSpec,
+        lane: GrandStrategy,
+    ) -> f64 {
+        let effect = |key: &str| spec.effects.get(key).copied().unwrap_or(0.0);
+        // ⚠ NOTHING IS READ OFF THE BOARD UNTIL AN EFFECT ASKS FOR IT. This
+        // runs inside `production_value`, which `take_turn` calls once per
+        // legal item per city per turn and which the profile puts at ~95% of
+        // the main thread. Fifty of the fifty-three wonders name none of the
+        // rate effects below, and an empire sweep for each of them would be
+        // cubic in city count for an answer of zero. `scaled` is the only
+        // gate: no effect, no yield read.
+        let scaled = |key: &str, amount: &mut f64, of: &dyn Fn() -> f64| {
+            let pct = effect(key);
+            if pct != 0.0 {
+                *amount += pct / 100.0 * of();
+            }
+        };
+        let city_yields = || g.city_yields(cid);
+        let empire_yield = |pick: fn(&crate::rules::Yields) -> f64| -> f64 {
+            g.player_city_ids(pid)
+                .into_iter()
+                .map(|other| pick(&g.city_yields(other)))
+                .sum()
+        };
+        // Rule 1's denominators, all of them the engine's own.
+        let victory_point =
+            STRATEGIC_WONDER_VICTORY_VALUE / crate::game::DIPLOMATIC_VICTORY_POINTS.max(1) as f64;
+        let tech = STRATEGIC_WONDER_VICTORY_VALUE / g.rules.techs.len().max(1) as f64;
+        let civic = STRATEGIC_WONDER_VICTORY_VALUE / g.rules.civics.len().max(1) as f64;
+        // Rule 2: a percentage becomes the flat yield it is equivalent to, so
+        // the arm's existing `yield_value(..) * 45.0` prices it unchanged.
+        let mut equivalent = crate::rules::Yields::default();
+        // Rule 1 and the reused unit valuations accumulate here instead.
+        let mut direct = 0.0;
+
+        match lane {
+            // ──────────────────────────────────────────────────────────────
+            // Diplomacy. Twenty points win, and seven of them are wonders.
+            // Envoys and favour are the indirect route to the same counter: a
+            // suzerainty is votes in the Congress, and the Congress is where
+            // the other thirteen come from.
+            GrandStrategy::Diplomacy => {
+                direct += effect("diplomatic_victory_points") * victory_point;
+                let suzerainties = g
+                    .players
+                    .iter()
+                    .filter(|minor| {
+                        minor.is_minor
+                            && !minor.is_barbarian
+                            && g.suzerain_of(minor.id) == Some(pid)
+                    })
+                    .count() as f64;
+                // The Building arm pays 300 an envoy in this lane; the same
+                // envoy bought by a wonder is the same envoy.
+                direct += effect("envoys") * DIPLOMATIC_ENVOY_PRODUCTION_VALUE;
+                direct += effect("envoys_per_wonder")
+                    * DIPLOMATIC_ENVOY_PRODUCTION_VALUE
+                    * g.cities
+                        .values()
+                        .filter(|other| other.owner == pid)
+                        .map(|other| other.wonders.len() as f64)
+                        .sum::<f64>();
+                // Orszaghaz doubles the favour every suzerainty pays, which is
+                // worth what the suzerainties are — nothing at none held.
+                direct += effect("suzerain_diplomatic_favor_pct") / 100.0
+                    * DIPLOMATIC_ENVOY_PRODUCTION_VALUE
+                    * suzerainties;
+                direct += effect("diplomatic_policy_slots") * STRATEGIC_WONDER_POLICY_SLOT;
+            }
+            // ──────────────────────────────────────────────────────────────
+            // Science. Beakers to reach the techs, and production to build the
+            // projects the space race is actually made of.
+            GrandStrategy::Science => {
+                scaled("city_science_pct", &mut equivalent.science, &|| {
+                    city_yields().science
+                });
+                scaled("empire_science_pct", &mut equivalent.science, &|| {
+                    empire_yield(|yields| yields.science)
+                });
+                scaled("city_production_pct", &mut equivalent.production, &|| {
+                    city_yields().production
+                });
+                scaled("empire_production_pct", &mut equivalent.production, &|| {
+                    empire_yield(|yields| yields.production)
+                });
+                equivalent.science += effect("incoming_route_city_science");
+                direct += effect("free_random_techs") * tech;
+                // The Great Library boosts every unresearched ancient and
+                // classical tech at half a tech each, so it is worth what is
+                // left of that half of the tree and nothing once it is done.
+                direct += if effect("ancient_classical_tech_boosts") > 0.0 {
+                    let unresearched = g
+                        .rules
+                        .techs
+                        .iter()
+                        .filter(|(name, node)| {
+                            node.era <= 1 && !g.players[pid].techs.contains(*name)
+                        })
+                        .count() as f64;
+                    unresearched * tech * 0.5
+                } else {
+                    0.0
+                };
+            }
+            // ──────────────────────────────────────────────────────────────
+            // Culture. The win is foreign tourists, and tourism multipliers
+            // are the only place in the build menu they arrive in bulk.
+            GrandStrategy::Culture => {
+                scaled("city_culture_pct", &mut equivalent.culture, &|| {
+                    city_yields().culture
+                });
+                let multiplied = (effect("seaside_resort_tourism_pct")
+                    + effect("city_improvement_park_tourism_pct")
+                    + effect("city_religious_tourism_pct"))
+                    / 100.0
+                    + (effect("religious_tourism_unreduced") + effect("renewable_power_tourism"))
+                        * 0.25;
+                if multiplied != 0.0 {
+                    direct += multiplied * g.tourism_per_turn(pid) * STRATEGIC_WONDER_TOURISM_RATE;
+                }
+                // Appeal is what the seaside resorts and national parks those
+                // multipliers act on are made of, so it is priced through the
+                // same rate at a quarter weight — it buys the ground, not the
+                // tourists.
+                let appeal = effect("empire_appeal");
+                if appeal != 0.0 || effect("city_appeal") != 0.0 {
+                    direct += (appeal * g.player_city_ids(pid).len() as f64
+                        + effect("city_appeal"))
+                        * STRATEGIC_WONDER_TOURISM_RATE
+                        * 0.25;
+                }
+                direct += effect("free_random_civics") * civic;
+                direct += effect("wildcard_policy_slots") * STRATEGIC_WONDER_POLICY_SLOT;
+            }
+            // ──────────────────────────────────────────────────────────────
+            // Religion. The win is converted cities; converted cities are
+            // Apostles reaching them. Faith is the fuel, charges are the reach.
+            GrandStrategy::Religion => {
+                scaled("city_faith_pct", &mut equivalent.faith, &|| {
+                    city_yields().faith
+                });
+                equivalent.faith += effect("regional_faith");
+                direct += (effect("apostles")
+                    + effect("gurus")
+                    + effect("religious_spread_charges")
+                    + effect("apostles_gain_martyr"))
+                    * STRATEGIC_WONDER_FREE_UNIT;
+                direct += effect("free_warrior_monks") * STRATEGIC_WONDER_FREE_UNIT * 0.5;
+                direct += effect("guru_purchase_discount_pct") / 100.0 * STRATEGIC_WONDER_FREE_UNIT;
+                // A religion the agent does not have is a religious victory it
+                // cannot start, so Stonehenge's Prophet is priced in the same
+                // units as a diplomatic point. `spent_religion_founding_site`
+                // in the caller already refuses it once the religion is
+                // founded, and this agrees with it rather than restating it.
+                direct += if g.players[pid].religion.is_none() {
+                    effect("free_great_prophet") * victory_point
+                } else {
+                    0.0
+                };
+            }
+            // ──────────────────────────────────────────────────────────────
+            // ⚠⚠ CONQUEST IS DELIBERATELY EMPTY, AND IT WAS NOT AT FIRST.
+            //
+            // The Statue of Zeus' seven free units, the Terracotta Army's
+            // promotion of everything standing and the Venetian Arsenal's
+            // second hull are the only wonders in the table that put units on
+            // the map, so pricing them for this lane looked obvious. Measured,
+            // it cost the lane two games in eight: `victory_eval --target all
+            // --games 8 --players 6 --turns 250 --speed online --start-seed
+            // 21000000` completed domination 1/8 with the arm and 3/8 with
+            // `--without strategic-wonders`, and both losses ended on the
+            // turn-250 tally instead of on a capital.
+            //
+            // Small, but it agrees with the mechanism and with this file's
+            // own record. A domination victory is not bought in the build
+            // menu: it is every rival capital, and the production a wonder
+            // takes is the production that was going to take one. The
+            // Statue of Zeus' Archers are a classical army arriving in the
+            // classical era, worth less than the medieval units the same 400
+            // production buys; the Terracotta Army promotes an army the
+            // empire already has rather than making it larger. Compare the
+            // 2026-08-14 war-half removal, which paid +38 Elo for spending
+            // *less* production on fighting — the same trade read the other
+            // way round.
+            //
+            // The four lanes below it are not this shape. Seven of a
+            // diplomatic victory's twenty points ARE wonders; a culture
+            // victory's tourists arrive nowhere else in bulk. Where a wonder
+            // carries the win condition it is priced, and where it merely
+            // helps the army it is not.
+            GrandStrategy::Conquest => {}
+            // Expansion carries the Score target, whose wonders are already
+            // priced by the tally itself; Recovery never opens the lane.
+            GrandStrategy::Expansion | GrandStrategy::Recovery => {}
+        }
+
+        self.yield_value(equivalent, lane) * 45.0 + direct
     }
 
     /// The amenity a district of `family` unlocks through the first-tier
@@ -16143,6 +16516,86 @@ impl AdvancedAi {
     /// city-states. This deliberately never replaces an active build, a
     /// threatened city's queue, or the earlier defense, Envoy, religion,
     /// Science, Culture, and Amenity reservations.
+    /// The land half of [`Self::reserve_idle_naval_recon`], and the missing
+    /// reach of `recon_replacement`.
+    ///
+    /// ★★★★ THE TREATMENT WAS ON AND COULD NOT REACH THE SEAT. The rebuild
+    /// logic — `BasicAi::recon_is_the_missing_arm`, with its own four-star
+    /// writeup — is consulted only by `BasicAi::pick_item`, and the live
+    /// seat's production runs through THIS governor, whose scorer prices a
+    /// Scout at `-2_000` once one exists and as a weak Warrior otherwise. So
+    /// the live seat builds its one opening Scout and never another: run
+    /// civvis-20260818T212725Z built one Scout on turn 2 and had zero recon
+    /// units from t150 to the end, while its four idle Settlers collected
+    /// 115 site refusals with a single reason — "beyond the empire's Loyalty
+    /// reach on ground the seat has NOT EXPLORED, where the rivals that
+    /// press it have never been seen". The unexplored-ground clause of that
+    /// veto is permanently true when nothing ever explores, so the empire's
+    /// founding, not just its map, is what the missing arm costs
+    /// (idle_settler_turns 45-112 across all five 08-18 runs).
+    ///
+    /// Same shape as the naval eye below: claim one idle, non-threatened
+    /// queue for the fastest recon unit while the arm is missing. The arm
+    /// target, the queued-recon accounting, and the withhold all live in
+    /// `recon_is_the_missing_arm` — `--without recon-replacement` disables
+    /// this reach exactly as it disables the BasicAi one.
+    fn reserve_idle_land_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        // A second eye is valuable only while it does not deepen the live
+        // war-economy deficit — the same precedence the naval eye honours.
+        if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+            || !self.base.recon_is_the_missing_arm(g, pid)
+        {
+            return;
+        }
+        let mut best: Option<(f64, u32, String)> = None;
+        for city in g.player_city_ids(pid) {
+            let current = &g.cities[&city];
+            let threatened = plan.threatened_city == Some(city)
+                || (current.last_attacked > 0 && g.turn.saturating_sub(current.last_attacked) <= 4);
+            if !current.queue.is_empty() || threatened {
+                continue;
+            }
+            let Some(unit) = self.base.best_recon(g, pid, city) else {
+                continue;
+            };
+            let item = Item::Unit {
+                unit: Name::new(&unit),
+            };
+            let turns = g.item_remaining_cost_for_city(pid, city, &item)
+                / g.city_yields(city).production.max(1.0);
+            let replace = best.as_ref().is_none_or(|(old_turns, old_city, old_unit)| {
+                turns + f64::EPSILON < *old_turns
+                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                        && (city, unit.as_str()) < (*old_city, old_unit.as_str()))
+            });
+            if replace {
+                best = Some((turns, city, unit));
+            }
+        }
+        let Some((turns, city, unit)) = best else {
+            return;
+        };
+        let item = Item::Unit {
+            unit: Name::new(&unit),
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} to reopen the land frontier", city_name, Self::plain_item(&item);
+                "the empire has no land eyes and unexplored ground is what the settler \
+                 veto reads; this is the fastest viable launch ({turns:.1} turns)");
+        }
+    }
+
     fn reserve_idle_naval_recon(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // A second eye is valuable only while it does not deepen the live
         // war-economy deficit. The ordinary governor's recovery branch takes
@@ -18469,12 +18922,54 @@ impl AdvancedAi {
                     && city.buildings.len() >= 3
                     && wonder_era + 2 >= g.world_era
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
+                // See `strategic_wonder_value`. The lane the agent is actually
+                // trying to win is its target when it has one, and its plan's
+                // strategy when it does not — a targeted agent whose plan has
+                // swung to Conquest under pressure is still playing for the
+                // target, and `Recovery` refuses the lane outright below.
+                let strategic_lane = self
+                    .victory_target
+                    .map(VictoryTarget::strategy)
+                    .unwrap_or(plan.strategy);
+                // ⚠ THE BARS GATE THE VALUE, NOT ONLY THE LANE. An earlier draft
+                // applied them to `strategic_opens` alone and still added the
+                // raw figure to the score, so a wonder the bars had just
+                // refused was boosted anyway wherever some other gate had
+                // already opened a lane — the live seat's race, or a Culture
+                // plan. The Potala Palace is exactly that case: 1 060
+                // production for one of twenty diplomatic points, refused by
+                // the cost bar and then handed +1 220 by the live race. One
+                // qualification, used for both.
+                let strategic_value = if self.strategic_wonders {
+                    let value = self.strategic_wonder_value(g, pid, cid, spec, strategic_lane);
+                    if value >= STRATEGIC_WONDER_MIN_VALUE
+                        && value >= spec.cost * STRATEGIC_WONDER_VALUE_PER_COST
+                    {
+                        value
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+                // The same development guards the live race earned the hard
+                // way: three cities, three buildings in this one, and one
+                // concurrent lane per six cities. A wonder that decides a
+                // victory is still 400 to 1 600 production, and an empire that
+                // cannot afford a second Settler cannot afford it.
+                let strategic_opens = self.strategic_wonders
+                    && !lane_opens
+                    && plan.strategy != GrandStrategy::Recovery
+                    && strategic_value > 0.0
+                    && city_count >= 3
+                    && city.buildings.len() >= 3
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
                 if already_queued
                     || threatened
                     || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || !(lane_opens || live_race_opens)
+                    || !(lane_opens || live_race_opens || strategic_opens)
                 {
                     -10_000.0
                 } else {
@@ -18524,6 +19019,10 @@ impl AdvancedAi {
                             0.0
                         }
                         + if wonder_civ { 120.0 } else { 0.0 }
+                        // Priced whichever gate opened the lane: on a Culture
+                        // plan or a Score target the arm was already willing to
+                        // build a wonder, and this is what decides *which* one.
+                        + strategic_value
                 }
             }
             Item::Project { project } => {
@@ -20925,34 +21424,72 @@ impl AdvancedAi {
             return false;
         }
         let visible = self.battlefront_visibility(g, pid);
-        let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
-            let Some(tile) = g.map.get(*target) else {
-                return false;
+        // The checks in dropping order, each with a name. Run 212725Z spent
+        // t224-t248 with FOUR settlers orbiting one site — "sets (22, 21)
+        // aside" every hysteresis period, per settler, staggered — and the
+        // journal could not say WHICH check flickered, so the lane's next
+        // measurement had nothing to bite on (the promotion-block class:
+        // no clean discriminator). Same conditions, same order, same
+        // short-circuit as the closure this replaces; only the first
+        // failure's name escapes.
+        let target_drop_reason = |target: Pos| -> Option<&'static str> {
+            let Some(tile) = g.map.get(target) else {
+                return Some("the tile left the map");
             };
-            !g.rules.is_water(tile)
-                && g.rules.is_passable(tile)
-                && !g.cities.values().any(|c| g.wdist(c.pos, *target) < 4)
-                && tile
-                    .owner_city
-                    .is_none_or(|cid| g.cities[&cid].owner == pid)
-                && Some(*target) != avoid
-                // A site the host or the mirror has since blocked is not a
-                // target, however it was chosen: `best_settler_target`
-                // refuses `blocked_city_sites` when it PICKS a site, but a
-                // site can join that set after the pick (see the standing
-                // case at the top of this function for the measured cost).
-                && !g.blocked_city_sites.contains(target)
-                && !self.settler_site_is_dead(uid, *target)
-                // A momentarily unavailable route is not a bad site. Under
-                // `settler_commit` the stall counter decides when to give up,
-                // not a single blocked turn.
-                && (*target == current
-                    || g.route_step(uid, *target, 0).is_some()
-                    || self.settler_commit)
-                && (!self.settlement_safety
-                    || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
-                        <= SETTLER_STEP_RISK_LIMIT)
-        });
+            if g.rules.is_water(tile) {
+                return Some("water");
+            }
+            if !g.rules.is_passable(tile) {
+                return Some("impassable");
+            }
+            if g.cities.values().any(|c| g.wdist(c.pos, target) < 4) {
+                return Some("a city within three tiles");
+            }
+            if !tile
+                .owner_city
+                .is_none_or(|cid| g.cities[&cid].owner == pid)
+            {
+                return Some("another empire's ground");
+            }
+            if Some(target) == avoid {
+                return Some("the site it is avoiding");
+            }
+            // A site the host or the mirror has since blocked is not a
+            // target, however it was chosen: `best_settler_target`
+            // refuses `blocked_city_sites` when it PICKS a site, but a
+            // site can join that set after the pick (see the standing
+            // case at the top of this function for the measured cost).
+            if g.blocked_city_sites.contains(&target) {
+                return Some("the host blocked the plot");
+            }
+            if self.settler_site_is_dead(uid, target) {
+                return Some("marked dead for this settler");
+            }
+            // A momentarily unavailable route is not a bad site. Under
+            // `settler_commit` the stall counter decides when to give up,
+            // not a single blocked turn.
+            if !(target == current || g.route_step(uid, target, 0).is_some() || self.settler_commit)
+            {
+                return Some("no route this turn");
+            }
+            if self.settlement_safety
+                && self.settlement_tile_risk(g, pid, Some(uid), target, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            {
+                return Some("step risk above the limit");
+            }
+            None
+        };
+        let cached_drop = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .and_then(target_drop_reason);
+        let valid_target = self
+            .settler_targets
+            .get(&uid)
+            .copied()
+            .filter(|_| cached_drop.is_none());
         // The target forecast is a live-bridge repair, not a production or
         // tournament policy. `settler_commit` is on in the normal promoted
         // controller, whereas both default constructors leave
@@ -20971,11 +21508,12 @@ impl AdvancedAi {
                         uid,
                         (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
                     );
+                    let why = cached_drop.unwrap_or("no cached site");
                     think!(self.journal(), Expansion, Detail,
                            "Settler sets {dropped:?} aside";
-                           "the cached site stopped passing its checks; it stays out of the next \
-                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
-                            flickering at the edge of sight cannot flip the march every frame";
+                           "the cached site stopped passing its checks ({why}); it stays out of the \
+                            next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
+                            threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
                 }
             }
@@ -27766,6 +28304,13 @@ impl AdvancedAi {
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
             self.reserve_idle_naval_recon(g, pid, &plan);
+            // And the land eye, which the settler veto reads: the loyalty
+            // forecast's unexplored-ground clause held four settlers idle for
+            // the whole back half of run civvis-20260818T212725Z while the
+            // empire owned zero recon units and the strategic scorer priced a
+            // Scout as a weak Warrior. Same claim discipline as the naval eye:
+            // one idle, safe queue, only while `recon_is_the_missing_arm`.
+            self.reserve_idle_land_recon(g, pid, &plan);
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.

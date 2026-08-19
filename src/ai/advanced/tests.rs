@@ -27,6 +27,54 @@
 /// So it is checked instead. The bundle's own source is the input: a
 /// treatment added to `enable_live_bridge` without a registry row fails
 /// here, naming itself.
+/// ★★★★ THE MIRROR THE REGISTRY DID NOT HAVE.
+///
+/// `live_bundle_and_registry_agree` above pins what the live bridge adds. Ask
+/// the same question of production and there was no table to ask it of, so a
+/// tool that wanted "the shipped agent minus one promoted behaviour" learned
+/// each name by hand — the exact shape that left `civvis_orders` carrying 57
+/// hand-written arms against 68 registry rows, with eleven shipped treatments
+/// uncontrolled.
+///
+/// `PRODUCTION_TREATMENTS` is that table, and this is what keeps it honest: a
+/// row must name a behaviour `promoted_policy_envoy` really turns on, and must
+/// have the withholding twin its third field points at.
+///
+/// ⚠ Correctness, not completeness — and that is deliberate. A promoted
+/// behaviour with no row is not a defect; a row that names a behaviour
+/// production does not have is a `--without` that silently withholds nothing.
+#[test]
+fn production_bundle_rows_are_real() {
+    let source = concat!(
+        include_str!("../advanced.rs"),
+        include_str!("treatment_flags.rs")
+    );
+    let start = source
+        .find("fn promoted_policy_envoy(")
+        .expect("promoted_policy_envoy must exist to be checked");
+    let body = &source[start..];
+    let end = body
+        .find("\n    }\n")
+        .expect("promoted_policy_envoy must be a complete function");
+    let bundle = &body[..end];
+
+    for (field, tag, _) in PRODUCTION_TREATMENTS.iter() {
+        // Either form the constructor uses: the toggle, or the field directly.
+        let enabled = bundle.contains(&format!("enable_{field}();"))
+            || bundle.contains(&format!("{field} = true;"));
+        assert!(
+            enabled,
+            "PRODUCTION_TREATMENTS lists `{tag}` but promoted_policy_envoy \
+             never turns `{field}` on, so withholding it withholds nothing"
+        );
+        assert!(
+            source.contains(&format!("pub fn disable_{field}(&mut self)")),
+            "`{tag}` has no withholding twin `disable_{field}`, so it ships \
+             unpriceable"
+        );
+    }
+}
+
 #[test]
 fn live_bundle_and_registry_agree() {
     // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles
@@ -20909,6 +20957,24 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(live.barbarian_scouts_are_scouts);
 }
 
+/// The civilian rescue ships natively: a capturable civilian within reach
+/// is walked onto, and a settler in the barbarians' hands is never
+/// declined (run `civvis-20260818T222844Z` t27–t33 lost our own captured
+/// settler to the old duplicate-settler freeze, twice from adjacency).
+/// The frozen controllers keep their history, and the withhold arm prices
+/// the promotion.
+#[test]
+fn the_civilian_rescue_is_native() {
+    assert!(AdvancedAi::new().base.civilian_rescue);
+    assert!(!AdvancedAi::legacy().base.civilian_rescue);
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_civilian_rescue();
+    assert!(!withheld.base.civilian_rescue);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.civilian_rescue);
+}
+
 /// ★★★★ A camp seven tiles from Rome stood for 130 turns WITH the reach
 /// on (civvis-20260816T200454Z): the home guard's recall budget is half
 /// the army with the garrison charged against it — a three-unit
@@ -25188,5 +25254,329 @@ fn a_built_wonder_stops_paying_its_prerequisites() {
             && !credits.contains_key(&crate::name!("campus")),
         "a wonder that already stands must stop crediting Library and \
          Campus, got {credits:?}"
+    );
+}
+
+/// A fixture that can legally build a named wonder: three cities so the
+/// lane guards are satisfied, the buildings and adjacent district the
+/// wonder requires, and one owned tile shaped to its terrain sheet.
+fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+    let mut game = Game::new_with(crate::game::GameOptions {
+        barbarians: false,
+        ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
+    });
+    for settler in game.player_unit_ids(0) {
+        if game.units[&settler].kind == "settler" {
+            let _ = game.apply(0, &Action::FoundCity { unit: settler });
+        }
+    }
+    let city = game.player_city_ids(0)[0];
+    // Three cities: the lane never opens for a two-city empire.
+    let center = game.cities[&city].pos;
+    for step in [5, 8] {
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(center, *pos) == step)
+            .collect();
+        for site in sites {
+            let settler = game.spawn_unit("settler", 0, site);
+            if game.can_found_city(settler)
+                && game.apply(0, &Action::FoundCity { unit: settler }).is_ok()
+            {
+                break;
+            }
+            game.units.remove(&settler);
+        }
+    }
+
+    let spec = game.rules.wonders[wonder].clone();
+    if let Some(tech) = spec.tech {
+        let mut open = vec![tech];
+        while let Some(node) = open.pop() {
+            if game.players[0].techs.insert(node) {
+                open.extend(game.rules.techs[&node].requires.iter().copied());
+            }
+        }
+    }
+    if let Some(civic) = spec.civic {
+        let mut open = vec![civic];
+        while let Some(node) = open.pop() {
+            if game.players[0].civics.insert(node) {
+                open.extend(game.rules.civics[&node].requires.iter().copied());
+            }
+        }
+    }
+    if spec.founded_religion {
+        game.players[0].religion = Some("buddhism".to_string());
+    }
+
+    // Three buildings, the required ones among them.
+    let mut buildings = vec![crate::name!("monument"), crate::name!("granary")];
+    buildings.extend(spec.requires_buildings.iter().copied());
+    buildings.extend(spec.requires_any_buildings.iter().take(1).copied());
+    game.cities.get_mut(&city).unwrap().buildings = buildings;
+
+    // The district the wonder must sit beside, and a tile beside it that
+    // matches the wonder's terrain sheet.
+    let district = spec
+        .adjacent_district
+        .as_ref()
+        .map(|family| install_ai_test_district(&mut game, city, family.as_str()));
+    let owned: Vec<Pos> = game.cities[&city].owned_tiles.to_vec();
+    for pos in owned {
+        if pos == center || game.wdist(pos, center) > 3 {
+            continue;
+        }
+        if district.is_some_and(|seat| game.wdist(pos, seat) != 1) {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        if tile.district.is_some() || tile.wonder.is_some() {
+            continue;
+        }
+        tile.flooded = false;
+        tile.improvement = None;
+        tile.resource = None;
+        tile.feature = spec.feature.first().cloned();
+        if let Some(terrain) = spec.terrain.first() {
+            tile.terrain = *terrain;
+        } else if spec.feature.is_empty() {
+            tile.terrain = crate::name!("grassland");
+        }
+        tile.hills = spec.hills.unwrap_or(false);
+        break;
+    }
+    game.turn = 90;
+    (game, city)
+}
+
+fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+    StrategicPlan {
+        strategy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: turn,
+        rush: false,
+    }
+}
+
+/// ★★★★★ THE DEFECT, STATED AS A NUMBER: seven of the twenty points a
+/// diplomatic victory needs are wonders, and the Diplomacy-targeted agent
+/// refused all three of them at the `-10_000` sentinel — not because it
+/// judged them badly, but because the wonder arm never priced
+/// `spec.effects` and only opened its lane for Culture and Score.
+#[test]
+fn a_diplomacy_agent_may_build_the_wonders_that_carry_a_third_of_its_victory() {
+    let (game, city) = strategic_wonder_fixture(6_401, "mahabodhi_temple");
+    let site = game
+        .wonder_sites(city, "mahabodhi_temple")
+        .into_iter()
+        .next()
+        .expect("a legal Mahabodhi site");
+    let item = Item::Wonder {
+        wonder: crate::name!("mahabodhi_temple"),
+        pos: site,
+    };
+    assert!(game.can_produce(0, city, &item));
+
+    let treated = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    let mut control = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    control.disable_strategic_wonders();
+    let plan = wonder_plan(GrandStrategy::Diplomacy, game.turn);
+
+    let refused = control.production_value(&game, 0, city, &item, &plan, &control.counts(&game, 0));
+    assert!(
+        refused <= -9_999.0,
+        "the defect: a Diplomacy agent refuses a wonder worth two of its \
+         twenty victory points outright ({refused})"
+    );
+    let priced = treated.production_value(&game, 0, city, &item, &plan, &treated.counts(&game, 0));
+    assert!(
+        priced > 0.0,
+        "the repair: the same wonder is a legal, positively-valued build \
+         ({priced})"
+    );
+}
+
+/// And the lane stays shut for a wonder this victory does not need. The
+/// arm opens a lane for the wonders that finish the game the agent is
+/// playing for, which is not the same thing as opening it for wonders.
+#[test]
+fn a_wonder_the_chosen_victory_does_not_need_is_still_refused() {
+    let (game, city) = strategic_wonder_fixture(6_402, "great_library");
+    let site = game
+        .wonder_sites(city, "great_library")
+        .into_iter()
+        .next()
+        .expect("a legal Great Library site");
+    let item = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos: site,
+    };
+    assert!(game.can_produce(0, city, &item));
+
+    let scientist = AdvancedAi::targeting(VictoryTarget::Science);
+    let diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    let beakers = scientist.production_value(
+        &game,
+        0,
+        city,
+        &item,
+        &wonder_plan(GrandStrategy::Science, game.turn),
+        &scientist.counts(&game, 0),
+    );
+    let no_votes = diplomat.production_value(
+        &game,
+        0,
+        city,
+        &item,
+        &wonder_plan(GrandStrategy::Diplomacy, game.turn),
+        &diplomat.counts(&game, 0),
+    );
+    assert!(
+        beakers > 0.0,
+        "the unresearched half of the tech tree, boosted, is a Science \
+         wonder ({beakers})"
+    );
+    assert!(
+        no_votes <= -9_999.0,
+        "and buys a Diplomacy agent no votes, so its lane stays shut \
+         ({no_votes})"
+    );
+}
+
+/// ⚠ The Conquest lane is priced at nothing on purpose, and this pins it.
+/// Wonders that put units on the map looked like a Domination arm and
+/// measured as a cost — `victory_eval` completed the lane 1/8 with them
+/// and 3/8 without. See `strategic_wonder_value`.
+#[test]
+fn the_conquest_lane_buys_no_wonders_and_that_is_deliberate() {
+    let (game, city) = strategic_wonder_fixture(6_404, "statue_of_zeus");
+    let spec = game.rules.wonders["statue_of_zeus"].clone();
+    let general = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        general.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Conquest),
+        0.0,
+        "seven free units is not a reason to stop building units"
+    );
+}
+
+/// Rule 2 of `strategic_wonder_value`: a rate effect is priced as the flat
+/// yield it is equivalent to, so the same wonder is a different build in a
+/// different city. The arm as written could not tell them apart — it read
+/// only the data sheet, which is identical everywhere.
+#[test]
+fn a_science_multiplier_is_worth_what_the_city_it_multiplies_makes() {
+    let (mut game, city) = strategic_wonder_fixture(6_403, "oxford_university");
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let spec = game.rules.wonders["oxford_university"].clone();
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+
+    let quiet = ai.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Science);
+    install_ai_test_district(&mut game, city, "campus");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    game.cities.get_mut(&city).unwrap().pop += 6;
+    let research = ai.strategic_wonder_value(&game, 0, city, &spec, GrandStrategy::Science);
+    assert!(
+        research > quiet,
+        "Oxford is worth more where there is more science to multiply: \
+         {research} vs {quiet}"
+    );
+    let _ = plan;
+}
+
+/// ★★★★ The live seat built one Scout on turn 2 and owned zero recon units
+/// from t150 to the end of run civvis-20260818T212725Z, while the loyalty
+/// forecast refused its four idle Settlers' candidate sites 115 times with
+/// one reason: unexplored ground. `recon_replacement` was ON the whole time —
+/// its rebuild logic lives in `BasicAi::pick_item`, which the strategic
+/// governor never routes through. `reserve_idle_land_recon` is that
+/// treatment's reach into the governor: one idle, non-threatened queue gets
+/// the fastest recon unit while `recon_is_the_missing_arm` says the empire
+/// is blind, and `--without recon-replacement` still withholds the whole arm.
+#[test]
+fn the_missing_land_eye_claims_one_idle_queue() {
+    let (mut game, capital, home) = empire_with_a_capital(71_127);
+    let second = found_nearby_test_city(&mut game, 0, home);
+    // No recon anywhere, and dark passable land past the city lights: the
+    // arm is missing in exactly the measured shape.
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let known: Vec<Pos> = game.wdisk(home, 3);
+    game.players[0].explored.clear();
+    game.players[0].explored.extend(known);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let is_recon = |game: &Game, cid: u32| {
+        matches!(game.cities[&cid].queue.first(),
+        Some(Item::Unit { unit })
+            if game.rules.units.get(unit.as_str()).is_some_and(|spec| {
+                spec.class == "military" && spec.promotion_class == "recon"
+            }))
+    };
+
+    // The withheld arm reserves nothing.
+    {
+        let mut withheld_board = game.clone();
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_recon_replacement();
+        withheld.reserve_idle_land_recon(&mut withheld_board, 0, &plan);
+        assert!(
+            !is_recon(&withheld_board, capital) && !is_recon(&withheld_board, second),
+            "--without recon-replacement must also withhold the governor's reach"
+        );
+    }
+
+    // The live seat claims exactly one idle queue for the missing eye.
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    live.reserve_idle_land_recon(&mut game, 0, &plan);
+    let reserved = [capital, second]
+        .iter()
+        .filter(|cid| is_recon(&game, **cid))
+        .count();
+    assert_eq!(reserved, 1, "one idle queue holds the recon unit");
+
+    // The arm's own target governs: with two cities it retains a spare eye
+    // (`RECON_ARM_MAX`), so a second call fills the second queue — and a
+    // third claims nothing, because queued recon counts toward the arm.
+    let mut again = game.clone();
+    live.reserve_idle_land_recon(&mut again, 0, &plan);
+    live.reserve_idle_land_recon(&mut again, 0, &plan);
+    let after = [capital, second]
+        .iter()
+        .filter(|cid| is_recon(&again, **cid))
+        .count();
+    assert_eq!(after, 2, "the arm fills to its own target and stops");
+
+    // A fully charted world needs no land eye at all.
+    let mut charted = game.clone();
+    for cid in [capital, second] {
+        charted.cities.get_mut(&cid).unwrap().queue.clear();
+    }
+    let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+    charted.players[0].explored.extend(all);
+    live.reserve_idle_land_recon(&mut charted, 0, &plan);
+    assert!(
+        !is_recon(&charted, capital) && !is_recon(&charted, second),
+        "a charted world reserves nothing"
     );
 }

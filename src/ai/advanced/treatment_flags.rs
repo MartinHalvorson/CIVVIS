@@ -1004,6 +1004,12 @@ impl AdvancedAi {
         // 19 starts became 8 foundings on the first hostile map after the
         // land-grab pipeline. See `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And a capturable civilian within reach is walked onto, never
+        // watched from adjacency — and a settler in the barbarians' hands is
+        // never declined. Run `civvis-20260818T222844Z` t27–t33: our own
+        // captured settler passed four units unguarded and was lost to a
+        // camp. See `BasicAi::civilian_rescue`.
+        self.enable_civilian_rescue();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -1126,6 +1132,10 @@ impl AdvancedAi {
         self.enable_camp_party();
         // A Religion plan that keeps its wars blockades its own lane.
         self.enable_religion_sues_peace();
+        // And a capturable civilian within reach is walked onto — a settler
+        // taken back from the barbarians repays its whole production. See
+        // `BasicAi::civilian_rescue`.
+        self.enable_civilian_rescue();
     }
 
     /// The economic half of [`AdvancedAi::enable_engine_repairs`]: settlement,
@@ -1645,6 +1655,16 @@ impl AdvancedAi {
         self.buildings_before_projects = false;
     }
 
+    /// Walk onto a capturable civilian within reach, and never decline a
+    /// settler held by the barbarians. See `BasicAi::civilian_rescue`.
+    pub fn enable_civilian_rescue(&mut self) {
+        self.base.civilian_rescue = true;
+    }
+
+    pub fn disable_civilian_rescue(&mut self) {
+        self.base.civilian_rescue = false;
+    }
+
     /// Stop pricing a Firaxis barbarian scout as a threat. See
     /// `barbarian_scouts_are_scouts`.
     pub fn enable_barbarian_scouts_are_scouts(&mut self) {
@@ -1673,6 +1693,18 @@ impl AdvancedAi {
 
     pub fn disable_score_horizon(&mut self) {
         self.score_horizon = false;
+    }
+
+    /// Build the wonders the chosen victory actually needs. See
+    /// `AdvancedAi::strategic_wonder_value`.
+    pub fn enable_strategic_wonders(&mut self) {
+        self.strategic_wonders = true;
+    }
+
+    /// Withholding twin for `enable_strategic_wonders`, so the arm can be
+    /// priced by taking this one treatment out. See `LIVE_TREATMENTS`.
+    pub fn disable_strategic_wonders(&mut self) {
+        self.strategic_wonders = false;
     }
 
     /// Give the 3,000-point first-pad rung to one city at a time. See
