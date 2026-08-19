@@ -6897,6 +6897,10 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
+            // The Settler seat's tally for the buildings inside its
+            // districts, against Firaxis rivals who fill every one; the
+            // native lanes keep their bred building debts.
+            "district_building_chain",
         ];
         // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
         // scrape reads the controller's whole text so a further split cannot
