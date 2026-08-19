@@ -739,11 +739,24 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("wc:GetResolutions(pid)", voter)
         self.assertIn("wc:GetVotesandFavorCost(pid)", voter)
         self.assertIn("GetDiplomaticVictoryPoints()", voter)
-        # Against the leader on the diplomatic-victory resolution, with all the favor affords.
+        # Against the leader on the diplomatic-victory resolution, with what
+        # the favor affords on BOTH cost tables the host might charge: every
+        # ask that saturated the reported Online table was refused whole
+        # (17/17 across four runs), so the walks live in
+        # `CivvisCongressVoteBudget` and the ask takes the smaller.
         self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
         self.assertIn("option = 2;", voter)
-        self.assertIn("costs[n] <= favor", voter)
+        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", voter)
+        self.assertIn("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", source)
+        budget = source.split("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", 1)[1].split("\nend", 1)[0]
+        self.assertIn("tonumber(costs[host]) <= bank", budget)
+        self.assertIn("5 * (standard + 1) * standard <= bank", budget)
+        # One operation carries the whole count: #2045's repeated single-vote
+        # experiment came back `votes_sent 20, recorded 1` on run
+        # civvis-20260819T004405Z -- the operation sets the ballot, it does
+        # not accumulate -- so the repeat loop must stay gone.
         self.assertIn("PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE", voter)
+        self.assertNotIn("PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1", voter)
         self.assertIn("PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN", voter)
         # Wired into the soft-blocker forfeit path, once per turn, before the dismissal.
         forfeit = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local dropped = dismissBlocker(pid, blocker);", 1)[0]
@@ -767,12 +780,12 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
-        self.assertIn("if ourIdx ~= nil and affordable >= claim then", arm)
-        claim = arm.index("if ourIdx ~= nil and affordable >= claim then")
+        self.assertIn("if ourIdx ~= nil and budget >= claim then", arm)
+        claim = arm.index("if ourIdx ~= nil and budget >= claim then")
         tail = arm[claim:]
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
-        self.assertIn("n = affordable;", tail)
+        self.assertIn("n = budget;", tail)
         self.assertIn('mode = "claim";', tail)
         # The claim overrides the floor rule, so it comes after it and before
         # the votes are committed.
@@ -780,8 +793,10 @@ class ProtectedInstallTest(unittest.TestCase):
         commit = arm.index("votes = n;")
         self.assertLess(gate, claim)
         self.assertLess(claim, commit)
-        # The bank is measured on its own ladder, not the floor-gated one.
-        self.assertIn("costs[affordable] <= favor", arm)
+        # The bank is measured once, against both cost tables, before any gate.
+        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", arm)
+        budgetCall = arm.index("CivvisCongressVoteBudget(favor, costs, maxVotes)")
+        self.assertLess(budgetCall, gate)
         # And the mode is reported on every ballot row.
         self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)
         self.assertGreaterEqual(source.count("mode = mode"), 2)
@@ -798,15 +813,22 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
         self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
-        # The paid ladder sits inside the floor gate; the free vote (n = 1) and
-        # the leader selection do not.
+        # The full bank spends inside the floor gate; the free vote (n = 1)
+        # and the leader selection sit before it. Below the floor a
+        # three-vote probe (`CongressVoteProbe`) keeps the purchase path
+        # measured at every session -- three votes fit both cost tables from
+        # the first congress bank on -- without draining what the floor
+        # banks.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
-        ladder = arm.index("costs[n] <= favor")
+        spend = arm.index("n = budget;")
         free = arm.index("local n = 1;")
         selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        probe = arm.index('elseif cfg.CongressVoteProbe ~= false and budget > 1 then')
         self.assertLess(selection, gate)
         self.assertLess(free, gate)
-        self.assertLess(gate, ladder)
+        self.assertLess(gate, spend)
+        self.assertLess(spend, probe)
+        self.assertIn("n = (budget < 3) and budget or 3;", arm)
 
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
