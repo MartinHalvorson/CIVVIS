@@ -156,4 +156,3 @@ UI reads them, and both readings (hit-point readback and damage deltas) are
 recorded side by side so the first live run says which one is right. The
 offline regression (`combat_ledger_test.lua`) proves the events are shaped as
 the ledger tool expects.
-
