@@ -11519,6 +11519,143 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
     assert!(!AdvancedAi::legacy().culture_building_debt);
 }
 
+/// ★★★★★ Eight Campuses and six Theater Squares stood empty to turn 205 of
+/// run civvis-20260819T000800Z: 174 produce orders, not one Library,
+/// University or Amphitheater. The Library was legal on 133 replayed
+/// city-turns at a median value of 23 while the queue winner stood 55
+/// higher; the Amphitheater never reached a price at all, because under an
+/// explicit non-Culture target the great-work veto returns before
+/// `culture_building_debt` is computed. See `district_building_chain`: a
+/// specialty district the city already stands owes its own buildings, the
+/// debt decays with each building of the family the city holds, the veto
+/// yields to a Theater Square the city has, and nothing changes for a city
+/// without the district, for a unit, for a wonder, or for the frozen and
+/// stock controllers.
+#[test]
+fn a_standing_district_owes_its_own_buildings_whatever_the_lane() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_115);
+    game.players[0].civics.insert(crate::name!("drama_poetry"));
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].techs.insert(crate::name!("currency"));
+    game.players[0].techs.insert(crate::name!("education"));
+    game.turn = 60;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    let university = Item::Building {
+        building: crate::name!("university"),
+    };
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+
+    // The seat that plays the ladder: an explicit Diplomacy target with the
+    // live bundle, and the same seat with only this treatment withheld.
+    let mut live = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    live.enable_live_bridge();
+    assert!(
+        live.district_building_chain,
+        "the live seat carries the treatment"
+    );
+    live.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    withheld.enable_live_bridge();
+    withheld.disable_district_building_chain();
+    withheld.refresh_research_weight(&game);
+
+    // No Campus, no Theater Square: nothing is owed and the two arms agree
+    // — including the veto, which still refuses the Amphitheater to a city
+    // with no Theater Square under a non-Culture target.
+    assert_eq!(
+        live.production_value(&game, 0, capital, &library, &plan, &counts),
+        withheld.production_value(&game, 0, capital, &library, &plan, &counts),
+        "a city with no Campus owes it no Library"
+    );
+    install_ai_test_district(&mut game, capital, "campus");
+    install_ai_test_district(&mut game, capital, "theater_square");
+    assert!(game.can_produce(0, capital, &library));
+    assert!(game.can_produce(0, capital, &amphitheater));
+
+    // The Campus owes its Library; the debt is the constant over the
+    // payback horizon (full this early), on top of the unchanged price.
+    let owed = live.production_value(&game, 0, capital, &library, &plan, &counts);
+    let unowed = withheld.production_value(&game, 0, capital, &library, &plan, &counts);
+    let cost = game.item_remaining_cost_for_city(0, capital, &library);
+    let production = game.city_yields(capital).production.max(1.0);
+    let denominator = 7.0 + (cost / production).max(1.0);
+    let expected = DISTRICT_BUILDING_CHAIN_DEBT
+        * AdvancedAi::campus_payback_horizon(&game)
+        * live.production_category_gene(&library)
+        / denominator;
+    assert!(
+        (owed - unowed - expected).abs() < 1e-6,
+        "the standing Campus owes its Library the chain debt: {owed} - {unowed} != {expected}"
+    );
+
+    // The Theater Square's building reaches a price on this seat: the veto
+    // that returned -10_000 before any debt was computed yields to a
+    // district the city already stands. Withheld, the veto stands.
+    let amph_live = live.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    let amph_withheld = withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    assert!(
+        amph_live > 0.0,
+        "the standing Theater Square's Amphitheater is priced, not vetoed: {amph_live}"
+    );
+    assert_eq!(
+        amph_withheld, -10_000.0,
+        "withheld, the great-work veto is unchanged"
+    );
+
+    // A building outside every specialty district collects nothing.
+    assert_eq!(
+        live.production_value(&game, 0, capital, &monument, &plan, &counts),
+        withheld.production_value(&game, 0, capital, &monument, &plan, &counts),
+        "a Monument is owed by no district"
+    );
+
+    // With the Library built, the University is owed less: one tier decayed.
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    assert!(game.can_produce(0, capital, &university));
+    let owed_university = live.production_value(&game, 0, capital, &university, &plan, &counts);
+    let unowed_university =
+        withheld.production_value(&game, 0, capital, &university, &plan, &counts);
+    let cost = game.item_remaining_cost_for_city(0, capital, &university);
+    let denominator = 7.0 + (cost / production).max(1.0);
+    let expected_tier_two = DISTRICT_BUILDING_CHAIN_DEBT
+        * DISTRICT_BUILDING_CHAIN_TIER_DECAY
+        * AdvancedAi::campus_payback_horizon(&game)
+        * live.production_category_gene(&university)
+        / denominator;
+    assert!(
+        (owed_university - unowed_university - expected_tier_two).abs() < 1e-6,
+        "the second building of the chain is owed one tier less: \
+         {owed_university} - {unowed_university} != {expected_tier_two}"
+    );
+
+    // Frozen and stock controllers never carry it, and the debt is a
+    // building-arm term: the Campus district's own price is untouched.
+    assert!(!AdvancedAi::new().district_building_chain);
+    assert!(!AdvancedAi::legacy().district_building_chain);
+    assert!(std::hint::black_box(DISTRICT_BUILDING_CHAIN_TIER_DECAY) < 1.0);
+}
+
 /// The old non-Culture veto used a Great Work slot as a proxy for the Culture
 /// district. That refuses National History Museum in the Government Plaza and
 /// lets slotless Marae through, neither of which is the actual policy boundary.
