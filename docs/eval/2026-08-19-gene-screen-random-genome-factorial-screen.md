@@ -64,9 +64,12 @@ games against a 25% chance baseline, at a score share of 22.2% against 25%.
 | `wide-map-capacity` | −0.7 pp (z −0.27) | **+2.89 pp (z +5.69)** | more score, **no more wins** |
 
 `governor-every-lane` reproduces an existing recorded result from a new
-instrument: `advanced_every_lane` measured −62/−95 Elo in `docs/EVAL.md`. That
-agreement is the best evidence available that this screen measures what it
-claims to.
+instrument: `advanced_every_lane` measured **−62 Elo compact / −95 deployment**
+over 400 pairs per gate
+(`docs/eval/2026-08-18-pricing-the-governor-s-routing-and-the-settling-asymmetry.md`,
+PR #1955). That agreement — a different design, different seeds, a different
+outcome measure — is the best evidence available that this screen measures what
+it claims to.
 
 ### Screen flags below the family-wise bar (candidates, not findings)
 
@@ -96,9 +99,11 @@ OFF, 20 pairs on the same maps and seats:
 Twenty pairs cannot resolve a 20-point win difference and this one does not:
 both outcome intervals span zero. What twenty pairs *does* resolve is that the
 bundle reliably ends with **three and a half more cities** and turns none of it
-into wins — the same shape as `wide-map-capacity`'s own row, and consistent in
-direction with `advanced_synergy`'s recorded −108 Elo without independently
-establishing it.
+into wins — the same shape as `wide-map-capacity`'s own row. It is consistent in
+direction with the recorded `advanced_synergy` confirmation
+(**−76 Elo, 95% CI −140..−13** compact; **−108, 95% CI −172..−43** deployment;
+`docs/AI_GAPS.md`) without independently establishing it: 20 pairs is a
+corroboration, not a measurement.
 
 ⚠ "All-off" here is production `advanced` **minus `strategic_wonders`**, which
 is a screened gene like any other. It is not exactly the shipped agent.

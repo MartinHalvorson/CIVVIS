@@ -208,8 +208,8 @@ that change how the tool is read:
 - **The interaction layer was noise**: 72 flags at |z| ≥ 2 against 73 expected.
 - **Fixed seating is a confound for the field.** See `--randomize-civs`.
 - The screen reproduced a known result from a new instrument:
-  `governor-every-lane` here, `advanced_every_lane` at −62/−95 Elo in
-  `docs/EVAL.md`.
+  `governor-every-lane` here, against `advanced_every_lane` at −62 Elo compact /
+  −95 deployment over 400 pairs per gate (PR #1955).
 
 ## What it is not
 
