@@ -1164,3 +1164,63 @@ insufficient. Find the third leak first, and the way to find it is a diverging
 seed: run seed 7311000 under both arms and diff the reports, rather than
 reasoning about what `attack_reach` reads. Two rounds of inspection found two
 real leaks and still missed one.
+
+## 2026-08-19 (fourth) — the leak, found by audit rather than by inspection
+
+The section above records a tighter invalidation set that measured −26%/−21%
+and was refused twice by `tools/speed_ab.py`, with the leak unfound after two
+rounds of reading the code. It said to find it by evidence. That worked, in one
+run.
+
+⚠ **Correction to the record:** commit `d474fa16`'s subject line reads "An
+envelope is invalidated by its own flood, not by a disk around it". That
+describes the approach that PR *refused to ship*; its title was set when the
+worktree opened and never revised when the experiment failed. The body and the
+section above are accurate. The flood approach ships **here**, in #2163.
+
+### The instrument
+
+`CIVVIS_ENVELOPE_AUDIT=1` makes every cache reuse also compute the envelope
+fresh and describe the first six disagreements: the enemy, its state, the tiles
+gained and lost, and every unit within three hexes of them. Reading it took
+seconds. Every report had the same shape — **tiles gained, none lost, around a
+unit whose cached envelope was empty.**
+
+### The leak
+
+`flow_past` returns nothing at all when `formation_movement_locked_by_zoc`
+holds. A sensitivity set built from the flood was therefore **empty**, and an
+empty set is touched by no board change ever — so that envelope froze at empty
+for the rest of the game, long after the lock lifted. The unit kept reading as
+harmless while it stood there able to attack.
+
+Two fixes, and the second came out of reading what the lock depends on:
+
+1. The sensitive set is always seeded with the unit's own tile and its
+   neighbours, and its linked peer's, flood or no flood. The lock is read off
+   that ground.
+2. `started_turn_in_zoc`, `acted` and `moved` are now tracked by the delta.
+   All three move without the unit moving — a unit that acts where it stands
+   loses its whole flood — and none is hashed by the board key, so nothing else
+   would have noticed.
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 93.03 s | 69.05 s | **−25.77%** |
+| 7311010–13 | 80.53 s | 62.80 s | **−22.02%** |
+| 7311020–23 | 79.15 s | 63.04 s | **−20.35%** |
+
+Reports agree on every paired seed — the same harness that refused this twice —
+and the anchor is unchanged at 17,482 decisions.
+
+Cumulative over #2148, #2151, #2155 and this: the same four-game workload has
+gone from **173 s to about 65 s**.
+
+### What this cost, and what it is worth
+
+Three iterations of inspection found two real leaks and missed the one that
+mattered; one audit run found it. The lesson is not that inspection is useless —
+the two leaks it found were genuine holes in shipped code — but that **a cache
+whose invariant spans a large surface should ship with a way to check itself.**
+`CIVVIS_ENVELOPE_AUDIT` stays for that reason, read once through a `OnceLock`
+so it costs nothing when unset.
