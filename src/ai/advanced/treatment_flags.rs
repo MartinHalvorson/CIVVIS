@@ -229,6 +229,15 @@ impl AdvancedAi {
         self.base.garrison_walls = false;
     }
 
+    /// See `BasicAi::barbarian_walls_one_tier`.
+    pub fn enable_barbarian_walls_one_tier(&mut self) {
+        self.base.barbarian_walls_one_tier = true;
+    }
+
+    pub fn disable_barbarian_walls_one_tier(&mut self) {
+        self.base.barbarian_walls_one_tier = false;
+    }
+
     /// Release an escort that is not walking its settler. See `escort_unstick`.
     pub fn enable_escort_unstick(&mut self) {
         self.escort_unstick = true;
@@ -706,6 +715,11 @@ impl AdvancedAi {
         // the culture lane and the fog hiding every attacker until adjacency.
         // See BasicAi::garrison_walls_item.
         self.enable_garrison_walls();
+        // And a raider ring buys ancient walls only: 40 medieval and
+        // renaissance walls "for nearby barbarian pressure" across 23 live
+        // games, against an enemy that cannot take a city. See
+        // `BasicAi::barbarian_walls_one_tier`.
+        self.enable_barbarian_walls_one_tier();
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();
@@ -1177,6 +1191,9 @@ impl AdvancedAi {
         self.enable_home_defense();
         self.enable_garrison_under_fire();
         self.enable_garrison_walls();
+        // And no wall tier above ancient against raiders that cannot capture.
+        // See `BasicAi::barbarian_walls_one_tier`.
+        self.enable_barbarian_walls_one_tier();
         // Tactical quality on the tile the unit actually stands on.
         self.enable_strike_opening();
         self.enable_ranged_needs_line_of_sight();
