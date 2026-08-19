@@ -240,15 +240,24 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
         assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 0.5, "{difficulty}");
     }
 
-    // And it reaches the map: a camp that has just spawned waits half as
-    // long to spawn again at Deity as it does at Prince. Read one named
-    // camp immediately after its first post-opening spawn so the standing
-    // guard and recon units do not make the global cap obscure the timer.
+    // And it reaches the map: a Scout report starts a raid, and its camp
+    // waits half as long to raise the next party member at Deity as it does
+    // at Prince. An idle camp has no raid to raise at all.
     let rearm = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
         game.difficulty = difficulty.to_string();
         let camp = *game.barb_camps.keys().next().unwrap();
-        game.turn = game.barb_camps[&camp];
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let target = game.units[&settler].pos;
+        game.found_city_for(0, target, None);
+        game.barb_camp_targets.insert(camp, target);
+        game.barb_alerted_until
+            .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+        game.barb_camps.insert(camp, game.turn);
         game.barbarian_phase();
         game.barb_camps[&camp]
     };
@@ -258,7 +267,7 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
 }
 
 #[test]
-fn difficulty_scales_the_standing_barbarian_force() {
+fn difficulty_scales_one_reported_barbarian_raid_party() {
     // BarbarianAttackForces bands its forces on difficulty and the bands
     // are what barb_force_scale carries: Settler and Chieftain at 0.5,
     // Warlord through Emperor at 1.0, Immortal and Deity at 1.5. Those
@@ -278,24 +287,46 @@ fn difficulty_scales_the_standing_barbarian_force() {
         assert_eq!(rules.difficulties[difficulty].barb_force_scale, scale, "{difficulty}");
     }
 
-    // And the scale reaches the field rather than sitting in the data: the
-    // same world run at three difficulties fields three different numbers
-    // of barbarians.
+    // And the scale reaches the field rather than sitting in the data: one
+    // report raises the exact difficulty-sized party at its own outpost.
     let count = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
         game.difficulty = difficulty.to_string();
-        // Camps re-arm on a turn counter, so the clock has to move.
-        for _ in 0..60 {
-            game.turn += 1;
+        let camp = *game.barb_camps.keys().next().unwrap();
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let target = game.units[&settler].pos;
+        game.found_city_for(0, target, None);
+        game.barb_camp_targets.insert(camp, target);
+        game.barb_alerted_until
+            .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+        game.barb_camps.insert(camp, game.turn);
+        let wanted = game.barbarian_raid_force_size();
+        for _ in 0..20 {
             game.barbarian_phase();
+            if game
+                .barb_raider_homes
+                .values()
+                .filter(|home| **home == camp)
+                .count()
+                == wanted
+            {
+                break;
+            }
+            game.turn += 1;
         }
-        game.barb_pid
-            .map(|bpid| game.player_unit_ids(bpid).len())
-            .unwrap_or(0)
+        game.barb_raider_homes
+            .values()
+            .filter(|home| **home == camp)
+            .count()
     };
     let (low, standard, high) = (count("settler"), count("prince"), count("deity"));
-    assert!(low < standard, "Settler fields fewer than Prince: {low} vs {standard}");
-    assert!(standard < high, "Deity fields more than Prince: {standard} vs {high}");
+    assert_eq!(low, 1, "Settler raises one melee raider");
+    assert_eq!(standard, 3, "Prince raises two melee and one ranged raider");
+    assert_eq!(high, 5, "Deity raises three melee and two ranged raiders");
 }
 
 #[test]

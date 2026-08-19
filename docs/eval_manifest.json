@@ -57,9 +57,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 227,
-    "firaxis_only_count": 25,
-    "live_bridge_count": 80,
+    "eval_only_count": 228,
+    "firaxis_only_count": 26,
+    "live_bridge_count": 81,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -226,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 227,
+      "declared_count": 228,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -320,6 +320,7 @@
         "live_without_spy_mission_patience",
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
+        "live_without_district_building_chain",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -458,7 +459,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 25,
+      "declared_count": 26,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -484,11 +485,12 @@
         "bank-envoys",
         "explore-commit",
         "land-grab",
-        "spy-mission-patience"
+        "spy-mission-patience",
+        "district-building-chain"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 80,
+      "declared_count": 81,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -569,7 +571,8 @@
         "siege-is-progress",
         "spy-mission-patience",
         "settler-site-agreement",
-        "civilian-rescue"
+        "civilian-rescue",
+        "district-building-chain"
       ]
     }
   },

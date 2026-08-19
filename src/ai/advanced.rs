@@ -2998,6 +2998,53 @@ pub struct AdvancedAi {
     /// prices the Settler seat's tally. Off for ordinary and frozen
     /// controllers.
     pub culture_building_debt: bool,
+    /// A specialty district owes its own buildings, whatever the lane.
+    ///
+    /// ★★★★★ THE SEAT BUILDS THE DISTRICT AND NEVER THE BUILDING INSIDE IT.
+    /// Measured on the live Settler seat, 2026-08-18/19: run
+    /// `civvis-20260819T000800Z` reached turn 205 with EIGHT Campuses and
+    /// SIX Theater Squares and not one Library, University or Amphitheater —
+    /// 174 produce orders, zero for any of the three, science 84 against the
+    /// best rival's 172, culture 99 against 303. The four games launched
+    /// after 18:50Z that day held 4/3/0, 3/0/0, 8/5/5 and 8/0/0
+    /// campus/library/university at their end; the two wins of the same day
+    /// held 8/8/6 and 12/12/12, and even those started their first Library
+    /// at turns 99 and 125.
+    ///
+    /// The cause is the ranking, not the actuator: 171 of 174 orders applied.
+    /// A persistent replay of the run with the candidate table printed shows
+    /// the Library legal on 133 city-turns at a median value of **23** while
+    /// the winner of the queue stood a median **55 higher**: Builders (21
+    /// wins over it), Theater Squares (20), Harbors (10), Spies (8), Baths
+    /// (7), Granaries (7), Settlers (6), wonders. The building's whole price
+    /// is `yield_value * 42` plus `RESEARCH_BUILDING_DEBT` decaying with the
+    /// game, and under the Diplomacy lane a beaker weighs 1.2 — so +2 science
+    /// prices at ~100 raw where the Campus that hosts it was priced with
+    /// `balanced_core` (130) and `RESEARCH_CAMPUS_COVERAGE` (300) on top of
+    /// its yields. The empire buys the expensive half of a research city on
+    /// the district's coverage terms and then prices the cheap half on yields
+    /// alone; the same asymmetry holds for every specialty district and its
+    /// chain (Market, Lighthouse, Workshop, Amphitheater, Shrine, Barracks).
+    ///
+    /// And on the Theater Square the building never even reaches the price:
+    /// under any explicit victory target but Culture the great-work veto
+    /// returns `-10_000` BEFORE `culture_building_debt` is computed, so on the
+    /// `--victory diplomatic` seat that treatment is dead code — the eight
+    /// Amphitheaters of the 2026-08-18 07:43 win were all ordered by the
+    /// idle-Great-Writer activation path, none by the queue.
+    ///
+    /// With this on, a non-wonder building whose district family the city
+    /// already holds is owed `DISTRICT_BUILDING_CHAIN_DEBT`, decaying by
+    /// `DISTRICT_BUILDING_CHAIN_TIER_DECAY` for each building of that family
+    /// the city already has, over `campus_payback_horizon`; and the great-work
+    /// veto yields to a Theater Square the city already stands, so the chain
+    /// treatments can price what they say they price. The district itself is
+    /// not touched, nor is any unit or wonder. Firaxis-only, beside
+    /// `culture_building_debt` and `campus_every_city`: it prices the Settler
+    /// seat's tally (a tech two, a civic three, a building one) against
+    /// rivals who fill every district. Off for ordinary and frozen
+    /// controllers.
+    pub district_building_chain: bool,
     /// Classify the non-Culture great-work-building veto by the building's
     /// district rather than by the presence of a Great Work slot.
     ///
@@ -3631,6 +3678,19 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// shape and one rung under the research debt — the same reasoning as
 /// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
 const CULTURE_BUILDING_DEBT: f64 = 190.0;
+/// What a specialty district's next building is owed while the district
+/// stands without it, before the (7 + turns) normalisation. See
+/// `district_building_chain`. Sized to the district arm's own coverage terms
+/// (`balanced_core` 130 + `RESEARCH_CAMPUS_COVERAGE` 300 + the yields at 60 a
+/// point) so the first building lands in the band the district was bought
+/// in — measured on the replay of `civvis-20260819T000800Z`, a Library moves
+/// from a median 23 to the Theater-Square/Campus band (50–90) and stays
+/// under Settlers (92–164), Spies (116–236), repairs and wonders.
+const DISTRICT_BUILDING_CHAIN_DEBT: f64 = 480.0;
+/// Each building of the family the city already holds discounts the next
+/// one's debt by this factor: the University is owed less than the Library,
+/// the Research Lab less again.
+const DISTRICT_BUILDING_CHAIN_TIER_DECAY: f64 = 0.7;
 /// The most a repeatable district project is worth, before the (7 + turns)
 /// normalisation, while its city can still build a Library, University,
 /// Research Lab or Workshop it lacks. See `buildings_before_projects`. Low
@@ -4170,10 +4230,10 @@ impl AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
         ai.base.precise_evacuation = false;
-        // The frozen rating anchor must keep playing the game it always
-        // played: the adjacent camp clear is default-ON everywhere current,
-        // and this line is the gate that keeps it away from the anchor so
-        // the ledger stands (see `advanced_v1_plays_the_same_game_it_always_did`).
+        // The adjacent camp clear is default-ON everywhere current, but this
+        // gate keeps that controller treatment outside the frozen anchor (see
+        // `advanced_v1_plays_the_same_game_it_always_did`). A shared world
+        // rule may still own a protocol bump separately.
         ai.base.adjacent_camp_clear = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
@@ -4322,6 +4382,7 @@ impl AdvancedAi {
             land_grab: false,
             tally_culture: false,
             culture_building_debt: false,
+            district_building_chain: false,
             great_work_veto_by_district: false,
             culture_coverage: false,
             bank_envoys: false,
@@ -8690,7 +8751,13 @@ impl AdvancedAi {
         let horizon = turns.clamp(1.0, 16.0);
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
-        for (kind, award) in g.project_completion_gpp_awards(pid, cid, project) {
+        let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
+        let world_fair_score = gpp_awards
+            .values()
+            .copied()
+            .filter(|award| award.is_finite() && *award > f64::EPSILON)
+            .sum::<f64>();
+        for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
             // but a disabled class has no race tempo to extend.
@@ -8832,7 +8899,65 @@ impl AdvancedAi {
                 value = value.min(PROJECT_BEHIND_BUILDINGS_CAP);
             }
         }
+        // The World Fair counts each Great Person point as competition score,
+        // including the completion awards above. That payoff is immediate and
+        // host-authoritative, so it must remain outside the normal "build the
+        // Library first" cap: a competition that ends before the building is
+        // complete cannot be resumed later.
         value
+            + self.host_competition_score_value(
+                g,
+                pid,
+                "EMERGENCY_WORLDS_FAIR",
+                world_fair_score,
+                turns,
+            )
+    }
+
+    /// Price one host-reported competition score gain against its deadline and
+    /// current standing. The result is raw production value, in the same
+    /// units as the surrounding project and building arms; production-value's
+    /// common normalizer then still prefers the city that can finish in time.
+    fn host_competition_score_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        kind: &str,
+        score_gain: f64,
+        completion_turns: f64,
+    ) -> f64 {
+        if !score_gain.is_finite() || score_gain <= f64::EPSILON {
+            return 0.0;
+        }
+        let Some(competition) = g.host_competition(pid, kind) else {
+            return 0.0;
+        };
+        let remaining = competition.ends.saturating_sub(g.turn) as f64;
+        if remaining <= 0.0 || completion_turns > remaining + f64::EPSILON {
+            return 0.0;
+        }
+        let deficit = (competition.leader - competition.ours).max(0.0);
+        let after = competition.ours + score_gain;
+        // The closer the host clock, the less opportunity remains to replace
+        // this move. The clamp prevents a final-turn score from becoming an
+        // unbounded override while still making a 29-turn competition matter.
+        let urgency = (1.0 + 10.0 / remaining.max(1.0)).min(3.5);
+        let base = score_gain * 38.0 * urgency;
+        let race_swing = if deficit > f64::EPSILON && after + f64::EPSILON >= competition.leader {
+            // Catching the current leader is where the tier and its victory
+            // rewards change hands; carry a concrete tempo premium rather than
+            // treating fifty World Games points like an ordinary yield.
+            950.0 + (score_gain - deficit).max(0.0) * 12.0
+        } else if deficit > f64::EPSILON {
+            // Closing a large gap is still valuable but cannot claim a tier
+            // transition this particular completion does not reach.
+            (score_gain / deficit.max(score_gain)).min(1.0) * 260.0
+        } else {
+            // A narrow lead must be defended; a decisive lead does not justify
+            // pinning every city to the same repeatable project.
+            (score_gain - (competition.ours - competition.leader).max(0.0)).max(0.0) * 14.0
+        };
+        base + race_swing
     }
 
     fn product_layout_value(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> f64 {
@@ -18643,9 +18768,30 @@ impl AdvancedAi {
                 } else {
                     !spec.great_work_slots.is_empty()
                 };
+                // See `district_building_chain`: a Theater Square the city
+                // already stands owes its buildings whatever the lane, so the
+                // veto steps aside for a family the city holds. It still
+                // refuses the chain in a city with no Theater Square, which
+                // is the case it was written for.
+                let chain_family_held = self.district_building_chain
+                    && spec
+                        .district
+                        .map(|district| g.district_family(district))
+                        .is_some_and(|family| {
+                            family != crate::name!("city_center")
+                                && g.rules
+                                    .districts
+                                    .get_interned(family)
+                                    .is_some_and(|d| d.specialty)
+                                && city
+                                    .districts
+                                    .keys()
+                                    .any(|built| g.district_family(*built) == family)
+                        });
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
+                    && !chain_family_held
                 {
                     return -10_000.0;
                 }
@@ -18778,7 +18924,31 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // See `district_building_chain`: the district the city
+                    // already stands owes this building, decaying with each
+                    // building of the family it already holds.
+                    let chain_debt = if chain_family_held && !spec.wonder {
+                        let family = spec.district.map(|district| g.district_family(district));
+                        let held = city
+                            .buildings
+                            .iter()
+                            .filter(|built| {
+                                g.rules
+                                    .buildings
+                                    .get_interned(**built)
+                                    .and_then(|other| other.district)
+                                    .map(|district| g.district_family(district))
+                                    == family
+                            })
+                            .count();
+                        DISTRICT_BUILDING_CHAIN_DEBT
+                            * DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
+                            * Self::campus_payback_horizon(g)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + chain_debt
                         + culture_debt
                         + research_debt
                         + spec.housing * (22.0 + housing_need * 18.0)
@@ -19455,6 +19625,24 @@ impl AdvancedAi {
                                 850.0
                             } else {
                                 250.0
+                            }
+                        }
+                        _ if spec.host_competition.is_some() => {
+                            let value = self.host_competition_score_value(
+                                g,
+                                pid,
+                                spec.host_competition.as_deref().unwrap(),
+                                spec.competition_score,
+                                turns,
+                            );
+                            // A host-unlocked project that cannot complete
+                            // before the current competition expires is not a
+                            // neutral fallback: letting it win a tie would
+                            // replace a real build with a refused stale order.
+                            if value > 0.0 {
+                                value
+                            } else {
+                                -10_000.0
                             }
                         }
                         _ if space_race => {

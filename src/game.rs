@@ -826,6 +826,10 @@ const BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING: usize = 2;
 /// Shipped `BARBARIAN_CAMP_COASTAL_SPAWN_ROLL`: one in six eligible coastal
 /// camps is a naval outpost. The classification persists for the camp's life.
 const BARBARIAN_CAMP_COASTAL_SPAWN_ROLL: usize = 6;
+/// A Scout that successfully returns home opens a finite raid window. During
+/// it the outpost raises the difficulty-shaped party it was told to send;
+/// after it expires the Scout goes back to looking for a new target.
+const BARBARIAN_SCOUT_ALERT_TURNS: u32 = 15;
 
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     let wounded_penalty = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
@@ -2833,6 +2837,21 @@ pub struct Emergency {
     pub contributions: BTreeMap<usize, i64>,
     pub started: u32,
     pub ends: u32,
+}
+
+/// A scored World Congress competition observed from the live Civilization VI
+/// host. It remains separate from [`Emergency`], which models CIVVIS's native
+/// city-capture emergencies rather than a host-granted production opportunity.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct HostCompetition {
+    /// Firaxis emergency type, for example `EMERGENCY_WORLD_GAMES`.
+    pub kind: String,
+    /// First CIVVIS turn on which the host opportunity is no longer current.
+    pub ends: u32,
+    /// The mirrored seat's current competition score.
+    pub ours: f64,
+    /// The highest score any member currently holds, including ours.
+    pub leader: f64,
 }
 
 /// Every blow that has landed on a city this game.
@@ -5198,6 +5217,10 @@ pub struct Game {
     #[serde(default)]
     pub barb_camp_guards: BTreeMap<Pos, u32>,
     pub barb_scout_homes: BTreeMap<u32, Pos>,
+    /// Raiders remember the outpost that raised them. A nearby second camp
+    /// must not silently redirect a party that was sent somewhere else.
+    #[serde(default)]
+    pub barb_raider_homes: BTreeMap<u32, Pos>,
     pub barb_scout_targets: BTreeMap<u32, Pos>,
     pub barb_camp_targets: BTreeMap<Pos, Pos>,
     pub barb_alerted_until: BTreeMap<Pos, u32>,
@@ -5239,6 +5262,11 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
+    /// Active scored competitions supplied by a live Civilization VI host.
+    /// Native games leave this empty, so host-only projects cannot leak into
+    /// offline production menus.
+    #[serde(default)]
+    pub host_competitions: Vec<HostCompetition>,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -5448,6 +5476,8 @@ struct GameSer {
     #[serde(default)]
     barb_scout_homes: BTreeMap<u32, Pos>,
     #[serde(default)]
+    barb_raider_homes: BTreeMap<u32, Pos>,
+    #[serde(default)]
     barb_scout_targets: BTreeMap<u32, Pos>,
     #[serde(default)]
     barb_camp_targets: Vec<(Pos, Pos)>,
@@ -5487,6 +5517,8 @@ struct GameSer {
     congress: Option<CongressSession>,
     #[serde(default)]
     active_congress_effects: Vec<CongressEffect>,
+    #[serde(default)]
+    host_competitions: Vec<HostCompetition>,
     #[serde(default)]
     last_special_session: u32,
     #[serde(default)]
@@ -5628,6 +5660,7 @@ impl From<GameSer> for Game {
             barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
             barb_camp_guards: s.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: s.barb_scout_homes,
+            barb_raider_homes: s.barb_raider_homes,
             barb_scout_targets: s.barb_scout_targets,
             barb_camp_targets: s.barb_camp_targets.into_iter().collect(),
             barb_alerted_until: s.barb_alerted_until.into_iter().collect(),
@@ -5648,6 +5681,7 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
+            host_competitions: s.host_competitions,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -5809,6 +5843,7 @@ impl From<Game> for GameSer {
             barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
             barb_camp_guards: g.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: g.barb_scout_homes,
+            barb_raider_homes: g.barb_raider_homes,
             barb_scout_targets: g.barb_scout_targets,
             barb_camp_targets: g.barb_camp_targets.into_iter().collect(),
             barb_alerted_until: g.barb_alerted_until.into_iter().collect(),
@@ -5829,6 +5864,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
+            host_competitions: g.host_competitions,
             last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
@@ -6223,6 +6259,7 @@ impl Game {
             barb_naval_camps: BTreeSet::new(),
             barb_camp_guards: BTreeMap::new(),
             barb_scout_homes: BTreeMap::new(),
+            barb_raider_homes: BTreeMap::new(),
             barb_scout_targets: BTreeMap::new(),
             barb_camp_targets: BTreeMap::new(),
             barb_alerted_until: BTreeMap::new(),
@@ -6243,6 +6280,7 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
+            host_competitions: Vec::new(),
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -7555,6 +7593,34 @@ impl Game {
         self.spawn_barbarian_camp_units(pos);
     }
 
+    /// The outpost assignment held by a barbarian unit. Scouts, standing
+    /// guards, and raiders all use the same durable home relationship; callers
+    /// may still supply a legacy nearest-camp fallback for an old save that
+    /// predates raider assignments.
+    pub(crate) fn barbarian_unit_home(&self, uid: u32) -> Option<Pos> {
+        self.barb_camp_guards
+            .iter()
+            .find_map(|(camp, guard)| (*guard == uid).then_some(*camp))
+            .or_else(|| self.barb_scout_homes.get(&uid).copied())
+            .or_else(|| self.barb_raider_homes.get(&uid).copied())
+    }
+
+    /// `BarbarianAttackForces` supplies one melee attacker below Warlord,
+    /// two melee plus one ranged unit through Emperor, and three melee plus
+    /// two ranged units at Immortal and Deity. The difficulty data carries
+    /// those three force bands as 0.5, 1.0, and 1.5 respectively.
+    fn barbarian_raid_force_size(&self) -> usize {
+        match self.difficulty_spec().barb_force_scale {
+            scale if scale <= 0.5 => 1,
+            scale if scale <= 1.0 => 3,
+            _ => 5,
+        }
+    }
+
+    fn barbarian_raid_ranged_size(&self) -> usize {
+        self.barbarian_raid_force_size() / 2
+    }
+
     fn barbarian_scout_phase(&mut self, bpid: usize) {
         self.barb_scout_homes.retain(|unit, camp| {
             self.units
@@ -7579,8 +7645,25 @@ impl Game {
                 continue;
             };
             self.barb_scout_homes.insert(unit, home);
+            // A reported target is one raid, not a permanent alarm. The Scout
+            // waits beside its camp while that party is raised, then goes back
+            // out after the alert has expired. Without this hold it could see
+            // the same city again on the next turn and renew the wave forever.
+            if self
+                .barb_alerted_until
+                .get(&home)
+                .is_some_and(|until| *until > self.turn)
+            {
+                self.barb_scout_targets.remove(&unit);
+                if self.wdist(position, home) > 1 {
+                    if let Some(step) = self.route_step(unit, home, 1) {
+                        self.relocate(unit, step);
+                    }
+                }
+                continue;
+            }
             if !self.barb_scout_targets.contains_key(&unit) {
-                let sight = self.unit_sight(unit);
+                let visible = self.unit_visible_tiles(unit);
                 if let Some(city) = self
                     .cities
                     .values()
@@ -7588,7 +7671,7 @@ impl Game {
                         let owner = &self.players[city.owner];
                         owner.alive && !owner.is_minor && !owner.is_barbarian
                     })
-                    .filter(|city| self.wdist(position, city.pos) <= sight)
+                    .filter(|city| visible.contains(&city.pos))
                     .min_by_key(|city| (self.wdist(position, city.pos), city.id))
                 {
                     self.barb_scout_targets.insert(unit, city.pos);
@@ -7596,7 +7679,8 @@ impl Game {
             }
             if let Some(target) = self.barb_scout_targets.get(&unit).copied() {
                 if self.wdist(position, home) <= 1 {
-                    self.barb_alerted_until.insert(home, self.turn + 15);
+                    self.barb_alerted_until
+                        .insert(home, self.turn + BARBARIAN_SCOUT_ALERT_TURNS);
                     self.barb_camp_targets.insert(home, target);
                     self.barb_camps.insert(home, self.turn + 1);
                     self.barb_scout_targets.remove(&unit);
@@ -7757,6 +7841,23 @@ impl Game {
             })
     }
 
+    /// Build the documented melee/ranged mix of a reported raid where the
+    /// current pool permits it. A coastal camp may not have a ranged ship at
+    /// this technology, so it falls back to an otherwise legal hull instead
+    /// of stalling the entire party.
+    fn choose_barbarian_raid_unit(&mut self, pool: &[Name], want_ranged: bool) -> Option<Name> {
+        let role_pool: Vec<Name> = pool
+            .iter()
+            .copied()
+            .filter(|kind| self.rules.units[kind].has_ranged_attack() == want_ranged)
+            .collect();
+        self.choose_barbarian_unit(if role_pool.is_empty() {
+            pool
+        } else {
+            &role_pool
+        })
+    }
+
     fn spawn_barbarian_camp_recon(&mut self, kind: &str, owner: usize, camp: Pos) -> Option<u32> {
         let want_sea = self.rules.units[kind].domain.as_deref() == Some("sea");
         self.nbrs(camp).into_iter().find_map(|position| {
@@ -7815,7 +7916,7 @@ impl Game {
         self.barb_alerted_until
             .retain(|camp, until| self.barb_camps.contains_key(camp) && *until > self.turn);
         self.barb_camp_targets
-            .retain(|camp, _| self.barb_camps.contains_key(camp));
+            .retain(|camp, _| self.barb_alerted_until.contains_key(camp));
         self.barb_naval_camps
             .retain(|camp| self.barb_camps.contains_key(camp));
         self.barb_camp_guards.retain(|camp, guard| {
@@ -7824,6 +7925,13 @@ impl Game {
                     .units
                     .get(guard)
                     .is_some_and(|unit| unit.owner == bpid && unit.pos == *camp)
+        });
+        self.barb_raider_homes.retain(|unit, camp| {
+            self.barb_camps.contains_key(camp)
+                && self
+                    .units
+                    .get(unit)
+                    .is_some_and(|raider| raider.owner == bpid)
         });
         self.barbarian_scout_phase(bpid);
         // Setup puts a third of the target on the map before turn one
@@ -7840,44 +7948,57 @@ impl Game {
         {
             self.spawn_camp();
         }
-        let alerted = self.barb_alerted_until.len();
-        // BarbarianAttackForces bands its force sizes on difficulty: at or
-        // below Chieftain a raid is one melee unit, from Warlord to Emperor
-        // two melee and a ranged, and at Immortal or above three and two. The
-        // Attack forces widen the same way. `barb_force_scale` carries those
-        // three bands as 0.5, 1.0 and 1.5, and the standing barbarian
-        // population is where a force size lives in this engine.
-        let scale = self.difficulty_spec().barb_force_scale;
+        // A reported camp raises exactly its own party. The old global cap
+        // let distant, unrelated camps consume the slots that a Scout had just
+        // earned for this target, then let the successful camp continue adding
+        // units after the party was already complete.
+        let force_size = self.barbarian_raid_force_size();
+        let ranged_size = self.barbarian_raid_ranged_size();
         let spawn_scale = self.difficulty_spec().barb_spawn_scale;
-        let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
-        let mut n_barb = self.player_unit_ids(bpid).len();
         let land_pool = self.barbarian_unit_pool();
         let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
         for (pos, nxt) in camps {
-            if self.turn < nxt || n_barb >= cap {
+            let alerted = self
+                .barb_alerted_until
+                .get(&pos)
+                .is_some_and(|until| *until > self.turn)
+                && self.barb_camp_targets.contains_key(&pos);
+            if self.turn < nxt || !alerted {
                 continue;
             }
+            let party: Vec<u32> = self
+                .barb_raider_homes
+                .iter()
+                .filter_map(|(unit, home)| (*home == pos).then_some(*unit))
+                .collect();
+            if party.len() >= force_size {
+                continue;
+            }
+            let ranged = party
+                .iter()
+                .filter(|unit| {
+                    self.units
+                        .get(unit)
+                        .is_some_and(|raider| self.rules.units[raider.kind].has_ranged_attack())
+                })
+                .count();
+            let melee = party.len().saturating_sub(ranged);
+            let want_ranged = ranged < ranged_size && melee >= force_size - ranged_size;
             let pool = if self.barb_naval_camps.contains(&pos) {
                 &naval_pool
             } else {
                 &land_pool
             };
-            let Some(utype) = self.choose_barbarian_unit(pool) else {
+            let Some(utype) = self.choose_barbarian_raid_unit(pool, want_ranged) else {
                 continue;
             };
-            if let Some(_unit) = self.place_new_unit(utype.as_str(), bpid, pos) {
-                n_barb += 1;
-                let rapid = self
-                    .barb_alerted_until
-                    .get(&pos)
-                    .is_some_and(|until| *until > self.turn);
+            if let Some(unit) = self.place_new_unit(utype.as_str(), bpid, pos) {
+                self.barb_raider_homes.insert(unit, pos);
                 // BarbarianAttackForces.SpawnRate is 2 up to Emperor and 1
                 // from Immortal, so the top band assembles forces twice as
                 // often as well as fielding bigger ones.
-                let wait = (f64::from(if rapid { 2 } else { 6 }) * spawn_scale)
-                    .round()
-                    .max(1.0) as u32;
+                let wait = (2.0 * spawn_scale).round().max(1.0) as u32;
                 self.barb_camps.insert(pos, self.turn + wait);
             }
         }
@@ -8190,6 +8311,7 @@ impl Game {
         self.barb_alerted_until.remove(&pos);
         self.barb_camp_targets.remove(&pos);
         self.barb_scout_homes.retain(|_, camp| *camp != pos);
+        self.barb_raider_homes.retain(|_, camp| *camp != pos);
         let tile = self.map.tiles.get_mut(&pos).unwrap();
         if tile.improvement.as_deref() == Some("barbarian_camp") {
             tile.improvement = None;
@@ -20183,6 +20305,7 @@ impl Game {
 
     fn remove_unit_recording_lifetime(&mut self, uid: u32, record_lifetime: bool) {
         self.barb_scout_homes.remove(&uid);
+        self.barb_raider_homes.remove(&uid);
         self.barb_scout_targets.remove(&uid);
         self.barb_camp_guards.retain(|_, guard| *guard != uid);
         let carried_aircraft: Vec<u32> = self
@@ -30758,6 +30881,30 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    /// Replace the current live-host competition snapshot. The production
+    /// catalog persists beyond an ordinary read-only memo scope, so a host
+    /// competition starting or ending must explicitly retire any menu cached
+    /// before the new snapshot arrived.
+    pub(crate) fn replace_host_competitions(&mut self, competitions: Vec<HostCompetition>) {
+        if self.host_competitions != competitions {
+            self.host_competitions = competitions;
+            self.query_memo.producible.borrow_mut().clear();
+        }
+    }
+
+    /// The current host competition of this mirrored seat, if it is still
+    /// active. Host player ids do not match generated CIVVIS seats, so the
+    /// mirror intentionally supplies opportunities for seat zero only.
+    pub fn host_competition(&self, pid: usize, kind: &str) -> Option<&HostCompetition> {
+        (pid == 0)
+            .then(|| {
+                self.host_competitions
+                    .iter()
+                    .find(|competition| competition.kind == kind && competition.ends > self.turn)
+            })
+            .flatten()
+    }
+
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_purchases = blocked;
     }
@@ -31123,6 +31270,13 @@ impl Game {
                     None => return false,
                 };
                 if self.players[pid].is_barbarian {
+                    return false;
+                }
+                if spec
+                    .host_competition
+                    .as_deref()
+                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                {
                     return false;
                 }
                 if spec

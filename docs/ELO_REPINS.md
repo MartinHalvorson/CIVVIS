@@ -1447,3 +1447,20 @@ five anchor profiles.
 definitions of the same thing disagreed and one of them was reachable only by
 accident — a defect repair, not a demonstrated gain. Rows before and after v15
 are not comparable in any game where an improvement was pillaged.
+
+---
+
+## v16 (2026-08-18) — a scout's report raises its own finite raid
+
+Barbarian Scouts now report only cities they can actually see. The reported
+camp then raises one finite, difficulty-shaped raiding party; idle and
+unrelated camps cannot consume that party's slots. Each raider retains the
+camp that raised it, and the report expires after the party has formed.
+
+This is a native-world rule, not an Advanced-AI controller treatment: every
+participant can face the party it creates. The v15 anchor was 18,586 decisions
+and `0x2076_c0d8_5213_9238`; with this correction it is **17,494 decisions**
+and `0x6cf9_b1fa_a854_dcd6` across the five anchor profiles.
+
+Rows before and after v16 are not comparable. This is a rules correction, not
+a compatibility re-pin.

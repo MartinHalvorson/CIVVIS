@@ -4529,6 +4529,95 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
+/// Host World Congress competitions move the diplomatic race outside the
+/// ordinary Congress ballot. The exact score table must therefore make the
+/// World Games project legal and compelling, while the World's Fair rewards
+/// the Great Person points existing district projects already produce.
+#[test]
+fn live_competitions_price_world_games_and_worlds_fair_production() {
+    let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.turn = 180;
+    game.players[0].techs.insert(crate::name!("pottery"));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.refresh_research_weight(&game);
+    let athlete = Item::Project {
+        project: crate::name!("train_athletes"),
+    };
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    assert!(game.can_produce(0, city, &granary));
+    assert!(
+        !game.can_produce(0, city, &athlete),
+        "the host-only project cannot escape into a native menu"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_WORLD_GAMES".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    assert!(game.can_produce(0, city, &athlete));
+    let resumed: Game = serde_json::from_value(
+        serde_json::to_value(&game).expect("the live competition checkpoint saves"),
+    )
+    .expect("the live competition checkpoint reloads");
+    assert_eq!(resumed.host_competitions, game.host_competitions);
+    assert!(
+        resumed.can_produce(0, city, &athlete),
+        "a resumed live mirror keeps the host-granted project legal"
+    );
+    let counts = ai.counts(&game, 0);
+    let athlete_value = ai.production_value(&game, 0, city, &athlete, &plan, &counts);
+    let granary_value = ai.production_value(&game, 0, city, &granary, &plan, &counts);
+    assert!(
+        athlete_value > granary_value,
+        "a 50-point project that catches the World Games leader must outrank ordinary infrastructure: {athlete_value} vs {granary_value}"
+    );
+
+    // Once the host competition ends, the bridge withdraws both legality and
+    // its valuation; a stale project must never survive as a neutral fallback.
+    game.replace_host_competitions(Vec::new());
+    assert!(!game.can_produce(0, city, &athlete));
+    assert!(ai.production_value(&game, 0, city, &athlete, &plan, &counts) < -1_000.0);
+
+    install_ai_test_district(&mut game, city, "campus");
+    let grants = Item::Project {
+        project: crate::name!("campus_research_grants"),
+    };
+    assert!(game.can_produce(0, city, &grants));
+    let baseline = ai.production_value(&game, 0, city, &grants, &plan, &counts);
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_WORLDS_FAIR".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 10.0,
+    }]);
+    let boosted = ai.production_value(&game, 0, city, &grants, &plan, &counts);
+    assert!(
+        boosted > baseline + 50.0,
+        "a Campus project's Great Scientist points must close the live World's Fair race: {boosted} vs {baseline}"
+    );
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
@@ -11710,6 +11799,143 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
     );
     assert!(!AdvancedAi::new().culture_building_debt);
     assert!(!AdvancedAi::legacy().culture_building_debt);
+}
+
+/// ★★★★★ Eight Campuses and six Theater Squares stood empty to turn 205 of
+/// run civvis-20260819T000800Z: 174 produce orders, not one Library,
+/// University or Amphitheater. The Library was legal on 133 replayed
+/// city-turns at a median value of 23 while the queue winner stood 55
+/// higher; the Amphitheater never reached a price at all, because under an
+/// explicit non-Culture target the great-work veto returns before
+/// `culture_building_debt` is computed. See `district_building_chain`: a
+/// specialty district the city already stands owes its own buildings, the
+/// debt decays with each building of the family the city holds, the veto
+/// yields to a Theater Square the city has, and nothing changes for a city
+/// without the district, for a unit, for a wonder, or for the frozen and
+/// stock controllers.
+#[test]
+fn a_standing_district_owes_its_own_buildings_whatever_the_lane() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_115);
+    game.players[0].civics.insert(crate::name!("drama_poetry"));
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].techs.insert(crate::name!("currency"));
+    game.players[0].techs.insert(crate::name!("education"));
+    game.turn = 60;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    let university = Item::Building {
+        building: crate::name!("university"),
+    };
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+
+    // The seat that plays the ladder: an explicit Diplomacy target with the
+    // live bundle, and the same seat with only this treatment withheld.
+    let mut live = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    live.enable_live_bridge();
+    assert!(
+        live.district_building_chain,
+        "the live seat carries the treatment"
+    );
+    live.refresh_research_weight(&game);
+    let mut withheld = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    withheld.enable_live_bridge();
+    withheld.disable_district_building_chain();
+    withheld.refresh_research_weight(&game);
+
+    // No Campus, no Theater Square: nothing is owed and the two arms agree
+    // — including the veto, which still refuses the Amphitheater to a city
+    // with no Theater Square under a non-Culture target.
+    assert_eq!(
+        live.production_value(&game, 0, capital, &library, &plan, &counts),
+        withheld.production_value(&game, 0, capital, &library, &plan, &counts),
+        "a city with no Campus owes it no Library"
+    );
+    install_ai_test_district(&mut game, capital, "campus");
+    install_ai_test_district(&mut game, capital, "theater_square");
+    assert!(game.can_produce(0, capital, &library));
+    assert!(game.can_produce(0, capital, &amphitheater));
+
+    // The Campus owes its Library; the debt is the constant over the
+    // payback horizon (full this early), on top of the unchanged price.
+    let owed = live.production_value(&game, 0, capital, &library, &plan, &counts);
+    let unowed = withheld.production_value(&game, 0, capital, &library, &plan, &counts);
+    let cost = game.item_remaining_cost_for_city(0, capital, &library);
+    let production = game.city_yields(capital).production.max(1.0);
+    let denominator = 7.0 + (cost / production).max(1.0);
+    let expected = DISTRICT_BUILDING_CHAIN_DEBT
+        * AdvancedAi::campus_payback_horizon(&game)
+        * live.production_category_gene(&library)
+        / denominator;
+    assert!(
+        (owed - unowed - expected).abs() < 1e-6,
+        "the standing Campus owes its Library the chain debt: {owed} - {unowed} != {expected}"
+    );
+
+    // The Theater Square's building reaches a price on this seat: the veto
+    // that returned -10_000 before any debt was computed yields to a
+    // district the city already stands. Withheld, the veto stands.
+    let amph_live = live.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    let amph_withheld = withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
+    assert!(
+        amph_live > 0.0,
+        "the standing Theater Square's Amphitheater is priced, not vetoed: {amph_live}"
+    );
+    assert_eq!(
+        amph_withheld, -10_000.0,
+        "withheld, the great-work veto is unchanged"
+    );
+
+    // A building outside every specialty district collects nothing.
+    assert_eq!(
+        live.production_value(&game, 0, capital, &monument, &plan, &counts),
+        withheld.production_value(&game, 0, capital, &monument, &plan, &counts),
+        "a Monument is owed by no district"
+    );
+
+    // With the Library built, the University is owed less: one tier decayed.
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    assert!(game.can_produce(0, capital, &university));
+    let owed_university = live.production_value(&game, 0, capital, &university, &plan, &counts);
+    let unowed_university =
+        withheld.production_value(&game, 0, capital, &university, &plan, &counts);
+    let cost = game.item_remaining_cost_for_city(0, capital, &university);
+    let denominator = 7.0 + (cost / production).max(1.0);
+    let expected_tier_two = DISTRICT_BUILDING_CHAIN_DEBT
+        * DISTRICT_BUILDING_CHAIN_TIER_DECAY
+        * AdvancedAi::campus_payback_horizon(&game)
+        * live.production_category_gene(&university)
+        / denominator;
+    assert!(
+        (owed_university - unowed_university - expected_tier_two).abs() < 1e-6,
+        "the second building of the chain is owed one tier less: \
+         {owed_university} - {unowed_university} != {expected_tier_two}"
+    );
+
+    // Frozen and stock controllers never carry it, and the debt is a
+    // building-arm term: the Campus district's own price is untouched.
+    assert!(!AdvancedAi::new().district_building_chain);
+    assert!(!AdvancedAi::legacy().district_building_chain);
+    assert!(std::hint::black_box(DISTRICT_BUILDING_CHAIN_TIER_DECAY) < 1.0);
 }
 
 /// The old non-Culture veto used a Great Work slot as a proxy for the Culture
@@ -21936,18 +22162,17 @@ fn an_adjacent_empty_camp_is_cleared_instead_of_being_held_or_explored_past() {
     }
 }
 
-/// The adjacent camp clear ships default-ON, and this gate is the reason the
-/// v14 rating ledger survives it: `AdvancedAi::legacy()` — the frozen anchor
-/// whose fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins —
-/// must never see the treatment, exactly like `naval_recon`. The withhold arm
-/// `advanced_without_adjacent_camp_clear` prices it from the current
-/// controller instead.
+/// The adjacent camp clear ships default-ON, but this gate keeps the controller
+/// treatment outside `AdvancedAi::legacy()` — the frozen anchor whose
+/// fingerprint `advanced_v1_plays_the_same_game_it_always_did` pins — exactly
+/// like `naval_recon`. A shared world rule may still own a protocol bump; this
+/// withhold arm prices the current-controller treatment instead.
 #[test]
 fn the_adjacent_camp_clear_cannot_reach_the_frozen_anchor() {
     assert!(
         !AdvancedAi::legacy().adjacent_camp_clear(),
-        "the frozen anchor must keep playing the game it always played; \
-         re-pinning it starts a new ledger and is not this treatment's call"
+        "this controller treatment must stay outside the frozen anchor; an \
+         anchor move needs a protocol decision owned by the world rule"
     );
     assert!(AdvancedAi::new().adjacent_camp_clear());
     let mut withheld = AdvancedAi::new();
@@ -25618,7 +25843,9 @@ fn a_valued_wonder_credits_the_prerequisites_that_unblock_it() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25737,7 +25964,9 @@ fn a_refused_wonder_earns_its_prerequisites_nothing() {
         game.players[0].civ
     );
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;
@@ -25777,7 +26006,9 @@ fn a_built_wonder_stops_paying_its_prerequisites() {
     clear_barbarian_fixture(&mut game);
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("recorded_history"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("recorded_history"));
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("granary")];
     game.turn = 10;

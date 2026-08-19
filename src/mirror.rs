@@ -8771,6 +8771,47 @@ pub struct StateResolution {
     pub target: String,
 }
 
+/// One score row in Firaxis's World Congress emergency tracker.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateEmergencyScore {
+    #[serde(default)]
+    pub player: i64,
+    #[serde(default)]
+    pub score: f64,
+    #[serde(default)]
+    pub tier: Option<i64>,
+}
+
+/// The active seat's membership and score in an exported emergency.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateEmergencyOurs {
+    #[serde(default)]
+    pub member: bool,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub tier: Option<i64>,
+}
+
+/// A World Congress emergency or scored competition as Firaxis's tracker
+/// reports it. The mirror needs only the active member's score race; native
+/// CIVVIS emergencies retain their separate city-capture representation.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateEmergency {
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    /// Firaxis uses a negative value once the tracker entry is complete; zero
+    /// remains an active final-turn opportunity.
+    #[serde(default = "minus_one_i64")]
+    pub turns_left: i64,
+    #[serde(default)]
+    pub begun: bool,
+    #[serde(default)]
+    pub scores: Vec<StateEmergencyScore>,
+    #[serde(default)]
+    pub ours: StateEmergencyOurs,
+}
+
 /// One population-worked Firaxis plot, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateWorkedPlot {
@@ -9998,6 +10039,11 @@ pub struct StateSnapshot {
     /// with nothing in effect.
     #[serde(default)]
     pub resolutions: Option<Vec<StateResolution>>,
+    /// The host's active World Congress emergency tracker. `None` means an
+    /// older control mod did not export it; `Some([])` is an authoritative
+    /// statement that no live competition remains.
+    #[serde(default)]
+    pub emergencies: Option<Vec<StateEmergency>>,
     /// Turns until the next regular session — how long `resolutions` stay
     /// binding (`GetMeetingStatus().TurnsLeft`).
     #[serde(default)]
@@ -11522,15 +11568,12 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "era_score", "era_score_baseline", "normal_age_threshold",
         "golden_age_threshold", "world_era", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "resolutions", "congress_turns_left",
+        "emergencies",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
         // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
         // if a new StateSnapshot field is missing here — this list is a second
         // copy of the struct's names and nothing keeps them in step automatically.
         "envoys_free",
-        // The World Congress emergencies and scored competitions (Firaxis's own
-        // crisis table, `GetEmergencyInfoTable`): carried for the ledger and the
-        // agent, not mirrored yet.
-        "emergencies",
     ];
     const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &[
@@ -11543,6 +11586,22 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const WORKED: &[&str] = &["x", "y", "yields"];
     const GREAT_WORK: &[&str] = &["type", "object", "era", "creator", "building", "slot"];
     const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
+    const EMERGENCY: &[&str] = &[
+        "type",
+        "name",
+        "target",
+        "target_city",
+        "turns_left",
+        "begun",
+        "success",
+        "members",
+        "scores",
+        "ours",
+        "goals",
+        "score_sources",
+    ];
+    const EMERGENCY_SCORE: &[&str] = &["player", "score", "tier"];
+    const EMERGENCY_OURS: &[&str] = &["member", "target", "score", "tier"];
     const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
         "trader",
@@ -11638,8 +11697,32 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         cities(minor.get("cities"), &mut gaps);
         units(minor.get("units"), &mut gaps);
     }
-    for religion in value.get("religions").and_then(|v| v.as_array()).into_iter().flatten() {
+    for religion in value
+        .get("religions")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         keys(religion, RELIGION, "religion", &mut gaps);
+    }
+    for emergency in value
+        .get("emergencies")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        keys(emergency, EMERGENCY, "emergency", &mut gaps);
+        for score in emergency
+            .get("scores")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(score, EMERGENCY_SCORE, "emergency.score", &mut gaps);
+        }
+        if let Some(ours) = emergency.get("ours") {
+            keys(ours, EMERGENCY_OURS, "emergency.ours", &mut gaps);
+        }
     }
     gaps.into_iter().collect()
 }
@@ -14866,6 +14949,51 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
     }
 }
 
+/// Mirror the short-lived World Congress competitions that the host has
+/// already made available to this seat. Firaxis grants their projects through
+/// `UnlocksFromEffect`, so retaining an old answer would be worse than losing
+/// one: it would make CIVVIS issue a project the host has withdrawn.
+fn apply_host_competitions(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let Some(emergencies) = state.emergencies.as_ref() else {
+        // An absent field is an older mod, not proof that a competition ended.
+        return;
+    };
+    let turn = state.turn.max(1);
+    let mut competitions: Vec<crate::game::HostCompetition> = emergencies
+        .iter()
+        .filter_map(|emergency| {
+            if !emergency.begun
+                || emergency.turns_left < 0
+                || !emergency.ours.member
+                || emergency.kind.trim().is_empty()
+            {
+                return None;
+            }
+            let ours = emergency
+                .ours
+                .score
+                .filter(|score| score.is_finite())
+                .unwrap_or(0.0);
+            let leader = emergency
+                .scores
+                .iter()
+                .map(|score| score.score)
+                .filter(|score| score.is_finite())
+                .fold(ours, f64::max);
+            let remaining = u32::try_from(emergency.turns_left).unwrap_or(u32::MAX);
+            Some(crate::game::HostCompetition {
+                kind: emergency.kind.trim().to_string(),
+                // `TurnsLeft == 0` is still the host's final playable turn.
+                ends: turn.saturating_add(remaining).saturating_add(1),
+                ours,
+                leader,
+            })
+        })
+        .collect();
+    competitions.sort_by(|left, right| left.kind.cmp(&right.kind));
+    game.replace_host_competitions(competitions);
+}
+
 /// Rebuild terrain, both empires, and everything visible of the rivals.
 pub fn rebuild_from_state(
     snapshot: &Snapshot,
@@ -15047,6 +15175,7 @@ pub fn rebuild_from_state(
         game.players[0].dvp = dvp;
     }
     apply_congress_dvp(&mut game, state);
+    apply_host_competitions(&mut game, state);
     if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
         game.players[0].diplomatic_favor = favor;
     }
@@ -16568,6 +16697,7 @@ impl LiveMirror {
             self.game.players[0].dvp = dvp;
         }
         apply_congress_dvp(&mut self.game, state);
+        apply_host_competitions(&mut self.game, state);
         if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
             self.game.players[0].diplomatic_favor = favor;
         }
@@ -17680,6 +17810,97 @@ mod host_fact_tests {
         }
     }
 
+    /// World Games is one of the ways a diplomatic race moves without a vote:
+    /// Firaxis grants `PROJECT_TRAIN_ATHLETES` only to active members, and the
+    /// bridge used to discard the exact tracker that says so.
+    #[test]
+    fn world_games_tracker_opens_then_retires_the_host_project() {
+        let raw = r#"{
+            "turn": 182,
+            "emergencies": [{
+                "type": "EMERGENCY_WORLD_GAMES",
+                "turns_left": 8,
+                "begun": true,
+                "scores": [
+                    {"player": 0, "score": 50, "tier": 2},
+                    {"player": 2, "score": 100, "tier": 1}
+                ],
+                "ours": {"member": true, "score": 50, "tier": 2}
+            }]
+        }"#;
+        let mut state = state_from_json(raw).expect("the competition tracker parses");
+        assert!(
+            state.schema_gaps.is_empty(),
+            "the recognized tracker must not be filed as discarded schema: {:?}",
+            state.schema_gaps
+        );
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 3,
+            y: 3,
+            pop: 5,
+            capital: true,
+            ..StateCity::default()
+        });
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: state.turn,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let athletes = crate::game::Item::Project {
+            project: crate::name!("train_athletes"),
+        };
+        let competition = mirror
+            .game
+            .host_competition(0, "EMERGENCY_WORLD_GAMES")
+            .expect("our active World Games score race reaches the board");
+        assert_eq!(competition.ours, 50.0);
+        assert_eq!(competition.leader, 100.0);
+        assert!(
+            mirror.game.can_produce(0, city, &athletes),
+            "an active member can run the host-granted athlete project"
+        );
+        assert!(
+            mirror.game.producible_items(0, city).contains(&athletes),
+            "the active project appears even after the menu is cached"
+        );
+
+        // An older control mod did not export this field. Its omission cannot
+        // be treated as a completed event, because a persistent mirror may
+        // have learned about World Games before the mod was refreshed.
+        let completed = state.emergencies.take();
+        state.turn += 1;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.can_produce(0, city, &athletes));
+
+        // `TurnsLeft < 0` is the host's completed marker. It must withdraw
+        // the project and invalidate the menu cached above rather than leave
+        // CIVVIS repeatedly ordering a project Firaxis no longer accepts.
+        state.turn += 1;
+        state.emergencies = completed;
+        state.emergencies.as_mut().unwrap()[0].turns_left = -1;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror
+            .game
+            .host_competition(0, "EMERGENCY_WORLD_GAMES")
+            .is_none());
+        assert!(!mirror.game.can_produce(0, city, &athletes));
+        assert!(!mirror.game.producible_items(0, city).contains(&athletes));
+
+        // A fresh non-member board is equally closed: the project is a host
+        // effect, not part of CIVVIS's ordinary ruleset.
+        state.emergencies.as_mut().unwrap()[0].turns_left = 8;
+        state.emergencies.as_mut().unwrap()[0].ours.member = false;
+        let inactive = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+        let inactive_city = inactive.player_city_ids(0)[0];
+        assert!(!inactive.can_produce(0, inactive_city, &athletes));
+    }
+
     /// Civilization VI's production names must reach CIVVIS's queue as real items.
     ///
     /// ⚠ The export shipped a raw HASH for the whole project, so this path was dead
@@ -17698,17 +17919,20 @@ mod host_fact_tests {
             matches!(monument, Some(crate::game::Item::Building { .. })),
             "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
         );
-        let theater = civvis_production_item(
-            &rules,
-            Some("PROJECT_ENHANCE_DISTRICT_THEATER"),
-            &[],
-            None,
-        );
+        let theater =
+            civvis_production_item(&rules, Some("PROJECT_ENHANCE_DISTRICT_THEATER"), &[], None);
         assert_eq!(
             theater,
             Some(crate::game::Item::Project {
                 project: crate::name!("theater_square_festival"),
             })
+        );
+        assert_eq!(
+            civvis_production_item(&rules, Some("PROJECT_TRAIN_ATHLETES"), &[], None),
+            Some(crate::game::Item::Project {
+                project: crate::name!("train_athletes"),
+            }),
+            "the host's active World Games queue must remain visibly committed"
         );
 
         // ⚠ Refusing to guess is the point. A wrong item tells CIVVIS a city is busy
