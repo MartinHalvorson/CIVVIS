@@ -21244,6 +21244,25 @@ impl AdvancedAi {
     /// Why a site would not hold, if it would not: the forecast revolt, or —
     /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
     /// ground. `None` when the site is judged sound.
+    /// File `site` as an open frontier question when the loyalty veto's
+    /// unexplored-ground clause is what refused it. Pruned and capped on
+    /// every write so the list can only hold a handful of live questions.
+    /// See `BasicAi::veto_guided_recon`.
+    fn record_frontier_question(&mut self, g: &Game, pid: usize, site: Pos) {
+        if !self.base.veto_guided_recon || !Self::beyond_loyalty_reach(g, pid, site) {
+            return;
+        }
+        let mut questions = self.base.frontier_questions.borrow_mut();
+        questions.retain(|(kept, expiry)| *expiry > g.turn && *kept != site);
+        questions.push((site, g.turn + crate::ai::FRONTIER_QUESTION_TURNS));
+        let overflow = questions
+            .len()
+            .saturating_sub(crate::ai::FRONTIER_QUESTION_CAP);
+        if overflow > 0 {
+            questions.drain(..overflow);
+        }
+    }
+
     fn settle_site_loyalty_verdict(&self, g: &Game, pid: usize, site: Pos) -> Option<String> {
         if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
             return Some(
@@ -21699,6 +21718,11 @@ impl AdvancedAi {
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
                 );
+                // A refusal whose reason is DARKNESS is a question recon can
+                // answer; hand it to the explorer's goal ranking. See
+                // `veto_guided_recon` — re-tested here as the predicate
+                // rather than parsed back out of the journal string.
+                self.record_frontier_question(g, pid, pos);
                 rejected += 1;
                 if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
                     break None;

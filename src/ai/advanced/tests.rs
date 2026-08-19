@@ -26046,3 +26046,105 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     assert!(!AdvancedAi::new().projected_stock_denial);
     assert!(!AdvancedAi::legacy().projected_stock_denial);
 }
+
+/// ★★★★ THE EYES WERE ALIVE AND THE VETO STAYED DARK. Run
+/// civvis-20260819T004405Z kept three scouts alive t80-t120 (the rebuilt
+/// land eye, #2080) and the loyalty forecast still refused settler
+/// candidates 213 times for unexplored ground: `exploration_goal` ranks fog
+/// by reveal value and distance and never knew which fog was holding a
+/// settler. With `veto_guided_recon`, a refusal whose reason is darkness
+/// files the site as an open question, and the committed explorer walk
+/// answers a live question ahead of every merely-dark candidate — reaching
+/// past the ordinary lookahead window when the question sits beyond it.
+#[test]
+fn the_explorer_answers_the_settler_vetos_question() {
+    let mut game = Game::new_full(2, 40, 24, 71_137, 30, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    // A scout with fog on every side, and a vetoed site far to the east —
+    // well past the committed walk's lookahead from the first fogged ring.
+    let origin = (6, 12);
+    let scout = game.spawn_test_unit("scout", 0, origin);
+    let near: Vec<Pos> = game.wdisk(origin, 2);
+    game.players[0].explored.clear();
+    game.players[0].explored.extend(near);
+    let question = (24, 12);
+    assert!(
+        game.map.tiles.contains_key(&question),
+        "the vetoed site is on the map"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.base.veto_guided_recon,
+        "the live seat carries the treatment"
+    );
+    live.base
+        .frontier_questions
+        .borrow_mut()
+        .push((question, game.turn + 30));
+    let goal = live
+        .base
+        .exploration_goal(&game, 0, scout, false)
+        .expect("fog everywhere yields a goal");
+    assert!(
+        game.wdist(goal, question) <= 9,
+        "the committed walk answers the question: goal {goal:?} lights {question:?}"
+    );
+
+    // Withheld, the same board picks by reveal value alone: the distant
+    // question does not reach the candidate window at all.
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_veto_guided_recon();
+    withheld
+        .base
+        .frontier_questions
+        .borrow_mut()
+        .push((question, game.turn + 30));
+    let raw = withheld
+        .base
+        .exploration_goal(&game, 0, scout, false)
+        .expect("fog everywhere yields a goal");
+    assert!(
+        game.wdist(raw, question) > 9,
+        "without the treatment the walk stays inside its window: {raw:?}"
+    );
+
+    // An expired question steers nothing.
+    let mut expired = AdvancedAi::new();
+    expired.enable_live_bridge();
+    expired
+        .base
+        .frontier_questions
+        .borrow_mut()
+        .push((question, game.turn));
+    let cold = expired
+        .base
+        .exploration_goal(&game, 0, scout, false)
+        .expect("fog everywhere yields a goal");
+    assert!(game.wdist(cold, question) > 9, "expired question: {cold:?}");
+
+    // The recorder files only darkness-refusals, prunes, and caps.
+    let mut recorder = AdvancedAi::new();
+    recorder.enable_live_bridge();
+    // (24,12) is beyond every city's loyalty reach on fogged ground.
+    recorder.record_frontier_question(&game, 0, question);
+    assert_eq!(recorder.base.frontier_questions.borrow().len(), 1);
+    // A site inside a friendly city's reach files nothing.
+    let capital = game.found_city_for(0, origin, None);
+    let _ = capital;
+    recorder.record_frontier_question(&game, 0, origin);
+    assert_eq!(
+        recorder.base.frontier_questions.borrow().len(),
+        1,
+        "a site inside the empire's reach is not a question"
+    );
+
+    // Frozen and ordinary controllers never steer by questions.
+    assert!(!AdvancedAi::new().base.veto_guided_recon);
+    assert!(!AdvancedAi::legacy().base.veto_guided_recon);
+}
