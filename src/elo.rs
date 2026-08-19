@@ -144,6 +144,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
+    "live_without_settler_guard_holds",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -416,6 +417,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
+    "settler-guard-holds",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -630,6 +632,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -692,6 +695,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -831,6 +835,7 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
+    LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -4440,6 +4445,7 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
+            Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
