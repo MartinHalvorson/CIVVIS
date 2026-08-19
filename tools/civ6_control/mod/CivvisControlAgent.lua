@@ -14136,6 +14136,128 @@ local function onPlayerDefeat(player, defeat, eventID)
 	});
 end
 
+-- ★★★★★ JOIN THE AID REQUEST BEFORE TRYING TO WIN IT.
+--
+-- The bridge already knows how to take an Aid Request's first-place score: a
+-- Send Aid project, or the bounded direct-Gold finisher.  Both paths require
+-- membership, while the prior controller merely let the World Crisis prompt
+-- wait for a person. Firaxis's own WorldCrisisPopup handles
+-- `Events.EmergencyAvailable` by issuing this exact ACCEPT_EMERGENCY operation
+-- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE.  Take that same operation,
+-- but only for the two humanitarian competitions we can actually score. Other
+-- emergencies can create wars or commit production that this event has not
+-- priced, so they remain untouched.
+--
+-- This is a bare global for the offline regression and because the main chunk
+-- is at its local-register ceiling. `peaceAsked` is the existing turn-scoped
+-- submission ledger; a string key prevents a synchronous repeat of this event
+-- from submitting a second accept before the host updates MemberIDs.
+CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
+	if finished or cfg.Play == false or cfg.AutoJoinAidRequests == false then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local target = tonumber(targetPlayerID);
+	local emergency = tonumber(emergencyType);
+	local definition = emergency ~= nil and try(function()
+		return GameInfo.EmergencyAlliances[emergency];
+	end, nil) or nil;
+	local kind = definition and tostring(definition.EmergencyType or "") or "";
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local function report(reason, submitted)
+		emit("aid_emergency_join", {
+			turn = turn, target = target or -1,
+			emergency = kind ~= "" and kind or tostring(emergencyType or ""),
+			submitted = submitted and true or false, reason = reason,
+		});
+	end
+	if pid == nil or pid < 0 or target == nil or target < 0
+			or emergency == nil then
+		report("invalid_event", false);
+		return;
+	end
+	if kind ~= "EMERGENCY_SEND_AID" and kind ~= "EMERGENCY_SEND_MILITARY_AID" then
+		report("not_aid_request", false);
+		return;
+	end
+	if target == pid then
+		report("target_is_local", false);
+		return;
+	end
+
+	-- Match the shipped popup's tracker lookup before issuing anything. An old
+	-- availability notification is not authority to join a different emergency.
+	local crises = try(function()
+		return Game.GetEmergencyManager():GetEmergencyInfoTable(pid);
+	end, nil);
+	local live = nil;
+	if type(crises) == "table" then
+		for _, crisis in ipairs(crises) do
+			if crisis.EmergencyType == emergency and tonumber(crisis.TargetID) == target then
+				live = crisis;
+				break;
+			end
+		end
+	end
+	if live == nil then
+		report("missing_emergency", false);
+		return;
+	end
+	if live.HasBegun == true then
+		report("already_begun", false);
+		return;
+	end
+	for _, member in ipairs(live.MemberIDs or {}) do
+		if tonumber(member) == pid then
+			report("already_member", false);
+			return;
+		end
+	end
+
+	-- Firaxis gives both Aid Request types an empty member-requirement set: the
+	-- project route can score even when we have not met the recipient, or when
+	-- it is not a major civilization. Do not accidentally impose the direct-Gold
+	-- deal's stricter contact/major gates here. War is different: the shipped
+	-- score sources deduct 30 (ordinary Aid) or 200 (military Aid) while at war,
+	-- so decline that actively losing membership.
+	local player = try(function() return Players[pid]; end, nil);
+	local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil);
+	if diplomacy == nil then
+		report("no_diplomacy", false);
+		return;
+	end
+	if try(function() return diplomacy:IsAtWarWith(target); end, false) then
+		report("at_war", false);
+		return;
+	end
+
+	local otherParam = try(function() return PlayerOperations.PARAM_OTHER_PLAYER; end);
+	local typeParam = try(function() return PlayerOperations.PARAM_EMERGENCY_TYPE; end);
+	local accept = try(function() return PlayerOperations.ACCEPT_EMERGENCY; end);
+	if otherParam == nil or typeParam == nil or accept == nil then
+		report("api_unavailable", false);
+		return;
+	end
+	local key = "aid_join:" .. kind .. ":" .. target;
+	if turn >= 0 and peaceAsked[key] == turn then
+		report("duplicate", false);
+		return;
+	end
+	local parameters = {};
+	parameters[otherParam] = target;
+	parameters[typeParam] = emergency;
+	-- Set the one-turn guard before the engine call: RequestPlayerOperation can
+	-- publish synchronously. A Lua exception clears it so a later valid event
+	-- can still retry; a normal return is only a submitted operation, not a
+	-- claimed membership or score change.
+	if turn >= 0 then peaceAsked[key] = turn; end
+	local submitted = pcall(function()
+		UI.RequestPlayerOperation(pid, accept, parameters);
+	end);
+	if not submitted and turn >= 0 and peaceAsked[key] == turn then
+		peaceAsked[key] = nil;
+	end
+	report(submitted and "submitted" or "throw", submitted);
+end;
+
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
 	for name, handler in pairs({
@@ -14149,6 +14271,7 @@ function Initialize()
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
