@@ -25,6 +25,15 @@ pub struct Tile {
     /// generation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub assumed_traversable: bool,
+    /// The sea's half of the same prior: an `unknown` tile at the edge of
+    /// water the seat has charted, which a ship may plan toward. Kept apart
+    /// from `assumed_traversable` because that flag is what a LAND unit reads
+    /// as passable ground — and `come_ashore` deliberately keeps the land army
+    /// out of the water, which it cannot do for fog that has no domain yet.
+    /// Set only by the Civilization VI mirror's frontier growth, never by map
+    /// generation, so a native world's ships behave exactly as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub assumed_navigable: bool,
     pub feature: Option<Name>,
     pub hills: bool,
     pub resource: Option<Name>,
@@ -208,6 +217,7 @@ impl Tile {
             pos,
             terrain: crate::name!("ocean"),
             assumed_traversable: false,
+            assumed_navigable: false,
             feature: None,
             hills: false,
             resource: None,

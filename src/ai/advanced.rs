@@ -26114,6 +26114,20 @@ impl AdvancedAi {
                     }
                     return self.base.fortify_or_stop(g, pid, uid);
                 }
+                // ★★★★ THE SEA SCOUT SAILED ONLY IN WARTIME. The explorer
+                // roster below was consulted on the tactical path alone, and
+                // this branch — no major at war, no raider at home — handed
+                // every hull to `BasicAi::military_step`, whose own enemy list
+                // always holds the barbarian seat (`is_at_war` says so for
+                // every major), so it took the ship to `peacetime_step` with
+                // `at_war = true`, where a non-Recon unit never explores. On
+                // the live seat that is most of the game: the sea's eye
+                // stood down between wars. Same roster, same turn, here too.
+                if self.is_naval_explorer(g, pid, uid) {
+                    if let Some(acted) = self.explorer_turn(g, pid, uid) {
+                        return acted;
+                    }
+                }
             }
             if let Some(acted) = self.war_return_home_step(g, pid, uid) {
                 return acted;
@@ -26599,34 +26613,12 @@ impl AdvancedAi {
         // Combat, escort, and recovery already had their chance above, so this
         // only spends hulls that have no more immediate job. See
         // `naval_explorer`.
-        let naval_explorer =
-            self.base.naval_recon
-                && spec.domain.as_deref() == Some("sea")
-                && self.naval_explorer(g, pid).contains(&uid);
+        let naval_explorer = self.is_naval_explorer(g, pid, uid);
         if (doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true))
             || naval_explorer
         {
-            if self.recon_flight {
-                if let Some(acted) = self.recon_flight_step(g, pid, uid) {
-                    if acted {
-                        self.recon_fled.insert(uid, g.turn);
-                    }
-                    return acted;
-                }
-                // Out of reach now, having fled this turn: hold here rather
-                // than let the explore step walk back into the band.
-                if self.recon_fled.get(&uid) == Some(&g.turn) {
-                    return self.base.fortify_or_stop(g, pid, uid);
-                }
-            }
-            // Recon flight keeps its safety-first escape above, but once it
-            // stands its ground an empty camp beside it is a completed reward,
-            // not fog to scout past.
-            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
-                return true;
-            }
-            if self.base.explore_step(g, pid, uid) {
-                return true;
+            if let Some(acted) = self.explorer_turn(g, pid, uid) {
+                return acted;
             }
         }
 
@@ -27518,21 +27510,52 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether this hull is on the sea-scout roster this turn. See
+    /// `naval_explorer`.
+    fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.base.naval_recon
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+            && self.naval_explorer(g, pid).contains(&uid)
+    }
+
+    /// An explorer's turn: slip out of a visible hostile's reach first, take
+    /// an empty camp beside it, then sail or walk for the fog. `Some(acted)`
+    /// when one of those settled the turn; `None` lets the caller's later
+    /// branches have the unit. Shared by the wartime tactical path and the
+    /// peacetime path so the two cannot drift apart again.
+    fn explorer_turn(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        if self.recon_flight {
+            if let Some(acted) = self.recon_flight_step(g, pid, uid) {
+                if acted {
+                    self.recon_fled.insert(uid, g.turn);
+                }
+                return Some(acted);
+            }
+            // Out of reach now, having fled this turn: hold here rather
+            // than let the explore step walk back into the band.
+            if self.recon_fled.get(&uid) == Some(&g.turn) {
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
+        }
+        // Recon flight keeps its safety-first escape above, but once it
+        // stands its ground an empty camp beside it is a completed reward,
+        // not fog to scout past.
+        if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+            return Some(true);
+        }
+        if self.base.explore_step(g, pid, uid) {
+            return Some(true);
+        }
+        None
+    }
+
     /// The bounded set of ships that explore: the first two movable, unlinked
     /// sea military units with an open route while water remains unseen. A
     /// lake-bound hull cannot hold the job over a real scout. The production
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon {
-            return Vec::new();
-        }
-        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
-            !g.players[pid].explored.contains(pos)
-                && g.rules.is_passable(tile)
-                && g.rules.is_water(tile)
-        });
-        if !water_left {
+        if !self.base.naval_recon || !BasicAi::unseen_water_remains(g, pid) {
             return Vec::new();
         }
         let mut ships = g
