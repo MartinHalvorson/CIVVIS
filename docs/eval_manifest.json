@@ -40,9 +40,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 224,
-    "firaxis_only_count": 24,
-    "live_bridge_count": 79,
+    "eval_only_count": 226,
+    "firaxis_only_count": 25,
+    "live_bridge_count": 80,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -209,7 +209,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 224,
+      "declared_count": 226,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -259,6 +259,7 @@
         "live_without_war_patience",
         "live_without_deny_while_targeted",
         "live_without_stock_denial_lead_time",
+        "live_without_projected_stock_denial",
         "live_without_endgame_war_runway",
         "live_without_stacked_escort",
         "live_without_counter_in_lane",
@@ -439,7 +440,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 24,
+      "declared_count": 25,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -458,6 +459,7 @@
         "tally-great-people",
         "deny-while-targeted",
         "stock-denial-lead-time",
+        "projected-stock-denial",
         "parallel-settlers",
         "host-settler-pop",
         "explore-dead-targets",
@@ -468,7 +470,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 79,
+      "declared_count": 80,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -539,6 +541,7 @@
         "buildings-before-projects",
         "deny-while-targeted",
         "stock-denial-lead-time",
+        "projected-stock-denial",
         "parallel-settlers",
         "host-settler-pop",
         "explore-dead-targets",

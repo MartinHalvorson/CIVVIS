@@ -364,6 +364,20 @@ const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// project queue is not instant either), so this gives the two stock lanes
 /// the lead time the one rate-limited lane already had.
 const STOCK_DENIAL_BAR: i32 = 78;
+/// How far ahead `projected_stock_denial` reads a stock lane's pressure.
+///
+/// A stock lane's pressure is a RATIO OF ACCUMULATIONS and it accelerates:
+/// run civvis-20260818T173802Z went 27%→96% in thirteen turns (Egypt, rock
+/// bands), so a static bar fires with 3-12 turns left — after the last
+/// Congress has already voted. Fifteen turns is the Congress cadence minus
+/// the margin a ballot needs to be worth aiming, and it is also what the
+/// four measurable culture losses say the projection buys: first crossing
+/// of `STOCK_DENIAL_BAR` moves from 3/7/12/37 turns of lead to 12/12/15/66.
+const STOCK_DENIAL_HORIZON: i32 = 15;
+/// How many turns of pressure history feed the projection's slope. Shorter
+/// windows chase per-turn noise in the export; longer ones flatten the very
+/// acceleration the projection exists to see.
+const STOCK_PRESSURE_SLOPE_WINDOW: u32 = 8;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
 /// refusing the marches that cannot arrive before the window shuts.
@@ -2760,6 +2774,30 @@ pub struct AdvancedAi {
     /// **Off by default, live-bridge only.**
     pub stock_denial_lead_time: bool,
 
+    /// Whether the stock-lane alarm reads PROJECTED pressure instead of the
+    /// raw reading: current pressure plus its recent slope carried
+    /// [`STOCK_DENIAL_HORIZON`] turns forward.
+    ///
+    /// The first game on the repaired economy (civvis-20260818T231407Z:
+    /// 16 cities against the best rival's 9, districts completing, score
+    /// 860) still ended on an Egypt Culture victory at t232. The raw
+    /// pressure crossed `STOCK_DENIAL_BAR` around t221 — one turn BEFORE
+    /// the last Congress of the game sat at t222 and spent all thirteen
+    /// votes elsewhere, because nothing had read as urgent when the ballot
+    /// was priced. The projection is not a new response: it arms the
+    /// existing urgency gate one Congress earlier, and every counter behind
+    /// that gate — the in-lane counter, the penalty ballots, the spy chain —
+    /// runs exactly as it does today. Slope is clamped at zero so a
+    /// receding leader can never read MORE urgent than the raw bar does.
+    ///
+    /// **Off by default, live-bridge only.** Withhold arm:
+    /// `--without projected-stock-denial`.
+    pub projected_stock_denial: bool,
+    /// Rival id → recent (turn, stock-lane pressure) samples, newest last.
+    /// Fed once per turn by `record_stock_pressures`; read by
+    /// `stock_pressure_slope`. Bounded to the slope window's span.
+    stock_pressure_history: BTreeMap<usize, Vec<(u32, i32)>>,
+
     /// Whether the empire will open an **ancient rush**: pick the nearest
     /// weak neighbour before the walls go up, march a small stack to their
     /// capital, and declare only once it is already adjacent.
@@ -4008,6 +4046,7 @@ impl AdvancedAi {
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_dead_sites.clear();
+        self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
@@ -4235,6 +4274,8 @@ impl AdvancedAi {
             spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
+            projected_stock_denial: false,
+            stock_pressure_history: BTreeMap::new(),
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
@@ -6920,7 +6961,7 @@ impl AdvancedAi {
                     .cmp(&right.1.progress)
                     .then_with(|| right.0.cmp(&left.0))
             })?;
-        let urgent = self.victory_pressure_is_urgent(g, pressure);
+        let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
         // reacting with two holdouts left when the rival also leads our own
@@ -6981,12 +7022,73 @@ impl AdvancedAi {
         Some((rival, counter))
     }
 
+    /// Record each living rival's stock-lane pressure for this turn, so the
+    /// urgency gate can read its slope. See `projected_stock_denial`. One
+    /// sample per rival per turn; entries older than the slope window are
+    /// dropped, so the map stays a handful of pairs per rival.
+    fn record_stock_pressures(&mut self, g: &Game, pid: usize) {
+        if !self.projected_stock_denial {
+            return;
+        }
+        let culture_pressures = self.rival_culture_pressures(g);
+        let samples: Vec<(usize, i32)> = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .map(|player| {
+                let pressure = self.rival_victory_pressure_with_culture(
+                    g,
+                    player.id,
+                    culture_pressures.get(&player.id).copied(),
+                );
+                (player.id, pressure)
+            })
+            .filter(|(_, pressure)| {
+                matches!(
+                    pressure.strategy,
+                    GrandStrategy::Culture | GrandStrategy::Diplomacy
+                )
+            })
+            .map(|(rival, pressure)| (rival, pressure.progress))
+            .collect();
+        let horizon = g.turn.saturating_sub(STOCK_PRESSURE_SLOPE_WINDOW);
+        for (rival, progress) in samples {
+            let history = self.stock_pressure_history.entry(rival).or_default();
+            history.retain(|(turn, _)| *turn >= horizon && *turn != g.turn);
+            history.push((g.turn, progress));
+        }
+        // A rival whose best race stopped being a stock lane keeps no stale
+        // ramp: its next stock reading starts a fresh window.
+        self.stock_pressure_history
+            .retain(|_, history| history.last().is_some_and(|(turn, _)| *turn >= horizon));
+    }
+
+    /// The per-turn slope of `rival`'s stock-lane pressure over the recorded
+    /// window, clamped at zero. `None` until the window holds two samples at
+    /// least three turns apart — a projection from a single reading is noise.
+    fn stock_pressure_slope(&self, rival: usize) -> Option<f64> {
+        let history = self.stock_pressure_history.get(&rival)?;
+        let (first_turn, first) = history.first().copied()?;
+        let (last_turn, last) = history.last().copied()?;
+        if last_turn.saturating_sub(first_turn) < 3 {
+            return None;
+        }
+        Some((f64::from(last - first) / f64::from(last_turn - first_turn)).max(0.0))
+    }
+
     /// Terminal clocks require action before an ordinary race margin, Formal
     /// War countdown, or comfortable force ratio is available. Keep this
     /// predicate shared between selection, declaration timing, and campaign
     /// readiness so either response cannot silently become more permissive
     /// than the other.
-    fn victory_pressure_is_urgent(&self, g: &Game, pressure: VictoryFocus) -> bool {
+    ///
+    /// `rival` feeds only the `projected_stock_denial` term: the stock-lane
+    /// clause reads pressure carried [`STOCK_DENIAL_HORIZON`] turns forward
+    /// along that rival's recorded slope. Every other clause reads the raw
+    /// number exactly as before.
+    fn victory_pressure_is_urgent(&self, g: &Game, rival: usize, pressure: VictoryFocus) -> bool {
         if !self.deny_leaders {
             return false;
         }
@@ -7004,15 +7106,27 @@ impl AdvancedAi {
             pressure.strategy,
             GrandStrategy::Culture | GrandStrategy::Diplomacy
         );
+        // The projection can only RAISE a stock reading (slope clamps at
+        // zero), and it feeds this clause alone: the match-point bars below
+        // and every non-stock lane still read the raw number.
+        let stock_progress = if self.projected_stock_denial && stock_lane {
+            let projected = self
+                .stock_pressure_slope(rival)
+                .map(|slope| pressure.progress + (slope * f64::from(STOCK_DENIAL_HORIZON)) as i32)
+                .unwrap_or(pressure.progress);
+            projected.min(100).max(pressure.progress)
+        } else {
+            pressure.progress
+        };
         pressure.progress >= 90
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
-            || (self.stock_denial_lead_time && stock_lane && pressure.progress >= STOCK_DENIAL_BAR)
+            || (self.stock_denial_lead_time && stock_lane && stock_progress >= STOCK_DENIAL_BAR)
             || (pressure.strategy == GrandStrategy::Religion
                 && pressure.progress >= religious_match_point)
     }
 
     fn urgent_victory_threat(&self, g: &Game, target: usize) -> bool {
-        self.victory_pressure_is_urgent(g, self.rival_victory_pressure(g, target))
+        self.victory_pressure_is_urgent(g, target, self.rival_victory_pressure(g, target))
     }
 
     /// Diagnostic seam: what this planner believes `target`'s best race is,
@@ -28327,6 +28441,9 @@ impl AdvancedAi {
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
+        // One stock-pressure sample per rival per turn, before anything reads
+        // urgency this turn. See `projected_stock_denial`.
+        self.record_stock_pressures(g, pid);
         self.maintain_war_plan(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
