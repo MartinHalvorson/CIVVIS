@@ -12561,11 +12561,9 @@ impl AdvancedAi {
                             &resolution.id,
                             &choice,
                         );
-                    let votes = if (plan.strategy == GrandStrategy::Diplomacy
-                        || counters_the_leader)
-                        && g.players[pid].diplomatic_favor >= 30.0
+                    let votes = if plan.strategy == GrandStrategy::Diplomacy || counters_the_leader
                     {
-                        3
+                        g.congress_affordable_votes(pid)
                     } else {
                         1
                     };

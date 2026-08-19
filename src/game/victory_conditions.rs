@@ -2346,6 +2346,55 @@ fn congress_tallies_outcome_before_target_and_refunds_partial_misses() {
 }
 
 #[test]
+fn online_congress_uses_the_host_cost_curve_for_actions_and_refunds() {
+    use crate::setup::GameSpeed;
+
+    let mut g = game_with_capitals(2, 4_150, 300);
+    g.game_speed = GameSpeed::Online;
+    g.turn = 30;
+    g.players[0].diplomatic_favor = 352.0;
+    g.players[1].diplomatic_favor = 1_000.0;
+    g.congress = Some(CongressSession {
+        convened: 30,
+        closes: 35,
+        resolutions: vec![CongressResolution {
+            id: "urban_development_treaty".to_string(),
+            title: "Urban Development Treaty".to_string(),
+            choices: vec!["A:campus".to_string(), "A:theater_square".to_string()],
+            ballots: BTreeMap::new(),
+        }],
+    });
+
+    assert_eq!(g.congress_vote_cost(13), 312.0);
+    assert_eq!(g.congress_vote_cost(14), 364.0);
+    assert_eq!(g.congress_affordable_votes(0), 13);
+    assert_eq!(g.congress_affordable_votes(1), 22);
+    assert!(
+        g.legal_actions(0).contains(&Action::CongressVote {
+            resolution: crate::name!("urban_development_treaty"),
+            choice: "A:campus".to_string(),
+            votes: 13,
+        }),
+        "the host-affordable ballot must enter the action space"
+    );
+
+    g.do_congress_vote(0, "urban_development_treaty", "A:campus", 13)
+        .unwrap();
+    assert_eq!(g.players[0].diplomatic_favor, 40.0);
+    g.do_congress_vote(1, "urban_development_treaty", "A:theater_square", 14)
+        .unwrap();
+    g.turn = 35;
+    g.process_congress();
+    assert_eq!(
+        g.players[0].diplomatic_favor, 196.0,
+        "a right-outcome, wrong-target ballot refunds half of the same 312 Favor"
+    );
+
+    g.game_speed = GameSpeed::Standard;
+    assert_eq!(g.congress_vote_cost(13), 780.0);
+}
+
+#[test]
 fn congress_generates_two_stock_outcome_target_proposals_by_era() {
     let mut g = game_with_capitals(3, 4_131, 300);
     g.world_era = 2;
