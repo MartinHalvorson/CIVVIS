@@ -2149,6 +2149,65 @@ mod tests {
         assert_eq!(mirror.game.units[&fresh].moves_left, 1.0);
     }
 
+    /// On a mid-turn combat frame the host says how many strikes a unit has
+    /// left; a unit that already struck must not be planned to strike again.
+    /// Trusted under the same seat capability as movement, on both paths.
+    #[test]
+    fn attacks_remaining_reach_the_board_with_the_seat_capability() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let units = |attacks: Option<i32>| {
+            vec![StateUnit {
+                id: 21,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 3,
+                y: 3,
+                moves: 1.0,
+                attacks_remaining: attacks,
+                ..StateUnit::default()
+            }]
+        };
+        let plain = StateSnapshot {
+            turn: 8,
+            frame: 1,
+            units: units(Some(0)),
+            ..StateSnapshot::default()
+        };
+        let mirror = LiveMirror::new(&snapshot, &plain, 4, 1, 250, 0);
+        let uid = mirror.uid_of[&21];
+        assert_eq!(mirror.game.units[&uid].attacks_left, 1, "no capability: the fresh-turn allowance");
+
+        let trusted = StateSnapshot {
+            turn: 8,
+            frame: 1,
+            units: units(Some(0)),
+            seat: Seat {
+                moves_at_turn_start: true,
+                ..Seat::default()
+            },
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &trusted, 4, 1, 250, 0);
+        let uid = mirror.uid_of[&21];
+        assert_eq!(mirror.game.units[&uid].attacks_left, 0, "the host says it already struck");
+        let mut next = trusted;
+        next.turn = 9;
+        next.frame = 0;
+        next.units = units(Some(1));
+        mirror.sync(&snapshot, &next, 0);
+        assert_eq!(mirror.game.units[&uid].attacks_left, 1);
+        next.units = units(None);
+        mirror.sync(&snapshot, &next, 0);
+        assert_eq!(mirror.game.units[&uid].attacks_left, 1, "an older export means the allowance");
+    }
+
     #[test]
     fn firaxis_babylon_pack_suffix_is_not_a_second_civilization() {
         assert_eq!(civvis_civ_name("CIVILIZATION_BABYLON_STK"), Some("Babylon"));
@@ -9580,6 +9639,12 @@ pub struct StateUnit {
     /// export; the mirror then infers it from standing on water.
     #[serde(default)]
     pub embarked: Option<bool>,
+    /// Attacks left this turn (`Unit:GetAttacksRemaining`). On a mid-turn
+    /// combat frame a unit that already struck reports 0 and the board plans
+    /// no second strike for it. Absent on an older export → the fresh-turn
+    /// allowance.
+    #[serde(default)]
+    pub attacks_remaining: Option<i32>,
     /// Exact host experience and promotion state. Option distinguishes an older
     /// archive that never exported the facts from a level-one unit with none.
     #[serde(default)]
@@ -10097,6 +10162,11 @@ where
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
     pub turn: u32,
+    /// 0 for the turn's opening board; N for the Nth mid-turn combat frame
+    /// (`CivvisFrames` in the mod), on which the brain re-plans the same turn
+    /// with the units' movement and attacks as they now stand.
+    #[serde(default)]
+    pub frame: u32,
     /// Civ 6 type names of COMPLETED research, e.g. `TECH_BRONZE_WORKING`.
     #[serde(default)]
     pub techs: Vec<String>,
@@ -11885,6 +11955,7 @@ const UNIT_KEYS: &[&str] = &[
     "great_person",
     "queued_dest",
     "embarked",
+    "attacks_remaining",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -11930,7 +12001,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     #[rustfmt::skip]
     const STATE: &[&str] = &[
-        "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
+        "kind", "event", "run", "ctx", "turn", "frame", "techs", "civics", "research",
         "science_projects", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
@@ -16942,8 +17013,15 @@ impl LiveMirror {
                 observed.get(&civ6).copied(),
                 state.seat.moves_at_turn_start,
             );
+            let attacks = observed
+                .get(&civ6)
+                .and_then(|unit| unit.attacks_remaining)
+                .filter(|_| state.seat.moves_at_turn_start);
             if let Some(live) = game.units.get_mut(&uid) {
                 live.moves_left = allowance;
+                if let Some(attacks) = attacks {
+                    live.attacks_left = attacks.max(0);
+                }
             }
         }
         let mut cid_of = std::collections::BTreeMap::new();
@@ -17426,7 +17504,13 @@ impl LiveMirror {
                         if let Some(live) = self.game.units.get_mut(&uid) {
                             live.moves_left = allowance;
                             live.acted = false;
-                            live.attacks_left = 1;
+                            // The host says how many strikes are left; a
+                            // frame's re-plan then cannot spend one twice.
+                            live.attacks_left = if state.seat.moves_at_turn_start {
+                                unit.attacks_remaining.unwrap_or(1).max(0)
+                            } else {
+                                1
+                            };
                             // Cleared by `Game::begin_turn` every turn; on a persistent
                             // game they survive and a unit that "already moved" is
                             // skipped.

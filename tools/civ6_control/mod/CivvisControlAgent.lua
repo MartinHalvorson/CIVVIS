@@ -5230,7 +5230,7 @@ end
 -- minutes once already. This runs from `playTurn`, which is once per turn, and
 -- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
 -- single log line is unbounded.
-local function exportState(player, pid, turn)
+local function exportState(player, pid, turn, frame)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -6200,6 +6200,10 @@ local function exportState(player, pid, turn)
 				return plot and { plot:GetX(), plot:GetY() } or nil;
 			end, nil),
 			embarked = try(function() return unit:IsEmbarked(); end, nil),
+			-- Attacks left this turn (`GetAttacksRemaining`, the shipped
+			-- SelectedUnit read). The mirror plans a frame's second strike only
+			-- for units that still have one.
+			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
 			great_person = greatPerson,
 		};
 	end);
@@ -7035,6 +7039,9 @@ local function exportState(player, pid, turn)
 	end
 	emit("state", {
 		turn = turn,
+		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
+		-- (see CivvisFrames). The brain re-plans the same turn on a frame.
+		frame = frame or 0,
 		techs = techs,
 		-- Completed one-time nuclear and space milestones. This stays separate
 		-- from the city's current production because completion is player-wide.
@@ -8253,26 +8260,36 @@ end
 
 -- Has the brain finished writing this turn? `ready` is written last, so a
 -- partially written turn is never actuated.
-local function ordersReady(turn)
+-- `frame` selects a mid-turn combat frame's answer (CivvisFrames); 0 or nil
+-- is the turn's opening board. `SELECT *` on purpose: a brain that predates
+-- the `frame` column answers with rows that have none, which reads as frame
+-- 0, instead of a query naming a column the table lacks and failing inside
+-- the pcall forever.
+local function ordersReady(turn, frame)
 	if not attachOrders() then return nil; end
+	frame = frame or 0;
 	local count = nil;
 	pcall(function()
 		local rows = DB.Query(string.format(
-			"SELECT count AS n FROM civvis.ready WHERE run = '%s' AND turn = %d LIMIT 1",
+			"SELECT * FROM civvis.ready WHERE run = '%s' AND turn = %d LIMIT 1",
 			sqlSafe(cfg.RunTag), turn));
-		for _, row in ipairs(rows) do count = row.n; end
+		for _, row in ipairs(rows) do
+			if (tonumber(row.frame) or 0) == frame then count = row.count; end
+		end
 	end);
 	return count;
 end
 
-local function fetchOrders(turn)
+local function fetchOrders(turn, frame)
+	frame = frame or 0;
 	local out = {};
 	pcall(function()
 		local rows = DB.Query(string.format(
-			"SELECT seq, kind, subject, verb, x, y FROM civvis.orders "
-			.. "WHERE run = '%s' AND turn = %d ORDER BY seq",
+			"SELECT * FROM civvis.orders WHERE run = '%s' AND turn = %d ORDER BY seq",
 			sqlSafe(cfg.RunTag), turn));
-		for _, row in ipairs(rows) do out[#out + 1] = row; end
+		for _, row in ipairs(rows) do
+			if (tonumber(row.frame) or 0) == frame then out[#out + 1] = row; end
+		end
 	end);
 	return out;
 end
@@ -8704,6 +8721,7 @@ end;
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
 CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
+	if CivvisFrames ~= nil then CivvisFrames.noteStrike(); end
 	local preview = CivvisLedger.preview(unit, verb, x, y);
 	local kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?");
 	local hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0);
@@ -11354,6 +11372,9 @@ end
 -- handler avoids consuming another main-chunk register.
 CivvisApplyOrder = applyOrder;
 CivvisResolveActions = resolveActions;
+CivvisOrdersReady = ordersReady;
+CivvisFetchOrders = fetchOrders;
+CivvisExportState = exportState;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -12018,6 +12039,64 @@ CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
 	end
 end;
 
+-- ------------------------------------------------------- mid-turn combat frame
+--
+-- ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A SINGLE DIE.
+-- Every strike of the turn is planned against the opening board with the
+-- engine's own rolls; the host's roll differs (it has left "sure" kills alive
+-- at 1, 3, 6, 8, 16 and 20 HP), and the next export is next turn. A combat
+-- frame closes that gap once per turn: after the opening orders and their
+-- per-unit queue have settled, if any strike was issued, the board is
+-- exported again with `frame = 1`, the brain re-plans the SAME turn on it
+-- (units that acted show the movement and attacks they have left, targets
+-- show the damage they took), and the answer is applied like the opening one.
+--
+-- ⚠ Default OFF (`CombatFrames = 0`) until a live run has been read: a second
+-- round trip per contact turn is a second place for the loop to wedge, and
+-- the round trip is the one thing this file cannot test offline. The frame
+-- wait has its own short budget (`CombatFramePolls`) and no fallback ladder:
+-- past it the frame is abandoned by name and the turn ends as it always did.
+-- One bare global table (200-local ceiling).
+CivvisFrames = { current = 0, strikes = 0, exported = false };
+
+CivvisFrames.reset = function()
+	CivvisFrames.current = 0;
+	CivvisFrames.strikes = 0;
+	CivvisFrames.exported = false;
+end;
+
+-- Called from CivvisLedger.strike for every strike issued, opening or queued.
+CivvisFrames.noteStrike = function()
+	CivvisFrames.strikes = CivvisFrames.strikes + 1;
+end;
+
+CivvisFrames.max = function()
+	return tonumber(cfg.CombatFrames) or 0;
+end;
+
+-- Whether another frame should open now: frames are enabled, the cap is not
+-- reached, and a strike was issued since the last board went out.
+CivvisFrames.wanted = function()
+	return CivvisFrames.max() > 0
+		and CivvisFrames.current < CivvisFrames.max()
+		and CivvisFrames.strikes > 0;
+end;
+
+-- Open the next frame: export the board again, stamped, and re-arm the
+-- handshake so `settleTurn` waits for this frame's answer.
+CivvisFrames.begin = function(player, pid, turn)
+	CivvisFrames.current = CivvisFrames.current + 1;
+	local strikes = CivvisFrames.strikes;
+	CivvisFrames.strikes = 0;
+	awaiting.frame = CivvisFrames.current;
+	awaiting.done = false;
+	awaiting.polls = 0;
+	awaiting.ticks = 0;
+	awaiting.source = "pending";
+	emit("combat_frame", { turn = turn, frame = CivvisFrames.current, strikes = strikes });
+	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+end;
+
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
@@ -12239,7 +12318,9 @@ local function applyOrders(player, pid, turn, rows)
 	-- untouched, and the count is reported separately as `explored` so a run's telemetry
 	-- never presents this as CIVVIS's work.
 	local explored, guarded = 0, 0;
-	if cfg.ExploreUnassigned ~= false then
+	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
+	-- was ordered by the opening board and is exactly where CIVVIS left it.
+	if cfg.ExploreUnassigned ~= false and (awaiting.frame or 0) == 0 then
 		local mentioned = {};
 		for _, row in ipairs(rows) do
 			if tostring(row.kind or "") == "unit" then
@@ -12270,7 +12351,7 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, source = "civvis", seen = #rows - deferred,
+		turn = turn, frame = awaiting.frame or 0, source = "civvis", seen = #rows - deferred,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		deferred = deferred,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
@@ -12319,6 +12400,9 @@ local function applyOrders(player, pid, turn, rows)
 	--
 	-- Leaner than the heuristic path's record on purpose: the fields it omits
 	-- (`war_blocked`) describe built-ins that did not run.
+	-- One turn record per turn: a combat frame's answer is part of the same
+	-- turn, and the harness reads `turn` records as its clock.
+	if (awaiting.frame or 0) > 0 then return applied; end
 	local counts = countUnits(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
@@ -12768,6 +12852,8 @@ local function beginTurn(player, pid, turn)
 	awaiting.polls = 0;
 	awaiting.done = false;
 	awaiting.source = "pending";
+	awaiting.frame = 0;
+	CivvisFrames.reset();
 	-- Per turn, like everything else in this handshake: a queue that outlived
 	-- its turn is reported and dropped, never carried into a board CIVVIS has
 	-- not seen.
@@ -12795,6 +12881,13 @@ local function settleTurn(player, pid, turn, playFallback)
 			end
 			CivvisQueue.drain(player, pid, turn);
 			if CivvisQueue.pendingCount() > 0 then return false; end
+		end
+		-- Everything issued has settled. If a strike went out this frame and
+		-- frames are enabled, open the next one: the brain re-plans the same
+		-- turn on the board as it now stands. See CivvisFrames.
+		if CivvisFrames.wanted() then
+			CivvisFrames.begin(player, pid, turn);
+			return false;
 		end
 		return true;
 	end
@@ -12833,9 +12926,10 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- on the first poll. `polls` doubles as the wait's own telemetry.
 	emit("await", { turn = turn, polls = awaiting.polls });
 
-	local ready = ordersReady(turn);
+	local frame = awaiting.frame or 0;
+	local ready = ordersReady(turn, frame);
 	if ready ~= nil and ready >= 0 then
-		local rows = fetchOrders(turn);
+		local rows = fetchOrders(turn, frame);
 		-- `ready.count` is the transaction boundary, including for an empty
 		-- decision. Requiring a positive row count wedged every turn where CIVVIS
 		-- correctly chose no action: the brain had durably written count=0, but the
@@ -12852,6 +12946,21 @@ local function settleTurn(player, pid, turn, playFallback)
 			applyOrders(player, pid, turn, rows);
 			return true;
 		end
+	end
+
+	-- A combat frame has its own short budget and no fallback: past it the
+	-- frame is abandoned by name and the turn ends as it always did. The
+	-- opening board's stale-answer and built-in ladders below never apply
+	-- to a frame — a stale answer is the very board this frame replaces.
+	if frame > 0 then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 20) then
+			awaiting.done = true;
+			awaiting.source = "civvis";
+			CivvisFrames.strikes = 0;
+			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls });
+			return true;
+		end
+		return false;
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
