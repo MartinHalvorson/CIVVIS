@@ -31412,6 +31412,7 @@ impl Game {
                 if !spec
                     .requires_buildings
                     .iter()
+                    .chain(&spec.consumes_buildings)
                     .all(|building| self.city_has_building_family(city, Name::new(building)))
                 {
                     return false;
@@ -47789,6 +47790,31 @@ impl Game {
                     > 0.0
                 {
                     self.cities.get_mut(&cid).unwrap().reactor_age = 0;
+                }
+                let consumed_buildings: Vec<Name> = self.cities[&cid]
+                    .buildings
+                    .iter()
+                    .copied()
+                    .filter(|building| {
+                        spec.consumes_buildings
+                            .iter()
+                            .any(|family| self.building_is_family(*building, Name::new(family)))
+                    })
+                    .collect();
+                let consumed_nuclear_plant = consumed_buildings.iter().any(|building| {
+                    self.building_is_family(*building, crate::name!("nuclear_power_plant"))
+                });
+                if !consumed_buildings.is_empty() {
+                    let city = self.cities.get_mut(&cid).unwrap();
+                    city.buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.pillaged_buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.building_eras
+                        .retain(|building, _| !consumed_buildings.contains(building));
+                    if consumed_nuclear_plant {
+                        city.reactor_age = 0;
+                    }
                 }
                 if let Some(target) = Self::converted_power_plant(project) {
                     let plants = ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"];
