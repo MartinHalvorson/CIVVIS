@@ -30,8 +30,13 @@ smallest and least visible. **41 of the 74 live losses to a rival's victory are
 diplomatic**, and CIVVIS's own diplomacy lane almost never completes — 2
 diplomatic victories in 120 contested games, 3 in 60.
 
-The shipped database names exactly **six** modifiers that adjust
-`DIPLOMATIC_VICTORY_POINTS`, against a threshold of 20
+⚠ **This section first said six.** It is **ten**. The search that found six
+matched `MODIFIER_PLAYER_ADJUST_DIPLOMATIC_VICTORY_POINTS` and missed
+`MODIFIER_EMERGENCY_PLAYERS_ADJUST_DIPLOMATIC_VICTORY_POINTS`, which is how a
+scored competition pays its winner. Searching one spelling and calling the list
+complete is the mistake.
+
+Seven **content** sources, against a threshold of 20
 (`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`):
 
 | source | amount | where CIVVIS keeps it |
@@ -62,7 +67,39 @@ is the only check on these amounts, and it exists because it caught that
 mistake. **Tree-node effects are an unaudited surface** — the audit's zero
 divergences say nothing about them.
 
-### So the lane is not starved of sources
+### And three competition sources, which CIVVIS does not have natively
+
+| award | amount | competitions |
+|---|---:|---|
+| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+| `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
+| `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
+
+Gathering Storm pays these to the *first-place* finisher, and they recur for
+the whole second half of a game. **A native CIVVIS game has none of them**: a
+competition exists only while a live host names one
+(`Game::replace_host_competitions`, and every competition project in
+`projects.json` is gated on `host_competition`).
+
+The live bridge is unaffected — it mirrors the host's own `dvp`. But every
+*evaluation* runs natively, and there the arithmetic does not close:
+
+| native source | points |
+|---|---:|
+| congress resolution, ±2 from the Modern era | ~8 across the congresses a 250-turn game reaches |
+| three wonders | 7, and **31 of 32** diplomatic games finish none |
+| one civic, one technology | 1 each, Future era |
+
+**41 of 209 terminal live games end in a rival's diplomatic victory — 19.6%.
+The contested screen produces 2 in 120 — 1.7%.** That twelvefold gap is
+structural, not tactical: a native empire has no route to 20 and no treatment
+can give it one, so every native measurement of a diplomatic-denial treatment
+has been measuring a lane that cannot complete.
+
+`no_native_competition_awards_a_diplomatic_victory_point` pins the gap and is
+written to fail the day competitions become native.
+
+### The content sources are not the problem
 
 It is starved of *reach*. `docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md`
 records **31 of 32** diplomatic games finishing no qualifying wonder: Mahabodhi
