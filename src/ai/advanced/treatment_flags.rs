@@ -40,6 +40,21 @@ use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// Promote an Apostle for the job the empire has rather than for the
+    /// largest number on the card. Off in production; opted into by name
+    /// (`victory_eval --with apostle-promotion-by-role`, `gene_screen`). See
+    /// [`crate::ai::BasicAi::apostle_promotion_by_role`] for the units mismatch
+    /// that makes the shipped ranking a constant.
+    pub fn enable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = true;
+    }
+
+    /// The twin of `enable_apostle_promotion_by_role`, so an arm that opted in
+    /// can put it back.
+    pub fn disable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = false;
+    }
+
     /// Enable the narrow Trader adaptation required by a live Civilization VI
     /// export.  Native tournament games leave this disabled.
     pub fn enable_live_trader_route_adapter(&mut self) {

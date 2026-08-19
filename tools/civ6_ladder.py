@@ -309,6 +309,51 @@ def decider_revisions(updates_path: Path) -> list[str] | None:
     return revisions or None
 
 
+def decider_genome(why_log: Path) -> dict | None:
+    """The genome the decider actually played, from its own first record.
+
+    ★★★★ WHAT WAS ASKED FOR IS NOT WHAT WAS PLAYED. `civvis_orders --strategy
+    NAME` resolves NAME against the league snapshot's internal names
+    (`g56-48`); the supervisor has passed the display name (`WildCard9`) since
+    it was written, the resolver printed "[genome] no strategy 'WildCard9'"
+    into `why.log` and fell back to the stock controller, and thirty-five
+    ladder rows carried `strategy=WildCard9` in their brain log while every one
+    of them played `AdvancedAi::new`. The decider writes a machine-readable
+    `{"kind":"genome", ...}` line at the top of `why.log` with the strategy it
+    resolved and the source it came from; this reads it, so the ledger says
+    which genome played rather than which name was typed. None when the run
+    has no `why.log` or the record is missing (an older decider): absence stays
+    distinct from "stock".
+    """
+    if not why_log.is_file():
+        return None
+    try:
+        with why_log.open() as handle:
+            for _ in range(20):
+                line = handle.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("kind") != "genome":
+                    continue
+                return {
+                    "strategy": record.get("strategy"),
+                    "source": record.get("source"),
+                    "lane": record.get("lane"),
+                    "civ": record.get("civ"),
+                    "strength_bound": record.get("strength_bound"),
+                }
+    except OSError:
+        return None
+    return None
+
+
 def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
                               now: datetime | None = None) -> str | None:
     """Why the origin/main watcher is not provably alive, or None.
@@ -484,6 +529,12 @@ def entry_from(summary: dict) -> dict:
         "reason": summary.get("reason"),
         "applied_pct": applied_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        # Which genome the decider actually played (see `decider_genome`) and
+        # the name the launcher asked for. `genome.strategy == "stock"` beside a
+        # `strategy_requested` that names a league entrant is the resolver's
+        # silent fallback, and it is on the row so it can be seen.
+        "genome": summary.get("genome"),
+        "strategy_requested": summary.get("strategy_requested"),
         # Which arm played this row: the live treatments withheld from the
         # decider, or [] for the full shipped bundle. Rows recorded before the
         # launchers could withhold anything carry None — unknown, which is not
