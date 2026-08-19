@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 21,
-    "never_named": 34,
+    "named": 22,
+    "never_named": 33,
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
@@ -9,7 +9,6 @@
       "blind-objective-strength",
       "blind-objective-units",
       "campus-every-city",
-      "district-coverage",
       "endgame-war-runway",
       "escort-unstick",
       "garrison-under-fire",

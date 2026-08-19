@@ -6178,6 +6178,82 @@ mod tests {
     /// and an hour later `dc6f661e` — "Promote strategic_deep: pre-registered
     /// PASS at 300 maps" — added it to `BUILTIN_AIS` and did not take the first
     /// entry out. Nothing looked, because nothing was looking.
+    /// ⚠⚠ TWO CHANGES CLAIMED THE SAME LEDGER VERSION ON THE SAME EVENING.
+    ///
+    /// #2079 and #2070 both re-pinned the frozen anchor and both set
+    /// `ELO_PROTOCOL_VERSION = 15`, for two independent changes to what
+    /// `advanced_v1` plays. `collaboration-policy` caught the *line* collision
+    /// because they edit the same lines — but only because they do. Nothing
+    /// checked the thing that actually matters: that a version number names one
+    /// ruleset.
+    ///
+    /// The anchor pins are self-guarding, because
+    /// `advanced_v1_plays_the_same_game_it_always_did` recomputes them from the
+    /// merged tree and a stale value fails. The version is not: a merge that
+    /// keeps either side's `15` is green, and two different rulesets then share
+    /// a ledger identity — which is the one thing the version exists to
+    /// prevent.
+    ///
+    /// So the changelog above this constant is checked instead. Its entries are
+    /// the record of what each version means, and three properties make a
+    /// duplicate impossible to land quietly: every version is named once, the
+    /// numbering has no gaps, and the newest entry is the version the code
+    /// actually reports.
+    #[test]
+    fn every_ledger_version_is_named_exactly_once_and_the_newest_is_current() {
+        let source = include_str!("elo.rs");
+        let versions: Vec<u32> = source
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("/// **v")?
+                    .split_once(' ')
+                    .map(|(number, _)| number)
+                    .and_then(|number| number.parse().ok())
+            })
+            .collect();
+        // A census that reports nothing is a broken census, not an empty
+        // changelog: this constant has carried its history since v5.
+        assert!(
+            versions.len() >= 10,
+            "found only {} version entries; the scrape broke rather than \
+             finding an undocumented ledger",
+            versions.len()
+        );
+
+        let mut seen: BTreeMap<u32, usize> = BTreeMap::new();
+        for version in &versions {
+            *seen.entry(*version).or_default() += 1;
+        }
+        let twice: Vec<u32> = seen
+            .iter()
+            .filter(|(_, count)| **count > 1)
+            .map(|(version, _)| *version)
+            .collect();
+        assert!(
+            twice.is_empty(),
+            "these ledger versions are documented more than once, so two rulesets share one \
+             identity and rows under them cannot be told apart: {twice:?}"
+        );
+
+        let lowest = *seen.keys().next().expect("at least one version");
+        let highest = *seen.keys().next_back().expect("at least one version");
+        let missing: Vec<u32> = (lowest..=highest)
+            .filter(|v| !seen.contains_key(v))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these ledger versions are between the first and last documented one and are \
+             described nowhere, so what changed under them is unrecoverable: {missing:?}"
+        );
+
+        assert_eq!(
+            highest, ELO_PROTOCOL_VERSION,
+            "the newest documented version is v{highest} and the code reports \
+             v{ELO_PROTOCOL_VERSION}; a bump without an entry leaves a ruleset nobody can \
+             describe, and an entry without a bump leaves rows filed under the old one"
+        );
+    }
+
     #[test]
     fn no_agent_name_is_registered_twice() {
         let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
