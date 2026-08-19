@@ -494,6 +494,19 @@ def build_config(args: argparse.Namespace) -> dict:
         "OrdersWaitPolls": args.orders_wait_polls,
         "OrdersFallbackPolls": args.orders_fallback_polls,
         "OrdersMaxStale": args.orders_max_stale,
+        # ★★★★★ ONE ORDER PER UNIT PER TURN WAS THE PRICE OF ASYNCHRONOUS
+        # ACTUATION, and it is what turned every planned move-then-strike into a
+        # move (7 melee attacks in 188 turns of war). With the queue on, the mod
+        # keeps a unit's later orders and issues each once the earlier one has
+        # settled; the brain sends the whole sequence only when the mod's `seat`
+        # event says it can (`order_queue`), so an old mod keeps the old rule.
+        # `OrderQueueMaxTicks` is the floor: past it the rest is refused as
+        # `queue_stalled` and the turn ends. `ExploreGuardRadius` keeps an
+        # unordered soldier off the host's explore automation while a hostile
+        # stands that close — a held unit stays held. See docs/LIVE_TACTICS.md.
+        "OrderQueue": args.order_queue,
+        "OrderQueueMaxTicks": args.order_queue_max_ticks,
+        "ExploreGuardRadius": args.explore_guard_radius,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -3271,6 +3284,16 @@ def main(argv: list[str] | None = None) -> int:
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
+    ap.add_argument("--no-order-queue", dest="order_queue",
+                    action="store_false", default=True,
+                    help="apply one order per unit per turn (the pre-queue rule): "
+                         "a unit's later orders wait for the next frame")
+    ap.add_argument("--order-queue-max-ticks", type=int, default=240,
+                    help="ticks the turn is held for queued unit orders before the "
+                         "rest are refused as queue_stalled")
+    ap.add_argument("--explore-guard-radius", type=int, default=4,
+                    help="an unordered combat unit this close to a visible hostile "
+                         "or an at-war city is held, not handed to explore automation")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")

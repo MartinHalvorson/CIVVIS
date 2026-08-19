@@ -188,6 +188,10 @@ local function resolveActions()
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
+		-- light cavalry's pillage-before-combat could not happen on the live
+		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
+		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -458,6 +462,13 @@ local function survey()
 		-- ones this run asked for.
 		setup = try(function() return GameConfiguration.GetValue("CIVVIS_SETUP"); end)
 			or "(absent)",
+		-- ★★★★ WHAT THIS MOD CAN ACTUATE, read back by the brain. `civvis_orders`
+		-- sends a unit's whole planned sequence (walk, strike, fortify) only
+		-- when the mod that will apply it says it sequences per-unit orders
+		-- (`CivvisQueue`); against an older mod it defers the follow-ups exactly
+		-- as before. A capability the sender assumes and the receiver lacks is
+		-- how an accepted order becomes a silent no-op.
+		order_queue = cfg.OrderQueue ~= false,
 	});
 
 	if cfg.SurveyEnums then
@@ -11300,6 +11311,7 @@ end
 -- Civilization VI UI sandbox has no `_G` table.  Reusing the existing local
 -- handler avoids consuming another main-chunk register.
 CivvisApplyOrder = applyOrder;
+CivvisResolveActions = resolveActions;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -11364,6 +11376,48 @@ CivvisSelectCongressLeader = function(candidates)
 		end
 	end
 	return leader, leaderPoints, leaderScore;
+end
+
+-- ★★★★ THE ASK IS PRICED AGAINST BOTH TABLES THE HOST MIGHT CHARGE.
+--
+-- Every multi-vote ballot this seat ever sent saturated the bank the host's
+-- own `GetVotesandFavorCost` table said it could afford — 14/16/18/20 votes
+-- across civvis-20260819T004405Z, 13 at t162 of T175125Z — and all 17 were
+-- refused whole while all 95 one-vote ballots registered. That table is the
+-- ONLINE curve: the k-th extra vote costs 4k, cumulative `2n(n-1)`. The
+-- Standard curve the game was written against charges 10k, cumulative
+-- `5n(n-1)` — the same 780-for-13-votes this file's own #2039 comment quotes
+-- from the shipped ladder. A core that CHARGES Standard while the accessor
+-- REPORTS Online refuses every ask this seat has ever made as unaffordable,
+-- and none of the 112 verdict rows can tell, because no ballot ever asked a
+-- count small enough to fit both tables. So cap the ask by both: when the
+-- theory is wrong this asks fewer votes than the bank affords on a ballot
+-- that today registers ONE, which cannot lose a vote we are getting; when it
+-- is right, the first session past the cap finally registers a bank. The
+-- verdict's `budget` field carries both walks so the session that decides it
+-- is attributable.
+--
+-- Exposed for the offline Lua regression. Must remain a bare global -- another
+-- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+CivvisCongressVoteBudget = function(favor, costs, maxVotes)
+	local bank = tonumber(favor) or 0;
+	local cap = tonumber(maxVotes) or 1;
+	if cap < 1 then cap = 1; end
+	-- `costs[k]` is the host's cumulative price of k+1 votes; the first vote
+	-- (`costs[0]`) is free on every observed table.
+	local host = 1;
+	while host + 1 <= cap and type(costs) == "table"
+	      and tonumber(costs[host]) ~= nil
+	      and tonumber(costs[host]) <= bank do
+		host = host + 1;
+	end
+	-- Standard-speed cumulative price of n votes: 5n(n-1).
+	local standard = 1;
+	while standard + 1 <= cap and 5 * (standard + 1) * standard <= bank do
+		standard = standard + 1;
+	end
+	local votes = (host < standard) and host or standard;
+	return votes, host, standard;
 end
 
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
@@ -11558,6 +11612,283 @@ end
 -- caught by a count and would have passed a boolean "is it wired up" check. An
 -- `orders` event that says only "CIVVIS decided" reads identical whether every
 -- order landed or every one was refused.
+-- ------------------------------------------------------ per-unit order queue
+--
+-- ★★★★★ ONE ORDER PER UNIT PER TURN WAS THE PRICE OF ASYNCHRONOUS ACTUATION.
+--
+-- `UnitManager.RequestOperation` returns before the unit has moved, so a list
+-- like `MOVE_TO a; RANGE_ATTACK t` applied in one callback aims the shot from
+-- where the unit STOOD, not from `a`. `civvis_orders::coalesce_unit_paths`
+-- answered that by sending a unit's walk and deferring every later order to the
+-- next frame — correct causally, and it deferred every strike that follows a
+-- step. The joint tactical search's lines are literally `[Move, Attack]`
+-- (`src/ai/tactics.rs`), so on this bridge they executed as a step: the unit
+-- walked into contact and stood there, unstruck, for the enemy's whole turn.
+-- Measured on run civvis-20260803T005930Z: 7 melee ATTACK orders against 1546
+-- MOVE_TO in 188 turns of war; 622 of 1787 military unit-turns hovering 2-4
+-- hexes from a target. Twelve finished live games in the host's Hall of Fame:
+-- 343 units lost, 61 killed.
+--
+-- This queue keeps the whole per-unit sequence and runs it IN ORDER, each
+-- order once the one before it has done what it meant to do: the unit stands
+-- where the move was aimed, or has no movement left, or the host says its
+-- operation is over (`UnitMoveComplete` / `UnitOperationDeactivated`), or a
+-- grace period ran out. Every order still passes `canOperate` inside
+-- `applyOrder`, so a step the host cut short refuses the strike by name
+-- rather than firing it from the wrong tile.
+--
+-- ⚠⚠⚠ THE UNIT HANDLE IS RE-RESOLVED ON EVERY DRAIN, NEVER CACHED — see the
+-- SIGSEGV note on `applyOrder`. A queued unit that died in its own strike is a
+-- named refusal (`unit_gone:<id>`), not a freed pointer.
+--
+-- ⚠ THE FLOOR: `settleTurn` holds the turn open while a queue is pending, but
+-- only for `OrderQueueMaxTicks`. Past that the rest is refused as
+-- `queue_stalled` and the turn ends. A wedged operation costs decision
+-- quality, never progress.
+--
+-- One bare global table: the main chunk sits two slots under Lua 5.1's
+-- 200-local ceiling (see the CI headroom check), so nothing here is a `local`.
+CivvisQueue = {
+	pending = {},   -- host unit id -> { rows, next, expect, ready, wait }
+	order = {},     -- unit ids in the order they were first queued
+	count = 0,
+	turn = -1,
+	ticks = 0,
+	stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
+	          strikes_planned = 0, queued = 0 },
+};
+
+CivvisQueue.reset = function(turn)
+	local q = CivvisQueue;
+	if q.count > 0 then
+		-- Leftovers from a turn that ended under us: name them, once.
+		local left = 0;
+		for _, entry in pairs(q.pending) do left = left + (#entry.rows - entry.next + 1); end
+		q.stats.refused = q.stats.refused + left;
+		q.stats.refusals.queue_turn_over = (q.stats.refusals.queue_turn_over or 0) + left;
+		CivvisQueue.report(q.turn, "turn_over");
+	end
+	q.pending = {}; q.order = {}; q.count = 0; q.turn = turn; q.ticks = 0;
+	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
+	            strikes_planned = 0, queued = 0 };
+end;
+
+-- The position an order should leave its unit at, when the next order must
+-- be issued from there. A melee ATTACK ends on the target only if the
+-- defender dies, so it carries no expectation and relies on the host's
+-- deactivation event or the grace period.
+CivvisQueue.expectFor = function(row)
+	local verb = tostring(row.verb or "");
+	local x, y = tonumber(row.x), tonumber(row.y);
+	if verb == "MOVE_TO" and x ~= nil and y ~= nil then return { x = x, y = y }; end
+	return nil;
+end;
+
+CivvisQueue.isStrike = function(row)
+	local verb = tostring(row.verb or "");
+	return verb == "ATTACK" or verb == "RANGE_ATTACK";
+end;
+
+CivvisQueue.push = function(subject, row, expect)
+	local q = CivvisQueue;
+	local entry = q.pending[subject];
+	if entry == nil then
+		entry = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+		q.pending[subject] = entry;
+		q.order[#q.order + 1] = subject;
+	end
+	entry.rows[#entry.rows + 1] = row;
+	q.count = q.count + 1;
+	q.stats.queued = q.stats.queued + 1;
+	if CivvisQueue.isStrike(row) then q.stats.strikes_planned = q.stats.strikes_planned + 1; end
+end;
+
+CivvisQueue.pendingCount = function() return CivvisQueue.count; end;
+
+CivvisQueue.refuseRest = function(subject, entry, why)
+	local q = CivvisQueue;
+	local left = #entry.rows - entry.next + 1;
+	if left > 0 then
+		q.stats.refused = q.stats.refused + left;
+		q.stats.refusals[why] = (q.stats.refusals[why] or 0) + left;
+	end
+	q.count = q.count - left;
+	q.pending[subject] = nil;
+end;
+
+-- A host event for one of our units: the move finished or the operation
+-- deactivated. Mark it ready; the drain on the next tick issues its next order.
+CivvisQueue.noteUnitEvent = function(pid, player, unitId)
+	local q = CivvisQueue;
+	if q.count <= 0 or player ~= pid then return false; end
+	local entry = q.pending[tonumber(unitId) or -1];
+	if entry == nil then return false; end
+	entry.ready = true;
+	return true;
+end;
+
+CivvisQueue.report = function(turn, why)
+	local q = CivvisQueue;
+	emit("orders_queue", {
+		turn = turn, why = why, applied = q.stats.applied, refused = q.stats.refused,
+		refusals = q.stats.refusals, queued = q.stats.queued,
+		strikes_planned = q.stats.strikes_planned,
+		strikes_landed = q.stats.strikes_landed, waited = q.ticks,
+	});
+end;
+
+-- Issue at most one queued order per unit whose previous order has settled.
+-- Returns how many orders ran on this call.
+CivvisQueue.drain = function(player, pid, turn)
+	local q = CivvisQueue;
+	if q.count <= 0 then return 0; end
+	-- The host's own `UnitMoveComplete` / `UnitOperationDeactivated` mark a
+	-- unit ready the moment its order settles; the grace period is only the
+	-- fallback for a host that never says so, and it is deliberately long —
+	-- an early strike is refused out of range, a late one merely waits.
+	local grace = tonumber(cfg.OrderQueueGraceTicks) or 30;
+	local ran = 0;
+	for _, subject in ipairs(q.order) do
+		local entry = q.pending[subject];
+		if entry ~= nil then
+			local unit = liveUnit(pid, subject);
+			if unit == nil then
+				CivvisQueue.refuseRest(subject, entry, "unit_gone:" .. tostring(subject));
+			else
+				entry.wait = entry.wait + 1;
+				local ux = tonumber(try(function() return unit:GetX(); end, -1)) or -1;
+				local uy = tonumber(try(function() return unit:GetY(); end, -1)) or -1;
+				local moves = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
+				local arrived = entry.expect == nil
+					or (ux == entry.expect.x and uy == entry.expect.y);
+				local spent = moves ~= nil and moves <= 0;
+				local ready = entry.ready or arrived or spent or entry.wait >= grace;
+				if ready then
+					local row = entry.rows[entry.next];
+					local verb = tostring(row.verb or "");
+					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
+						-- Nothing that needs movement can run; say why, don't ask.
+						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+					else
+						local ok, why = false, "throw";
+						local safe, res1, res2 = pcall(function()
+							return applyOrder(player, pid, row, turn);
+						end);
+						if safe then ok, why = res1, res2; end
+						ran = ran + 1;
+						q.count = q.count - 1;
+						if ok then
+							q.stats.applied = q.stats.applied + 1;
+							if CivvisQueue.isStrike(row) then
+								q.stats.strikes_landed = q.stats.strikes_landed + 1;
+							end
+						else
+							q.stats.refused = q.stats.refused + 1;
+							local key = tostring(why);
+							q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
+						end
+						entry.next = entry.next + 1;
+						if entry.next > #entry.rows then
+							q.pending[subject] = nil;
+						else
+							entry.expect = ok and CivvisQueue.expectFor(row) or nil;
+							entry.ready = false;
+							entry.wait = 0;
+						end
+					end
+				end
+			end
+		end
+	end
+	if q.count <= 0 then
+		q.pending = {}; q.order = {};
+		CivvisQueue.report(turn, "drained");
+	end
+	return ran;
+end;
+
+-- Past the cap the queue is abandoned by name and the turn may end.
+CivvisQueue.giveUp = function(turn)
+	local q = CivvisQueue;
+	for subject, entry in pairs(q.pending) do
+		CivvisQueue.refuseRest(subject, entry, "queue_stalled");
+	end
+	q.pending = {}; q.order = {}; q.count = 0;
+	CivvisQueue.report(turn, "stalled");
+end;
+
+-- ★★★★ A HELD SOLDIER IS NOT AN IDLE ONE. `applyOrders` hands every combat
+-- unit CIVVIS did not mention to `UNITOPERATION_AUTOMATE_EXPLORE`, which was
+-- right for a peacetime army parked in its capital and wrong for the one
+-- CIVVIS meant to hold in contact — a hold produces no order, and the host's
+-- automation then walked the unit wherever it liked. Visible hostile combat
+-- units and at-war cities within `ExploreGuardRadius` tiles keep the unit
+-- where CIVVIS left it. Computed once per turn, only when the hand-off asks.
+CivvisQueue.contactPlots = function(pid, turn)
+	local q = CivvisQueue;
+	if q.contactTurn == turn and q.contacts ~= nil then return q.contacts; end
+	local plots = {};
+	local diplomacy = try(function() return Players[pid]:GetDiplomacy(); end);
+	local visible = function(x, y)
+		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
+	end
+	local combatUnit = function(unit)
+		return try(function()
+			local row = GameInfo.Units[unit:GetUnitType()];
+			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
+		end, false) == true;
+	end
+	local addUnits = function(other)
+		pcall(function()
+			for _, unit in other:GetUnits():Members() do
+				local ux, uy = unit:GetX(), unit:GetY();
+				if visible(ux, uy) and combatUnit(unit) then
+					plots[#plots + 1] = { x = ux, y = uy };
+				end
+			end
+		end);
+	end
+	pcall(function()
+		for _, oid in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if oid ~= pid then
+				local other = Players[oid];
+				local barbarian = try(function() return other:IsBarbarian(); end, false) == true;
+				local free = try(function()
+					return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
+				end, false) == true;
+				local atWar = diplomacy ~= nil
+					and try(function() return diplomacy:IsAtWarWith(oid); end, false) == true;
+				if other ~= nil and (barbarian or free or atWar) then
+					addUnits(other);
+					if atWar then
+						pcall(function()
+							for _, city in other:GetCities():Members() do
+								local cx, cy = city:GetX(), city:GetY();
+								if visible(cx, cy) then plots[#plots + 1] = { x = cx, y = cy }; end
+							end
+						end);
+					end
+				end
+			end
+		end
+	end);
+	q.contacts = plots;
+	q.contactTurn = turn;
+	return plots;
+end;
+
+CivvisQueue.inContact = function(pid, unit, turn)
+	local radius = tonumber(cfg.ExploreGuardRadius) or 4;
+	local ux = tonumber(try(function() return unit:GetX(); end, -1)) or -1;
+	local uy = tonumber(try(function() return unit:GetY(); end, -1)) or -1;
+	if ux < 0 then return false; end
+	for _, plot in ipairs(CivvisQueue.contactPlots(pid, turn)) do
+		local d = tonumber(try(function() return Map.GetPlotDistance(ux, uy, plot.x, plot.y); end, -1)) or -1;
+		if d >= 0 and d <= radius then return true; end
+	end
+	return false;
+end;
+
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
@@ -11666,11 +11997,19 @@ local function applyOrders(player, pid, turn, rows)
 			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
 		end
 		ordered[index] = true;
+		return ok, why;
 	end
 
+	-- A found refused here because the settler is not on its site yet is
+	-- queued again behind that settler's walk (see the queue below), so a
+	-- settler with movement to spare after arriving founds THIS turn instead
+	-- of standing a full enemy turn on the frontier with 0 moves left.
+	local foundRetry = {};
 	for index, row in ipairs(rows) do
 		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "FOUND_CITY" then
-			runOrder(index, row);
+			local ok = runOrder(index, row);
+			local subject = tonumber(row.subject);
+			if not ok and subject ~= nil then foundRetry[subject] = row; end
 		end
 	end
 	-- ★★★★★ CHANGE GOVERNMENT BEFORE SLOTTING THE DECK THAT FITS IT. Like
@@ -11701,8 +12040,40 @@ local function applyOrders(player, pid, turn, rows)
 			runOrder(index, row);
 		end
 	end
+	-- ★★★★★ THE FIRST ORDER PER UNIT RUNS NOW; EVERY LATER ONE IS QUEUED behind
+	-- it and issued once the earlier order has done what it meant to do — see
+	-- `CivvisQueue`. Before this, `civvis_orders` deferred those follow-ups to
+	-- the next turn, which is how a planned move-then-strike became a move.
+	-- A unit whose first order the host refused gets no follow-up: the rest of
+	-- its sequence was planned from a tile it never reached, and is refused by
+	-- name rather than fired from the wrong one.
+	local queueOn = cfg.OrderQueue ~= false;
+	local firstRun, firstRefused = {}, {};
 	for index, row in ipairs(rows) do
-		if not ordered[index] then runOrder(index, row); end
+		if not ordered[index] then
+			local subject = tonumber(row.subject);
+			local isUnit = tostring(row.kind or "") == "unit" and subject ~= nil;
+			if queueOn and isUnit and firstRun[subject] then
+				ordered[index] = true;
+				if firstRefused[subject] then
+					refused = refused + 1;
+					whyNot.queue_prior_refused = (whyNot.queue_prior_refused or 0) + 1;
+				else
+					CivvisQueue.push(subject, row, firstRun[subject].expect);
+				end
+			else
+				local ok = runOrder(index, row);
+				if isUnit then
+					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
+					if not ok then firstRefused[subject] = true; end
+					if queueOn and ok and foundRetry[subject] ~= nil
+							and tostring(row.verb or "") == "MOVE_TO" then
+						CivvisQueue.push(subject, foundRetry[subject], firstRun[subject].expect);
+						foundRetry[subject] = nil;
+					end
+				end
+			end
+		end
 	end
 
 	-- Great People go first, before the explore handoff: they cannot explore,
@@ -11738,7 +12109,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- that an idle unit should be doing something. Every unit CIVVIS actually assigns is
 	-- untouched, and the count is reported separately as `explored` so a run's telemetry
 	-- never presents this as CIVVIS's work.
-	local explored = 0;
+	local explored, guarded = 0, 0;
 	if cfg.ExploreUnassigned ~= false then
 		local mentioned = {};
 		for _, row in ipairs(rows) do
@@ -11758,6 +12129,11 @@ local function applyOrders(player, pid, turn, rows)
 					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				return;
 			end
+			-- A held soldier stays held: see `CivvisQueue.contactPlots`.
+			if cfg.ExploreGuard ~= false and CivvisQueue.inContact(pid, unit, turn) then
+				guarded = guarded + 1;
+				return;
+			end
 			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
 				explored = explored + 1;
 			end
@@ -11770,6 +12146,12 @@ local function applyOrders(player, pid, turn, rows)
 		deferred = deferred,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
+		-- Unmentioned combat units kept off the explore automation because a
+		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
+		explore_guarded = guarded,
+		-- Follow-up orders waiting in the per-unit queue; their outcome lands
+		-- in this turn's `orders_queue` event, not in `applied` above.
+		queued = CivvisQueue.pendingCount(),
 		-- Also not part of `applied`: Great People driven to their own use —
 		-- an actuation formality, not a CIVVIS decision. See `orderGreatPerson`.
 		gp_activated = gpActivated,
@@ -11829,6 +12211,8 @@ local function applyOrders(player, pid, turn, rows)
 	});
 	return applied;
 end
+-- Exposed for the offline order-queue regression (order_queue_test.lua).
+CivvisApplyOrders = applyOrders;
 
 -- Publish the board and open the window in which CIVVIS answers.
 --
@@ -12161,6 +12545,11 @@ local function beginTurn(player, pid, turn)
 						costs = envoyTally.ballot_costs,
 						votes_sent = (type(envoyTally.ballot_sent) == "table")
 							and envoyTally.ballot_sent[r.type] or nil,
+						-- Both affordability walks behind the ask (host table
+						-- and Standard-priced), so the session that finally
+						-- registers a bank says which table the core charges.
+						budget = (type(envoyTally.ballot_budget) == "table")
+							and envoyTally.ballot_budget or nil,
 					});
 				end
 			end
@@ -12243,6 +12632,10 @@ local function beginTurn(player, pid, turn)
 	awaiting.polls = 0;
 	awaiting.done = false;
 	awaiting.source = "pending";
+	-- Per turn, like everything else in this handshake: a queue that outlived
+	-- its turn is reported and dropped, never carried into a board CIVVIS has
+	-- not seen.
+	CivvisQueue.reset(turn);
 	-- Per turn, or the tally becomes cumulative and unreadable.
 	residualAnswers = {};
 	-- The same table carries direct choices and deferred `city:next` leases.
@@ -12255,7 +12648,20 @@ end
 -- by CIVVIS or by the fallback; the caller must not end the turn before then.
 local function settleTurn(player, pid, turn, playFallback)
 	if awaiting.turn ~= turn then return true; end
-	if awaiting.done then return true; end
+	if awaiting.done then
+		-- The decisions are in; the per-unit follow-ups may still be
+		-- draining. Hold the turn for them, bounded — see `CivvisQueue`.
+		if CivvisQueue.pendingCount() > 0 then
+			CivvisQueue.ticks = CivvisQueue.ticks + 1;
+			if CivvisQueue.ticks > (tonumber(cfg.OrderQueueMaxTicks) or 240) then
+				CivvisQueue.giveUp(turn);
+				return true;
+			end
+			CivvisQueue.drain(player, pid, turn);
+			if CivvisQueue.pendingCount() > 0 then return false; end
+		end
+		return true;
+	end
 	awaiting.ticks = awaiting.ticks + 1;
 
 	-- ⚠⚠ DO NOT QUERY ON EVERY TICK. This is the bug that deadlocked run
@@ -12565,6 +12971,7 @@ local function tick()
 			envoyTally.ballot_favor_now = favorNow;
 			envoyTally.ballot_favor_entering = favorEntering;
 			envoyTally.ballot_ask = {};
+			envoyTally.ballot_budget = nil;
 			-- ★★★★★ AND WHAT THE VOTES WERE PRICED AGAINST, BECAUSE THE FIRST
 			-- READBACK RULED OUT THE REASON IT WAS BUILT TO TEST.
 			--
@@ -12710,13 +13117,37 @@ local function tick()
 						-- nothing is spent; from there every session spends the bank.
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
+						-- Both walks live in `CivvisCongressVoteBudget` (see its
+						-- comment): the host-table bank and the Standard-priced
+						-- bank a mispricing core would charge. The ask takes the
+						-- smaller; the verdict records both.
+						local budget, budgetHost, budgetStandard =
+							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						envoyTally.ballot_budget =
+							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
 						if (tonumber(leaderPoints) or 0) >= floor then
-							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-								n = n + 1;
-							end
+							n = budget;
+							mode = (n > 1) and "deny" or "free";
+						elseif cfg.CongressVoteProbe ~= false and budget > 1 then
+							-- ★★ A THREE-VOTE PROBE AT EVERY SESSION BELOW THE FLOOR.
+							--
+							-- The floor banks Favor until a leader is within reach,
+							-- which also postpones the first multi-vote ballot to
+							-- t160+ — one or two sessions before a diplomatic loss,
+							-- far too late to learn whether the purchase registers
+							-- at all. Three votes cost 12 Favor on the Online table
+							-- (30 if the core charges Standard) out of a bank that
+							-- ends games in the hundreds: every session now reports
+							-- a verdict on the purchase path, and lands two extra
+							-- votes against the leader when it works. Its own mode
+							-- string keeps a 12-Favor probe from reading like a
+							-- bank-scale deny in the ledger.
+							n = (budget < 3) and budget or 3;
+							mode = "probe";
+						else
+							mode = "free";
 						end
-						mode = (n > 1) and "deny" or "free";
 						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
 						--
 						-- The resolution's winner is the option with more votes, and
@@ -12738,15 +13169,10 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == pid then ourIdx = idx; end
 						end
-						local affordable = 1;
-						while affordable + 1 <= maxVotes and costs[affordable] ~= nil
-						      and costs[affordable] <= favor do
-							affordable = affordable + 1;
-						end
-						if ourIdx ~= nil and affordable >= claim then
+						if ourIdx ~= nil and budget >= claim then
 							option = 1;
 							selection = ourIdx;
-							n = affordable;
+							n = budget;
 							mode = "claim";
 						end
 						votes = n;
@@ -12823,27 +13249,23 @@ local function tick()
 					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
 					-- through this path.
 					--
-					-- So stop sending it. One vote per operation, repeated: if
-					-- the core accumulates them the seat can finally buy votes,
-					-- and if it does not, the host records one -- which is what
-					-- it records today, so this cannot cost a vote the seat is
-					-- already not getting. `votes_sent` and the verdict's
-					-- `recorded` say which happened, on the first session past
-					-- the floor.
-					local sent, submitted = false, 0;
-					for _ = 1, math.max(1, votes) do
-						local one = {};
-						for key, value in pairs(params) do one[key] = value; end
-						one[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1;
-						local ok = pcall(function()
-							UI.RequestPlayerOperation(pid,
-								PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, one);
-						end);
-						if ok then submitted = submitted + 1; sent = true; end
-					end
+					-- #2045 tried one vote per operation, repeated, on the theory
+					-- that the core might accumulate them. The experiment came
+					-- back on run civvis-20260819T004405Z: `votes_sent 20,
+					-- recorded 1` on every multi-vote session — the operation
+					-- SETS the seat's ballot rather than adding to it, so a
+					-- repeat leaves the LAST write's single vote standing. Back
+					-- to one operation carrying the whole count, exactly as the
+					-- shipped `OnAccept` sends it; what changed instead is the
+					-- count itself, now priced by `CivvisCongressVoteBudget`
+					-- against both tables the host might charge.
+					local sent = pcall(function()
+						UI.RequestPlayerOperation(pid,
+							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
+					end);
 					if sent then cast = cast + 1; end
 					envoyTally.ballot_sent = envoyTally.ballot_sent or {};
-					envoyTally.ballot_sent[rtype] = submitted;
+					envoyTally.ballot_sent[rtype] = sent and 1 or 0;
 					-- What this ballot ASKED for, per resolution, so the next
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
@@ -12899,6 +13321,19 @@ local function tick()
 				local r = Game.GetWorldCongress():GetResolutions(ballotPid);
 				return r and r.Stage or nil;
 			end, nil);
+			-- `GetResolutions().Stage` has read INT_MAX on every recorded cast,
+			-- from both triggers, so it does not say whether the cast landed
+			-- inside the congress turn segment — the window the shipped popup
+			-- votes in (`CheckShouldOpen` gates on `Game.GetCurrentTurnSegment`).
+			-- Read the segment itself, so the moment theory finally has a
+			-- measurement instead of a sentinel.
+			local segment = try(function() return Game.GetCurrentTurnSegment(); end, nil);
+			local inCongressSegment = try(function()
+				if segment == nil then return nil; end
+				return segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_1")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_2")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_RESOLUTION");
+			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
@@ -12906,7 +13341,9 @@ local function tick()
 			                  why = why, leader = leader,
 			                  leader_points = leaderPoints,
 			                  leader_score = leaderScore, source = trigger,
-			                  stage = stage, favor_before = before, mode = mode });
+			                  stage = stage, favor_before = before, mode = mode,
+			                  segment = segment,
+			                  in_congress_segment = inCongressSegment });
 		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
@@ -13315,6 +13752,19 @@ local function onEndTurnBlockingChanged()
 	tick();
 end
 
+-- The host says one of our units finished moving or its operation ended.
+-- If that unit has queued follow-ups, this is the moment to issue the next
+-- one — undivided, like `EndTurnBlockingChanged`, because a board whose only
+-- remaining work is a queued strike publishes almost nothing on its own.
+CivvisQueue.onUnitSettled = function(player, unitId)
+	if CivvisQueue.count <= 0 then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if CivvisQueue.noteUnitEvent(pid, player, unitId) then
+		ensureStarted();
+		tick();
+	end
+end;
+
 local function onTeamVictory(team, victoryType, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
@@ -13349,6 +13799,8 @@ function Initialize()
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		GameCoreEventPublishComplete = onGameCoreTick,
 		EndTurnBlockingChanged = onEndTurnBlockingChanged,
+		UnitMoveComplete = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
+		UnitOperationDeactivated = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
 		CityAddedToMap = onGameCoreTick,
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
