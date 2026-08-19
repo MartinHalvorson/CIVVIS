@@ -6983,8 +6983,8 @@ mod tests {
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
         let unit = *mirror.uid_of.get(&77).expect("the Horseman is mirrored");
 
-        let pillage = translate(&Action::Pillage { unit }, &mirror, &state)
-            .expect("the pillage crosses");
+        let pillage =
+            translate(&Action::Pillage { unit }, &mirror, &state).expect("the pillage crosses");
         assert_eq!(pillage.kind, "unit");
         assert_eq!(pillage.subject, Some(77));
         assert_eq!(pillage.verb.as_deref(), Some("PILLAGE"));
@@ -7415,17 +7415,20 @@ mod tests {
 
     #[test]
     fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(42, "MOVE_TO", Some((4, 5))),
-            unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
-            unit_order(99, "FORTIFY", None),
-            Order {
-                kind: "research",
-                subject: None,
-                verb: Some("TECH_WRITING".to_string()),
-                pos: None,
-            },
-        ], false);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(42, "MOVE_TO", Some((4, 5))),
+                unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
+                unit_order(99, "FORTIFY", None),
+                Order {
+                    kind: "research",
+                    subject: None,
+                    verb: Some("TECH_WRITING".to_string()),
+                    pos: None,
+                },
+            ],
+            false,
+        );
 
         assert_eq!(deferred, 1);
         assert_eq!(coalesced, 0);
@@ -7441,15 +7444,21 @@ mod tests {
     /// asked for the WHOLE walk, or it spends every turn on the first hex.
     #[test]
     fn a_units_planned_walk_becomes_one_move_to_its_furthest_hex() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(7, "MOVE_TO", Some((10, 10))),
-            unit_order(7, "MOVE_TO", Some((11, 10))),
-            unit_order(7, "MOVE_TO", Some((12, 11))),
-            unit_order(7, "FOUND_CITY", None),
-        ], false);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(7, "MOVE_TO", Some((10, 10))),
+                unit_order(7, "MOVE_TO", Some((11, 10))),
+                unit_order(7, "MOVE_TO", Some((12, 11))),
+                unit_order(7, "FOUND_CITY", None),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 2, "two later steps folded into the first");
-        assert_eq!(deferred, 1, "the founding still waits for the arrival frame");
+        assert_eq!(
+            deferred, 1,
+            "the founding still waits for the arrival frame"
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].subject, Some(7));
         assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
@@ -7460,12 +7469,15 @@ mod tests {
     /// was planned from where the act leaves the unit, so it waits like the act.
     #[test]
     fn a_move_after_an_act_is_not_folded_into_the_walk() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(3, "MOVE_TO", Some((1, 1))),
-            unit_order(3, "MOVE_TO", Some((2, 1))),
-            unit_order(3, "RANGE_ATTACK", Some((4, 1))),
-            unit_order(3, "MOVE_TO", Some((1, 1))),
-        ], false);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+                unit_order(3, "MOVE_TO", Some((2, 1))),
+                unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+                unit_order(3, "MOVE_TO", Some((1, 1))),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 1);
         assert_eq!(deferred, 2);
@@ -7477,12 +7489,15 @@ mod tests {
     /// defender, and a unit whose first order is the strike sends only the strike.
     #[test]
     fn a_melee_strike_terminates_the_walk_and_leads_alone_when_first() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(5, "MOVE_TO", Some((8, 8))),
-            unit_order(5, "ATTACK", Some((9, 8))),
-            unit_order(6, "ATTACK", Some((9, 8))),
-            unit_order(6, "MOVE_TO", Some((9, 8))),
-        ], false);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(5, "MOVE_TO", Some((8, 8))),
+                unit_order(5, "ATTACK", Some((9, 8))),
+                unit_order(6, "ATTACK", Some((9, 8))),
+                unit_order(6, "MOVE_TO", Some((9, 8))),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 0);
         assert_eq!(deferred, 2);
@@ -7499,20 +7514,23 @@ mod tests {
     /// host executes sequentially — is preserved.
     #[test]
     fn interleaved_units_fold_independently_and_keep_their_batch_slots() {
-        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
-            unit_order(1, "MOVE_TO", Some((0, 1))),
-            unit_order(2, "MOVE_TO", Some((5, 5))),
-            unit_order(1, "MOVE_TO", Some((0, 2))),
-            Order {
-                kind: "produce",
-                subject: Some(65_536),
-                verb: Some("UNIT_SETTLER".to_string()),
-                pos: None,
-            },
-            unit_order(2, "MOVE_TO", Some((6, 5))),
-            unit_order(2, "MOVE_TO", Some((7, 5))),
-            unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
-        ], false);
+        let (orders, deferred, coalesced) = coalesce_unit_paths(
+            vec![
+                unit_order(1, "MOVE_TO", Some((0, 1))),
+                unit_order(2, "MOVE_TO", Some((5, 5))),
+                unit_order(1, "MOVE_TO", Some((0, 2))),
+                Order {
+                    kind: "produce",
+                    subject: Some(65_536),
+                    verb: Some("UNIT_SETTLER".to_string()),
+                    pos: None,
+                },
+                unit_order(2, "MOVE_TO", Some((6, 5))),
+                unit_order(2, "MOVE_TO", Some((7, 5))),
+                unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
+            ],
+            false,
+        );
 
         assert_eq!(coalesced, 3);
         assert_eq!(deferred, 1);
@@ -7521,6 +7539,9 @@ mod tests {
         assert_eq!((orders[1].subject, orders[1].pos), (Some(2), Some((7, 5))));
         assert_eq!(orders[2].kind, "produce");
     }
+
+    /// (subject, verb, position) of one host order, for asserting a sequence.
+    type Sequenced<'a> = (Option<i64>, &'a str, Option<(i32, i32)>);
 
     /// With a queueing mod (`seat.order_queue`), the walk still folds into one
     /// MOVE_TO and every later order for that unit rides along in sequence —
@@ -7544,9 +7565,15 @@ mod tests {
 
         assert_eq!(deferred, 0, "nothing waits for the next frame");
         assert_eq!(coalesced, 1, "only the contiguous walk folds");
-        let sequence: Vec<(Option<i64>, &str, Option<(i32, i32)>)> = orders
+        let sequence: Vec<Sequenced<'_>> = orders
             .iter()
-            .map(|order| (order.subject, order.verb.as_deref().unwrap_or(""), order.pos))
+            .map(|order| {
+                (
+                    order.subject,
+                    order.verb.as_deref().unwrap_or(""),
+                    order.pos,
+                )
+            })
             .collect();
         assert_eq!(
             sequence,
