@@ -877,12 +877,16 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
-    /// A World Congress competition that must currently be active on the
-    /// authoritative host before this project is legal.  These projects use
-    /// Firaxis's `UnlocksFromEffect` rather than a normal tech or civic gate,
-    /// so they must never appear in a native CIVVIS production menu.
+    /// A host-tracked competition that must currently be active before this
+    /// project is legal. These projects use Firaxis's `UnlocksFromEffect`
+    /// rather than a normal tech or civic gate, so they must never appear in a
+    /// native CIVVIS production menu.
     #[serde(default)]
     pub host_competition: Option<String>,
+    /// Additional host competitions that can grant this same project. Firaxis
+    /// uses one Send Aid project for both ordinary and military Aid Requests.
+    #[serde(default)]
+    pub host_competitions: Vec<String>,
     /// Competition points the host awards when this project completes.  Kept
     /// in the rules row beside the exact project cost, rather than in an AI
     /// name switch, so another host-unlocked competition can use the same
@@ -902,6 +906,22 @@ pub struct ProjectSpec {
     pub full_power_while_active: bool,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+}
+
+impl ProjectSpec {
+    /// Every authoritative host competition that can make this project legal.
+    /// `host_competition` remains the compact, backwards-compatible form for
+    /// the common one-host case.
+    pub fn host_competition_kinds(&self) -> impl Iterator<Item = &str> {
+        self.host_competition
+            .as_deref()
+            .into_iter()
+            .chain(self.host_competitions.iter().map(String::as_str))
+    }
+
+    pub fn requires_host_competition(&self) -> bool {
+        self.host_competition.is_some() || !self.host_competitions.is_empty()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -3354,9 +3374,13 @@ mod tests {
         // Spaceport, grants 30 competition score, and follows the same
         // host-only availability rule while the authoritative tracker names
         // the Space Station competition.
+        // Moved again by Gathering Storm's Aid Request project.
+        // `PROJECT_SEND_AID` costs 200 Production, grants 200 competition
+        // score, and is available through either the ordinary or military Aid
+        // Request effect instead of any tech or civic gate.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:277427216f052d8b"
+            "fnv1a64:b554a9ad89283c85"
         );
     }
 
@@ -4001,7 +4025,18 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 27);
+        assert_eq!(rules.projects.len(), 28);
+        let aid = rules
+            .projects
+            .get(&crate::name!("send_aid"))
+            .expect("the Gathering Storm Aid Request project is modeled");
+        assert_eq!(aid.cost, 200.0);
+        assert_eq!(
+            aid.host_competition_kinds().collect::<Vec<_>>(),
+            ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"]
+        );
+        assert_eq!(aid.competition_score, 200.0);
+        assert!(aid.repeatable);
         let athletes = rules
             .projects
             .get(&crate::name!("train_athletes"))

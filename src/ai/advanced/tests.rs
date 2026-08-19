@@ -4529,12 +4529,12 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
-/// Host World Congress competitions move the diplomatic race outside the
-/// ordinary Congress ballot. The exact score table must therefore make the
-/// World Games project legal and compelling, while the World's Fair rewards
+/// Host competitions move the diplomatic race outside the ordinary Congress
+/// ballot. The exact score table must therefore make World Games and either
+/// Aid Request project legal and compelling, while the World's Fair rewards
 /// the Great Person points existing district projects already produce.
 #[test]
-fn live_competitions_price_world_games_and_worlds_fair_production() {
+fn live_competitions_price_host_projects_and_worlds_fair_production() {
     let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
     let settler = game
         .player_unit_ids(0)
@@ -4560,6 +4560,9 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     let athlete = Item::Project {
         project: crate::name!("train_athletes"),
     };
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
     let granary = Item::Building {
         building: crate::name!("granary"),
     };
@@ -4567,6 +4570,10 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     assert!(
         !game.can_produce(0, city, &athlete),
         "the host-only project cannot escape into a native menu"
+    );
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "the shared Aid Request project cannot escape into a native menu"
     );
 
     game.replace_host_competitions(vec![crate::game::HostCompetition {
@@ -4598,6 +4605,53 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     game.replace_host_competitions(Vec::new());
     assert!(!game.can_produce(0, city, &athlete));
     assert!(ai.production_value(&game, 0, city, &athlete, &plan, &counts) < -1_000.0);
+
+    // Firaxis grants the same 200-point Send Aid project for either kind of
+    // request. Each individual host kind must make it legal and compelling;
+    // treating the plural rules row as an AND would silently lose one aid
+    // emergency.
+    for kind in ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"] {
+        game.replace_host_competitions(vec![crate::game::HostCompetition {
+            kind: kind.to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        }]);
+        assert!(
+            game.can_produce(0, city, &aid),
+            "{kind} grants the shared Send Aid project"
+        );
+        let aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+        assert!(
+            aid_value > granary_value,
+            "the 200-point Send Aid project must outrank ordinary infrastructure during {kind}: {aid_value} vs {granary_value}"
+        );
+    }
+    game.replace_host_competitions(vec![
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_AID".to_string(),
+            ends: game.turn + 1,
+            ours: 0.0,
+            leader: 200.0,
+        },
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_MILITARY_AID".to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        },
+    ]);
+    let best_live_aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+    assert!(
+        best_live_aid_value > granary_value,
+        "when both kinds are active, the viable military request must win over an expiring ordinary request: {best_live_aid_value} vs {granary_value}"
+    );
+    game.replace_host_competitions(Vec::new());
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "with neither aid emergency live the shared project is withdrawn"
+    );
+    assert!(ai.production_value(&game, 0, city, &aid, &plan, &counts) < -1_000.0);
 
     install_ai_test_district(&mut game, city, "campus");
     let grants = Item::Project {
