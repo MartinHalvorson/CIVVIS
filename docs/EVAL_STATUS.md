@@ -23,8 +23,8 @@ How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
 - Withholdable live treatments: **55**
-- Named somewhere in the evidence: **22**
-- **Never named in any round: 33**
+- Named somewhere in the evidence: **31**
+- **Never named in any round: 24**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -40,7 +40,7 @@ them is what stayed invisible.
 
 Never named:
 
-`amenity-district-path` (`live_without_amenity_district_path`), `amenity-project-preemption` (`live_without_amenity_project_preemption`), `army-target-weighs-enemy` (`live_without_army_target_weighs_enemy`), `blind-objective-strength` (`live_without_blind_objective_strength`), `blind-objective-units` (`live_without_blind_objective_units`), `campus-every-city` (`live_without_campus_every_city`), `endgame-war-runway` (`live_without_endgame_war_runway`), `escort-unstick` (`live_without_escort_unstick`), `garrison-under-fire` (`live_without_garrison_under_fire`), `garrison-walls` (`live_without_garrison_walls`), `housing-buildings` (`live_without_housing_buildings`), `housing-cards` (`live_without_housing_cards`), `housing-districts` (`live_without_housing_districts`), `housing-research` (`live_without_housing_research`), `loyalty-rate-alarm` (`live_without_loyalty_rate_alarm`), `muster-at-command-radius` (`live_without_muster_at_command_radius`), `ranged-line-of-sight` (`live_without_ranged_needs_line_of_sight`), `relief-targets-the-siege` (`live_without_relief_targets_the_siege`), `religion-sues-peace` (`live_without_religion_sues_peace`), `score-horizon` (`live_without_score_horizon`), `settler-site-agreement` (`live_without_settler_site_agreement`), `siege-commitment` (`live_without_siege_commitment`), `siege-role` (`live_without_siege_role`), `siege-tracks-wall` (`live_without_siege_tracks_wall`), `slot-kind-tiebreak` (`live_without_slot_kind_tiebreak`), `stacked-escort` (`live_without_stacked_escort`), `stranded-settler-discount` (`live_without_stranded_settler_discount`), `suzerain-cards` (`live_without_suzerain_cards`), `war-economy` (`live_without_war_economy`), `war-patience` (`live_without_war_patience`), `war-reinforcement` (`live_without_war_reinforcement`), `wide-map-capacity` (`live_without_wide_map_capacity`), `wonder-ring-settle-value` (`live_without_wonder_ring_settle_value`)
+`amenity-district-path` (`live_without_amenity_district_path`), `amenity-project-preemption` (`live_without_amenity_project_preemption`), `blind-objective-strength` (`live_without_blind_objective_strength`), `blind-objective-units` (`live_without_blind_objective_units`), `campus-every-city` (`live_without_campus_every_city`), `endgame-war-runway` (`live_without_endgame_war_runway`), `garrison-under-fire` (`live_without_garrison_under_fire`), `garrison-walls` (`live_without_garrison_walls`), `housing-cards` (`live_without_housing_cards`), `housing-research` (`live_without_housing_research`), `loyalty-rate-alarm` (`live_without_loyalty_rate_alarm`), `muster-at-command-radius` (`live_without_muster_at_command_radius`), `relief-targets-the-siege` (`live_without_relief_targets_the_siege`), `settler-site-agreement` (`live_without_settler_site_agreement`), `siege-commitment` (`live_without_siege_commitment`), `siege-role` (`live_without_siege_role`), `siege-tracks-wall` (`live_without_siege_tracks_wall`), `stacked-escort` (`live_without_stacked_escort`), `stranded-settler-discount` (`live_without_stranded_settler_discount`), `suzerain-cards` (`live_without_suzerain_cards`), `war-economy` (`live_without_war_economy`), `war-reinforcement` (`live_without_war_reinforcement`), `wide-map-capacity` (`live_without_wide_map_capacity`), `wonder-ring-settle-value` (`live_without_wonder_ring_settle_value`)
 
 ## Live ladder
 
