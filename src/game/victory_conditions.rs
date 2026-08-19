@@ -3590,7 +3590,7 @@ fn every_shipped_source_of_a_diplomatic_victory_point_is_modelled() {
 fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
     let mut game = game_with_capitals(3, 61_000, 400);
     game.native_competitions = true;
-    game.world_era = 6;
+    game.world_era = 8;
     // The Space Station competition needs someone holding a Spaceport, which is
     // what makes it offerable at all.
     let city = *game.cities.keys().next().expect("the fixture has a city");
@@ -3677,7 +3677,7 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
 fn native_competitions_are_off_unless_a_game_turns_them_on() {
     let mut game = game_with_capitals(3, 61_001, 400);
     assert!(!game.native_competitions, "off by default");
-    game.world_era = 6;
+    game.world_era = 8;
     let city = *game.cities.keys().next().expect("the fixture has a city");
     let pos = game.cities[&city].pos;
     game.cities
@@ -3709,7 +3709,7 @@ fn native_competitions_are_off_unless_a_game_turns_them_on() {
 fn a_competition_is_offered_only_where_its_project_could_be_built() {
     let mut game = game_with_capitals(3, 62_000, 400);
     game.native_competitions = true;
-    game.world_era = 6;
+    game.world_era = 7;
     let city = *game.cities.keys().next().expect("the fixture has a city");
     let pos = game.cities[&city].pos;
     let owner = game.cities[&city].owner;
@@ -3729,9 +3729,9 @@ fn a_competition_is_offered_only_where_its_project_could_be_built() {
         Some("EMERGENCY_CLIMATE_ACCORDS"),
         "a competition nobody can score in must not be seated: it pays no one          and spends the lockout"
     );
-    // The World's Fair *is* seatable here -- every empire recruits Great
-    // People, so there is no ground to hold. Clear it so the check below is
-    // about Climate Accords becoming offerable, not about which came first.
+    // World Games is seatable here: its athletes project needs no district.
+    // Clear it so the check below is about Climate Accords becoming offerable,
+    // not about which competition came first.
     game.competition = None;
 
     // Give it something to decommission and it becomes offerable.
@@ -3754,8 +3754,9 @@ fn a_competition_is_offered_only_where_its_project_could_be_built() {
 fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
     let mut game = game_with_capitals(3, 63_000, 400);
     game.native_competitions = true;
+    game.world_era = 5;
 
-    // No Spaceport and no power plant anywhere, so the other two are not
+    // No Spaceport and no power plant anywhere, so the other three are not
     // offerable — and the lane still gets a competition.
     game.open_native_competition();
     assert_eq!(
@@ -3783,5 +3784,90 @@ fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
         game.players[owner].dvp - dvp,
         1,
         "Gathering Storm pays the World's Fair winner one Diplomatic Victory Point"
+    );
+}
+
+/// Competition eras come from Gathering Storm's emergency requirements, not
+/// from whether a scoring project happens to have a district prerequisite.
+#[test]
+fn native_competitions_honor_era_windows_and_world_games_pays_its_winner() {
+    let mut game = game_with_capitals(3, 63_001, 400);
+    game.native_competitions = true;
+    let city_id = *game.cities.keys().next().expect("the fixture has a city");
+    let owner = game.cities[&city_id].owner;
+    let pos = game.cities[&city_id].pos;
+    let city = game.cities.get_mut(&city_id).unwrap();
+    city.districts.insert(crate::name!("spaceport"), pos);
+    city.districts.insert(crate::name!("industrial_zone"), pos);
+    city.buildings.push(crate::name!("coal_power_plant"));
+
+    game.world_era = 4;
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "none of the modelled congress competitions is available before Modern"
+    );
+
+    game.world_era = 5;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_WORLDS_FAIR"),
+        "World's Fair is Modern only"
+    );
+    game.competition = None;
+
+    game.world_era = 6;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_WORLD_GAMES"),
+        "World Games begins in Atomic"
+    );
+    let declared_score = game.rules.projects["train_athletes"].competition_score;
+    game.complete_item(
+        owner,
+        city_id,
+        &Item::Project {
+            project: crate::name!("train_athletes"),
+        },
+    );
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&owner],
+        declared_score,
+        "World Games uses the shipped athletes-project score"
+    );
+    let before = game.players[owner].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[owner].dvp - before,
+        1,
+        "World Games pays its first-place finisher one Diplomatic Victory Point"
+    );
+
+    game.world_era = 7;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS"),
+        "Climate Accords begins in Information"
+    );
+    game.competition = None;
+
+    game.world_era = 8;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_SPACE_STATION"),
+        "International Space Station begins in Future"
     );
 }
