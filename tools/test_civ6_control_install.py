@@ -993,7 +993,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("religion_founding_failed", source)
         self.assertIn("religion_founded", source)
 
-    def test_religious_units_export_progress_and_actuate_promote_and_spread(self) -> None:
+    def test_religious_units_export_progress_and_actuate_direct_operations(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         progress = source.split("local function unitProgress", 1)[1].split(
             "-- ⚠⚠ THE pcall GOES INSIDE THE LOOP", 1
@@ -1008,7 +1008,14 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("unit:GetBuildCharges()", progress)
         self.assertIn("unit:GetSpreadCharges()", progress)
         self.assertIn("unit:GetReligionType()", progress)
-        self.assertIn('"UNITOPERATION_SPREAD_RELIGION"', source)
+        for operation in (
+            "UNITOPERATION_SPREAD_RELIGION",
+            "UNITOPERATION_LAUNCH_INQUISITION",
+            "UNITOPERATION_REMOVE_HERESY",
+            "UNITOPERATION_RELIGIOUS_HEAL",
+            "UNITOPERATION_CONVERT_BARBARIANS",
+        ):
+            self.assertIn(f'"{operation}"', source)
         self.assertIn('"^PROMOTE:(.+)$"', handler)
         self.assertIn("results[UnitCommandResults.PROMOTIONS]", handler)
         self.assertIn(
@@ -1016,6 +1023,8 @@ class ProtectedInstallTest(unittest.TestCase):
             handler,
         )
         self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
+        self.assertIn('local hash = OP["UNITOPERATION_" .. verb];', handler)
+        self.assertIn("return operate(unit, hash, {}), verb;", handler)
 
     def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
