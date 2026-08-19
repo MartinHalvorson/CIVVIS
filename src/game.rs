@@ -2835,6 +2835,21 @@ pub struct Emergency {
     pub ends: u32,
 }
 
+/// A scored World Congress competition observed from the live Civilization VI
+/// host. It remains separate from [`Emergency`], which models CIVVIS's native
+/// city-capture emergencies rather than a host-granted production opportunity.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct HostCompetition {
+    /// Firaxis emergency type, for example `EMERGENCY_WORLD_GAMES`.
+    pub kind: String,
+    /// First CIVVIS turn on which the host opportunity is no longer current.
+    pub ends: u32,
+    /// The mirrored seat's current competition score.
+    pub ours: f64,
+    /// The highest score any member currently holds, including ours.
+    pub leader: f64,
+}
+
 /// Every blow that has landed on a city this game.
 ///
 /// A war ledger says who declared and who lost units; it cannot say whether an
@@ -5239,6 +5254,11 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
+    /// Active scored competitions supplied by a live Civilization VI host.
+    /// Native games leave this empty, so host-only projects cannot leak into
+    /// offline production menus.
+    #[serde(default)]
+    pub host_competitions: Vec<HostCompetition>,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -5488,6 +5508,8 @@ struct GameSer {
     #[serde(default)]
     active_congress_effects: Vec<CongressEffect>,
     #[serde(default)]
+    host_competitions: Vec<HostCompetition>,
+    #[serde(default)]
     last_special_session: u32,
     #[serde(default)]
     pending_emergencies: Vec<EmergencyProposal>,
@@ -5648,6 +5670,7 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
+            host_competitions: s.host_competitions,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -5829,6 +5852,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
+            host_competitions: g.host_competitions,
             last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
@@ -6243,6 +6267,7 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
+            host_competitions: Vec::new(),
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -30758,6 +30783,30 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    /// Replace the current live-host competition snapshot. The production
+    /// catalog persists beyond an ordinary read-only memo scope, so a host
+    /// competition starting or ending must explicitly retire any menu cached
+    /// before the new snapshot arrived.
+    pub(crate) fn replace_host_competitions(&mut self, competitions: Vec<HostCompetition>) {
+        if self.host_competitions != competitions {
+            self.host_competitions = competitions;
+            self.query_memo.producible.borrow_mut().clear();
+        }
+    }
+
+    /// The current host competition of this mirrored seat, if it is still
+    /// active. Host player ids do not match generated CIVVIS seats, so the
+    /// mirror intentionally supplies opportunities for seat zero only.
+    pub fn host_competition(&self, pid: usize, kind: &str) -> Option<&HostCompetition> {
+        (pid == 0)
+            .then(|| {
+                self.host_competitions.iter().find(|competition| {
+                    competition.kind == kind && competition.ends > self.turn
+                })
+            })
+            .flatten()
+    }
+
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_purchases = blocked;
     }
@@ -31123,6 +31172,13 @@ impl Game {
                     None => return false,
                 };
                 if self.players[pid].is_barbarian {
+                    return false;
+                }
+                if spec
+                    .host_competition
+                    .as_deref()
+                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                {
                     return false;
                 }
                 if spec
