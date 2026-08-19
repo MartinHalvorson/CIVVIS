@@ -153,6 +153,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
+    "advanced_congress_banks_decided",
     "advanced_pantheon_board",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
@@ -845,6 +846,7 @@ define_arm_kinds! {
     AdvancedCongressCounter => "advanced_congress_counter",
     AdvancedCongressCounterHard => "advanced_congress_counter_hard",
     AdvancedCongressVotes => "advanced_congress_votes",
+    AdvancedCongressBanksDecided => "advanced_congress_banks_decided",
     AdvancedPantheonBoard => "advanced_pantheon_board",
     AdvancedCounterInLane => "advanced_counter_in_lane",
     AdvancedCounterStandDown => "advanced_counter_stand_down",
@@ -2686,6 +2688,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.congress_counter_votes = true;
             Box::new(ai)
         }
+        // The free Diplomatic Victory Point on a resolution that is already
+        // settled. `advanced` answers one with the same opposition it would
+        // cast against a live vote, backed by the treasury when the plan is
+        // Diplomacy -- a ballot that cannot change the result, forfeits the
+        // point the host pays for predicting it, and is not refunded on the
+        // occasions it happens to win. This arm takes the point and stakes
+        // only the free first vote.
+        "advanced_congress_banks_decided" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_banks_a_decided_vote = true;
+            Box::new(ai)
+        }
         // The pantheon read from the land instead of from a fixed order. The
         // shipped choice is a constant: a pantheon is exclusive and the
         // deployment profile seats six majors against a roster of eleven, so
@@ -4468,6 +4482,7 @@ impl ArmKind {
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
             Self::AdvancedCongressCounter => &["congress-counter-target"],
             Self::AdvancedCongressVotes => &["congress-counter-votes"],
+            Self::AdvancedCongressBanksDecided => &["congress-banks-a-decided-vote"],
             Self::AdvancedPantheonBoard => &["pantheon-reads-the-board"],
             Self::AdvancedCongressCounterHard => {
                 &["congress-counter-target", "congress-counter-votes"]
@@ -5082,6 +5097,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_congress_counter" => (Vec::new(), "advanced_congress_counter"),
         "advanced_congress_votes" => (Vec::new(), "advanced_congress_votes"),
         "advanced_congress_counter_hard" => (Vec::new(), "advanced_congress_counter_hard"),
+        "advanced_congress_banks_decided" => (Vec::new(), "advanced_congress_banks_decided"),
         "advanced_pantheon_board" => (Vec::new(), "advanced_pantheon_board"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
@@ -6518,6 +6534,7 @@ mod tests {
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",
+                "advanced_congress_banks_decided",
                 "advanced_pantheon_board",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",

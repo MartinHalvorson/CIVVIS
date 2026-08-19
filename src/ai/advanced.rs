@@ -3327,6 +3327,41 @@ pub struct AdvancedAi {
     /// `advanced_congress_counter_hard` with both flags set.
     pub congress_counter_votes: bool,
 
+    /// Whether a resolution that can no longer move is answered with the free
+    /// vote that predicts it instead of an opposition that cannot land.
+    ///
+    /// ★★★★★ THE POINT THE SHIPPED COMMENT SAYS IS NOT THERE. `take_turn`
+    /// backs its opposition with the treasury and justifies it in writing:
+    /// *"a losing vote is refunded in full ... an opposition that fails costs
+    /// nothing"*. That is true of Favor and false of the tally. `resolve_congress`
+    /// pays **+1 Diplomatic Victory Point** to every eligible voter that named
+    /// the winning outcome *and* the winning target, and `congress_vote_cost`
+    /// makes the first vote on any ballot free. A failed opposition therefore
+    /// costs exactly one Diplomatic Victory Point that a zero-Favor ballot on
+    /// the settled winner would have banked. Twenty points win the game, and
+    /// the live census attributes 41 of 310 losses to a rival's Diplomatic
+    /// victory — the largest single bucket, ahead of Culture at 24.
+    ///
+    /// The same reading fixes the stake. A winning ballot is **not** refunded,
+    /// so `congress_affordable_votes` on a resolution already decided empties
+    /// the treasury to buy an outcome that was going to happen anyway. With
+    /// this on, a decided resolution is always answered with exactly the one
+    /// free vote, whether or not the choice had to change.
+    ///
+    /// Decided is decided against every ballot still outstanding, at both of
+    /// the host's two tally stages. See [`Self::congress_decided_choice`].
+    ///
+    /// Measured before it was wired up, on three 6-player 200-turn Online
+    /// games with all six seats running this arm: **26 of 192 ballot decisions
+    /// were already settled**, 13.5%, or about 1.4 free points per seat per
+    /// game against the 20 a Diplomatic victory needs. The first cut of the
+    /// bound charged this empire's own Favor against *every* rival choice and
+    /// found only 9 of 192 — a third as many, from a test that was not more
+    /// careful, only wrong about where its own votes could land.
+    ///
+    /// Reachable as `advanced_congress_banks_decided`.
+    pub congress_banks_a_decided_vote: bool,
+
     /// Value the infrastructure that produces city-state influence.
     ///
     /// The allocation layer already spends every envoy it earns, while the
@@ -4301,6 +4336,7 @@ impl AdvancedAi {
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
+            congress_banks_a_decided_vote: false,
             envoy_infrastructure: false,
             holy_lane_parity: false,
             diplomatic_opening: false,
@@ -11017,6 +11053,128 @@ impl AdvancedAi {
             }
     }
 
+    /// The ballot this resolution has already settled on, if nothing still to
+    /// be cast can move it.
+    ///
+    /// ★★★★★ WHAT MAKES THE FREE POINT SAFE TO TAKE. Joining a vote is only
+    /// costless if this empire's own ballot could not have changed where it
+    /// lands, so the leader has to beat every alternative by more than the
+    /// votes still outstanding against it — and both of the host's tally
+    /// stages are checked, because `resolve_congress` picks the outcome across
+    /// all targets first and then the target among the ballots that named that
+    /// outcome.
+    ///
+    /// ⚠ *Outstanding against it* is the whole subtlety, and the first cut got
+    /// it wrong. Rivals who have not voted can bring their Favor to any choice,
+    /// so their votes are charged against every alternative. This empire's own
+    /// stake cannot: the counterfactual being ruled out is that it opposed
+    /// instead of joining, and an opposition goes on the one ballot
+    /// `congress_choice` actually returned. Charging it everywhere is not the
+    /// cautious reading of the same question, it is a different and false one —
+    /// it treats this empire as able to fund every rival at once, and it threw
+    /// away two thirds of the free points (9 of 192 settled, against 26 for the
+    /// bound that asks where the votes could really go).
+    ///
+    /// An outcome or target nobody has voted for is still compared, at zero.
+    /// Leaving the empty ones out would call a one-ballot resolution decided
+    /// while the whole field still had Favor to spend, which is the reading
+    /// that makes the join expensive instead of free.
+    ///
+    /// ⚠ Returns the choice string as `resolution.choices` spells it rather
+    /// than a reassembled `"{outcome}:{target}"`. Pre-resolution-variety saves
+    /// store a bare target, which [`Game::congress_choice_parts`] reads as
+    /// outcome A, and a reassembled string would not match the ballot the
+    /// host is expecting.
+    fn congress_decided_choice(
+        &self,
+        g: &Game,
+        pid: usize,
+        resolution: &CongressResolution,
+        preferred: &str,
+    ) -> Option<String> {
+        // Every vote some *other* empire could still bring, counted at the most
+        // the Favor it holds could buy. This empire's own stake is not in here:
+        // it is added below to the one ballot this empire would actually have
+        // cast, which is the only place those votes can land.
+        let slack: u64 = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.id != pid
+                    && !resolution.ballots.contains_key(&player.id)
+            })
+            .map(|player| u64::from(g.congress_affordable_votes(player.id)))
+            .sum();
+        let own = u64::from(g.congress_affordable_votes(pid));
+        let (preferred_outcome, preferred_target) = Game::congress_choice_parts(preferred);
+
+        let mut outcome_totals: std::collections::BTreeMap<&str, u64> =
+            std::collections::BTreeMap::new();
+        for choice in &resolution.choices {
+            outcome_totals
+                .entry(Game::congress_choice_parts(choice).0)
+                .or_insert(0);
+        }
+        for (choice, votes) in resolution.ballots.values() {
+            *outcome_totals
+                .entry(Game::congress_choice_parts(choice).0)
+                .or_insert(0) += u64::from(*votes);
+        }
+        let (&leading_outcome, &leading_votes) =
+            outcome_totals.iter().max_by_key(|(_, votes)| **votes)?;
+        if outcome_totals.iter().any(|(outcome, votes)| {
+            let own_stake = if *outcome == preferred_outcome {
+                own
+            } else {
+                0
+            };
+            *outcome != leading_outcome && *votes + slack + own_stake >= leading_votes
+        }) {
+            return None;
+        }
+
+        let mut target_totals: std::collections::BTreeMap<&str, u64> =
+            std::collections::BTreeMap::new();
+        for choice in &resolution.choices {
+            let (outcome, target) = Game::congress_choice_parts(choice);
+            if outcome == leading_outcome {
+                target_totals.entry(target).or_insert(0);
+            }
+        }
+        for (choice, votes) in resolution.ballots.values() {
+            let (outcome, target) = Game::congress_choice_parts(choice);
+            if outcome == leading_outcome {
+                *target_totals.entry(target).or_insert(0) += u64::from(*votes);
+            }
+        }
+        let (&leading_target, &target_votes) =
+            target_totals.iter().max_by_key(|(_, votes)| **votes)?;
+        if target_totals.iter().any(|(target, votes)| {
+            // This empire's votes only reach the target stage at all if the
+            // ballot it would have cast names the outcome that won.
+            let own_stake = if preferred_outcome == leading_outcome && *target == preferred_target {
+                own
+            } else {
+                0
+            };
+            *target != leading_target && *votes + slack + own_stake >= target_votes
+        }) {
+            return None;
+        }
+
+        resolution
+            .choices
+            .iter()
+            .find(|choice| {
+                let (outcome, target) = Game::congress_choice_parts(choice);
+                outcome == leading_outcome && target == leading_target
+            })
+            .cloned()
+    }
+
     /// The living major holding the most Diplomatic Victory Points.
     ///
     /// Its own concept, not a fallback: the `world_leader` ballot aims here
@@ -12601,11 +12759,25 @@ impl AdvancedAi {
                     continue;
                 }
                 if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
+                    // Nothing cast now can move a resolution that is already
+                    // settled, so the only thing left on the table is the
+                    // Diplomatic Victory Point the host pays for naming the
+                    // winner exactly -- and the first vote on any ballot is
+                    // free. Take the point, stake nothing, and do not empty
+                    // the treasury behind an outcome that is going to happen
+                    // anyway (a *winning* ballot is not refunded). See
+                    // [`Self::congress_banks_a_decided_vote`].
+                    let settled = if self.congress_banks_a_decided_vote {
+                        self.congress_decided_choice(g, pid, &resolution, &choice)
+                    } else {
+                        None
+                    };
+                    let choice = settled.clone().unwrap_or(choice);
                     // A ballot aimed at the empire closest to a victory is
                     // backed with everything the treasury can spare, because a
                     // losing vote is refunded in full and a right-outcome,
                     // wrong-target one at half -- an opposition that fails
-                    // costs nothing. Shipped, weight keys off the voter's own
+                    // costs no Favor. Shipped, weight keys off the voter's own
                     // plan and never off the stakes.
                     let counters_the_leader = self.congress_counter_votes
                         && self.congress_ballot_opposes_the_counter_target(
@@ -12614,8 +12786,9 @@ impl AdvancedAi {
                             &resolution.id,
                             &choice,
                         );
-                    let votes = if plan.strategy == GrandStrategy::Diplomacy || counters_the_leader
-                    {
+                    let votes = if settled.is_some() {
+                        1
+                    } else if plan.strategy == GrandStrategy::Diplomacy || counters_the_leader {
                         g.congress_affordable_votes(pid)
                     } else {
                         1

@@ -57,7 +57,7 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 226,
+    "eval_only_count": 227,
     "firaxis_only_count": 25,
     "live_bridge_count": 80,
     "native_engine_repair_count": 55,
@@ -226,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 226,
+      "declared_count": 227,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -330,6 +330,7 @@
         "advanced_congress_counter",
         "advanced_congress_votes",
         "advanced_congress_counter_hard",
+        "advanced_congress_banks_decided",
         "advanced_pantheon_board",
         "advanced_banking_dedication",
         "advanced_blind_to_leaders",
