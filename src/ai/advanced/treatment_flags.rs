@@ -968,6 +968,10 @@ impl AdvancedAi {
         // where Religious Settlements is a free Settler at ~t20. See
         // `expansion_pantheon`.
         self.enable_expansion_pantheon();
+        // And the book's own Settler slot survives the host's population
+        // floor: half the recorded openings burned it and ordered the first
+        // Settler four turns later. See `opening_settler_waits`.
+        self.enable_opening_settler_waits();
         // And a civic is three points on that tally to a tech's two. See
         // `tally_culture`.
         self.enable_tally_culture();
@@ -1616,6 +1620,18 @@ impl AdvancedAi {
     pub fn disable_expansion_pantheon(&mut self) {
         self.expansion_pantheon = false;
         self.base.expansion_pantheon = false;
+    }
+
+    /// Hold the opening book's Settler slot for the host's population floor
+    /// (see `opening_settler_waits`).
+    pub fn enable_opening_settler_waits(&mut self) {
+        self.opening_settler_waits = true;
+        self.base.opening_settler_waits = true;
+    }
+
+    pub fn disable_opening_settler_waits(&mut self) {
+        self.opening_settler_waits = false;
+        self.base.opening_settler_waits = false;
     }
 
     /// Price a point of culture at the lane's price of a point of science.
