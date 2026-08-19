@@ -202,3 +202,17 @@ the mirror tests (`host_routes_land_on_the_engines_ladder`,
 runs should be read for `move_capped` / `move_no_reach` on `orders`,
 `queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
 did-not-move share (12.5 % before).
+
+## 7. Step 3, first cut — the joint search reaches as far as the unit does
+
+The engagement-window planner grows in steps; this is the first: approach
+lines from the engine's exact reach flood instead of two hand-built steps
+(`docs/TACTICS.md` §17). Measured on `battle_bench` at 300 paired seeds a cell
+on two disjoint blocks: the four foot compositions hold within one standard
+error; the two mounted compositions gain (cavalry +398 → +476 and +352 → +410;
+mounted medieval +496 → +590 and +601 → +622), because a four-move unit's
+third and fourth hexes now exist for our own lines as they already did for
+the enemy's reply. Still ahead in this step: the window (units four-plus tiles
+out with no strike this turn), a second ply for set-up lines, expected-value
+combat for the host's rolls, and the city-assault terms the one-city arena
+regime measures.

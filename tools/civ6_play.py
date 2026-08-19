@@ -3031,6 +3031,24 @@ def _play(args: argparse.Namespace) -> int:
             run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
+        # And which GENOME decided it. `--civvis-strategy` is forwarded to
+        # `civvis_orders --strategy` by name, and a name the league snapshot
+        # does not carry under that spelling falls back to the stock controller
+        # with one line in why.log; the supervisor's default (`WildCard9`, a
+        # display name) has done exactly that on every row since it was
+        # written. Both halves go on the record so asked and played can be
+        # compared on the ledger instead of in a log excavation.
+        genome = civ6_ladder.decider_genome(run_dir / "why.log")
+        if genome is not None:
+            summary["genome"] = genome
+            requested = (args.civvis_strategy or "").strip()
+            summary["strategy_requested"] = requested or None
+            if (requested and requested.lower() not in ("", "auto", "stock", "none")
+                    and genome.get("strategy") == "stock"):
+                print(f"⚠ --civvis-strategy {requested!r} did not resolve in the "
+                      f"decider's league snapshot; this run played the STOCK "
+                      f"genome ({genome.get('source')}). The ledger row records "
+                      f"both.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))

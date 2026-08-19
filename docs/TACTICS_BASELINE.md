@@ -4,7 +4,7 @@ What the shipped controllers do on the arena, so a change to tactical AI can be
 answered with a number. Regenerate with `tools/tactics_bench.py --write-baseline`
 and quote the diff in the pull request that moves it.
 
-**Measured on `79f2ab775` (2026-08-17), 240 seat-mirrored games per matchup.** These figures describe
+**Measured on `e66bd0a28` (2026-08-19), 240 seat-mirrored games per matchup.** These figures describe
 that revision and no other. `tactics_bench.py` prints how many commits have
 landed since, because a table with no age on it reads as current.
 
@@ -41,14 +41,14 @@ finding.** Read the `basic` column.
 
 | regime | advanced vs basic | advanced vs advanced_v1 |
 | --- | --- | --- |
-| 1 city per side | 79.2% | 60.0% (53.7–66.0) |
-| no cities | 87.9% | 99.6% (97.7–99.9) |
-| no cities, random era | 95.0% | 98.8% (96.4–99.6) |
+| 1 city per side | 75.8% | 62.1% (55.8–68.0) |
+| no cities | 91.7% | 100.0% (98.4–100.0) |
+| no cities, random era | 95.4% | 97.9% (95.2–99.1) |
 
-<!-- measured: {"commit": "79f2ab7750a85500ed8b746a7d95e0bf4d440f80", "date": "2026-08-17T14:31:02-04:00", "games": 240} -->
-<!-- bench: {"regime": "capture", "left": "advanced", "right": "basic", "pct": 79.16666666666667} -->
-<!-- bench: {"regime": "capture", "left": "advanced", "right": "advanced_v1", "pct": 60.0} -->
-<!-- bench: {"regime": "attrition", "left": "advanced", "right": "basic", "pct": 87.91666666666667} -->
-<!-- bench: {"regime": "attrition", "left": "advanced", "right": "advanced_v1", "pct": 99.6} -->
-<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "basic", "pct": 95.0} -->
-<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "advanced_v1", "pct": 98.8} -->
+<!-- measured: {"commit": "e66bd0a289cd3cb1cae449aaa37963f74dec65d4", "date": "2026-08-19T01:18:58-04:00", "games": 240} -->
+<!-- bench: {"regime": "capture", "left": "advanced", "right": "basic", "pct": 75.83333333333333} -->
+<!-- bench: {"regime": "capture", "left": "advanced", "right": "advanced_v1", "pct": 62.1} -->
+<!-- bench: {"regime": "attrition", "left": "advanced", "right": "basic", "pct": 91.66666666666667} -->
+<!-- bench: {"regime": "attrition", "left": "advanced", "right": "advanced_v1", "pct": 100.0} -->
+<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "basic", "pct": 95.41666666666667} -->
+<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "advanced_v1", "pct": 97.9} -->

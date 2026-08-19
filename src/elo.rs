@@ -145,6 +145,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
     "live_without_idle_walkers_close_the_pipeline",
+    "live_without_settler_guard_holds",
     "live_without_expansion_pantheon",
     "live_without_expansion_hall",
     "live_without_opening_settler_waits",
@@ -421,6 +422,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "civilian-rescue",
     "district-building-chain",
     "idle-walkers-close-the-pipeline",
+    "settler-guard-holds",
     "expansion-pantheon",
     "expansion-hall",
     "opening-settler-waits",
@@ -649,6 +651,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "wonder-ring-settle-value",
     "settler-site-agreement",
     "idle-walkers-close-the-pipeline",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -712,6 +715,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "wonder-ring-settle-value",
     "settler-site-agreement",
     "idle-walkers-close-the-pipeline",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -852,6 +856,7 @@ define_arm_kinds! {
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     LiveWithoutIdleWalkersCloseThePipeline => "live_without_idle_walkers_close_the_pipeline",
+    LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
     LiveWithoutExpansionHall => "live_without_expansion_hall",
     LiveWithoutOpeningSettlerWaits => "live_without_opening_settler_waits",
@@ -4467,6 +4472,7 @@ impl ArmKind {
             Self::LiveWithoutIdleWalkersCloseThePipeline => {
                 live_without("idle-walkers-close-the-pipeline")
             }
+            Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
             Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
             Self::LiveWithoutOpeningSettlerWaits => live_without("opening-settler-waits"),
