@@ -25950,3 +25950,99 @@ fn the_missing_land_eye_claims_one_idle_queue() {
         "a charted world reserves nothing"
     );
 }
+
+/// ★★★ A STOCK LANE'S PRESSURE ACCELERATES, AND THE BAR READ IT TOO LATE TO
+/// VOTE. The first game on the repaired economy (civvis-20260818T231407Z,
+/// 16 cities against the best rival's 9) crossed `STOCK_DENIAL_BAR` at ~t221;
+/// the game's last Congress sat at t222 with nothing reading urgent when the
+/// ballot was priced, and Egypt won Culture at t232. Across the four
+/// measurable culture losses the projection moves the first crossing from
+/// 3/7/12/37 turns of lead to 12/12/15/66. The projection can only raise a
+/// reading — a receding leader clamps to the raw number — and it feeds the
+/// stock clause alone.
+#[test]
+fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
+    let game = Game::new_full(2, 20, 14, 71_131, 30, 0, false);
+    let rising = VictoryFocus {
+        strategy: GrandStrategy::Culture,
+        progress: 60,
+    };
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.projected_stock_denial,
+        "the live seat carries the treatment"
+    );
+    assert!(
+        live.stock_denial_lead_time,
+        "the projection rides the lead-time bar"
+    );
+
+    // No history yet: a projection from a single reading is noise, so the
+    // raw bar rules and 60 is not urgent.
+    assert!(!live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // Eight turns of the measured Egypt ramp (~2.4/turn): 60 projected
+    // fifteen turns forward clears the bar with a Congress still to come.
+    live.stock_pressure_history.insert(
+        1,
+        (0..=8)
+            .map(|i| (100 + i, 41 + (i as i32) * 12 / 5))
+            .collect(),
+    );
+    assert!(live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // A flat or receding leader clamps to the raw reading: not urgent.
+    live.stock_pressure_history
+        .insert(1, (0..=8).map(|i| (100 + i, 60 - (i as i32))).collect());
+    assert!(!live.victory_pressure_is_urgent(&game, 1, rising));
+
+    // The raw bar itself is untouched: 78 stays urgent with any history.
+    let at_bar = VictoryFocus {
+        strategy: GrandStrategy::Culture,
+        progress: STOCK_DENIAL_BAR,
+    };
+    assert!(live.victory_pressure_is_urgent(&game, 1, at_bar));
+
+    // Non-stock lanes never read the projection: Science at 60 with the
+    // steepest ramp on record stays non-urgent.
+    live.stock_pressure_history
+        .insert(1, (0..=8).map(|i| (100 + i, 40 + (i as i32) * 6)).collect());
+    let science = VictoryFocus {
+        strategy: GrandStrategy::Science,
+        progress: 60,
+    };
+    assert!(!live.victory_pressure_is_urgent(&game, 1, science));
+
+    // The withhold arm restores the raw bar exactly.
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_projected_stock_denial();
+    withheld.stock_pressure_history.insert(
+        1,
+        (0..=8)
+            .map(|i| (100 + i, 41 + (i as i32) * 12 / 5))
+            .collect(),
+    );
+    assert!(!withheld.victory_pressure_is_urgent(&game, 1, rising));
+
+    // The published withhold row reaches the same flag.
+    let (field, name, disable) = super::treatments::LIVE_TREATMENTS
+        .iter()
+        .find(|(field, _, _)| *field == "projected_stock_denial")
+        .copied()
+        .expect("the treatment is published");
+    assert_eq!(name, "projected-stock-denial");
+    let mut via_row = AdvancedAi::new();
+    via_row.enable_live_bridge();
+    disable(&mut via_row);
+    assert!(
+        !via_row.projected_stock_denial,
+        "{field} row disables the flag"
+    );
+
+    // Frozen and ordinary controllers never project.
+    assert!(!AdvancedAi::new().projected_stock_denial);
+    assert!(!AdvancedAi::legacy().projected_stock_denial);
+}
