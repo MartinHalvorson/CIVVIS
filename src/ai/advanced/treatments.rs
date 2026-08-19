@@ -123,6 +123,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("host_settler_pop", "host-settler-pop", AdvancedAi::disable_host_settler_pop),
     ("explore_dead_targets", "explore-dead-targets", AdvancedAi::disable_explore_dead_targets),
     ("explore_commit", "explore-commit", AdvancedAi::disable_explore_commit),
+    ("veto_guided_recon", "veto-guided-recon", AdvancedAi::disable_veto_guided_recon),
     ("bank_envoys", "bank-envoys", AdvancedAi::disable_bank_envoys),
     ("land_grab", "land-grab", AdvancedAi::disable_land_grab),
     ("siege_is_progress", "siege-is-progress", AdvancedAi::disable_siege_is_progress),

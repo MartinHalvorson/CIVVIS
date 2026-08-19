@@ -57,9 +57,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 228,
-    "firaxis_only_count": 26,
-    "live_bridge_count": 81,
+    "eval_only_count": 229,
+    "firaxis_only_count": 27,
+    "live_bridge_count": 82,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -226,7 +226,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 228,
+      "declared_count": 229,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -277,6 +277,7 @@
         "live_without_deny_while_targeted",
         "live_without_stock_denial_lead_time",
         "live_without_projected_stock_denial",
+        "live_without_veto_guided_recon",
         "live_without_endgame_war_runway",
         "live_without_stacked_escort",
         "live_without_counter_in_lane",
@@ -459,7 +460,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 26,
+      "declared_count": 27,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -479,6 +480,7 @@
         "deny-while-targeted",
         "stock-denial-lead-time",
         "projected-stock-denial",
+        "veto-guided-recon",
         "parallel-settlers",
         "host-settler-pop",
         "explore-dead-targets",
@@ -490,7 +492,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 81,
+      "declared_count": 82,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -566,6 +568,7 @@
         "host-settler-pop",
         "explore-dead-targets",
         "explore-commit",
+        "veto-guided-recon",
         "bank-envoys",
         "land-grab",
         "siege-is-progress",
