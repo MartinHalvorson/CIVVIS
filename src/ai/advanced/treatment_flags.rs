@@ -97,6 +97,15 @@ impl AdvancedAi {
         self.base.recorded_tactical_step = true;
     }
 
+    /// Withholding twin for the base military picker's engine-legality
+    /// candidate screen (`BasicAi::legal_tactical_candidates`), which
+    /// production enables in `promoted_policy_envoy`. Only the
+    /// `advanced_without_legal_candidates` arm calls this, so the axis stays
+    /// measurable after shipping.
+    pub fn disable_legal_tactical_candidates(&mut self) {
+        self.base.legal_tactical_candidates = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -1241,6 +1250,18 @@ impl AdvancedAi {
     /// Evaluator arm `advanced_builder_survey`; off in production.
     pub fn enable_builder_reward_survey(&mut self) {
         self.builder_reward_survey = true;
+    }
+
+    /// Credit a wonder's missing prerequisite buildings/districts with a
+    /// share of the wonder's own production score. Evaluator arm
+    /// `advanced_wonder_reach`; off in production.
+    pub fn enable_wonder_prereq_reach(&mut self) {
+        self.wonder_prereq_reach = true;
+    }
+
+    /// Withhold the wonder-prerequisite credit. Evaluator-only.
+    pub fn disable_wonder_prereq_reach(&mut self) {
+        self.wonder_prereq_reach = false;
     }
 
     /// Credit strength-per-production and the civ's own unique unit in the
