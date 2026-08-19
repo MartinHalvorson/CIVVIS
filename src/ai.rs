@@ -2267,6 +2267,23 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Refuse a step back onto **any** tile this unit has already stood on
+    /// this turn, not merely the one it just left.
+    ///
+    /// ★★★★★ THE SHIPPED GUARD IS ONE STEP DEEP AND THE LOOPS ARE THREE.
+    /// `recorded_tactical_step` remembers a single previous tile, so `A -> B ->
+    /// A` is refused and `A -> B -> C -> A` is not. Measured over three
+    /// 6-player 200-turn games, the `live` bundle walks 329 routes that end on
+    /// the tile they began: **23** are the two-hop shape the shipped guard
+    /// covers and **294** are three hops or more. Every one of them spends a
+    /// unit's whole turn to arrive nowhere, and on the Civilization VI bridge
+    /// the wasted step is also a dropped order.
+    ///
+    /// Off for native tournament games, whose recorded ladders replay
+    /// move-for-move, and off for the frozen anchor. On for the live bridge
+    /// and for the native repair bundle — a loop back to the start is a wasted
+    /// turn in either engine, so this is not a Firaxis semantic.
+    whole_turn_backtrack_guard: bool,
     /// Drop attack candidates the engine will refuse — invisible target, no
     /// line of sight, wrong melee domain, unpayable entry cost — before they
     /// are scored, so a doomed order cannot win the argmax and shadow a legal
@@ -2353,11 +2370,41 @@ pub struct BasicAi {
     /// the key, so a worker that has applied an action recomputes.
     attack_envelope_cache:
         std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
+    /// Keep the hostile-envelope table across this seat's own unit moves.
+    ///
+    /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
+    /// place, own units included, because an own unit's zone of control ends
+    /// an enemy's move — so a serial path that moves one unit between two
+    /// asks recomputes every enemy's `attack_reach`, and the exact cache
+    /// serves the frontier batches and little else (a deterministic 6p 40×30
+    /// 80-turn game: 4,301 computes for 6,028 asks). With this on, the
+    /// fingerprint leaves the viewer's own units out: the envelopes read the
+    /// enemy's next turn against the positions this pass STARTED with, and
+    /// are refreshed the moment an enemy moves, dies or appears, a city
+    /// changes hands, or the map changes. The difference from exact is one
+    /// tile of zone of control on the enemy's side of a unit that just moved
+    /// — an estimate of a turn the enemy has not taken yet, against
+    /// positions this pass is still changing.
+    ///
+    /// Measured 2026-08-19 (`speed_ab.py` shape, `ci`, one game): 67 s → 34 s
+    /// and 87 s → 39 s beside the exact key, on a controller whose reports
+    /// therefore differ. Evaluator arm `advanced_envelope_own_moves` prices
+    /// it, and the gate has answered: `--matrix --pairs 40` RETAINED the
+    /// exact key — parity on the fieldless profiles, but 43.8 % on the
+    /// contested one (11 of 80 games against 21, twelve maps to two, sign
+    /// p = 0.013). Off in production; the arm stays so the exact algorithmic
+    /// route (see docs/SIMULATOR_PERFORMANCE.md, 2026-08-19) can be measured
+    /// against it.
+    envelope_cache_across_own_moves: bool,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
     /// identical round trip would repeat forever.
-    last_path_step_from: RefCell<HashMap<u32, (u32, Pos)>>,
+    /// Per unit: the turn, and every tile it has stepped *from* during that
+    /// turn, in order. The last entry is the step it just took, which is all
+    /// the shipped reversal guard reads; the rest of the trail is what
+    /// [`BasicAi::whole_turn_backtrack_guard`] reads.
+    last_path_step_from: RefCell<HashMap<u32, (u32, Vec<Pos>)>>,
     /// Give up an exploration target the host will not move the unit toward.
     ///
     /// ★★★★ AN ACCEPTED MOVE THAT NEVER MOVES IS INVISIBLE TO EVERY DETECTOR.
@@ -2602,7 +2649,7 @@ pub(crate) struct BasicUnitPlanState {
     patrol_target: Option<Pos>,
     settler_target: Option<Pos>,
     memory: Option<UnitMemory>,
-    last_path_step: Option<(u32, Pos)>,
+    last_path_step: Option<(u32, Vec<Pos>)>,
     patrol_posts: HashMap<String, Vec<Pos>>,
 }
 
@@ -4093,6 +4140,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
@@ -4109,6 +4157,7 @@ impl BasicAi {
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4400,6 +4449,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
             unit_objective_memory: false,
@@ -4416,6 +4466,7 @@ impl BasicAi {
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4649,7 +4700,14 @@ impl BasicAi {
         g: &Game,
         pid: usize,
     ) -> std::sync::Arc<Vec<(u32, BTreeSet<Pos>)>> {
-        let key = (g.turn, pid, Self::attack_envelope_fingerprint(g));
+        let key = (
+            g.turn,
+            pid,
+            Self::attack_envelope_fingerprint(
+                g,
+                self.envelope_cache_across_own_moves.then_some(pid),
+            ),
+        );
         // A poisoned lock only means another worker panicked mid-store; the
         // value inside is a complete entry or `None`, either of which is safe
         // to read.
@@ -4679,8 +4737,9 @@ impl BasicAi {
     /// health, movement and fighting state (an own unit's place matters too —
     /// its zone of control ends an enemy's move), every city's identity,
     /// owner and place, the map epoch, and the war ledger. FNV-1a over those
-    /// fields in table order, so equal boards hash equal.
-    fn attack_envelope_fingerprint(g: &Game) -> u64 {
+    /// fields in table order, so equal boards hash equal. `skip_owner` leaves
+    /// one seat's units out — see `envelope_cache_across_own_moves`.
+    fn attack_envelope_fingerprint(g: &Game, skip_owner: Option<usize>) -> u64 {
         const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
         const PRIME: u64 = 0x0000_0100_0000_01b3;
         let mut hash = OFFSET;
@@ -4692,7 +4751,11 @@ impl BasicAi {
         };
         mix(g.map.tiles.epoch());
         mix(g.wars.len() as u64);
-        for unit in g.units.values() {
+        for unit in g
+            .units
+            .values()
+            .filter(|unit| Some(unit.owner) != skip_owner)
+        {
             mix(u64::from(unit.id));
             mix(unit.owner as u64);
             mix(unit.pos.0 as u64);
@@ -4711,6 +4774,11 @@ impl BasicAi {
             mix(city.pos.1 as u64);
         }
         hash
+    }
+
+    /// See `envelope_cache_across_own_moves`. Evaluator arm only.
+    pub fn enable_envelope_cache_across_own_moves(&mut self) {
+        self.envelope_cache_across_own_moves = true;
     }
 
     fn compute_enemy_attack_envelopes(g: &Game, pid: usize) -> Vec<(u32, BTreeSet<Pos>)> {
@@ -5357,7 +5425,7 @@ impl BasicAi {
             patrol_target: self.patrol_targets.get(&uid).copied(),
             settler_target: self.settler_targets.get(&uid).copied(),
             memory: self.unit_memory(uid),
-            last_path_step: self.last_path_step_from.borrow().get(&uid).copied(),
+            last_path_step: self.last_path_step_from.borrow().get(&uid).cloned(),
             patrol_posts: self.patrol_posts.clone(),
         }
     }
@@ -10772,12 +10840,26 @@ impl BasicAi {
                 return false;
             }
         }
-        let reverses_last_step = self
-            .last_path_step_from
-            .borrow()
-            .get(&uid)
-            .is_some_and(|(turn, previous)| *turn == g.turn && *previous == to);
-        if reverses_last_step {
+        // Shipped: only the step just taken is remembered, so `A -> B -> A` is
+        // refused. With `whole_turn_backtrack_guard` on, every tile walked
+        // this turn is remembered, which is what refuses the longer loops --
+        // `A -> B -> C -> A` and up -- that a one-deep memory cannot see.
+        // `allow_livelock_retread` still overrides both: a proven livelock
+        // escape has to be allowed back through the pocket it came from.
+        let whole_turn = self.whole_turn_backtrack_guard && !allow_livelock_retread;
+        let revisits_this_turn =
+            self.last_path_step_from
+                .borrow()
+                .get(&uid)
+                .is_some_and(|(turn, trail)| {
+                    *turn == g.turn
+                        && if whole_turn {
+                            trail.contains(&to)
+                        } else {
+                            trail.last() == Some(&to)
+                        }
+                });
+        if revisits_this_turn {
             return false;
         }
         // The same refusal over the unit's last several turns rather than its
@@ -10798,9 +10880,14 @@ impl BasicAi {
         if g.apply(pid, &movement).is_err() {
             return false;
         }
-        self.last_path_step_from
-            .borrow_mut()
-            .insert(uid, (g.turn, from));
+        {
+            let mut trails = self.last_path_step_from.borrow_mut();
+            let entry = trails.entry(uid).or_insert((g.turn, Vec::new()));
+            if entry.0 != g.turn {
+                *entry = (g.turn, Vec::new());
+            }
+            entry.1.push(from);
+        }
         true
     }
 

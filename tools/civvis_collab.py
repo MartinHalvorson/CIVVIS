@@ -41,7 +41,41 @@ DEFAULT_BRANCH = "main"
 #: format-and-clippy ratchet is scoped to the lines a change touches precisely
 #: so it is always satisfiable; a ratchet nobody has to pass ratchets nothing,
 #: and it trains a fleet at a hundred merges a day to read red as normal.
+def _eval_manifest_outputs() -> Tuple[str, ...]:
+    """`eval_manifest.GENERATED_OUTPUTS`, without importing the module eagerly.
+
+    `civvis_collab.py` is copied to machines as a standalone freshness worker,
+    so a hard import would make the launcher depend on a file the worker never
+    ships with. Missing, it simply resolves nothing automatically.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from eval_manifest import GENERATED_OUTPUTS  # type: ignore[import-not-found]
+    except Exception:
+        return ()
+    return tuple(GENERATED_OUTPUTS)
+
+
 REQUIRED_CHECKS = ("cargo-test", "collaboration-policy", "rust-quality")
+
+#: Generated artifacts a merge conflict may be resolved in by regenerating,
+#: mapped to the command that rebuilds them (argv relative to the repo root,
+#: run with this interpreter).
+#:
+#: A path belongs here only if all three hold: its content is a deterministic
+#: function of tracked source, rebuilding it is cheap, and nothing about it is
+#: measured. `docs/TACTICS_BASELINE.md` looks similar and fails the third —
+#: `tools/tactics_bench.py --write-baseline` runs a benchmark, so its output
+#: depends on the machine that ran it and must never be regenerated to settle
+#: somebody else's merge.
+#:
+#: The eval pair is discovered from the generator rather than spelled again
+#: here, so a third artifact cannot be added to `eval_manifest.py` and quietly
+#: left out of this map.
+REGENERATED_ON_MERGE: Dict[str, Tuple[str, ...]] = {
+    name: ("tools/eval_manifest.py", "--write")
+    for name in _eval_manifest_outputs()
+}
 
 #: Every other check a pull request gets, with the reason it is NOT required.
 #: `test_civvis_collab.py` discovers the checks the workflows actually produce
@@ -1025,6 +1059,88 @@ def wait_for_pr_head(
         time.sleep(max(0.1, poll_seconds))
 
 
+def regenerable_conflicts(repo: Path) -> List[str]:
+    """The conflicted paths this tool is allowed to resolve by regenerating.
+
+    Empty when nothing is conflicted, and empty when *anything* conflicted is
+    not on the list — a partial automatic resolution is worse than none,
+    because it hands the author a half-merged tree that looks resolved.
+    """
+    unmerged = [
+        line.strip()
+        for line in git(repo, "diff", "--name-only", "--diff-filter=U").splitlines()
+        if line.strip()
+    ]
+    if not unmerged or any(name not in REGENERATED_ON_MERGE for name in unmerged):
+        return []
+    return sorted(unmerged)
+
+
+def resolve_by_regenerating(repo: Path, conflicted: List[str]) -> None:
+    """Rebuild the generated artifacts from the merged sources and stage them.
+
+    ★★★★★ THE ONLY HOT CONFLICT CLASS THAT NEEDS NO JUDGEMENT. On 2026-08-19,
+    35 of the 138 commits main took in a day touched `docs/eval_manifest.json`
+    and 32 touched `docs/EVAL_STATUS.md` — the fourth and fifth most-edited
+    paths in the repository, behind only `advanced.rs`, its tests and
+    `elo.rs`. Both are pure functions of tracked source, both are appended to
+    by every agent registering an evaluator arm, and every conflict in them
+    has exactly one correct resolution: run the generator again. One pull
+    request hit the same conflict on four consecutive ship attempts and
+    resolved it four identical times by hand.
+
+    ⚠ This is sound *because the source merged cleanly*. `regenerable_conflicts`
+    returns nothing unless every conflicted path is generated, so the tree this
+    regenerates from is the real merge of both branches' sources. Regenerating
+    over a conflicted source file would silently publish one side's arms.
+
+    ⚠ And it regenerates rather than choosing a side. `--write` is run, then
+    `--check`, so a resolution that does not match what the merged source
+    implies fails loudly instead of being committed.
+    """
+    commands = []
+    for name in conflicted:
+        command = REGENERATED_ON_MERGE[name]
+        if command not in commands:
+            commands.append(command)
+    for command in commands:
+        run((sys.executable, str(repo / command[0]), *command[1:]), cwd=repo, capture=False)
+        # The generator reporting success is not the same as every artifact it
+        # owns being current; ask it.
+        run(
+            (sys.executable, str(repo / command[0]), "--check"),
+            cwd=repo,
+            capture=False,
+        )
+    git(repo, "add", "--", *conflicted)
+    still = [line for line in git(repo, "diff", "--name-only", "--diff-filter=U").splitlines() if line.strip()]
+    if still:
+        raise CommandError(
+            "regenerating the generated documents left conflicts behind: " + ", ".join(still)
+        )
+
+
+def settle_merge_conflict(repo: Path, detail: str) -> None:
+    """Finish a conflicted merge, or hand it back to the author.
+
+    A conflict confined to generated documents is arithmetic, not a decision:
+    rebuild them from the merged source and commit. Anything else raises, with
+    git's own message, exactly as it did before. See `resolve_by_regenerating`.
+    """
+    conflicted = regenerable_conflicts(repo)
+    if not conflicted:
+        raise CommandError(
+            "latest main did not merge cleanly; resolve this task worktree, "
+            f"revalidate it, and run ship again: {detail or 'merge conflict'}"
+        )
+    print(
+        "main advanced into a generated-document conflict; regenerating "
+        + ", ".join(conflicted)
+    )
+    resolve_by_regenerating(repo, conflicted)
+    git(repo, "commit", "--no-edit")
+
+
 def merge_current_main(repo: Path) -> bool:
     """Integrate a newly advanced main and type-check the merged result.
 
@@ -1047,11 +1163,7 @@ def merge_current_main(repo: Path) -> bool:
         check=False,
     )
     if merged.returncode:
-        detail = (merged.stderr or merged.stdout or "merge conflict").strip()
-        raise CommandError(
-            "latest main did not merge cleanly; resolve this task worktree, "
-            f"revalidate it, and run ship again: {detail}"
-        )
+        settle_merge_conflict(repo, (merged.stderr or merged.stdout or "").strip())
     git(repo, "diff", "--check", "origin/main...")
     run(
         ("cargo", "check", "--locked"),
