@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unittest
@@ -121,6 +122,11 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         in a row played nothing. Run the script's OWN knob lines and the
         optional-flag lines of its climb invocation under zsh, with and
         without the knobs, and read the words that come out."""
+        if shutil.which("zsh") is None:
+            # The supervisor is a zsh script and only ever runs on the macOS
+            # hosts that have it; the literal pin above is the guard on a
+            # runner without one.
+            self.skipTest("zsh is not installed here")
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         knob_lines = [line for line in source.splitlines()
                       if re.match(r"^(VICTORY|ABANDON_BELOW)=\$\{CIVVIS_", line)]
