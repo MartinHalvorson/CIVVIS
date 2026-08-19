@@ -19138,14 +19138,12 @@ impl AdvancedAi {
                     // the Renaissance Walls family, which includes Tsikhe.
                     // The helper is host-scoped, so native games and every
                     // other competition retain this exact building valuation.
-                    let monarchy_wall_favor = if g.building_is_family(
-                        building,
-                        crate::name!("renaissance_walls"),
-                    ) {
-                        g.gov_effects(pid).walled_city_diplomatic_favor
-                    } else {
-                        0.0
-                    };
+                    let monarchy_wall_favor =
+                        if g.building_is_family(building, crate::name!("renaissance_walls")) {
+                            g.gov_effects(pid).walled_city_diplomatic_favor
+                        } else {
+                            0.0
+                        };
                     let nobel_peace_favor = self.nobel_peace_favor_score_value(
                         g,
                         pid,
