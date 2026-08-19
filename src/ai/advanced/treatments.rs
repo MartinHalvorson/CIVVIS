@@ -132,3 +132,13 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
 pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
     ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
 ];
+
+/// Opt-in treatments production ships OFF: the complement of
+/// `PRODUCTION_TREATMENTS`. A row here lets an evaluator seat the treated
+/// agent by name (`victory_eval --with <tag>`) the way `--without` withholds
+/// a shipped behaviour, so an off-by-default arm can be measured in the
+/// targeted regime it exists for before any promotion question is asked.
+#[rustfmt::skip]
+pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+    ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
+];
