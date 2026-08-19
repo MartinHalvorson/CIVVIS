@@ -40,6 +40,21 @@ use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// Promote an Apostle for the job the empire has rather than for the
+    /// largest number on the card. Off in production; opted into by name
+    /// (`victory_eval --with apostle-promotion-by-role`, `gene_screen`). See
+    /// [`crate::ai::BasicAi::apostle_promotion_by_role`] for the units mismatch
+    /// that makes the shipped ranking a constant.
+    pub fn enable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = true;
+    }
+
+    /// The twin of `enable_apostle_promotion_by_role`, so an arm that opted in
+    /// can put it back.
+    pub fn disable_apostle_promotion_by_role(&mut self) {
+        self.base.apostle_promotion_by_role = false;
+    }
+
     /// Enable the narrow Trader adaptation required by a live Civilization VI
     /// export.  Native tournament games leave this disabled.
     pub fn enable_live_trader_route_adapter(&mut self) {
@@ -528,6 +543,15 @@ impl AdvancedAi {
         self.settler_site_agreement = false;
     }
 
+    /// See [`Self::settler_guard_holds`].
+    pub fn enable_settler_guard_holds(&mut self) {
+        self.settler_guard_holds = true;
+    }
+
+    pub fn disable_settler_guard_holds(&mut self) {
+        self.settler_guard_holds = false;
+    }
+
     /// See [`Self::siege_is_progress`].
     pub fn enable_siege_is_progress(&mut self) {
         self.siege_is_progress = true;
@@ -968,6 +992,11 @@ impl AdvancedAi {
         // where Religious Settlements is a free Settler at ~t20. See
         // `expansion_pantheon`.
         self.enable_expansion_pantheon();
+        // And the plaza the seat builds by t29–57 in every game gets the one
+        // building the land grab is made of — a free Builder in every new
+        // city, +50% Settlers — instead of standing empty to turn 250. See
+        // `expansion_hall`.
+        self.enable_expansion_hall();
         // And the book's own Settler slot survives the host's population
         // floor: half the recorded openings burned it and ordered the first
         // Settler four turns later. See `opening_settler_waits`.
@@ -1045,6 +1074,11 @@ impl AdvancedAi {
         // 19 starts became 8 foundings on the first hostile map after the
         // land-grab pipeline. See `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And the guard on the settler's tile holds there, and only a guard
+        // that can hold counts — both settlers of civvis-20260819T025840Z were
+        // taken one tile outside Rome from a tile a warrior had just left.
+        // See `settler_guard_holds`.
+        self.enable_settler_guard_holds();
         // And a capturable civilian within reach is walked onto, never
         // watched from adjacency — and a settler in the barbarians' hands is
         // never declined. Run `civvis-20260818T222844Z` t27–t33: our own
@@ -1190,6 +1224,9 @@ impl AdvancedAi {
         // And never paying for a Settler the march will refuse to land. See
         // `settler_site_agreement`.
         self.enable_settler_site_agreement();
+        // And a stacked guard holds, and only one that can hold counts. See
+        // `settler_guard_holds`.
+        self.enable_settler_guard_holds();
         // The cheap half of a research city before the race in it. See
         // `buildings_before_projects`.
         self.enable_buildings_before_projects();
@@ -1620,6 +1657,15 @@ impl AdvancedAi {
     pub fn disable_expansion_pantheon(&mut self) {
         self.expansion_pantheon = false;
         self.base.expansion_pantheon = false;
+    }
+
+    /// Price the Ancestral Hall for the land grab (see `expansion_hall`).
+    pub fn enable_expansion_hall(&mut self) {
+        self.expansion_hall = true;
+    }
+
+    pub fn disable_expansion_hall(&mut self) {
+        self.expansion_hall = false;
     }
 
     /// Hold the opening book's Settler slot for the host's population floor
