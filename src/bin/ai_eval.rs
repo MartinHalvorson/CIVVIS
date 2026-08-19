@@ -661,6 +661,7 @@ fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
 fn unresolvable_lanes(
     enabled: &str,
     decided_by: &BTreeMap<String, usize>,
+    won_by_entrants: &BTreeMap<String, usize>,
     pairs: usize,
     half_width_points: f64,
 ) -> Vec<(String, usize, f64)> {
@@ -676,7 +677,13 @@ fn unresolvable_lanes(
             if decided == 0 {
                 return None;
             }
-            let ceiling = 100.0 * decided as f64 / pairs as f64;
+            // Only a game an entrant WON can move the paired score. On a field
+            // profile a game the field takes is a draw for the pair, so a lane
+            // the entrants never win has a ceiling of zero however often the
+            // board produces it — which is the case this function existed to
+            // catch and originally got wrong.
+            let movable = won_by_entrants.get(name).copied().unwrap_or(0);
+            let ceiling = 100.0 * movable as f64 / pairs as f64;
             (ceiling < half_width_points).then(|| (name.to_string(), decided, ceiling))
         })
         .collect();
@@ -2798,16 +2805,28 @@ here and any null is uninformative"
         // suzerainty round, where `diplomatic` decided 2 of 240 games with a
         // half-width of ~5 points.
         let half_width = (inference.high - inference.low) / 2.0 * 100.0;
-        let unresolvable: Vec<String> =
-            unresolvable_lanes(&enabled_victories, &game_victories, pairs, half_width)
-                .into_iter()
-                .map(|(name, decided, ceiling)| {
-                    format!(
-                        "{name} decided {decided} of {total} games, so it can move the paired \
-                         score by at most {ceiling:.1} points"
-                    )
-                })
-                .collect();
+        let mut won_by_entrants: BTreeMap<String, usize> = BTreeMap::new();
+        for name in [a, b] {
+            for (lane, count) in &totals[name].victories {
+                *won_by_entrants.entry(lane.clone()).or_default() += count;
+            }
+        }
+        let unresolvable: Vec<String> = unresolvable_lanes(
+            &enabled_victories,
+            &game_victories,
+            &won_by_entrants,
+            pairs,
+            half_width,
+        )
+        .into_iter()
+        .map(|(name, decided, ceiling)| {
+            let won = won_by_entrants.get(&name).copied().unwrap_or(0);
+            format!(
+                "{name} decided {decided} of {total} games but an entrant won {won} of them, \
+                 so it can move the paired score by at most {ceiling:.1} points"
+            )
+        })
+        .collect();
         if !unresolvable.is_empty() {
             println!(
                 "⚠ produced but not resolvable here (interval half-width {half_width:.1} points): \
@@ -3273,7 +3292,8 @@ mod tests {
 
         // 120 pairs, interval half-width 5 points. Diplomacy tops out at
         // 2/120 = 1.7 points and cannot be seen; religion tops out at 45.
-        let bounded = unresolvable_lanes(enabled, &decided, 120, 5.0);
+        let won = decided.clone();
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 5.0);
         assert_eq!(bounded.len(), 1, "{bounded:?}");
         assert_eq!(bounded[0].0, "diplomatic");
         assert_eq!(bounded[0].1, 2);
@@ -3281,16 +3301,39 @@ mod tests {
 
         // A lane nobody produced belongs to the separate, stronger line.
         assert!(
-            !unresolvable_lanes(enabled, &decided, 120, 5.0)
+            !unresolvable_lanes(enabled, &decided, &won, 120, 5.0)
                 .iter()
                 .any(|(name, ..)| name == "science"),
             "never-produced lanes are reported by the silence check, not this one"
         );
 
         // Tighten the run and the same lane becomes resolvable.
-        assert!(unresolvable_lanes(enabled, &decided, 120, 1.0).is_empty());
+        assert!(unresolvable_lanes(enabled, &decided, &won, 120, 1.0).is_empty());
         // A run with no pairs has no resolution to compare against.
-        assert!(unresolvable_lanes(enabled, &decided, 0, 5.0).is_empty());
+        assert!(unresolvable_lanes(enabled, &decided, &won, 0, 5.0).is_empty());
+    }
+
+    /// The contested board is the case that corrected this. It produced
+    /// `diplomatic` 29 times in 240 games — comfortably resolvable if you count
+    /// the games — while **neither entrant won one of them**: every single one
+    /// went to a scripted field seat, and a game the field wins is a draw for
+    /// the pair. The ceiling is therefore zero, not 24 points, and a diplomacy
+    /// treatment cannot be screened there by win rate however often the board
+    /// produces the lane.
+    #[test]
+    fn a_lane_only_the_field_ever_wins_cannot_move_the_score() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 29);
+        decided.insert("religious".to_string(), 108);
+        let mut won = BTreeMap::new();
+        won.insert("religious".to_string(), 108);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 3.7);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 29, "the games it decided are still reported");
+        assert_eq!(bounded[0].2, 0.0, "but none of them can move the pair");
     }
 
     /// The city-state guard is a list of strings, and lists of strings rot.
