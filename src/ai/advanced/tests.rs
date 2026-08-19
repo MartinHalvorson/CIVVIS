@@ -4734,6 +4734,83 @@ fn live_competitions_price_host_projects_and_worlds_fair_production() {
     );
 }
 
+/// Firaxis counts selected Great Person points in its Nobel competitions just
+/// as it counts every class for the World's Fair. A hosted Nobel Physics race
+/// should therefore pull a Scientist project, while Literature should pull a
+/// Writer/Artist/Musician project—and neither race may price the other class.
+#[test]
+fn live_nobel_competitions_price_only_matching_great_person_projects() {
+    let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.turn = 180;
+    install_ai_test_district(&mut game, city, "campus");
+    install_ai_test_district(&mut game, city, "theater_square");
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.refresh_research_weight(&game);
+    let scientist = Item::Project {
+        project: crate::name!("campus_research_grants"),
+    };
+    let literature = Item::Project {
+        project: crate::name!("theater_square_festival"),
+    };
+    assert!(game.can_produce(0, city, &scientist));
+    assert!(game.can_produce(0, city, &literature));
+    let counts = ai.counts(&game, 0);
+    let scientist_baseline = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let literature_baseline = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PHYSICS".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 10.0,
+    }]);
+    let physics_scientist = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let physics_literature = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+    assert!(
+        physics_scientist > scientist_baseline + 50.0,
+        "Nobel Physics must price a project's Great Scientist points: {physics_scientist} vs {scientist_baseline}"
+    );
+    assert_eq!(
+        physics_literature, literature_baseline,
+        "Nobel Physics must not claim Writer/Artist/Musician points"
+    );
+
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: game.turn + 50,
+        ours: 0.0,
+        leader: 15.0,
+    }]);
+    let literature_scientist = ai.production_value(&game, 0, city, &scientist, &plan, &counts);
+    let literature_project = ai.production_value(&game, 0, city, &literature, &plan, &counts);
+    assert_eq!(
+        literature_scientist, scientist_baseline,
+        "Nobel Literature must not claim Great Scientist points"
+    );
+    assert!(
+        literature_project > literature_baseline + 50.0,
+        "Nobel Literature must price Writer/Artist/Musician project points: {literature_project} vs {literature_baseline}"
+    );
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
