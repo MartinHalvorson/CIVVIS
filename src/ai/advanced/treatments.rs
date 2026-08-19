@@ -30,7 +30,7 @@ use super::AdvancedAi;
 pub type LiveTreatment = (&'static str, &'static str, fn(&mut AdvancedAi));
 
 #[rustfmt::skip]
-pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
+pub const LIVE_TREATMENTS: [LiveTreatment; 81] = [
     ("joint_tactics", "joint-tactics", AdvancedAi::disable_joint_tactics),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
@@ -100,6 +100,7 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
     ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
     ("stock_denial_lead_time", "stock-denial-lead-time", AdvancedAi::disable_stock_denial_lead_time),
+    ("projected_stock_denial", "projected-stock-denial", AdvancedAi::disable_projected_stock_denial),
     ("parallel_settlers", "parallel-settlers", AdvancedAi::disable_parallel_settlers),
     ("host_settler_pop", "host-settler-pop", AdvancedAi::disable_host_settler_pop),
     ("explore_dead_targets", "explore-dead-targets", AdvancedAi::disable_explore_dead_targets),
@@ -110,6 +111,7 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 79] = [
     ("spy_mission_patience", "spy-mission-patience", AdvancedAi::disable_spy_mission_patience),
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
+    ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
 ];
 
 /// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.

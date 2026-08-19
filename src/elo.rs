@@ -99,6 +99,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_war_patience",
     "live_without_deny_while_targeted",
     "live_without_stock_denial_lead_time",
+    "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_counter_in_lane",
@@ -142,6 +143,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_spy_mission_patience",
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
+    "live_without_district_building_chain",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -401,6 +403,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "deny-while-targeted",
     "stock-denial-lead-time",
+    "projected-stock-denial",
     "parallel-settlers",
     "host-settler-pop",
     "explore-dead-targets",
@@ -411,6 +414,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "spy-mission-patience",
     "settler-site-agreement",
     "civilian-rescue",
+    "district-building-chain",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -553,6 +557,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // t229-245); the native lanes end on their own clock and keep the
     // measured 90 bar until a native run says otherwise.
     "stock-denial-lead-time",
+    // Same steal record, same clock: the projection only widens the live
+    // seat's lead-time bar; native lanes keep the raw reading.
+    "projected-stock-denial",
     // These four react to host movement or host production semantics; native
     // CIVVIS has neither distinction, so the repair bundle must not imply
     // they are native engine changes.
@@ -572,6 +579,10 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // native `do_spy_mission` sets `spy.mission` and legality already
     // debounces, so the repair cannot fire there.
     "spy-mission-patience",
+    // Prices the Settler seat's tally for the buildings inside the districts
+    // it already stands, against Firaxis rivals who fill every one; the
+    // native lanes keep their bred building debts.
+    "district-building-chain",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -774,6 +785,7 @@ define_arm_kinds! {
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutDenyWhileTargeted => "live_without_deny_while_targeted",
     LiveWithoutStockDenialLeadTime => "live_without_stock_denial_lead_time",
+    LiveWithoutProjectedStockDenial => "live_without_projected_stock_denial",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutCounterInLane => "live_without_counter_in_lane",
     LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
@@ -817,6 +829,7 @@ define_arm_kinds! {
     LiveWithoutSpyMissionPatience => "live_without_spy_mission_patience",
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
+    LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -1141,7 +1154,22 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// measured — the justification is that two definitions of the same thing
 /// disagreed, not a demonstrated gain. Rows before and after v15 are not
 /// comparable in any game where an improvement was pillaged.
-pub const ELO_PROTOCOL_VERSION: u32 = 15;
+///
+/// **v16 (2026-08-18) — Barbarian Scouts now report a sighted city, and each
+/// reported outpost raises one finite, difficulty-shaped raiding party.** The
+/// old phase let unreported camps add globally capped, unassigned units, so a
+/// distant camp could consume the force a successful Scout had earned. The
+/// corrected world rule keeps the Scout home while its report is active,
+/// retains each raider's source camp, and ends the alert after the party has
+/// formed.
+///
+/// This is a shared native-world rule with no controller gate: it changes what
+/// every participant faces before and during their turns. The frozen anchor
+/// therefore moves from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
+/// 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles. This is a rules
+/// correction, not a compatibility re-pin: v15 and v16 rows are not
+/// comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 16;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -4354,6 +4382,7 @@ impl ArmKind {
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutDenyWhileTargeted => live_without("deny-while-targeted"),
             Self::LiveWithoutStockDenialLeadTime => live_without("stock-denial-lead-time"),
+            Self::LiveWithoutProjectedStockDenial => live_without("projected-stock-denial"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
             Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
@@ -4396,6 +4425,7 @@ impl ArmKind {
             Self::LiveWithoutSpyMissionPatience => live_without("spy-mission-patience"),
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
+            Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -6874,6 +6904,7 @@ mod tests {
             "deny_while_targeted",
             // Same: priced on the live seat's steal record, not native play.
             "stock_denial_lead_time",
+            "projected_stock_denial",
             // Host movement and production semantics, not native engine
             // repairs. `explore_commit` is already set by production
             // Advanced, but stays in the live registry for full parity.
@@ -6889,6 +6920,10 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
+            // The Settler seat's tally for the buildings inside its
+            // districts, against Firaxis rivals who fill every one; the
+            // native lanes keep their bred building debts.
+            "district_building_chain",
         ];
         // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
         // scrape reads the controller's whole text so a further split cannot

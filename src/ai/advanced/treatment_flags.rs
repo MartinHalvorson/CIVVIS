@@ -537,6 +537,15 @@ impl AdvancedAi {
         self.siege_is_progress = false;
     }
 
+    /// See [`Self::projected_stock_denial`].
+    pub fn enable_projected_stock_denial(&mut self) {
+        self.projected_stock_denial = true;
+    }
+
+    pub fn disable_projected_stock_denial(&mut self) {
+        self.projected_stock_denial = false;
+    }
+
     /// See [`Self::stock_denial_lead_time`].
     pub fn enable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = true;
@@ -958,6 +967,12 @@ impl AdvancedAi {
         self.enable_tally_culture();
         // And the buildings that chain hangs off. See `culture_building_debt`.
         self.enable_culture_building_debt();
+        // And every specialty district's own buildings, whatever the lane —
+        // eight Campuses and six Theater Squares stood empty to turn 205 on
+        // run civvis-20260819T000800Z while the queue bought Builders, Baths
+        // and Harbors over a Library priced at 23. See
+        // `district_building_chain`.
+        self.enable_district_building_chain();
         // And the coverage that price alone never bought. See
         // `culture_coverage`.
         self.enable_culture_coverage();
@@ -995,6 +1010,13 @@ impl AdvancedAi {
         // Four of the five stolen games above were Culture; the general 90
         // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
         self.enable_stock_denial_lead_time();
+        // ⚠ And the stock bar must fire BEFORE the last Congress, not at it.
+        // The first game on the repaired economy (231407Z) crossed the bar at
+        // ~t221; the final Congress sat at t222 with nothing reading urgent
+        // when its ballot was priced, and Egypt won Culture at t232. The
+        // projection carries the recorded slope fifteen turns forward and
+        // feeds the same gate. See `projected_stock_denial`.
+        self.enable_projected_stock_denial();
         // These host-facing controls used to be applied by `civvis_orders`
         // after this bundle. They belong here: `live` and every
         // `live_without_*` arm must construct the controller that deployment
@@ -1594,6 +1616,16 @@ impl AdvancedAi {
 
     pub fn disable_culture_building_debt(&mut self) {
         self.culture_building_debt = false;
+    }
+
+    /// Make every specialty district owe its own buildings, whatever the
+    /// lane. See `district_building_chain`.
+    pub fn enable_district_building_chain(&mut self) {
+        self.district_building_chain = true;
+    }
+
+    pub fn disable_district_building_chain(&mut self) {
+        self.district_building_chain = false;
     }
 
     /// Treat a Theater Square, rather than any Great Work slot, as the

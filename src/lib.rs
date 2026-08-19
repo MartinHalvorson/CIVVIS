@@ -611,6 +611,7 @@ mod tests {
         // Replay under the same headless observation mode as `run_game`.
         // Fog memory is a display cache, not an action or gameplay input.
         r.set_fog_memory(false);
+        r.set_war_ledger(false);
         for (i, (pid, a)) in g.log.iter().enumerate() {
             r.apply(*pid, a)
                 .unwrap_or_else(|e| panic!("logged action {i} failed on replay: {e} ({a:?})"));
