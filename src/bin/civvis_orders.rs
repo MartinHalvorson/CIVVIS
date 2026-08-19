@@ -1483,18 +1483,34 @@ fn great_person_orders(
             continue;
         }
         // A command that just resolved can remain unavailable for the rest of
-        // this Firaxis frame. If the person already occupies any activation
-        // plot, wait for the next export instead of sending them toward a
-        // different city. Qu Yuan otherwise bounced Theater -> capital on the
-        // cooldown frame after creating his first work.
-        if person.activation_plots.iter().any(|plot| plot.distance == 0) {
+        // this Firaxis frame. If the person already occupies an activation
+        // plot THAT CAN STILL TAKE THE WORK, wait for the next export instead
+        // of sending them toward a different city. Qu Yuan otherwise bounced
+        // Theater -> capital on the cooldown frame after creating his first
+        // work. `slot_open == Some(false)` is the one standing-still case that
+        // is NOT a cooldown: the engine highlights a cultural person's
+        // district whether or not a compatible slot is free, and waiting on a
+        // known-full tile is the wedge that stacked eleven people on (25,23)
+        // for the whole of run civvis-20260817T010950Z while twelve empty
+        // slots stood 2-10 tiles away. Older exports send no `slot_open`;
+        // their `None` keeps the old benefit of the doubt.
+        if person
+            .activation_plots
+            .iter()
+            .any(|plot| plot.distance == 0 && plot.slot_open != Some(false))
+        {
             stall.on_cooldown += 1;
             continue;
         }
+        // Prefer the tile a matching empty slot is KNOWN to stand on, then an
+        // unknown tile (a wonder's — the host cannot map those), by distance
+        // within each. A tile known to hold no matching slot is never a
+        // destination: walking there is the wedge this ranking exists to end.
         let target = person
             .activation_plots
             .iter()
-            .min_by_key(|plot| (plot.distance, plot.y, plot.x));
+            .filter(|plot| plot.slot_open != Some(false))
+            .min_by_key(|plot| (plot.slot_open != Some(true), plot.distance, plot.y, plot.x));
         if let Some(target) = target {
             orders.push(Order {
                 kind: "unit",
@@ -1503,8 +1519,10 @@ fn great_person_orders(
                 pos: Some((target.x, target.y)),
             });
         } else {
-            // The host offered no plot anywhere. This individual has nothing to
-            // do until the empire builds the district their class activates on.
+            // The host offered no plot anywhere — or every highlighted tile is
+            // known-full while the empty slots sit somewhere unmappable (a
+            // wonder). Either way marching cannot help; this individual waits
+            // for the empire to build the district or slot their class needs.
             stall.no_activation_plot += 1;
         }
     }
@@ -6103,11 +6121,13 @@ mod tests {
                                 x: 30,
                                 y: 20,
                                 distance: 7,
+                                ..StateActivationPlot::default()
                             },
                             StateActivationPlot {
                                 x: 11,
                                 y: 12,
                                 distance: 2,
+                                ..StateActivationPlot::default()
                             },
                         ],
                         ..StateGreatPerson::default()
@@ -6137,8 +6157,18 @@ mod tests {
     /// still under an explicit counter — and never marches to a full building.
     #[test]
     fn a_person_with_no_empty_slot_anywhere_stalls_explicitly_not_as_cooldown() {
-        let on_plot = StateActivationPlot { x: 25, y: 23, distance: 0 };
-        let far_plot = StateActivationPlot { x: 30, y: 20, distance: 7 };
+        let on_plot = StateActivationPlot {
+            x: 25,
+            y: 23,
+            distance: 0,
+            ..StateActivationPlot::default()
+        };
+        let far_plot = StateActivationPlot {
+            x: 30,
+            y: 20,
+            distance: 7,
+            ..StateActivationPlot::default()
+        };
         let state = StateSnapshot {
             units: vec![
                 // Standing on the highlighted Theater, zero writing slots free.
@@ -6230,11 +6260,13 @@ mod tests {
                             x: 11,
                             y: 12,
                             distance: 0,
+                            ..StateActivationPlot::default()
                         },
                         StateActivationPlot {
                             x: 20,
                             y: 18,
                             distance: 7,
+                            ..StateActivationPlot::default()
                         },
                     ],
                     ..StateGreatPerson::default()
@@ -6251,6 +6283,60 @@ mod tests {
         assert_eq!(
             stall.no_activation_plot, 0,
             "and must not be reported as an unusable Great Person"
+        );
+    }
+
+    /// The (25,23) wedge from run civvis-20260817T010950Z: eleven cultural
+    /// people stood a whole game on one highlighted tile the host KNEW held no
+    /// compatible empty slot, while highlighted tiles with empty Amphitheater
+    /// slots waited 2-10 tiles away, and the run ended with zero Great Works.
+    /// A known-full tile is neither a cooldown to wait out nor a destination
+    /// to march to; a known-open tile beats an unknown one even when farther.
+    #[test]
+    fn a_person_on_a_known_full_tile_marches_to_the_known_open_slot() {
+        let full_here = StateActivationPlot {
+            x: 25,
+            y: 23,
+            distance: 0,
+            slot_open: Some(false),
+        };
+        let unknown_near = StateActivationPlot {
+            x: 26,
+            y: 23,
+            distance: 1,
+            slot_open: None,
+        };
+        let open_far = StateActivationPlot {
+            x: 30,
+            y: 20,
+            distance: 7,
+            slot_open: Some(true),
+        };
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 84,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 0,
+                    can_activate: false,
+                    empty_slots: Some(2),
+                    activation_plots: vec![full_here, unknown_near, open_far],
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert_eq!(stall.on_cooldown, 0, "a known-full tile is not a cooldown");
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(
+            orders[0].pos,
+            Some((30, 20)),
+            "the known-open slot outranks the nearer unknown tile"
         );
     }
 
