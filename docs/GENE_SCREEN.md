@@ -58,13 +58,19 @@ muster-at-command-…    300  31.0%  22.3%  +8.7 [ +1.9,+15.5] +2.51  +2.10pp +3
 | `Δpp`, `95% CI`, `z` | on − off in points, from the paired differences (each pair contributes one on-arm and one off-arm) |
 | `shareΔ`, `z` | the same contrast on **score share** (treated score ÷ all majors' scores): continuous, so it resolves an edge at a fraction of the games a win count needs |
 | `adjΔpp` | the win Δ from an OLS of every pair's difference on the whole ±1 sign matrix at once, so a gene is not credited with its neighbours' chance imbalance; printed once there are at least `2·genes+10` pairs |
-| `read` | `helps *`/`hurts *` at \|z\| ≥ 2 on the win Δ; `HELPS **`/`HURTS **` past the family-wise 5% bar; `~` otherwise |
+| `read` | `helps *`/`hurts *` at \|z\| ≥ 2, `HELPS **`/`HURTS **` past the family-wise 5% bar — on the win Δ first, then `share …` when the score-share z says more; `~` otherwise |
 
 The header lines carry the treated seat's overall win rate against chance
-(1/players), the anchors if any were played, and a **resolution line**: how many
-genes, the smallest win Δ and share Δ this run resolves at 80% power, how many
-`*` rows |z| ≥ 2 flags by chance alone (≈ 2.6 of 57), and the family-wise bar
-(≈ |z| ≥ 3.33 for 57 genes).
+(1/players), **how the games ended** (victory type, count, median turn — the
+regime the table was measured in), the anchors if any were played, and a
+**resolution line**: how many genes, the smallest win Δ and share Δ this run
+resolves at 80% power, how many `*` rows |z| ≥ 2 flags by chance alone (≈ 2.6
+of 57), and the family-wise bar (≈ |z| ≥ 3.33 for 57 genes).
+
+⚠ The table is sorted by the win z, and on the first run every result past
+the family-wise bar was on the **share** axis (`governor-every-lane` share
+z −7.3 with a win Δ of −0.4 pp). Read the `read` column, not just the top of
+the sort.
 
 ⚠ **`~` means unresolved at this size, never "no effect."** A screen's job is
 to rank and to say what it could see; a `*` is a candidate for a dedicated
@@ -104,6 +110,7 @@ not a silent omission.
 | `--genes a,b,c` | tags or field names | screen only these; the rest are held at the baseline |
 | `--baseline` | `repairs` (default) / `stock` | what un-screened engine repairs are held at: on (the `advanced_synergy` bundle) or off (production `advanced`) |
 | `--field` | `advanced` (default) / `repairs` | the other majors: production `advanced`, or the native repair bundle |
+| `--randomize-civs` | off by default | shuffle every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game unless this is on |
 
 ## Profile and cost
 
@@ -134,6 +141,24 @@ Interactions (epistasis), subgroup tables (by seat, victory type, map), and a
 fitted logistic are all re-analyses of these rows and never need a game
 replayed. `--analyze` refuses to merge files written at different profiles or
 gene orders — a merged table would mix two experiments.
+
+## What the first run taught (2026-08-18, 4p 60×38 Online-250, 300 pairs)
+
+Recorded in full in `docs/eval/2026-08-19-gene-screen-random-genome-factorial-screen.md`.
+The parts that change how the tool is read:
+
+- **Native 4p games are a religion race.** Two thirds ended by conversion,
+  median t149, a third before t150. The 31 war/siege genes sit at ~0 win Δ
+  because the game is over before a siege matters — a regime fact, not a
+  measurement of the repairs. Screen a war repair in a regime that lets wars
+  happen (`--field repairs`, more seats, victories restricted) or read an
+  outcome that fires earlier than "won".
+- **Score share carries the signal, win rate barely moves.** At 260 pairs the
+  win Δ resolved ±7 pp and share ±1.6 pp; the two hard results
+  (`governor-every-lane` −3.8 pp share, `war-economy` −2.7 pp) had win Δs of
+  −0.4 and −5.8. `wide-map-capacity` bought +2.7 cities and ~+100 score per
+  game and **no wins**: city count does not convert in this regime.
+- **Fixed seating is a confound for the field.** See `--randomize-civs`.
 
 ## What it is not
 

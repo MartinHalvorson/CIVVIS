@@ -59,7 +59,8 @@
 //!               [--width N] [--height N] [--city-states N] [--speed ID]
 //!               [--map ID] [--jobs N] [--genes tag,tag,...]
 //!               [--baseline repairs|stock] [--field advanced|repairs]
-//!               [--anchor-pairs N] [--out PATH] [--append] [--quiet]
+//!               [--anchor-pairs N] [--randomize-civs] [--out PATH] [--append]
+//!               [--quiet]
 //!   gene_screen --analyze PATH [PATH ...]
 //!   gene_screen --list
 //!
@@ -200,6 +201,11 @@ struct Header {
     baseline: String,
     field: String,
     start_seed: u64,
+    /// Whether every seat's civilization was shuffled per map instead of the
+    /// stock order (Rome, Egypt, Greece, China, … by seat). Absent in files
+    /// written before the flag existed, which means `false`.
+    #[serde(default)]
+    randomize_civs: bool,
 }
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
@@ -296,6 +302,7 @@ struct Profile {
     city_states: usize,
     speed: GameSpeed,
     map: MapScript,
+    randomize_civs: bool,
 }
 
 /// Play one game with the treated seat carrying `genome` and report its row.
@@ -317,6 +324,7 @@ fn play(
     let mut game = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
+        randomize_civs: profile.randomize_civs,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -654,11 +662,33 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
     (estimates, complete.len(), overall_win, overall_share)
 }
 
+/// The `read` column: the win-Δ verdict, then the score-share verdict when it
+/// says more. Share resolves an edge at a fraction of the games a win count
+/// needs, so a gene the win column cannot yet see is often already loud here
+/// — and a reader sorting by the win z would otherwise never meet it.
+fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
+    let word = |z: f64| -> Option<&'static str> {
+        if z.abs() >= family_z {
+            Some(if z > 0.0 { "HELPS **" } else { "HURTS **" })
+        } else if z.abs() >= 2.0 {
+            Some(if z > 0.0 { "helps *" } else { "hurts *" })
+        } else {
+            None
+        }
+    };
+    match (word(win_z), word(share_z)) {
+        (None, None) => "~".to_string(),
+        (Some(win), None) => win.to_string(),
+        (None, Some(share)) => format!("share {share}"),
+        (Some(win), Some(share)) => format!("{win} · share {share}"),
+    }
+}
+
 fn print_table(header: &Header, rows: &[Row]) {
     let (mut estimates, pairs, overall_win, overall_share) = estimate(header, rows);
     let anchors: Vec<&Row> = rows.iter().filter(|row| row.kind == "anchor").collect();
     println!(
-        "\ngene screen · {} complete pairs ({} games) · {}p {}x{} {} · {} · {} turns · {} city-states · baseline {} · field {}",
+        "\ngene screen · {} complete pairs ({} games) · {}p {}x{} {} · {} · {} turns · {} city-states · baseline {} · field {} · {}",
         pairs,
         pairs * 2,
         header.players,
@@ -669,7 +699,12 @@ fn print_table(header: &Header, rows: &[Row]) {
         header.turns,
         header.city_states,
         header.baseline,
-        header.field
+        header.field,
+        if header.randomize_civs {
+            "shuffled civs"
+        } else {
+            "stock-seated civs"
+        }
     );
     println!(
         "treated seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
@@ -678,6 +713,39 @@ fn print_table(header: &Header, rows: &[Row]) {
         100.0 * overall_share,
         100.0 / header.players as f64
     );
+    {
+        // The regime, so a table is never read without knowing what decided
+        // its games: two thirds of native 4p games end by conversion before
+        // a siege can matter, and that is visible only here.
+        let screened_rows: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+        let mut census: BTreeMap<&str, (usize, Vec<u32>)> = BTreeMap::new();
+        for row in &screened_rows {
+            let entry = census
+                .entry(row.victory.as_str())
+                .or_insert((0, Vec::new()));
+            entry.0 += 1;
+            entry.1.push(row.turn);
+        }
+        let mut kinds: Vec<_> = census.into_iter().collect();
+        kinds.sort_by_key(|kind| std::cmp::Reverse(kind.1 .0));
+        let parts: Vec<String> = kinds
+            .iter()
+            .map(|(kind, (count, turns))| {
+                let mut turns = turns.clone();
+                turns.sort_unstable();
+                format!(
+                    "{} {} ({:.0}%, median t{})",
+                    if kind.is_empty() { "unfinished" } else { kind },
+                    count,
+                    100.0 * *count as f64 / screened_rows.len().max(1) as f64,
+                    turns[turns.len() / 2]
+                )
+            })
+            .collect();
+        if !parts.is_empty() {
+            println!("how the games ended: {}", parts.join(" · "));
+        }
+    }
     if !anchors.is_empty() {
         let (on, off): (Vec<&Row>, Vec<&Row>) = anchors.iter().partition(|row| row.arm == 0);
         let rate = |rows: &[&Row]| {
@@ -751,21 +819,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     );
     for e in &estimates {
         let z = e.win_z();
-        let read = if z.abs() >= family_z {
-            if z > 0.0 {
-                "HELPS **"
-            } else {
-                "HURTS **"
-            }
-        } else if z.abs() >= 2.0 {
-            if z > 0.0 {
-                "helps *"
-            } else {
-                "hurts *"
-            }
-        } else {
-            "~"
-        };
+        let read = read_column(z, e.share_z(), family_z);
         let adjusted = match e.adjusted {
             Some((effect, se)) => format!("{:+.1}±{:.1}", 100.0 * effect, 100.0 * se),
             None => "-".to_string(),
@@ -787,9 +841,10 @@ fn print_table(header: &Header, rows: &[Row]) {
         );
     }
     println!(
-        "\n`*` = |z|≥2 on the win Δ (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar. \
-         `~` = unresolved at this size, NOT no effect. shareΔ is the score-share Δ in points; \
-         adjΔpp is the OLS Δ over the whole sign matrix."
+        "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
+         column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
+         this size, NOT no effect. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ \
+         over the whole sign matrix."
     );
 }
 
@@ -830,6 +885,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.map != found.map
                                 || first.baseline != found.baseline
                                 || first.field != found.field
+                                || first.randomize_civs != found.randomize_civs
                             {
                                 eprintln!(
                                     "{path} was played at a different profile than {}; a merged \
@@ -864,7 +920,7 @@ fn usage() -> ! {
         "usage: gene_screen [--pairs N] [--start-seed N] [--players N] [--turns N] \
          [--width N] [--height N] [--city-states N] [--speed ID] [--map ID] [--jobs N] \
          [--genes tag,tag,...] [--baseline repairs|stock] [--field advanced|repairs] \
-         [--anchor-pairs N] [--out PATH] [--append] [--quiet]\n       \
+         [--anchor-pairs N] [--randomize-civs] [--out PATH] [--append] [--quiet]\n       \
          gene_screen --analyze PATH [PATH ...]\n       gene_screen --list"
     );
     std::process::exit(2)
@@ -915,6 +971,12 @@ fn main() {
     let city_states = number(&args, "--city-states", 6).max(0) as usize;
     let jobs = number(&args, "--jobs", civvis::parallel::default_jobs() as i64).max(1) as usize;
     let quiet = present(&args, "--quiet");
+    // ⚠ Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China…),
+    // and on the first 250-pair run seats 0 and 2 won twice as often as seat 3
+    // whoever sat there. The foldover cancels that for every per-gene contrast
+    // — both arms share the seat — but the field is always the same three
+    // civs unless this is on.
+    let randomize_civs = present(&args, "--randomize-civs");
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -1023,6 +1085,7 @@ fn main() {
         baseline: format!("{baseline:?}").to_lowercase(),
         field: format!("{field:?}").to_lowercase(),
         start_seed,
+        randomize_civs,
     };
     writeln!(
         out,
@@ -1039,9 +1102,10 @@ fn main() {
         city_states,
         speed,
         map,
+        randomize_civs,
     };
     println!(
-        "gene screen: {pairs} foldover pairs ({} games){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
+        "gene screen: {pairs} foldover pairs ({} games){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
         pairs * 2,
         if anchor_pairs > 0 {
             format!(" + {anchor_pairs} anchor pairs")
@@ -1052,6 +1116,7 @@ fn main() {
         genes.len(),
         map.id(),
         speed.id(),
+        if randomize_civs { "shuffled" } else { "stock-seated" },
         baseline,
         field,
         start_seed + (pairs + anchor_pairs) as u64 - 1
@@ -1256,6 +1321,15 @@ mod tests {
     }
 
     #[test]
+    fn the_read_column_names_both_axes() {
+        assert_eq!(read_column(0.5, -0.3, 3.33), "~");
+        assert_eq!(read_column(2.4, 0.1, 3.33), "helps *");
+        assert_eq!(read_column(-0.8, -7.2, 3.33), "share HURTS **");
+        assert_eq!(read_column(2.1, 4.9, 3.33), "helps * · share HELPS **");
+        assert_eq!(read_column(-3.5, -1.0, 3.33), "HURTS **");
+    }
+
+    #[test]
     fn the_normal_tables_are_right() {
         assert!((normal_cdf(0.0) - 0.5).abs() < 1e-6);
         assert!((normal_cdf(1.96) - 0.975).abs() < 1e-4);
@@ -1311,6 +1385,7 @@ mod tests {
             baseline: "repairs".into(),
             field: "advanced".into(),
             start_seed: 1,
+            randomize_civs: false,
         };
         let mut rows = Vec::new();
         let screened = vec![true, true];
