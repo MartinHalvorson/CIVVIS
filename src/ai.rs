@@ -2240,7 +2240,8 @@ pub struct BasicAi {
     /// cache. Every unit of one frontier batch is planned against the same
     /// board, so the first to compute serves the rest; every reader checks
     /// the key, so a worker that has applied an action recomputes.
-    attack_envelope_cache: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
+    attack_envelope_cache:
+        std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
@@ -4748,9 +4749,9 @@ impl BasicAi {
             })
             .collect();
         let struck = |position: Pos| {
-            strike_sources
-                .iter()
-                .any(|source| g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position))
+            strike_sources.iter().any(|source| {
+                g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
+            })
         };
         let mut cities = HashSet::new();
         let mut friendly_tiles = HashSet::new();
