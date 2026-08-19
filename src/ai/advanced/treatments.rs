@@ -170,4 +170,16 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
     ("apostle_promotion_by_role", "apostle-promotion-by-role", AdvancedAi::enable_apostle_promotion_by_role),
+    // The joint engagement search (`docs/TACTICS.md`): production ships it
+    // off, the bridge turns it on, and `advanced_joint_tactics` is
+    // `AdvancedAi::new()` plus this one flag — so it is a native opt-in like
+    // any other. Listed here so `gene_screen` can price it in whole native
+    // games beside the engine repairs and `victory_eval --with joint-tactics`
+    // can seat it by name. (`joint-reach-lines` rides with it — the enable
+    // turns both on; the lines alone are priced on `battle_bench`, §17.)
+    ("joint_tactics", "joint-tactics", AdvancedAi::enable_joint_tactics),
+    // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
+    // engaged front as a wave rather than one at a time. Off everywhere
+    // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
+    ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
 ];
