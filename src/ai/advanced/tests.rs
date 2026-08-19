@@ -4529,12 +4529,12 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(!AdvancedAi::legacy().buildings_before_projects);
 }
 
-/// Host World Congress competitions move the diplomatic race outside the
-/// ordinary Congress ballot. The exact score table must therefore make the
-/// World Games project legal and compelling, while the World's Fair rewards
+/// Host competitions move the diplomatic race outside the ordinary Congress
+/// ballot. The exact score table must therefore make World Games and either
+/// Aid Request project legal and compelling, while the World's Fair rewards
 /// the Great Person points existing district projects already produce.
 #[test]
-fn live_competitions_price_world_games_and_worlds_fair_production() {
+fn live_competitions_price_host_projects_and_worlds_fair_production() {
     let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
     let settler = game
         .player_unit_ids(0)
@@ -4560,6 +4560,9 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     let athlete = Item::Project {
         project: crate::name!("train_athletes"),
     };
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
     let granary = Item::Building {
         building: crate::name!("granary"),
     };
@@ -4567,6 +4570,10 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     assert!(
         !game.can_produce(0, city, &athlete),
         "the host-only project cannot escape into a native menu"
+    );
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "the shared Aid Request project cannot escape into a native menu"
     );
 
     game.replace_host_competitions(vec![crate::game::HostCompetition {
@@ -4598,6 +4605,53 @@ fn live_competitions_price_world_games_and_worlds_fair_production() {
     game.replace_host_competitions(Vec::new());
     assert!(!game.can_produce(0, city, &athlete));
     assert!(ai.production_value(&game, 0, city, &athlete, &plan, &counts) < -1_000.0);
+
+    // Firaxis grants the same 200-point Send Aid project for either kind of
+    // request. Each individual host kind must make it legal and compelling;
+    // treating the plural rules row as an AND would silently lose one aid
+    // emergency.
+    for kind in ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"] {
+        game.replace_host_competitions(vec![crate::game::HostCompetition {
+            kind: kind.to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        }]);
+        assert!(
+            game.can_produce(0, city, &aid),
+            "{kind} grants the shared Send Aid project"
+        );
+        let aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+        assert!(
+            aid_value > granary_value,
+            "the 200-point Send Aid project must outrank ordinary infrastructure during {kind}: {aid_value} vs {granary_value}"
+        );
+    }
+    game.replace_host_competitions(vec![
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_AID".to_string(),
+            ends: game.turn + 1,
+            ours: 0.0,
+            leader: 200.0,
+        },
+        crate::game::HostCompetition {
+            kind: "EMERGENCY_SEND_MILITARY_AID".to_string(),
+            ends: game.turn + 50,
+            ours: 0.0,
+            leader: 200.0,
+        },
+    ]);
+    let best_live_aid_value = ai.production_value(&game, 0, city, &aid, &plan, &counts);
+    assert!(
+        best_live_aid_value > granary_value,
+        "when both kinds are active, the viable military request must win over an expiring ordinary request: {best_live_aid_value} vs {granary_value}"
+    );
+    game.replace_host_competitions(Vec::new());
+    assert!(
+        !game.can_produce(0, city, &aid),
+        "with neither aid emergency live the shared project is withdrawn"
+    );
+    assert!(ai.production_value(&game, 0, city, &aid, &plan, &counts) < -1_000.0);
 
     install_ai_test_district(&mut game, city, "campus");
     let grants = Item::Project {
@@ -18043,6 +18097,219 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     );
 }
 
+/// ★★★★★ Both settlers of civvis-20260819T025840Z were taken one tile outside
+/// Rome, each from a tile a warrior had just been standing on: the step was
+/// priced with any own military unit on the destination as protection (×0.15),
+/// the unbound warrior then took its own turn — wounded, hostiles adjacent — and
+/// healed away, and the civilian stood alone in a horse archer's reach. See
+/// `settler_guard_holds`: only the settler's bound guard counts as on-tile
+/// protection, and only while it could hold; an unbound unit, or a guard the
+/// first reachable hostile would break, is no discount at all.
+#[test]
+fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
+    let mut game = Game::new_full(2, 24, 16, 8_119, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The step under test: from the city onto an adjacent tile where an own
+    // warrior stands, with a hostile two tiles from that tile.
+    let step = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let raider_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(step, *position) == 2
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile two steps from the destination");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    let bystander = game.spawn_test_unit("warrior", 0, step);
+    // A peer-strength hostile: a warrior does not break a warrior.
+    let raider = game.spawn_test_unit("warrior", 1, raider_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(raider_tile);
+    let visible = {
+        let ai = AdvancedAi::new();
+        ai.battlefront_visibility(&game, 0)
+    };
+    assert!(game.sees(&visible, raider_tile), "the raider is in sight");
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.settler_guard_holds && live.stacked_escort && live.settler_stack_discipline);
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+
+    // An UNBOUND warrior on the destination: the old pricing discounts the
+    // capture risk to nothing; the repaired one prices the raider in full.
+    let old = withheld.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    let new = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        old <= SETTLER_STEP_RISK_LIMIT,
+        "precondition: the withheld pricing let the step through ({old})"
+    );
+    assert!(
+        new > SETTLER_STEP_RISK_LIMIT,
+        "an unbound unit on the tile is no protection: {new} must exceed the step limit"
+    );
+
+    // BOUND, healthy, and not outmatched: protection again — the guard
+    // mirrors the step from the settler's own tile.
+    game.units.get_mut(&bystander).unwrap().pos = source;
+    live.settler_guards.insert(settler, bystander);
+    let bound = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        bound <= SETTLER_STEP_RISK_LIMIT,
+        "a bound guard that can hold still protects the step: {bound}"
+    );
+
+    // BOUND but outmatched: a knight in reach breaks a warrior — the exact
+    // shape of the Saka horsemen against Rome's warriors — so no discount.
+    game.remove_unit(raider);
+    let _knight = game.spawn_test_unit("knight", 1, raider_tile);
+    let broken = live.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+    assert!(
+        broken > SETTLER_STEP_RISK_LIMIT,
+        "a guard the first hostile in reach would break is no protection: {broken}"
+    );
+
+    // Frozen and stock controllers never carry it.
+    assert!(!AdvancedAi::new().settler_guard_holds);
+    assert!(!AdvancedAi::legacy().settler_guard_holds);
+}
+
+/// The other half of `settler_guard_holds`: the bound guard's own turn ran
+/// `healing_step` before its escort duty, so a wounded guard sharing its
+/// settler's tile healed away and left the civilian in the open. Under the
+/// flag it holds there first.
+#[test]
+fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
+    let mut game = Game::new_full(2, 24, 16, 8_120, 120, 0, false);
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let source = game.units[&founding_settler].pos;
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    // The pair stands one tile outside the city; a hostile warrior is adjacent.
+    let field = game
+        .nbrs(source)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("a passable neighbour of the city");
+    let hostile_tile =
+        game.nbrs(field)
+            .into_iter()
+            .find(|position| {
+                *position != source
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile beside the pair, away from the city");
+    let settler = game.spawn_test_unit("settler", 0, field);
+    let guard = game.spawn_test_unit("warrior", 0, field);
+    game.units.get_mut(&guard).unwrap().hp = 45;
+    let _hostile = game.spawn_test_unit("warrior", 1, hostile_tile);
+    game.at_war.insert((0, 1));
+    game.players[0].explored.insert(hostile_tile);
+    let plan = stacked_escort_plan(&game);
+
+    let run = |ai: &mut AdvancedAi, game: &mut Game| {
+        ai.settler_guards.insert(settler, guard);
+        for unit in [settler, guard] {
+            if let Some(unit) = game.units.get_mut(&unit) {
+                unit.moves_left = 2.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+        }
+        ai.advanced_military_step_with_decline(game, 0, guard, &plan, false);
+        game.units[&guard].pos
+    };
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_settler_guard_holds();
+    let mut game_without = game.clone();
+    let left_to = run(&mut withheld, &mut game_without);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    let held_at = run(&mut live, &mut game);
+    assert_eq!(
+        held_at, field,
+        "the bound guard on its settler's tile holds there under the flag"
+    );
+    // The point of the test is the ORDER: withheld, the guard is free to heal
+    // away (and does, in this fixture, or at least is not pinned by the
+    // escort). Either way the flag's answer is the tile.
+    assert!(
+        left_to != field || withheld.settler_guards.get(&settler) == Some(&guard),
+        "fixture note: withheld arm moved to {left_to:?}"
+    );
+}
+
 #[test]
 fn a_settler_waits_for_its_guard_only_within_patience() {
     let (mut game, source, target) = stacked_escort_fixture();
@@ -26574,4 +26841,171 @@ fn the_whole_turn_guard_is_a_live_treatment() {
     assert!(live.base.whole_turn_backtrack_guard);
     live.disable_whole_turn_backtrack_guard();
     assert!(!live.base.whole_turn_backtrack_guard);
+}
+
+/// ★★★★ THE FAITH THAT BUYS THE PANTHEON IS ONE CARD, AND THE PLAN KEPT
+/// THROWING IT AWAY. See `AdvancedAi::expansion_pantheon`: God-King is the
+/// live capital's only early Faith, the portfolio replaced it at the first
+/// civic after Code of Laws, and the pantheon landed at median t22 and as late
+/// as t108 with 6–9 Faith banked against a price of 12.5. With the flag on the
+/// card is wanted first while the pantheon is unfounded and unaffordable, and
+/// released the turn it is founded; ordinary and frozen controllers keep the
+/// bred deck.
+#[test]
+fn the_expansion_pantheon_keeps_god_king_until_the_pantheon_is_founded() {
+    let slotted = |treated: bool, pantheon: Option<&str>, faith: f64| {
+        let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        // The live seat at its first civic swap: Chiefdom's lone economic
+        // slot, with God-King, Urban Planning, Ilkum and Colonization all on
+        // offer.
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].civics.extend([
+            crate::name!("code_of_laws"),
+            crate::name!("craftsmanship"),
+            crate::name!("foreign_trade"),
+            crate::name!("early_empire"),
+        ]);
+        game.players[0].policies.clear();
+        game.players[0].pantheon = pantheon.map(str::to_string);
+        game.players[0].faith = faith;
+        let mut ai = AdvancedAi::new();
+        if treated {
+            ai.enable_expansion_pantheon();
+        }
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Expansion);
+        game.players[0].policies.clone()
+    };
+    let god_king = crate::name!("god_king");
+
+    // Off: the bred deck never wants the Faith card.
+    assert!(
+        !slotted(false, None, 0.0).contains(&god_king),
+        "the ordinary controller keeps its deck"
+    );
+    // On, no pantheon, no Faith: God-King holds the slot.
+    assert!(
+        slotted(true, None, 0.0).contains(&god_king),
+        "the pantheon is God-King's alone until it is founded"
+    );
+    // On, the price already banked: the slot goes back to the plan.
+    assert!(
+        !slotted(true, None, 200.0).contains(&god_king),
+        "Faith enough for the pantheon frees the slot"
+    );
+    // On, pantheon founded: released the same turn.
+    assert!(
+        !slotted(true, Some("religious_settlements"), 0.0).contains(&god_king),
+        "a founded pantheon releases the card"
+    );
+
+    // Frozen and ordinary controllers never carry the flag.
+    assert!(!AdvancedAi::new().expansion_pantheon);
+    assert!(!AdvancedAi::legacy().expansion_pantheon);
+    assert!(!AdvancedAi::new().base.expansion_pantheon);
+}
+
+/// ★★★★ THE PLAZA STANDS EMPTY IN EVERY RECORDED GAME. See
+/// `AdvancedAi::expansion_hall`: a Government Plaza completes at t29–57 in
+/// all 35 recorded 2026-08-18/19 runs and no tier-1 plaza building is ever
+/// built, because the Ancestral Hall has no yields, its district is not
+/// `specialty`, and its two effects — a free Builder in every new city, +50%
+/// Settlers — were priced at nothing. With the flag on the land grab pays for
+/// them while it is still short of seats, and nothing when it is not; ordinary
+/// and frozen controllers keep the zero.
+#[test]
+fn the_expansion_hall_is_priced_while_the_land_grab_is_short_of_seats() {
+    let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    // A completed Government Plaza in the capital, the way the recorded games
+    // hold one by t29–57.
+    let plaza = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != game.cities[&city].pos
+                && game.map.tiles[position].district.is_none()
+                && !game.map.tiles[position].terrain.contains("ocean")
+                && !game.map.tiles[position].terrain.contains("coast")
+                && !game.map.tiles[position].terrain.contains("mountain")
+        })
+        .expect("a land tile for the plaza");
+    game.map.tiles.get_mut(&plaza).unwrap().district = Some(crate::name!("government_plaza"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("government_plaza"), plaza);
+    let hall = Item::Building {
+        building: crate::name!("ancestral_hall"),
+    };
+    let audience = Item::Building {
+        building: crate::name!("audience_chamber"),
+    };
+    let plan = |desired_cities: usize| StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    // Off: nothing prices the hall's effects.
+    let control = AdvancedAi::new();
+    let counts = control.counts(&game, 0);
+    let unpriced = control.production_value(&game, 0, city, &hall, &plan(16), &counts);
+
+    // On, with the land grab short of seats: the hall is owed the Builder in
+    // every new city and the faster Settlers, and the Audience Chamber —
+    // neither effect — is not.
+    let mut live = AdvancedAi::new();
+    live.enable_land_grab();
+    live.enable_expansion_hall();
+    let counts = live.counts(&game, 0);
+    let priced = live.production_value(&game, 0, city, &hall, &plan(16), &counts);
+    let chamber = live.production_value(&game, 0, city, &audience, &plan(16), &counts);
+    // `production_value` normalises by (7 + turns to build), so the raw 1200
+    // reads as 1200 / (7 + turns) here; the shape, not the figure, is asserted.
+    assert!(
+        priced > unpriced + 10.0,
+        "fifteen seats short pays the full hall: {priced} against {unpriced}"
+    );
+    assert!(
+        (chamber - unpriced).abs() < 1.0,
+        "the Audience Chamber carries neither effect: {chamber} against {unpriced}"
+    );
+    // On, but the land grab has its seats: back to the unpriced building.
+    let satisfied = live.production_value(&game, 0, city, &hall, &plan(1), &counts);
+    assert!(
+        (satisfied - unpriced).abs() < 1.0,
+        "no seats short, nothing owed: {satisfied} against {unpriced}"
+    );
+    // Half the shortfall, half the price.
+    let half = live.production_value(&game, 0, city, &hall, &plan(4), &counts);
+    let ratio = (half - unpriced) / (priced - unpriced);
+    assert!(
+        (0.45..=0.55).contains(&ratio),
+        "three seats short pays half of the full hall: {half} against {priced} ({ratio:.2})"
+    );
+
+    // Frozen and ordinary controllers never carry the flag.
+    assert!(!AdvancedAi::new().expansion_hall);
+    assert!(!AdvancedAi::legacy().expansion_hall);
 }

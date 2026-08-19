@@ -467,7 +467,7 @@ class InteractiveHostOwnership(unittest.TestCase):
             gamelock = tmp / "gamelock.py"
             gamelock.write_text(
                 "import sys\n"
-                "if '--hold-status' in sys.argv:\n"
+                "if '--halt-status' in sys.argv:\n"
                 "    print('the game is explicitly halted for this test')\n"
                 "    raise SystemExit(0)\n"
                 "raise SystemExit(1)\n")
@@ -497,6 +497,75 @@ class InteractiveHostOwnership(unittest.TestCase):
                         loop.index('if ! pid_is_live "$supervisor_pid"; then'))
         self.assertIn('operator halt active; stopping owned children and exiting',
                       loop)
+
+    def test_the_host_stops_only_for_the_explicit_halt_never_a_standing_hold(self):
+        """A live lock holder that drives no run is a report, not a halt.
+
+        Between one attempt's exit and the next attempt's launch the batch loop
+        holds the game lock under a tag no process yet carries, so
+        `gamelock.py --hold-status` answers "held … no harness is driving that
+        tag" for a few seconds. The host polls every five. When it acted on
+        that answer it stopped its own supervisor and the game under it: four
+        games on 2026-08-18/19 ended as `game exited` at t18/t44/t72/t83 within
+        seconds of such a line. The host must ask `--halt-status` — the durable
+        operator marker and nothing else — and a fake lock helper that answers
+        yes to `--hold-status` and no to `--halt-status` must not stop the
+        supervisor it started.
+        """
+        source = self.HOST.read_text()
+        helper = source[source.index("hold_status() {"):source.index("release_lock() {")]
+        self.assertIn('"$GAMELOCK" --halt-status', helper)
+        self.assertNotIn('"$GAMELOCK" --hold-status', helper,
+                         "the host must not act on the standing (transient) hold")
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            started = tmp / "supervisor.started"
+            lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text(
+                "#!/bin/zsh\n"
+                f"print -r -- started > {started}\n"
+                "sleep 30\n")
+            supervisor.chmod(0o755)
+            gamelock = tmp / "gamelock.py"
+            gamelock.write_text(
+                "import sys\n"
+                "if '--hold-status' in sys.argv:\n"
+                "    print('the game is held by pid 1 under tag x since now, "
+                "and no harness is driving that tag')\n"
+                "    raise SystemExit(0)\n"
+                "raise SystemExit(1)\n")
+            with subprocess.Popen(
+                ["/bin/zsh", str(self.HOST)],
+                env={
+                    **os.environ,
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_GAMELOCK": str(gamelock),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                    "CIVVIS_INTERACTIVE_HOST_POLL_S": "0.2",
+                    "CIVVIS_POPUP_KEEPER": str(tmp / "absent-popup-keeper.sh"),
+                    "CIVVIS_MIRROR_KEEPER": str(tmp / "absent-mirror-keeper.sh"),
+                },
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            ) as host:
+                try:
+                    deadline = time.monotonic() + 5.0
+                    while time.monotonic() < deadline and not started.exists():
+                        time.sleep(0.05)
+                    self.assertTrue(started.exists(), "the host must start its supervisor")
+                    time.sleep(1.5)
+                    self.assertIsNone(host.poll(),
+                                      "a standing hold must not make the host exit")
+                    text = log.read_text()
+                    self.assertNotIn("operator halt active", text)
+                    self.assertNotIn("stopping owned children", text)
+                finally:
+                    host.terminate()
+                    host.wait(timeout=5)
 
     def test_an_adopted_supervisor_survives_the_host(self):
         with TemporaryDirectory() as raw:

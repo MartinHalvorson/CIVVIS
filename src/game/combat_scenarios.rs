@@ -1326,6 +1326,99 @@ fn zoc_stops_combatants_but_cavalry_ignores_and_rivers_block_it() {
     assert!(!g.in_enemy_zoc(0, ring[0]));
 }
 
+/// The joint tactical search builds its approach lines from this reading:
+/// real step costs and paths, and a zone of control that stops the walk but
+/// not the blow — the flood keeps the movement the unit arrives with, unlike
+/// `reachable`'s "can it move on" answer.
+#[test]
+fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there() {
+    let (mut g, enemy_pos, ring) = controlled_game(310);
+    g.spawn_unit("warrior", 1, enemy_pos);
+    // A horseman four tiles out on flat ground: it reaches the ring with
+    // movement to spare, and the flood's path is the engine's own.
+    let far = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|p| g.wdist(*p, enemy_pos) == 4 && g.rules.is_passable(&g.map.tiles[p]))
+        .expect("a tile four out");
+    let horse = g.spawn_unit("horseman", 0, far);
+    let reach = g.approach_reach(horse);
+    let entry = ring
+        .iter()
+        .copied()
+        .find(|r| reach.contains_key(r))
+        .expect("the ring is within a four-move unit's reach");
+    let (kept, path) = &reach[&entry];
+    assert_eq!(path.len(), 3, "four out, three steps to the ring");
+    assert_eq!(*path.last().unwrap(), entry);
+    assert!(
+        *kept > 0.0,
+        "cavalry ignores zone of control; it keeps its spare movement: {kept}"
+    );
+    // Every reported tile is reachable, and every path step is a legal move
+    // in sequence — the reading is the engine's, not a guess.
+    for (to, (_, path)) in &reach {
+        let mut probe = g.clone();
+        for step in path {
+            probe
+                .apply(
+                    0,
+                    &Action::Move {
+                        unit: horse,
+                        to: *step,
+                    },
+                )
+                .unwrap_or_else(|why| panic!("path to {to:?} refused at {step:?}: {why}"));
+        }
+        assert_eq!(probe.units[&horse].pos, *to);
+    }
+    assert!(
+        !reach.contains_key(&enemy_pos),
+        "the enemy's own tile is no destination"
+    );
+
+    // A foot soldier that ends its walk inside the zone of control keeps what
+    // it has left for the attack (`zoc_stops_combatants…` proves the engine
+    // does), and the flood does not walk on from that tile.
+    let (mut g, enemy_pos, ring) = controlled_game(311);
+    g.spawn_unit("warrior", 1, enemy_pos);
+    let start = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|p| g.wdist(*p, enemy_pos) == 2 && g.rules.is_passable(&g.map.tiles[p]))
+        .expect("a tile two out");
+    let warrior = g.spawn_unit("warrior", 0, start);
+    let reach = g.approach_reach(warrior);
+    let ring_tiles: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|r| reach.contains_key(r))
+        .collect();
+    assert!(
+        !ring_tiles.is_empty(),
+        "a two-move warrior two out reaches the ring"
+    );
+    for r in &ring_tiles {
+        let (kept, path) = &reach[r];
+        assert_eq!(path.len(), 1);
+        assert_eq!(*kept, 1.0, "one step spent, one kept for the blow");
+        assert!(
+            *kept >= g.step_cost_for(warrior, *r, enemy_pos),
+            "the kept movement pays the defender's plains tile"
+        );
+    }
+    for to in reach.keys() {
+        assert!(
+            g.wdist(*to, start) <= 2,
+            "{to:?} lies past a zone-of-control stop"
+        );
+    }
+}
+
 #[test]
 fn civilian_support_religious_and_district_zoc_follow_civ6_behavior() {
     for (seed, kind) in [(310, "builder"), (311, "battering_ram")] {

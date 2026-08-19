@@ -5031,6 +5031,22 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: BTreeSet<Name>,
+    /// Pantheon beliefs a HOST has already granted to another player, for the same
+    /// reasons and with the same emptiness in an ordinary game as
+    /// [`Game::blocked_city_sites`].
+    ///
+    /// The mirror seats no rival pantheons — the export lists founded religions
+    /// only (`Game.GetReligion():GetReligions()` minus the pantheon rows), so
+    /// `do_choose_pantheon`'s "belief already taken" check sees only our own. A
+    /// first choice a rival holds is refused by the mod as `taken_BELIEF_<X>`, and
+    /// nothing carried that back: the same belief would be re-derived from the same
+    /// board next turn, and after two sightings the mod's own blocker fallback
+    /// picks the FIRST untaken pantheon in database order (Dance of the Aurora on
+    /// the recorded runs). Harvested from the refusal stream by the mirror
+    /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
+    /// `AdvancedAi::expansion_pantheon` for the choice this protects.
+    #[serde(default)]
+    pub blocked_pantheons: BTreeSet<Name>,
     /// Districts a HOST ruleset will not place, per city, for the same reasons and
     /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -5643,6 +5659,7 @@ impl From<GameSer> for Game {
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
@@ -6242,6 +6259,7 @@ impl Game {
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
@@ -12085,6 +12103,7 @@ impl Game {
             .players
             .iter()
             .any(|p| p.pantheon.as_deref() == Some(belief))
+            || self.blocked_pantheons.contains(&Name::new(belief))
         {
             return Err("belief already taken".into());
         }
@@ -23705,6 +23724,86 @@ impl Game {
                     && peer_spec.domain.as_deref() != Some("sea")))
     }
 
+    /// Every tile this unit can end a move on this turn, with the movement it
+    /// keeps THERE for a blow, and the path that gets it there.
+    ///
+    /// The same flood as [`Game::reachable`] with one difference that matters
+    /// to a planner: entering enemy zone of control still stops further
+    /// movement (the flood does not expand past such a tile), but the
+    /// movement the unit keeps on arrival is reported rather than zeroed —
+    /// `flow` writes 0 there, which is right for "can it move on" and wrong
+    /// for "can it still strike", since a unit that stops in a zone of
+    /// control keeps its unused movement for the attack (`do_attack`,
+    /// `do_ranged`, `can_pay_melee_entry`). Paths are the flood's own
+    /// parents, so every step is one the engine will accept in sequence.
+    ///
+    /// A reading for candidate generation, never a permission: the engine
+    /// re-decides every step when the line is played.
+    pub(crate) fn approach_reach(&self, uid: u32) -> BTreeMap<Pos, (f64, Vec<Pos>)> {
+        let mut out = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return out;
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        let max_moves = self.unit_max_moves(uid);
+        if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
+            return out;
+        }
+        let _memo = self.query_memo();
+        // Per tile: movement kept on arrival, and whether the arrival stopped
+        // the unit (zone of control) so nothing expands from it.
+        let mut best: BTreeMap<Pos, (f64, bool)> = BTreeMap::new();
+        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        best.insert(start, (moves, false));
+        let mut queue = vec![start];
+        while let Some(cur) = queue.pop() {
+            let (rem, stopped) = best[&cur];
+            if rem <= 0.0 || stopped {
+                continue;
+            }
+            for n in self.nbrs(cur) {
+                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                    continue;
+                }
+                let cost = self.unit_step_cost(uid, cur, n);
+                let fresh = cur == start && rem >= max_moves;
+                if rem < cost && !fresh {
+                    continue; // MP paid up front (Civ 6)
+                }
+                let new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
+                let stops = self.formation_enters_enemy_zoc(uid, n);
+                if best.get(&n).map(|b| new_rem > b.0).unwrap_or(true) {
+                    best.insert(n, (new_rem, stops));
+                    parent.insert(n, cur);
+                    queue.push(n);
+                }
+            }
+        }
+        for (pos, (rem, _)) in best {
+            if pos == start {
+                continue;
+            }
+            let mut path = vec![pos];
+            let mut cur = pos;
+            while let Some(p) = parent.get(&cur) {
+                if *p == start {
+                    break;
+                }
+                path.push(*p);
+                cur = *p;
+            }
+            path.reverse();
+            out.insert(pos, (rem, path));
+        }
+        out
+    }
+
+    /// The movement a unit would pay to enter `to` from `from` — the exact
+    /// preflight a melee blow needs after a move (`can_pay_melee_entry`).
+    pub(crate) fn step_cost_for(&self, uid: u32, from: Pos, to: Pos) -> f64 {
+        self.unit_step_cost(uid, from, to)
+    }
+
     /// All tiles the unit can reach this turn with its remaining movement
     /// (Dijkstra maximizing leftover MP; every intermediate tile must be
     /// legally enterable, matching repeated single-step moves).
@@ -31272,10 +31371,10 @@ impl Game {
                 if self.players[pid].is_barbarian {
                     return false;
                 }
-                if spec
-                    .host_competition
-                    .as_deref()
-                    .is_some_and(|kind| self.host_competition(pid, kind).is_none())
+                if spec.requires_host_competition()
+                    && !spec
+                        .host_competition_kinds()
+                        .any(|kind| self.host_competition(pid, kind).is_some())
                 {
                     return false;
                 }

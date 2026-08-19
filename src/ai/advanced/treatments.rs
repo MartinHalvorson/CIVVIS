@@ -131,6 +131,10 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
     ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
+    ("settler_guard_holds", "settler-guard-holds", AdvancedAi::disable_settler_guard_holds),
+    ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
+    ("expansion_hall", "expansion-hall", AdvancedAi::disable_expansion_hall),
+    ("opening_settler_waits", "opening-settler-waits", AdvancedAi::disable_opening_settler_waits),
 ];
 
 /// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
@@ -162,4 +166,5 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
+    ("apostle_promotion_by_role", "apostle-promotion-by-role", AdvancedAi::enable_apostle_promotion_by_role),
 ];

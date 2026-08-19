@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 32,
-    "never_named": 24,
+    "named": 34,
+    "never_named": 23,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -16,6 +16,7 @@
       "loyalty-rate-alarm": "live_without_loyalty_rate_alarm",
       "muster-at-command-radius": "live_without_muster_at_command_radius",
       "relief-targets-the-siege": "live_without_relief_targets_the_siege",
+      "settler-guard-holds": "live_without_settler_guard_holds",
       "settler-site-agreement": "live_without_settler_site_agreement",
       "siege-commitment": "live_without_siege_commitment",
       "siege-role": "live_without_siege_role",
@@ -23,9 +24,7 @@
       "stacked-escort": "live_without_stacked_escort",
       "stranded-settler-discount": "live_without_stranded_settler_discount",
       "suzerain-cards": "live_without_suzerain_cards",
-      "war-economy": "live_without_war_economy",
       "war-reinforcement": "live_without_war_reinforcement",
-      "wide-map-capacity": "live_without_wide_map_capacity",
       "wonder-ring-settle-value": "live_without_wonder_ring_settle_value"
     },
     "never_named_treatments": [
@@ -42,6 +41,7 @@
       "loyalty-rate-alarm",
       "muster-at-command-radius",
       "relief-targets-the-siege",
+      "settler-guard-holds",
       "settler-site-agreement",
       "siege-commitment",
       "siege-role",
@@ -49,19 +49,17 @@
       "stacked-escort",
       "stranded-settler-discount",
       "suzerain-cards",
-      "war-economy",
       "war-reinforcement",
-      "wide-map-capacity",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 56
+    "withholdable": 57
   },
   "derived": {
-    "eval_only_count": 229,
-    "firaxis_only_count": 26,
-    "live_bridge_count": 82,
-    "native_engine_repair_count": 56,
-    "withholdable_live_count": 56
+    "eval_only_count": 233,
+    "firaxis_only_count": 29,
+    "live_bridge_count": 86,
+    "native_engine_repair_count": 57,
+    "withholdable_live_count": 57
   },
   "ladder": {
     "ahead": 6,
@@ -101,7 +99,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 24,
+      "declared_count": 25,
       "items": [
         "escort-unstick",
         "stacked-escort",
@@ -109,6 +107,7 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -130,7 +129,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 56,
+      "declared_count": 57,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -170,6 +169,7 @@
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
+        "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
         "housing-districts",
@@ -228,7 +228,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 229,
+      "declared_count": 233,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -324,6 +324,10 @@
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
         "live_without_district_building_chain",
+        "live_without_settler_guard_holds",
+        "live_without_expansion_pantheon",
+        "live_without_expansion_hall",
+        "live_without_opening_settler_waits",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -462,7 +466,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 26,
+      "declared_count": 29,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -489,11 +493,14 @@
         "explore-commit",
         "land-grab",
         "spy-mission-patience",
-        "district-building-chain"
+        "district-building-chain",
+        "expansion-pantheon",
+        "expansion-hall",
+        "opening-settler-waits"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 82,
+      "declared_count": 86,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -576,7 +583,11 @@
         "spy-mission-patience",
         "settler-site-agreement",
         "civilian-rescue",
-        "district-building-chain"
+        "district-building-chain",
+        "settler-guard-holds",
+        "expansion-pantheon",
+        "expansion-hall",
+        "opening-settler-waits"
       ]
     }
   },
