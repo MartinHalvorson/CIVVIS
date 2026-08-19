@@ -1824,6 +1824,68 @@ fn the_land_grab_pipeline_widens_with_the_empire() {
     assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(16, 3, 0), 1);
 }
 
+/// ★★★★ Nineteen Settlers for nine cities on run civvis-20260819T000800Z: the
+/// land-grab pipeline kept paying for walkers while five stood idle inside a
+/// rival's border. See `idle_walkers_close_the_pipeline`: a walker idle for
+/// `SETTLER_REPLACEMENT_BLOCKED_TURNS` closes the pipeline until it moves,
+/// founds or dies; the older `stalled_expansion` branch — which OPENS a
+/// replacement seat for a blocked walker — is what the flag overrides; the
+/// frozen and stock controllers never carry it.
+#[test]
+fn an_idle_walker_closes_the_land_grab_pipeline() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(
+        live.idle_walkers_close_the_pipeline && live.land_grab && live.settlement_safety,
+        "the live seat carries the treatment beside the pipeline it governs"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge();
+    withheld.disable_idle_walkers_close_the_pipeline();
+
+    // Nothing idle: the pipeline is the land grab's, both arms alike.
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    assert_eq!(withheld.settler_in_flight_allowed(16, 6, 2), 4);
+
+    // One walker blocked for the replacement threshold: the shipped arm keeps
+    // its four-wide pipeline (and, without the land grab, would open a
+    // replacement seat); the repaired one closes it.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    withheld
+        .settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    assert_eq!(
+        withheld.settler_in_flight_allowed(16, 6, 2),
+        4,
+        "withheld, an idle walker changes nothing under the land grab"
+    );
+    assert_eq!(
+        live.settler_in_flight_allowed(16, 6, 2),
+        0,
+        "an idle walker is the whole allowance"
+    );
+    // A walker one turn short of the threshold is still walking as far as
+    // the pipeline knows.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS - 1);
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    // And once it moves (the map entry cleared), the pipeline reopens.
+    live.settler_blocked_turns.clear();
+    assert_eq!(live.settler_in_flight_allowed(16, 6, 2), 4);
+    // No walker out at all: nothing to be idle, whatever the map says.
+    live.settler_blocked_turns
+        .insert(77, SETTLER_REPLACEMENT_BLOCKED_TURNS);
+    assert_eq!(
+        live.settler_in_flight_allowed(16, 6, 0),
+        4,
+        "a stale entry with no walker alive does not close the pipeline"
+    );
+
+    assert!(!AdvancedAi::new().idle_walkers_close_the_pipeline);
+    assert!(!AdvancedAi::legacy().idle_walkers_close_the_pipeline);
+}
+
 /// The land grab's window: a Settler must still repay before the turn
 /// limit, whatever the lane. Under an assigned lane the stock window shuts
 /// at `standard_duration(175)` — t116 Online — and run T104654Z then read

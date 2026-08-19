@@ -144,6 +144,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
+    "live_without_idle_walkers_close_the_pipeline",
     "live_without_expansion_pantheon",
     "live_without_opening_settler_waits",
     "basic_evolved",
@@ -418,6 +419,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
+    "idle-walkers-close-the-pipeline",
     "expansion-pantheon",
     "opening-settler-waits",
 ];
@@ -641,6 +643,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "idle-walkers-close-the-pipeline",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -703,6 +706,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "idle-walkers-close-the-pipeline",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
@@ -842,6 +846,7 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
+    LiveWithoutIdleWalkersCloseThePipeline => "live_without_idle_walkers_close_the_pipeline",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
     LiveWithoutOpeningSettlerWaits => "live_without_opening_settler_waits",
     Advanced => "advanced",
@@ -4453,6 +4458,9 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
+            Self::LiveWithoutIdleWalkersCloseThePipeline => {
+                live_without("idle-walkers-close-the-pipeline")
+            }
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
             Self::LiveWithoutOpeningSettlerWaits => live_without("opening-settler-waits"),
             // The native repair bundle is a COMPOSITE for the same reason

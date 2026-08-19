@@ -130,6 +130,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
     ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
+    ("idle_walkers_close_the_pipeline", "idle-walkers-close-the-pipeline", AdvancedAi::disable_idle_walkers_close_the_pipeline),
     ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
     ("opening_settler_waits", "opening-settler-waits", AdvancedAi::disable_opening_settler_waits),
 ];
