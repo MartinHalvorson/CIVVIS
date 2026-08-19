@@ -2014,25 +2014,43 @@ pub struct BasicAi {
     /// Promote an Apostle for the job the empire actually has, instead of for
     /// the largest number on the card.
     ///
-    /// ★★★★★ THE SHIPPED RULE COMPARES A PERCENTAGE TO A COMBAT NUMBER.
-    /// `prepare_unit_formations` scores every promotion by the sum of the
-    /// ABSOLUTE VALUES of its effects, and the five Apostle promotions are not
-    /// measured in the same unit:
+    /// ★★★★★ BOTH SHIPPED RULES RANK A PERCENTAGE AGAINST A COMBAT NUMBER, AND
+    /// THE DEPLOYED ONE PROVES IT KNOWS BETTER.
     ///
-    /// | promotion | effect | number |
-    /// |---|---|---|
-    /// | `translator` | `foreign_spread_pct` | 200 |
-    /// | `proselytizer` | `rival_pressure_removed_pct` | 50 |
-    /// | `debater` | `religious_strength` | 20 |
-    /// | `orator` | `religious_charges` | 2 |
-    /// | `martyr` | `relic_on_death` | 1 |
+    /// There are two promotion choosers. `BasicAi::prepare_unit_formations`
+    /// scores by the sum of the ABSOLUTE VALUES of a promotion's effects.
+    /// `AdvancedAi::advanced_promotions` — the one the deployed agent actually
+    /// runs, because `advanced_units` replaces the Basic unit phase entirely —
+    /// scores with `AdvancedAi::promotion_value`, which carries a **calibrated
+    /// weight table** precisely because raw magnitudes are not comparable:
+    /// `extra_attacks` 70, `range` 55, `movement` 20, `combat_all` 4.0,
+    /// `attack_*`/`ranged_*`/`siege_*` 3.5. Not one religious effect appears in
+    /// that table, so every one of them takes the `_ => 2.0` fallthrough and is
+    /// multiplied by its own raw magnitude. The mechanism that exists to make
+    /// units commensurable was never pointed at religion.
     ///
-    /// So the ranking inside any offer is a CONSTANT — Translator whenever it
-    /// appears, then Proselytizer, then Debater — and it is constant because a
-    /// percent sign is worth ten of a strength point, not because spreading
-    /// abroad is worth ten times winning a theological fight. The choice is a
-    /// real one: `Game::available_promotions` truncates an Apostle's offer to
-    /// three of the five, and Civilization VI's Apostle takes its single
+    /// Either way the nine Apostle promotions — a percentage, a gold figure, a
+    /// combat strength, hit points and a charge count — are ranked against one
+    /// another as bare numbers:
+    ///
+    /// | promotion | effect | number | unit | `promotion_value` |
+    /// |---|---|---|---|---|
+    /// | `translator` | `foreign_spread_pct` | 200 | percent | 400 |
+    /// | `indulgence_vendor` | `gold_per_conversion` | 100 | gold | 200 |
+    /// | `proselytizer` | `rival_pressure_removed_pct` | 50 | percent | 100 |
+    /// | `chaplain` | `adjacent_heal` | 20 | hit points | 40 |
+    /// | `debater` | `religious_strength` | 20 | combat strength | 40 |
+    /// | `pilgrim` | `natural_wonder_charges` | 3 | charges | 6 |
+    /// | `orator` | `religious_charges` | 2 | charges | 4 |
+    /// | `heathen_conversion` | `convert_barbarians` | 1 | flag | 2 |
+    /// | `martyr` | `relic_on_death` | 1 | flag | 2 |
+    ///
+    /// So the ranking inside any offer is a CONSTANT, in both choosers and for
+    /// the same reason: a percent sign is worth ten of a strength point, not
+    /// because spreading abroad is worth ten times winning a theological fight.
+    /// The second-ranked promotion in the whole set is a GOLD one. The choice
+    /// is real — `Game::available_promotions` truncates an Apostle's offer to
+    /// three of the nine, and Civilization VI's Apostle takes its single
     /// promotion at birth and never takes another. It is simply never made.
     ///
     /// ⚠ The two promotions the rule can never reach are the DEFENSIVE ones,
@@ -2051,11 +2069,35 @@ pub struct BasicAi {
     /// (inquisitors/theological combat) relative to how hard they push their
     /// own religion."
     ///
+    /// ⚠⚠ AND THE DEFENSIVE HALF IS ALMOST UNREACHABLE, which is a finding
+    /// about the engine and not about this flag. The Apostle is the **only
+    /// promotable religious unit** — Missionary, Guru and Inquisitor all carry
+    /// no `promotion_class` at all — and a defending empire buys exactly those:
+    /// `religious_spending_with_reserve`'s non-offensive priority is
+    /// `["missionary", "inquisitor"]`, and its under-pressure priority puts the
+    /// Inquisitor first. So promotion choice can only ever reach an empire that
+    /// is SPREADING. A reachability census over four whole games measured the
+    /// two situational branches at exactly zero: 24 promotions taken, byte
+    /// identical with the flag on and off.
+    ///
+    /// ⚠⚠⚠ THAT CENSUS ALSO CAUGHT THIS TREATMENT WIRED TO A FUNCTION THE
+    /// DEPLOYED AGENT NEVER CALLS, which is the whole reason the cheap question
+    /// is asked before the expensive one. The first two versions changed
+    /// `prepare_unit_formations` only — and `AdvancedAi::advanced_units`
+    /// replaces the Basic unit phase outright, promoting through
+    /// `advanced_promotions` instead. Both censuses came back byte identical,
+    /// which is exactly what a treatment attached to dead code looks like from
+    /// the outside. It is now applied at both choosers.
+    ///
+    /// What that census did find is the mistake this treatment mostly fixes:
+    /// `indulgence_vendor` — a GOLD promotion — was taken **6 of 24 times, as
+    /// often as `translator`**, because 100 outranks `proselytizer`'s 50 and
+    /// `orator`'s 2. A quarter of the empire's Apostles were promoted to earn
+    /// gold per conversion instead of to convert. The offensive branch is
+    /// therefore an explicit conversion-first order rather than a fallthrough.
+    ///
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
-    /// by name before any promotion question is asked. A quiet
-    /// homeland falls through to the shipped rule itself rather than to a copy
-    /// of it, so the treatment is a no-op by construction wherever it has
-    /// nothing to say.
+    /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
@@ -10030,24 +10072,24 @@ impl BasicAi {
         })
     }
 
-    /// The Apostle promotions this empire wants, best first — or `None` when
-    /// the situation says nothing and the shipped rule should decide.
+    /// The Apostle promotions this empire wants, best first.
     ///
-    /// Returning `None` rather than a copy of the shipped order is deliberate:
-    /// it makes "unchanged when the homeland is quiet" true by construction
-    /// instead of by a list somebody has to keep in step with the ruleset.
-    ///
-    /// Every returned branch names all nine promotions, so whichever three the
-    /// offer holds, one of them is always found. See
+    /// Three branches — reconvert, fight, spread — and every one of them names
+    /// all nine promotions, so whichever three the offer holds, one of them is
+    /// always found and the magnitude rule is never reached by accident. See
     /// [`BasicAi::apostle_promotion_by_role`] for why the shipped rule cannot
     /// express any of this.
-    fn apostle_promotion_preference(&self, g: &Game, pid: usize) -> Option<&'static [&'static str]> {
+    pub(crate) fn apostle_promotion_preference(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> &'static [&'static str] {
         if self.home_faith_is_contested(g, pid) {
             // Reconversion. `proselytizer` triples what one spread evicts
             // (`do_spread`'s eviction goes 0.25 -> 0.75), `orator` buys five
             // spreads instead of three, and `debater` matters because the
             // rival's Apostles are usually standing in the city being taken.
-            return Some(&[
+            return &[
                 "proselytizer",
                 "orator",
                 "debater",
@@ -10057,13 +10099,13 @@ impl BasicAi {
                 "pilgrim",
                 "martyr",
                 "heathen_conversion",
-            ]);
+            ];
         }
         if self.foreign_faith_unit_near_home(g, pid) {
             // A fight we are in whether or not we chose it. `debater` is the
             // only promotion that touches `theological_strength`; `chaplain`
             // is what lets a unit survive a second one.
-            return Some(&[
+            return &[
                 "debater",
                 "chaplain",
                 "proselytizer",
@@ -10073,11 +10115,31 @@ impl BasicAi {
                 "pilgrim",
                 "martyr",
                 "heathen_conversion",
-            ]);
+            ];
         }
-        // A quiet homeland: the Apostle's whole job is spreading abroad, and
-        // the shipped rule already prefers the spreading promotion.
-        None
+        // A quiet homeland: the Apostle's whole job is spreading abroad. The
+        // shipped rule gets the FIRST choice right by luck — `translator` has
+        // the biggest number — and then gets the next one wrong, because
+        // `indulgence_vendor` is a GOLD promotion at 100 and outranks
+        // `proselytizer` at 50 and `orator` at 2. The offer is three of nine,
+        // so the second choice is made often: over four whole games the
+        // reachability census counted `indulgence_vendor` taken SIX times out
+        // of twenty-four, exactly as often as `translator`. A quarter of this
+        // empire's Apostles were promoted to earn gold per conversion instead
+        // of to convert.
+        //
+        // Conversion first, then the fight, then the trinkets.
+        &[
+            "translator",
+            "proselytizer",
+            "orator",
+            "debater",
+            "chaplain",
+            "indulgence_vendor",
+            "pilgrim",
+            "martyr",
+            "heathen_conversion",
+        ]
     }
 
     /// Spend earned promotions before moving, then consolidate eligible
@@ -10087,29 +10149,26 @@ impl BasicAi {
     pub(crate) fn prepare_unit_formations(&self, g: &mut Game, pid: usize) {
         // Computed at most once per turn, and only if an Apostle actually has
         // a promotion to take: it walks every city and every unit on the board.
-        let mut apostle_preference: Option<Option<&'static [&'static str]>> = None;
+        let mut apostle_preference: Option<&'static [&'static str]> = None;
         for uid in g.player_unit_ids(pid) {
             let offered = g.available_promotions(uid);
             if offered.is_empty() {
                 continue;
             }
             let shipped = |offered: &[Name]| -> Option<Name> {
-                offered
-                    .iter()
-                    .copied()
-                    .max_by(|a, b| {
-                        let value = |name: &str| {
-                            g.rules.promotions[name]
-                                .effects
-                                .values()
-                                .map(|effect| effect.abs())
-                                .sum::<f64>()
-                        };
-                        value(a)
-                            .partial_cmp(&value(b))
-                            .unwrap()
-                            .then_with(|| b.cmp(a))
-                    })
+                offered.iter().copied().max_by(|a, b| {
+                    let value = |name: &str| {
+                        g.rules.promotions[name]
+                            .effects
+                            .values()
+                            .map(|effect| effect.abs())
+                            .sum::<f64>()
+                    };
+                    value(a)
+                        .partial_cmp(&value(b))
+                        .unwrap()
+                        .then_with(|| b.cmp(a))
+                })
             };
             let is_apostle = self.apostle_promotion_by_role
                 && g.units.get(&uid).is_some_and(|unit| {
@@ -10122,14 +10181,11 @@ impl BasicAi {
                 let ranked = *apostle_preference
                     .get_or_insert_with(|| self.apostle_promotion_preference(g, pid));
                 ranked
-                    .and_then(|ranked| {
-                        ranked
-                            .iter()
-                            .find_map(|want| offered.iter().find(|name| **name == **want).copied())
-                    })
-                    // A quiet homeland, or an offer out of a modded ruleset
-                    // holding none of the nine named promotions: the shipped
-                    // rule decides, exactly as it does today.
+                    .iter()
+                    .find_map(|want| offered.iter().find(|name| **name == **want).copied())
+                    // An offer out of a modded ruleset holding none of the nine
+                    // named promotions: the shipped rule decides, exactly as it
+                    // does today.
                     .or_else(|| shipped(&offered))
             } else {
                 shipped(&offered)
@@ -22327,9 +22383,15 @@ mod apostle_promotion_tests {
             "the fixture must actually seat our own faith"
         );
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0),
-            None,
-            "a quiet homeland must fall through to the shipped rule"
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "translator",
+            "a quiet homeland spreads abroad"
+        );
+        assert_eq!(
+            ai.apostle_promotion_preference(&game, 0)[1],
+            "proselytizer",
+            "and its SECOND choice is a conversion promotion, not the gold one — \
+             this is the branch the census showed being got wrong 6 times in 24"
         );
 
         // 2. A rival faith has reached half our pressure — still ours, already
@@ -22345,8 +22407,8 @@ mod apostle_promotion_tests {
             "the city has NOT flipped yet — that is the point of this branch"
         );
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0).map(|order| order[0]),
-            Some("proselytizer"),
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "proselytizer",
             "a city being lost asks for the promotion that evicts rival pressure"
         );
 
@@ -22358,8 +22420,8 @@ mod apostle_promotion_tests {
         }
         assert_eq!(game.city_religion(&game.cities[&cid]), Some("theirs"));
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0).map(|order| order[0]),
-            Some("proselytizer"),
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "proselytizer",
             "a city already lost is the same job"
         );
 
@@ -22371,16 +22433,16 @@ mod apostle_promotion_tests {
             city.pressure.insert("ours".to_string(), 400.0);
         }
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0),
-            None,
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "translator",
             "the fixture must be back to quiet before the unit is placed"
         );
         let home = game.cities[&cid].pos;
         let intruder = game.spawn_unit("missionary", 1, home);
         game.units.get_mut(&intruder).unwrap().religion = Some("theirs".to_string());
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0).map(|order| order[0]),
-            Some("debater"),
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "debater",
             "a foreign religious unit at the gates asks for the theological-combat promotion"
         );
 
@@ -22388,8 +22450,8 @@ mod apostle_promotion_tests {
         // detector must not fire on our own Apostles standing at home.
         game.units.get_mut(&intruder).unwrap().religion = Some("ours".to_string());
         assert_eq!(
-            ai.apostle_promotion_preference(&game, 0),
-            None,
+            ai.apostle_promotion_preference(&game, 0)[0],
+            "translator",
             "a co-religionist is not an intruder"
         );
 
@@ -22397,6 +22459,141 @@ mod apostle_promotion_tests {
         assert!(
             !BasicAi::new().apostle_promotion_by_role,
             "the treatment must ship off"
+        );
+    }
+
+    /// ★★★★ THE APOSTLE IS THE ONLY PROMOTABLE RELIGIOUS UNIT, AND THAT IS WHY
+    /// A PROMOTION CANNOT BE A DEFENSIVE REPAIR.
+    ///
+    /// Missionary, Guru and Inquisitor carry no `promotion_class` at all, so
+    /// they can never take a promotion — and those are exactly the units a
+    /// defending empire buys: `AdvancedAi::religious_spending_with_reserve`
+    /// asks for `["missionary", "inquisitor"]` when it is not on the offensive,
+    /// and puts the Inquisitor first when the home cities are under pressure.
+    /// So promotion choice can only ever reach an empire that is SPREADING,
+    /// and the two situational branches of
+    /// [`BasicAi::apostle_promotion_by_role`] are nearly unreachable by
+    /// construction. The reachability census below measured them at exactly
+    /// zero over four whole games.
+    ///
+    /// This is a fact about the shipped roster, not about the flag, and it is
+    /// pinned here so the next person to reach for a promotion as a religious
+    /// defence learns it from a failing test instead of from a measurement.
+    #[test]
+    fn the_apostle_is_the_only_religious_unit_that_can_be_promoted() {
+        let rules = crate::rules::Rules::embedded();
+        let religious: Vec<(&str, &str)> = rules
+            .units
+            .iter()
+            .filter(|(_, spec)| spec.class == "religious")
+            .map(|(name, spec)| (name.as_str(), spec.promotion_class.as_str()))
+            .collect();
+        assert!(
+            religious.len() >= 4,
+            "the religious roster shrank; re-read this test's premise"
+        );
+        for (unit, promotion_class) in &religious {
+            if *unit == "apostle" {
+                assert_eq!(
+                    *promotion_class, "religious_apostle",
+                    "the Apostle must still be promotable or the treatment has no subject"
+                );
+            } else {
+                assert!(
+                    promotion_class.is_empty(),
+                    "{unit} became promotable — a promotion can now reach a defending \
+                     empire, so the treatment's defensive branches are no longer \
+                     unreachable and its census should be re-run"
+                );
+            }
+        }
+    }
+
+    /// ★★★ IS THE TREATMENT REACHABLE AT ALL? This is the cheap question, and
+    /// it is the precondition for a win rate meaning anything —
+    /// `src/bin/gene_census.rs` states the doctrine: *does this control change
+    /// anything at all* is far cheaper to establish than a win rate, and a gene
+    /// that cannot change an outcome cannot be selected on.
+    ///
+    /// Plays whole games with the flag off and on and counts the promotion each
+    /// Apostle actually took. Three ways this can come back, and only one of
+    /// them justifies spending hours on a win-rate screen:
+    ///
+    /// - **no Apostles at all** — the treatment is unreachable at this profile
+    ///   and the screen would measure nothing;
+    /// - **Apostles, but the same promotions** — the situational branches never
+    ///   fire, so the flag is a no-op;
+    /// - **different promotions** — the treatment is live, and the census says
+    ///   how often and in which direction.
+    ///
+    /// Ignored because it plays whole games. Run it with:
+    /// `CIVVIS_APOSTLE_AB_SEEDS=8 cargo test --profile ci --lib \
+    ///  the_apostle_treatment_changes_the_promotions_actually_taken -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn the_apostle_treatment_changes_the_promotions_actually_taken() {
+        use std::collections::BTreeMap;
+        let count: u64 = std::env::var("CIVVIS_APOSTLE_AB_SEEDS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(4);
+        let seeds: Vec<u64> = (1..=count).map(|n| 26_081_900 + n).collect();
+        let mut census: Vec<BTreeMap<String, usize>> = Vec::new();
+        for treated in [false, true] {
+            let mut taken: BTreeMap<String, usize> = BTreeMap::new();
+            for seed in &seeds {
+                let mut game = Game::new_with(crate::game::GameOptions {
+                    speed: "online".to_string(),
+                    ..crate::game::GameOptions::new(4, 60, 38, *seed, 250, 6)
+                });
+                let mut ais: Vec<crate::ai::AdvancedAi> = (0..game.players.len())
+                    .map(|_| {
+                        let mut ai = crate::ai::AdvancedAi::new();
+                        if treated {
+                            ai.enable_apostle_promotion_by_role();
+                        }
+                        ai
+                    })
+                    .collect();
+                crate::ai::run_game(&mut game, &mut ais);
+                for unit in game.units.values() {
+                    if game.rules.units[unit.kind].promotion_class != "religious_apostle" {
+                        continue;
+                    }
+                    for promotion in &unit.promotions {
+                        *taken.entry(promotion.to_string()).or_default() += 1;
+                    }
+                }
+            }
+            census.push(taken);
+        }
+        println!(
+            "\napostle promotions taken over {} games per arm (4p 60x38 online-250):",
+            seeds.len()
+        );
+        let mut names: Vec<&String> = census[0].keys().chain(census[1].keys()).collect();
+        names.sort();
+        names.dedup();
+        println!("{:<22} {:>8} {:>8}", "promotion", "shipped", "by-role");
+        for name in &names {
+            println!(
+                "{:<22} {:>8} {:>8}",
+                name,
+                census[0].get(*name).copied().unwrap_or(0),
+                census[1].get(*name).copied().unwrap_or(0)
+            );
+        }
+        let shipped_total: usize = census[0].values().sum();
+        let treated_total: usize = census[1].values().sum();
+        println!("{:<22} {shipped_total:>8} {treated_total:>8}", "total");
+        // The assertion is only that the census RAN and found Apostles to
+        // count. Whether the distribution moved is the thing being reported,
+        // and a single small sweep cannot make that a pass/fail.
+        assert!(
+            shipped_total > 0 || treated_total > 0,
+            "no Apostle survived to the end of any game at this profile, so this \
+             census cannot say whether the treatment is reachable — raise \
+             CIVVIS_APOSTLE_AB_SEEDS or count promotions as they are taken"
         );
     }
 
@@ -22435,10 +22632,7 @@ mod apostle_promotion_tests {
             city.pressure.insert("theirs".to_string(), 400.0);
             city.atheist_pressure = 0.0;
         }
-        branches.push(
-            ai.apostle_promotion_preference(&game, 0)
-                .expect("the contested-home branch"),
-        );
+        branches.push(ai.apostle_promotion_preference(&game, 0));
         {
             let city = game.cities.get_mut(&cid).unwrap();
             city.pressure.clear();
@@ -22447,11 +22641,11 @@ mod apostle_promotion_tests {
         let home = game.cities[&cid].pos;
         let intruder = game.spawn_unit("missionary", 1, home);
         game.units.get_mut(&intruder).unwrap().religion = Some("theirs".to_string());
-        branches.push(
-            ai.apostle_promotion_preference(&game, 0)
-                .expect("the intruder branch"),
-        );
-        assert_eq!(branches.len(), 2);
+        branches.push(ai.apostle_promotion_preference(&game, 0));
+        // And the offensive branch, which is the reachable one.
+        game.units.get_mut(&intruder).unwrap().religion = Some("ours".to_string());
+        branches.push(ai.apostle_promotion_preference(&game, 0));
+        assert_eq!(branches.len(), 3);
         for branch in branches {
             let listed: std::collections::BTreeSet<&str> = branch.iter().copied().collect();
             assert_eq!(

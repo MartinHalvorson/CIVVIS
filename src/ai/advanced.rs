@@ -27215,11 +27215,41 @@ impl AdvancedAi {
     }
 
     fn advanced_promotions(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        // Computed at most once a turn, and only if an Apostle actually has a
+        // promotion to take: it walks every city and every unit on the board.
+        // See [`crate::ai::BasicAi::apostle_promotion_by_role`].
+        let mut apostle_preference: Option<&'static [&'static str]> = None;
         for uid in g.player_unit_ids(pid) {
             if self.promotion_heal_is_wasted(g, uid) {
                 continue;
             }
             let promotions = g.available_promotions(uid);
+            let apostle = self.base.apostle_promotion_by_role
+                && g.units.get(&uid).is_some_and(|unit| {
+                    g.rules
+                        .units
+                        .get(&unit.kind)
+                        .is_some_and(|spec| spec.promotion_class == "religious_apostle")
+                });
+            if apostle {
+                let ranked = *apostle_preference
+                    .get_or_insert_with(|| self.base.apostle_promotion_preference(g, pid));
+                if let Some(promotion) = ranked
+                    .iter()
+                    .find_map(|want| promotions.iter().find(|name| **name == **want).copied())
+                {
+                    let _ = g.apply(
+                        pid,
+                        &Action::Promote {
+                            unit: uid,
+                            promotion: Name::new(&promotion),
+                        },
+                    );
+                    continue;
+                }
+                // An offer out of a modded ruleset naming none of the nine
+                // falls through to the shipped scorer below.
+            }
             let choice = promotions.into_iter().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)
                     .partial_cmp(&self.promotion_value(g, b, strategy))
