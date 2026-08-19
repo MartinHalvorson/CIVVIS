@@ -44,15 +44,15 @@ Never named:
 
 ## Live ladder
 
-- Attempts recorded: **317**
-- Configured attempts: **310**
-- Terminal outcomes: **209**
-- Configured wins: **3**
-- Latest ledger entry: **2026-08-18T06:17:27Z**
+- Attempts recorded: **349**
+- Configured attempts: **342**
+- Terminal outcomes: **232**
+- Configured wins: **7**
+- Latest ledger entry: **2026-08-19T11:21:36Z**
 
-- Attempts that ran the full clock: **133**, median score **449**, best **1191**
-- Graded against the best rival: **17** of 133 finished attempts; rival bar median **1035**, our lead median **-83**, best **+409**, ahead in **6**
-- Lost to a rival's victory before the clock: **74** (diplomatic 41, culture 24, religious 5, technology 3, conquest 1), of which **3** while our own score was the highest on the board
+- Attempts that ran the full clock: **147**, median score **461**, best **1588**
+- Graded against the best rival: **48** of 147 finished attempts; rival bar median **1077**, our lead median **-207**, best **+759**, ahead in **12**
+- Lost to a rival's victory before the clock: **83** (diplomatic 47, culture 27, religious 5, technology 3, conquest 1), of which **4** while our own score was the highest on the board
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this

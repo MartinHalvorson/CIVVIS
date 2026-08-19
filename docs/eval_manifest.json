@@ -64,27 +64,27 @@
     "withholdable_live_count": 59
   },
   "ladder": {
-    "ahead": 6,
-    "attempts": 317,
-    "configured": 310,
-    "full_length": 133,
-    "graded": 17,
-    "latest_utc": "2026-08-18T06:17:27Z",
-    "lead_best": 409,
-    "lead_median": -83,
-    "rival_bar_median": 1035,
-    "score_best": 1191,
-    "score_median": 449,
+    "ahead": 12,
+    "attempts": 349,
+    "configured": 342,
+    "full_length": 147,
+    "graded": 48,
+    "latest_utc": "2026-08-19T11:21:36Z",
+    "lead_best": 759,
+    "lead_median": -207,
+    "rival_bar_median": 1077,
+    "score_best": 1588,
+    "score_median": 461,
     "stolen": {
       "conquest": 1,
-      "culture": 24,
-      "diplomatic": 41,
+      "culture": 27,
+      "diplomatic": 47,
       "religious": 5,
       "technology": 3
     },
-    "stolen_while_ahead": 3,
-    "terminal": 209,
-    "wins": 3
+    "stolen_while_ahead": 4,
+    "terminal": 232,
+    "wins": 7
   },
   "registry": {
     "BUILTIN_AIS": {
