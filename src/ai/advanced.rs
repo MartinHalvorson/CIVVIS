@@ -11328,7 +11328,19 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         denied_partner: Option<usize>,
     ) {
-        if g.turn % 12 != pid as u32 % 12 || !g.players[pid].civics.contains(&crate::name!("civil_service")) {
+        // A level-one alliance generates one Favor on the next turn.  Nobel
+        // Peace scores that stream while its host clock is live, so a fixed
+        // twelve-turn proposal cadence can throw away up to eleven scoring
+        // turns despite a legal ally already being known.  Keep the cadence
+        // for ordinary games and even an expiring Peace contest: only bypass
+        // it when the next-turn Favor can still reach the host score.
+        let nobel_peace_alliance_pays =
+            self.nobel_peace_favor_score_value(g, pid, 1.0, 1.0) > f64::EPSILON;
+        if (!nobel_peace_alliance_pays && g.turn % 12 != pid as u32 % 12)
+            || !g.players[pid]
+                .civics
+                .contains(&crate::name!("civil_service"))
+        {
             return;
         }
         let kind = match plan.strategy {
