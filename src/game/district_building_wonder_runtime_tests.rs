@@ -1931,3 +1931,75 @@ fn power_conversion_projects_replace_exactly_one_existing_plant() {
     );
     assert_eq!(game.cities[&city].reactor_age, 0);
 }
+
+#[test]
+fn climate_accords_projects_consume_the_exact_host_power_plant() {
+    let (mut game, city, position) = one_city(774_412);
+    install_district(&mut game, city, position, "industrial_zone");
+    let coal = Item::Project {
+        project: crate::name!("decommission_coal_power_plant"),
+    };
+    assert!(
+        !game.can_produce(0, city, &coal),
+        "native boards cannot invent a host-granted Climate Accords project"
+    );
+    game.replace_host_competitions(vec![HostCompetition {
+        kind: "EMERGENCY_CLIMATE_ACCORDS".to_string(),
+        ends: game.turn + 30,
+        ours: 0.0,
+        leader: 100.0,
+    }]);
+    assert!(
+        !game.can_produce(0, city, &coal),
+        "the host grant still needs the specific plant it will decommission"
+    );
+
+    for (project, power_plant, nuclear) in [
+        ("decommission_coal_power_plant", "coal_power_plant", false),
+        ("decommission_oil_power_plant", "oil_power_plant", false),
+        (
+            "decommission_nuclear_power_plant",
+            "nuclear_power_plant",
+            true,
+        ),
+    ] {
+        let power_plant = Name::new(power_plant);
+        let era = game.world_era;
+        let city_state = game.cities.get_mut(&city).unwrap();
+        city_state.buildings = vec![crate::name!("factory"), power_plant];
+        city_state.pillaged_buildings.clear();
+        city_state.building_eras.insert(power_plant, era);
+        city_state.reactor_age = if nuclear { 27 } else { 0 };
+
+        let item = Item::Project {
+            project: Name::new(project),
+        };
+        assert!(game.can_produce(0, city, &item), "{project} is host-legal");
+        assert!(game.complete_item(0, city, &item), "{project} completes");
+        {
+            let city_state = &game.cities[&city];
+            assert!(
+                city_state.buildings.contains(&crate::name!("factory")),
+                "{project} leaves unrelated infrastructure intact"
+            );
+            assert!(
+                !city_state.buildings.contains(&power_plant),
+                "{project} consumes its exact plant"
+            );
+            assert!(
+                !city_state.building_eras.contains_key(&power_plant),
+                "the consumed plant has no lingering construction record"
+            );
+        }
+        assert!(
+            !game.can_produce(0, city, &item),
+            "a consumed plant prevents free repeat score"
+        );
+        if nuclear {
+            assert_eq!(
+                game.cities[&city].reactor_age, 0,
+                "retiring a reactor clears its age"
+            );
+        }
+    }
+}
