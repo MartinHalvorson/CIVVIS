@@ -11134,6 +11134,48 @@ CivvisSelectCongressLeader = function(candidates)
 	return leader, leaderPoints, leaderScore;
 end
 
+-- ★★★★ THE ASK IS PRICED AGAINST BOTH TABLES THE HOST MIGHT CHARGE.
+--
+-- Every multi-vote ballot this seat ever sent saturated the bank the host's
+-- own `GetVotesandFavorCost` table said it could afford — 14/16/18/20 votes
+-- across civvis-20260819T004405Z, 13 at t162 of T175125Z — and all 17 were
+-- refused whole while all 95 one-vote ballots registered. That table is the
+-- ONLINE curve: the k-th extra vote costs 4k, cumulative `2n(n-1)`. The
+-- Standard curve the game was written against charges 10k, cumulative
+-- `5n(n-1)` — the same 780-for-13-votes this file's own #2039 comment quotes
+-- from the shipped ladder. A core that CHARGES Standard while the accessor
+-- REPORTS Online refuses every ask this seat has ever made as unaffordable,
+-- and none of the 112 verdict rows can tell, because no ballot ever asked a
+-- count small enough to fit both tables. So cap the ask by both: when the
+-- theory is wrong this asks fewer votes than the bank affords on a ballot
+-- that today registers ONE, which cannot lose a vote we are getting; when it
+-- is right, the first session past the cap finally registers a bank. The
+-- verdict's `budget` field carries both walks so the session that decides it
+-- is attributable.
+--
+-- Exposed for the offline Lua regression. Must remain a bare global -- another
+-- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+CivvisCongressVoteBudget = function(favor, costs, maxVotes)
+	local bank = tonumber(favor) or 0;
+	local cap = tonumber(maxVotes) or 1;
+	if cap < 1 then cap = 1; end
+	-- `costs[k]` is the host's cumulative price of k+1 votes; the first vote
+	-- (`costs[0]`) is free on every observed table.
+	local host = 1;
+	while host + 1 <= cap and type(costs) == "table"
+	      and tonumber(costs[host]) ~= nil
+	      and tonumber(costs[host]) <= bank do
+		host = host + 1;
+	end
+	-- Standard-speed cumulative price of n votes: 5n(n-1).
+	local standard = 1;
+	while standard + 1 <= cap and 5 * (standard + 1) * standard <= bank do
+		standard = standard + 1;
+	end
+	local votes = (host < standard) and host or standard;
+	return votes, host, standard;
+end
+
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
 --
 -- Measured on run civvis-20260801T224944Z: five Great People — three Writers and
@@ -11929,6 +11971,11 @@ local function beginTurn(player, pid, turn)
 						costs = envoyTally.ballot_costs,
 						votes_sent = (type(envoyTally.ballot_sent) == "table")
 							and envoyTally.ballot_sent[r.type] or nil,
+						-- Both affordability walks behind the ask (host table
+						-- and Standard-priced), so the session that finally
+						-- registers a bank says which table the core charges.
+						budget = (type(envoyTally.ballot_budget) == "table")
+							and envoyTally.ballot_budget or nil,
 					});
 				end
 			end
@@ -12333,6 +12380,7 @@ local function tick()
 			envoyTally.ballot_favor_now = favorNow;
 			envoyTally.ballot_favor_entering = favorEntering;
 			envoyTally.ballot_ask = {};
+			envoyTally.ballot_budget = nil;
 			-- ★★★★★ AND WHAT THE VOTES WERE PRICED AGAINST, BECAUSE THE FIRST
 			-- READBACK RULED OUT THE REASON IT WAS BUILT TO TEST.
 			--
@@ -12478,13 +12526,37 @@ local function tick()
 						-- nothing is spent; from there every session spends the bank.
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
+						-- Both walks live in `CivvisCongressVoteBudget` (see its
+						-- comment): the host-table bank and the Standard-priced
+						-- bank a mispricing core would charge. The ask takes the
+						-- smaller; the verdict records both.
+						local budget, budgetHost, budgetStandard =
+							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						envoyTally.ballot_budget =
+							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
 						if (tonumber(leaderPoints) or 0) >= floor then
-							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-								n = n + 1;
-							end
+							n = budget;
+							mode = (n > 1) and "deny" or "free";
+						elseif cfg.CongressVoteProbe ~= false and budget > 1 then
+							-- ★★ A THREE-VOTE PROBE AT EVERY SESSION BELOW THE FLOOR.
+							--
+							-- The floor banks Favor until a leader is within reach,
+							-- which also postpones the first multi-vote ballot to
+							-- t160+ — one or two sessions before a diplomatic loss,
+							-- far too late to learn whether the purchase registers
+							-- at all. Three votes cost 12 Favor on the Online table
+							-- (30 if the core charges Standard) out of a bank that
+							-- ends games in the hundreds: every session now reports
+							-- a verdict on the purchase path, and lands two extra
+							-- votes against the leader when it works. Its own mode
+							-- string keeps a 12-Favor probe from reading like a
+							-- bank-scale deny in the ledger.
+							n = (budget < 3) and budget or 3;
+							mode = "probe";
+						else
+							mode = "free";
 						end
-						mode = (n > 1) and "deny" or "free";
 						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
 						--
 						-- The resolution's winner is the option with more votes, and
@@ -12506,15 +12578,10 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == pid then ourIdx = idx; end
 						end
-						local affordable = 1;
-						while affordable + 1 <= maxVotes and costs[affordable] ~= nil
-						      and costs[affordable] <= favor do
-							affordable = affordable + 1;
-						end
-						if ourIdx ~= nil and affordable >= claim then
+						if ourIdx ~= nil and budget >= claim then
 							option = 1;
 							selection = ourIdx;
-							n = affordable;
+							n = budget;
 							mode = "claim";
 						end
 						votes = n;
@@ -12591,27 +12658,23 @@ local function tick()
 					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
 					-- through this path.
 					--
-					-- So stop sending it. One vote per operation, repeated: if
-					-- the core accumulates them the seat can finally buy votes,
-					-- and if it does not, the host records one -- which is what
-					-- it records today, so this cannot cost a vote the seat is
-					-- already not getting. `votes_sent` and the verdict's
-					-- `recorded` say which happened, on the first session past
-					-- the floor.
-					local sent, submitted = false, 0;
-					for _ = 1, math.max(1, votes) do
-						local one = {};
-						for key, value in pairs(params) do one[key] = value; end
-						one[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1;
-						local ok = pcall(function()
-							UI.RequestPlayerOperation(pid,
-								PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, one);
-						end);
-						if ok then submitted = submitted + 1; sent = true; end
-					end
+					-- #2045 tried one vote per operation, repeated, on the theory
+					-- that the core might accumulate them. The experiment came
+					-- back on run civvis-20260819T004405Z: `votes_sent 20,
+					-- recorded 1` on every multi-vote session — the operation
+					-- SETS the seat's ballot rather than adding to it, so a
+					-- repeat leaves the LAST write's single vote standing. Back
+					-- to one operation carrying the whole count, exactly as the
+					-- shipped `OnAccept` sends it; what changed instead is the
+					-- count itself, now priced by `CivvisCongressVoteBudget`
+					-- against both tables the host might charge.
+					local sent = pcall(function()
+						UI.RequestPlayerOperation(pid,
+							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
+					end);
 					if sent then cast = cast + 1; end
 					envoyTally.ballot_sent = envoyTally.ballot_sent or {};
-					envoyTally.ballot_sent[rtype] = submitted;
+					envoyTally.ballot_sent[rtype] = sent and 1 or 0;
 					-- What this ballot ASKED for, per resolution, so the next
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
@@ -12667,6 +12730,19 @@ local function tick()
 				local r = Game.GetWorldCongress():GetResolutions(ballotPid);
 				return r and r.Stage or nil;
 			end, nil);
+			-- `GetResolutions().Stage` has read INT_MAX on every recorded cast,
+			-- from both triggers, so it does not say whether the cast landed
+			-- inside the congress turn segment — the window the shipped popup
+			-- votes in (`CheckShouldOpen` gates on `Game.GetCurrentTurnSegment`).
+			-- Read the segment itself, so the moment theory finally has a
+			-- measurement instead of a sentinel.
+			local segment = try(function() return Game.GetCurrentTurnSegment(); end, nil);
+			local inCongressSegment = try(function()
+				if segment == nil then return nil; end
+				return segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_1")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_2")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_RESOLUTION");
+			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
@@ -12674,7 +12750,9 @@ local function tick()
 			                  why = why, leader = leader,
 			                  leader_points = leaderPoints,
 			                  leader_score = leaderScore, source = trigger,
-			                  stage = stage, favor_before = before, mode = mode });
+			                  stage = stage, favor_before = before, mode = mode,
+			                  segment = segment,
+			                  in_congress_segment = inCongressSegment });
 		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
