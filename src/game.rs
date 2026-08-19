@@ -682,6 +682,8 @@ const REQUEST_REFUSAL_FIRST_GRIEVANCES: f64 = 25.0;
 const REQUEST_REFUSAL_REPEAT_GRIEVANCES: f64 = 25.0;
 const PROMISE_BROKEN_FIRST_GRIEVANCES: f64 = 100.0;
 const PROMISE_BROKEN_REPEAT_GRIEVANCES: f64 = 25.0;
+/// Gathering Storm's `WORLD_CONGRESS_REQUEST_FOR_MILITARY_AID_GRIEVANCES_MIN`.
+const MILITARY_AID_REQUEST_GRIEVANCES_MIN: f64 = 200.0;
 
 /// The grievance share a third party acquires from its relationship with the
 /// directly aggrieved civilization.  These are intentionally applied once at
@@ -2862,9 +2864,10 @@ pub struct HostCompetition {
 /// seven sites including congress *refunds*, and deciding which of those count
 /// as favor "earned" is a rule this repository does not have — the kind of
 /// invention that put Vanilla belief values into a Gathering Storm ruleset in
-/// #2049. Native Send Aid seats from a random-disaster population loss and
-/// scores its existing project. Its other score sources, and the separate
-/// military-aid war trigger, remain outside the portion modelled here.
+/// #2049. Native aid requests seat from a random-disaster population loss or
+/// a war declared by a civilization the target already has 200 grievances
+/// against, and score their existing project. Their other score sources remain
+/// outside the portion modelled here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CompetitionScoring {
     /// A project completed in a city, worth its `competition_score`.
@@ -2880,6 +2883,8 @@ enum NativeCompetitionTrigger {
     Congress,
     /// A player lost population to a random disaster.
     RandomDisasterPopulationLoss,
+    /// A civilization the target already has 200 grievances against declares war.
+    WarWithGrievances,
 }
 
 /// The portion of a scored competition CIVVIS can faithfully seat itself.
@@ -17716,7 +17721,10 @@ impl Game {
         let before = city.pop;
         city.pop = (city.pop - loss).max(1);
         if city.pop < before {
-            self.open_native_aid_request(owner);
+            self.open_native_aid_request(
+                owner,
+                NativeCompetitionTrigger::RandomDisasterPopulationLoss,
+            );
         }
     }
 
@@ -31226,6 +31234,16 @@ impl Game {
             minimum_world_era: 0,
             maximum_world_era: None,
         },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_SEND_MILITARY_AID",
+            diplomatic_victory_points: 2,
+            scoring: CompetitionScoring::Project,
+            trigger: NativeCompetitionTrigger::WarWithGrievances,
+            duration: 30,
+            lockout: 30,
+            minimum_world_era: 0,
+            maximum_world_era: None,
+        },
     ];
 
     fn native_competition(kind: &str) -> Option<&'static NativeCompetitionSpec> {
@@ -31267,17 +31285,16 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
-    /// Seat Gathering Storm's Send Aid request when a random disaster costs a
-    /// major civilization population. Unlike congress competitions this is
-    /// targeted: the affected empire receives aid and cannot score in its own
-    /// request.
-    fn open_native_aid_request(&mut self, target: usize) {
+    /// Seat Gathering Storm's targeted aid request at its native trigger.
+    /// Unlike congress competitions the affected empire receives aid and
+    /// cannot score in its own request.
+    fn open_native_aid_request(&mut self, target: usize, trigger: NativeCompetitionTrigger) {
         if !self.native_competitions || self.competition.is_some() || !self.victory_eligible(target)
         {
             return;
         }
         let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
-            competition.trigger == NativeCompetitionTrigger::RandomDisasterPopulationLoss
+            competition.trigger == trigger
                 && self
                     .competition_lockout_until
                     .get(competition.kind)
@@ -39987,6 +40004,16 @@ impl Game {
             }
             declared_principals.push(partner);
         }
+        // Gathering Storm's `WORLD_CONGRESS_REQUEST_FOR_MILITARY_AID_GRIEVANCES_MIN`
+        // tests the target's grievance ledger when a declarer begins the war.
+        // Capture that pre-declaration state before the war's own grievance
+        // accounting can make an ordinary declaration appear eligible.
+        let military_aid_request = declared_principals.iter().any(|declarer| {
+            self.players[other]
+                .grievances
+                .get(declarer)
+                .is_some_and(|grievances| *grievances >= MILITARY_AID_REQUEST_GRIEVANCES_MIN)
+        });
         let attackers: BTreeSet<usize> = declared_principals
             .iter()
             .flat_map(|principal| self.team_members(*principal))
@@ -40041,8 +40068,9 @@ impl Game {
                 }
             }
         }
+        let declaration_grievances = profile.declaration_grievances();
         for declarer in &declared_principals {
-            self.add_grievances(other, *declarer, profile.declaration_grievances());
+            self.add_grievances(other, *declarer, declaration_grievances);
         }
         if self.players[other].is_minor {
             self.city_state_declaration_grievances(other, &declared_principals);
@@ -40127,6 +40155,9 @@ impl Game {
             }
         }
         self.sync_war_log();
+        if military_aid_request {
+            self.open_native_aid_request(other, NativeCompetitionTrigger::WarWithGrievances);
+        }
         Ok(())
     }
 
