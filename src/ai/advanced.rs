@@ -23742,7 +23742,15 @@ impl AdvancedAi {
         uid: u32,
         offensive: bool,
     ) -> bool {
-        let Some(religion) = g.players[pid].religion.clone() else {
+        // A non-founder can still buy a Missionary of a purchase city's
+        // adopted majority faith to repel a competing conversion. That unit
+        // has no player-owned religion to read, so its own faith is the
+        // authority for both its defensive target and its Spread action.
+        let Some(religion) = g.units[&uid]
+            .religion
+            .clone()
+            .or_else(|| g.players[pid].religion.clone())
+        else {
             return false;
         };
         let current = g.units[&uid].pos;
