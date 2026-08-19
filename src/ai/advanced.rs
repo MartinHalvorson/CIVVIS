@@ -19466,7 +19466,11 @@ impl AdvancedAi {
                             // before the current competition expires is not a
                             // neutral fallback: letting it win a tie would
                             // replace a real build with a refused stale order.
-                            if value > 0.0 { value } else { -10_000.0 }
+                            if value > 0.0 {
+                                value
+                            } else {
+                                -10_000.0
+                            }
                         }
                         _ if space_race => {
                             3_300.0

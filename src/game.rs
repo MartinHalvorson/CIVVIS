@@ -30898,9 +30898,9 @@ impl Game {
     pub fn host_competition(&self, pid: usize, kind: &str) -> Option<&HostCompetition> {
         (pid == 0)
             .then(|| {
-                self.host_competitions.iter().find(|competition| {
-                    competition.kind == kind && competition.ends > self.turn
-                })
+                self.host_competitions
+                    .iter()
+                    .find(|competition| competition.kind == kind && competition.ends > self.turn)
             })
             .flatten()
     }
