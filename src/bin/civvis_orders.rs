@@ -1652,9 +1652,9 @@ fn append_work_sale_order(
 // `EMERGENCY_SEND_AID` and `EMERGENCY_SEND_MILITARY_AID` score sources award
 // one point for each Gold gift to the emergency target; first place pays two
 // Diplomatic Victory points.  `PROJECT_SEND_AID` contributes 200 of those
-// points at completion, but a city cannot finish it after the final production
-// window closes.  A normal one-way Gold deal can close an already-visible gap
-// immediately, provided the target accepts it.
+// points at completion. When no currently queued project can finish before the
+// final production window closes, a normal one-way Gold deal can close an
+// already-visible gap immediately, provided the target accepts it.
 //
 // This is deliberately a finish-line fallback, not a treasury-to-score
 // conversion.  It acts only in the final three host turns, keeps 100 Gold for
@@ -1690,6 +1690,23 @@ fn aid_gift_needed_score(emergency: &civvis::mirror::StateEmergency) -> Option<i
     Some(needed as i64)
 }
 
+/// A host-reported Send Aid project already reaches the current emergency's
+/// deadline.  The production estimate is authoritative only when finite and
+/// non-negative; an omitted or unknown estimate must not suppress a finish-line
+/// gift on a guess.  Both humanitarian emergency kinds use `PROJECT_SEND_AID`.
+fn aid_project_finishes_by_deadline(
+    state: &civvis::mirror::StateSnapshot,
+    emergency: &civvis::mirror::StateEmergency,
+) -> bool {
+    let deadline = emergency.turns_left as f64;
+    state.cities.iter().any(|city| {
+        city.producing.as_deref() == Some("PROJECT_SEND_AID")
+            && city.production_turns.is_finite()
+            && city.production_turns >= 0.0
+            && city.production_turns <= deadline + f64::EPSILON
+    })
+}
+
 /// Append the direct Gold fallback for an Aid Request that can be won before
 /// it closes.  The target must be a currently exported peaceful major: that
 /// means the Lua side has a met player id it can validate rather than a guessed
@@ -1713,6 +1730,7 @@ fn append_aid_gift_order(
                 && emergency.turns_left <= AID_GIFT_FINISH_WINDOW
                 && emergency.ours.member
                 && emergency.target >= 0
+                && !aid_project_finishes_by_deadline(state, emergency)
         })
         .filter_map(|emergency| {
             let amount = aid_gift_needed_score(emergency)?;
@@ -8659,6 +8677,28 @@ mod tests {
         let mut orders = Vec::new();
         assert_eq!(append_aid_gift_order(&state, &mut orders), None);
         assert_eq!(orders[0].pos, Some((51, 0)));
+
+        // A real host queue already delivering the same 200-point project by
+        // the deadline is worth more than a redundant treasury spend. Unknown
+        // or late estimates do not suppress the finish-line fallback.
+        let mut queued = state.clone();
+        queued.cities = vec![StateCity {
+            producing: Some("PROJECT_SEND_AID".to_string()),
+            production_turns: 2.0,
+            ..StateCity::default()
+        }];
+        let mut no_order = Vec::new();
+        assert_eq!(
+            append_aid_gift_order(&queued, &mut no_order),
+            Some("aid_gift_hold:no_finishable_lead")
+        );
+        assert!(no_order.is_empty());
+        queued.cities[0].production_turns = 3.0;
+        assert_eq!(append_aid_gift_order(&queued, &mut no_order), None);
+        assert_eq!(
+            no_order[0].kind, "aid_gift",
+            "a project that misses the deadline cannot suppress a gift"
+        );
 
         // The tracker is the authorization. A same-shaped World Games score,
         // a pre-begin event, a non-member, an old/finished event, or an event
