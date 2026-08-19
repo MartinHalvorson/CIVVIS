@@ -1208,11 +1208,22 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// This is a shared native-world rule with no controller gate: it changes what
 /// every participant faces before and during their turns. The frozen anchor
-/// therefore moves from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
-/// 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles. This is a rules
-/// correction, not a compatibility re-pin: v15 and v16 rows are not
-/// comparable.
-pub const ELO_PROTOCOL_VERSION: u32 = 16;
+/// therefore moved from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
+/// v16's 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles.
+///
+/// **v17 (2026-08-19) — the Great Person roster reaches the Information era.**
+/// It fills the roster out to the Information era. It held 29 of
+/// Gathering Storm's 213 individuals and stopped at the Atomic era, so from the
+/// midgame every class ran out and `Game::unused_great_person_faith` paid the
+/// whole Campus, Theatre Square and Harbour yield out as Faith --
+/// **26.6% of all non-prophet Great Person points**, measured over eight
+/// 6-player 200-turn games. This too is a shared world rule with no controller
+/// gate: the market every participant recruits from is the same one. The
+/// anchor moves again, to **17,482 decisions and `0x8162_c919_b83c_40df`**.
+///
+/// Each of these is a rules correction, not a compatibility re-pin: rows from
+/// v15, v16 and v17 are not comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 17;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

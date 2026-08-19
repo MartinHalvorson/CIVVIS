@@ -3387,9 +3387,17 @@ mod tests {
         // costs 400 Production in an Industrial Zone, grants 100 score while
         // the host tracks Climate Accords, and consumes its coal, oil, or
         // nuclear power plant rather than being repeatable in one city.
+        // Moved again by 36 Gathering Storm Great People. The roster held 29
+        // of the game's 213 and stopped at the Atomic era, so from the midgame
+        // every class ran out and `unused_great_person_faith` paid the whole
+        // Campus, Theatre Square and Harbour yield out as Faith instead --
+        // 26.6% of all non-prophet Great Person points, measured over eight
+        // 6-player 200-turn games. Each addition takes its class, era, cost
+        // and charges from `GreatPersonIndividuals` and `Eras`, so the
+        // fidelity audit still reports zero divergent fields.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:4a13f9d738011d59"
+            "fnv1a64:95f0f5b6c8117d55"
         );
     }
 
