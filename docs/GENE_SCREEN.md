@@ -150,6 +150,7 @@ not a silent omission.
 | `--field` | `advanced` (default) / `repairs` | the other majors: production `advanced`, or the native repair bundle |
 | `--victories a,b,…` | all six by default | restrict the victory lanes, because **the regime decides which genes can act at all**. `--victories domination,score` gives the 31 war and siege genes a game that does not end by conversion at turn 149. Same spelling and same parser as `civvis --victories` |
 | `--randomize-civs` | off by default | shuffle every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game unless this is on |
+| `--all-seats` | off by default | **every major seat is its own test**: each draws its own genome (seat `s` from the seed stream at `pair·players + s`), and arm 2 complements *every* seat — so each gene is still on in exactly one arm of every seat's pair, and one game yields `players` observations instead of one. Outcomes within a game share a single winner, so the analysis **clusters by game pair** (`clustered_mean_se`; sandwich errors on the adjusted column) — the gain is real but less than ×players on the win axis. The field is the other treated majors: effects are averaged over random opposing genomes rather than against a fixed production field, which is a different (and more ecological) estimand — `--field` shapes only the anchors, which keep the classic single treated seat (an all-on-vs-all-off contrast where every seat flips is symmetric and measures nothing). Files record `all_seats` in the header and refuse to merge across modes |
 
 ## Profile and cost
 
@@ -180,6 +181,18 @@ Interactions (epistasis), subgroup tables (by seat, victory type, map), and a
 fitted logistic are all re-analyses of these rows and never need a game
 replayed. `--analyze` refuses to merge files written at different profiles or
 gene orders — a merged table would mix two experiments.
+
+## Per-civilization effects — `--by-civ <tag>`
+
+Rows carry the seat's civilization (both arms of a pair share it — the roster
+shuffle is seeded by the map seed), and `--analyze … --by-civ war-economy`
+prints that one gene's paired contrast split by civ, clustered like everything
+else. This is the subgroup the marginal table averages away: a flag can be
+worth nothing on average and still be a real strategy for one civilization —
+or the reverse. It is a subgroup scan with its own family-wise bar printed in
+the header; treat a flag as where to point a run, not a finding. `--all-seats`
+with `--randomize-civs` is what gives every civ enough labelled pairs for the
+split to resolve anything.
 
 ## Interactions — the other half of every pair
 
