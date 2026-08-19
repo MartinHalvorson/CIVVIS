@@ -10563,8 +10563,41 @@ fn non_founder_buys_adopted_faith_missionaries_to_defend_home() {
         .values()
         .find(|unit| unit.owner == 0 && unit.kind == "missionary")
         .expect("defense should buy a missionary of the adopted faith");
-    assert_eq!(missionary.religion.as_deref(), Some("Neighbor Faith"));
-    assert_eq!(missionary.pos, game.cities[&adopted_city].pos);
+    let missionary = missionary.id;
+    assert_eq!(
+        game.units[&missionary].religion.as_deref(),
+        Some("Neighbor Faith")
+    );
+    assert_eq!(game.units[&missionary].pos, game.cities[&adopted_city].pos);
+
+    // The player founded no religion, so the unit controller must follow the
+    // purchased unit's adopted faith rather than returning early. Place it in
+    // the converted capital to prove it spends a charge reconverting the home
+    // city instead of becoming an inert Faith sink.
+    let converted_pos = game.cities[&converted_capital].pos;
+    let before = game.cities[&converted_capital]
+        .pressure
+        .get("Neighbor Faith")
+        .copied()
+        .unwrap_or(0.0);
+    game.units.get_mut(&missionary).unwrap().pos = converted_pos;
+    game.units.get_mut(&missionary).unwrap().moves_left = 4.0;
+    assert!(AdvancedAi::new().advanced_missionary_step(
+        &mut game,
+        0,
+        missionary,
+        false
+    ));
+    assert!(
+        game.cities[&converted_capital]
+            .pressure
+            .get("Neighbor Faith")
+            .copied()
+            .unwrap_or(0.0)
+            > before,
+        "the adopted defender must spread into the threatened capital"
+    );
+    assert_eq!(game.units[&missionary].charges, 2);
 }
 
 #[test]
