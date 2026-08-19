@@ -10639,6 +10639,42 @@ impl AdvancedAi {
             g.rules.policies[*card].offered(&g.players[pid].age, g.world_era)
         });
 
+        // Nobel Peace scores the Favor this seat generates while its host
+        // clock is live. A policy can be slotted now and starts that stream on
+        // the following turn, so price ordinary direct-Favor cards against the
+        // same deadline as a timely building or suzerainty.  Keep Dark Age
+        // bargains such as Disinformation Campaign out: their Broadcast Center
+        // rate comes with an empire-wide Science/Culture cost and is not a
+        // free contest score.
+        let mut nobel_peace_direct_favor_cards: Vec<(&str, f64)> = g
+            .rules
+            .policies
+            .iter()
+            .filter(|(_, policy)| !policy.dark_age)
+            .filter_map(|(name, policy)| {
+                let favor_per_turn = policy
+                    .effects
+                    .get("diplomatic_favor_per_turn")
+                    .copied()
+                    .unwrap_or(0.0);
+                (self.nobel_peace_favor_score_value(g, pid, favor_per_turn, 0.0) > f64::EPSILON)
+                    .then_some((name.as_str(), favor_per_turn))
+            })
+            .collect();
+        nobel_peace_direct_favor_cards
+            .sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+        let nobel_peace_direct_favor_cards: Vec<&str> = nobel_peace_direct_favor_cards
+            .into_iter()
+            .map(|(card, _)| card)
+            .collect();
+        if !nobel_peace_direct_favor_cards.is_empty() {
+            // Diplomacy already names Diplomatic Capital in its static deck;
+            // remove that ordinary occurrence before putting its live contest
+            // action ahead of every plan's normal policy portfolio.
+            desired.retain(|card| !nobel_peace_direct_favor_cards.contains(card));
+            desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
+        }
+
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately.  Most importantly, Isolationism can never coexist with
         // a live settler or an Expansion plan.
@@ -10705,7 +10741,18 @@ impl AdvancedAi {
             let mut replaceable: Vec<Name> = g.players[pid]
                 .policies
                 .iter()
-                .filter(|current| !desired_set.contains(current.as_str()))
+                .filter(|current| {
+                    !desired_set.contains(current.as_str())
+                        // An ordinary desired card normally remains protected
+                        // from a policy reassessment. A live Nobel Peace
+                        // direct-Favor card is a timed host competition action,
+                        // not an ordinary deck wish, so let it take a fitting
+                        // wildcard seat now. The normal desired card retakes
+                        // that seat after the host withdraws the competition.
+                        || (nobel_peace_direct_favor_cards.contains(&card)
+                            && !nobel_peace_direct_favor_cards
+                                .contains(&current.as_str()))
+                })
                 .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
