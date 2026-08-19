@@ -115,3 +115,45 @@ and explore guard against a stubbed host, and the Rust tests prove the
 capability gate. The first live runs should be read for `orders_queue` and
 for the exchange ratio; a wedge shows as `queue_stalled` with `waited` at the
 cap.
+
+## 5. Step 5 — the tactical ledger (landed with step 1's successor change)
+
+**Mechanism.** The mod (`CivvisLedger`) writes the combat record the host
+already knows into the run's own event stream: `combat` at
+`Events.CombatVisEnd` — attacker and defender (player, id, kind, plot), hit
+points read back at Begin and End, damage both ways, kills, the
+`UnitDamageChanged` deltas observed while the combat was open, and the strike's
+host preview joined on; `strike` before every ATTACK / RANGE_ATTACK with
+`CombatManager.SimulateAttackInto`'s predicted damage — the same call the
+shipped UnitPanel makes to draw the combat preview; `unit_lost` for our units
+leaving the map, with the last known kind and the treasury (a bankruptcy
+disband and a battlefield loss are one field apart); `city_occupation` when a
+city changes hands. Hostile and rival units carry the host's unit id in the
+export, so a combat and a next-frame sighting name the same unit.
+
+`tools/civ6_tactics_ledger.py <run-dir> [--hof HallofFame.sqlite]` reads one
+run into one report: orders and the queue's strikes planned / landed, the
+MOVE_TO arrival ledger against the next frame (arrived, short, did not move —
+with or without movement at export —, gone; by unit kind), combat and the
+host-preview error, the roster of military units gone with their last
+context, the hover share, and the Hall of Fame. Where the recording mod did
+not emit an event it says `(mod predates the ledger)` rather than printing a
+zero.
+
+**Measured on the recorded runs (2026-08-01/02, pre-queue mod):** run
+`live-head-rome-20260802T164220Z` — 1,608 unit orders on 235 turns (6.84 per
+turn), 0 unit-turns with more than one order; 1,397 first moves judged:
+arrived 82.3 %, did not move 12.5 % (159 with movement at export, 15
+without); 78 military units left the board (43 at full hp with the treasury
+empty, 19 beside a hostile, 16 with no visible threat); 99 of 384 near-hostile
+unit-turns hovered (25.8 %); Hall of Fame across the 12 local games: 0.18
+kills per loss. These are the numbers the program started from, now
+reproducible from the ledger in one command.
+
+**Not verified in-game yet.** `CombatVisBegin/End`, `UnitDamageChanged`,
+`SimulateAttackInto` and `CityOccupationChanged` are read the way the shipped
+UI reads them, and both readings (hit-point readback and damage deltas) are
+recorded side by side so the first live run says which one is right. The
+offline regression (`combat_ledger_test.lua`) proves the events are shaped as
+the ledger tool expects.
+
