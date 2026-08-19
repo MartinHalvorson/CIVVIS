@@ -136,7 +136,30 @@ lockout was global**, so that empty competition blocked every other kind for
 sixty turns — but the shipped `LockoutTime` is a column on the emergency row,
 so it is per kind.
 
-⚠ **Three points a game is not twenty.** Both competitions CIVVIS can seat need
+### The one that recurs
+
+The World's Fair scores **one point per Great Person an empire recruits** — the
+shipped `EmergencyScoreSources` rows give every class `ScoreAmount="1"` — so it
+needs no ground to hold and every empire can enter it from the first congress.
+On seed 41000 it closes at turn 99 (scores `{0:1, 4:1, 5:2}`) and again at 159
+(`{0:2, 1:1, 3:1, 4:1}`), paying a point each time. That midgame recurrence is
+what the other two cannot give, and it is why this one matters more than its
+single point suggests.
+
+⚠ A competition can still close empty: the same trace has Climate Accords
+closing at 199 with no score at all. Eligibility asks whether an empire *could*
+score — it held an Industrial Zone and a power plant when the competition was
+seated — not whether it will build the project. That is the right bar and it
+pays nobody, but the lockout is spent.
+
+⚠ **Favor is not modelled and the Nobel Peace prize therefore is not.** It
+scores `FromFavor="true"`, and favor accrues at seven sites in this engine
+including congress *refunds*; deciding which of those count as favor "earned" is
+a rule the shipped data does not state, and inventing one is the #2049 mistake.
+It is also the only Nobel that pays a point at all — Literature and Physics are
+commented out of `EmergencyRewards`.
+
+⚠ **Three to five points a game is not twenty.** The two project-scored competitions need
 late prerequisites — a Spaceport, a power plant to decommission — so they land
 around turn 180 and 200 and the lane still does not complete. The recurrence
 that would make it complete is in the five types not modelled: World's Fair and
