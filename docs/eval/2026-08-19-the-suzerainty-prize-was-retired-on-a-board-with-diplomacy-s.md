@@ -69,8 +69,84 @@ envoy placement, not pursued as a victory path.
 
 ### Contested field
 
-<!-- CONTESTED -->
+`deployment-contested`'s field, seed 19300000, 120 pairs / 240 games.
+Entrants hold seats 0 and 1; the other four are
+`live_target_diplomatic` and `live_target_culture`.
+
+```
+paired-map score 50.8% (95% betting CI 47.2%..54.6%)  Elo-equivalent +6 (CI -20..+32)
+paired direction 15 for / 94 neutral / 11 against     sign p = 0.5572 INCONCLUSIVE
+game-win share   59/240 (24.6%) against 55/240 (22.9%)
+```
+
+The mechanism fires, and harder than it did fieldless:
+
+| | treatment | control |
+|---|---:|---:|
+| suzerainties | **1.47** | 0.90 |
+| envoys placed | 18.4 | 17.9 |
+| **diplomatic victory points** | **5.5** | **5.5** |
+
+Envoy income is flat and suzerainties are up **63%** — a larger dose than
+the 0.3 → 0.7 the fieldless fires-check recorded. And the diplomatic victory
+points, which are what the lane is actually paid in, **do not move at all**.
+
+### The board produces the lane. Our agents still never win it.
+
+Over the 240 games: religious 108, culture 93, **diplomatic 29**, score 7,
+science 3. So this board does produce the two lanes that beat us live.
+
+The entrants' own wins do not:
+
+| arm | religious | science | score | culture | diplomatic |
+|---|---:|---:|---:|---:|---:|
+| `advanced_price_suzerainty` | 54 | 3 | 2 | **0** | **0** |
+| `advanced` | 54 | 0 | 1 | **0** | **0** |
+
+**Every one of those 29 diplomatic and 93 culture victories was won by a
+scripted field seat**, and a game the field wins is a draw for the pair. So
+the lane is produced 29 times and can move the paired score by exactly
+nothing.
+
+That is a stronger statement than "the screen was underpowered". A win-rate
+screen for a diplomacy treatment is not merely noisy on this board, it is
+structurally incapable of registering one, because our agents do not win
+that lane at all — on the board built to make them contest it.
 
 ## What was decided
 
-<!-- DECIDED -->
+**`price_the_suzerainty` stays off.** Nothing here supports promotion: the
+contested screen reads 50.8% with the interval crossing parity and the sign
+test at p=0.5572, and the fieldless run is at parity too. Two disjoint seeds
+already retired it and this adds a third board that does not rescue it. The
+earlier decision was right.
+
+**But the reason it fails is now visible, and it is not the dose.** The arm
+delivers what it promises — envoy income flat, suzerainties up 63% — and
+converts none of it into the currency the lane needs. Diplomatic victory
+points sit at 5.5 for both arms while one holds 63% more suzerainties, and
+`Game::suzerain_diplomatic_favor_per_turn` says each of those should be
+paying 1.0 favor a turn. **Where that favor goes is the open question this
+round hands on**, and it is a better question than "should the prize be
+bigger", which is where this arm's file has been stuck.
+
+**Recorded about the instruments, not the arm:**
+
+- Both 400-pair runs that retired this flag ran with diplomatic victory
+  *disabled*. That is now on the record beside them.
+- The arm was missing from `MINOR_DEPENDENT_ARMS`; at `--city-states 0` it
+  is byte-identical to its control, and 12 pairs confirm it (0 favored / 12
+  neutral / 0 against on wins *and* terminal score). Added.
+- `ai_eval` now reports what a lane can move the paired score by *at most*,
+  beside the interval it already prints. The fieldless run's `diplomatic 2`
+  is bounded at 1.7 points against a ~5-point half-width; this round's
+  `diplomatic 29` is bounded at **zero**, because no entrant won one. The
+  first version of that check counted games rather than entrant wins and
+  would have called this board adequate.
+
+**Not decided here:** whether the composite `advanced_diplomacy_lane`
+(#2185) behaves differently. It is registered and unscreened. On the
+evidence above, screening it by win rate on either of these boards would
+measure the board again — the useful screen is the mechanism one: does
+giving the lane a reason to be entered convert suzerainties into DVP where
+pricing alone did not.
