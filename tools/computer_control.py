@@ -200,6 +200,52 @@ def _as(text: "str") -> "str":
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _process_window_script(process: str, frame: "tuple[int, int, int, int]") -> str:
+    """Build a placement script that selects a process window by its frame.
+
+    macOS's ``window 1`` is an ordering, not an identity.  Terminal keeps
+    every tabbed and hidden window in that ordering, so a later layout pass can
+    otherwise move a different operator window each time.  Choose the visible
+    window already closest to the requested slot; after the first placement
+    that is also the same window on every subsequent pass.
+    """
+    x, y, w, h = frame
+    return f'''on absolute_value(numberValue)
+  if numberValue < 0 then return -numberValue
+  return numberValue
+end absolute_value
+
+tell application "System Events"
+  tell (first process whose name contains {_as(process)})
+    set targetWindow to missing value
+    set bestScore to 100000000
+    repeat with i from 1 to (count of windows)
+      try
+        set candidate to window i
+        set candidateVisible to true
+        try
+          set candidateVisible to visible of candidate
+        end try
+        if candidateVisible then
+          set candidatePosition to position of candidate
+          set candidateSize to size of candidate
+          set candidateScore to (my absolute_value((item 1 of candidatePosition) - {x})) + (my absolute_value((item 2 of candidatePosition) - {y})) + (my absolute_value((item 1 of candidateSize) - {w})) + (my absolute_value((item 2 of candidateSize) - {h}))
+          if candidateScore < bestScore then
+            set bestScore to candidateScore
+            set targetWindow to candidate
+          end if
+        end if
+      end try
+    end repeat
+    if targetWindow is missing value then error number -1719
+    tell targetWindow
+      set size to {{{w}, {h}}}
+      set position to {{{x}, {y}}}
+    end tell
+  end tell
+end tell'''
+
+
 def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = None,
                  title: "str | None" = None,
                  skip_owners: "frozenset[str]" = frozenset()) -> "str | None":
@@ -208,22 +254,14 @@ def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = Non
     Size before position, deliberately: Aspyr's window constrains a requested
     origin against its CURRENT size, so positioning first lands an upper
     quadrant at the bottom (measured in `civ6_play.place_game`, kept here).
+    Process specs select the visible window nearest the requested frame;
+    ``window 1`` is not stable when Terminal has several windows.
     """
     x, y, w, h = frame
     if process and not title:
-        finder = f'first process whose name contains {_as(process)}'
-        window = "window 1"
-    else:
-        # Title match walks every visible process's windows; first match wins.
-        finder = None
-        window = None
-    if finder:
-        script = (f'tell application "System Events" to tell ({finder}) to tell {window}\n'
-                  f'  set size to {{{w}, {h}}}\n'
-                  f'  set position to {{{x}, {y}}}\n'
-                  f'end tell')
-        done = _osascript(script)
+        done = _osascript(_process_window_script(process, frame))
         return None if done.returncode == 0 else (done.stderr or done.stdout).strip()
+    # Title match walks every visible process's windows; first match wins.
     pattern = re.compile(title or "", re.I)
     # ★★★ RETRIED, BECAUSE THIS RACES EXACTLY WHEN IT IS NEEDED. Walking every
     # visible process's windows fails with `-1719` ("Invalid index") when the
