@@ -72,6 +72,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_fog_land_capacity",
     "live_without_home_defense",
     "live_without_joint_tactics",
+    "live_without_joint_reach_lines",
     "live_without_loyalty_policy_defence",
     "live_without_solvent_faith_army",
     "live_without_siege_muster",
@@ -299,6 +300,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
+    "advanced_joint_tactics_geometric",
     "advanced_coordinated_finish",
     "advanced_single_finisher_volley",
     "strategic_cheap",
@@ -344,6 +346,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
 /// A/B exactly which repairs were live in the arm it measured.
 pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "joint-tactics",
+    "joint-reach-lines",
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
@@ -527,6 +530,7 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// `AdvancedAi::enable_engine_repairs`.
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
+    "joint-reach-lines",
     "live-trader-route",
     "live-religious-purchase",
     "solvent-faith-army",
@@ -792,6 +796,7 @@ define_arm_kinds! {
     LiveWithoutFogLandCapacity => "live_without_fog_land_capacity",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
+    LiveWithoutJointReachLines => "live_without_joint_reach_lines",
     LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
     LiveWithoutSiegeMuster => "live_without_siege_muster",
@@ -910,6 +915,7 @@ define_arm_kinds! {
     AdvancedExpansionPayback => "advanced_expansion_payback",
     AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedJointTacticsGeometric => "advanced_joint_tactics_geometric",
     AdvancedCoordinatedFinish => "advanced_coordinated_finish",
     AdvancedSingleFinisherVolley => "advanced_single_finisher_volley",
     AdvancedLateExpansion => "advanced_late_expansion",
@@ -3653,6 +3659,16 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.joint_tactics = true;
             Box::new(ai)
         }
+        // The same joint search with the approach lines of `docs/TACTICS.md`
+        // §17 withheld: one-step and handoff lines only, no reach flood.
+        // Paired against `advanced_joint_tactics` on `battle_bench` or the
+        // arena this prices the reach lines and nothing else.
+        "advanced_joint_tactics_geometric" => {
+            let mut ai = AdvancedAi::new();
+            ai.joint_tactics = true;
+            ai.disable_joint_reach_lines();
+            Box::new(ai)
+        }
         // The friendly-volley extension on the production controller without
         // the rest of the closed war-half bundle: an engaged force credits a
         // setup shot whose defender a teammate — or, when no lone teammate
@@ -4428,6 +4444,7 @@ impl ArmKind {
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
+            Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
             Self::LiveWithoutSolventFaithArmy => live_without("solvent-faith-army"),
             Self::LiveWithoutSiegeMuster => live_without("siege-muster"),
@@ -4596,7 +4613,8 @@ impl ArmKind {
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
             Self::AdvancedCoupledExpansion => &["coupled-expansion"],
-            Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedJointTactics => &["joint-tactics", "joint-reach-lines"],
+            Self::AdvancedJointTacticsGeometric => &["joint-tactics"],
             Self::AdvancedCoordinatedFinish => &["coordinated-finish"],
             Self::AdvancedSingleFinisherVolley => &["coordinated-finish", "single-finisher-volley"],
             Self::AdvancedLateExpansion => &["late-expansion"],
@@ -5182,6 +5200,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
         "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
+        "advanced_joint_tactics_geometric" => (Vec::new(), "advanced_joint_tactics_geometric"),
         "advanced_coordinated_finish" => (Vec::new(), "advanced_coordinated_finish"),
         "advanced_single_finisher_volley" => (Vec::new(), "advanced_single_finisher_volley"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -6608,6 +6627,7 @@ mod tests {
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
+                "advanced_joint_tactics_geometric",
                 "advanced_coordinated_finish",
                 "advanced_single_finisher_volley",
                 "advanced",
@@ -6958,6 +6978,9 @@ mod tests {
             "live_religious_purchase_guard",
             "solvent_faith_army",
             "joint_tactics",
+            // A sub-feature of the joint search: it has no effect where the
+            // search does not run, and the search is excluded above.
+            "joint_reach_lines",
             // Prices a Firaxis-specific opportunity: an uncontested wonder
             // catalogue on the Settler seat and a score tally at the host's
             // turn limit. CIVVIS-vs-CIVVIS wonders are the contested race the

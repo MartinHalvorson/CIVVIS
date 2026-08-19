@@ -3667,6 +3667,15 @@ pub struct AdvancedAi {
     /// means what its paired measurement says.
     joint_tactics_forced_off: bool,
 
+    /// The joint search offers approach lines from the engine's exact reach
+    /// flood (`Game::approach_reach`), not just the adjacent step. On by
+    /// default wherever the joint search runs; withholdable as the live
+    /// treatment `joint-reach-lines` (`live_without_joint_reach_lines`) and
+    /// as the bench arm `advanced_joint_tactics_geometric`, so its effect
+    /// can be priced on the arena, the bench and the live ladder alike.
+    /// `docs/TACTICS.md` §17 carries the measurement.
+    pub joint_reach_lines: bool,
+
     /// Admit the friendly-volley extension without the rest of the closed
     /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
     /// and left production with that bundle's removal (#1589, +38 for the
@@ -4587,6 +4596,7 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
+            joint_reach_lines: true,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -10639,6 +10649,42 @@ impl AdvancedAi {
             g.rules.policies[*card].offered(&g.players[pid].age, g.world_era)
         });
 
+        // Nobel Peace scores the Favor this seat generates while its host
+        // clock is live. A policy can be slotted now and starts that stream on
+        // the following turn, so price ordinary direct-Favor cards against the
+        // same deadline as a timely building or suzerainty.  Keep Dark Age
+        // bargains such as Disinformation Campaign out: their Broadcast Center
+        // rate comes with an empire-wide Science/Culture cost and is not a
+        // free contest score.
+        let mut nobel_peace_direct_favor_cards: Vec<(&str, f64)> = g
+            .rules
+            .policies
+            .iter()
+            .filter(|(_, policy)| !policy.dark_age)
+            .filter_map(|(name, policy)| {
+                let favor_per_turn = policy
+                    .effects
+                    .get("diplomatic_favor_per_turn")
+                    .copied()
+                    .unwrap_or(0.0);
+                (self.nobel_peace_favor_score_value(g, pid, favor_per_turn, 0.0) > f64::EPSILON)
+                    .then_some((name.as_str(), favor_per_turn))
+            })
+            .collect();
+        nobel_peace_direct_favor_cards
+            .sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
+        let nobel_peace_direct_favor_cards: Vec<&str> = nobel_peace_direct_favor_cards
+            .into_iter()
+            .map(|(card, _)| card)
+            .collect();
+        if !nobel_peace_direct_favor_cards.is_empty() {
+            // Diplomacy already names Diplomatic Capital in its static deck;
+            // remove that ordinary occurrence before putting its live contest
+            // action ahead of every plan's normal policy portfolio.
+            desired.retain(|card| !nobel_peace_direct_favor_cards.contains(card));
+            desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
+        }
+
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately.  Most importantly, Isolationism can never coexist with
         // a live settler or an Expansion plan.
@@ -10705,7 +10751,18 @@ impl AdvancedAi {
             let mut replaceable: Vec<Name> = g.players[pid]
                 .policies
                 .iter()
-                .filter(|current| !desired_set.contains(current.as_str()))
+                .filter(|current| {
+                    !desired_set.contains(current.as_str())
+                        // An ordinary desired card normally remains protected
+                        // from a policy reassessment. A live Nobel Peace
+                        // direct-Favor card is a timed host competition action,
+                        // not an ordinary deck wish, so let it take a fitting
+                        // wildcard seat now. The normal desired card retakes
+                        // that seat after the host withdraws the competition.
+                        || (nobel_peace_direct_favor_cards.contains(&card)
+                            && !nobel_peace_direct_favor_cards
+                                .contains(&current.as_str()))
+                })
                 .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
@@ -13647,6 +13704,24 @@ impl AdvancedAi {
         BANKED_ENVOY_LIQUIDITY_RESERVE.max(reclaim)
     }
 
+    /// Nobel Peace scores Favor generated while its host clock is live. A
+    /// suzerainty is therefore a new per-turn Favor stream, not merely the
+    /// generic city-state yield the envoy scorer already prices.
+    ///
+    /// Credit only a route the current envoy pool can finish. The placements
+    /// all occur in this action loop, so the new suzerainty starts paying on
+    /// the next turn; divide that one concrete stream across the ordinary
+    /// Envoys still required, which keeps every step toward the same immediate
+    /// outcome valuable without inventing future Influence or Envoys.
+    fn nobel_peace_suzerain_score_value(&self, g: &Game, pid: usize, envoys_needed: i64) -> i64 {
+        if envoys_needed <= 0 || g.players[pid].envoys_free < envoys_needed {
+            return 0;
+        }
+        (self.nobel_peace_favor_score_value(g, pid, g.suzerain_diplomatic_favor_per_turn(pid), 1.0)
+            / envoys_needed as f64)
+            .round() as i64
+    }
+
     fn advanced_envoys(
         &self,
         g: &mut Game,
@@ -13738,10 +13813,14 @@ impl AdvancedAi {
                     // suzerainty census looks like from the inside. This term
                     // rises as the seat closes on the floor (180, then 90, then
                     // 180 at one away) instead of falling.
-                    let suzerain_prize = if self.price_the_suzerainty
-                        && g.suzerain_of(minor.id) != Some(pid)
-                    {
-                        SUZERAIN_PRIZE / needed
+                    let suzerain_prize =
+                        if self.price_the_suzerainty && g.suzerain_of(minor.id) != Some(pid) {
+                            SUZERAIN_PRIZE / needed
+                        } else {
+                            0
+                        };
+                    let nobel_peace_suzerain_prize = if g.suzerain_of(minor.id) != Some(pid) {
+                        self.nobel_peace_suzerain_score_value(g, pid, needed)
                     } else {
                         0
                     };
@@ -13749,6 +13828,7 @@ impl AdvancedAi {
                         + type_bonus_value
                         + denial
                         + suzerain_prize
+                        + nobel_peace_suzerain_prize
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -28354,7 +28434,10 @@ impl AdvancedAi {
     /// search played it, starting from the position the search started from,
     /// so the seeded combat rolls land exactly as they were evaluated.
     fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
-        let search = super::tactics::JointTactics::default();
+        let search = super::tactics::JointTactics {
+            reach_lines: self.joint_reach_lines,
+            ..super::tactics::JointTactics::default()
+        };
         // ★★★★ A BOUND GUARD IS NOT AN ATTACKER. See
         // `settler_stack_discipline`: the joint plan spent the settler's guard
         // on a strike one tile away, and whether the host executed it or not
