@@ -11697,12 +11697,27 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         cities(minor.get("cities"), &mut gaps);
         units(minor.get("units"), &mut gaps);
     }
-    for religion in value.get("religions").and_then(|v| v.as_array()).into_iter().flatten() {
+    for religion in value
+        .get("religions")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         keys(religion, RELIGION, "religion", &mut gaps);
     }
-    for emergency in value.get("emergencies").and_then(|v| v.as_array()).into_iter().flatten() {
+    for emergency in value
+        .get("emergencies")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         keys(emergency, EMERGENCY, "emergency", &mut gaps);
-        for score in emergency.get("scores").and_then(|v| v.as_array()).into_iter().flatten() {
+        for score in emergency
+            .get("scores")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
             keys(score, EMERGENCY_SCORE, "emergency.score", &mut gaps);
         }
         if let Some(ours) = emergency.get("ours") {
@@ -17904,12 +17919,8 @@ mod host_fact_tests {
             matches!(monument, Some(crate::game::Item::Building { .. })),
             "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
         );
-        let theater = civvis_production_item(
-            &rules,
-            Some("PROJECT_ENHANCE_DISTRICT_THEATER"),
-            &[],
-            None,
-        );
+        let theater =
+            civvis_production_item(&rules, Some("PROJECT_ENHANCE_DISTRICT_THEATER"), &[], None);
         assert_eq!(
             theater,
             Some(crate::game::Item::Project {
