@@ -321,6 +321,7 @@
         "live_without_spy_mission_patience",
         "live_without_settler_site_agreement",
         "live_without_civilian_rescue",
+        "live_without_district_building_chain",
         "basic_evolved",
         "advanced_policy_live_control",
         "advanced_policy_envoy_priority",
@@ -485,7 +486,8 @@
         "bank-envoys",
         "explore-commit",
         "land-grab",
-        "spy-mission-patience"
+        "spy-mission-patience",
+        "district-building-chain"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
@@ -571,7 +573,8 @@
         "siege-is-progress",
         "spy-mission-patience",
         "settler-site-agreement",
-        "civilian-rescue"
+        "civilian-rescue",
+        "district-building-chain"
       ]
     }
   },

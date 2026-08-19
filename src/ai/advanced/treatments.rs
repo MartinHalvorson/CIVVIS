@@ -112,6 +112,7 @@ pub const LIVE_TREATMENTS: [LiveTreatment; 81] = [
     ("spy_mission_patience", "spy-mission-patience", AdvancedAi::disable_spy_mission_patience),
     ("settler_site_agreement", "settler-site-agreement", AdvancedAi::disable_settler_site_agreement),
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
+    ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
 ];
 
 /// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
