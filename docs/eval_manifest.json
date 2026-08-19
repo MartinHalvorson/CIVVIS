@@ -53,9 +53,9 @@
     "withholdable": 55
   },
   "derived": {
-    "eval_only_count": 230,
-    "firaxis_only_count": 28,
-    "live_bridge_count": 83,
+    "eval_only_count": 231,
+    "firaxis_only_count": 29,
+    "live_bridge_count": 84,
     "native_engine_repair_count": 55,
     "withholdable_live_count": 55
   },
@@ -222,7 +222,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 230,
+      "declared_count": 231,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -318,6 +318,7 @@
         "live_without_civilian_rescue",
         "live_without_district_building_chain",
         "live_without_expansion_pantheon",
+        "live_without_expansion_hall",
         "live_without_opening_settler_waits",
         "basic_evolved",
         "advanced_policy_live_control",
@@ -457,7 +458,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 28,
+      "declared_count": 29,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -486,11 +487,12 @@
         "spy-mission-patience",
         "district-building-chain",
         "expansion-pantheon",
+        "expansion-hall",
         "opening-settler-waits"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 83,
+      "declared_count": 84,
       "items": [
         "joint-tactics",
         "live-trader-route",
@@ -574,6 +576,7 @@
         "civilian-rescue",
         "district-building-chain",
         "expansion-pantheon",
+        "expansion-hall",
         "opening-settler-waits"
       ]
     }
