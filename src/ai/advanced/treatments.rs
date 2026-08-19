@@ -131,6 +131,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("civilian_rescue", "civilian-rescue", AdvancedAi::disable_civilian_rescue),
     ("district_building_chain", "district-building-chain", AdvancedAi::disable_district_building_chain),
     ("settler_guard_holds", "settler-guard-holds", AdvancedAi::disable_settler_guard_holds),
+    ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
 ];
 
 /// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
