@@ -1191,4 +1191,3 @@ the paired means on identical seeds.
 The frozen `advanced_v1` anchor never runs the joint search and is untouched;
 the arena `advanced` and the live bridge pick this up automatically. See
 `docs/LIVE_TACTICS.md` §7 for the program this belongs to.
-
