@@ -61,7 +61,7 @@
 //!               [--baseline repairs|stock] [--field advanced|repairs]
 //!               [--anchor-pairs N] [--randomize-civs] [--out PATH] [--append]
 //!               [--quiet]
-//!   gene_screen --analyze PATH [PATH ...]
+//!   gene_screen --analyze PATH [PATH ...] [--interactions] [--top N]
 //!   gene_screen --list
 //!
 //! Defaults play 4 majors on 60x38 Pangaea at Online speed to its own 250-turn
@@ -206,6 +206,10 @@ struct Header {
     /// written before the flag existed, which means `false`.
     #[serde(default)]
     randomize_civs: bool,
+    /// The victory lanes left enabled, comma separated. Absent in files written
+    /// before the flag existed, which means all six.
+    #[serde(default)]
+    victories: String,
 }
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
@@ -303,6 +307,7 @@ struct Profile {
     speed: GameSpeed,
     map: MapScript,
     randomize_civs: bool,
+    victories: civvis::game::VictoryConditions,
 }
 
 /// Play one game with the treated seat carrying `genome` and report its row.
@@ -325,6 +330,7 @@ fn play(
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
+        victory_conditions: profile.victories,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -550,8 +556,14 @@ impl GeneEstimate {
 /// key; an unfinished run's odd row is dropped rather than counted as an
 /// unpaired game. Merged files may repeat a key only if they replayed the same
 /// pair, in which case the later row wins.
-fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
-    let k = header.genes.len();
+/// The screened rows grouped into complete foldover pairs, in (arm 0, arm 1)
+/// order.
+///
+/// A pair is complete when both arms are present for one `(seed, seat, pair)`
+/// key; an unfinished run's odd row is dropped rather than counted as an
+/// unpaired game. Merged files may repeat a key only if they replayed the same
+/// pair, in which case the later row wins.
+fn complete_pairs(rows: &[Row]) -> Vec<(&Row, &Row)> {
     let mut pairs: BTreeMap<(u64, usize, usize), [Option<&Row>; 2]> = BTreeMap::new();
     for row in rows.iter().filter(|row| row.kind == "game") {
         let slot = pairs
@@ -559,10 +571,39 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
             .or_insert([None, None]);
         slot[usize::from(row.arm.min(1))] = Some(row);
     }
-    let complete: Vec<(&Row, &Row)> = pairs
+    pairs
         .values()
         .filter_map(|[a, b]| Some(((*a)?, (*b)?)))
-        .collect();
+        .collect()
+}
+
+/// The ±1 sign vector of a pair's arm-0 genome, restricted to screened genes,
+/// or `None` when the genome string does not match the header's gene order.
+fn pair_signs(genome: &str, screened: &[bool], k: usize) -> Option<Vec<f64>> {
+    let bits: Vec<bool> = genome.chars().map(|c| c == '1').collect();
+    if bits.len() != k {
+        return None;
+    }
+    Some(
+        (0..k)
+            .filter(|&i| screened[i])
+            .map(|i| if bits[i] { 1.0 } else { -1.0 })
+            .collect(),
+    )
+}
+
+/// Which header genes were screened, as a mask over the gene order.
+fn screened_mask(header: &Header) -> Vec<bool> {
+    header
+        .genes
+        .iter()
+        .map(|gene| header.screened.contains(gene))
+        .collect()
+}
+
+fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
+    let k = header.genes.len();
+    let complete = complete_pairs(rows);
     let treated_wins = complete
         .iter()
         .map(|(a, b)| usize::from(a.win) + usize::from(b.win))
@@ -583,26 +624,18 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
         0.0
     };
 
-    let screened: Vec<bool> = header
-        .genes
-        .iter()
-        .map(|gene| header.screened.contains(gene))
-        .collect();
+    let screened = screened_mask(header);
     let mut signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
     let mut win_diffs: Vec<f64> = Vec::with_capacity(complete.len());
     let mut share_diffs: Vec<f64> = Vec::with_capacity(complete.len());
     for (a, b) in &complete {
-        let bits_a: Vec<bool> = a.genome.chars().map(|c| c == '1').collect();
-        let bits_b: Vec<bool> = b.genome.chars().map(|c| c == '1').collect();
-        if bits_a.len() != k || bits_b.len() != k {
+        let Some(row_signs) = pair_signs(&a.genome, &screened, k) else {
+            continue;
+        };
+        if b.genome.chars().count() != k {
             continue;
         }
-        signs.push(
-            (0..k)
-                .filter(|&i| screened[i])
-                .map(|i| if bits_a[i] { 1.0 } else { -1.0 })
-                .collect(),
-        );
+        signs.push(row_signs);
         win_diffs.push(f64::from(u8::from(a.win)) - f64::from(u8::from(b.win)));
         share_diffs.push(a.score_share - b.score_share);
     }
@@ -684,11 +717,197 @@ fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
     }
 }
 
+/// One two-factor interaction between screened genes.
+#[derive(Clone, Debug)]
+struct Interaction {
+    a: usize,
+    b: usize,
+    /// How much more gene `b` is worth when gene `a` is on (and symmetrically),
+    /// on the outcome's own scale. `4γ` in the ±1 parameterisation.
+    synergy: f64,
+    se: f64,
+}
+
+impl Interaction {
+    fn z(&self) -> f64 {
+        if self.se > 0.0 && self.se.is_finite() {
+            self.synergy / self.se
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Every two-factor interaction, estimated from the PAIR SUMS.
+///
+/// ★★★★ THE FOLDOVER SPLITS THE EVIDENCE IN TWO AND THE MAIN TABLE USES ONLY
+/// HALF OF IT. Write the outcome as `y = μ + Σβᵢxᵢ + Σγᵢⱼxᵢxⱼ` with
+/// `x ∈ {−1,+1}`. The second arm of a pair is the exact complement, so every
+/// `xᵢ` flips sign, and therefore:
+///
+/// - the **difference** `y(g) − y(ḡ)` keeps `2βᵢxᵢ` and CANCELS every
+///   two-factor term, because `xᵢxⱼ − (−xᵢ)(−xⱼ) = 0`. That cancellation is
+///   exactly why the main-effect table above is clean — a foldover de-aliases
+///   main effects from two-factor interactions, which is the classical reason
+///   to run one.
+/// - the **sum** `y(g) + y(ḡ)` cancels every main effect and keeps `2γᵢⱼxᵢxⱼ`.
+///
+/// So the interactions were never missing from these games; they were in the
+/// half of each pair the difference throws away. Nothing here needs a game
+/// replayed.
+///
+/// Each `γᵢⱼ` is estimated marginally — `mean(centred pair sum × xᵢxⱼ) / 2` —
+/// rather than jointly, because 57 genes have 1,596 two-factor terms and no
+/// affordable run fits them all at once. The other terms are orthogonal in
+/// expectation (the draws are independent coin flips), so a marginal estimate
+/// is unbiased; what it pays is variance, since every other interaction and
+/// the map's own difficulty sit in the residual. The reported figure is `4γ`:
+/// **how much more one gene is worth when the other is on**.
+///
+/// ⚠ The map effect does NOT cancel here the way it does in the difference. A
+/// pair's sum is twice its map mean plus the interaction terms, so these
+/// estimates carry the full between-map variance and are far noisier than the
+/// main effects from the same run. Read the multiplicity bar, not the top row.
+fn interactions(
+    header: &Header,
+    rows: &[Row],
+    outcome: fn(&Row) -> f64,
+) -> (Vec<Interaction>, usize) {
+    let k = header.genes.len();
+    let screened = screened_mask(header);
+    let complete = complete_pairs(rows);
+    let mut signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
+    let mut sums: Vec<f64> = Vec::with_capacity(complete.len());
+    for (a, b) in &complete {
+        let Some(row_signs) = pair_signs(&a.genome, &screened, k) else {
+            continue;
+        };
+        if b.genome.chars().count() != k {
+            continue;
+        }
+        signs.push(row_signs);
+        sums.push(outcome(a) + outcome(b));
+    }
+    let n = sums.len();
+    if n < 3 {
+        return (Vec::new(), n);
+    }
+    // Centre the sums: a pair's sum is dominated by its own map's difficulty,
+    // which is a constant within the pair and contributes nothing to any
+    // product's expectation once the mean is removed.
+    let mean: f64 = sums.iter().sum::<f64>() / n as f64;
+    let centred: Vec<f64> = sums.iter().map(|value| value - mean).collect();
+    let width = signs[0].len();
+    let mut found = Vec::with_capacity(width * width / 2);
+    for a in 0..width {
+        for b in a + 1..width {
+            let products: Vec<f64> = signs
+                .iter()
+                .zip(&centred)
+                .map(|(row, value)| row[a] * row[b] * value)
+                .collect();
+            let (mean, se) = mean_se(&products);
+            // mean = 2γ, and the reported synergy is 4γ.
+            found.push(Interaction {
+                a,
+                b,
+                synergy: 2.0 * mean,
+                se: 2.0 * se,
+            });
+        }
+    }
+    (found, n)
+}
+
+/// Print the strongest two-factor interactions on one outcome.
+fn print_interactions(
+    header: &Header,
+    rows: &[Row],
+    label: &str,
+    scale: f64,
+    unit: &str,
+    outcome: fn(&Row) -> f64,
+    top: usize,
+) {
+    let (mut found, pairs) = interactions(header, rows, outcome);
+    if found.is_empty() {
+        println!("\ninteractions ({label}): not enough complete pairs");
+        return;
+    }
+    let names: Vec<&String> = header
+        .genes
+        .iter()
+        .zip(screened_mask(header))
+        .filter(|(_, screened)| *screened)
+        .map(|(gene, _)| gene)
+        .collect();
+    let tests = found.len();
+    let family_z = normal_quantile_upper(0.025 / tests as f64);
+    found.sort_by(|a, b| b.z().abs().total_cmp(&a.z().abs()));
+    let flagged = found.iter().filter(|row| row.z().abs() >= family_z).count();
+    // ⚠ THE COUNT AT |z|≥2 IS THE ONLY HONEST HEADLINE HERE, and it is a
+    // count against an expectation, not a list of exciting rows. 1,596 tests
+    // throw ~73 flags at |z|≥2 with nothing whatever going on, so a table that
+    // printed its top twelve without this line would read as twelve findings
+    // every single time it was run — including on pure noise.
+    let loose = found.iter().filter(|row| row.z().abs() >= 2.0).count();
+    let expected_loose = tests as f64 * 0.0455;
+    println!(
+        "\ntwo-factor interactions on {label} · {pairs} pairs · {tests} gene pairs tested · \
+         {loose} at |z|≥2 against {expected_loose:.0} expected by chance · \
+         {flagged} past the family-wise bar |z|≥{family_z:.2} against {:.2} expected{}",
+        0.05,
+        if loose as f64 <= expected_loose && flagged == 0 {
+            " ⇒ THIS LAYER IS INDISTINGUISHABLE FROM NOISE at this size; the rows below are the loudest noise, not findings"
+        } else {
+            ""
+        }
+    );
+    println!(
+        "estimated from the pair SUMS, which is the half of each pair the main-effect table cancels; \
+         the figure is how much more one gene is worth when the other is on"
+    );
+    println!(
+        "\n{:<28} {:<28} {:>10} {:>8} {:>7}  read",
+        "gene", "with", "synergy", "±se", "z"
+    );
+    for row in found.iter().take(top) {
+        let z = row.z();
+        let read = if z.abs() >= family_z {
+            if z > 0.0 {
+                "SYNERGY **"
+            } else {
+                "ANTAGONISM **"
+            }
+        } else if z.abs() >= 2.0 {
+            if z > 0.0 {
+                "synergy *"
+            } else {
+                "antagonism *"
+            }
+        } else {
+            "~"
+        };
+        println!(
+            "{:<28} {:<28} {:>+9.2}{unit} {:>7.2} {:>+7.2}  {}",
+            names[row.a],
+            names[row.b],
+            scale * row.synergy,
+            scale * row.se,
+            z,
+            read
+        );
+    }
+    if tests > top {
+        println!("… {} weaker pairs not shown (--top N)", tests - top);
+    }
+}
+
 fn print_table(header: &Header, rows: &[Row]) {
     let (mut estimates, pairs, overall_win, overall_share) = estimate(header, rows);
     let anchors: Vec<&Row> = rows.iter().filter(|row| row.kind == "anchor").collect();
     println!(
-        "\ngene screen · {} complete pairs ({} games) · {}p {}x{} {} · {} · {} turns · {} city-states · baseline {} · field {} · {}",
+        "\ngene screen · {} complete pairs ({} games) · {}p {}x{} {} · {} · {} turns · {} city-states · baseline {} · field {} · {} · {}",
         pairs,
         pairs * 2,
         header.players,
@@ -704,6 +923,13 @@ fn print_table(header: &Header, rows: &[Row]) {
             "shuffled civs"
         } else {
             "stock-seated civs"
+        },
+        if header.victories.is_empty()
+            || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len()
+        {
+            "all lanes".to_string()
+        } else {
+            format!("lanes {}", header.victories)
         }
     );
     println!(
@@ -886,6 +1112,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.baseline != found.baseline
                                 || first.field != found.field
                                 || first.randomize_civs != found.randomize_civs
+                                || first.victories != found.victories
                             {
                                 eprintln!(
                                     "{path} was played at a different profile than {}; a merged \
@@ -921,7 +1148,8 @@ fn usage() -> ! {
          [--width N] [--height N] [--city-states N] [--speed ID] [--map ID] [--jobs N] \
          [--genes tag,tag,...] [--baseline repairs|stock] [--field advanced|repairs] \
          [--anchor-pairs N] [--randomize-civs] [--out PATH] [--append] [--quiet]\n       \
-         gene_screen --analyze PATH [PATH ...]\n       gene_screen --list"
+         gene_screen --analyze PATH [PATH ...] [--interactions] [--top N]\n       \
+         gene_screen --list"
     );
     std::process::exit(2)
 }
@@ -959,6 +1187,27 @@ fn main() {
         }
         let (header, rows) = read_rows(&paths);
         print_table(&header, &rows);
+        if present(&args, "--interactions") {
+            let top = number(&args, "--top", 20).max(1) as usize;
+            print_interactions(
+                &header,
+                &rows,
+                "win rate",
+                100.0,
+                "pp",
+                |row| f64::from(u8::from(row.win)),
+                top,
+            );
+            print_interactions(
+                &header,
+                &rows,
+                "score share",
+                100.0,
+                "pp",
+                |row| row.score_share,
+                top,
+            );
+        }
         return;
     }
 
@@ -977,6 +1226,24 @@ fn main() {
     // — both arms share the seat — but the field is always the same three
     // civs unless this is on.
     let randomize_civs = present(&args, "--randomize-civs");
+    // ⚠ THE REGIME DECIDES WHICH GENES CAN EVEN ACT. The first run's own
+    // census: 66% of native 4-player games ended by RELIGIOUS conversion at a
+    // median of turn 149, a third of them before turn 150 — so the thirty-one
+    // war and siege genes were being asked what they contribute to a game that
+    // was over before a siege could matter, and duly measured ~0. Restricting
+    // the lanes is how a war repair gets a regime that lets a war happen
+    // (`--victories domination,score`), and it is the same flag `civvis` itself
+    // takes, parsed by the same function, so the two agree by construction.
+    let victories = match text(&args, "--victories") {
+        None => civvis::game::VictoryConditions::default(),
+        Some(list) => civvis::game::VictoryConditions::parse(&list).unwrap_or_else(|why| {
+            eprintln!(
+                "--victories: {why}; choose from {:?}",
+                civvis::game::VictoryConditions::NAMES
+            );
+            std::process::exit(2);
+        }),
+    };
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -1086,6 +1353,12 @@ fn main() {
         field: format!("{field:?}").to_lowercase(),
         start_seed,
         randomize_civs,
+        victories: civvis::game::VictoryConditions::NAMES
+            .iter()
+            .filter(|name| victories.is_enabled(name))
+            .copied()
+            .collect::<Vec<_>>()
+            .join(","),
     };
     writeln!(
         out,
@@ -1103,6 +1376,7 @@ fn main() {
         speed,
         map,
         randomize_civs,
+        victories,
     };
     println!(
         "gene screen: {pairs} foldover pairs ({} games){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -1386,6 +1660,7 @@ mod tests {
             field: "advanced".into(),
             start_seed: 1,
             randomize_civs: false,
+            victories: String::new(),
         };
         let mut rows = Vec::new();
         let screened = vec![true, true];
@@ -1438,6 +1713,114 @@ mod tests {
             ..rows[0].clone()
         });
         assert_eq!(estimate(&header, &rows).1, 300);
+    }
+
+    /// Synthetic rows with a planted interaction and planted main effects: the
+    /// pair-sum estimator must find the interaction and must NOT report the
+    /// main effects as interactions. That second half is the load-bearing one —
+    /// it is the property that makes the foldover's two halves independent,
+    /// and if it ever stops holding, every synergy in the table is really a
+    /// main effect wearing a disguise.
+    #[test]
+    fn interactions_come_out_of_the_pair_sums_and_main_effects_do_not() {
+        let genes: Vec<String> = ["a", "b", "c", "d"].iter().map(|g| g.to_string()).collect();
+        let header = Header {
+            kind: "header".into(),
+            genes: genes.clone(),
+            screened: genes,
+            players: 4,
+            width: 1,
+            height: 1,
+            turns: 1,
+            city_states: 0,
+            speed: "online".into(),
+            map: "pangaea".into(),
+            baseline: "repairs".into(),
+            field: "advanced".into(),
+            start_seed: 1,
+            randomize_civs: false,
+            victories: String::new(),
+        };
+        // y = 0.5 + 0.30·a  −  0.20·c  + 0.25·(a·b) in the ±1 coding, plus a
+        // per-map offset that is constant inside a pair — which is what a map
+        // is. The design is the COMPLETE factorial (all 16 genomes of 4 genes,
+        // each paired with its complement) repeated over ten maps, so every
+        // sign product is exactly balanced and the recovery is exact rather
+        // than approximate. A random draw would be off by an O(1/√n) term and
+        // could only be asserted loosely, which would not prove the property.
+        let screened = vec![true; 4];
+        let mut rows = Vec::new();
+        let mut pair = 0usize;
+        for map in 0..10 {
+            let map_offset = f64::from(map) * 0.05;
+            for combination in 0u32..16 {
+                let genome: Vec<bool> = (0..4).map(|bit| combination >> bit & 1 == 1).collect();
+                let flipped = complement(&genome, &screened);
+                for (arm, genome) in [(0u8, &genome), (1u8, &flipped)] {
+                    let x: Vec<f64> = genome.iter().map(|&b| if b { 1.0 } else { -1.0 }).collect();
+                    let y = 0.5 + 0.30 * x[0] - 0.20 * x[2] + 0.25 * x[0] * x[1] + map_offset;
+                    rows.push(Row {
+                        kind: "game".into(),
+                        pair,
+                        arm,
+                        seed: pair as u64,
+                        seat: pair % 4,
+                        genome: genome_string(genome),
+                        win: false,
+                        winner: None,
+                        victory: String::new(),
+                        turn: 1,
+                        score: 0,
+                        score_share: y,
+                        rank: 1,
+                        cities: 0,
+                        alive: true,
+                        secs: 0.0,
+                    });
+                }
+                pair += 1;
+            }
+        }
+        let (found, pairs) = interactions(&header, &rows, |row| row.score_share);
+        assert_eq!(pairs, 160);
+        assert_eq!(found.len(), 6, "four genes have six two-factor pairs");
+        let ab = found
+            .iter()
+            .find(|row| row.a == 0 && row.b == 1)
+            .expect("a×b is a pair");
+        // Planted γ = 0.25 in the ±1 coding, and the reported synergy is 4γ.
+        assert!(
+            (ab.synergy - 1.0).abs() < 1e-12,
+            "planted a×b not recovered: {}",
+            ab.synergy
+        );
+        for row in &found {
+            if row.a == 0 && row.b == 1 {
+                continue;
+            }
+            assert!(
+                row.synergy.abs() < 1e-12,
+                "genes {} and {} carry main effects but no interaction, and one leaked: {}",
+                row.a,
+                row.b,
+                row.synergy
+            );
+        }
+        // And the main-effect table still reads the main effects out of the
+        // same rows: the two halves of a pair do not interfere.
+        let (marginal, _, _, _) = estimate(&header, &rows);
+        let a = marginal.iter().find(|e| e.tag == "a").unwrap();
+        let b = marginal.iter().find(|e| e.tag == "b").unwrap();
+        let c = marginal.iter().find(|e| e.tag == "c").unwrap();
+        let d = marginal.iter().find(|e| e.tag == "d").unwrap();
+        assert!((a.share_delta - 0.60).abs() < 1e-12, "a: {}", a.share_delta);
+        assert!(
+            b.share_delta.abs() < 1e-12,
+            "b has no main effect, only an interaction, and the difference must not see it: {}",
+            b.share_delta
+        );
+        assert!((c.share_delta + 0.40).abs() < 1e-12, "c: {}", c.share_delta);
+        assert!(d.share_delta.abs() < 1e-9, "d is null: {}", d.share_delta);
     }
 
     #[test]
