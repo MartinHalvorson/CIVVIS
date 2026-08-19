@@ -885,7 +885,11 @@ call site; the two overlap under `healing_step`).
 | 7311000 | 136.2 s | 67.3 s | identical |
 | 7311001 | 147.0 s | 86.9 s | identical |
 
-Two-fold, byte-identical. Measured but **not shipped**: keying the envelope
+And on the paired harness itself, `tools/speed_ab.py --seeds 7311000 --games 4`
+against the same `main` binary: **461.75 s → 306.26 s user CPU, −33.7%, reports
+agree on every seed** (the harness interleaves the arms and runs the pair
+concurrently, which is why its per-game figure sits under the serial ones
+above). Between 1.5× and 2×, byte-identical. Measured but **not shipped**: keying the envelope
 cache on enemy state only (own units left out) makes the same games 34 s and
 39 s — the serial paths (city-state and barbarian `military_step`,
 `advance_unit_serial`) then hit as well — but every report differs, because
