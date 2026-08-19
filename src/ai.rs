@@ -1849,7 +1849,27 @@ struct AttackEnvelopeCache {
     /// and place, the map epoch and the war ledger: everything `attack_reach`
     /// reads. Equal keys mean equal envelopes for every enemy.
     key: (u32, usize, u64),
-    envelopes: std::sync::Arc<Vec<(u32, BTreeSet<Pos>)>>,
+    envelopes: std::sync::Arc<AttackEnvelopes>,
+}
+
+/// The hostile envelopes one board hands back: each enemy, and the tiles it
+/// can strike next turn. Shared, so a per-enemy cache hit costs a refcount.
+pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<BTreeSet<Pos>>)>;
+
+/// One enemy's envelope, with the key that says when it may be reused.
+///
+/// ★★★★★ THE BOARD KEY IS TOO COARSE AND THAT IS MOST OF THE COST. The
+/// board-wide key is exact and cheap to test, but it moves whenever *any*
+/// unit moves — so a serial path that steps one own unit recomputes an
+/// `attack_reach` flow field for every visible enemy on the map. A `sample` of
+/// head put `enemy_attack_envelopes` at 74.9% of the main thread with the
+/// board key already tightened to what reach reads (#2148).
+///
+/// An enemy's reach can only change if something *inside that reach* changed,
+/// so each envelope carries a key over its own neighbourhood instead.
+struct EnemyEnvelope {
+    key: u64,
+    reach: std::sync::Arc<BTreeSet<Pos>>,
 }
 
 #[derive(Clone)]
@@ -2370,6 +2390,9 @@ pub struct BasicAi {
     /// the key, so a worker that has applied an action recomputes.
     attack_envelope_cache:
         std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<AttackEnvelopeCache>>>>,
+    /// Per enemy, its last envelope and the neighbourhood key it belongs to.
+    /// Consulted only when the board key missed. See [`EnemyEnvelope`].
+    enemy_envelope_cache: std::sync::Arc<std::sync::Mutex<HashMap<u32, EnemyEnvelope>>>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -4157,6 +4180,7 @@ impl BasicAi {
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4466,6 +4490,7 @@ impl BasicAi {
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4695,11 +4720,7 @@ impl BasicAi {
     /// without moving anything. A serial path that moves a unit between two
     /// steps still recomputes, because the moved unit's zone of control is
     /// part of every enemy's reach; the exact key does not pretend otherwise.
-    fn enemy_attack_envelopes(
-        &self,
-        g: &Game,
-        pid: usize,
-    ) -> std::sync::Arc<Vec<(u32, BTreeSet<Pos>)>> {
+    fn enemy_attack_envelopes(&self, g: &Game, pid: usize) -> std::sync::Arc<AttackEnvelopes> {
         let key = (
             g.turn,
             pid,
@@ -4721,7 +4742,7 @@ impl BasicAi {
             }
         }
         drop(slot);
-        let envelopes = std::sync::Arc::new(Self::compute_enemy_attack_envelopes(g, pid));
+        let envelopes = std::sync::Arc::new(self.compute_enemy_attack_envelopes(g, pid));
         let mut slot = self
             .attack_envelope_cache
             .lock()
@@ -4779,8 +4800,99 @@ impl BasicAi {
         self.envelope_cache_across_own_moves = true;
     }
 
-    fn compute_enemy_attack_envelopes(g: &Game, pid: usize) -> Vec<(u32, BTreeSet<Pos>)> {
-        g.units
+    /// The largest number of tiles an enemy's next-turn reach can span.
+    ///
+    /// ★★★★★ SOUNDNESS LIVES HERE. The neighbourhood key below is only valid
+    /// if nothing outside this radius can change the envelope, so the bound
+    /// must be an over-estimate of what `attack_reach` can span and never an
+    /// estimate of what it usually does.
+    ///
+    /// `flow_past` spends `unit_max_moves` and pays `unit_step_cost` per tile.
+    /// Terrain defaults to 1 MP and every feature that declares a cost adds 1,
+    /// so a step off a route is never cheaper than 1; a route flattens terrain
+    /// to 1 and the shipped ladder then discounts it to 0.75, 0.5 and — on a
+    /// Railroad — [`MIN_STEP_COST`] 0.25, which is the floor. One extra tile
+    /// for the free first step a full-movement unit always gets, and then the
+    /// attack itself: `unit_attack_range` for a ranged unit, one tile for a
+    /// melee one.
+    fn envelope_reach_bound(g: &Game, uid: u32) -> i32 {
+        /// The cheapest step any unit can pay: a Railroad tile.
+        /// `envelope_reach_bound_matches_the_shipped_route_ladder` pins it.
+        const MIN_STEP_COST: f64 = 0.25;
+        let moves = g.unit_max_moves(uid).max(0.0);
+        let strides = (moves / MIN_STEP_COST).ceil() as i32;
+        strides + 1 + g.unit_attack_range(uid).max(1)
+    }
+
+    /// A key over everything inside `uid`'s reach bound that `attack_reach`
+    /// reads. Equal keys mean an equal envelope for this one enemy.
+    ///
+    /// ⚠ Air units are deliberately absent: `attack_reach` centres their disk
+    /// on `air_operation_origin`, not on the unit's tile, so a key built
+    /// around the tile would be looking at the wrong neighbourhood. They are
+    /// cheap (a disk, not a flow field) and are simply recomputed.
+    fn enemy_envelope_key(g: &Game, uid: u32) -> Option<u64> {
+        let unit = g.units.get(&uid)?;
+        if g.rules.units[unit.kind].domain.as_deref() == Some("air") {
+            return None;
+        }
+        let bound = Self::envelope_reach_bound(g, uid);
+        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const PRIME: u64 = 0x0000_0100_0000_01b3;
+        let mut hash = OFFSET;
+        let mut mix = |value: u64| {
+            for byte in value.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(PRIME);
+            }
+        };
+        mix(g.map.tiles.epoch());
+        mix(g.wars.len() as u64);
+        // The enemy's own place and spec, stated rather than left to fall out
+        // of the neighbourhood sweep below including it at distance zero. The
+        // reuse is only sound because these are here, so they are written here.
+        mix(unit.pos.0 as u64);
+        mix(unit.pos.1 as u64);
+        mix(u64::from(unit.kind.id()));
+        mix(unit.formation as u64);
+        mix(u64::from(unit.zoc_stopped));
+        // Ordered by id so equal neighbourhoods hash equal whatever the map
+        // iteration order is.
+        let mut near: Vec<&crate::game::Unit> = g
+            .units
+            .values()
+            .filter(|other| g.wdist(other.pos, unit.pos) <= bound)
+            .collect();
+        near.sort_unstable_by_key(|other| other.id);
+        for other in near {
+            mix(u64::from(other.id));
+            mix(other.owner as u64);
+            mix(other.pos.0 as u64);
+            mix(other.pos.1 as u64);
+            mix(u64::from(other.kind.id()));
+        }
+        let mut cities: Vec<&crate::game::City> = g
+            .cities
+            .values()
+            .filter(|city| g.wdist(city.pos, unit.pos) <= bound)
+            .collect();
+        cities.sort_unstable_by_key(|city| city.id);
+        for city in cities {
+            mix(u64::from(city.id));
+            mix(city.owner as u64);
+            mix(city.pos.0 as u64);
+            mix(city.pos.1 as u64);
+        }
+        Some(hash)
+    }
+
+    fn compute_enemy_attack_envelopes(&self, g: &Game, pid: usize) -> AttackEnvelopes {
+        let mut store = self
+            .enemy_envelope_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let out: AttackEnvelopes = g
+            .units
             .values()
             .filter(|unit| {
                 let spec = &g.rules.units[unit.kind];
@@ -4791,10 +4903,33 @@ impl BasicAi {
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
             })
             .filter_map(|unit| {
-                let reach: BTreeSet<Pos> = g.attack_reach(unit.id).into_iter().collect();
+                let key = Self::enemy_envelope_key(g, unit.id);
+                if let Some(key) = key {
+                    if let Some(entry) = store.get(&unit.id) {
+                        if entry.key == key {
+                            return (!entry.reach.is_empty())
+                                .then(|| (unit.id, std::sync::Arc::clone(&entry.reach)));
+                        }
+                    }
+                }
+                let reach: std::sync::Arc<BTreeSet<Pos>> =
+                    std::sync::Arc::new(g.attack_reach(unit.id).into_iter().collect());
+                if let Some(key) = key {
+                    store.insert(
+                        unit.id,
+                        EnemyEnvelope {
+                            key,
+                            reach: std::sync::Arc::clone(&reach),
+                        },
+                    );
+                }
                 (!reach.is_empty()).then_some((unit.id, reach))
             })
-            .collect()
+            .collect();
+        // A unit that died or left sight is never asked about again; drop it so
+        // a long game does not carry an envelope per unit ever seen.
+        store.retain(|id, _| g.units.contains_key(id));
+        out
     }
 
     /// Conservative expected damage from the hostile units whose precise
@@ -4806,7 +4941,7 @@ impl BasicAi {
         pid: usize,
         uid: u32,
         position: Pos,
-        envelopes: &[(u32, BTreeSet<Pos>)],
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
     ) -> f64 {
         let Some(unit) = g.units.get(&uid) else {
             return f64::INFINITY;
@@ -4904,7 +5039,7 @@ impl BasicAi {
         uid: u32,
         position: Pos,
         danger: Option<Pos>,
-        envelopes: &[(u32, BTreeSet<Pos>)],
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
     ) -> Option<EvacuationTile> {
         g.map.get(position)?;
         let city = g.city_at(position).is_some_and(|city| {
@@ -4957,7 +5092,7 @@ impl BasicAi {
         g: &Game,
         pid: usize,
         uid: u32,
-        envelopes: &[(u32, BTreeSet<Pos>)],
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
     ) -> Option<Pos> {
         // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
         // and it used to price every tile with `evacuation_tile` — a defender
@@ -23219,6 +23354,177 @@ mod apostle_promotion_tests {
 mod attack_envelope_key_tests {
     use super::*;
     use crate::game::Game;
+
+    /// The reach bound's step-cost floor is the one the shipped rules allow.
+    ///
+    /// ★★★★★ EVERY CACHE HIT RESTS ON THIS NUMBER. `envelope_reach_bound`
+    /// converts movement points into tiles by dividing by 0.25, and if any
+    /// step in the shipped data could be paid for less, an enemy could reach
+    /// past its own neighbourhood key and a stale envelope would be served.
+    /// Terrain defaults to 1 MP and every feature that names a cost adds 1, so
+    /// the only discounts are the route ladder's, whose cheapest rung is a
+    /// Railroad at 0.25.
+    #[test]
+    fn envelope_reach_bound_matches_the_shipped_route_ladder() {
+        let rules = crate::rules::Rules::shipped();
+        for (name, terrain) in rules.terrains.iter() {
+            assert!(
+                terrain.move_cost >= 1.0,
+                "terrain {name} costs {} -- below the 1 MP the reach bound \
+                 assumes for an off-route step",
+                terrain.move_cost
+            );
+        }
+        for (name, feature) in rules.features.iter() {
+            assert!(
+                feature.move_cost >= 0.0,
+                "feature {name} refunds {} movement, which would let a unit \
+                 out-run its own neighbourhood key",
+                feature.move_cost
+            );
+        }
+    }
+
+    /// Every tile `attack_reach` returns lies inside the radius the
+    /// neighbourhood key was built from.
+    ///
+    /// ★★★★★ THIS IS THE SOUNDNESS ARGUMENT, EXECUTED. `enemy_envelope_key`
+    /// hashes the units and cities within `envelope_reach_bound` and reuses the
+    /// envelope when that hash is unchanged. If the bound ever under-estimates
+    /// what a unit can span, something outside the hashed neighbourhood could
+    /// move the envelope and a stale one would be served. Rather than argue
+    /// the arithmetic, run the real `attack_reach` over the whole shipped unit
+    /// roster on a real board and check the radius it actually spans.
+    ///
+    /// ⚠ A placement search is not the test to write here, and the attempt is
+    /// worth recording: with shipped units, moving an own unit **never**
+    /// changes an enemy's next-turn envelope on an open board. A two-movement
+    /// unit's flood is spent by the time zone of control could bite, and
+    /// cavalry ignore incoming zone of control outright. That is also why this
+    /// cache wins as much as it does — but it means no fixture can tell a
+    /// one-tile radius from a ten-tile one, and a first draft of this test
+    /// passed against a planted radius of 1.
+    #[test]
+    fn the_reach_bound_covers_every_tile_attack_reach_returns() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let anchor = game.units[&game.player_unit_ids(0).into_iter().next().unwrap()].pos;
+        let ground: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t))
+                    && game.units_at(*pos).is_empty()
+                    && game.wdist(*pos, anchor) > 3
+            })
+            .collect();
+        let military: Vec<Name> = game
+            .rules
+            .units
+            .iter()
+            .filter(|(_, spec)| {
+                spec.class == "military" && (spec.is_melee_capable() || spec.has_ranged_attack())
+            })
+            .map(|(name, _)| name)
+            .copied()
+            .collect();
+        assert!(
+            military.len() > 20,
+            "only {} military kinds reached this check",
+            military.len()
+        );
+        let mut checked = 0usize;
+        for (index, kind) in military.iter().enumerate() {
+            let Some(&home) = ground.get(index % ground.len()) else {
+                continue;
+            };
+            let mut board = game.clone();
+            let uid = board.spawn_test_unit(kind.as_str(), 1, home);
+            let bound = BasicAi::envelope_reach_bound(&board, uid);
+            for tile in board.attack_reach(uid) {
+                assert!(
+                    board.wdist(tile, home) <= bound,
+                    "{kind} reaches {tile:?}, {} hexes away, but its neighbourhood \
+                     key only covers {bound}",
+                    board.wdist(tile, home)
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 100, "only {checked} tiles were checked");
+    }
+
+    /// A warm per-enemy cache answers exactly what a cold one computes.
+    #[test]
+    fn a_warm_envelope_cache_answers_what_a_cold_one_computes() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let dry = |g: &Game, pos: Pos| {
+            g.map.get(pos).is_some_and(|t| !g.rules.is_water(t)) && g.units_at(pos).is_empty()
+        };
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) > 12 && dry(&game, *pos))
+            .min_by_key(|pos| (game.wdist(*pos, home), *pos))
+            .expect("the fixture offers distant open land");
+        let enemy = game.spawn_test_unit("warrior", 1, far);
+        let scout = game.spawn_test_unit("warrior", 0, home);
+        let cold = |g: &Game| BasicAi::new().enemy_attack_envelopes(g, 0).to_vec();
+        let baseline = cold(&game);
+        assert!(
+            !baseline.is_empty(),
+            "the fixture must offer at least one visible enemy envelope, or every \
+             comparison below is vacuously equal"
+        );
+
+        let warm = BasicAi::new();
+        let _ = warm.enemy_attack_envelopes(&game, 0);
+        type Step = Box<dyn Fn(&mut Game)>;
+        let steps: Vec<Step> = vec![
+            Box::new(move |g: &mut Game| {
+                let to = g.nbrs(g.units[&scout].pos).into_iter().next().unwrap();
+                g.units.get_mut(&scout).unwrap().pos = to;
+            }),
+            Box::new(move |g: &mut Game| {
+                let beside = g.nbrs(g.units[&enemy].pos).into_iter().next().unwrap();
+                g.units.get_mut(&scout).unwrap().pos = beside;
+            }),
+            // The enemy itself moving is what must always invalidate.
+            Box::new(move |g: &mut Game| {
+                let to = g.nbrs(g.units[&enemy].pos).into_iter().next_back().unwrap();
+                g.units.get_mut(&enemy).unwrap().pos = to;
+            }),
+            Box::new(move |g: &mut Game| {
+                g.units.get_mut(&enemy).unwrap().kind = crate::name!("horseman");
+            }),
+        ];
+        let mut seen = vec![baseline];
+        for (index, step) in steps.iter().enumerate() {
+            step(&mut game);
+            let expected = cold(&game);
+            let actual = warm.enemy_attack_envelopes(&game, 0).to_vec();
+            assert_eq!(actual, expected, "step {index}: the warm cache went stale");
+            seen.push(expected);
+        }
+        // Non-vacuity, and pointed rather than general: the enemy's own move is
+        // step 2, and it *must* move the answer. A key that leaves the enemy's
+        // own place out would serve a stale envelope exactly here, and a
+        // blanket "some step differed" assertion does not notice.
+        assert_ne!(
+            seen[2], seen[3],
+            "the enemy moved and its envelope did not, so the comparison above \
+             cannot detect a stale one"
+        );
+    }
 
     /// The envelope key moves for exactly the board changes `attack_reach`
     /// can see, and for no others.
