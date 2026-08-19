@@ -1869,6 +1869,7 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<BTreeSet<Pos>>)>;
 /// so each envelope carries a key over its own neighbourhood instead.
 struct EnemyEnvelope {
     reach: std::sync::Arc<BTreeSet<Pos>>,
+    sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
 }
 
 /// One unit, in exactly the terms an envelope can notice.
@@ -1880,6 +1881,11 @@ struct EnvelopeUnit {
     formation: u8,
     zoc_stopped: bool,
     patrol: Option<Pos>,
+    /// `formation_movement_locked_by_zoc` reads all three, and all three move
+    /// without the unit moving: a unit that acts where it stands loses its
+    /// whole flood, and regains it next turn.
+    locked: (bool, bool, bool),
+    linked_to: Option<u32>,
 }
 
 /// The board the per-enemy envelopes were last measured against.
@@ -4859,6 +4865,102 @@ impl BasicAi {
     /// for the free first step a full-movement unit always gets, and then the
     /// attack itself: `unit_attack_range` for a ranged unit, one tile for a
     /// melee one.
+    /// The tiles a board change must touch before an envelope is worth
+    /// recomputing: the unit's movement flood and every neighbour of it.
+    fn envelope_sensitive_tiles(
+        g: &Game,
+        unit: &crate::game::Unit,
+        flood: &[Pos],
+    ) -> std::collections::HashSet<Pos> {
+        let mut tiles = std::collections::HashSet::with_capacity(flood.len() * 7 + 7);
+        // ★★★★★ AN EMPTY FLOOD IS NOT AN EMPTY SENSITIVITY. `flow_past` returns
+        // nothing at all when `formation_movement_locked_by_zoc` holds, and a
+        // set built only from the flood is then empty — so no board change ever
+        // touches it and the envelope is frozen for the rest of the game, still
+        // empty long after the lock lifts. That is the leak `speed_ab.py`
+        // refused twice in #2159 and inspection missed twice: the audit found
+        // it in one run, every report showing tiles *gained* and none lost,
+        // around a unit whose cached envelope was empty.
+        //
+        // The lock is read off this unit's own ground — its `zoc_stopped`,
+        // whether it acted without moving, and `in_enemy_zoc_for` at its own
+        // tile — so its own tile and their neighbours are always sensitive,
+        // flood or no flood. The same goes for a linked peer, whose lock locks
+        // the leader.
+        let seed = |pos: Pos, tiles: &mut std::collections::HashSet<Pos>| {
+            tiles.insert(pos);
+            for neighbour in g.nbrs(pos) {
+                tiles.insert(neighbour);
+            }
+        };
+        seed(unit.pos, &mut tiles);
+        if let Some(peer) = unit.linked_to.and_then(|id| g.units.get(&id)) {
+            seed(peer.pos, &mut tiles);
+        }
+        for tile in flood {
+            tiles.insert(*tile);
+            for neighbour in g.nbrs(*tile) {
+                tiles.insert(neighbour);
+            }
+        }
+        tiles
+    }
+
+    /// Whether `CIVVIS_ENVELOPE_AUDIT` asked for the reuse audit. Read once:
+    /// the check sits in the hottest path in the simulator, and an environment
+    /// lookup per reuse would be measuring the instrument.
+    fn envelope_audit_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("CIVVIS_ENVELOPE_AUDIT").is_some())
+    }
+
+    /// ⚠ DIAGNOSTIC ONLY. Describes one envelope that was reused when it should
+    /// not have been, with everything needed to name the input nobody tracked.
+    fn report_stale_envelope(
+        g: &Game,
+        unit: &crate::game::Unit,
+        stale: &BTreeSet<Pos>,
+        fresh: &BTreeSet<Pos>,
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEEN: AtomicUsize = AtomicUsize::new(0);
+        if SEEN.fetch_add(1, Ordering::Relaxed) >= 6 {
+            return;
+        }
+        let gained: Vec<Pos> = fresh.difference(stale).copied().collect();
+        let lost: Vec<Pos> = stale.difference(fresh).copied().collect();
+        let near = |pos: Pos| -> Vec<String> {
+            g.units
+                .values()
+                .filter(|other| g.wdist(other.pos, pos) <= 3)
+                .map(|other| {
+                    format!(
+                        "{}#{}@{:?}p{}{}",
+                        other.kind.as_str(),
+                        other.id,
+                        other.pos,
+                        other.owner,
+                        if other.air_patrol { "!patrol" } else { "" }
+                    )
+                })
+                .collect()
+        };
+        eprintln!(
+            "STALE turn={} enemy={}#{} at {:?} owner={} formation={} zoc_stopped={}\n               gained={:?}\n  lost={:?}\n  near_gained={:?}\n  near_lost={:?}",
+            g.turn,
+            unit.kind.as_str(),
+            unit.id,
+            unit.pos,
+            unit.owner,
+            unit.formation,
+            unit.zoc_stopped,
+            &gained[..gained.len().min(6)],
+            &lost[..lost.len().min(6)],
+            gained.first().map(|p| near(*p)).unwrap_or_default(),
+            lost.first().map(|p| near(*p)).unwrap_or_default(),
+        );
+    }
+
     fn envelope_reach_bound(g: &Game, uid: u32) -> i32 {
         /// The cheapest step any unit can pay: a Railroad tile.
         /// `envelope_reach_bound_matches_the_shipped_route_ladder` pins it.
@@ -4908,6 +5010,8 @@ impl BasicAi {
                     formation: unit.formation,
                     zoc_stopped: unit.zoc_stopped,
                     patrol: unit.air_patrol.then_some(unit.air_patrol_pos).flatten(),
+                    locked: (unit.started_turn_in_zoc, unit.acted, unit.moved),
+                    linked_to: unit.linked_to,
                 },
             );
         }
@@ -5033,23 +5137,37 @@ impl BasicAi {
                 let reusable = g.rules.units[unit.kind].domain.as_deref() != Some("air");
                 if reusable {
                     if let (Some(delta), Some(entry)) = (delta.as_ref(), store.get(&unit.id)) {
-                        let bound = Self::envelope_reach_bound(g, unit.id);
                         if delta
                             .iter()
-                            .all(|touched| g.wdist(*touched, unit.pos) > bound)
+                            .all(|touched| !entry.sensitive.contains(touched))
                         {
+                            // ⚠ DIAGNOSTIC ONLY. With CIVVIS_ENVELOPE_AUDIT set,
+                            // every reuse is checked against a fresh computation
+                            // and the first disagreement is described. This is
+                            // how the leak gets named instead of guessed at.
+                            if Self::envelope_audit_enabled() {
+                                let fresh: BTreeSet<Pos> =
+                                    g.attack_reach(unit.id).into_iter().collect();
+                                if fresh != *entry.reach {
+                                    Self::report_stale_envelope(g, unit, &entry.reach, &fresh);
+                                }
+                            }
                             return (!entry.reach.is_empty())
                                 .then(|| (unit.id, std::sync::Arc::clone(&entry.reach)));
                         }
                     }
                 }
+                let (targets, flood) = g.attack_reach_from_flood(unit.id);
                 let reach: std::sync::Arc<BTreeSet<Pos>> =
-                    std::sync::Arc::new(g.attack_reach(unit.id).into_iter().collect());
+                    std::sync::Arc::new(targets.into_iter().collect());
                 if reusable {
                     store.insert(
                         unit.id,
                         EnemyEnvelope {
                             reach: std::sync::Arc::clone(&reach),
+                            sensitive: std::sync::Arc::new(Self::envelope_sensitive_tiles(
+                                g, unit, &flood,
+                            )),
                         },
                     );
                 }
@@ -23642,6 +23760,45 @@ mod attack_envelope_key_tests {
         }
     }
 
+    /// A unit that cannot move is still sensitive to its own ground.
+    ///
+    /// ★★★★★ THIS IS THE DEFECT THAT REFUSED THE WHOLE OPTIMISATION TWICE.
+    /// `flow_past` returns nothing at all when
+    /// `formation_movement_locked_by_zoc` holds, so a sensitivity set built
+    /// only from the flood was **empty** — and an empty set is touched by no
+    /// board change ever, so the envelope froze at empty for the rest of the
+    /// game, long after the lock lifted. `tools/speed_ab.py` refused the change
+    /// on the same two seeds every time and two rounds of inspection missed it;
+    /// a reuse audit found it in one run, every report showing tiles *gained*
+    /// and none lost around a unit whose cached envelope was empty.
+    ///
+    /// The lock is read off the unit's own ground, so that ground is always
+    /// sensitive, flood or no flood.
+    #[test]
+    fn a_unit_that_cannot_move_is_still_sensitive_to_its_own_ground() {
+        let mut game = Game::new_full(2, 24, 16, 9_090, 300, 0, false);
+        let home = game.units[&game.player_unit_ids(0).into_iter().next().unwrap()].pos;
+        let uid = game.spawn_test_unit("warrior", 1, home);
+        let unit = game.units[&uid].clone();
+
+        let locked = BasicAi::envelope_sensitive_tiles(&game, &unit, &[]);
+        assert!(
+            !locked.is_empty(),
+            "an empty flood must not give an empty sensitivity: nothing would \
+             ever invalidate the envelope again"
+        );
+        assert!(
+            locked.contains(&home),
+            "its own tile decides whether it is locked"
+        );
+        for neighbour in game.nbrs(home) {
+            assert!(
+                locked.contains(&neighbour),
+                "{neighbour:?} is where the zone of control that locks it comes from"
+            );
+        }
+    }
+
     /// The board delta names every tile a change touched, and gives up
     /// entirely on the changes it does not track.
     ///
@@ -23699,6 +23856,24 @@ mod attack_envelope_key_tests {
         assert!(
             died.contains(&from),
             "a removed unit's last tile must be reported"
+        );
+
+        // Acting where it stands costs a unit its entire flood, via
+        // `formation_movement_locked_by_zoc`, and moves none of the fields the
+        // board key hashes — so only this notices.
+        {
+            let stander = game.units.get_mut(&uid).unwrap();
+            stander.started_turn_in_zoc = true;
+            stander.acted = true;
+            stander.moved = false;
+        }
+        let acted = ai
+            .envelope_board_delta(&game)
+            .expect("acting in place is not wholesale");
+        assert!(
+            acted.contains(&game.units[&uid].pos),
+            "a unit that acted where it stands loses its whole flood; the tile it \
+             stands on must be reported or its envelope is never recomputed"
         );
 
         // A patrol is the one thing an envelope notices that the *board key*
