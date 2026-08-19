@@ -1458,30 +1458,86 @@ def pid_alive(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def process_cpu_percent(pid: int, window: float = 0.25) -> float | None:
-    """Recent CPU share of a process, or None when it cannot be measured."""
-    if os.name != "nt":
-        result = command("ps", "-o", "%cpu=", "-p", str(pid))
-        if result.returncode != 0:
-            return None
-        # Give the kernel accounting tick time to distinguish a newly spawned
-        # sleeper's startup cost from a process that is still consuming CPU.
-        if window > 0.0:
-            time.sleep(max(window, 0.5))
-            result = command("ps", "-o", "%cpu=", "-p", str(pid))
-            if result.returncode != 0:
-                return None
+def parse_cpu_time(text: str) -> float | None:
+    """Seconds from ps\'s cumulative CPU column: `[[DD-]HH:]MM:SS[.ss]`."""
+    text = text.strip()
+    if not text:
+        return None
+    days = 0.0
+    if "-" in text:
+        head, _, text = text.partition("-")
         try:
-            percent = float(result.stdout.strip())
+            days = float(head)
         except ValueError:
             return None
-        return percent
-    # Windows exposes cumulative CPU time rather than a rate, so sample twice.
-    before = windows_cpu_seconds(pid)
+    parts = text.split(":")
+    if len(parts) > 3:
+        return None
+    seconds = 0.0
+    try:
+        for part in parts:
+            seconds = seconds * 60.0 + float(part)
+    except ValueError:
+        return None
+    return days * 86_400.0 + seconds
+
+
+def posix_cpu_seconds(pid: int) -> float | None:
+    """Total user plus system CPU time a POSIX process has consumed."""
+    # Linux publishes the counter in clock ticks, which resolves a window
+    # shorter than a second. Its `ps -o time=` rounds to whole seconds and
+    # would read every quarter-second window as no compute at all.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        text = ""
+    if text:
+        # The second field is the executable name in parentheses and may itself
+        # contain spaces and parentheses, so split after its final one. utime
+        # and stime are fields 14 and 15, two and three places past that point.
+        try:
+            fields = text[text.rindex(")") + 1 :].split()
+            ticks = float(fields[11]) + float(fields[12])
+        except (IndexError, ValueError):
+            return None
+        return ticks / os.sysconf("SC_CLK_TCK")
+    result = command("ps", "-o", "time=", "-p", str(pid))
+    if result.returncode != 0:
+        return None
+    return parse_cpu_time(result.stdout)
+
+
+def process_cpu_percent(pid: int, window: float = 0.25) -> float | None:
+    """Share of one core the process used over `window`, or None.
+
+    Sampled as an interval on every platform, because that is the only reading
+    the callers actually want.
+
+    `ps -o %cpu=` was the POSIX branch until 2026-08-19 and is a different
+    quantity under the same name: Linux documents it as cputime/realtime over
+    the process\'s whole life, and macOS returns a decaying kernel estimate.
+    Neither is bounded by `window`, so the parameter did not mean what it said
+    and the two platforms disagreed while sharing one threshold. A freshly
+    spawned process reported its interpreter startup as current compute — an
+    idle sleeper measured 0.6-0.7% here and exactly 1.0% on a CI runner, which
+    is what made `test_cpu_measurement_reads_real_compute_on_this_platform`
+    fail intermittently against its `< 1.0` bound.
+
+    That flake is the visible half. `process_busy` reads this to decide
+    whether an unresponsive server is still computing and should be left
+    alone rather than restarted, so on Linux an hour of real work kept the
+    lifetime average above the threshold long after the server stopped
+    computing, and a hung game was never recovered.
+    """
+    if window <= 0.0:
+        return None
+    sample = windows_cpu_seconds if os.name == "nt" else posix_cpu_seconds
+    before = sample(pid)
     if before is None:
         return None
     time.sleep(window)
-    after = windows_cpu_seconds(pid)
+    after = sample(pid)
     if after is None:
         return None
     return max(0.0, (after - before) / window * 100.0)
