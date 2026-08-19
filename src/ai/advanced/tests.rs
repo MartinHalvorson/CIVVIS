@@ -5137,6 +5137,129 @@ fn live_nobel_peace_envoys_price_an_affordable_suzerainty_favor_stream() {
     assert_eq!(expiring.envoys_at(0, science_target), 3);
 }
 
+/// Nobel Peace scores Favor generated while its host clock is live.  A
+/// non-Diplomacy plan therefore needs to take a fitting wildcard from its
+/// ordinary deck for a direct Favor card now, then give the seat back once the
+/// host withdraws the contest.  The Dark Age Broadcast Center bargain remains
+/// out: its Science/Culture downside is not free score.
+#[test]
+fn live_nobel_peace_preempts_a_wildcard_for_direct_favor_then_releases_it() {
+    let board = || {
+        let mut game = Game::new(2, 32, 24, 5_420, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        game.turn = 180;
+        game.world_era = 7;
+        game.players[0].age = "dark".to_string();
+        game.players[0].government = Some("autocracy".to_string());
+        game.players[0].civics.extend([
+            crate::name!("political_philosophy"),
+            crate::name!("exodus_imperative"),
+            crate::name!("smart_power_doctrine"),
+        ]);
+        game.apply(
+            0,
+            &Action::SlotPolicy {
+                policy: crate::name!("future_victory_science"),
+            },
+        )
+        .expect("the ordinary Science wildcard fits");
+        assert!(
+            game.available_policies(0)
+                .contains(&crate::name!("future_victory_diplomatic")),
+            "the fixture needs the real +4 Favor-per-turn policy"
+        );
+        assert!(
+            game.available_policies(0)
+                .contains(&crate::name!("disinformation_campaign")),
+            "the fixture also exposes the Dark Age Broadcast Center bargain"
+        );
+        game
+    };
+    let policies = |game: &mut Game| {
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(game);
+        ai.strategic_policies(game, 0, GrandStrategy::Science);
+    };
+
+    let mut ordinary = board();
+    policies(&mut ordinary);
+    assert!(ordinary.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_science")));
+    assert!(!ordinary.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_diplomatic")));
+
+    let mut wrong_nobel = board();
+    wrong_nobel.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_LITERATURE".to_string(),
+        ends: wrong_nobel.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    policies(&mut wrong_nobel);
+    assert!(wrong_nobel.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_science")));
+    assert!(!wrong_nobel.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_diplomatic")));
+
+    let mut peace = board();
+    peace.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: peace.turn + 30,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    policies(&mut peace);
+    assert!(peace.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_diplomatic")));
+    assert!(
+        !peace.players[0]
+            .policies
+            .contains(&crate::name!("future_victory_science")),
+        "the timed +4 Favor stream must replace the ordinary wildcard while Peace is live"
+    );
+    assert!(
+        !peace.players[0]
+            .policies
+            .contains(&crate::name!("disinformation_campaign")),
+        "the -10% Science/-10% Culture Dark Age bargain is not free Nobel Peace score"
+    );
+
+    peace.replace_host_competitions(Vec::new());
+    policies(&mut peace);
+    assert!(peace.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_science")));
+    assert!(!peace.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_diplomatic")));
+
+    let mut expiring = board();
+    expiring.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_NOBEL_PRIZE_PEACE".to_string(),
+        ends: expiring.turn + 1,
+        ours: 0.0,
+        leader: 50.0,
+    }]);
+    policies(&mut expiring);
+    assert!(expiring.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_science")));
+    assert!(!expiring.players[0]
+        .policies
+        .contains(&crate::name!("future_victory_diplomatic")));
+}
+
 #[test]
 fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
     let ai = AdvancedAi::new();
