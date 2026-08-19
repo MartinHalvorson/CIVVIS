@@ -49,10 +49,8 @@ TYPE_ATTR = re.compile(
     rb'\s*=\s*"((?:BUILDING|DISTRICT|UNIT|IMPROVEMENT|PROJECT|PROMOTION)_[A-Z0-9_]+)"'
 )
 
-MAC_DEFAULT = os.path.expanduser(
-    "~/Library/Application Support/Steam/steamapps/common/"
-    "Sid Meier's Civilization VI/Civ6.app/Contents/Assets"
-)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import civ6_env  # noqa: E402
 
 OUR_OWN_MOD = "CivvisControl"
 
@@ -81,17 +79,24 @@ def harvest(assets: str) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--civ6", default=os.environ.get("CIV6_DIR", MAC_DEFAULT),
+    parser.add_argument("--civ6", default=None,
                         help="Civilization VI Assets directory")
     parser.add_argument("--out", default="data/civ6_type_names.json")
     args = parser.parse_args()
 
-    if not os.path.isdir(args.civ6):
-        print(f"Civilization VI assets not found at {args.civ6!r}; "
-              f"pass --civ6 or set CIV6_DIR", file=sys.stderr)
+    # One resolver for the whole toolchain; this file used to carry a fourth
+    # hard-coded macOS path of its own. See `civ6_env.assets_dir`.
+    try:
+        assets = str(civ6_env.assets_dir(args.civ6))
+    except SystemExit as missing:
+        print(missing, file=sys.stderr)
+        return 2
+    if not os.path.isdir(assets):
+        print(f"Civilization VI assets not found at {assets!r}; "
+              f"pass --civ6 or set $CIV6_INSTALL", file=sys.stderr)
         return 2
 
-    names = harvest(args.civ6)
+    names = harvest(assets)
     if len(names) < 500:
         print(f"only {len(names)} names harvested -- that is too few to be the "
               f"shipped ruleset; refusing to overwrite the snapshot",

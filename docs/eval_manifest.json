@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 34,
-    "never_named": 25,
+    "named": 35,
+    "never_named": 24,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -15,7 +15,6 @@
       "housing-cards": "live_without_housing_cards",
       "housing-research": "live_without_housing_research",
       "idle-walkers-close-the-pipeline": "live_without_idle_walkers_close_the_pipeline",
-      "loyalty-rate-alarm": "live_without_loyalty_rate_alarm",
       "muster-at-command-radius": "live_without_muster_at_command_radius",
       "relief-targets-the-siege": "live_without_relief_targets_the_siege",
       "settler-guard-holds": "live_without_settler_guard_holds",
@@ -42,7 +41,6 @@
       "housing-cards",
       "housing-research",
       "idle-walkers-close-the-pipeline",
-      "loyalty-rate-alarm",
       "muster-at-command-radius",
       "relief-targets-the-siege",
       "settler-guard-holds",

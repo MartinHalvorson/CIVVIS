@@ -1433,16 +1433,31 @@ const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
 const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
 
-/// Whether the plan in force means to cast its favor: a Diplomacy strategy or
-/// an assigned diplomatic lane. `plan` is the plan report's
-/// `(strategy, victory_target)`; no plan at all holds too.
+/// Whether the plan in force can still spend its favor. Only a seat with no
+/// plan report holds now; every plan sells its surplus above `FAVOR_RESERVE`.
+///
+/// ⚠ A Diplomacy strategy or an assigned diplomatic lane used to hold every
+/// point, on the reading that each one is a vote CIVVIS means to cast. **It
+/// cannot cast them.** The first vote on a resolution is free — the cost
+/// ladder a ballot reports starts `{index 0, cost 0}`, then 4, 12, 24 — so
+/// favor buys only EXTRA votes, and the host has never honoured
+/// `PARAM_WORLD_CONGRESS_VOTES > 1` through the mod's path. The comment above
+/// `FAVOR_RESERVE` already recorded that the ballot's favor spend never
+/// registers; this is the policy catching up with it.
+///
+/// Measured on run `civvis-20260819T054901Z`, a full Chieftain game to t222:
+/// the plan read `victory=Some("diplomatic")` on 119 turns, so nothing sold;
+/// **0 of 7** purchased-vote ballots registered; and the seat ended holding
+/// **566 favor** with 3 diplomatic victory points against Germany's 20, losing
+/// to that rival's diplomatic victory. Every one of those points was banked
+/// for a purchase that cannot happen.
+///
+/// `FAVOR_RESERVE` still stands for the emergency ballot, so this frees the
+/// surplus rather than the bank. If the multi-vote purchase is ever fixed in
+/// the game core, revisit this: the holding was correct reasoning about a
+/// mechanism that does not work, not a mistake about what favor is for.
 fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
-    match plan {
-        None => true,
-        Some((strategy, victory_target)) => {
-            strategy == "diplomacy" || victory_target == Some("diplomatic")
-        }
-    }
+    plan.is_none()
 }
 
 /// Drop the planner's own favor sales when the plan means to cast that favor.
@@ -1471,11 +1486,10 @@ fn append_favor_sale_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
+    // `plan_keeps_favor` now answers only this, so the diplomacy branch that
+    // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
-    }
-    if plan_keeps_favor(plan) {
-        return Some("favor_hold:diplomacy_plan");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
@@ -8305,7 +8319,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_favor_sells_on_every_plan_but_diplomacy() {
+    fn idle_favor_sells_on_every_plan_that_reports_one() {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
         // twenty-point win, one at war with us.
@@ -8349,17 +8363,26 @@ mod tests {
         assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=150"));
         assert_eq!(orders[0].pos, Some((150, 0)));
 
-        // A Diplomacy plan holds every point, whether the strategy or the
-        // assigned lane says so.
+        // A Diplomacy plan sells its surplus too: the favor it was holding
+        // buys only EXTRA votes, and those never register. Run
+        // civvis-20260819T054901Z banked 566 points to t222 and cast none of
+        // them, losing to the rival diplomatic victory it was saving for.
+        for diplomatic in [
+            Some(("diplomacy", None)),
+            Some(("expansion", Some("diplomatic"))),
+        ] {
+            let mut sold = Vec::new();
+            assert_eq!(
+                append_favor_sale_order(diplomatic, &state, &mut sold),
+                None,
+                "the diplomatic lane no longer banks what it cannot cast"
+            );
+            assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
+            assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
+        }
+
+        // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
-        assert_eq!(
-            append_favor_sale_order(Some(("diplomacy", None)), &state, &mut held),
-            Some("favor_hold:diplomacy_plan")
-        );
-        assert_eq!(
-            append_favor_sale_order(Some(("expansion", Some("diplomatic"))), &state, &mut held),
-            Some("favor_hold:diplomacy_plan")
-        );
         assert_eq!(
             append_favor_sale_order(None, &state, &mut held),
             Some("favor_hold:no_plan")
@@ -8419,13 +8442,18 @@ mod tests {
         ];
         assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
         assert_eq!(planner.len(), 2);
+        // The diplomacy plan lets the planner's own quote stand now: those ten
+        // points were held as "two votes at the next session", and the next
+        // session cannot take them.
         assert_eq!(
             hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
-            1
+            0
         );
+        assert_eq!(planner.len(), 2);
+        // A seat with no plan report still holds: unknown intent is not licence.
+        assert_eq!(hold_planner_favor_sales(None, &mut planner), 1);
         assert_eq!(planner.len(), 1);
         assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
-        assert_eq!(hold_planner_favor_sales(None, &mut planner), 0);
 
         // Nobody eligible: every met rival at war or already near the win.
         let mut nobody = state.clone();

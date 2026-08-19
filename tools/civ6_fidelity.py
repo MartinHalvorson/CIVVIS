@@ -17,7 +17,9 @@ Usage::
     python tools/civ6_fidelity.py --json out.json     # machine-readable
     python tools/civ6_fidelity.py --max-divergences 0 # CI gate
 
-``--civ6`` (or ``$CIV6_DIR``) overrides install auto-detection. Exit status is
+``--civ6`` (or ``$CIV6_INSTALL``/``$CIV6_DIR``) overrides install
+auto-detection, and accepts either the install root or the assets directory
+inside the macOS app bundle. Exit status is
 1 when the divergence count exceeds ``--max-divergences``, so the audit can be
 wired into CI as a ratchet once a table reaches parity.
 """
@@ -33,6 +35,9 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import civ6_env  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -91,13 +96,6 @@ PACK_EXCLUDE = re.compile(
 # nothing: the Eye of the Sahara kept Rise and Fall's 1 Production instead of
 # Gathering Storm's 2. These are applied last, after every base table is in.
 CROSS_EXPANSION = re.compile(r"_Expansion[12]\.xml$", re.IGNORECASE)
-
-INSTALL_CANDIDATES = [
-    r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI",
-    r"C:\Program Files\Steam\steamapps\common\Sid Meier's Civilization VI",
-    r"D:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI",
-    r"E:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI",
-]
 
 # Tables we project onto CIVVIS' schema, and the primary key of each.
 TABLE_KEYS = {
@@ -207,18 +205,29 @@ ERAS = [
 
 
 def find_install(explicit: str | None) -> Path:
-    for candidate in filter(None, [explicit, os.environ.get("CIV6_DIR")]):
-        path = Path(candidate)
-        if (path / LOAD_ORDER[0]).is_dir():
-            return path
+    """The assets root to audit against, via the one shared resolver.
+
+    ★★★★★ THIS AUDIT COULD NOT FIND AN INSTALL ON ANY MACHINE IN THIS FLEET.
+    The list that stood here held four paths and every one of them began
+    ``C:\`` or ``D:\``. The fleet runs on macOS, where the gameplay database
+    is not at the install root at all but inside the signed app bundle, at
+    ``Civ6.app/Contents/Assets``. So the guard against modelling a *different
+    game* than Civilization VI reported "install not found" and did nothing,
+    unless someone happened to pass the nested path by hand.
+
+    That is not hypothetical damage. It is why #2049 read the compiled
+    ``DebugGameplay.sqlite`` cache directly instead — bypassing this tool's
+    ruleset refusal — and shipped Vanilla belief values as Gathering Storm,
+    retracted the next day in #2050.
+
+    ``civ6_env`` already knew the bundle layout; its ``ASSETS_SUBPATH``
+    constant is documented as the path *this audit wants*. The accommodation
+    was written and never wired up.
+    """
+    path = civ6_env.assets_dir(explicit)
+    if not (path / LOAD_ORDER[0]).is_dir():
         raise SystemExit(f"no Civilization VI gameplay data under {path}")
-    for candidate in INSTALL_CANDIDATES:
-        path = Path(candidate)
-        if (path / LOAD_ORDER[0]).is_dir():
-            return path
-    raise SystemExit(
-        "Civilization VI install not found; pass --civ6 <path> or set $CIV6_DIR"
-    )
+    return path
 
 
 # ---------------------------------------------------------------- game database
