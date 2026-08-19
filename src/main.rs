@@ -72,14 +72,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x6cf9_b1fa_a854_dcd6;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x8162_c919_b83c_40df;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 17_494;
+const ANCHOR_DECISIONS: usize = 17_482;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

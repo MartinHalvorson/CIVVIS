@@ -27149,6 +27149,60 @@ fn the_expansion_hall_is_priced_while_the_land_grab_is_short_of_seats() {
     assert!(!AdvancedAi::legacy().expansion_hall);
 }
 
+/// Every Great Person class stays recruitable to the Information era.
+///
+/// ★★★★★ A CLASS THAT RUNS OUT STOPS BEING AN ECONOMY AND BECOMES FAITH.
+/// `Game::unused_great_person_faith` faithfully models Civilization VI's
+/// `GetFaithFromUnusedGreatPeoplePoints`: once a class has nobody left to
+/// recruit, every point per turn it earns is paid out as Faith instead. That
+/// is correct, and it made a content gap invisible. The shipped roster held 29
+/// individuals against Gathering Storm's 213, and **every class was empty from
+/// the Atomic era on** — so from the midgame the Campus, Theatre Square and
+/// Harbour output an empire had spent the whole game building stopped
+/// producing Great People at all.
+///
+/// Measured over eight 6-player 200-turn games, 48 empire-games, paired
+/// against the same seeds: **26.6% of all non-prophet Great Person points were
+/// converted to Faith, and seven of the eight non-prophet classes ran dry** —
+/// writer by median turn 106, artist 139, scientist 159, admiral 160. With the
+/// roster filled out to 65 the same measurement reports 5.4%, three classes
+/// running dry and none before turn 172, and **229 Great People recruited
+/// against 125**.
+///
+/// ⚠ Prophet is excluded on purpose, and is the one class this must not
+/// demand. Civilization VI stops offering Prophets once the map's religions
+/// are claimed, and `great_person_class_earnable` already models that; its
+/// points becoming Faith is the rule, not a gap.
+#[test]
+fn every_great_person_class_is_recruitable_to_the_information_era() {
+    const INFORMATION: usize = 7;
+    let rules = crate::rules::Rules::shipped();
+    let mut eras: std::collections::BTreeMap<&str, std::collections::BTreeSet<usize>> =
+        std::collections::BTreeMap::new();
+    for spec in rules.great_people.values() {
+        eras.entry(spec.kind.as_str()).or_default().insert(spec.era);
+    }
+    assert!(
+        eras.len() >= 8,
+        "the roster should span every class: {eras:?}"
+    );
+    for (kind, present) in &eras {
+        if *kind == "prophet" {
+            continue;
+        }
+        let first = *present.iter().next().expect("a class with no era");
+        let missing: Vec<usize> = (first..=INFORMATION)
+            .filter(|era| !present.contains(era))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{kind} first appears in era {first} and then has no individual for \
+             era(s) {missing:?}; every point that class earns after the gap is \
+             paid out as Faith instead"
+        );
+    }
+}
+
 #[test]
 fn a_founding_is_priced_on_the_ground_the_settler_stood_on() {
     // "the site is worth N" is the INPUT to the settling decision, not a

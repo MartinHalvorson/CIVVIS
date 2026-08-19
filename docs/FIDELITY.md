@@ -45,6 +45,32 @@ That gap has a cost on the record: #2049 read the compiled cache directly to
 get around this, bypassing the ruleset refusal, and shipped Vanilla belief
 values as Gathering Storm. #2050 retracted them the next day.
 
+## The Great Person roster
+
+`data/great_people.json` holds 65 of Gathering Storm's 213 individuals. That is
+a deliberate subset, but the shape of the subset matters more than its size:
+until 2026-08-19 it held 29 and **stopped at the Atomic era**, with 26
+(class, era) slots empty that the shipped game fills. Because
+`Game::unused_great_person_faith` correctly models
+`GetFaithFromUnusedGreatPeoplePoints`, a class with nobody left to recruit pays
+its points out as Faith — so an empty late-game slot did not read as missing
+content, it read as an empire that had chosen Faith. Measured over eight
+6-player 200-turn games, **26.6% of all non-prophet Great Person points** were
+being converted that way, seven of eight classes running dry, writers by median
+turn 106.
+
+`every_great_person_class_is_recruitable_to_the_information_era` now pins the
+invariant: no class may have a hole between its first era and the Information
+era. Prophet is exempt, and is the one class that must be — Civilization VI
+stops offering Prophets once the map's religions are claimed.
+
+⚠ Class, era, cost and charges come from `GreatPersonIndividuals` and `Eras` and
+are audited. **Effects are not audited and are not a translation of each
+Firaxis ability** — they use only keys the engine already prices, in magnitudes
+matching the same class's existing entries. Translating each individual's real
+ability would mean new engine keys per person; adding a person to keep the
+class alive does not.
+
 ## Running the audit without an install
 
 `tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly

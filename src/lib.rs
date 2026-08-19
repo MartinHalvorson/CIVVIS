@@ -1990,12 +1990,14 @@ mod tests {
         assert_eq!(g.players[0].boosted_techs, boosts_before);
         assert!((g.city_yields(cid).science - science_before - 1.0).abs() < 1e-9);
         // The global market advances to the next named Scientist rather than
-        // fabricating a generic doubled threshold.
+        // fabricating a generic doubled threshold. Omar Khayyam is the
+        // Medieval Scientist the roster had no entry for until the era chain
+        // was filled in; before that the market skipped an era to Newton.
         assert_eq!(
             g.current_great_person("scientist").unwrap().0,
-            "isaac_newton"
+            "omar_khayyam"
         );
-        assert_eq!(g.gp_cost(0, "scientist"), 1_646.0);
+        assert_eq!(g.gp_cost(0, "scientist"), 307.0);
     }
 
     #[test]

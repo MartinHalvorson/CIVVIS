@@ -177,6 +177,14 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
             < 1e-9
     );
 
+    // Omar Khayyam is the Medieval Scientist the roster had no entry for. His
+    // free Library is a no-op in a city that already has one -- exactly
+    // Hypatia's case above -- while his +1 Science to Libraries still pays.
+    let before_khayyam = game.city_yields(city).science;
+    assert_eq!(recruit_current_scientist(&mut game), "omar_khayyam");
+    assert_eq!(game.players[0].boosted_techs, initial_boosts);
+    assert!((game.city_yields(city).science - before_khayyam - 1.0).abs() < 1e-9);
+
     let before_newton = game.city_yields(city).science;
     assert_eq!(recruit_current_scientist(&mut game), "isaac_newton");
     assert!(game.cities[&city]
@@ -200,6 +208,13 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .unwrap()
         .building_eras
         .insert(crate::name!("research_lab"), game.world_era);
+    // Charles Darwin is the Industrial Scientist the roster had no entry for,
+    // and grants what Newton does: the University is already standing, so only
+    // the permanent +2 Science to Universities lands.
+    let before_darwin = game.city_yields(city).science;
+    assert_eq!(recruit_current_scientist(&mut game), "charles_darwin");
+    assert!((game.city_yields(city).science - before_darwin - 2.0).abs() < 1e-9);
+
     let before_einstein = game.city_yields(city).science;
     let boosts_before_einstein = game.players[0].boosted_techs.clone();
 
@@ -541,6 +556,17 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         ends: game.turn + 30,
     });
     game.players[0].techs.insert(crate::name!("refining"));
+    // The Renaissance and Industrial Merchants the roster had no entry for.
+    // `gold` pays once per charge, as Crassus' 60 x 3 shows above, and these
+    // two carry one charge each.
+    let gold_before_fugger = game.players[0].gold;
+    assert_eq!(recruit_current_merchant(&mut game), "jakob_fugger");
+    assert_eq!(game.players[0].gold - gold_before_fugger, 240.0);
+
+    let gold_before_smith = game.players[0].gold;
+    assert_eq!(recruit_current_merchant(&mut game), "adam_smith");
+    assert_eq!(game.players[0].gold - gold_before_smith, 420.0);
+
     let rockefeller_route_gold = game.city_yields(merchant_city).gold;
     let capacity_before_rockefeller = game.trade_capacity(0);
     let gold_before_rockefeller = game.players[0].gold;
@@ -593,6 +619,17 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
     );
     assert_eq!(game.units[&target].formation, 1);
     assert_eq!(game.units[&untouched].formation, 0);
+
+    // Joan of Arc is the Renaissance General the roster had no entry for, so
+    // the chain no longer jumps an era from Classical to Industrial. She
+    // promotes rather than forms: `land_unit_formation` names the level to
+    // reach, not a step, so a second level-one General is a no-op.
+    assert_eq!(
+        recruit_current_military_person(&mut game, "general"),
+        "joan_of_arc"
+    );
+    assert!(game.promotion_pending(target));
+    assert_eq!(game.units[&target].formation, 1);
 
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
@@ -775,11 +812,13 @@ fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
         .gpp
         .insert("scientist".to_string(), hypatia_cost);
     game.claim_great_person(0, "scientist", None).unwrap();
+    // The Medieval Scientist the roster gained when the era chain was filled
+    // in; the market used to skip straight from Hypatia to Newton.
     assert_eq!(
         game.current_great_person("scientist").unwrap().0,
-        "isaac_newton"
+        "omar_khayyam"
     );
-    assert_eq!(game.gp_cost(0, "scientist"), 240.0);
+    assert_eq!(game.gp_cost(0, "scientist"), 120.0);
 
     let (mut patronage, _, _) = scientist_game(95_008);
     assert_eq!(

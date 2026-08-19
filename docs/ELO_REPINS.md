@@ -1464,3 +1464,37 @@ and `0x6cf9_b1fa_a854_dcd6` across the five anchor profiles.
 
 Rows before and after v16 are not comparable. This is a rules correction, not
 a compatibility re-pin.
+
+---
+
+## v17 (2026-08-19) — the Great Person roster reaches the Information era
+
+The shipped roster held **29 of Gathering Storm's 213 Great People** and
+stopped at the Atomic era. Every class ran out mid-game, and
+`Game::unused_great_person_faith` — which correctly models Civilization VI's
+`GetFaithFromUnusedGreatPeoplePoints` — then paid the whole Campus, Theatre
+Square and Harbour output out as Faith instead of Great People. The engine was
+right; the content it was reading from was not there.
+
+Measured over eight 6-player 200-turn games, 48 empire-games, paired on the
+same seeds: **26.6% of all non-prophet Great Person points were converted to
+Faith**, and seven of the eight non-prophet classes ran dry — writer by median
+turn 106, artist 139, scientist 159, admiral 160. With 36 individuals added the
+same measurement reports **5.4%**, three classes running dry and none before
+turn 172, and **229 Great People recruited against 125**.
+
+Every addition takes its class, era, cost and charges from the shipped
+`GreatPersonIndividuals` and `Eras` tables, so `tools/civ6_fidelity.py` still
+reports zero divergent fields; the roster row goes from 29/0/0/184 to
+65/0/0/148. Effects use only keys the engine already prices —
+`tools/civvis_inert.py` still reports zero effect keys with no consumer — and
+are class-typical rather than a per-individual translation of each Firaxis
+ability, which would need new engine keys.
+
+This is a shared native-world rule with no controller gate: the recruitment
+market is the same one every participant draws from. The v16 anchor was 17,494
+decisions and `0x6cf9_b1fa_a854_dcd6`; with this correction it is **17,482
+decisions** and `0x8162_c919_b83c_40df` across the five anchor profiles.
+
+Rows before and after v17 are not comparable. This is a rules correction, not a
+compatibility re-pin.
