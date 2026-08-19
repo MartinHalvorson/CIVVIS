@@ -4455,9 +4455,7 @@ impl ArmKind {
             Self::AdvancedCoupledExpansion => &["coupled-expansion"],
             Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedCoordinatedFinish => &["coordinated-finish"],
-            Self::AdvancedSingleFinisherVolley => {
-                &["coordinated-finish", "single-finisher-volley"]
-            }
+            Self::AdvancedSingleFinisherVolley => &["coordinated-finish", "single-finisher-volley"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],

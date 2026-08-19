@@ -19314,7 +19314,8 @@ fn friendly_volley_chains_two_finishers_onto_a_three_blow_kill() {
             let mut candidate = base.clone();
             candidate.units.get_mut(&defender).unwrap().hp = hp;
             let alive_after = |shots: &[u32]| survives(&candidate, shots);
-            (alive_after(&[opener, second])? && alive_after(&[opener, third])?
+            (alive_after(&[opener, second])?
+                && alive_after(&[opener, third])?
                 && !alive_after(&[opener, second, third])?
                 && !alive_after(&[opener, third, second])?)
             .then_some(candidate)

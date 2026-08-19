@@ -24748,7 +24748,10 @@ impl AdvancedAi {
                 pid,
                 &[uid, finisher],
             );
-            return Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply));
+            return Some((
+                self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+                reply,
+            ));
         }
         if !self.volley_chain {
             return None;
@@ -24806,7 +24809,11 @@ impl AdvancedAi {
                 return None;
             }
         }
-        let mut best_chain: Option<(f64, (u32, usize, u32, usize), Game)> = None;
+        // Score, then (middle, middle order, finisher, finisher order) as the
+        // deterministic tie-break, then the finished position the reply is
+        // priced against.
+        type ChainCandidate = (f64, (u32, usize, u32, usize), Game);
+        let mut best_chain: Option<ChainCandidate> = None;
         for (order, followup) in followups.into_iter().enumerate() {
             let (middle, ranged) = match &followup {
                 Action::Attack { unit, .. } => (*unit, false),
@@ -24851,8 +24858,7 @@ impl AdvancedAi {
                     _ => unreachable!("friendly volley only retains direct ground attacks"),
                 };
                 let mut after_third = after_second.speculative_clone();
-                if after_third.apply(pid, &last).is_err()
-                    || after_third.units.contains_key(&victim)
+                if after_third.apply(pid, &last).is_err() || after_third.units.contains_key(&victim)
                 {
                     continue;
                 }
@@ -24872,8 +24878,7 @@ impl AdvancedAi {
                 let score = middle_score + finish_score;
                 let key = (middle, order, finisher, last_order);
                 let better = best_chain.as_ref().is_none_or(|(old, old_key, _)| {
-                    score.total_cmp(old).is_gt()
-                        || (score.total_cmp(old).is_eq() && key < *old_key)
+                    score.total_cmp(old).is_gt() || (score.total_cmp(old).is_eq() && key < *old_key)
                 });
                 if better {
                     best_chain = Some((score, key, after_third));
@@ -24887,7 +24892,10 @@ impl AdvancedAi {
             pid,
             &[uid, middle, finisher],
         );
-        Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply))
+        Some((
+            self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE,
+            reply,
+        ))
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
