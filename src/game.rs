@@ -20933,24 +20933,31 @@ impl Game {
         self.has_line_of_sight(from, to, true)
     }
 
+    /// The line-of-sight test `do_ranged` applies, asked of a unit that may
+    /// fire from `from`. This preserves a Ranger's `see_through_woods` rule
+    /// while also letting threat readers inspect a legal future firing tile.
+    fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
+        let unit = &self.units[&uid];
+        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
+            let attacker_height = self.see_from_level(from);
+            return self.tile_has_visibility_line(
+                &mut HeightField::none(),
+                from,
+                to,
+                attacker_height,
+                true,
+            );
+        }
+        self.has_line_of_sight(from, to, true)
+    }
+
     /// The line-of-sight test `do_ranged` applies, asked of a unit that
     /// already exists. This is *not* `line_of_sight_from`: that one asks about
     /// a tile a unit is only considering standing on, and cannot know about
     /// the firing unit's own `see_through_woods`. Gating a candidate shot with
     /// the tile version would refuse a Ranger the engine would have allowed.
     pub(crate) fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
-        let unit = &self.units[&uid];
-        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
-            let attacker_height = self.see_from_level(unit.pos);
-            return self.tile_has_visibility_line(
-                &mut HeightField::none(),
-                unit.pos,
-                to,
-                attacker_height,
-                true,
-            );
-        }
-        self.has_line_of_sight(unit.pos, to, true)
+        self.unit_has_line_of_sight_from(uid, self.units[&uid].pos, to)
     }
 
     fn unit_base_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
@@ -23596,6 +23603,80 @@ impl Game {
         };
         let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
         best.into_keys().filter(|p| *p != start).collect()
+    }
+
+    /// Every tile this unit could attack on a fresh turn.
+    ///
+    /// This is the combat counterpart to [`Game::threat_reach`]. It follows
+    /// the same terrain, border, cliff, movement-cost, and zone-of-control
+    /// rules, then reserves the Movement an actual melee attack needs or the
+    /// remaining point a ranged attack needs. Occupying units are deliberately
+    /// read through: callers use this as an enemy threat envelope, where a
+    /// blocker may move away before the threatened unit's next turn.
+    ///
+    /// The result is a potential envelope rather than a permission: it does
+    /// not require a current target, visibility, or a declaration of war.
+    /// Those facts belong to the controller deciding which visible enemies
+    /// matter. The returned order is stable for explainers and tests.
+    pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
+        let Some(unit) = self.units.get(&uid) else {
+            return vec![];
+        };
+        let spec = &self.rules.units[unit.kind];
+        if spec.class != "military" || (!spec.is_melee_capable() && !spec.has_ranged_attack()) {
+            return vec![];
+        }
+
+        if spec.domain.as_deref() == Some("air") {
+            let origin = self.air_operation_origin(uid);
+            return self
+                .wdisk(origin, self.unit_attack_range(uid))
+                .into_iter()
+                .filter(|target| *target != origin && self.map.tiles.contains_key(target))
+                .collect();
+        }
+
+        let start = unit.pos;
+        let max_moves = self.unit_max_moves(uid);
+        let positions = self.flow_past(uid, start, max_moves, true);
+        let mut targets = BTreeSet::new();
+        for (from, remaining) in positions {
+            if remaining <= 0.0 {
+                continue;
+            }
+
+            if spec.has_ranged_attack()
+                && !self.unit_is_embarked_at(unit, from)
+                && (!spec.siege
+                    || from == start
+                    || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            {
+                for target in self.wdisk(from, self.unit_attack_range(uid)) {
+                    if target != from
+                        && self.map.tiles.contains_key(&target)
+                        && self.unit_has_line_of_sight_from(uid, from, target)
+                    {
+                        targets.insert(target);
+                    }
+                }
+            }
+
+            if spec.is_melee_capable() {
+                for target in self.nbrs(from) {
+                    if !self.map.tiles.contains_key(&target)
+                        || !self.unit_can_melee_target_domain(uid, target)
+                        || !self.unit_can_cross_cliff(uid, from, target)
+                    {
+                        continue;
+                    }
+                    let fresh = from == start && remaining >= max_moves;
+                    if fresh || remaining >= self.unit_step_cost(uid, from, target) {
+                        targets.insert(target);
+                    }
+                }
+            }
+        }
+        targets.into_iter().collect()
     }
 
     /// Every legal single step inside this turn's remaining movement, as

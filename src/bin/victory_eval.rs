@@ -58,10 +58,54 @@
 //! is a reading of the clock rather than of the agent. Online prices everything
 //! at 50% of Standard, so Online/250 and Standard/500 are the same race. Quote
 //! no number out of this tool without the speed beside it.
+//!
+//! ## `--without <treatment>`
+//!
+//! ⚠ A LANE TABLE WITH NO CONTROL ARM IS A DESCRIPTION, NOT A MEASUREMENT. The
+//! table above says how often each victory lands. It could not say what any one
+//! behaviour contributed to that, because every run it has ever taken built the
+//! same agent — so a change to the controller moved these counts and nothing
+//! here could attribute the movement.
+//!
+//! `--without <treatment>` withholds a row of `LIVE_TREATMENTS` or
+//! `PRODUCTION_TREATMENTS` from every seat, so the same seeds replay with one
+//! behaviour removed and the lane counts compare directly. Repeat the flag to
+//! withhold more than one; an unknown name lists what is available rather than
+//! failing quietly. The fieldless default path is unchanged, so every number
+//! above still reproduces.
 use civvis::ai::{run_game, AdvancedAi, VictoryTarget};
 use civvis::game::Game;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
+
+/// One seat's government, as `id=government:slotted/slots`.
+///
+/// ⚠ `none` and `chiefdom` are different answers and both are worth seeing. A
+/// seat still on `none` has never adopted a government at all — zero slots, so
+/// every policy card it ever unlocked is unseated — and at the turn limit that
+/// is a defect, not a phase. Anarchy is called out by name because `gov_slots`
+/// returns nothing during it: a seat mid-switch runs those turns on an empty
+/// deck, and the count alone would read as a seat that simply had no cards.
+fn government_cell(
+    id: usize,
+    government: Option<&str>,
+    anarchy_turns: u32,
+    seated: usize,
+    slots: i64,
+) -> String {
+    format!(
+        "{}={}{}:{}/{}",
+        id,
+        government.unwrap_or("none"),
+        if anarchy_turns > 0 {
+            format!("(anarchy {anarchy_turns})")
+        } else {
+            String::new()
+        },
+        seated,
+        slots,
+    )
+}
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -137,6 +181,57 @@ fn main() {
         .position(|arg| arg == "--turns")
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse::<u32>().ok());
+    // ⚠ A LANE TABLE WITH NO CONTROL ARM IS A DESCRIPTION, NOT A MEASUREMENT.
+    // The table in this file's header says how often each victory lands; it
+    // could not say what any one behaviour contributed to that, because every
+    // run built the same agent. `--without <treatment>` withholds a row of
+    // `LIVE_TREATMENTS` from every seat, so the same seeds can be replayed
+    // with one behaviour removed and the lane counts compared directly.
+    // Repeat the flag to withhold more than one.
+    let withheld: Vec<civvis::ai::LiveTreatment> = {
+        let mut rows = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            if arg != "--without" {
+                continue;
+            }
+            let Some(name) = args.get(index + 1) else {
+                eprintln!("--without requires a treatment name");
+                std::process::exit(2);
+            };
+            // ⚠ BOTH TABLES, NOT ONE. `LIVE_TREATMENTS` is what the live
+            // bridge adds; `PRODUCTION_TREATMENTS` is what production itself
+            // adds. A tool that reads only the first cannot withhold a
+            // behaviour the shipped agent has and the bridge did not give it.
+            match civvis::ai::LIVE_TREATMENTS
+                .iter()
+                .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
+                .find(|(field, tag, _)| field == name || tag == name)
+            {
+                Some(row) => rows.push(*row),
+                None => {
+                    eprintln!("unknown treatment {name:?}; known names:");
+                    for (field, tag, _) in civvis::ai::LIVE_TREATMENTS
+                        .iter()
+                        .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
+                    {
+                        eprintln!("  {tag} ({field})");
+                    }
+                    std::process::exit(2);
+                }
+            }
+        }
+        rows
+    };
+    if !withheld.is_empty() {
+        println!(
+            "withholding: {}",
+            withheld
+                .iter()
+                .map(|(_, tag, _)| *tag)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
     let mut failures = 0;
     let mut winners: BTreeMap<&'static str, BTreeSet<usize>> = BTreeMap::new();
     let started = Instant::now();
@@ -157,6 +252,11 @@ fn main() {
                 ..civvis::game::GameOptions::new(players, width, height, seed, turns, city_states)
             });
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
+            for ai in ais.iter_mut() {
+                for treatment in &withheld {
+                    (treatment.2)(ai);
+                }
+            }
             run_game(&mut game, &mut ais);
 
             let actual = game.victory_type.as_deref().unwrap_or("none");
@@ -184,6 +284,82 @@ fn main() {
                         )
                     })
                     .collect();
+            // ★★★★★ WHICH WONDERS THE LANE ACTUALLY FINISHED, WHICH IS NOT
+            // WHAT ITS VALUATION SAYS IT WANTS.
+            //
+            // The `Item::Wonder` valuation is a claim about intent; a wonder on
+            // the map is the artifact. Without this line the two are impossible
+            // to tell apart, and they came apart immediately: over 32
+            // 250-turn games a Diplomacy-targeted agent finishes a wonder in
+            // **one** of them, against a Culture agent's three in a single game
+            // and a Score agent's eight. Seven of the twenty points a
+            // diplomatic victory needs are wonders, so that is not a pricing
+            // result — it is a reachability one, and pricing cannot fix it. The
+            // Mahabodhi Temple needs a founded religion, a Holy Site and a
+            // Temple; the Statue of Liberty needs a Harbor and Civil
+            // Engineering. A diplomatic empire builds those once in 32 games.
+            //
+            // Owner-tagged, because "somebody built the Great Library" and "the
+            // seat we are measuring built the Great Library" are different
+            // facts and the lane result only follows from the second.
+            let wonders: Vec<String> = game
+                .cities
+                .values()
+                .filter(|city| !game.players[city.owner].is_minor)
+                .flat_map(|city| {
+                    city.wonders
+                        .keys()
+                        .map(move |wonder| format!("{}:{wonder}", city.owner))
+                })
+                .collect();
+            // ★★★★ WHAT THE EMPIRE WAS GOVERNED BY, WHICH THIS TOOL NEVER SAID.
+            //
+            // A verification game reported eras, cities and techs — the outputs
+            // — and nothing about the one empire-wide choice that multiplies
+            // all three. A government is four to six policy slots and the cards
+            // in them, and the difference between an empire under Monarchy with
+            // four cards seated and one still under `none` with zero is not a
+            // small one: `gov_slots` returns nothing at all in Anarchy, so a
+            // seat mid-switch is running the whole turn on an empty deck. Read
+            // a lane table without it and a lane that never lands looks like a
+            // pacing problem rather than an empire that spent forty turns
+            // ungoverned.
+            //
+            // Every major, because the interesting comparison is against the
+            // seats that beat this one; `slotted/slots` rather than a card list
+            // per seat, because the counts are what a scan needs and the
+            // winner's actual deck follows on the same line.
+            let governments: Vec<String> = game
+                .players
+                .iter()
+                .filter(|player| !player.is_minor && !player.is_barbarian)
+                .map(|player| {
+                    let slots = game.gov_slots(player.id);
+                    government_cell(
+                        player.id,
+                        player.government.as_deref(),
+                        player.anarchy_turns,
+                        player.policies.len(),
+                        slots.military + slots.economic + slots.diplomatic + slots.wildcard,
+                    )
+                })
+                .collect();
+            // The winner's actual deck. A count says a slot was filled; only
+            // the names say what the empire was actually paying for, which is
+            // the question a lane result raises first.
+            let seated: String = game
+                .players
+                .get(game.winner.unwrap_or(usize::MAX))
+                .map(|player| {
+                    player
+                        .policies
+                        .iter()
+                        .map(|card| card.to_string())
+                        .collect::<Vec<_>>()
+                        .join("+")
+                })
+                .filter(|cards| !cards.is_empty())
+                .unwrap_or_else(|| "none".to_string());
             let passed = actual == target.as_str();
             failures += usize::from(!passed);
             if passed {
@@ -258,7 +434,7 @@ fn main() {
                 VictoryTarget::Score => format!("score={}", game.score(winner)),
             });
             println!(
-                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} {} [{:.2}s]",
+                "{:<11} seed={} target={:<10} actual={:<10} winner={} turn={} world_era={} majors=(id,alive,era,cities,techs){:?} wonders=[{}] govs=[{}] policies={} {} [{:.2}s]",
                 if passed { "PASS" } else { "FAIL" },
                 seed,
                 target.as_str(),
@@ -271,6 +447,9 @@ fn main() {
                 game.reported_turn(),
                 game.world_era,
                 major_progress,
+                wonders.join(" "),
+                governments.join(" "),
+                seated,
                 progress.unwrap_or_default(),
                 game_started.elapsed().as_secs_f64(),
             );
@@ -305,6 +484,28 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three answers a seat can give, told apart.
+    #[test]
+    fn a_government_cell_distinguishes_ungoverned_from_anarchic_from_seated() {
+        assert_eq!(
+            government_cell(0, Some("monarchy"), 0, 4, 6),
+            "0=monarchy:4/6",
+            "an ordinary seat reads its cards against its slots"
+        );
+        assert_eq!(
+            government_cell(3, None, 0, 0, 0),
+            "3=none:0/0",
+            "a seat that never adopted a government must say so rather than \
+             render as an empty deck"
+        );
+        assert_eq!(
+            government_cell(2, Some("monarchy"), 3, 2, 0),
+            "2=monarchy(anarchy 3):2/0",
+            "Anarchy has no slots of its own, so the seat is named as running \
+             on none of the cards it holds"
+        );
+    }
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_string()).collect()

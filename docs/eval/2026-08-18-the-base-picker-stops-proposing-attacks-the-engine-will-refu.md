@@ -85,9 +85,20 @@ branch — 18,572 decisions, `0x3bda_c2f2_b84d_30fc` — so every frozen identit
 (the anchor's legacy base, the dated `basic` entrant, the evaluator controls)
 still plays the recorded game.
 
-**The seat-local price** (withholding arm vs production):
+**The seat-local price** (withholding arm vs production, 24 pairs / 48 games
+per seed):
 
-FILL_EVAL_RESULTS
+| seed stream | paired-map score | outcomes | terminal-score direction | gate |
+|---|---|---|---|---|
+| 31150000 | 50.0% (betting CI 32.1%..67.9%), Elo +0 (CI −130..+130) | 0 sweeps / **24 neutral** / 0 | 1 for, 21 neutral, 2 against, p=1.0000 | INCONCLUSIVE |
+| 31250000 | 50.0% (betting CI 32.1%..67.9%), Elo +0 (CI −130..+130) | 0 sweeps / **24 neutral** / 0 | 1 for, 23 neutral, 0 against, p=1.0000 | INCONCLUSIVE |
+
+Twenty-four neutral splits on twenty-four maps, both seeds, is the signature
+of two agents playing essentially the same games — consistent with the census:
+majors reach this candidate loop about ten times a game, and dropping a
+refused winner changes play only when a legal runner-up cleared the threshold.
+The major seat's own delegation is priced at nothing; the change's payload is
+the environment, which a paired arm cannot express by construction.
 
 ## What was decided
 
