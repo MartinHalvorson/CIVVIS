@@ -1683,6 +1683,18 @@ impl AdvancedAi {
         self.score_horizon = false;
     }
 
+    /// Build the wonders the chosen victory actually needs. See
+    /// `AdvancedAi::strategic_wonder_value`.
+    pub fn enable_strategic_wonders(&mut self) {
+        self.strategic_wonders = true;
+    }
+
+    /// Withholding twin for `enable_strategic_wonders`, so the arm can be
+    /// priced by taking this one treatment out. See `LIVE_TREATMENTS`.
+    pub fn disable_strategic_wonders(&mut self) {
+        self.strategic_wonders = false;
+    }
+
     /// Give the 3,000-point first-pad rung to one city at a time. See
     /// `one_launch_pad`.
     pub fn enable_one_launch_pad(&mut self) {
