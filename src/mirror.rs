@@ -11769,10 +11769,30 @@ const CITY_KEYS: &[&str] = &[
 ];
 
 const UNIT_KEYS: &[&str] = &[
-    "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
-    "player", "moves", "xp", "level", "promotions", "build_charges", "spread_charges",
-    "religion", "fortified", "fortify_turns", "formation_count", "great_person",
-    "queued_dest", "embarked",
+    "id",
+    "kind",
+    "type",
+    "base",
+    "class",
+    "x",
+    "y",
+    "hp",
+    "combat",
+    "ranged",
+    "player",
+    "moves",
+    "xp",
+    "level",
+    "promotions",
+    "build_charges",
+    "spread_charges",
+    "religion",
+    "fortified",
+    "fortify_turns",
+    "formation_count",
+    "great_person",
+    "queued_dest",
+    "embarked",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -16739,8 +16759,7 @@ impl LiveMirror {
         max_turns: u32,
         frontier_depth: u32,
     ) -> LiveMirror {
-        let rebuilt =
-            rebuild_from_state(snapshot, state, players, seed, max_turns, frontier_depth);
+        let rebuilt = rebuild_from_state(snapshot, state, players, seed, max_turns, frontier_depth);
         let mut uid_of = std::collections::BTreeMap::new();
         for (uid, civ6) in &rebuilt.unit_ids {
             uid_of.insert(*civ6, *uid);
