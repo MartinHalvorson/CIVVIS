@@ -253,7 +253,12 @@ def render(data: dict) -> str:
     elif cross:
         lines.append(f"  {cross['note']}")
     else:
-        lines.append("  never lost the lead")
+        # "for good", not "never behind": `crossover` deliberately reports the
+        # last loss that stuck, so a seat that trailed at t100 and led again by
+        # t150 lands here. Reading this as "never trailed" contradicts the
+        # trajectory printed three lines below it, which is exactly the misread
+        # it caused on run civvis-20260819T102134Z (-74 at t100, +189 at t225).
+        lines.append("  never lost the lead for good (may have trailed; see the trajectory)")
     lines.append("")
     lines.append(f"  {'turn':>5} {'us':>6} {'best':>6} {'gap':>6} "
                  f"{'cities':>7} {'techs':>6} {'sci':>5} {'cul':>5}")
