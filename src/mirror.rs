@@ -1336,6 +1336,92 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A pantheon a rival holds is already in the stream as `taken_BELIEF_<X>`
+    /// — the mod's `pantheon` handler writes it when `IsInSomePantheon` says so
+    /// — and until now nothing read it: the mirror seats no rival pantheons, so
+    /// the same first choice was re-derived from the same board next turn and,
+    /// after two sightings, the mod's blocker fallback chose the first untaken
+    /// belief in database order. See `Game::blocked_pantheons` and
+    /// `AdvancedAi::expansion_pantheon`.
+    #[test]
+    fn the_hosts_taken_pantheons_are_read_from_the_refusals_it_already_writes() {
+        let dir = std::env::temp_dir().join(format!("civvis-pantheon-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"orders","turn":18,"refusals":{"taken_BELIEF_RELIGIOUS_SETTLEMENTS":1,"MOVE_TO":4}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":19,"refusals":{"taken_BELIEF_RELIGIOUS_SETTLEMENTS":1,"taken_NOT_A_BELIEF":1}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":20,"refusals":{"taken_BELIEF_NOT_A_REAL_PANTHEON":1,"pantheon_already_founded":1}}"#,
+                "
+",
+                r#"{"kind":"orders","turn":40,"refusals":{"taken_BELIEF_FERTILITY_RITES":1}}"#,
+                "
+",
+            ),
+        )
+        .expect("write events");
+
+        let names = refused_pantheons(&path);
+        assert!(names.contains("BELIEF_RELIGIOUS_SETTLEMENTS"));
+        assert!(names.contains("BELIEF_FERTILITY_RITES"));
+        assert_eq!(
+            names.len(),
+            3,
+            "each distinct belief once, however many turns it spans; a `taken_` reason              that is not a belief is not one: {names:?}"
+        );
+        // Bounded by turn, the way every per-turn state read asks for it.
+        assert!(
+            !refused_pantheons_through(&path, Some(30)).contains("BELIEF_FERTILITY_RITES"),
+            "a refusal on turn 40 is not known on turn 30"
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let blocked = blocked_pantheons_from(&names, &rules);
+        assert!(blocked.contains(&Name::new("religious_settlements")));
+        assert!(blocked.contains(&Name::new("fertility_rites")));
+        assert_eq!(
+            blocked.len(),
+            2,
+            "a belief CIVVIS does not model is DROPPED, not inserted under a name that              matches nothing"
+        );
+
+        // And the board refuses what the host refused, so the chooser moves on.
+        let mut game = crate::game::Game::new_full(2, 30, 18, 6_101, 200, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .unwrap();
+        game.players[0].faith = 200.0;
+        game.blocked_pantheons = blocked;
+        assert!(game
+            .apply(
+                0,
+                &crate::game::Action::ChoosePantheon {
+                    belief: Name::new("religious_settlements"),
+                },
+            )
+            .is_err());
+        assert!(game
+            .apply(
+                0,
+                &crate::game::Action::ChoosePantheon {
+                    belief: Name::new("divine_spark"),
+                },
+            )
+            .is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// ★★★★ The wonder half of `build_no_plot` was being DROPPED ON THE FLOOR.
     ///
     /// The mod emits a refused district under the event's `district` key and a
@@ -10193,6 +10279,12 @@ pub struct StateSnapshot {
     /// ruleset is in hand; see [`refused_policies`].
     #[serde(default)]
     pub refused_policy_names: std::collections::BTreeSet<String>,
+    /// Pantheon beliefs Civilization VI refused as already taken by another
+    /// player, as its OWN names, harvested from the `taken_<BELIEF>` refusal
+    /// reasons already in the stream. Translated where the ruleset is in hand;
+    /// see [`refused_pantheons`] and `Game::blocked_pantheons`.
+    #[serde(default)]
+    pub refused_pantheons: std::collections::BTreeSet<String>,
     /// Districts Civilization VI refused to place, by ITS city id, from
     /// `build_no_plot`. Mapped onto CIVVIS cities where `city_ids` is in hand; see
     /// [`refused_districts`].
@@ -11782,6 +11874,7 @@ pub fn state_from_events(
         state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
+        state.refused_pantheons = refused_pantheons_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
@@ -13489,6 +13582,71 @@ fn refused_policies_through(
 }
 
 
+/// The pantheon beliefs Civilization VI refused as already taken by another
+/// player, as its own `BELIEF_*` names, harvested from the `taken_<BELIEF>`
+/// refusal reasons in the `orders` events. Same shape as [`refused_policies`]:
+/// the mod's `pantheon` handler answers `taken_BELIEF_<X>` when
+/// `IsInSomePantheon` says a rival holds it, and until this nothing read it back
+/// — the mirror seats no rival pantheons, so the same belief was re-derived from
+/// the same board next turn. See `Game::blocked_pantheons`.
+pub fn refused_pantheons(path: &std::path::Path) -> std::collections::BTreeSet<String> {
+    refused_pantheons_through(path, None)
+}
+
+fn refused_pantheons_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<String> {
+    let mut refused: std::collections::BTreeSet<String> = Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("taken_BELIEF_") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if turn.is_some_and(|limit| {
+            event
+                .get("turn")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+                > limit as u64
+        }) {
+            continue;
+        }
+        let Some(reasons) = event.get("refusals").and_then(|r| r.as_object()) else {
+            continue;
+        };
+        for reason in reasons.keys() {
+            let Some(civ6) = reason.strip_prefix("taken_") else {
+                continue;
+            };
+            if civ6.starts_with("BELIEF_") {
+                refused.insert(civ6.to_string());
+            }
+        }
+    }
+    refused
+}
+
+/// The host's taken pantheons as CIVVIS spells them, dropping any it does not
+/// model — an unmatched entry would filter nothing while making the set look
+/// populated, the same care as [`blocked_policies_from`].
+fn blocked_pantheons_from(
+    names: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    names
+        .iter()
+        .filter_map(|civ6| civvis_belief_name(rules, civ6))
+        .filter(|name| rules.beliefs.pantheon.contains_key(name.as_str()))
+        .map(|name| Name::new(&name))
+        .collect()
+}
+
 /// A Civilization VI production type name as a CIVVIS queue [`Item`].
 ///
 /// ⚠ Returns None rather than guessing. A wrong item would tell CIVVIS a city is
@@ -15053,6 +15211,7 @@ pub fn rebuild_from_state(
     game.blocked_improvement_sites = state.refused_improves.clone();
     game.blocked_trade_routes = state.refused_trade_routes.clone();
     game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
+    game.blocked_pantheons = blocked_pantheons_from(&state.refused_pantheons, &game.rules);
     // ⚠ Wired after `city_ids` below would be too late for the rebuild, so this is
     // filled in at the end of the function where both are in hand.
 
@@ -16621,6 +16780,9 @@ impl LiveMirror {
         // retired, and the set is rebuilt from the whole event log each time.
         let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);
         self.game.blocked_policies.extend(retired);
+        // And a pantheon a rival holds stays held.
+        let taken = blocked_pantheons_from(&state.refused_pantheons, &self.game.rules);
+        self.game.blocked_pantheons.extend(taken);
         let refused = blocked_districts_from(
             &state.refused_districts,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
