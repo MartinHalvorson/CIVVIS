@@ -2854,6 +2854,30 @@ pub struct HostCompetition {
     pub leader: f64,
 }
 
+/// A scored competition CIVVIS runs itself, rather than observing on a host.
+///
+/// ★★★★★ THE DIPLOMATIC LANE'S LARGEST SOURCE. Gathering Storm pays a
+/// Diplomatic Victory Point to the first-place finisher of a scored
+/// competition, and they recur for the whole second half of a game. Without
+/// them a native empire has no route to the twenty a Diplomatic victory needs:
+/// the congress resolution is ±2 from the Modern era, the three wonders are
+/// worth seven and 31 of 32 diplomatic games finish none, and the civic and
+/// technology are worth one each in the Future era. Live, 19.6% of terminal
+/// games end in a rival's diplomatic victory; on the contested screen CIVVIS
+/// produced 1.7%. See `docs/FIDELITY.md`.
+///
+/// Unlike [`HostCompetition`], which is one mirrored seat's view of a host's
+/// competition, this holds every seat's score because CIVVIS is running it.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct Competition {
+    /// Firaxis emergency type, so a seat cannot tell this from a host one.
+    pub kind: String,
+    /// First turn on which the competition is no longer current.
+    pub ends: u32,
+    /// Score by player id. A seat that has scored nothing is absent.
+    pub scores: BTreeMap<usize, f64>,
+}
+
 /// Every blow that has landed on a city this game.
 ///
 /// A war ledger says who declared and who lost units; it cannot say whether an
@@ -5283,6 +5307,22 @@ pub struct Game {
     /// offline production menus.
     #[serde(default)]
     pub host_competitions: Vec<HostCompetition>,
+    /// The scored competition CIVVIS is running itself, if any. Off unless
+    /// `native_competitions` is set. See [`Competition`].
+    #[serde(default)]
+    pub competition: Option<Competition>,
+    /// First turn a new competition may be seated. Gathering Storm locks a
+    /// finished competition out for sixty turns.
+    #[serde(default)]
+    pub competition_lockout_until: u32,
+    /// Whether this game runs its own scored competitions.
+    ///
+    /// ⚠ Off by default and deliberately so. Turning it on changes what every
+    /// participant faces, which moves the frozen rating anchor — so it ships
+    /// as an arm to be priced first, not as a silent rules change. See
+    /// `docs/ELO_REPINS.md` for what promoting it costs.
+    #[serde(default)]
+    pub native_competitions: bool,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -5536,6 +5576,12 @@ struct GameSer {
     #[serde(default)]
     host_competitions: Vec<HostCompetition>,
     #[serde(default)]
+    competition: Option<Competition>,
+    #[serde(default)]
+    competition_lockout_until: u32,
+    #[serde(default)]
+    native_competitions: bool,
+    #[serde(default)]
     last_special_session: u32,
     #[serde(default)]
     pending_emergencies: Vec<EmergencyProposal>,
@@ -5699,6 +5745,9 @@ impl From<GameSer> for Game {
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
             host_competitions: s.host_competitions,
+            competition: s.competition,
+            competition_lockout_until: s.competition_lockout_until,
+            native_competitions: s.native_competitions,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -5882,6 +5931,9 @@ impl From<Game> for GameSer {
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
             host_competitions: g.host_competitions,
+            competition: g.competition,
+            competition_lockout_until: g.competition_lockout_until,
+            native_competitions: g.native_competitions,
             last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
@@ -6299,6 +6351,9 @@ impl Game {
             congress: None,
             active_congress_effects: Vec::new(),
             host_competitions: Vec::new(),
+            competition: None,
+            competition_lockout_until: 0,
+            native_competitions: false,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -31009,14 +31064,132 @@ impl Game {
     /// The current host competition of this mirrored seat, if it is still
     /// active. Host player ids do not match generated CIVVIS seats, so the
     /// mirror intentionally supplies opportunities for seat zero only.
-    pub fn host_competition(&self, pid: usize, kind: &str) -> Option<&HostCompetition> {
+    pub fn host_competition(&self, pid: usize, kind: &str) -> Option<HostCompetition> {
+        // A competition CIVVIS is running itself answers for every seat, and
+        // presents in the same shape a mirrored one does — so the production
+        // catalog and the AI's valuation cannot tell them apart and neither
+        // needed changing.
+        if let Some(native) = self
+            .competition
+            .as_ref()
+            .filter(|running| running.kind == kind && running.ends > self.turn)
+        {
+            let ours = native.scores.get(&pid).copied().unwrap_or(0.0);
+            let leader = native.scores.values().copied().fold(0.0, f64::max);
+            return Some(HostCompetition {
+                kind: native.kind.clone(),
+                ends: native.ends,
+                ours,
+                leader,
+            });
+        }
         (pid == 0)
             .then(|| {
                 self.host_competitions
                     .iter()
                     .find(|competition| competition.kind == kind && competition.ends > self.turn)
+                    .cloned()
             })
             .flatten()
+    }
+
+    /// The competitions CIVVIS can seat itself, with the Diplomatic Victory
+    /// Points Gathering Storm pays their winner.
+    ///
+    /// ⚠ Three of the seven, and the three are not a preference. A competition
+    /// is offered only when our own data says an empire could score in it, and
+    /// the scoring project is what says so: Space Station needs a Spaceport,
+    /// Climate Accords needs an Industrial Zone and a power plant to
+    /// decommission. World Games' project declares no prerequisite at all, so
+    /// nothing in the data says when it may start and choosing an era would be
+    /// inventing one — the same mistake that put Vanilla belief values into a
+    /// Gathering Storm ruleset in #2049. World's Fair and the Nobel prizes
+    /// score from Great People rather than a project, and the aid requests
+    /// trigger on a random event and a war, not on the congress.
+    const NATIVE_COMPETITIONS: &'static [(&'static str, i64)] = &[
+        ("EMERGENCY_SPACE_STATION", 1),
+        ("EMERGENCY_CLIMATE_ACCORDS", 2),
+    ];
+
+    /// Seat a competition if one may run and an empire could score in it.
+    fn open_native_competition(&mut self) {
+        if !self.native_competitions
+            || self.competition.is_some()
+            || self.turn < self.competition_lockout_until
+        {
+            return;
+        }
+        let majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| self.victory_eligible(player.id))
+            .map(|player| player.id)
+            .collect();
+        let Some((kind, _)) = Self::NATIVE_COMPETITIONS.iter().find(|(kind, _)| {
+            majors
+                .iter()
+                .any(|pid| self.can_score_competition(*pid, kind))
+        }) else {
+            return;
+        };
+        self.competition = Some(Competition {
+            kind: (*kind).to_string(),
+            ends: self.turn + self.standard_duration(29),
+            scores: BTreeMap::new(),
+        });
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// Whether this empire holds the ground a competition's scoring project
+    /// needs. The project's own `district` is the requirement, so this asks the
+    /// data rather than a hand-written era.
+    fn can_score_competition(&self, pid: usize, kind: &str) -> bool {
+        self.rules.projects.iter().any(|(_, spec)| {
+            if spec.competition_score <= 0.0 || !spec.host_competition_kinds().any(|k| k == kind) {
+                return false;
+            }
+            let Some(district) = spec.district else {
+                return true;
+            };
+            self.cities
+                .values()
+                .any(|city| city.owner == pid && city.districts.contains_key(district))
+        })
+    }
+
+    /// Close a finished competition, paying its winner what Gathering Storm
+    /// pays: the Diplomatic Victory Point, and the Favor beside it.
+    ///
+    /// ⚠ First place only, and ties pay nobody — a tie has no first place, and
+    /// inventing a tiebreak here would be inventing a rule. Nothing is paid on
+    /// the mirrored path either: a host has already counted its own.
+    fn close_native_competition(&mut self) {
+        let Some(running) = self.competition.as_ref() else {
+            return;
+        };
+        if self.turn < running.ends {
+            return;
+        }
+        let award = Self::NATIVE_COMPETITIONS
+            .iter()
+            .find(|(kind, _)| *kind == running.kind)
+            .map(|(_, points)| *points)
+            .unwrap_or(0);
+        let best = running.scores.values().copied().fold(0.0, f64::max);
+        let winners: Vec<usize> = running
+            .scores
+            .iter()
+            .filter(|(_, score)| **score >= best && best > 0.0)
+            .map(|(pid, _)| *pid)
+            .collect();
+        if let [winner] = winners[..] {
+            self.players[winner].dvp += award;
+            self.players[winner].diplomatic_favor += 25.0;
+            self.add_historic_moment(winner, "MOMENT_PLAYER_EARNED_DIPLOMATIC_VICTORY_POINT");
+        }
+        self.competition = None;
+        self.competition_lockout_until = self.turn + self.standard_duration(60);
+        self.query_memo.producible.borrow_mut().clear();
     }
 
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
@@ -43614,6 +43787,9 @@ impl Game {
             closes: self.turn + self.standard_duration(5),
             resolutions,
         });
+        // Gathering Storm seats a scored competition from the congress
+        // (`EMERGENCY_TRIGGER_WORLD_CONGRESS`), not on its own clock.
+        self.open_native_competition();
     }
 
     /// From the Medieval era, regular sessions open every 30 turns. Voting
@@ -43623,6 +43799,7 @@ impl Game {
         if self.is_finished() {
             return;
         }
+        self.close_native_competition();
         self.active_congress_effects
             .retain(|effect| effect.expires > self.turn);
         if self
@@ -47763,6 +47940,20 @@ impl Game {
                     return true;
                 }
                 let spec = self.rules.projects[project].clone();
+                // The score the project declares only means something while a
+                // competition CIVVIS runs itself is open; a mirrored one is
+                // counted by the host and must not be counted twice.
+                if spec.competition_score > 0.0 {
+                    if let Some(running) = self.competition.as_mut() {
+                        if running.ends > self.turn
+                            && spec
+                                .host_competition_kinds()
+                                .any(|kind| kind == running.kind)
+                        {
+                            *running.scores.entry(pid).or_insert(0.0) += spec.competition_score;
+                        }
+                    }
+                }
                 if !spec.repeatable && self.players[pid].science_projects.contains(project.as_str()) {
                     // Another city won this internal project race.
                     return true;
