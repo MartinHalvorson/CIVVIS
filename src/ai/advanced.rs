@@ -19798,14 +19798,19 @@ impl AdvancedAi {
                                 250.0
                             }
                         }
-                        _ if spec.host_competition.is_some() => {
-                            let value = self.host_competition_score_value(
-                                g,
-                                pid,
-                                spec.host_competition.as_deref().unwrap(),
-                                spec.competition_score,
-                                turns,
-                            );
+                        _ if spec.requires_host_competition() => {
+                            let value = spec
+                                .host_competition_kinds()
+                                .map(|kind| {
+                                    self.host_competition_score_value(
+                                        g,
+                                        pid,
+                                        kind,
+                                        spec.competition_score,
+                                        turns,
+                                    )
+                                })
+                                .fold(0.0, f64::max);
                             // A host-unlocked project that cannot complete
                             // before the current competition expires is not a
                             // neutral fallback: letting it win a tie would
