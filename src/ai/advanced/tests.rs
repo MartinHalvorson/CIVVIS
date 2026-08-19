@@ -18060,7 +18060,13 @@ fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
         .find(|uid| game.units[uid].kind == "settler")
         .unwrap();
     let source = game.units[&founding_settler].pos;
-    game.apply(0, &Action::FoundCity { unit: founding_settler }).unwrap();
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
     for unit in game.player_unit_ids(0) {
         game.remove_unit(unit);
     }
@@ -18080,24 +18086,24 @@ fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
         .nbrs(source)
         .into_iter()
         .find(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            })
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
         })
         .expect("a passable neighbour of the city");
-    let raider_tile = game
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .find(|position| {
-            game.wdist(step, *position) == 2
-                && game.wdist(source, *position) >= 2
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-        })
-        .expect("a tile two steps from the destination");
+    let raider_tile =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(step, *position) == 2
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile two steps from the destination");
     let settler = game.spawn_test_unit("settler", 0, source);
     let bystander = game.spawn_test_unit("warrior", 0, step);
     // A peer-strength hostile: a warrior does not break a warrior.
@@ -18168,7 +18174,13 @@ fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
         .find(|uid| game.units[uid].kind == "settler")
         .unwrap();
     let source = game.units[&founding_settler].pos;
-    game.apply(0, &Action::FoundCity { unit: founding_settler }).unwrap();
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .unwrap();
     for unit in game.player_unit_ids(0) {
         game.remove_unit(unit);
     }
@@ -18187,22 +18199,22 @@ fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
         .nbrs(source)
         .into_iter()
         .find(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            })
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
         })
         .expect("a passable neighbour of the city");
-    let hostile_tile = game
-        .nbrs(field)
-        .into_iter()
-        .find(|position| {
-            *position != source
-                && game.wdist(source, *position) >= 2
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-        })
-        .expect("a tile beside the pair, away from the city");
+    let hostile_tile =
+        game.nbrs(field)
+            .into_iter()
+            .find(|position| {
+                *position != source
+                    && game.wdist(source, *position) >= 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a tile beside the pair, away from the city");
     let settler = game.spawn_test_unit("settler", 0, field);
     let guard = game.spawn_test_unit("warrior", 0, field);
     game.units.get_mut(&guard).unwrap().hp = 45;

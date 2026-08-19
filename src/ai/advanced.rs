@@ -2777,6 +2777,7 @@ pub struct AdvancedAi {
     ///   settler decides for the pair, and its own guarded-here test uses the
     ///   same "could hold" bar, so an outmatched pair retreats together and
     ///   the guard follows.
+    ///
     /// Live bundle and native repair (economy half): the rules are the
     /// engine's, not the host's. Off for ordinary and frozen controllers.
     pub settler_guard_holds: bool,
@@ -20405,8 +20406,7 @@ impl AdvancedAi {
                 return false;
             }
             let spec = &g.rules.units[unit.kind];
-            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air"))
-            {
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
                 return false;
             }
             if self.barbarian_scouts_are_scouts
@@ -20421,8 +20421,7 @@ impl AdvancedAi {
                 1
             };
             let attack_reach = attack_range + spec.moves.ceil() as i32;
-            let attacker =
-                crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            let attacker = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
             g.wdist(unit.pos, pos) <= attack_reach && attacker > defender * 1.5
         })
     }
@@ -21845,7 +21844,9 @@ impl AdvancedAi {
         if self.stacked_escort && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
-            let visible_now = self.settler_guard_holds.then(|| self.battlefront_visibility(g, pid));
+            let visible_now = self
+                .settler_guard_holds
+                .then(|| self.battlefront_visibility(g, pid));
             let guarded_here = g.city_at(current).is_some()
                 || g.units_at(current).into_iter().any(|other| {
                     other != uid
@@ -26457,15 +26458,12 @@ impl AdvancedAi {
         if self.settler_guard_holds
             && self.stacked_escort
             && spec.class == "military"
-            && self
-                .settler_guards
-                .iter()
-                .any(|(settler, guard)| {
-                    *guard == uid
-                        && g.units.get(settler).is_some_and(|settler| {
-                            settler.owner == pid && settler.pos == unit.pos
-                        })
-                })
+            && self.settler_guards.iter().any(|(settler, guard)| {
+                *guard == uid
+                    && g.units
+                        .get(settler)
+                        .is_some_and(|settler| settler.owner == pid && settler.pos == unit.pos)
+            })
         {
             if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
                 return acted;
