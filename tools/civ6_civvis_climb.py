@@ -1287,6 +1287,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            if getattr(args, "abandon_below_win_rate", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
+        + [flag for treatment in args.with_
+           for flag in ("--civvis-with", treatment)]
         + [flag for treatment in args.without
            for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
@@ -1350,6 +1352,11 @@ def main() -> int:
                          "this batch — the control half of a live A/B. Pair "
                          "with --attempts N on a pinned revision, then run the "
                          "same N without this flag for the treatment half")
+    ap.add_argument("--with", dest="with_", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for every attempt "
+                         "in this labeled verification arm; repeatable and validated "
+                         "by civvis_orders")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
@@ -1887,6 +1894,10 @@ def main() -> int:
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
         record["leader_asked"] = args.leader or None
+        # Stamp the requested ledger override here too, rather than relying
+        # solely on a graceful child summary: a crashed force-on arm is still
+        # an arm, not an unexplained deployment row.
+        record["forced"] = sorted(args.with_)
         record["code_rev"] = code_rev
 
         # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.

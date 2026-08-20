@@ -1417,7 +1417,7 @@ class LiveControlArmTests(unittest.TestCase):
         values = {
             "civvis_victory": "science", "civvis_strategy": "auto",
             "civvis_war_from_plan": False, "civvis_refresh_seconds": None,
-            "civvis_without": [], "timeout": 7200.0,
+            "civvis_with": [], "civvis_without": [], "timeout": 7200.0,
         }
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1429,6 +1429,18 @@ class LiveControlArmTests(unittest.TestCase):
 
     def test_the_full_bundle_withholds_nothing(self) -> None:
         self.assertNotIn("--without", self._cmd())
+        self.assertNotIn("--with", self._cmd())
+
+    def test_each_forced_ledger_treatment_reaches_the_decider(self) -> None:
+        cmd = self._cmd(civvis_with=["stacked-escort", "settler-stack-discipline"])
+        pairs = [(cmd[i], cmd[i + 1]) for i, tok in enumerate(cmd)
+                 if tok == "--with"]
+        self.assertEqual(
+            pairs,
+            [("--with", "stacked-escort"),
+             ("--with", "settler-stack-discipline")],
+            "each force-on treatment needs its own flag for an attributable arm",
+        )
 
     def test_each_withheld_treatment_reaches_the_decider(self) -> None:
         cmd = self._cmd(civvis_without=["peacetime-deterrence", "stacked-escort"])
@@ -1468,6 +1480,7 @@ class SupervisedBrainCommandTests(unittest.TestCase):
             "civvis_strategy": "auto",
             "civvis_war_from_plan": False,
             "civvis_refresh_seconds": None,
+            "civvis_with": [],
             "civvis_without": [],
             "timeout": 7200.0,
         }
