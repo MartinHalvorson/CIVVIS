@@ -152,6 +152,19 @@ impl AdvancedAi {
         self.base.whole_turn_backtrack_guard = false;
     }
 
+    /// A blind-planned unit stops at the first step that revealed new ground
+    /// and finishes its movement sighted; on the bridge its walk is cut at
+    /// the first unrevealed hex so the replan frame sees what it uncovered.
+    /// See [`AdvancedAi::step_and_reassess`].
+    pub fn enable_step_and_reassess(&mut self) {
+        self.step_and_reassess = true;
+    }
+
+    /// Withholding twin for `enable_step_and_reassess`. See `LIVE_TREATMENTS`.
+    pub fn disable_step_and_reassess(&mut self) {
+        self.step_and_reassess = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -712,6 +725,11 @@ impl AdvancedAi {
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.
         self.enable_whole_turn_backtrack_guard();
+        // A unit that uncovers new ground re-decides the rest of its movement
+        // on what it saw, instead of finishing a path planned blind. See
+        // `step_and_reassess`; on the bridge it is the brain half of the
+        // mid-turn replan frame.
+        self.enable_step_and_reassess();
         self.enable_bounded_recovery();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
@@ -1205,6 +1223,8 @@ impl AdvancedAi {
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.
         self.enable_whole_turn_backtrack_guard();
+        // And a plan made blind is finished sighted. See `step_and_reassess`.
+        self.enable_step_and_reassess();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.
