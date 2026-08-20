@@ -542,6 +542,12 @@ const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
 const SETTLER_REPLACEMENT_BLOCKED_TURNS: u32 = 3;
 const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
+/// `stacked_escort` / `settler_stack_discipline`: how close a visible hostile
+/// military unit must be before the escort machinery engages (and past which
+/// a bound guard is released back to the army). Eight tiles is two turns of
+/// cavalry plus a margin — the doorstep captures the flags exist for all
+/// began inside it.
+const SETTLER_ESCORT_THREAT_RADIUS: i32 = 8;
 /// How many consecutive turns a settler holds position for a guard that has
 /// fallen off the pair before marching on unescorted. Two turns covers every
 /// ordinary desync (a refused step, a zone of control, a re-stack after the
@@ -5030,7 +5036,12 @@ impl AdvancedAi {
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
         let cities = g.player_city_ids(pid).len();
-        if self.war_patience {
+        // `war_economy`'s stall clock (cycle three) reads the same
+        // ownership-aware progress the patience clock keeps, so the
+        // observation runs for either flag. The count-based fallback below
+        // keeps its exact reach: controllers with neither flag are
+        // unchanged, including the frozen diplomacy fatigue at 11284.
+        if self.war_patience || self.war_economy {
             // Civilization VI preserves a city's id when it changes hands, and
             // the live mirror preserves that identity too. A new Roman city has
             // no prior foreign owner, so it must not buy another full patience
@@ -19873,9 +19884,30 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
+                // ★★★ Cycle three (2026-08-20): the pop floor improved the
+                // gene (−2.8 → −1.7 [−3.8, +0.4] on 2,000 pairs, seeds
+                // 45000000..) and the 6p whole-genome screen still read
+                // −1.9 (z −4.4, seeds 46000000..). The remaining harm has
+                // the same mechanism the wide-map repair priced: a Campus in
+                // every city is an investment the conversion race liquidates
+                // — 60–66% of native games end religious at median t134–158.
+                // So the coverage promise now uses the exact signal that
+                // flipped `wide_map_capacity` to a helper: it stands down
+                // while a religious victory is enabled AND a rival religion
+                // exists, and resumes when the race is absent, over, or
+                // disabled (war lanes keep full coverage by construction).
+                let conversion_race_live = g.victory_conditions.religious
+                    && g.players.iter().any(|player| {
+                        player.id != pid
+                            && player.alive
+                            && !player.is_minor
+                            && !player.is_barbarian
+                            && player.religion.is_some()
+                    });
                 let campus_keeps_asking = self.campus_every_city
                     && family == "campus"
-                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR
+                    && !conversion_race_live;
                 // See `culture_coverage`: the same exemption, for the same
                 // reason — the civic tree cascades out of the Theater Square
                 // the way the tech tree cascades out of the Campus, and being
@@ -22359,11 +22391,50 @@ impl AdvancedAi {
         if !self.stacked_escort {
             return None;
         }
-        // A real formation link — reconciled from the host, or left over from
-        // an older controller — would make the linked branch below defer to
-        // the very channel this treatment retires. Shed it.
+        // ★★★ REPAIRED 2026-08-20 (cycle three) after the 6p whole-genome
+        // screen priced escort-always at **−2.1 pp wins (z −4.8)** for this
+        // flag and **−2.3 (z −5.4)** for `settler_stack_discipline` over
+        // 13,386 game-pairs (seeds 46000000..): every settler bound a
+        // military guard full-time and waited for it, in a regime where the
+        // recorded census says the native engine loses ~zero civilians
+        // (settlers.py: live seat 43 of 127 captured; native 0.00). The
+        // machinery was army-thinning overhead paid against a risk that was
+        // not there. It now engages ON THREAT: a guard is bound and the
+        // pacing below runs only while a visible hostile military unit
+        // stands within [`SETTLER_ESCORT_THREAT_RADIUS`] of the settler —
+        // the recorded live captures (t22–t25 of run civvis-20260815T230003Z
+        // among them) all had exactly such a unit in sight. On quiet ground
+        // any bound guard is RELEASED back to the army and the settler
+        // marches normally. The live seat keeps its protection the moment a
+        // raider shows; the native game stops paying for ghosts.
+        // Shedding a stale formation link is bookkeeping about a channel
+        // this treatment retires — it happens whether or not anything
+        // threatens the settler, so it runs before the threat gate.
         if g.units[&uid].linked_to.is_some() {
             return Some(g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok());
+        }
+        let threatened = {
+            let position = g.units[&uid].pos;
+            g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.unit_visible_to(unit.id, pid)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                    && !(self.barbarian_scouts_are_scouts
+                        && g.players[unit.owner].is_barbarian
+                        && g.rules.units[unit.kind].promotion_class == "recon")
+                    && g.wdist(unit.pos, position) <= SETTLER_ESCORT_THREAT_RADIUS
+            })
+        };
+        if !threatened {
+            if self.settler_guards.remove(&uid).is_some() {
+                self.guard_wait.remove(&uid);
+                think!(self.journal(), Expansion, Detail, "The settler's guard stands down";
+                       "no visible hostile within {SETTLER_ESCORT_THREAT_RADIUS} tiles; \
+                        the army gets its body back");
+            }
+            return None;
         }
         let current = g.units[&uid].pos;
         if let Some(guard) = self.settler_guards.get(&uid).copied() {
@@ -30102,11 +30173,25 @@ impl AdvancedAi {
                 // war economy pays only while there is a war to pay for. An
                 // appointed timed war keeps its own routing via
                 // `war_plan.is_some()` above, unchanged.
+                // ★★★ Cycle three adds the STALL CLOCK, the flag's last
+                // chance before removal: after two repairs (declared-war
+                // gate, front bound) the war regime still priced it at
+                // −7.4 [−10.7, −4.1] over 800 classic pairs (seeds
+                // 48000000..) — a declared, front-bounded war that stops
+                // advancing keeps eating the front's economy for fifty-plus
+                // turns. The routing now also requires the campaign to be
+                // YOUNG OR MOVING: within `WAR_PATIENCE_LIMIT_TURNS`
+                // standard turns of the last observed progress (a foreign
+                // city changing hands; the same ownership-aware clock the
+                // patience flag keeps, observed for either flag). A stalled
+                // war's front cities return to the baseline governor with
+                // the rest of the empire.
                 || (self.war_economy
                     && plan.strategy == GrandStrategy::Conquest
                     && plan
                         .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target)))
+                        .is_some_and(|target| g.is_at_war(pid, target))
+                    && !self.war_patience_exhausted(g))
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }

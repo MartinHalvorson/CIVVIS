@@ -3939,10 +3939,12 @@ mod flagged_gene_repairs {
                     && plan.strategy == GrandStrategy::Conquest
                     && plan
                         .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target)))";
+                        .is_some_and(|target| g.is_at_war(pid, target))
+                    && !self.war_patience_exhausted(g))";
         assert!(
             source.contains(gate),
-            "war-economy's production routing must require a declared war"
+            "war-economy's production routing must require a declared war \
+             that is still young or moving (the cycle-three stall clock)"
         );
         assert_eq!(
             source
@@ -4054,6 +4056,24 @@ mod flagged_gene_repairs {
             !source.contains("finishes {} before the lane's strategic pick"),
             "the naive building preemption must stay reverted"
         );
+    }
+
+    /// Cycle three's three gates keep their shapes: the escort machinery
+    /// engages on a visible threat and releases on quiet ground; the war
+    /// economy requires a young-or-moving war; the campus coverage promise
+    /// reads the same conversion-race signal that repaired wide-map.
+    #[test]
+    fn cycle_three_gates_are_wired() {
+        let source = include_str!("../advanced.rs");
+        for needle in [
+            "<= SETTLER_ESCORT_THREAT_RADIUS",
+            "if self.settler_guards.remove(&uid).is_some() {",
+            "&& !self.war_patience_exhausted(g))",
+            "if self.war_patience || self.war_economy {",
+            "&& !conversion_race_live;",
+        ] {
+            assert!(source.contains(needle), "missing {needle:?}");
+        }
     }
 
     /// `wide-map-capacity`: the wide target stands while a religious victory
@@ -19033,7 +19053,15 @@ fn blocked_land_settler_links_to_one_escort_and_the_escort_leads() {
 /// plains disk, a settler with a committed target 4-8 tiles out, and a
 /// clean unit slate. Returns (game, source, target).
 fn stacked_escort_fixture() -> (Game, Pos, Pos) {
-    let mut game = Game::new_full(1, 24, 16, 8_119, 120, 0, false);
+    // Two majors at war: since the cycle-three repair, the escort machinery
+    // engages only under a visible threat, so each test spawns the raider
+    // its scenario needs.
+    let mut game = Game::new_full(2, 24, 16, 8_119, 120, 0, false);
+    game.record_contact(0, 1);
+    game.at_war.insert((0, 1));
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
     let founding_settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -19098,6 +19126,9 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     ai.settler_targets.insert(settler, target);
     let plan = stacked_escort_plan(&game);
 
+    // The repaired machinery engages only under threat: a raider shadows
+    // the expedition, re-seated beside the settler every turn.
+    let mut raider = None;
     let mut last = game.wdist(source, target);
     for _ in 0..8 {
         for unit in [settler, guard] {
@@ -19107,6 +19138,22 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
                 unit.fortified = false;
             }
         }
+        if let Some(old) = raider.take() {
+            game.remove_unit(old);
+        }
+        let beside = game
+            .wdisk(game.units[&settler].pos, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, game.units[&settler].pos) == 2
+                    && *position != target
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("open ground beside the settler");
+        raider = Some(game.spawn_test_unit("warrior", 1, beside));
         ai.advanced_settler_step(&mut game, 0, settler);
         if !game.units.contains_key(&settler) {
             // Founded: the march is over and the pairing held throughout.
@@ -19363,6 +19410,23 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
             })
             .expect("fixture has a lagging guard post");
     let guard = game.spawn_test_unit("warrior", 0, lagging);
+    // The repaired machinery engages only under threat: a raider stands six
+    // tiles out — inside the engage radius, outside capture reach, so the
+    // scene exercises the pure wait rather than the threatened fallback.
+    let raider_post = game
+        .wdisk(source, 6)
+        .into_iter()
+        .find(|position| {
+            game.wdist(source, *position) == 6
+                && *position != lagging
+                && game.units_at(*position).is_empty()
+                && game
+                    .map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        })
+        .expect("fixture has a raider post");
+    game.spawn_test_unit("warrior", 1, raider_post);
     let mut ai = AdvancedAi::new();
     ai.enable_stacked_escort();
     ai.settler_targets.insert(settler, target);
@@ -19501,15 +19565,21 @@ fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
         "the fallback is journaled"
     );
 
-    // Quiet: the same settler waits in place, as before.
+    // Quiet: since the cycle-three repair the machinery stands down with no
+    // visible hostile in reach — the settler marches instead of paying for a
+    // guard against a risk that is not there, and no binding is held.
     let (mut calm, settler, _guard, source) = build(false);
     let mut ai = AdvancedAi::new();
     ai.enable_stacked_escort();
     calm.units.get_mut(&settler).unwrap().moves_left = 2.0;
     let _ = ai.advanced_settler_step(&mut calm, 0, settler);
-    assert_eq!(
+    assert_ne!(
         calm.units[&settler].pos, source,
-        "on a quiet tile the settler holds for its guard"
+        "on quiet ground the escort stands down and the settler marches"
+    );
+    assert!(
+        ai.settler_guards.is_empty(),
+        "no guard is bound against a risk that is not there"
     );
 }
 
