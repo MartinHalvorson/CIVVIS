@@ -1583,7 +1583,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
             refresh_seconds=None, no_peace_deterrence=False, without=[],
-            no_counter_resolutions=False,
+            no_counter_resolutions=False, combat_frames=0, replan_frames=2,
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1601,6 +1601,19 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             "--abandon-below-win-rate",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_mid_turn_frames_reach_the_play_command(self):
+        """The combat frame (#2132) was never forwarded by the climb, so no
+        ladder run ever played it; both frame counts now cross verbatim, the
+        replan frames on by default and withholdable with 0."""
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "2")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "0")
+        cmd = climb.play_command(self._play_args(replan_frames=0, combat_frames=1), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "0")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "1")
 
     def test_a_withheld_deterrence_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",

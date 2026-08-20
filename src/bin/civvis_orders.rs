@@ -1048,6 +1048,48 @@ fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usiz
     (out, deferred, coalesced)
 }
 
+/// `step_and_reassess` on the bridge: cut each unit's PURE walk (a MOVE_TO
+/// with no later order for the same unit this frame) at its first unrevealed
+/// hex, the one `first_unknown_coalesced_steps` recorded before the walk was
+/// folded. A walk that is all on known ground is left alone — there is
+/// nothing to look at — and a walk with a follow-up (a strike, a found) is
+/// left alone because the follow-up expects the unit where the walk ends.
+/// Returns how many walks were cut.
+fn cut_walks_at_first_unknown(
+    orders: &mut [Order],
+    first_unknown_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
+) -> usize {
+    let mut orders_per_unit: std::collections::BTreeMap<i64, usize> =
+        std::collections::BTreeMap::new();
+    for order in orders.iter() {
+        if order.kind == "unit" {
+            if let Some(unit) = order.subject {
+                *orders_per_unit.entry(unit).or_default() += 1;
+            }
+        }
+    }
+    let mut cut = 0;
+    for order in orders.iter_mut() {
+        if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
+            continue;
+        }
+        let Some(unit) = order.subject else {
+            continue;
+        };
+        if orders_per_unit.get(&unit).copied().unwrap_or(0) != 1 {
+            continue;
+        }
+        let Some(&edge) = first_unknown_steps.get(&unit) else {
+            continue;
+        };
+        if order.pos.is_some() && order.pos != Some(edge) {
+            order.pos = Some(edge);
+            cut += 1;
+        }
+    }
+    cut
+}
+
 /// Unit orders that follow an earlier order for the same unit in this turn's
 /// list — the ones the mod's per-unit queue will hold until that earlier order
 /// has settled. Zero on an unsequenced turn by construction.
@@ -3249,6 +3291,19 @@ fn decide(
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
     if host_frontier_probes > 0 {
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
+    }
+
+    // `step_and_reassess`, bridge half: a pure walk that crosses into the
+    // unknown stops at its first unrevealed hex, so the host walks the unit
+    // to the edge of what the seat knows, the mod re-exports what it saw
+    // (`CivvisTiles.sweep` + a replan frame), and the frame's re-plan spends
+    // the rest of the movement on the new ground. Only when the mod can open
+    // that frame; against an older mod the cut would strand the movement.
+    if ai.step_and_reassess && state.seat.replan_frames {
+        let cut = cut_walks_at_first_unknown(&mut orders, &first_unknown_steps);
+        if cut > 0 {
+            note_bits.push(format!("frontier_cuts={cut}"));
+        }
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -7692,6 +7747,34 @@ mod tests {
         assert_eq!(orders[0].pos, Some((4, 5)));
         assert_eq!(orders[1].subject, Some(99));
         assert_eq!(orders[2].kind, "research");
+    }
+
+    /// `step_and_reassess` on the bridge: a pure walk into the unknown is cut
+    /// at its first unrevealed hex; a walk on known ground, and a walk with a
+    /// follow-up behind it, keep their furthest hex.
+    #[test]
+    fn a_walk_into_the_unknown_is_cut_at_its_first_unrevealed_hex() {
+        let mut orders = vec![
+            // scout 7: walk folded to (12, 11), first unknown hop (11, 10)
+            unit_order(7, "MOVE_TO", Some((12, 11))),
+            // warrior 8: walk entirely on known ground — no unknown hop
+            unit_order(8, "MOVE_TO", Some((3, 3))),
+            // archer 9: walk then strike — the strike expects the far tile
+            unit_order(9, "MOVE_TO", Some((20, 20))),
+            unit_order(9, "RANGE_ATTACK", Some((21, 20))),
+            // settler 10: already exactly at its first unknown hop
+            unit_order(10, "MOVE_TO", Some((5, 5))),
+        ];
+        let mut edges = std::collections::BTreeMap::new();
+        edges.insert(7, (11, 10));
+        edges.insert(9, (19, 20));
+        edges.insert(10, (5, 5));
+
+        assert_eq!(cut_walks_at_first_unknown(&mut orders, &edges), 1);
+        assert_eq!(orders[0].pos, Some((11, 10)), "the scout stops where the known ends");
+        assert_eq!(orders[1].pos, Some((3, 3)), "known ground: untouched");
+        assert_eq!(orders[2].pos, Some((20, 20)), "a walk with a follow-up: untouched");
+        assert_eq!(orders[4].pos, Some((5, 5)), "already at the edge: not counted");
     }
 
     /// A settler with two movement points logs two hex steps; the host must be

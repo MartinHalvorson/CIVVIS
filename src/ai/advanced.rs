@@ -3750,6 +3750,13 @@ pub struct AdvancedAi {
     /// now see). The rest of the batch keeps its plan: another unit's reveal
     /// is not this unit's new fact unless it also walks into it.
     ///
+    /// Serially (every evaluator and the live decider run without a pool, so
+    /// each step is already re-decided sighted) the gene's other leg acts: a
+    /// step that brings a hostile into view dirties the force groups, which
+    /// are otherwise re-formed only by an attack — the unit that saw the
+    /// barbarian horsemen, and every unit after it, move on the board with
+    /// them on it (`advance_unit_serial`, `reveal_regroups`).
+    ///
     /// On the live bridge the same gene is the brain half of the mid-turn
     /// replan frame: `civvis_orders` cuts a unit's coalesced walk at its
     /// first unrevealed hex when the seat advertises `replan_frames`, so the
@@ -3759,9 +3766,11 @@ pub struct AdvancedAi {
     /// anchor; on for the live bridge and the repair bundle; priced by
     /// `gene_screen` as `step-and-reassess`. See `docs/LIVE_TACTICS.md` §11.
     pub step_and_reassess: bool,
-    /// How many blind plans `step_and_reassess` cut short this game — the
-    /// gene's own fires-check, read by its tests and the decide note.
+    /// How many blind plans `step_and_reassess` cut short this game, and how
+    /// many steps brought a hostile into view and re-formed the force groups
+    /// — the gene's own fires-checks, read by its tests.
     pub step_reassessed: u32,
+    pub reveal_regroups: u32,
 
     /// Admit the friendly-volley extension without the rest of the closed
     /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
@@ -4709,6 +4718,7 @@ impl AdvancedAi {
             joint_reach_lines: true,
             step_and_reassess: false,
             step_reassessed: 0,
+            reveal_regroups: 0,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -28675,6 +28685,20 @@ impl AdvancedAi {
             && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
     }
 
+    /// Hostile units this seat can see right now: barbarians and anyone it
+    /// is at war with, on a tile in its current sight.
+    fn visible_hostiles(g: &Game, pid: usize) -> usize {
+        let frame = g.player_vision_frame(pid);
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && (g.barb_pid == Some(unit.owner) || g.at_war.contains(&(pid, unit.owner)))
+                    && g.sees(&frame, unit.pos)
+            })
+            .count()
+    }
+
     fn advance_unit_serial(
         &mut self,
         g: &mut Game,
@@ -28691,6 +28715,16 @@ impl AdvancedAi {
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
+            // `step_and_reassess`: a step that brings a hostile into view is
+            // new information for every unit still to move. The force groups
+            // are otherwise re-formed only when an ATTACK dirties them
+            // ("movement cannot change the opposing force") — but a step
+            // that reveals one does exactly that.
+            let hostiles_before = if self.step_and_reassess {
+                Self::visible_hostiles(g, pid)
+            } else {
+                0
+            };
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -28718,8 +28752,18 @@ impl AdvancedAi {
                 break;
             }
             took_a_turn = true;
+            self.note_sightings(g, pid, hostiles_before);
         }
         took_a_turn
+    }
+
+    /// After a sighted step: if more hostiles are in view than before it,
+    /// the force groups are re-formed before the next military step.
+    fn note_sightings(&mut self, g: &Game, pid: usize, hostiles_before: usize) {
+        if self.step_and_reassess && Self::visible_hostiles(g, pid) > hostiles_before {
+            self.force_groups_dirty = true;
+            self.reveal_regroups += 1;
+        }
     }
 
     fn plan_general_unit_turn(
