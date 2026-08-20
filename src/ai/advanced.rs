@@ -759,6 +759,12 @@ pub struct StrategyCensus {
     pub arrival_wave_holds: u32,
     pub arrival_wave_releases: u32,
     pub arrival_wave_lone: u32,
+    /// `step_and_reassess`: steps that brought a hostile into view and
+    /// re-formed the force groups (serial path), and blind batch plans cut
+    /// at the step that revealed new ground (parallel path). Zero unless the
+    /// flag is on; zero under the flag says it never fired.
+    pub reveal_regroups: u32,
+    pub step_reassessed: u32,
 }
 
 impl StrategyCensus {
@@ -820,6 +826,8 @@ impl StrategyCensus {
         self.arrival_wave_holds += other.arrival_wave_holds;
         self.arrival_wave_releases += other.arrival_wave_releases;
         self.arrival_wave_lone += other.arrival_wave_lone;
+        self.reveal_regroups += other.reveal_regroups;
+        self.step_reassessed += other.step_reassessed;
     }
 }
 
@@ -3766,11 +3774,6 @@ pub struct AdvancedAi {
     /// anchor; on for the live bridge and the repair bundle; priced by
     /// `gene_screen` as `step-and-reassess`. See `docs/LIVE_TACTICS.md` §11.
     pub step_and_reassess: bool,
-    /// How many blind plans `step_and_reassess` cut short this game, and how
-    /// many steps brought a hostile into view and re-formed the force groups
-    /// — the gene's own fires-checks, read by its tests.
-    pub step_reassessed: u32,
-    pub reveal_regroups: u32,
 
     /// Admit the friendly-volley extension without the rest of the closed
     /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
@@ -4717,8 +4720,6 @@ impl AdvancedAi {
             joint_tactics_forced_off: false,
             joint_reach_lines: true,
             step_and_reassess: false,
-            step_reassessed: 0,
-            reveal_regroups: 0,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -28762,7 +28763,7 @@ impl AdvancedAi {
     fn note_sightings(&mut self, g: &Game, pid: usize, hostiles_before: usize) {
         if self.step_and_reassess && Self::visible_hostiles(g, pid) > hostiles_before {
             self.force_groups_dirty = true;
-            self.reveal_regroups += 1;
+            self.census.reveal_regroups += 1;
         }
     }
 
@@ -28892,7 +28893,7 @@ impl AdvancedAi {
                 // finish; the hops it DID take are what the reversal guard
                 // must know before the sighted continuation chooses a step.
                 self.base.record_walked_steps(uid, g.turn, walked);
-                self.step_reassessed += 1;
+                self.census.step_reassessed += 1;
                 took_a_turn |= self.advance_unit_serial(
                     g,
                     pid,

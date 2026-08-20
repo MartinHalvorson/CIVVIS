@@ -292,6 +292,20 @@ that change how the tool is read:
   `governor-every-lane` here, against `advanced_every_lane` at −62 Elo compact /
   −95 deployment over 400 pairs per gate (PR #1955).
 
+## A Δ of exactly zero is a gene that never fired, not a null
+
+`step-and-reassess` (2026-08-20, `docs/LIVE_TACTICS.md` §11) first screened
+**+0.0 [+0.0, +0.0]** on both axes over 204 pairs: every pair's two games
+ended identically. That is not "no effect" — a gene with any reach at all
+moves at least the score share of some game — it is the signature of a gene
+whose code path is never entered in the regime the screen plays. The cause
+was structural: its first cut lived only on the parallel unit planner, and
+the only thing that installs a `WorkPool` is the interactive `civvis --jobs`
+CLI; every evaluator, `gene_screen` included, and the live decider run units
+serially. The repaired gene carries a serial leg and the next 41 pairs already
+differed. Read the interval's width before the sign: a zero-width interval is
+a fires-check failure, and the fix is in the gene, not in more pairs.
+
 ## What it is not
 
 - Not `gene_census`, which asks whether a continuous `Weights` gene moves an

@@ -28097,7 +28097,7 @@ fn a_blind_plan_stops_at_the_step_that_revealed_new_ground() {
             "fixture: the walk must uncover ground the unit did not know"
         );
         if reassess {
-            assert_eq!(ai.step_reassessed, 1, "the reveal on the first step cut the plan");
+            assert_eq!(ai.census.step_reassessed, 1, "the reveal on the first step cut the plan");
             assert_ne!(board.units[&uid].pos, a, "the revealing step itself was taken");
             assert!(
                 ai.base
@@ -28108,7 +28108,7 @@ fn a_blind_plan_stops_at_the_step_that_revealed_new_ground() {
                 "the reversal guard remembers the hop the unit really took"
             );
         } else {
-            assert_eq!(ai.step_reassessed, 0);
+            assert_eq!(ai.census.step_reassessed, 0);
             assert_eq!(board.units[&uid].pos, d, "without the gene the blind walk is finished");
         }
     }
@@ -28163,7 +28163,7 @@ fn a_step_that_sights_a_hostile_dirties_the_force_groups() {
         assert!(AdvancedAi::visible_hostiles(&board, 0) > hostiles_before);
         ai.note_sightings(&board, 0, hostiles_before);
         assert_eq!(ai.force_groups_dirty, reassess, "dirtied only with the gene, reassess={reassess}");
-        assert_eq!(ai.reveal_regroups, u32::from(reassess));
+        assert_eq!(ai.census.reveal_regroups, u32::from(reassess));
         // A step that sights nothing new leaves the groups alone either way.
         ai.force_groups_dirty = false;
         ai.note_sightings(&board, 0, AdvancedAi::visible_hostiles(&board, 0));
@@ -28493,4 +28493,28 @@ fn a_founding_is_priced_on_the_ground_the_settler_stood_on() {
         "the journal prices the ground the settler stood on ({before:.1}), \
          not the city it became ({after:.1}); got {line}"
     );
+}
+
+/// Fires-check for `step_and_reassess`, run by hand: four 4p games with the
+/// repair bundle, counting sightings that re-formed the force groups.
+/// `cargo test --profile ci --lib -- --ignored --nocapture step_and_reassess_fires_check`
+#[test]
+#[ignore]
+fn step_and_reassess_fires_check() {
+    for seed in 0..4u64 {
+        let mut game = Game::new(4, 60, 38, 97 + seed, 150, 6);
+        let mut ais = AdvancedAi::fleet(&game);
+        for ai in ais.iter_mut() {
+            ai.enable_engine_repairs();
+        }
+        crate::ai::run_game(&mut game, &mut ais);
+        let mut census = StrategyCensus::default();
+        for ai in ais.iter().take(4) {
+            census.absorb(&ai.strategy_census());
+        }
+        eprintln!(
+            "FIRES seed={seed} t{} sightings={} blind_cuts={} engage={} hold={}",
+            game.turn, census.reveal_regroups, census.step_reassessed, census.engage, census.hold
+        );
+    }
 }
