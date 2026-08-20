@@ -7606,26 +7606,28 @@ impl AdvancedAi {
         // is not subtle — two thirds of native games end by RELIGIOUS
         // conversion, a religious victory is won by converting cities, and
         // every extra unconverted city this flag buys is another follower
-        // for the rival's clock. So the wide target now stands down while
-        // the empire is measurably bleeding the conversion race: three-plus
-        // cities with at least a third of them flying somebody else's faith.
-        // A healthy empire keeps the full wide capacity; a bleeding one
-        // stops digging and lets production and faith answer the race
-        // instead of feeding it.
-        let conversion_bleeding = {
-            let own: Vec<&crate::game::City> =
-                g.cities.values().filter(|city| city.owner == pid).collect();
-            let faith = g.players[pid].religion.as_deref();
-            let foreign = own
-                .iter()
-                .filter(|city| {
-                    g.city_religion(city)
-                        .is_some_and(|majority| Some(majority) != faith)
-                })
-                .count();
-            own.len() >= 3 && foreign * 3 >= own.len()
-        };
-        let map_capacity = if self.wide_map_capacity && !conversion_bleeding {
+        // for the rival's clock.
+        // (Second cut, same day: the first gate stood the target down once a
+        // third of our cities flew a foreign faith. Measured on 1,200
+        // verification pairs (seeds 43000000..) that signal arrives ~t120,
+        // AFTER the capacity is consumed — the paired cities delta did not
+        // move (+2.68 → +2.78). The regime split of the 4,000 screened pairs
+        // names the early fact instead: +9.0 pp in games that do NOT end by
+        // conversion (and +19.2, z +18.5, in the domination,score screen)
+        // against −7.5 pp in games that do. So: the wide target stands while
+        // a religious victory is disabled, or until the first RIVAL religion
+        // is founded (~t40–70, before the settling window closes); from that
+        // moment the conversion race is live and the narrow target stands.
+        // A war-lane game keeps the full +19 by construction.)
+        let conversion_race_live = g.victory_conditions.religious
+            && g.players.iter().any(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && player.religion.is_some()
+            });
+        let map_capacity = if self.wide_map_capacity && !conversion_race_live {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
             // twelve. A fresh live mirror knows the world's dimensions but
             // deliberately carries only revealed terrain, so its counted
@@ -7669,7 +7671,7 @@ impl AdvancedAi {
         // leaving the current live opening bound at three cities. Start that
         // plan at the measured six-city floor; ordinary Advanced and the
         // frozen anchor retain three.
-        let city_floor = if self.wide_map_capacity && !conversion_bleeding {
+        let city_floor = if self.wide_map_capacity && !conversion_race_live {
             self.city_target_floor.max(PRODUCTION_CITY_TARGET_FLOOR)
         } else {
             self.city_target_floor

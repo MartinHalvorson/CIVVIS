@@ -3953,27 +3953,29 @@ mod flagged_gene_repairs {
         );
     }
 
-    /// `wide-map-capacity`: the wide target stands down while a third of a
-    /// three-plus-city empire flies somebody else's faith.
+    /// `wide-map-capacity`: the wide target stands while a religious victory
+    /// is disabled or no rival has founded a religion; from the first rival
+    /// founding the conversion race is live and the narrow target stands.
+    /// (The first-cut bleed gate measured inert — its signal arrived ~t120,
+    /// after the capacity was consumed.)
     #[test]
-    fn wide_map_capacity_stands_down_while_bleeding_conversion() {
+    fn wide_map_capacity_stands_down_once_the_conversion_race_is_live() {
         let source = include_str!("../advanced.rs");
         for needle in [
-            "let conversion_bleeding = {",
-            "self.wide_map_capacity && !conversion_bleeding",
-            "own.len() >= 3 && foreign * 3 >= own.len()",
+            "let conversion_race_live = g.victory_conditions.religious",
+            "&& player.religion.is_some()",
         ] {
             assert!(
                 source.contains(needle),
-                "wide-map bleed gate must keep its shape: missing {needle:?}"
+                "wide-map race gate must keep its shape: missing {needle:?}"
             );
         }
         assert_eq!(
             source
-                .matches("self.wide_map_capacity && !conversion_bleeding")
+                .matches("self.wide_map_capacity && !conversion_race_live")
                 .count(),
             2,
-            "both the capacity and the floor read the bleed gate"
+            "both the capacity and the floor read the race gate"
         );
     }
 }
