@@ -17988,7 +17988,10 @@ impl AdvancedAi {
                             }
                             Some((spec.cost, item))
                         })
-                        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1))))
+                        .min_by(|a, b| {
+                            a.0.total_cmp(&b.0)
+                                .then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1)))
+                        })
                         .map(|(_, item)| item)
                 };
                 if let Some(item) = unfinished {

@@ -4007,9 +4007,7 @@ mod flagged_gene_repairs {
         } else {
             g.player_city_ids(0)
                 .into_iter()
-                .find(|cid| {
-                    g.wdist(g.cities[cid].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS
-                })
+                .find(|cid| g.wdist(g.cities[cid].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS)
                 .unwrap_or(near)
         };
         if g.wdist(g.cities[&near].pos, enemy_capital.1) > WAR_ECONOMY_FRONT_RADIUS {
