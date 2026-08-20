@@ -12319,7 +12319,7 @@ end;
 -- ends as it always did. Every frame re-arms the per-unit queue's tick
 -- budget, so a turn with N frames may hold up to (N+1) x OrderQueueMaxTicks.
 -- One bare global table (200-local ceiling).
-CivvisFrames = { current = 0, strikes = 0, revealed = 0, movers = 0, reason = nil };
+CivvisFrames = { current = 0, strikes = 0, revealed = 0, movers = 0, reason = nil, settled = false };
 
 CivvisFrames.reset = function()
 	CivvisFrames.current = 0;
@@ -12327,6 +12327,10 @@ CivvisFrames.reset = function()
 	CivvisFrames.revealed = 0;
 	CivvisFrames.movers = 0;
 	CivvisFrames.reason = nil;
+	-- True once the turn declined its next frame: `settleTurn` is called
+	-- again on every later tick of the turn (blockers, end-turn retries),
+	-- and the sweep must not run on each of them.
+	CivvisFrames.settled = false;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -12387,6 +12391,7 @@ CivvisFrames.begin = function(player, pid, turn)
 	local reason = CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
+	CivvisFrames.settled = false;
 	local strikes, revealed = CivvisFrames.strikes, CivvisFrames.revealed;
 	CivvisFrames.strikes = 0;
 	CivvisFrames.revealed = 0;
@@ -13195,10 +13200,13 @@ local function settleTurn(player, pid, turn, playFallback)
 		-- ground was revealed that somebody can still act on, and frames are
 		-- enabled, open the next one: the brain re-plans the same turn on the
 		-- board as it now stands. See CivvisFrames.
-		CivvisFrames.observe(player, pid, turn);
-		if CivvisFrames.wanted() then
-			CivvisFrames.begin(player, pid, turn);
-			return false;
+		if not CivvisFrames.settled then
+			CivvisFrames.observe(player, pid, turn);
+			if CivvisFrames.wanted() then
+				CivvisFrames.begin(player, pid, turn);
+				return false;
+			end
+			CivvisFrames.settled = true;
 		end
 		return true;
 	end

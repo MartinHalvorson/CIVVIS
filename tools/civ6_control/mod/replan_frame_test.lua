@@ -254,6 +254,14 @@ revealed[key(2, 0)] = true
 frames.observe(player, PID, 12)
 check("the cap holds at ReplanFrames", frames.wanted(), false)
 
+-- 3b. Once the turn declined its next frame it is settled: a later tick
+-- does not sweep again (the latch), and a new frame or turn clears it.
+frames.reset()
+check("a fresh turn is not settled", frames.settled, false)
+frames.settled = true
+beginFrame(12)
+check("begin clears the latch", frames.settled, false)
+
 -- 4. Revealed ground with nobody to move on it opens nothing.
 frames.reset()
 host.units[5].moves = 0
