@@ -2804,25 +2804,42 @@ fn configure_live_bridge(
     Ok(())
 }
 
+/// The immutable live-arm identity. Keeping it as one value prevents a new
+/// experimental gene from growing the already busy turn-decider signature.
+#[derive(Clone, Copy)]
+struct DecisionArm<'a> {
+    war_from_plan: bool,
+    forced_on: &'a [&'a str],
+    withheld: &'a [String],
+}
+
+/// Per-run state the decider carries between host turns.
+struct DecisionMemory<'a> {
+    ours: &'a mut std::collections::BTreeMap<i64, String>,
+    host_peace_retries: &'a mut HostPeaceRetries,
+    host_move_refusals: &'a mut HostMoveRefusals,
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
-    war_from_plan: bool,
-    forced_on: &[&str],
-    withheld: &[String],
-    ours: &mut std::collections::BTreeMap<i64, String>,
-    host_peace_retries: &mut HostPeaceRetries,
-    host_move_refusals: &mut HostMoveRefusals,
+    arm: DecisionArm<'_>,
+    memory: DecisionMemory<'_>,
 ) -> String {
+    let DecisionMemory {
+        ours,
+        host_peace_retries,
+        host_move_refusals,
+    } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
     // Every live-bridge adapter and repair, in one place so the headless
     // measurement arms can play the SAME controller the bridge deploys.
     // See `AdvancedAi::enable_live_bridge`.
-    if let Err(why) = configure_live_bridge(ai, forced_on, withheld) {
+    if let Err(why) = configure_live_bridge(ai, arm.forced_on, arm.withheld) {
         // Names were validated before the first board is read. Keep a hard
         // error here too: a registry drift must not silently downgrade a live
         // treatment arm into the deployment arm mid-game.
@@ -2953,10 +2970,10 @@ fn decide(
         }
     }
     let mut policy_changed = false;
-    if !withheld.is_empty() {
+    if !arm.withheld.is_empty() {
         // ⚠ A control arm that does not say so in its own run log is a control
         // arm nobody can trust afterwards. Wall-clock is not provenance.
-        note_bits.push(format!("withheld=[{}]", withheld.join(",")));
+        note_bits.push(format!("withheld=[{}]", arm.withheld.join(",")));
     }
     if !pre_traders.is_empty() {
         note_bits.push(format!(
@@ -3197,7 +3214,7 @@ fn decide(
         // continuity is broken — but with the persistent mirror, CIVVIS should reach
         // its own declaration, and if it does not that is information, not a gap to fill.
         let already = orders.iter().any(|o| o.kind == "war");
-        if war_from_plan && !already {
+        if arm.war_from_plan && !already {
             if let Some(seat) = report.target_player {
                 if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
                     if !rival.at_war {
@@ -4516,6 +4533,11 @@ fn main() {
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    let arm = DecisionArm {
+        war_from_plan,
+        forced_on: &forced_on,
+        withheld: &withheld,
+    };
 
     // Read the board fresh each time: the mod appends to this file every turn.
     let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
@@ -5062,12 +5084,12 @@ fn main() {
             &mut ai,
             &snapshot,
             &state,
-            war_from_plan,
-            &forced_on,
-            &withheld,
-            &mut ours,
-            &mut host_peace_retries,
-            &mut host_move_refusals,
+            arm,
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut host_peace_retries,
+                host_move_refusals: &mut host_move_refusals,
+            },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
@@ -5210,12 +5232,12 @@ fn main() {
                         &mut ai,
                         &snapshot,
                         &state,
-                        war_from_plan,
-                        &forced_on,
-                        &withheld,
-                        &mut ours,
-                        &mut host_peace_retries,
-                        &mut host_move_refusals,
+                        arm,
+                        DecisionMemory {
+                            ours: &mut ours,
+                            host_peace_retries: &mut host_peace_retries,
+                            host_move_refusals: &mut host_move_refusals,
+                        },
                     );
                     live = Some(board);
                     reply
@@ -5237,12 +5259,12 @@ fn main() {
                                 &mut ai,
                                 &snapshot,
                                 &state,
-                                war_from_plan,
-                                &forced_on,
-                                &withheld,
-                                &mut ours,
-                                &mut host_peace_retries,
-                                &mut host_move_refusals,
+                                arm,
+                                DecisionMemory {
+                                    ours: &mut ours,
+                                    host_peace_retries: &mut host_peace_retries,
+                                    host_move_refusals: &mut host_move_refusals,
+                                },
                             );
                             live = Some(fresh);
                             reply
@@ -5270,12 +5292,12 @@ fn main() {
                                     &mut throwaway,
                                     &snapshot,
                                     &state,
-                                    war_from_plan,
-                                    &forced_on,
-                                    &withheld,
-                                    &mut ours,
-                                    &mut host_peace_retries,
-                                    &mut host_move_refusals,
+                                    arm,
+                                    DecisionMemory {
+                                        ours: &mut ours,
+                                        host_peace_retries: &mut host_peace_retries,
+                                        host_move_refusals: &mut host_move_refusals,
+                                    },
                                 )
                             } else {
                                 decide(
@@ -5283,12 +5305,12 @@ fn main() {
                                     &mut ai,
                                     &snapshot,
                                     &state,
-                                    war_from_plan,
-                                    &forced_on,
-                                    &withheld,
-                                    &mut ours,
-                                    &mut host_peace_retries,
-                                    &mut host_move_refusals,
+                                    arm,
+                                    DecisionMemory {
+                                        ours: &mut ours,
+                                        host_peace_retries: &mut host_peace_retries,
+                                        host_move_refusals: &mut host_move_refusals,
+                                    },
                                 )
                             }
                         }
@@ -5721,6 +5743,14 @@ mod tests {
         StateMinor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
+    fn default_decision_arm() -> DecisionArm<'static> {
+        DecisionArm {
+            war_from_plan: false,
+            forced_on: &[],
+            withheld: &[],
+        }
+    }
+
     #[test]
     fn host_peace_backoff_matches_firaxis_retry_window() {
         let mut retries = HostPeaceRetries::default();
@@ -6048,12 +6078,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
         let orders = reply["orders"].as_array().expect("orders are an array");
@@ -6091,12 +6121,12 @@ mod tests {
             &mut confirmed_ai,
             &snapshot,
             &confirmed_state,
-            false,
-            &[],
-            &[],
-            &mut confirmed_ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut confirmed_ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the confirmed decision is JSON");
         let envoys = confirmed["orders"]
@@ -6809,12 +6839,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .unwrap();
         let attacks = reply["orders"]
@@ -6874,12 +6904,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .unwrap();
         let (x, y) = civvis::hex::axial_to_offset(target_pos.0, target_pos.1);
@@ -9519,12 +9549,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -9664,12 +9694,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -9855,12 +9885,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         );
 
         assert!(reply.contains("\"turn\":4"));
@@ -9932,12 +9962,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -10008,12 +10038,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         );
 
         assert!(
