@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 39,
-    "never_named": 21,
+    "named": 40,
+    "never_named": 20,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -19,7 +19,6 @@
       "siege-role": "live_without_siege_role",
       "siege-tracks-wall": "live_without_siege_tracks_wall",
       "stacked-escort": "live_without_stacked_escort",
-      "step-and-reassess": "live_without_step_and_reassess",
       "stranded-settler-discount": "live_without_stranded_settler_discount",
       "suzerain-cards": "live_without_suzerain_cards",
       "war-reinforcement": "live_without_war_reinforcement",
@@ -42,7 +41,6 @@
       "siege-role",
       "siege-tracks-wall",
       "stacked-escort",
-      "step-and-reassess",
       "stranded-settler-discount",
       "suzerain-cards",
       "war-reinforcement",

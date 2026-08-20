@@ -4308,7 +4308,17 @@ fn main() {
             // reason; `LIVE_BRIDGE_TREATMENTS` is `&[&str]` now, so the bound is
             // gone at the declaration and `.as_slice()` on it would resolve to the
             // unstable `str::as_slice` instead.
-            "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
+            // ★★★★ THE LIST IS WHAT THE LEDGER LEFT ON, NOT THE UNIVERSE. Since
+            // the gene ledger (`docs/gene_ledger.json`) decides the deployment
+            // genome, `LIVE_BRIDGE_TREATMENTS` names what COULD be on; this
+            // names what IS — the helpers the screens proved, the opt-ins they
+            // proved, and the host-only flags no screen can price.
+            "treatments": civvis::ai::deployment_treatments(),
+            "ledger_withheld": civvis::elo::LIVE_BRIDGE_TREATMENTS
+                .iter()
+                .filter(|tag| civvis::ai::ledger_default_on(tag) == Some(false))
+                .copied()
+                .collect::<Vec<_>>(),
         })
     );
 

@@ -1,0 +1,2031 @@
+{
+  "kind": "gene_ledger",
+  "rules": {
+    "z_bar": 2.0,
+    "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2, in the deciding regime",
+    "hurts": "the mirror image",
+    "deciding_regime": "native when it resolves, else war when it resolves, else unresolved",
+    "default_on": "verdict == helps"
+  },
+  "sources": [
+    {
+      "path": "docs/gene_screens/2026-08-20-p4-native-6p-allseats-13446-pairs.json",
+      "regime": "native",
+      "complete_pairs": 13446,
+      "family_wise_z": 3.359,
+      "profile": {
+        "players": 6,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "baseline": "repairs",
+        "field": "advanced",
+        "design": null,
+        "start_seed": 46000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-19-p2-war-4p-allseats-3300-pairs.json",
+      "regime": "war",
+      "complete_pairs": 3300,
+      "family_wise_z": 3.359,
+      "profile": {
+        "players": 4,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "domination,score",
+        "all_seats": true,
+        "baseline": "repairs",
+        "field": "advanced",
+        "design": null,
+        "start_seed": 41000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json",
+      "regime": "war",
+      "complete_pairs": 1064,
+      "family_wise_z": 2.638,
+      "profile": {
+        "players": 4,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "domination,score",
+        "all_seats": true,
+        "baseline": "repairs",
+        "field": "advanced",
+        "design": null,
+        "start_seed": 44000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json",
+      "regime": "native",
+      "complete_pairs": 1000,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 4,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": false,
+        "baseline": "repairs",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 50000000
+      }
+    }
+  ],
+  "counts": {
+    "helps": 10,
+    "hurts": 11,
+    "unresolved": 44
+  },
+  "genes": [
+    {
+      "tag": "amenity-district-path",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.238,
+        "win_z": -0.557,
+        "share_delta_pp": -0.015,
+        "share_z": -0.205,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.606,
+        "win_z": 0.522,
+        "share_delta_pp": 0.228,
+        "share_z": 0.797,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "amenity-project-preemption",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.669,
+        "win_z": 1.539,
+        "share_delta_pp": 0.102,
+        "share_z": 1.482,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.939,
+        "win_z": 1.727,
+        "share_delta_pp": 0.261,
+        "share_z": 0.95,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "apostle-promotion-by-role",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.833,
+        "win_z": -1.95,
+        "share_delta_pp": -0.103,
+        "share_z": -1.459,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.03,
+        "win_z": -0.932,
+        "share_delta_pp": -0.246,
+        "share_z": -0.885,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "army-target-weighs-enemy",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.669,
+        "win_z": -1.511,
+        "share_delta_pp": -0.028,
+        "share_z": -0.394,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -2.121,
+        "win_z": -1.921,
+        "share_delta_pp": -0.291,
+        "share_z": -1.08,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "arrival-waves",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.149,
+        "win_z": -0.344,
+        "share_delta_pp": -0.102,
+        "share_z": -1.426,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": -3.008,
+        "win_z": -1.621,
+        "share_delta_pp": -0.485,
+        "share_z": -1.211,
+        "read": "~",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "barbarian-scouts-are-scouts",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 1.101,
+        "win_z": 2.556,
+        "share_delta_pp": 0.156,
+        "share_z": 2.246,
+        "read": "helps * \u00b7 share helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.455,
+        "win_z": 1.276,
+        "share_delta_pp": 0.632,
+        "share_z": 2.152,
+        "read": "share helps *",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "barbarian-walls-one-tier",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.119,
+        "win_z": -0.277,
+        "share_delta_pp": 0.039,
+        "share_z": 0.564,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.152,
+        "win_z": 1.035,
+        "share_delta_pp": 0.151,
+        "share_z": 0.557,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "blind-objective-strength",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.729,
+        "win_z": 1.709,
+        "share_delta_pp": 0.076,
+        "share_z": 1.12,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.667,
+        "win_z": -0.58,
+        "share_delta_pp": 0.221,
+        "share_z": 0.756,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "blind-objective-units",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.119,
+        "win_z": 0.279,
+        "share_delta_pp": 0.02,
+        "share_z": 0.284,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.152,
+        "win_z": -1.029,
+        "share_delta_pp": -0.054,
+        "share_z": -0.194,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "bounded-recovery",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.58,
+        "win_z": 1.319,
+        "share_delta_pp": 0.166,
+        "share_z": 2.414,
+        "read": "share helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.545,
+        "win_z": 0.48,
+        "share_delta_pp": 0.342,
+        "share_z": 1.257,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "buildings-before-projects",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": true,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.461,
+        "win_z": 1.072,
+        "share_delta_pp": 0.232,
+        "share_z": 3.374,
+        "read": "share HELPS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -2.485,
+        "win_z": -2.157,
+        "share_delta_pp": -0.208,
+        "share_z": -0.739,
+        "read": "hurts *",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "camp-party",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.863,
+        "win_z": 1.993,
+        "share_delta_pp": 0.1,
+        "share_z": 1.434,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.515,
+        "win_z": 1.295,
+        "share_delta_pp": 0.468,
+        "share_z": 1.645,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "camp-reach",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.387,
+        "win_z": -0.902,
+        "share_delta_pp": -0.045,
+        "share_z": -0.648,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.212,
+        "win_z": -1.098,
+        "share_delta_pp": -0.367,
+        "share_z": -1.269,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "campus-every-city",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -1.874,
+        "win_z": -4.391,
+        "share_delta_pp": -0.403,
+        "share_z": -5.719,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": -2.444,
+        "win_z": -1.396,
+        "share_delta_pp": -0.554,
+        "share_z": -1.312,
+        "read": "~",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "civilian-rescue",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.119,
+        "win_z": -0.278,
+        "share_delta_pp": 0.115,
+        "share_z": 1.661,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.606,
+        "win_z": -0.555,
+        "share_delta_pp": -0.215,
+        "share_z": -0.756,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "come-ashore",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.342,
+        "win_z": -0.786,
+        "share_delta_pp": 0.095,
+        "share_z": 1.384,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.364,
+        "win_z": -0.313,
+        "share_delta_pp": 0.073,
+        "share_z": 0.242,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "district-coverage",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.208,
+        "win_z": -0.492,
+        "share_delta_pp": -0.059,
+        "share_z": -0.85,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.273,
+        "win_z": -1.169,
+        "share_delta_pp": -0.072,
+        "share_z": -0.267,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "endgame-war-runway",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.074,
+        "win_z": 0.173,
+        "share_delta_pp": -0.019,
+        "share_z": -0.267,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.061,
+        "win_z": -0.054,
+        "share_delta_pp": 0.129,
+        "share_z": 0.451,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "escort-unstick",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "war",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.0,
+        "win_z": -0.0,
+        "share_delta_pp": -0.031,
+        "share_z": -0.45,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -2.606,
+        "win_z": -2.263,
+        "share_delta_pp": -0.263,
+        "share_z": -0.908,
+        "read": "hurts *",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "garrison-under-fire",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 1.368,
+        "win_z": 3.28,
+        "share_delta_pp": 0.23,
+        "share_z": 3.307,
+        "read": "helps * \u00b7 share helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.576,
+        "win_z": 1.395,
+        "share_delta_pp": 0.497,
+        "share_z": 1.804,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "garrison-walls",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -1.086,
+        "win_z": -2.529,
+        "share_delta_pp": -0.13,
+        "share_z": -1.864,
+        "read": "hurts *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.97,
+        "win_z": -0.868,
+        "share_delta_pp": -0.404,
+        "share_z": -1.463,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "governor-every-lane",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -1.116,
+        "win_z": -2.516,
+        "share_delta_pp": -3.377,
+        "share_z": -51.501,
+        "read": "hurts * \u00b7 share HURTS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": -9.023,
+        "win_z": -5.069,
+        "share_delta_pp": -2.74,
+        "share_z": -6.581,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "home-defense",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.595,
+        "win_z": -1.384,
+        "share_delta_pp": -0.021,
+        "share_z": -0.297,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.121,
+        "win_z": -0.106,
+        "share_delta_pp": -0.223,
+        "share_z": -0.802,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "housing-buildings",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.283,
+        "win_z": -0.655,
+        "share_delta_pp": -0.12,
+        "share_z": -1.743,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.182,
+        "win_z": 0.158,
+        "share_delta_pp": 0.13,
+        "share_z": 0.465,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "housing-cards",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.089,
+        "win_z": -0.215,
+        "share_delta_pp": -0.005,
+        "share_z": -0.074,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.152,
+        "win_z": -1.0,
+        "share_delta_pp": -0.151,
+        "share_z": -0.516,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "housing-districts",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.387,
+        "win_z": -0.892,
+        "share_delta_pp": -0.061,
+        "share_z": -0.881,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.758,
+        "win_z": -1.567,
+        "share_delta_pp": -0.477,
+        "share_z": -1.666,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "housing-research",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.521,
+        "win_z": -1.21,
+        "share_delta_pp": -0.185,
+        "share_z": -2.631,
+        "read": "share hurts *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.455,
+        "win_z": -1.302,
+        "share_delta_pp": -0.716,
+        "share_z": -2.566,
+        "read": "share hurts *",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "idle-walkers-close-the-pipeline",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.372,
+        "win_z": -0.864,
+        "share_delta_pp": -0.034,
+        "share_z": -0.485,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.788,
+        "win_z": -0.69,
+        "share_delta_pp": -0.17,
+        "share_z": -0.592,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "joint-tactics",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.357,
+        "win_z": -0.841,
+        "share_delta_pp": 0.04,
+        "share_z": 0.59,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": 2.256,
+        "win_z": 1.178,
+        "share_delta_pp": 0.658,
+        "share_z": 1.584,
+        "read": "~",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "loyalty-policy-defence",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -1.071,
+        "win_z": -2.472,
+        "share_delta_pp": -0.105,
+        "share_z": -1.495,
+        "read": "hurts *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.03,
+        "win_z": -0.89,
+        "share_delta_pp": -0.383,
+        "share_z": -1.345,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "loyalty-rate-alarm",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.654,
+        "win_z": 1.546,
+        "share_delta_pp": 0.47,
+        "share_z": 6.93,
+        "read": "share HELPS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.424,
+        "win_z": -0.373,
+        "share_delta_pp": 0.117,
+        "share_z": 0.415,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "muster-at-command-radius",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.669,
+        "win_z": -1.543,
+        "share_delta_pp": -0.099,
+        "share_z": -1.369,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.545,
+        "win_z": 0.49,
+        "share_delta_pp": -0.084,
+        "share_z": -0.312,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "naval-recon",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.253,
+        "win_z": -0.585,
+        "share_delta_pp": -0.096,
+        "share_z": -1.369,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.182,
+        "win_z": 0.163,
+        "share_delta_pp": -0.024,
+        "share_z": -0.087,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "one-launch-pad",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.461,
+        "win_z": 1.081,
+        "share_delta_pp": 0.037,
+        "share_z": 0.533,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.455,
+        "win_z": -1.302,
+        "share_delta_pp": -0.129,
+        "share_z": -0.456,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "peacetime-deterrence",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.0,
+        "win_z": -0.0,
+        "share_delta_pp": 0.074,
+        "share_z": 1.114,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.788,
+        "win_z": 0.706,
+        "share_delta_pp": 0.301,
+        "share_z": 1.07,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "ranged-line-of-sight",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.149,
+        "win_z": -0.355,
+        "share_delta_pp": -0.016,
+        "share_z": -0.235,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.455,
+        "win_z": 1.276,
+        "share_delta_pp": 0.347,
+        "share_z": 1.224,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "recon-flight",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.03,
+        "win_z": 0.069,
+        "share_delta_pp": 0.05,
+        "share_z": 0.72,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.606,
+        "win_z": -0.527,
+        "share_delta_pp": -0.189,
+        "share_z": -0.644,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "recon-replacement",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.58,
+        "win_z": 1.36,
+        "share_delta_pp": -0.112,
+        "share_z": -1.594,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.273,
+        "win_z": 1.112,
+        "share_delta_pp": -0.154,
+        "share_z": -0.539,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "recorded-tactical-step",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.268,
+        "win_z": 0.621,
+        "share_delta_pp": 0.16,
+        "share_z": 2.346,
+        "read": "share helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.152,
+        "win_z": -1.014,
+        "share_delta_pp": 0.05,
+        "share_z": 0.173,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "relief-targets-the-siege",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.223,
+        "win_z": -0.514,
+        "share_delta_pp": 0.001,
+        "share_z": 0.019,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.697,
+        "win_z": 1.445,
+        "share_delta_pp": -0.056,
+        "share_z": -0.195,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "religion-sues-peace",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.491,
+        "win_z": 1.162,
+        "share_delta_pp": 0.068,
+        "share_z": 0.959,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.606,
+        "win_z": -0.541,
+        "share_delta_pp": -0.467,
+        "share_z": -1.635,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "score-horizon",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.699,
+        "win_z": 1.599,
+        "share_delta_pp": 0.067,
+        "share_z": 0.981,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.758,
+        "win_z": -1.532,
+        "share_delta_pp": -0.251,
+        "share_z": -0.857,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "settler-guard-holds",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.089,
+        "win_z": -0.215,
+        "share_delta_pp": 0.003,
+        "share_z": 0.049,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.394,
+        "win_z": -1.25,
+        "share_delta_pp": -0.425,
+        "share_z": -1.556,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "settler-site-agreement",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.416,
+        "win_z": -0.975,
+        "share_delta_pp": -0.007,
+        "share_z": -0.107,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.667,
+        "win_z": -0.597,
+        "share_delta_pp": 0.104,
+        "share_z": 0.387,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "settler-stack-discipline",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -2.32,
+        "win_z": -5.476,
+        "share_delta_pp": -0.309,
+        "share_z": -4.43,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.606,
+        "win_z": -0.537,
+        "share_delta_pp": -0.25,
+        "share_z": -0.913,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "settler-target-hysteresis",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.164,
+        "win_z": -0.382,
+        "share_delta_pp": -0.039,
+        "share_z": -0.559,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.667,
+        "win_z": 0.58,
+        "share_delta_pp": 0.113,
+        "share_z": 0.404,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "siege-commitment",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.803,
+        "win_z": -1.869,
+        "share_delta_pp": 0.018,
+        "share_z": 0.267,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.03,
+        "win_z": 0.921,
+        "share_delta_pp": -0.006,
+        "share_z": -0.023,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "siege-is-progress",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -1.279,
+        "win_z": -3.023,
+        "share_delta_pp": -0.093,
+        "share_z": -1.297,
+        "read": "hurts *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 2.303,
+        "win_z": 1.995,
+        "share_delta_pp": 0.508,
+        "share_z": 1.791,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "siege-muster",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.521,
+        "win_z": -1.208,
+        "share_delta_pp": 0.216,
+        "share_z": 3.133,
+        "read": "share helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.424,
+        "win_z": 0.376,
+        "share_delta_pp": 0.269,
+        "share_z": 0.956,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "siege-role",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.595,
+        "win_z": 1.402,
+        "share_delta_pp": -0.069,
+        "share_z": -0.992,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.061,
+        "win_z": -0.053,
+        "share_delta_pp": 0.176,
+        "share_z": 0.634,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "siege-tracks-wall",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 1.011,
+        "win_z": 2.398,
+        "share_delta_pp": 0.044,
+        "share_z": 0.621,
+        "read": "helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.273,
+        "win_z": 1.124,
+        "share_delta_pp": 0.137,
+        "share_z": 0.48,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "slot-kind-tiebreak",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.521,
+        "win_z": 1.217,
+        "share_delta_pp": -0.043,
+        "share_z": -0.625,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.152,
+        "win_z": -1.044,
+        "share_delta_pp": 0.01,
+        "share_z": 0.036,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "stacked-escort",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -2.082,
+        "win_z": -4.814,
+        "share_delta_pp": 0.034,
+        "share_z": 0.486,
+        "read": "HURTS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -3.273,
+        "win_z": -2.842,
+        "share_delta_pp": -0.751,
+        "share_z": -2.621,
+        "read": "hurts * \u00b7 share hurts *",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "step-and-reassess",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 1000,
+        "n_on": 1000,
+        "n_off": 1000,
+        "win_delta_pp": 0.2,
+        "win_z": 0.277,
+        "share_delta_pp": 0.005,
+        "share_z": 0.064,
+        "read": "~",
+        "source": "2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json"
+      },
+      "war": null
+    },
+    {
+      "tag": "stranded-settler-discount",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.104,
+        "win_z": 0.242,
+        "share_delta_pp": 0.057,
+        "share_z": 0.813,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 1.394,
+        "win_z": 1.253,
+        "share_delta_pp": 0.172,
+        "share_z": 0.592,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "strategic-wonders",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.416,
+        "win_z": 0.977,
+        "share_delta_pp": 0.044,
+        "share_z": 0.63,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.303,
+        "win_z": 0.262,
+        "share_delta_pp": 0.209,
+        "share_z": 0.739,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "strike-opening",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.402,
+        "win_z": 0.946,
+        "share_delta_pp": 0.106,
+        "share_z": 1.54,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.788,
+        "win_z": 0.682,
+        "share_delta_pp": -0.035,
+        "share_z": -0.122,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "suzerain-cards",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.283,
+        "win_z": 0.65,
+        "share_delta_pp": -0.009,
+        "share_z": -0.122,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.121,
+        "win_z": -0.105,
+        "share_delta_pp": 0.033,
+        "share_z": 0.117,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "war-economy",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -3.838,
+        "win_z": -8.92,
+        "share_delta_pp": -0.735,
+        "share_z": -10.686,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": -17.857,
+        "win_z": -10.531,
+        "share_delta_pp": -3.73,
+        "share_z": -9.854,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "war-patience",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.059,
+        "win_z": 0.136,
+        "share_delta_pp": -0.051,
+        "share_z": -0.733,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -1.455,
+        "win_z": -1.291,
+        "share_delta_pp": -0.021,
+        "share_z": -0.074,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "war-reinforcement",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.982,
+        "win_z": 2.277,
+        "share_delta_pp": 0.119,
+        "share_z": 1.709,
+        "read": "helps *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.909,
+        "win_z": 0.787,
+        "share_delta_pp": 0.428,
+        "share_z": 1.526,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "whole-turn-backtrack-guard",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.773,
+        "win_z": 1.782,
+        "share_delta_pp": 0.022,
+        "share_z": 0.307,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.242,
+        "win_z": 0.219,
+        "share_delta_pp": -0.023,
+        "share_z": -0.084,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "wide-map-capacity",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.699,
+        "win_z": 1.629,
+        "share_delta_pp": 0.326,
+        "share_z": 4.649,
+        "read": "share HELPS **",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 1064,
+        "n_on": 1064,
+        "n_off": 1064,
+        "win_delta_pp": 14.474,
+        "win_z": 8.663,
+        "share_delta_pp": 4.915,
+        "share_z": 13.448,
+        "read": "HELPS ** \u00b7 share HELPS **",
+        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+      }
+    },
+    {
+      "tag": "wonder-prereq-reach",
+      "verdict": "hurts",
+      "default_on": false,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": -0.907,
+        "win_z": -2.085,
+        "share_delta_pp": -0.025,
+        "share_z": -0.357,
+        "read": "hurts *",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": 0.364,
+        "win_z": 0.315,
+        "share_delta_pp": 0.158,
+        "share_z": 0.546,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    },
+    {
+      "tag": "wonder-ring-settle-value",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 13446,
+        "n_on": 13446,
+        "n_off": 13446,
+        "win_delta_pp": 0.312,
+        "win_z": 0.711,
+        "share_delta_pp": 0.003,
+        "share_z": 0.048,
+        "read": "~",
+        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
+      },
+      "war": {
+        "pairs": 3300,
+        "n_on": 3300,
+        "n_off": 3300,
+        "win_delta_pp": -0.485,
+        "win_z": -0.431,
+        "share_delta_pp": -0.278,
+        "share_z": -1.004,
+        "read": "~",
+        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+      }
+    }
+  ]
+}

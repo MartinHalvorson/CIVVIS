@@ -4094,6 +4094,15 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// guards that they stay out of this file.
 mod treatment_flags;
 
+/// The gene ledger: the screens' verdict per gene and the deployment genome
+/// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
+/// applying it; the table is generated. See `advanced/gene_ledger.rs`.
+pub mod gene_ledger;
+pub use gene_ledger::{
+    deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
+    screenable, GeneLedgerApplied, GeneVerdict, Measure, Verdict,
+};
+
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained

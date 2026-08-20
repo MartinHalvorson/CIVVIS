@@ -86,9 +86,18 @@ use std::time::Instant;
 struct Gene {
     field: &'static str,
     tag: &'static str,
+    /// On after `enable_engine_repairs_universe` — the genome's universe.
     after_setup_on: bool,
     stock_on: bool,
+    /// On in the deployment genome: the ledger's `helps`, or — for a gene the
+    /// ledger has not measured — the universe state. See `gene_ledger.rs`.
+    default_on: bool,
     flip: fn(&mut AdvancedAi),
+}
+
+/// The deployment default for a tag: the ledger's say, else the universe.
+fn ledger_default(tag: &str, universe_on: bool) -> bool {
+    civvis::ai::ledger_default_on(tag).unwrap_or(universe_on)
 }
 
 /// Every gene this screen can vary, in the order the genome bits are written.
@@ -115,6 +124,7 @@ fn gene_table() -> Vec<Gene> {
             tag,
             after_setup_on: true,
             stock_on: false,
+            default_on: ledger_default(tag, true),
             flip: disable,
         });
     }
@@ -124,6 +134,7 @@ fn gene_table() -> Vec<Gene> {
             tag,
             after_setup_on: true,
             stock_on: true,
+            default_on: ledger_default(tag, true),
             flip: disable,
         });
     }
@@ -133,16 +144,68 @@ fn gene_table() -> Vec<Gene> {
             tag,
             after_setup_on: false,
             stock_on: false,
+            default_on: ledger_default(tag, false),
             flip: enable,
         });
     }
     genes
 }
 
+/// How the on-probability of each screened gene is chosen.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Design {
+    /// Each gene on with probability one half; arm 1 is arm 0's exact
+    /// complement. Every gene on in exactly one arm of every pair.
+    Foldover,
+    /// ★★★★ THE HELPFUL GENES PLAY MOST OF THE TIME, AND ARE STILL PRICED.
+    /// Operator directive 2026-08-20: in the large batch tests a helpful gene
+    /// may be on in 90% of games and a harmful one in 10%, and the win rate
+    /// of the 90% is still compared with the win rate of the 10% — for a
+    /// helper the 90% should win more. Each arm is drawn independently from
+    /// the prior (both arms still share the map and seat), the per-gene
+    /// contrast is the marginal on-versus-off difference with errors
+    /// clustered by game, and the adjusted column is the map-paired OLS on
+    /// the arms' differences, which cancels the map exactly where the arms
+    /// differ on a gene.
+    Prior,
+}
+
+impl Design {
+    fn id(self) -> &'static str {
+        match self {
+            Design::Foldover => "foldover",
+            Design::Prior => "prior",
+        }
+    }
+}
+
+/// The on-probability of a gene under the prior design, from its ledger
+/// verdict: helps 0.9, hurts 0.1, unresolved (or unmeasured) 0.5 unless the
+/// operator moves them.
+#[derive(Clone, Copy, Debug)]
+struct PriorWeights {
+    helps: f64,
+    hurts: f64,
+    unresolved: f64,
+}
+
+impl PriorWeights {
+    fn for_tag(&self, tag: &str) -> f64 {
+        match civvis::ai::ledger_verdict(tag).map(|row| row.verdict) {
+            Some(civvis::ai::Verdict::Helps) => self.helps,
+            Some(civvis::ai::Verdict::Hurts) => self.hurts,
+            _ => self.unresolved,
+        }
+    }
+}
+
 /// What the un-screened genes are held at.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Baseline {
-    /// The native repair bundle (`advanced_synergy`): every engine repair on.
+    /// The deployment genome: every gene at the ledger's default (helps on,
+    /// the rest off; unmeasured genes as the universe set them). The default.
+    Best,
+    /// The genome's universe: every engine repair on.
     Repairs,
     /// Production `advanced`: every engine repair off.
     Stock,
@@ -153,7 +216,7 @@ enum Baseline {
 enum Field {
     /// Production `advanced`, the ladder's incumbent.
     Advanced,
-    /// The native repair bundle.
+    /// The native repair bundle as deployed (`advanced_synergy`, ledger applied).
     Repairs,
 }
 
@@ -251,6 +314,19 @@ struct Header {
     /// classic one-treated-seat design.
     #[serde(default)]
     all_seats: bool,
+    /// `foldover` or `prior`. Absent in files written before the prior
+    /// design existed, which means foldover.
+    #[serde(default = "foldover")]
+    design: String,
+    /// Under the prior design, each gene's on-probability in header order
+    /// (un-screened genes carry 0 or 1 for their held state). Empty for a
+    /// foldover file.
+    #[serde(default)]
+    prior: Vec<f64>,
+}
+
+fn foldover() -> String {
+    "foldover".to_string()
 }
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
@@ -288,6 +364,29 @@ fn draw_genome(start_seed: u64, pair: usize, screened: &[bool]) -> Vec<bool> {
         .collect()
 }
 
+/// One arm's genome under the prior design: each screened gene on with its
+/// own probability, seeded from the start seed, the pair and the ARM, so the
+/// two arms of a pair are independent draws on the same map and seat.
+fn draw_genome_prior(
+    start_seed: u64,
+    pair: usize,
+    arm: u8,
+    screened: &[bool],
+    prior: &[f64],
+) -> Vec<bool> {
+    let mut rng = Rng::new(
+        start_seed
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add((pair as u64) * 2 + u64::from(arm))
+            .wrapping_add(0x9E4E_5EED),
+    );
+    screened
+        .iter()
+        .zip(prior)
+        .map(|(&is_screened, &p)| is_screened && rng.chance(p))
+        .collect()
+}
+
 /// The foldover: every screened gene flipped, un-screened genes untouched.
 fn complement(genome: &[bool], screened: &[bool]) -> Vec<bool> {
     genome
@@ -314,12 +413,15 @@ fn treated_seat(
     baseline: Baseline,
 ) -> AdvancedAi {
     let mut ai = AdvancedAi::new();
-    ai.enable_engine_repairs();
+    // The universe, not the deployment genome: every gene is set explicitly
+    // below, and `after_setup_on` describes the universe.
+    ai.enable_engine_repairs_universe();
     for ((gene, &on), &is_screened) in genes.iter().zip(genome).zip(screened) {
         let desired = if is_screened {
             on
         } else {
             match baseline {
+                Baseline::Best => gene.default_on,
                 Baseline::Repairs => gene.after_setup_on,
                 Baseline::Stock => gene.stock_on,
             }
@@ -483,14 +585,21 @@ fn all_seat_genomes(
     players: usize,
     screened: &[bool],
     arm: u8,
+    design: Design,
+    prior: &[f64],
 ) -> Vec<Vec<bool>> {
     (0..players)
-        .map(|seat| {
-            let drawn = draw_genome(start_seed, pair * players + seat, screened);
-            if arm == 0 {
-                drawn
-            } else {
-                complement(&drawn, screened)
+        .map(|seat| match design {
+            Design::Foldover => {
+                let drawn = draw_genome(start_seed, pair * players + seat, screened);
+                if arm == 0 {
+                    drawn
+                } else {
+                    complement(&drawn, screened)
+                }
+            }
+            Design::Prior => {
+                draw_genome_prior(start_seed, pair * players + seat, arm, screened, prior)
             }
         })
         .collect()
@@ -757,6 +866,10 @@ fn adjusted_effects(
 struct GeneEstimate {
     tag: String,
     pairs: usize,
+    /// Games with the gene on / off behind `win_on` / `win_off`. Equal to
+    /// `pairs` each under the foldover; unequal under a prior-weighted draw.
+    n_on: usize,
+    n_off: usize,
     win_on: f64,
     win_off: f64,
     /// Win-rate Δ (on − off) with its standard error.
@@ -836,6 +949,9 @@ fn screened_mask(header: &Header) -> Vec<bool> {
 }
 
 fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
+    if header.design == "prior" {
+        return estimate_prior(header, rows);
+    }
     let k = header.genes.len();
     let complete = complete_pairs(rows);
     let treated_wins = complete
@@ -916,6 +1032,8 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
         estimates.push(GeneEstimate {
             tag: tag.clone(),
             pairs: n,
+            n_on: n,
+            n_off: n,
             win_on: if n > 0 {
                 wins_on as f64 / n as f64
             } else {
@@ -931,6 +1049,166 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
             share_delta,
             share_se,
             adjusted: adjusted.as_ref().map(|all| all[column]),
+        });
+    }
+    (estimates, complete.len(), overall_win, overall_share)
+}
+
+/// The analysis as data: one object per screened gene with the numbers the
+/// table prints, plus the profile. `tools/gene_ledger.py` reads this to
+/// build `docs/gene_ledger.json` and the generated Rust table, so the
+/// deployment genome is derived from the screens rather than typed in.
+fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
+    let (estimates, pairs, overall_win, overall_share) = estimate(header, rows);
+    let family_z = family_wise_z(estimates.len());
+    let genes: Vec<serde_json::Value> = estimates
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "tag": e.tag,
+                "pairs": e.pairs,
+                "n_on": e.n_on,
+                "n_off": e.n_off,
+                "win_on": e.win_on,
+                "win_off": e.win_off,
+                "win_delta_pp": 100.0 * e.win_delta,
+                "win_se_pp": 100.0 * e.win_se,
+                "win_z": e.win_z(),
+                "share_delta_pp": 100.0 * e.share_delta,
+                "share_se_pp": 100.0 * e.share_se,
+                "share_z": e.share_z(),
+                "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
+                "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
+                "read": read_column(e.win_z(), e.share_z(), family_z),
+            })
+        })
+        .collect();
+    let summary = serde_json::json!({
+        "kind": "gene_screen_analysis",
+        "profile": header,
+        "regime": if header.victories.is_empty()
+            || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len()
+        {
+            "native".to_string()
+        } else {
+            header.victories.clone()
+        },
+        "complete_pairs": pairs,
+        "overall_win": overall_win,
+        "overall_share": overall_share,
+        "family_wise_z": family_z,
+        "genes": genes,
+    });
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(&summary).expect("summary serializes"),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("cannot write {path}: {error}");
+        std::process::exit(2);
+    });
+    println!("analysis written to {path}");
+}
+
+/// The family-wise 5% bar for `k` genes (Bonferroni, two-sided).
+fn family_wise_z(k: usize) -> f64 {
+    normal_quantile_upper(0.025 / k.max(1) as f64)
+}
+
+/// The prior design's estimates: the marginal on-versus-off contrast over
+/// every game (the 90% against the 10%, errors clustered by game), and the
+/// map-paired OLS on the arms' differences as the adjusted column.
+///
+/// Unlike the foldover, a pair's two arms are independent draws, so per-gene
+/// balance is no longer exact and the map's own difficulty does not cancel
+/// in the marginal contrast; it does cancel in the adjusted one, which
+/// regresses `y₀ − y₁` on `x₀ − x₁ ∈ {−1, 0, +1}` — zero for every gene the
+/// two arms agree on, so each gene is priced from the pairs that differ on
+/// it, with the rest of the genome differenced out.
+fn estimate_prior(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
+    let k = header.genes.len();
+    let screened = screened_mask(header);
+    let games: Vec<&Row> = rows
+        .iter()
+        .filter(|row| row.kind == "game" && row.genome.chars().count() == k)
+        .collect();
+    let n = games.len();
+    let overall_win = if n > 0 {
+        games.iter().filter(|row| row.win).count() as f64 / n as f64
+    } else {
+        0.0
+    };
+    let overall_share = if n > 0 {
+        games.iter().map(|row| row.score_share).sum::<f64>() / n as f64
+    } else {
+        0.0
+    };
+    // One game is one cluster: `(seed, pair·2 + arm)` — a classic row is alone
+    // in its cluster, an all-seats game's rows share one.
+    let game_key = |row: &Row| (row.seed, row.pair * 2 + usize::from(row.arm.min(1)));
+    let bits: Vec<Vec<bool>> = games
+        .iter()
+        .map(|row| row.genome.chars().map(|c| c == '1').collect())
+        .collect();
+
+    // Adjusted: the pairs whose arms both exist, differenced.
+    let complete = complete_pairs(rows);
+    let mut diff_signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
+    let mut win_diffs = Vec::with_capacity(complete.len());
+    let mut share_diffs = Vec::with_capacity(complete.len());
+    let mut clusters = Vec::with_capacity(complete.len());
+    for (a, b) in &complete {
+        let (Some(sa), Some(sb)) = (
+            pair_signs(&a.genome, &screened, k),
+            pair_signs(&b.genome, &screened, k),
+        ) else {
+            continue;
+        };
+        // (±1 − ±1) / 2 ∈ {−1, 0, +1}: on in arm 0 only, same, on in arm 1 only.
+        diff_signs.push(sa.iter().zip(&sb).map(|(x, y)| (x - y) / 2.0).collect());
+        win_diffs.push(f64::from(u8::from(a.win)) - f64::from(u8::from(b.win)));
+        share_diffs.push(a.score_share - b.score_share);
+        clusters.push((a.seed, a.pair));
+    }
+    let adjusted = adjusted_effects(&diff_signs, &win_diffs, &clusters);
+
+    let mut estimates = Vec::new();
+    let mut column = 0;
+    for (i, tag) in header.genes.iter().enumerate() {
+        if !screened[i] {
+            continue;
+        }
+        let this_column = column;
+        column += 1;
+        let (mut on_win, mut on_share, mut on_keys) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut off_win, mut off_share, mut off_keys) = (Vec::new(), Vec::new(), Vec::new());
+        for (row, genome) in games.iter().zip(&bits) {
+            let (win, share, keys) = if genome[i] {
+                (&mut on_win, &mut on_share, &mut on_keys)
+            } else {
+                (&mut off_win, &mut off_share, &mut off_keys)
+            };
+            win.push(f64::from(u8::from(row.win)));
+            share.push(row.score_share);
+            keys.push(game_key(row));
+        }
+        let (win_on, win_on_se) = clustered_mean_se(&on_win, &on_keys);
+        let (win_off, win_off_se) = clustered_mean_se(&off_win, &off_keys);
+        let (share_on, share_on_se) = clustered_mean_se(&on_share, &on_keys);
+        let (share_off, share_off_se) = clustered_mean_se(&off_share, &off_keys);
+        let hypot = |a: f64, b: f64| (a * a + b * b).sqrt();
+        estimates.push(GeneEstimate {
+            tag: tag.clone(),
+            pairs: complete.len(),
+            n_on: on_win.len(),
+            n_off: off_win.len(),
+            win_on: if on_win.is_empty() { 0.0 } else { win_on },
+            win_off: if off_win.is_empty() { 0.0 } else { win_off },
+            win_delta: win_on - win_off,
+            win_se: hypot(win_on_se, win_off_se),
+            share_delta: share_on - share_off,
+            share_se: hypot(share_on_se, share_off_se),
+            adjusted: adjusted.as_ref().map(|all| all[this_column]),
         });
     }
     (estimates, complete.len(), overall_win, overall_share)
@@ -1197,6 +1475,25 @@ fn print_table(header: &Header, rows: &[Row]) {
         100.0 * overall_share,
         100.0 / header.players as f64
     );
+    if header.design == "prior" {
+        let screened = screened_mask(header);
+        let mut by_p: BTreeMap<String, usize> = BTreeMap::new();
+        for (p, &s) in header.prior.iter().zip(&screened) {
+            if s {
+                *by_p.entry(format!("{:.2}", p)).or_default() += 1;
+            }
+        }
+        println!(
+            "design: prior-weighted — each arm drawn independently from the ledger's prior \
+             (genes at p = {}); Δ is the marginal on-versus-off contrast, errors clustered by \
+             game; adjΔpp is the map-paired OLS on the arms' differences",
+            by_p
+                .iter()
+                .map(|(p, n)| format!("{p}×{n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     {
         // The regime, so a table is never read without knowing what decided
         // its games: two thirds of native 4p games end by conversion before
@@ -1349,9 +1646,19 @@ fn print_table(header: &Header, rows: &[Row]) {
         );
     }
     estimates.sort_by(|a, b| b.win_z().total_cmp(&a.win_z()));
+    let prior_design = header.design == "prior";
     println!(
-        "\n{:<28} {:>5} {:>6} {:>6} {:>7} {:>15} {:>6}  {:>8} {:>6}  {:>9}  read",
-        "gene", "pairs", "on%", "off%", "Δpp", "95% CI", "z", "shareΔ", "z", "adjΔpp"
+        "\n{:<28} {:>11} {:>6} {:>6} {:>7} {:>15} {:>6}  {:>8} {:>6}  {:>9}  read",
+        "gene",
+        if prior_design { "on n/off n" } else { "pairs" },
+        "on%",
+        "off%",
+        "Δpp",
+        "95% CI",
+        "z",
+        "shareΔ",
+        "z",
+        "adjΔpp"
     );
     for e in &estimates {
         let z = e.win_z();
@@ -1360,10 +1667,15 @@ fn print_table(header: &Header, rows: &[Row]) {
             Some((effect, se)) => format!("{:+.1}±{:.1}", 100.0 * effect, 100.0 * se),
             None => "-".to_string(),
         };
+        let count = if prior_design {
+            format!("{}/{}", e.n_on, e.n_off)
+        } else {
+            e.pairs.to_string()
+        };
         println!(
-            "{:<28} {:>5} {:>5.1}% {:>5.1}% {:>+7.1} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {}",
+            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>+7.1} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {}",
             e.tag,
-            e.pairs,
+            count,
             100.0 * e.win_on,
             100.0 * e.win_off,
             100.0 * e.win_delta,
@@ -1564,9 +1876,10 @@ fn usage() -> ! {
     eprintln!(
         "usage: gene_screen [--pairs N] [--start-seed N] [--players N] [--turns N] \
          [--width N] [--height N] [--city-states N] [--speed ID] [--map ID] [--jobs N] \
-         [--genes tag,tag,...] [--baseline repairs|stock] [--field advanced|repairs] \
+         [--genes tag,tag,...] [--baseline best|repairs|stock] [--field advanced|repairs] \
+         [--design foldover|prior] [--p-helps 0.9] [--p-hurts 0.1] [--p-unresolved 0.5] \
          [--anchor-pairs N] [--randomize-civs] [--all-seats] [--out PATH] [--append] [--quiet]\n       \
-         gene_screen --analyze PATH [PATH ...] [--interactions] [--top N] [--by-civ TAG]\n       \
+         gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--top N] [--by-civ TAG]\n       \
          gene_screen --list"
     );
     std::process::exit(2)
@@ -1580,14 +1893,29 @@ fn main() {
     let genes = gene_table();
 
     if present(&args, "--list") {
-        println!("{} genes (bit order):", genes.len());
+        let weights = PriorWeights {
+            helps: 0.9,
+            hurts: 0.1,
+            unresolved: 0.5,
+        };
+        println!(
+            "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
+             prior = on-probability under --design prior",
+            genes.len()
+        );
         for (i, gene) in genes.iter().enumerate() {
+            let verdict = civvis::ai::ledger_verdict(gene.tag)
+                .map(|row| row.verdict.as_str())
+                .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} repairs:{} stock:{}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
-                if gene.stock_on { "on" } else { "off" }
+                if gene.stock_on { "on " } else { "off" },
+                if gene.default_on { "on " } else { "off" },
+                verdict,
+                weights.for_tag(gene.tag)
             );
         }
         return;
@@ -1605,6 +1933,9 @@ fn main() {
         }
         let (header, rows) = read_rows(&paths);
         print_table(&header, &rows);
+        if let Some(path) = text(&args, "--json") {
+            write_json_summary(&path, &header, &rows);
+        }
         if let Some(tag) = text(&args, "--by-civ") {
             print_by_civ(&header, &rows, &tag);
         }
@@ -1694,13 +2025,39 @@ fn main() {
         }),
     };
     let baseline = match text(&args, "--baseline").as_deref() {
-        None | Some("repairs") => Baseline::Repairs,
+        None | Some("best") => Baseline::Best,
+        Some("repairs") => Baseline::Repairs,
         Some("stock") => Baseline::Stock,
         Some(other) => {
-            eprintln!("unknown --baseline {other:?}; use repairs|stock");
+            eprintln!("unknown --baseline {other:?}; use best|repairs|stock");
             std::process::exit(2);
         }
     };
+    let design = match text(&args, "--design").as_deref() {
+        None | Some("foldover") => Design::Foldover,
+        Some("prior") => Design::Prior,
+        Some(other) => {
+            eprintln!("unknown --design {other:?}; use foldover|prior");
+            std::process::exit(2);
+        }
+    };
+    let prior_weights = PriorWeights {
+        helps: text(&args, "--p-helps").and_then(|v| v.parse().ok()).unwrap_or(0.9),
+        hurts: text(&args, "--p-hurts").and_then(|v| v.parse().ok()).unwrap_or(0.1),
+        unresolved: text(&args, "--p-unresolved")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.5),
+    };
+    for (name, p) in [
+        ("--p-helps", prior_weights.helps),
+        ("--p-hurts", prior_weights.hurts),
+        ("--p-unresolved", prior_weights.unresolved),
+    ] {
+        if !(0.0..=1.0).contains(&p) {
+            eprintln!("{name} must be a probability, got {p}");
+            std::process::exit(2);
+        }
+    }
     let field = match text(&args, "--field").as_deref() {
         None | Some("advanced") => Field::Advanced,
         Some("repairs") => Field::Repairs,
@@ -1741,6 +2098,32 @@ fn main() {
         eprintln!("nothing to screen");
         std::process::exit(2);
     }
+    // The on-probability of every gene in header order: the prior for a
+    // screened gene, the held state (0 or 1) for the rest. Recorded in the
+    // header so `--analyze` can say what the draw was.
+    let prior: Vec<f64> = match design {
+        Design::Foldover => Vec::new(),
+        Design::Prior => genes
+            .iter()
+            .zip(&screened)
+            .map(|(gene, &s)| {
+                if s {
+                    prior_weights.for_tag(gene.tag)
+                } else {
+                    let held = match baseline {
+                        Baseline::Best => gene.default_on,
+                        Baseline::Repairs => gene.after_setup_on,
+                        Baseline::Stock => gene.stock_on,
+                    };
+                    if held {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+            })
+            .collect(),
+    };
 
     let out_path =
         text(&args, "--out").unwrap_or_else(|| format!("gene_screen-{start_seed}.jsonl"));
@@ -1790,6 +2173,8 @@ fn main() {
             .collect::<Vec<_>>()
             .join(","),
         all_seats,
+        design: design.id().to_string(),
+        prior: prior.clone(),
     };
     writeln!(
         out,
@@ -1810,7 +2195,8 @@ fn main() {
         victories,
     };
     println!(
-        "gene screen: {pairs} foldover pairs ({} games{}){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
+        "gene screen: {pairs} {} pairs ({} games{}){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
+        design.id(),
         pairs * 2,
         if all_seats {
             format!(", every major treated: {} seat pairs", pairs * players)
@@ -1835,6 +2221,10 @@ fn main() {
     // Job list: screened pairs first, then anchors, two games each. Every job
     // is independent, so the batch goes through the repository's pool.
     let total_games = 2 * (pairs + anchor_pairs);
+    // Anchors: arm 0 every screened gene on, arm 1 every screened gene off —
+    // or, at the deployment baseline, arm 1 at the ledger's defaults, so the
+    // anchor prices the all-on universe against the best genome: what the
+    // ledger bought.
     let all_on: Vec<bool> = genes
         .iter()
         .zip(&screened)
@@ -1843,7 +2233,13 @@ fn main() {
     let all_off: Vec<bool> = genes
         .iter()
         .zip(&screened)
-        .map(|(gene, &s)| if s { false } else { gene.after_setup_on })
+        .map(|(gene, &s)| {
+            if s {
+                baseline == Baseline::Best && gene.default_on
+            } else {
+                gene.after_setup_on
+            }
+        })
         .collect();
     let started = Instant::now();
     let done = std::sync::atomic::AtomicUsize::new(0);
@@ -1859,16 +2255,23 @@ fn main() {
             let seat = pair % players;
             if pair < pairs {
                 if all_seats {
-                    let genomes = all_seat_genomes(start_seed, pair, players, &screened, arm);
+                    let genomes = all_seat_genomes(
+                        start_seed, pair, players, &screened, arm, design, &prior,
+                    );
                     return play_all_seats(
                         &profile, &genes, &screened, baseline, pair, arm, seed, &genomes,
                     );
                 }
-                let drawn = draw_genome(start_seed, pair, &screened);
-                let genome = if arm == 0 {
-                    drawn
-                } else {
-                    complement(&drawn, &screened)
+                let genome = match design {
+                    Design::Foldover => {
+                        let drawn = draw_genome(start_seed, pair, &screened);
+                        if arm == 0 {
+                            drawn
+                        } else {
+                            complement(&drawn, &screened)
+                        }
+                    }
+                    Design::Prior => draw_genome_prior(start_seed, pair, arm, &screened, &prior),
                 };
                 return vec![play(
                     &profile, &genes, &screened, baseline, field, "game", pair, arm, seed, seat,
@@ -2134,6 +2537,8 @@ mod tests {
             randomize_civs: false,
             victories: String::new(),
             all_seats: false,
+            design: "foldover".into(),
+            prior: Vec::new(),
         };
         let mut rows = Vec::new();
         let screened = vec![true, true];
@@ -2221,6 +2626,8 @@ mod tests {
             randomize_civs: false,
             victories: String::new(),
             all_seats: false,
+            design: "foldover".into(),
+            prior: Vec::new(),
         };
         // y = 0.5 + 0.30·a  −  0.20·c  + 0.25·(a·b) in the ±1 coding, plus a
         // per-map offset that is constant inside a pair — which is what a map
@@ -2316,10 +2723,14 @@ mod tests {
     #[test]
     fn all_seat_genomes_are_per_seat_foldovers() {
         let screened = vec![true, true, false, true];
-        let a = all_seat_genomes(9, 4, 3, &screened, 0);
-        let b = all_seat_genomes(9, 4, 3, &screened, 1);
+        let a = all_seat_genomes(9, 4, 3, &screened, 0, Design::Foldover, &[]);
+        let b = all_seat_genomes(9, 4, 3, &screened, 1, Design::Foldover, &[]);
         assert_eq!(a.len(), 3);
-        assert_eq!(a, all_seat_genomes(9, 4, 3, &screened, 0), "reproduces");
+        assert_eq!(
+            a,
+            all_seat_genomes(9, 4, 3, &screened, 0, Design::Foldover, &[]),
+            "reproduces"
+        );
         for (ga, gb) in a.iter().zip(&b) {
             assert_eq!(
                 ga,
@@ -2373,6 +2784,8 @@ mod tests {
             randomize_civs: false,
             victories: String::new(),
             all_seats: true,
+            design: "foldover".into(),
+            prior: Vec::new(),
         };
         let screened = vec![true, true];
         let mut rows = Vec::new();
@@ -2456,5 +2869,152 @@ mod tests {
         assert!(serde_json::from_str::<Header>(&text)
             .map(|h| h.kind != "header")
             .unwrap_or(true));
+    }
+
+    /// ★★★★ THE HELPFUL GENES PLAY MOST OF THE TIME. Under the prior design a
+    /// gene is on with its own probability, the two arms of a pair are
+    /// independent draws, and a run reproduces from its seed.
+    #[test]
+    fn prior_draws_follow_the_weights_and_arms_are_independent() {
+        let screened = vec![true, true, true, false];
+        let prior = vec![0.9, 0.1, 0.5, 1.0];
+        let mut on = [0usize; 4];
+        let mut differ = 0usize;
+        let pairs = 4000;
+        for pair in 0..pairs {
+            let a = draw_genome_prior(5, pair, 0, &screened, &prior);
+            let b = draw_genome_prior(5, pair, 1, &screened, &prior);
+            assert_eq!(a, draw_genome_prior(5, pair, 0, &screened, &prior), "reproduces");
+            assert!(!a[3] && !b[3], "an un-screened gene is never drawn on");
+            for (i, &bit) in a.iter().enumerate() {
+                on[i] += usize::from(bit);
+            }
+            differ += usize::from(a[0] != b[0]);
+        }
+        let rate = |i: usize| on[i] as f64 / pairs as f64;
+        assert!((rate(0) - 0.9).abs() < 0.03, "helper on ~90%: {}", rate(0));
+        assert!((rate(1) - 0.1).abs() < 0.03, "harmful on ~10%: {}", rate(1));
+        assert!((rate(2) - 0.5).abs() < 0.03, "unresolved on ~50%: {}", rate(2));
+        // Independent arms differ on a p = 0.9 gene in 2·0.9·0.1 = 18% of pairs.
+        let discordant = differ as f64 / pairs as f64;
+        assert!((discordant - 0.18).abs() < 0.03, "arms drawn independently: {discordant}");
+    }
+
+    /// The prior weights come from the ledger's verdict per tag.
+    #[test]
+    fn prior_weights_follow_the_ledger() {
+        let weights = PriorWeights {
+            helps: 0.9,
+            hurts: 0.1,
+            unresolved: 0.5,
+        };
+        for row in civvis::ai::gene_ledger_rows() {
+            let expected = match row.verdict {
+                civvis::ai::Verdict::Helps => 0.9,
+                civvis::ai::Verdict::Hurts => 0.1,
+                civvis::ai::Verdict::Unresolved => 0.5,
+            };
+            assert_eq!(weights.for_tag(row.tag), expected, "{}", row.tag);
+        }
+        assert_eq!(weights.for_tag("no-such-gene"), 0.5, "unmeasured draws at one half");
+    }
+
+    /// Under an unbalanced draw the marginal contrast still reads a planted
+    /// gene — the 90% against the 10% — and the map-paired OLS recovers it
+    /// from the pairs whose arms differ on it.
+    #[test]
+    fn estimate_prior_reads_a_planted_gene_through_an_unbalanced_draw() {
+        let genes = vec!["a".to_string(), "b".to_string()];
+        let prior = vec![0.9, 0.5];
+        let header = Header {
+            kind: "header".into(),
+            genes: genes.clone(),
+            screened: genes,
+            players: 4,
+            width: 1,
+            height: 1,
+            turns: 1,
+            city_states: 0,
+            speed: "online".into(),
+            map: "pangaea".into(),
+            baseline: "best".into(),
+            field: "advanced".into(),
+            start_seed: 1,
+            randomize_civs: false,
+            victories: String::new(),
+            all_seats: false,
+            design: "prior".into(),
+            prior: prior.clone(),
+        };
+        let screened = vec![true, true];
+        let mut rows = Vec::new();
+        for pair in 0..600 {
+            for arm in 0u8..2 {
+                let genome = draw_genome_prior(3, pair, arm, &screened, &prior);
+                // Gene `a` on wins; gene `b` does nothing; the map adds a
+                // per-pair share offset that the paired OLS cancels.
+                rows.push(Row {
+                    kind: "game".into(),
+                    pair,
+                    arm,
+                    seed: pair as u64,
+                    seat: pair % 4,
+                    genome: genome_string(&genome),
+                    win: genome[0],
+                    winner: None,
+                    victory: String::new(),
+                    turn: 1,
+                    score: 0,
+                    score_share: if genome[0] { 0.4 } else { 0.2 } + (pair % 5) as f64 * 0.01,
+                    rank: 1,
+                    cities: 0,
+                    alive: true,
+                    secs: 0.0,
+                    founded_religion: false,
+                    foreign_faith_cities: 0,
+                    faith: 0.0,
+                    inquisition: false,
+                    techs: 0,
+                    military: 0.0,
+                    civ: String::new(),
+                });
+            }
+        }
+        let (estimates, pairs, overall_win, _) = estimate(&header, &rows);
+        assert_eq!(pairs, 600);
+        assert!((overall_win - 0.9).abs() < 0.05, "a is on 90% of the time: {overall_win}");
+        let a = estimates.iter().find(|e| e.tag == "a").unwrap();
+        let b = estimates.iter().find(|e| e.tag == "b").unwrap();
+        assert!(a.n_on > 1000 && a.n_off < 200, "unbalanced: {}/{}", a.n_on, a.n_off);
+        assert!((a.win_on - 1.0).abs() < 1e-9 && a.win_off.abs() < 1e-9);
+        assert!((a.win_delta - 1.0).abs() < 1e-9, "the 90% beat the 10% by the planted 100pp");
+        assert!((a.share_delta - 0.2).abs() < 0.02, "{}", a.share_delta);
+        assert!(b.win_delta.abs() < 0.1, "b is planted null: {}", b.win_delta);
+        let (adj_a, _) = a.adjusted.expect("600 pairs support 2 genes");
+        assert!((adj_a - 1.0).abs() < 1e-6, "paired OLS recovers a: {adj_a}");
+        let (adj_b, _) = b.adjusted.unwrap();
+        assert!(adj_b.abs() < 0.1, "paired OLS reads b null: {adj_b}");
+    }
+
+    /// The deployment baseline holds an un-screened gene at the ledger's
+    /// default: a measured harmful repair is off, a measured helper on.
+    #[test]
+    fn the_best_baseline_holds_unscreened_genes_at_the_ledger_default() {
+        let genes = gene_table();
+        let none = vec![false; genes.len()];
+        let genome = vec![false; genes.len()];
+        let best = treated_seat(&genes, &genome, &none, Baseline::Best);
+        let siege = genes.iter().find(|g| g.tag == "siege-is-progress").unwrap();
+        let reinforcement = genes.iter().find(|g| g.tag == "war-reinforcement").unwrap();
+        assert_eq!(best.siege_is_progress, siege.default_on);
+        assert_eq!(best.war_reinforcement, reinforcement.default_on);
+        assert_eq!(siege.default_on, civvis::ai::ledger_default_on("siege-is-progress").unwrap());
+        assert_eq!(
+            reinforcement.default_on,
+            civvis::ai::ledger_default_on("war-reinforcement").unwrap()
+        );
+        // And the universe baseline keeps every repair on whatever the ledger says.
+        let universe = treated_seat(&genes, &genome, &none, Baseline::Repairs);
+        assert!(universe.siege_is_progress && universe.war_reinforcement);
     }
 }

@@ -136,8 +136,8 @@ fn live_bundle_and_registry_agree() {
     );
     let registry = include_str!("treatments.rs");
     let start = source
-        .find("pub fn enable_live_bridge(&mut self) {")
-        .expect("enable_live_bridge must exist to be checked");
+        .find("pub fn enable_live_bridge_universe(&mut self) {")
+        .expect("enable_live_bridge_universe must exist to be checked");
     let body = &source[start..];
     let end = body
         .find("\n    }\n")
@@ -519,7 +519,7 @@ fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
     );
 
     let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge();
+    bridged.enable_live_bridge_universe();
     assert!(bridged.religion_sues_peace);
     bridged.disable_religion_sues_peace();
     assert!(!bridged.religion_sues_peace);
@@ -593,7 +593,7 @@ fn a_siege_landing_net_damage_is_not_a_stalled_war() {
     );
 
     let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge();
+    bridged.enable_live_bridge_universe();
     assert!(
         bridged.siege_is_progress,
         "the live bundle carries the repair"
@@ -1376,7 +1376,7 @@ fn the_settler_build_is_never_paid_for_ground_the_march_refuses() {
     );
 
     let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge();
+    bridged.enable_live_bridge_universe();
     assert!(
         bridged.settler_site_agreement,
         "the live bundle carries the repair"
@@ -1385,7 +1385,7 @@ fn the_settler_build_is_never_paid_for_ground_the_march_refuses() {
     assert!(!bridged.settler_site_agreement);
 
     let mut native = AdvancedAi::new();
-    native.enable_engine_repairs();
+    native.enable_engine_repairs_universe();
     assert!(
         native.settler_site_agreement,
         "the drain-forecast half is native, so the repair is an engine repair"
@@ -1834,13 +1834,13 @@ fn the_land_grab_pipeline_widens_with_the_empire() {
 #[test]
 fn an_idle_walker_closes_the_land_grab_pipeline() {
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.idle_walkers_close_the_pipeline && live.land_grab && live.settlement_safety,
         "the live seat carries the treatment beside the pipeline it governs"
     );
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_idle_walkers_close_the_pipeline();
 
     // Nothing idle: the pipeline is the land grab's, both arms alike.
@@ -2732,7 +2732,7 @@ fn an_embarked_settler_under_the_stacked_escort_is_not_linked_to_a_ship() {
     assert_eq!(game.units[&settler].linked_to, None);
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.stacked_escort);
     live.advanced_formations(&mut game, 0);
     assert_eq!(
@@ -2789,7 +2789,7 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     game.players[0].explored.extend(near);
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     // The Firaxis order adapter also commits explorers to separated fog
     // goals, so exercise the two-hull branch under its shipped settings.
     live.enable_explore_commit();
@@ -2814,7 +2814,7 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
         let idle_galley = idle.units.keys().copied().min().unwrap();
         let start = idle.units[&idle_galley].pos;
         let mut withheld = AdvancedAi::new();
-        withheld.enable_live_bridge();
+        withheld.enable_live_bridge_universe();
         withheld.disable_naval_recon();
         let plan = withheld.assess(&idle, 0);
         let _ =
@@ -2856,7 +2856,7 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     charted.players[0].explored.extend(all);
     assert!(live.naval_explorer(&charted, 0).is_empty());
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_naval_recon();
     assert!(withheld.naval_explorer(&game, 0).is_empty());
     // Production carries the fleet since the 2026-08-17 promotion; the
@@ -2917,7 +2917,7 @@ fn on_a_mirrored_board_the_sea_scout_arm_reads_the_fog_past_charted_water() {
     let city = game.place_city(0, rim, None);
     assert!(crate::ai::BasicAi::empire_is_coastal(&game, 0));
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     // The Firaxis order adapter commits explorers to fog goals; run under
     // its shipped settings so the held goal can be read back.
     live.enable_explore_commit();
@@ -3065,7 +3065,7 @@ fn a_wartime_naval_recon_arm_reserves_one_idle_coastal_city() {
         rush: false,
     };
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.naval_recon_is_the_missing_arm(&game, 0));
 
     // The spare eye must not leapfrog the shared recovery rule. One
@@ -3177,7 +3177,7 @@ fn a_lake_bound_ship_yields_the_naval_explorer_job_to_an_open_water_hull() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert_eq!(
         live.naval_explorer(&game, 0),
         vec![free],
@@ -3629,7 +3629,7 @@ fn a_threatened_settler_on_the_shore_retreats_inland_but_holds_inside_a_city() {
     let settler = game.spawn_test_unit("settler", 0, shore);
     game.units.get_mut(&settler).unwrap().moves_left = 2.0;
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let journal = crate::reasoning::Journal::recording();
     live.attach_journal(journal.handle());
     assert!(
@@ -3700,7 +3700,7 @@ fn a_threatened_settler_on_the_shore_retreats_inland_but_holds_inside_a_city() {
     let inside = fortress.spawn_test_unit("settler", 0, shore);
     fortress.units.get_mut(&inside).unwrap().moves_left = 2.0;
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let journal = crate::reasoning::Journal::recording();
     live.attach_journal(journal.handle());
     let _ = live.advanced_settler_step(&mut fortress, 0, inside);
@@ -4457,7 +4457,7 @@ fn the_suzerain_gate_is_off_unless_the_live_bridge_asks() {
         "a configured or Elo agent must keep the deck order it has always had"
     );
     let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge();
+    bridged.enable_live_bridge_universe();
     assert!(
         bridged.suzerain_cards_need_a_suzerainty,
         "the live bridge is where this is meant to fire"
@@ -7131,7 +7131,7 @@ fn overwhelmed_multi_front_recovery_offers_peace_to_its_campaign_target() {
     let mut single_front = game.clone();
     single_front.at_war.remove(&(0, 2));
     let mut single_front_ai = AdvancedAi::new();
-    single_front_ai.enable_live_bridge();
+    single_front_ai.enable_live_bridge_universe();
     single_front_ai.advanced_diplomacy(&mut single_front, 0, &recovery);
     assert!(
         !single_front_ai.peace_offers.contains(&1),
@@ -7139,7 +7139,7 @@ fn overwhelmed_multi_front_recovery_offers_peace_to_its_campaign_target() {
     );
 
     let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge();
+    ai.enable_live_bridge_universe();
     ai.major_war_since = Some(40);
     ai.advanced_diplomacy(&mut game, 0, &recovery);
 
@@ -7894,7 +7894,7 @@ fn only_the_live_bridge_finishes_a_siege() {
     assert!(!fresh.siege_commitment);
     assert!(!AdvancedAi::legacy().siege_commitment);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.siege_commitment);
     live.disable_siege_commitment();
     assert!(!live.siege_commitment);
@@ -8486,7 +8486,7 @@ fn conquest_army_stages_before_diplomacy_opens_the_war() {
     let reserve = endgame.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
     endgame.turn = endgame.max_turns.saturating_sub(reserve);
     let mut guarded = AdvancedAi::targeting(VictoryTarget::Domination);
-    guarded.enable_live_bridge();
+    guarded.enable_live_bridge_universe();
     assert!(guarded.urgent_victory_threat(&endgame, 1));
     guarded.advanced_diplomacy(&mut endgame, 0, &plan);
     assert!(
@@ -11158,7 +11158,7 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
     let (mut late, city) = fresh();
     late.turn = 170;
     let mut live = AdvancedAi::targeting(VictoryTarget::Science);
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.score_horizon, "the live seat carries the treatment");
     assert!(
         !live.space_race_can_finish(&late, 0),
@@ -11188,7 +11188,7 @@ fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
     let (mut late_withheld, city_withheld) = fresh();
     late_withheld.turn = 170;
     let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_score_horizon();
     withheld.space_race_production(&mut late_withheld, 0);
     assert!(
@@ -11271,11 +11271,11 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     let _ = second;
 
     let mut live = AdvancedAi::targeting(VictoryTarget::Science);
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.one_launch_pad, "the live seat carries the treatment");
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_one_launch_pad();
     withheld.refresh_research_weight(&game);
     let counts = live.counts(&game, 0);
@@ -12398,7 +12398,7 @@ fn severe_amenity_crisis_reclaims_one_research_grant_for_the_repair_chain() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.amenity_project_preemption);
     live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, false);
     let repair_city = [city, other]
@@ -12508,7 +12508,7 @@ fn an_amenity_district_is_worth_the_arena_it_hosts() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.amenity_district_path);
     let priced = live.production_value(&game, 0, capital, &complex, &plan, &counts);
     let lift_displeased = priced - stock;
@@ -13070,11 +13070,11 @@ fn a_city_without_a_theater_square_is_a_culture_hole_on_the_tally_seat() {
     let counts = EmpireCounts::default();
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.culture_coverage, "the live seat carries the treatment");
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_culture_coverage();
     withheld.refresh_research_weight(&game);
 
@@ -13332,7 +13332,7 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
         .observed_city_amenity_adjustments
         .insert(local_city, -4 - modeled);
     let mut local_live = AdvancedAi::new();
-    local_live.enable_live_bridge();
+    local_live.enable_live_bridge_universe();
     local_live.reserve_idle_entertainment_path_for_widespread_crisis(&mut local, 0, &plan);
     assert_eq!(local.cities[&capital].queue.first(), Some(&builder));
     assert!(
@@ -13343,7 +13343,7 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
     assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
     let reserved = cities[1..]
@@ -13442,7 +13442,7 @@ fn widespread_live_amenity_pressure_starts_one_idle_entertainment_complex() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
     assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
     let reserved = cities[1..]
@@ -13559,7 +13559,7 @@ fn broad_wartime_amenity_pressure_reclaims_one_repeatable_project_before_slots_c
         .get_mut(&cities[2])
         .expect("the third city has the calibrated -1 adjustment") += 1;
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     live.redirect_repeatable_projects_for_amenity_crisis(&mut below_threshold, 0, &plan, true);
     assert_eq!(
         below_threshold.cities[&capital].queue.first(),
@@ -19104,10 +19104,10 @@ fn a_civilian_is_priced_protected_only_by_a_guard_that_can_hold() {
     assert!(game.sees(&visible, raider_tile), "the raider is in sight");
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.settler_guard_holds && live.stacked_escort && live.settler_stack_discipline);
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_settler_guard_holds();
 
     // An UNBOUND warrior on the destination: the old pricing discounts the
@@ -19223,12 +19223,12 @@ fn a_wounded_bound_guard_on_its_settlers_tile_holds_instead_of_healing_away() {
         game.units[&guard].pos
     };
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_settler_guard_holds();
     let mut game_without = game.clone();
     let left_to = run(&mut withheld, &mut game_without);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let held_at = run(&mut live, &mut game);
     assert_eq!(
         held_at, field,
@@ -19566,7 +19566,7 @@ fn a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_ma
     assert!(!AdvancedAi::new().settler_stack_discipline());
     assert!(!AdvancedAi::legacy().settler_stack_discipline());
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.settler_stack_discipline(),
         "the live seat carries the discipline"
@@ -19811,7 +19811,7 @@ fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores()
     game.spawn_test_unit("warrior", 1, threat);
     let scout = game.spawn_test_unit("scout", 0, post);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.recon_flight, "the live seat carries the treatment");
     let plan = live.assess(&game, 0);
     let journal = crate::reasoning::Journal::recording();
@@ -19853,7 +19853,7 @@ fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores()
     game.spawn_test_unit("warrior", 1, threat);
     let scout = game.spawn_test_unit("scout", 0, post);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let plan = live.assess(&game, 0);
     live.advance_unit_serial(&mut game, 0, scout, &plan, false, false);
     let rested = game.units[&scout].pos;
@@ -19867,7 +19867,7 @@ fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores()
     game.spawn_test_unit("warrior", 1, threat);
     let scout = game.spawn_test_unit("scout", 0, post);
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_recon_flight();
     let plan = withheld.assess(&game, 0);
     let journal = crate::reasoning::Journal::recording();
@@ -19994,7 +19994,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let mut probe = game0.clone();
         let settler = probe.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
-        ai.enable_live_bridge();
+        ai.enable_live_bridge_universe();
         ai.disable_frontier_loyalty();
         ai.best_settler_target(&probe, 0, settler, 8, None)
             .map(|(pos, _)| pos)
@@ -20004,7 +20004,7 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
         let mut game = game0.clone();
         let settler = game.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
-        ai.enable_live_bridge();
+        ai.enable_live_bridge_universe();
         // Isolate the hysteresis: the fogged-frontier rule would retire a
         // far site on this small board for its own reason.
         ai.disable_frontier_loyalty();
@@ -23118,7 +23118,7 @@ fn a_camp_within_nine_tiles_of_a_city_is_home_ground_the_guard_clears() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.camp_reach(), "the live seat carries the treatment");
     assert_eq!(live.base.camp_radius(), crate::ai::HOME_CAMP_RADIUS);
     assert_eq!(
@@ -23128,7 +23128,7 @@ fn a_camp_within_nine_tiles_of_a_city_is_home_ground_the_guard_clears() {
     );
 
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_camp_reach();
     assert_eq!(withheld.base.camp_radius(), crate::ai::HOME_THREAT_RADIUS);
     assert_eq!(
@@ -23189,7 +23189,7 @@ fn the_civilian_rescue_is_native() {
     withheld.disable_civilian_rescue();
     assert!(!withheld.base.civilian_rescue);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.civilian_rescue);
 }
 
@@ -23274,7 +23274,7 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     };
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.camp_party(), "the live seat carries the party");
     let sent = objectives(&live, &game);
     assert_eq!(
@@ -23292,7 +23292,7 @@ fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countrysi
     // and would send nobody at all had the capital's warrior been counted
     // as garrison (the measured game: floor(3 × 0.5) − 1 = 0).
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_camp_party();
     let held = objectives(&withheld, &game);
     assert!(
@@ -27759,7 +27759,7 @@ fn the_missing_land_eye_claims_one_idle_queue() {
     {
         let mut withheld_board = game.clone();
         let mut withheld = AdvancedAi::new();
-        withheld.enable_live_bridge();
+        withheld.enable_live_bridge_universe();
         withheld.disable_recon_replacement();
         withheld.reserve_idle_land_recon(&mut withheld_board, 0, &plan);
         assert!(
@@ -27770,7 +27770,7 @@ fn the_missing_land_eye_claims_one_idle_queue() {
 
     // The live seat claims exactly one idle queue for the missing eye.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     live.reserve_idle_land_recon(&mut game, 0, &plan);
     let reserved = [capital, second]
         .iter()
@@ -28195,12 +28195,12 @@ fn a_step_that_sights_a_hostile_dirties_the_force_groups() {
 fn step_and_reassess_is_a_live_treatment_and_a_native_repair() {
     assert!(!AdvancedAi::new().step_and_reassess);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.step_and_reassess);
     live.disable_step_and_reassess();
     assert!(!live.step_and_reassess);
     let mut repairs = AdvancedAi::new();
-    repairs.enable_engine_repairs();
+    repairs.enable_engine_repairs_universe();
     assert!(repairs.step_and_reassess);
     assert!(
         crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&"step-and-reassess"),
@@ -28213,7 +28213,7 @@ fn step_and_reassess_is_a_live_treatment_and_a_native_repair() {
 fn the_whole_turn_guard_is_a_live_treatment() {
     assert!(!AdvancedAi::new().base.whole_turn_backtrack_guard);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.whole_turn_backtrack_guard);
     live.disable_whole_turn_backtrack_guard();
     assert!(!live.base.whole_turn_backtrack_guard);
@@ -28524,8 +28524,13 @@ fn step_and_reassess_fires_check() {
         let mut ais = AdvancedAi::fleet(&game);
         for ai in ais.iter_mut() {
             ai.enable_engine_repairs();
+            if std::env::var("CIVVIS_NO_REASSESS").is_ok() {
+                ai.disable_step_and_reassess();
+            }
         }
+        let started = std::time::Instant::now();
         crate::ai::run_game(&mut game, &mut ais);
+        eprintln!("WALL seed={seed} {:.1}s", started.elapsed().as_secs_f64());
         let mut census = StrategyCensus::default();
         for ai in ais.iter().take(4) {
             census.absorb(&ai.strategy_census());

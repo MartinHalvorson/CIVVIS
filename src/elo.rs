@@ -6911,10 +6911,10 @@ mod tests {
             include_str!("ai/advanced/treatment_flags.rs")
         );
         let body = source
-            .split("pub fn enable_live_bridge(&mut self) {")
+            .split("pub fn enable_live_bridge_universe(&mut self) {")
             .nth(1)
             .and_then(|tail| tail.split("\n    }\n").next())
-            .expect("enable_live_bridge body");
+            .expect("enable_live_bridge_universe body");
         let enabled = body.matches("self.enable_").count();
         assert_eq!(
             enabled,
@@ -7127,17 +7127,28 @@ mod tests {
 
         // The parent must actually delegate, or the halves could agree with
         // the bridge while `advanced_synergy` carried neither of them.
-        let parent = calls("enable_engine_repairs");
+        let parent = calls("enable_engine_repairs_universe");
         assert_eq!(
             parent,
             BTreeSet::from([
                 "engine_repairs_economy".to_string(),
                 "engine_repairs_war".to_string(),
             ]),
-            "enable_engine_repairs must be exactly its two halves"
+            "enable_engine_repairs_universe must be exactly its two halves"
         );
+        // And the deployment helpers are each their universe plus the ledger.
+        for (deployed, universe) in [
+            ("enable_engine_repairs", "engine_repairs_universe"),
+            ("enable_live_bridge", "live_bridge_universe"),
+        ] {
+            assert_eq!(
+                calls(deployed),
+                BTreeSet::from([universe.to_string()]),
+                "{deployed} must be its universe and the ledger, nothing else"
+            );
+        }
 
-        let bridge = calls("enable_live_bridge");
+        let bridge = calls("enable_live_bridge_universe");
         let war = calls("enable_engine_repairs_war");
         let economy = calls("enable_engine_repairs_economy");
         let overlap: Vec<&String> = war.intersection(&economy).collect();
