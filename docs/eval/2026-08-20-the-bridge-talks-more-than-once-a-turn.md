@@ -59,6 +59,27 @@ path a blind plan stops at the step that revealed new ground.
 
 S_MEANING
 
+## The second directive, the same day: the defaults are the best genome
+
+While the screens ran the operator added: *let the defaults for the genes
+reflect our best genome — only genes that provably help; unhelpful genes can
+default off — so our verification games use our best genome; keep testing
+and improving the less helpful genes; in the large batches a helpful gene
+may be on in 90% of tests and we still compare the 90% with the 10%.*
+`docs/GENE_SCREEN.md` (*The gene ledger*, *Prior-weighted screens*) records
+the mechanism; the numbers:
+
+| what | instrument | result |
+|---|---|---|
+| the first ledger | `tools/gene_ledger.py` over the 6p native screen (13,446 seat-pairs), the 4p war screen (3,300) and the repaired genes' war re-screen (1,064) | **10 help (on) · 11 hurt (off) · 44 unresolved (off)**; the live bundle plays the ten plus the host-only flags |
+| what the ledger bought | `gene_screen --baseline best --anchor-pairs 250` — the all-on universe against the best genome, same maps, 4p all-six, seeds 52M | S4_RESULT |
+| the first gene priced into the ledger | s2 above | `step-and-reassess` unresolved at +0.2 [−1.2, +1.6]: off until a screen says otherwise |
+
+The phase-1 anchors had already said the all-on bundle was not the best
+genome (7.5% wins against 27% for all-off over 200 pairs); the ledger makes
+the choice per gene and from the measurements, and makes a new treatment
+ship into the universe rather than into the deployment.
+
 ## Not measured
 
 The live seat itself: this machine carries a standing operator game hold

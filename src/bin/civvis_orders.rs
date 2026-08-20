@@ -5310,7 +5310,9 @@ mod tests {
     #[test]
     fn a_live_treatment_can_be_withheld_by_name() {
         let mut ai = civvis::ai::AdvancedAi::new();
-        ai.enable_live_bridge();
+        // The universe, not the deployment genome: the ledger already holds
+        // unproven genes off, and this test is about the withholding path.
+        ai.enable_live_bridge_universe();
         assert!(
             ai.blind_objective_strength,
             "the composite must set the flag before we can meaningfully hold it off"

@@ -1543,14 +1543,31 @@ fn print_table(header: &Header, rows: &[Row]) {
                 rows.iter().map(|row| row.score_share).sum::<f64>() / rows.len() as f64
             }
         };
+        // Paired: both arms of an anchor pair share the map and seat, so the
+        // win difference carries its own standard error over pairs.
+        let mut by_key: BTreeMap<(u64, usize, usize), [Option<&Row>; 2]> = BTreeMap::new();
+        for row in &anchors {
+            by_key.entry((row.seed, row.seat, row.pair)).or_insert([None, None])
+                [usize::from(row.arm.min(1))] = Some(row);
+        }
+        let diffs: Vec<f64> = by_key
+            .values()
+            .filter_map(|[a, b]| Some(f64::from(u8::from((*a)?.win)) - f64::from(u8::from((*b)?.win))))
+            .collect();
+        let (delta, se) = mean_se(&diffs);
+        // Under the deployment baseline arm 1 is the best genome, not all-off.
+        let off_label = if header.baseline == "best" { "best genome" } else { "all-off" };
         println!(
-            "anchors: all-on {} games win {:.1}% share {:.1}% · all-off {} games win {:.1}% share {:.1}%",
+            "anchors: all-on {} games win {:.1}% share {:.1}% · {off_label} {} games win {:.1}% share {:.1}% · paired win Δ {:+.1} pp ± {:.1} over {} pairs",
             on.len(),
             100.0 * rate(&on),
             100.0 * share(&on),
             off.len(),
             100.0 * rate(&off),
-            100.0 * share(&off)
+            100.0 * share(&off),
+            100.0 * delta,
+            100.0 * se,
+            diffs.len()
         );
     }
     {
