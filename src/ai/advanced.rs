@@ -3942,6 +3942,11 @@ const HOUSING_DECK_INSERT: usize = 4;
 /// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
 /// growth band, where `housing_growth_mult` stops paying 1.0 and starts halving.
 const HOUSING_CARD_HEADROOM: f64 = 2.0;
+/// `campus_every_city`: the population a city needs before the coverage
+/// promise exempts its Campus from the half-empire district cliff. Seven
+/// citizens is a city that can staff the Library the science funnel hangs
+/// off; below it the ask waits for growth.
+const CAMPUS_EVERY_CITY_POP_FLOOR: i32 = 7;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -7521,7 +7526,36 @@ impl AdvancedAi {
             .values()
             .filter(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             .count();
-        let map_capacity = if self.wide_map_capacity {
+        // ★★★ `wide_map_capacity` REPAIRED 2026-08-19 after the 4,000-pair
+        // native screen priced it at −3.4 pp wins with +2.3 pp score share
+        // (z −4.5 / +16.5, seeds 40000000..) and the anchors at +3.45 cities
+        // with no wins: a bigger empire that does not convert. The mechanism
+        // is not subtle — two thirds of native games end by RELIGIOUS
+        // conversion, a religious victory is won by converting cities, and
+        // every extra unconverted city this flag buys is another follower
+        // for the rival's clock. So the wide target now stands down while
+        // the empire is measurably bleeding the conversion race: three-plus
+        // cities with at least a third of them flying somebody else's faith.
+        // A healthy empire keeps the full wide capacity; a bleeding one
+        // stops digging and lets production and faith answer the race
+        // instead of feeding it.
+        let conversion_bleeding = {
+            let own: Vec<&crate::game::City> = g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .collect();
+            let faith = g.players[pid].religion.as_deref();
+            let foreign = own
+                .iter()
+                .filter(|city| {
+                    g.city_religion(city)
+                        .is_some_and(|majority| Some(majority) != faith)
+                })
+                .count();
+            own.len() >= 3 && foreign * 3 >= own.len()
+        };
+        let map_capacity = if self.wide_map_capacity && !conversion_bleeding {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
             // twelve. A fresh live mirror knows the world's dimensions but
             // deliberately carries only revealed terrain, so its counted
@@ -7565,7 +7599,7 @@ impl AdvancedAi {
         // leaving the current live opening bound at three cities. Start that
         // plan at the measured six-city floor; ordinary Advanced and the
         // frozen anchor retain three.
-        let city_floor = if self.wide_map_capacity {
+        let city_floor = if self.wide_map_capacity && !conversion_bleeding {
             self.city_target_floor.max(PRODUCTION_CITY_TARGET_FLOOR)
         } else {
             self.city_target_floor
@@ -9534,12 +9568,48 @@ impl AdvancedAi {
         }
         // Only when the ceiling is genuinely being paid. `housing_growth_mult`
         // pays 1.0 at headroom 2 and halves below it, so 2 is the break-even.
-        let capped = g
+        //
+        // ★★★ REPAIRED 2026-08-19 after the 4,000-pair native screen priced
+        // the old gate at −2.2 pp wins / −0.67 pp score share (z −3.0 / −4.6,
+        // seeds 40000000..): "any one capped city" handed the empire's
+        // research slot to the Aqueduct line — the exact hijack the
+        // `first_campus_tech` doc records live (Wheel-toward-Engineering at
+        // t34, Writing at t83). Two conditions replace it, each restoring a
+        // premise the goal always claimed: the ceiling must bind the EMPIRE
+        // (at least two capped cities, and at least half of them), and tech
+        // must be the binding constraint — a capped city that can already
+        // produce a housing-raising building or district is the production
+        // lanes' job (`housing_buildings`, `housing_districts`), not a
+        // research detour.
+        let capped: Vec<u32> = g
             .cities
             .values()
-            .filter(|city| city.owner == pid)
-            .any(|city| g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM);
-        if !capped {
+            .filter(|city| {
+                city.owner == pid && g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM
+            })
+            .map(|city| city.id)
+            .collect();
+        let cities = g.player_city_ids(pid).len();
+        if capped.len() < 2 || capped.len() * 2 < cities {
+            return None;
+        }
+        let raises_housing = |item: &Item| match item {
+            Item::Building { building } => g
+                .rules
+                .buildings
+                .get(building)
+                .is_some_and(|spec| spec.housing > 0.0),
+            Item::District { district, .. } => g
+                .rules
+                .districts
+                .get(district)
+                .is_some_and(|spec| spec.housing > 0.0),
+            _ => false,
+        };
+        let tech_bound = capped
+            .iter()
+            .any(|cid| !g.producible_items(pid, *cid).iter().any(raises_housing));
+        if !tech_bound {
             return None;
         }
         // The cheapest un-researched tech that unlocks a district this empire
@@ -17609,6 +17679,59 @@ impl AdvancedAi {
                     }
                 }
             }
+            // ★★★ `governor_every_lane` REPAIRED 2026-08-19. The composite
+            // measured −62/−95 Elo (PR #1955) and the 4,000-pair native
+            // screen −2.8 pp wins with −4.5 pp score share (z −3.7 / −35,
+            // seeds 40000000..), and the recorded census fingerprint says
+            // where the loss lives: under this routing the empire ends with
+            // traders at 0.70× of control, gold at 0.71×, buildings at
+            // 0.81×, while districts hold 0.94×. The mechanism: the baseline
+            // governor orders a Trader as a hard branch before any building
+            // (`economic_recovery_item`'s shape), while this scorer only
+            // PRICES one (~300–400) — and the district asks outbid it every
+            // time. So the lane routing now keeps the baseline's trader
+            // reservation as a preemption: an idle city fills an open,
+            // safe trade-route slot before the strategic argmax runs.
+            // Scoped to the every-lane routing so victory-targeted seats,
+            // war plans and Recovery keep their measured behaviour.
+            let every_lane_routing = (self.governor_victory_lanes
+                && matches!(
+                    plan.strategy,
+                    GrandStrategy::Science
+                        | GrandStrategy::Culture
+                        | GrandStrategy::Religion
+                        | GrandStrategy::Diplomacy
+                ))
+                || (self.governor_expansion_lane && plan.strategy == GrandStrategy::Expansion);
+            if committed.is_none()
+                && every_lane_routing
+                && self
+                    .base
+                    .should_add_trader_for_controller(g, pid, counts.traders)
+            {
+                let trader = Item::Unit {
+                    unit: crate::name!("trader"),
+                };
+                if g.can_produce(pid, cid, &trader)
+                    && g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: trader.clone(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        let city_name = g.cities[&cid].name.clone();
+                        think!(self.journal(), Economy, Decision,
+                            "{} starts a Trader before the lane's strategic pick", city_name;
+                            "an open trade-route slot compounds; the district ask can wait one build");
+                    }
+                    counts.add_item(g, &trader);
+                    continue;
+                }
+            }
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let items = g
@@ -19500,7 +19623,21 @@ impl AdvancedAi {
                 // So the Campus is exempted from the cliff and keeps asking in
                 // every city. The other four families are untouched.
                 let core_capped = district_count * 2 >= city_count;
-                let campus_keeps_asking = self.campus_every_city && family == "campus";
+                // ★★★ REPAIRED 2026-08-19 after the 4,000-pair native screen
+                // priced the unconditional exemption at −2.8 pp wins (z −3.7,
+                // share Δ ~0, seeds 40000000..): "keeps asking in every city"
+                // includes the size-three frontier town whose Library the
+                // funnel argument above can never staff, and the 130-point ask
+                // beat that town's growth buildings in a regime decided at a
+                // median of t134. Beyond the half-empire cliff the Campus now
+                // keeps asking only in a city big enough to feed the funnel —
+                // [`CAMPUS_EVERY_CITY_POP_FLOOR`] — so the coverage promise
+                // stays (no city is EVER told half the empire is enough once
+                // it can staff a Library) while the towns keep compounding
+                // until they qualify. Below the cliff nothing changes.
+                let campus_keeps_asking = self.campus_every_city
+                    && family == "campus"
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
                 // See `culture_coverage`: the same exemption, for the same
                 // reason — the civic tree cascades out of the Theater Square
                 // the way the tech tree cascades out of the Campus, and being

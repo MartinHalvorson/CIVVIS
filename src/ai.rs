@@ -273,6 +273,10 @@ const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
 /// a city past it has the defense strength, hitpoints, and production of a
 /// developed city and keeps the ordinary build order.
 const GARRISON_WALLS_POP_FLOOR: i32 = 8;
+/// `garrison_walls`: how close a visible hostile military unit must be to a
+/// city before the walls doctrine intercepts its production in peacetime.
+/// At a declared major war the doctrine fires empire-wide as before.
+const GARRISON_WALLS_THREAT_RADIUS: i32 = 8;
 
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
@@ -9511,6 +9515,37 @@ impl BasicAi {
         let eligible = city.is_capital
             || (city.pop < GARRISON_WALLS_POP_FLOOR && Self::city_is_frontier(g, pid, cid));
         if !eligible {
+            return None;
+        }
+        // ★★★ REPAIRED 2026-08-19 after the 4,000-pair native screen priced
+        // the unconditional doctrine at −2.1 pp wins / −0.51 pp score share
+        // (z −2.7 / −3.5, seeds 40000000..): every peaceful capital paid a
+        // granary-then-walls toll before its first district, in a regime two
+        // thirds of whose games are decided by conversion. The live defect
+        // this flag repairs (an unwalled capital falling to a t61
+        // declaration) needs danger, not a standing order: the doctrine now
+        // fires at a declared major war — the measured case — or when a
+        // visible hostile military unit stands within
+        // [`GARRISON_WALLS_THREAT_RADIUS`] of this city (a raider or a camp
+        // party is a real siege risk for a frontier town). A quiet map keeps
+        // its production.
+        let at_major_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        let visible_threat = || {
+            g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.unit_visible_to(unit.id, pid)
+                    && g.wdist(unit.pos, city.pos) <= GARRISON_WALLS_THREAT_RADIUS
+            })
+        };
+        if !at_major_war && !visible_threat() {
             return None;
         }
         let wall = Item::Building {

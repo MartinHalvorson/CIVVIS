@@ -3816,6 +3816,144 @@ fn battlefront_frame_keeps_later_reveals_out_of_turn_start_planning() {
     assert!(ai.battlefront_unit_visible(&game, 0, enemy));
 }
 
+/// The screen-flagged gene repairs of 2026-08-19: each gate that was measured
+/// causing losses now needs its firing condition, and stands down without it.
+mod flagged_gene_repairs {
+    use super::*;
+
+    /// `housing-research`: one capped city out of many no longer owns the
+    /// research slot; a majority-capped empire whose relief is already
+    /// producible leaves it to production; only a tech-bound, empire-binding
+    /// cap forces the goal.
+    ///
+    /// One fresh board per assertion: `producible_items` is memoized per
+    /// city, and a test that hand-inserts a tech between two calls would
+    /// read the first call's cached list.
+    #[test]
+    fn housing_research_needs_an_empire_binding_tech_bound_cap() {
+        let board = |capped: usize, pottery: bool| {
+            let mut g = Game::new_full(2, 24, 16, 61, 80, 0, false);
+            if pottery {
+                let granary_tech = g.rules.buildings[&crate::name!("granary")]
+                    .tech
+                    .clone()
+                    .expect("granary has a tech");
+                g.players[0].techs.insert(granary_tech);
+            }
+            let cities = [
+                found_test_city(&mut g, 0),
+                found_test_city(&mut g, 0),
+                found_test_city(&mut g, 0),
+            ];
+            for cid in cities.into_iter().take(capped) {
+                let housing = g.city_housing(&g.cities[&cid]);
+                g.cities.get_mut(&cid).unwrap().pop = housing.ceil() as i32 + 1;
+            }
+            g
+        };
+        let mut ai = AdvancedAi::new();
+        ai.enable_housing_research();
+        assert_eq!(
+            ai.unreachable_housing_tech(&board(0, false), 0),
+            None,
+            "nobody capped: no goal"
+        );
+        assert_eq!(
+            ai.unreachable_housing_tech(&board(1, false), 0),
+            None,
+            "one capped city of three must not own the research slot"
+        );
+        assert!(
+            ai.unreachable_housing_tech(&board(2, false), 0).is_some(),
+            "a majority-capped, tech-bound empire researches toward housing"
+        );
+        assert_eq!(
+            ai.unreachable_housing_tech(&board(2, true), 0),
+            None,
+            "a granary the capped cities can already order is production's job"
+        );
+    }
+
+    /// `garrison-walls`: the doctrine intercepts production at a declared
+    /// major war or with a visible hostile nearby — never on a quiet map.
+    #[test]
+    fn garrison_walls_needs_danger() {
+        let mut g = Game::new_full(2, 24, 16, 62, 80, 0, false);
+        let mut ai = BasicAi::new();
+        ai.garrison_walls = true;
+        let capital = found_test_city(&mut g, 0);
+        let masonry = g.rules.buildings[&crate::name!("walls")]
+            .tech
+            .clone()
+            .expect("walls have a tech");
+        g.players[0].techs.insert(masonry);
+        // Peace, no visible hostile: the capital keeps its production.
+        assert_eq!(
+            ai.garrison_walls_item(&g, 0, capital),
+            None,
+            "a quiet map pays no walls toll"
+        );
+        // A declared major war restores the measured doctrine.
+        g.at_war.insert((0, 1));
+        assert!(
+            ai.garrison_walls_item(&g, 0, capital).is_some(),
+            "the t61-declaration case the flag exists for still fires"
+        );
+    }
+
+    /// `campus-every-city`: beyond the half-empire cliff the exemption only
+    /// asks in a city big enough to staff the funnel.
+    #[test]
+    fn campus_every_city_pop_floor_is_wired() {
+        // The gate is a conjunction inside the district scorer; pin the
+        // constant and the flag here so a retune is a conscious edit.
+        assert_eq!(CAMPUS_EVERY_CITY_POP_FLOOR, 7);
+        let source = include_str!("../advanced.rs");
+        assert!(
+            source.contains("city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR"),
+            "the coverage exemption must read the pop floor"
+        );
+    }
+
+    /// `governor-every-lane`: the lane routing keeps the baseline's trader
+    /// reservation as a preemption, scoped to the every-lane dispatch.
+    #[test]
+    fn every_lane_routing_reserves_the_trader_first() {
+        let source = include_str!("../advanced.rs");
+        let gate = "if committed.is_none()\n                && every_lane_routing";
+        assert!(
+            source.contains(&gate.replace("\\n", "\n")),
+            "the trader preemption must be scoped to the every-lane routing"
+        );
+        assert!(
+            source.contains("should_add_trader_for_controller(g, pid, counts.traders)"),
+            "the preemption asks the baseline's own trader gate"
+        );
+    }
+
+    /// `wide-map-capacity`: the wide target stands down while a third of a
+    /// three-plus-city empire flies somebody else's faith.
+    #[test]
+    fn wide_map_capacity_stands_down_while_bleeding_conversion() {
+        let source = include_str!("../advanced.rs");
+        for needle in [
+            "let conversion_bleeding = {",
+            "self.wide_map_capacity && !conversion_bleeding",
+            "own.len() >= 3 && foreign * 3 >= own.len()",
+        ] {
+            assert!(
+                source.contains(needle),
+                "wide-map bleed gate must keep its shape: missing {needle:?}"
+            );
+        }
+        assert_eq!(
+            source.matches("self.wide_map_capacity && !conversion_bleeding").count(),
+            2,
+            "both the capacity and the floor read the bleed gate"
+        );
+    }
+}
+
 fn found_test_city(game: &mut Game, pid: usize) -> u32 {
     let position = game
         .map
