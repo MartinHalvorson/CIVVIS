@@ -29835,7 +29835,27 @@ impl AdvancedAi {
                 // target. Same shape as adaptive Recovery immediately above:
                 // `delegated_cities` still runs after this for the queues the
                 // war path leaves empty.
-                || (self.war_economy && plan.strategy == GrandStrategy::Conquest)
+                //
+                // ★★★★ REPAIRED 2026-08-19: only while the war is DECLARED.
+                // Both gene screens priced the unconditional routing as the
+                // single worst flag on the board — −7.2 pp wins (z −9.6) over
+                // 4,000 all-six-lane pairs (seeds 40000000..), and
+                // **−26.7 pp (z −29) over 3,200 seat-pairs in the
+                // domination,score regime it was built for** (seeds
+                // 41000000..): a seat whose plan merely SAYS Conquest ran its
+                // whole empire through war production, against native wars
+                // that capture nearly nothing (17 declarations, 4 cities, 0
+                // capitals over 12 recorded games) and games that end on
+                // score at t250. The peacetime staging build-up is the
+                // baseline governor's job, exactly as without the flag; the
+                // war economy pays only while there is a war to pay for. An
+                // appointed timed war keeps its own routing via
+                // `war_plan.is_some()` above, unchanged.
+                || (self.war_economy
+                    && plan.strategy == GrandStrategy::Conquest
+                    && plan
+                        .target_player
+                        .is_some_and(|target| g.is_at_war(pid, target)))
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }

@@ -3929,6 +3929,28 @@ mod flagged_gene_repairs {
         );
     }
 
+    /// `war-economy`: the war production routing needs a DECLARED war with
+    /// the plan's target — a plan that merely says Conquest leaves the
+    /// empire's queues to the baseline governor, as without the flag.
+    #[test]
+    fn war_economy_routing_needs_a_declared_war() {
+        let source = include_str!("../advanced.rs");
+        let gate = "|| (self.war_economy
+                    && plan.strategy == GrandStrategy::Conquest
+                    && plan
+                        .target_player
+                        .is_some_and(|target| g.is_at_war(pid, target)))";
+        assert!(
+            source.contains(gate),
+            "war-economy's production routing must require a declared war"
+        );
+        assert_eq!(
+            source.matches("self.war_economy && plan.strategy == GrandStrategy::Conquest").count(),
+            0,
+            "the unconditional routing must not come back"
+        );
+    }
+
     /// `wide-map-capacity`: the wide target stands down while a third of a
     /// three-plus-city empire flies somebody else's faith.
     #[test]
