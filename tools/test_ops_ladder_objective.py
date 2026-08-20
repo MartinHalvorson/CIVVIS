@@ -156,6 +156,40 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                 words = [w for w in done.stdout.split("\n") if w != ""]
                 self.assertEqual(words, expected)
 
+    def test_the_installed_supervisor_forwards_a_named_live_withhold_as_words(self):
+        """The live A/B gate is a list of argv words, never one shell string.
+
+        The runner already records `withheld` in each game summary, but this
+        is the only hop that can otherwise lose the operator's named arm.  In
+        particular, zsh does not split a quoted comma-list for us: turn it
+        into repeated `--without TREATMENT` pairs before the climb starts.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("WITHHELD=${CIVVIS_WITHOUT:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${WITHOUT_ARGS[@]}"', source[invocation_start:invocation_end])
+        script = gate + '\nfor word in "${WITHOUT_ARGS[@]}"; do print -r -- "$word"; done\n'
+        for raw, expected in (
+            (None, []),
+            ("war-economy", ["--without", "war-economy"]),
+            ("war-economy,garrison-walls",
+             ["--without", "war-economy", "--without", "garrison-walls"]),
+        ):
+            with self.subTest(raw=raw):
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("CIVVIS_")}
+                if raw is not None:
+                    env["CIVVIS_WITHOUT"] = raw
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True, check=True)
+                words = [word for word in done.stdout.split("\n") if word]
+                self.assertEqual(words, expected)
+
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("civ6_ladder_policy.py", source)
