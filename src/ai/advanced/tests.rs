@@ -3954,9 +3954,6 @@ mod flagged_gene_repairs {
         assert!(source.contains("fn live_war_economy_requires_recovery"));
     }
 
-
-
-
     /// The war-economy front bound keeps its shape — and the reverted
     /// building preemption stays out (it re-measured −3.6 pp wins on 2,000
     /// disjoint pairs; the revert note in `advanced_production` records it).

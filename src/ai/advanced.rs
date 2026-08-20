@@ -30133,24 +30133,24 @@ impl AdvancedAi {
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
                 || every_lane
-                // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
-                // 2026-08-20, by its own numbers, after three repairs in
-                // three cycles. Unrepaired it measured −7.2 pp wins over
-                // 4,000 native pairs (seeds 40M) and **−26.7 pp (z −29)**
-                // in the domination,score regime it was built for (seeds
-                // 41M). The declared-war gate took the war regime to −18.1
-                // (seeds 44M); the front bound to −7.4 (seeds 48M); the
-                // stall clock to **−6.8 [−10.0, −3.5], z −4.1** (seeds
-                // 50M) — statistically unmoved. Routing an empire's
-                // production through the war path loses the development
-                // race in every regime and every design measured, however
-                // the routing is bounded. The flag and its PROTECTIVE
-                // halves stay (`live_war_economy_requires_recovery`, the
-                // maintenance-emergency policy cards — they prevent the
-                // recorded bankruptcy disbands); an appointed timed war
-                // keeps its own `war_plan` routing above, unchanged. Do not
-                // re-add a Conquest routing here without a mechanism the
-                // three removed gates did not have.
+            // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
+            // 2026-08-20, by its own numbers, after three repairs in
+            // three cycles. Unrepaired it measured −7.2 pp wins over
+            // 4,000 native pairs (seeds 40M) and **−26.7 pp (z −29)**
+            // in the domination,score regime it was built for (seeds
+            // 41M). The declared-war gate took the war regime to −18.1
+            // (seeds 44M); the front bound to −7.4 (seeds 48M); the
+            // stall clock to **−6.8 [−10.0, −3.5], z −4.1** (seeds
+            // 50M) — statistically unmoved. Routing an empire's
+            // production through the war path loses the development
+            // race in every regime and every design measured, however
+            // the routing is bounded. The flag and its PROTECTIVE
+            // halves stay (`live_war_economy_requires_recovery`, the
+            // maintenance-emergency policy cards — they prevent the
+            // recorded bankruptcy disbands); an appointed timed war
+            // keeps its own `war_plan` routing above, unchanged. Do not
+            // re-add a Conquest routing here without a mechanism the
+            // three removed gates did not have.
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
