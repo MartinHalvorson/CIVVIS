@@ -3960,9 +3960,10 @@ mod flagged_gene_repairs {
     #[test]
     fn cycle_two_preemptions_are_wired() {
         let source = include_str!("../advanced.rs");
-        for needle in ["MEASURED AND REVERTED"] {
-            assert!(source.contains(needle), "missing {needle:?}");
-        }
+        assert!(
+            source.contains("MEASURED AND REVERTED"),
+            "the building-preemption revert note must stay"
+        );
         assert!(
             !source.contains("finishes {} before the lane's strategic pick"),
             "the naive building preemption must stay reverted"
