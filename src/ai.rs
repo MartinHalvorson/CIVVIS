@@ -19751,7 +19751,13 @@ mod tests {
     /// the culture lane open, and nothing hostile in vision. See
     /// `garrison_walls_item`.
     fn unwalled_masonry_capital(seed: u64) -> (Game, u32, BasicAi) {
-        let mut g = Game::new_full(1, 24, 16, seed, 120, 0, false);
+        // Two players AT WAR: the repaired doctrine (2026-08-19) fires on a
+        // declared major war or a visible nearby hostile, never on a quiet
+        // map — the unconditional interception measured −2.1 pp wins over
+        // 4,000 screened pairs. The declared war is the measured live case
+        // (an unwalled capital falling to a t61 declaration).
+        let mut g = Game::new_full(2, 24, 16, seed, 120, 0, false);
+        g.at_war.insert((0, 1));
         let settler = g
             .player_unit_ids(0)
             .into_iter()
