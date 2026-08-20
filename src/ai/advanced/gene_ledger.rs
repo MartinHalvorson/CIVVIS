@@ -194,10 +194,7 @@ impl AdvancedAi {
     /// verification arm. Callers must validate names before this point; an
     /// unrecognized, host-only, or already-deployed tag is ignored here rather
     /// than becoming a back door around the ledger.
-    pub fn apply_gene_ledger_with_forced_live(
-        &mut self,
-        forced_on: &[&str],
-    ) -> GeneLedgerApplied {
+    pub fn apply_gene_ledger_with_forced_live(&mut self, forced_on: &[&str]) -> GeneLedgerApplied {
         let mut applied = GeneLedgerApplied::default();
         for &(_, tag, disable) in super::LIVE_TREATMENTS
             .iter()

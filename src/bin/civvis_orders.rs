@@ -4372,11 +4372,9 @@ fn main() {
     };
     if let Some(tag) = forced_on
         .iter()
-        .find(|tag| withheld.iter().any(|treatment| treatment.as_str() == *tag))
+        .find(|tag| withheld.iter().any(|treatment| treatment.as_str() == **tag))
     {
-        eprintln!(
-            "civvis-orders: {tag:?} cannot be both --with and --without in one live arm"
-        );
+        eprintln!("civvis-orders: {tag:?} cannot be both --with and --without in one live arm");
         std::process::exit(2);
     }
     // Validate every requested row before a single turn is driven. Discovering
@@ -5698,7 +5696,11 @@ mod tests {
         let mut ai = civvis::ai::AdvancedAi::new();
         super::configure_live_bridge(&mut ai, &forced, &[])
             .expect("the validated arm configures the live controller");
-        assert!(ai.stacked_escort, "the requested gene is restored");
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
+                .contains(&"stacked-escort"),
+            "the requested gene is restored in the arm's genome"
+        );
         assert!(
             !ai.settler_stack_discipline(),
             "a neighbouring held gene stays off until the experiment names it"
