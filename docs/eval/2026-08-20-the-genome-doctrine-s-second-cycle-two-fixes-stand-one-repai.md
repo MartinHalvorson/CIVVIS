@@ -51,8 +51,16 @@ civs, field production `advanced`):
 | `governor-every-lane` | +0.8 [−1.3, +2.9] win · −4.63 share (z −33) | **−3.6 [−5.6, −1.6] win (z −3.5) · −5.39 share (z −37)** | the building preemption made BOTH axes worse and was **reverted the same day**, its number recorded in the code |
 | `campus-every-city` | −1.7 [−3.8, +0.4] | −1.8 [−3.8, +0.2] | stable; unchanged by this cycle, on cycle three's docket |
 
-**Run 5b (war regime):**
-<!-- 5B_RESULTS -->
+**Run 5b (war regime, classic design, 800 pairs, resolution ±4.7 pp):**
+
+| gene | cycle-2 code (5b) | read |
+|---|---|---|
+| `wide-map-capacity` | **+8.9 [+5.6, +12.2], z +5.3 · share +3.30, z +10.0** | the repair keeps the war upside — positive in every regime and design measured |
+| `war-economy` | **−7.4 [−10.7, −4.1], z −4.4** | native is a null (−0.8) but the war regime still pays: even front-bounded war production loses a hundred-turn war of development |
+
+(5b is classic-design, so its `war-economy` row is not interval-comparable
+with 3b's all-seats −18.1; the direction and the family-wise verdict are the
+comparison.)
 
 **The 6p whole-genome screen** (operator specification: six players, every
 seat its own genome; 13,386 game-pairs / 26,898 seat-observations at seeds
@@ -77,6 +85,12 @@ seat its own genome; 13,386 game-pairs / 26,898 seat-observations at seeds
 - **Shipped: the two fixes that measured** — `war-economy`'s front bound and
   `garrison-walls`' risk-priced gate, each with tests pinning the repaired
   contract and the study that motivated it in the doc comment.
+- **`war-economy` gets one more cycle, then the knife.** Two repairs took it
+  from −7.2 to a native null, and the war regime still reads −7.4. The
+  operator's standing rule is fix-or-remove; the third attempt is the war
+  stall clock (`last_campaign_progress` — stand the routing down when the
+  war stops advancing), and if that does not clear the war regime the
+  routing is removed by the fleet's established pattern.
 - **Shipped: the revert** of the governor's building preemption, with its
   number in the code so the naive form is not retried. The −4.6 share drag
   stays an open problem; the note names the unmeasured next levers (scope
