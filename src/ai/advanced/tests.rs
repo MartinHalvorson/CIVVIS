@@ -28097,8 +28097,14 @@ fn a_blind_plan_stops_at_the_step_that_revealed_new_ground() {
             "fixture: the walk must uncover ground the unit did not know"
         );
         if reassess {
-            assert_eq!(ai.census.step_reassessed, 1, "the reveal on the first step cut the plan");
-            assert_ne!(board.units[&uid].pos, a, "the revealing step itself was taken");
+            assert_eq!(
+                ai.census.step_reassessed, 1,
+                "the reveal on the first step cut the plan"
+            );
+            assert_ne!(
+                board.units[&uid].pos, a,
+                "the revealing step itself was taken"
+            );
             assert!(
                 ai.base
                     .last_path_step_from
@@ -28109,7 +28115,10 @@ fn a_blind_plan_stops_at_the_step_that_revealed_new_ground() {
             );
         } else {
             assert_eq!(ai.census.step_reassessed, 0);
-            assert_eq!(board.units[&uid].pos, d, "without the gene the blind walk is finished");
+            assert_eq!(
+                board.units[&uid].pos, d,
+                "without the gene the blind walk is finished"
+            );
         }
     }
 }
@@ -28148,7 +28157,10 @@ fn a_step_that_sights_a_hostile_dirties_the_force_groups() {
         let _ = board.unit_sight(uid);
         let baseline = AdvancedAi::visible_hostiles(&board, 0);
         board.spawn_test_unit("warrior", barb, lurker);
-        assert!(!board.player_can_see(0, lurker), "fixture: the lurker is unseen from A");
+        assert!(
+            !board.player_can_see(0, lurker),
+            "fixture: the lurker is unseen from A"
+        );
         assert_eq!(AdvancedAi::visible_hostiles(&board, 0), baseline);
 
         let mut ai = AdvancedAi::new();
@@ -28159,10 +28171,16 @@ fn a_step_that_sights_a_hostile_dirties_the_force_groups() {
         // The loop's own bookkeeping around one sighted step along the chain.
         let hostiles_before = AdvancedAi::visible_hostiles(&board, 0);
         assert!(ai.base.path_move(&mut board, 0, uid, b), "the step to B");
-        assert!(board.player_can_see(0, lurker), "fixture: the step brings the warrior into view");
+        assert!(
+            board.player_can_see(0, lurker),
+            "fixture: the step brings the warrior into view"
+        );
         assert!(AdvancedAi::visible_hostiles(&board, 0) > hostiles_before);
         ai.note_sightings(&board, 0, hostiles_before);
-        assert_eq!(ai.force_groups_dirty, reassess, "dirtied only with the gene, reassess={reassess}");
+        assert_eq!(
+            ai.force_groups_dirty, reassess,
+            "dirtied only with the gene, reassess={reassess}"
+        );
         assert_eq!(ai.census.reveal_regroups, u32::from(reassess));
         // A step that sights nothing new leaves the groups alone either way.
         ai.force_groups_dirty = false;

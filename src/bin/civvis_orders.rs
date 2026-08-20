@@ -7771,10 +7771,22 @@ mod tests {
         edges.insert(10, (5, 5));
 
         assert_eq!(cut_walks_at_first_unknown(&mut orders, &edges), 1);
-        assert_eq!(orders[0].pos, Some((11, 10)), "the scout stops where the known ends");
+        assert_eq!(
+            orders[0].pos,
+            Some((11, 10)),
+            "the scout stops where the known ends"
+        );
         assert_eq!(orders[1].pos, Some((3, 3)), "known ground: untouched");
-        assert_eq!(orders[2].pos, Some((20, 20)), "a walk with a follow-up: untouched");
-        assert_eq!(orders[4].pos, Some((5, 5)), "already at the edge: not counted");
+        assert_eq!(
+            orders[2].pos,
+            Some((20, 20)),
+            "a walk with a follow-up: untouched"
+        );
+        assert_eq!(
+            orders[4].pos,
+            Some((5, 5)),
+            "already at the edge: not counted"
+        );
     }
 
     /// A settler with two movement points logs two hex steps; the host must be

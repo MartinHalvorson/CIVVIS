@@ -527,10 +527,8 @@ mod tests {
     /// real sweep and the delta (rule 3 of `apply_finished_improvements`).
     #[test]
     fn a_tiles_delta_merges_new_ground_without_standing_for_a_sweep() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-mirror-tiles-delta-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("civvis-mirror-tiles-delta-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("events.jsonl");
         std::fs::write(
@@ -545,7 +543,11 @@ mod tests {
         .unwrap();
 
         let snapshot = snapshot_from_events(&path).unwrap();
-        assert_eq!(snapshot.revealed_count(), 2, "the delta's plot is on the map");
+        assert_eq!(
+            snapshot.revealed_count(),
+            2,
+            "the delta's plot is on the map"
+        );
         assert_eq!(
             snapshot.plot((2, 1)).and_then(|plot| plot.t.as_deref()),
             Some("TERRAIN_PLAINS")
@@ -8344,8 +8346,8 @@ pub fn snapshot_from_events_at(
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                let is_delta = serde_json::from_str::<TilesDeltaStamp>(line)
-                    .is_ok_and(|stamp| stamp.delta);
+                let is_delta =
+                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
                 if is_delta {
                     snapshot.merge_delta(&chunk);
                 } else {
