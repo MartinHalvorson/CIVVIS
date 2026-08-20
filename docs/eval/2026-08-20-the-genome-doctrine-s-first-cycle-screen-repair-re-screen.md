@@ -111,9 +111,53 @@ resolved, and the all-repairs-on seats it screens cost ~2 games/min):**
 | `arrival-waves` | +1.6 [−0.6, +3.9] | −3.0 [−6.7, +0.6] | no reliable effect either read; stays an opt-in |
 | `joint-tactics` | +1.4 [−0.8, +3.7] | +2.1 [−1.7, +5.8] | leans positive both reads, unresolved |
 
-**Run 3c — classic all-six, post-repair (against run 1's row for each gene):**
-<!-- 3C_RESULTS -->
+**Run 3c — classic all-six, post-repair, the exact run-1 design (2,000
+pairs, resolution ±3.0 pp win / ±0.49 pp share; family-wise bar |z| ≥ 2.64):**
+
+| gene | run 1 (pre-repair) | run 3c (post-repair) | verdict |
+|---|---|---|---|
+| `wide-map-capacity` | −3.4 [−4.9, −1.9] | **+3.0 [+0.9, +5.1], z +2.8 · share +0.69, z +3.9** | **flipped to a helper** — and 3b holds +14.5 in the war regime. The intervals are disjoint |
+| `housing-research` | −2.2 [−3.7, −0.8] | +0.4 [−1.7, +2.5] · share +0.00 | repaired to a clean null |
+| `governor-every-lane` | −2.8 [−4.3, −1.3] · share −4.45 | **+0.8 [−1.3, +2.9]** · share **−4.63, z −32.9** | the win-rate harm is gone (disjoint intervals); the score-share drag is untouched — the lanes still under-compound the economy beyond traders |
+| `campus-every-city` | −2.8 [−4.3, −1.3] | −1.7 [−3.8, +0.4] | improved, no longer resolves as harmful; re-screen next cycle |
+| `war-economy` | −7.2 [−8.7, −5.7] | **−4.1 [−6.2, −2.0], z −3.9** | improved (disjoint intervals) and still past the bar |
+| `garrison-walls` | −2.1 [−3.5, −0.6] | **−3.1 [−5.2, −1.0], z −2.9** | the war-or-visible-threat gate did not clear it |
 
 ## What was decided
 
-<!-- DECISIONS: filled with 3b/3c -->
+**Shipped (this PR): the six repairs**, each behind its existing flag (all off
+in production `advanced`), each doc-commented with the number that motivated
+it, each with a behaviour-pinning test. Scorecard, by the doctrine's own
+"refine or drop":
+
+- **Repaired to helpers or nulls:** `wide-map-capacity` (now the strongest
+  measured positive in BOTH regimes: +3.0 native, +14.5 war),
+  `housing-research` (null), `governor-every-lane` on the win axis.
+- **Improved, keep and re-screen:** `campus-every-city` (−2.8 → −1.7,
+  unresolved); `war-economy` (−7.2 → −4.1 native, −26.7 → −18.1 war — two
+  disjoint-interval improvements from one gate).
+- **Drop candidates:** `war-economy` and `garrison-walls` still resolve as
+  harmful after one repair each. Dropping a repair from a shipped bundle is
+  the matrix gate's decision, not a screen's — the recommendation recorded
+  here is that `advanced_synergy`'s successors withhold both, and that the
+  live bridge read its own ladder before following (the live seat's regime is
+  neither of the two screened here).
+- **The governor's residual:** the −4.6 pp score-share drag under
+  `governor-every-lane` survives the trader preemption. The recorded census
+  fingerprint (buildings 0.81×, gold 0.71×) names the next lever: the same
+  hard-preemption treatment for the compounding buildings the lanes skip.
+- `ranged-line-of-sight` is recorded as a Firaxis-fidelity self-restriction:
+  natively priced −2.2, correct live behaviour, not a defect.
+
+**The instrument** (`--all-seats`, `--by-civ`, clustered errors) and the
+genome doctrine are `docs/GENE_SCREEN.md`'s charter now. Run 3R is kept as
+the round's methods lesson: a verification must match its baseline's design
+and field, or it verifies nothing. The first wide-map gate is kept as the
+other lesson: a repair is a hypothesis until the screen says otherwise — its
+signal fired ~t120, after the settling window, and the paired cities delta
+(+2.68 → +2.78) caught it in one read.
+
+**Next cycle** is already running: the operator's 6-player specification —
+10,000 games, 60,000 civ-tests, ~10,000 winners, the whole 64-gene genome,
+seeds 46000000.. — with the repaired code, as the standing whole-genome
+screen this doctrine calls for.
