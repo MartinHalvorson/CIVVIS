@@ -3945,7 +3945,9 @@ mod flagged_gene_repairs {
             "war-economy's production routing must require a declared war"
         );
         assert_eq!(
-            source.matches("self.war_economy && plan.strategy == GrandStrategy::Conquest").count(),
+            source
+                .matches("self.war_economy && plan.strategy == GrandStrategy::Conquest")
+                .count(),
             0,
             "the unconditional routing must not come back"
         );
