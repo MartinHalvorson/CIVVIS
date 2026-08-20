@@ -177,6 +177,21 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
+/// `arrival_waves`: how many rear reinforcements must stand together, inside
+/// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
+/// its front group's orders. Two is the smallest wave that is not "one at a
+/// time", which is the shape `docs/LIVE_TACTICS.md` item 4 names: on the live
+/// seat 73 of 231 combat losses were taken at a >30-point strength gap by
+/// units that reached an engaged front alone.
+const ARRIVAL_WAVE_SIZE: usize = 2;
+/// `arrival_waves`: the most turns a lone arrival is held short of an engaged
+/// front waiting for company. After this it joins on its own — a held unit is
+/// still a unit not fighting, and the front may need it more than the wave.
+const ARRIVAL_WAVE_PATIENCE_TURNS: u32 = 3;
+/// `arrival_waves`: how close two held arrivals must be to count as one wave —
+/// `command_radius` (6), the same clique radius force groups are built at, so
+/// a released wave is one group's worth of units, not two.
+const ARRIVAL_WAVE_RADIUS: i32 = 6;
 
 /// How long the defensive-war `Recovery` posture may hold on the power-gap
 /// trigger alone before the empire returns to its own lane, in standard turns.
@@ -733,6 +748,17 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
+    /// `arrival_waves`: fresh reinforcements held short of an engaging front
+    /// (units, once per hold), units released as part of a wave of
+    /// [`ARRIVAL_WAVE_SIZE`] or more, and units released alone because
+    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`] ran out. All zero unless the flag is
+    /// on, so a census that reads zero under the flag says the mechanism
+    /// never fired — the question every treatment ends on. A held unit that
+    /// comes into contact or whose group stops engaging is dropped without
+    /// a release, so `holds` may exceed `releases + lone`.
+    pub arrival_wave_holds: u32,
+    pub arrival_wave_releases: u32,
+    pub arrival_wave_lone: u32,
 }
 
 impl StrategyCensus {
@@ -791,6 +817,9 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
+        self.arrival_wave_holds += other.arrival_wave_holds;
+        self.arrival_wave_releases += other.arrival_wave_releases;
+        self.arrival_wave_lone += other.arrival_wave_lone;
     }
 }
 
@@ -1588,6 +1617,32 @@ pub struct AdvancedAi {
     /// front fights with whatever staged on declaration day. **Off by
     /// default, live-bridge only.**
     pub war_reinforcement: bool,
+    /// Rear reinforcements reach an engaged front as a wave, not one at a
+    /// time. `wartime_reinforcement_step` walks the standing-still rear to the
+    /// objective's staging ring, and the turn a marcher comes inside
+    /// `command_radius` of the front it joins that clique and takes its
+    /// orders — which, for an `Engage`/`Advance` front, means walking into
+    /// the fight alone with whatever strength it brought. While this flag is
+    /// on, a unit that marched as a reinforcement last turn and is now in an
+    /// engaging group holds where it stands (fortified, out of contact) until
+    /// [`ARRIVAL_WAVE_SIZE`] such arrivals stand within
+    /// [`ARRIVAL_WAVE_RADIUS`] of each other or it has waited
+    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`]; then the whole wave is released in the
+    /// same turn. Item 4 of `docs/LIVE_TACTICS.md` ("arrive together"),
+    /// reduced to the one mechanism the recorded evidence names. **Off by
+    /// default everywhere**; opt-in by name (`gene_screen`,
+    /// `victory_eval --with arrival-waves`) until a screen has priced it.
+    pub arrival_waves: bool,
+    /// `arrival_waves` memory: the last turn each unit marched as a rear
+    /// reinforcement (`wartime_reinforcement_step`). A unit whose entry is
+    /// last turn's is a fresh arrival when it first takes group orders.
+    reinforcement_marches: BTreeMap<u32, u32>,
+    /// `arrival_waves` memory: the units currently held short of the front,
+    /// keyed to the turn they were first held. Cleared for a unit when its
+    /// wave is released, it comes into contact, or it leaves an engaging
+    /// group; rebuilt by [`AdvancedAi::plan_arrival_waves`] every time the
+    /// force groups are.
+    arrival_wave: BTreeMap<u32, u32>,
     /// Do not let the stall clause of the peace rules end a war the empire is
     /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
     /// 12) both offers peace and accepts any white peace at +320; while this
@@ -4336,6 +4391,8 @@ impl AdvancedAi {
         self.settler_retreats.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
+        self.reinforcement_marches.clear();
+        self.arrival_wave.clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
     }
@@ -4391,6 +4448,19 @@ impl AdvancedAi {
             .settler_closest
             .iter()
             .filter_map(|(uid, progress)| map.get(uid).map(|new| (*new, *progress)))
+            .collect();
+        // Wave memory is unit-keyed too: a held arrival whose id shifted
+        // would otherwise be released by amnesia, which is the piecemeal
+        // arrival the flag exists to stop.
+        self.reinforcement_marches = self
+            .reinforcement_marches
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
+        self.arrival_wave = self
+            .arrival_wave
+            .iter()
+            .filter_map(|(uid, since)| map.get(uid).map(|new| (*new, *since)))
             .collect();
         // ★★★★ Retired sites and retreat counts are settler memory too, and
         // the live bridge rebuilds its board every turn: without this remap a
@@ -4481,6 +4551,9 @@ impl AdvancedAi {
             muster_at_command_radius: false,
             war_economy: false,
             war_reinforcement: false,
+            arrival_waves: false,
+            reinforcement_marches: BTreeMap::new(),
+            arrival_wave: BTreeMap::new(),
             war_patience: false,
             endgame_war_runway: false,
             siege_commitment: false,
@@ -12869,7 +12942,118 @@ impl AdvancedAi {
                    objective, g.wdist(here, objective);
                    objective);
         }
-        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+        let marched = g
+            .apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok();
+        if marched && self.arrival_waves {
+            self.reinforcement_marches.insert(uid, g.turn);
+        }
+        Some(marched)
+    }
+
+    /// `arrival_waves`: decide, once per force-group rebuild, which fresh
+    /// arrivals hold short of their engaging front and which waves go.
+    ///
+    /// A candidate is a land military unit in an `Engage` or `Advance` group
+    /// that is not in contact (no enemy within 2) and is either already held
+    /// or marched as a rear reinforcement last turn. Candidates standing
+    /// within [`ARRIVAL_WAVE_RADIUS`] of at least `ARRIVAL_WAVE_SIZE - 1`
+    /// others are released together; a candidate held for
+    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`] is released alone. Everything else is
+    /// held. Release also forgets the unit's march, so a second rebuild in the
+    /// same turn (after an attack dirties the groups) cannot re-hold it — the
+    /// plan is idempotent within a turn.
+    ///
+    /// A held unit still counts in its group: it is inside the clique radius,
+    /// so its strength is in the front's `local_strength_ratio` and its
+    /// presence in the front's `readiness`. That is the point — a front that
+    /// was too weak to advance may clear the floor the turn the wave stands
+    /// beside it, and then the whole group goes, not the newcomer alone.
+    fn plan_arrival_waves(&mut self, g: &Game, enemies: &[usize]) {
+        if !self.arrival_waves {
+            return;
+        }
+        let turn = g.turn;
+        let mut candidates: Vec<(u32, Pos, u32)> = Vec::new();
+        for group in &self.force_groups {
+            if !matches!(group.posture, ForcePosture::Engage | ForcePosture::Advance) {
+                continue;
+            }
+            for &uid in &group.units {
+                let Some(unit) = g.units.get(&uid) else {
+                    continue;
+                };
+                let spec = &g.rules.units[unit.kind];
+                if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    continue;
+                }
+                let in_contact = g.units.values().any(|enemy| {
+                    enemies.contains(&enemy.owner) && g.wdist(unit.pos, enemy.pos) <= 2
+                });
+                if in_contact {
+                    continue;
+                }
+                let since = match self.arrival_wave.get(&uid) {
+                    Some(since) => *since,
+                    None if self
+                        .reinforcement_marches
+                        .get(&uid)
+                        .is_some_and(|marched| marched + 1 == turn) =>
+                    {
+                        turn
+                    }
+                    None => continue,
+                };
+                candidates.push((uid, unit.pos, since));
+            }
+        }
+        // Anyone no longer a candidate — dead, in contact, out of the
+        // engaging group — is no longer held.
+        self.arrival_wave
+            .retain(|uid, _| candidates.iter().any(|(other, _, _)| other == uid));
+        let mut released = Vec::new();
+        for &(uid, pos, since) in &candidates {
+            let company = candidates
+                .iter()
+                .filter(|(other, opos, _)| {
+                    *other != uid && g.wdist(pos, *opos) <= ARRIVAL_WAVE_RADIUS
+                })
+                .count();
+            let waited = turn.saturating_sub(since);
+            if company + 1 >= ARRIVAL_WAVE_SIZE || waited >= ARRIVAL_WAVE_PATIENCE_TURNS {
+                released.push((uid, company + 1, waited));
+            } else {
+                // Units, not rebuilds: the groups are rebuilt after every
+                // attack, and a unit held across three rebuilds of one turn
+                // was held once.
+                if self.arrival_wave.insert(uid, since).is_none() {
+                    self.census.arrival_wave_holds += 1;
+                }
+            }
+        }
+        for (uid, wave, waited) in released {
+            self.arrival_wave.remove(&uid);
+            self.reinforcement_marches.remove(&uid);
+            if wave >= ARRIVAL_WAVE_SIZE {
+                self.census.arrival_wave_releases += 1;
+            } else {
+                self.census.arrival_wave_lone += 1;
+            }
+            if self.journal().wants(crate::reasoning::Level::Detail) {
+                think!(self.journal(), Military, Detail,
+                       "A reinforcement wave of {} joins the front", wave;
+                       "held {} turn(s) short of an engaging front so it would not arrive alone",
+                       waited;
+                       g.units[&uid].pos);
+            }
+        }
     }
 
     /// A predecessor that missed the breakthrough upgrade because it was
@@ -24750,6 +24934,7 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
+        self.plan_arrival_waves(g, &enemies);
         // What the armies have been told to do. This is the layer between the
         // grand strategy and the individual attacks below it, and it is the
         // one an observer cannot infer from watching units move: a group that
@@ -27719,6 +27904,15 @@ impl AdvancedAi {
             return acted;
         }
         if let Some(orders) = &group {
+            // `arrival_waves`: a fresh arrival held short of an engaging
+            // front waits here, fortified, until its wave is released by
+            // `plan_arrival_waves`. Its immediate combat scan above already
+            // ran (a held unit is out of contact by construction), and the
+            // reinforcement march above declined it, so the only order it is
+            // declining is the one that would walk it into the fight alone.
+            if self.arrival_waves && self.arrival_wave.contains_key(&uid) {
+                return self.base.fortify_or_stop(g, pid, uid);
+            }
             return self.coordinated_tactical_step(
                 g,
                 pid,

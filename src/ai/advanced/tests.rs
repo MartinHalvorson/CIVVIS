@@ -20293,6 +20293,235 @@ fn quietest_first(g: &Game, mut candidates: Vec<Pos>) -> Vec<Pos> {
     candidates
 }
 
+/// An engaged front beside a wounded defender, and a reinforcement that
+/// marched last turn standing three tiles back: one clique at
+/// `command_radius`, so without the flag the newcomer takes the front's
+/// `Engage` order alone. Returns the board, the front, the defender and the
+/// two rear tiles.
+fn arrival_wave_board() -> (Game, [u32; 3], u32, Pos, Pos, Pos) {
+    let mut g = Game::new_full(2, 24, 16, 78, 80, 0, false);
+    g.at_war.insert((0, 1));
+    g.turn = 10;
+    let open_land = |g: &Game, pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            && g.units_at(pos).is_empty()
+            && g.city_at(pos).is_none()
+    };
+    let candidates = quietest_first(
+        &g,
+        g.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| open_land(&g, *pos))
+            .collect(),
+    );
+    let (target, ring, rear_a, rear_b) = candidates
+        .into_iter()
+        .find_map(|pos| {
+            let ring: Vec<Pos> = g
+                .nbrs(pos)
+                .into_iter()
+                .filter(|neighbor| open_land(&g, *neighbor))
+                .collect();
+            if ring.len() < 3 {
+                return None;
+            }
+            // Two rear tiles three to four tiles from the defender (out of
+            // contact) and within `command_radius` of every front unit and
+            // of each other (one clique, one wave).
+            let rear: Vec<Pos> = g
+                .wdisk(pos, 4)
+                .into_iter()
+                .filter(|rear| {
+                    (3..=4).contains(&g.wdist(*rear, pos))
+                        && open_land(&g, *rear)
+                        && ring[..3].iter().all(|front| g.wdist(*rear, *front) <= 6)
+                })
+                .collect();
+            let pair = rear.iter().find_map(|a| {
+                rear.iter()
+                    .find(|b| *b != a && g.wdist(*a, **b) <= 6)
+                    .map(|b| (*a, *b))
+            })?;
+            Some((pos, ring, pair.0, pair.1))
+        })
+        .expect("test map has an open land engagement with a rear");
+    for position in [target, ring[0], ring[1], ring[2], rear_a, rear_b] {
+        let tile = g.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.improvement = None;
+        tile.hills = false;
+    }
+    for ring_tile in ring.iter().copied() {
+        g.map.set_river_edge(target, ring_tile, false);
+    }
+    let front = [
+        g.spawn_test_unit("warrior", 0, ring[0]),
+        g.spawn_test_unit("archer", 0, ring[1]),
+        g.spawn_test_unit("catapult", 0, ring[2]),
+    ];
+    let defender = g.spawn_test_unit("warrior", 1, target);
+    g.units.get_mut(&defender).unwrap().hp = 20;
+    (g, front, defender, target, rear_a, rear_b)
+}
+
+fn arrival_wave_plan(g: &Game) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    }
+}
+
+/// `arrival_waves`: a reinforcement that marched last turn and now shares an
+/// engaging clique is held — unless the flag is off, in which case nothing
+/// is recorded and it takes the front's order as before.
+#[test]
+fn arrival_waves_hold_a_lone_fresh_reinforcement_short_of_an_engaged_front() {
+    let (mut g, front, _defender, _target, rear_a, _rear_b) = arrival_wave_board();
+    let arrival = g.spawn_test_unit("warrior", 0, rear_a);
+    let plan = arrival_wave_plan(&g);
+
+    let mut off = AdvancedAi::new();
+    off.reinforcement_marches.insert(arrival, g.turn - 1);
+    off.rebuild_force_groups(&g, 0, &plan);
+    let orders = off
+        .force_groups()
+        .iter()
+        .find(|group| group.units.contains(&arrival))
+        .expect("the arrival is inside the front's command radius");
+    assert!(front.iter().all(|uid| orders.units.contains(uid)));
+    assert_eq!(orders.posture, ForcePosture::Engage);
+    assert!(
+        off.arrival_wave.is_empty(),
+        "off by default: nothing is held"
+    );
+    assert_eq!(off.census.arrival_wave_holds, 0);
+
+    let mut on = AdvancedAi::new();
+    on.enable_arrival_waves();
+    on.reinforcement_marches.insert(arrival, g.turn - 1);
+    on.rebuild_force_groups(&g, 0, &plan);
+    assert_eq!(
+        on.arrival_wave.get(&arrival),
+        Some(&g.turn),
+        "held from this turn"
+    );
+    assert_eq!(on.census.arrival_wave_holds, 1);
+    assert_eq!(on.census.arrival_wave_releases, 0);
+    // The front itself is not held: only the fresh arrival is.
+    for uid in front {
+        assert!(!on.arrival_wave.contains_key(&uid));
+    }
+    // A second rebuild in the same turn is idempotent.
+    on.rebuild_force_groups(&g, 0, &plan);
+    assert_eq!(on.arrival_wave.get(&arrival), Some(&g.turn));
+    assert_eq!(on.arrival_wave.len(), 1);
+    // The flag's twin forgets the hold.
+    on.disable_arrival_waves();
+    assert!(on.arrival_wave.is_empty() && on.reinforcement_marches.is_empty());
+}
+
+/// Two fresh arrivals within `command_radius` of each other are one wave and
+/// go together the turn the second one stands beside the first; a release
+/// forgets the march so a later rebuild cannot re-hold either.
+#[test]
+fn arrival_waves_release_a_pair_together() {
+    let (mut g, _front, _defender, _target, rear_a, rear_b) = arrival_wave_board();
+    let first = g.spawn_test_unit("warrior", 0, rear_a);
+    let plan = arrival_wave_plan(&g);
+    let mut ai = AdvancedAi::new();
+    ai.enable_arrival_waves();
+    ai.reinforcement_marches.insert(first, g.turn - 1);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(ai.arrival_wave.contains_key(&first));
+
+    g.turn += 1;
+    let second = g.spawn_test_unit("warrior", 0, rear_b);
+    ai.reinforcement_marches.insert(second, g.turn - 1);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(
+        ai.arrival_wave.is_empty(),
+        "a pair is a wave: both released"
+    );
+    assert_eq!(ai.census.arrival_wave_releases, 2);
+    assert_eq!(ai.census.arrival_wave_lone, 0);
+    assert_eq!(
+        ai.census.arrival_wave_holds, 1,
+        "the first was held; the second never was"
+    );
+    assert!(!ai.reinforcement_marches.contains_key(&first));
+    assert!(!ai.reinforcement_marches.contains_key(&second));
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(ai.arrival_wave.is_empty(), "a released unit is not re-held");
+}
+
+/// A lone arrival is not held forever: after `ARRIVAL_WAVE_PATIENCE_TURNS`
+/// it joins on its own.
+#[test]
+fn arrival_waves_release_a_lone_arrival_when_patience_runs_out() {
+    let (mut g, _front, _defender, _target, rear_a, _rear_b) = arrival_wave_board();
+    let arrival = g.spawn_test_unit("warrior", 0, rear_a);
+    let plan = arrival_wave_plan(&g);
+    let mut ai = AdvancedAi::new();
+    ai.enable_arrival_waves();
+    ai.reinforcement_marches.insert(arrival, g.turn - 1);
+    let held_from = g.turn;
+    for _ in 0..ARRIVAL_WAVE_PATIENCE_TURNS {
+        ai.rebuild_force_groups(&g, 0, &plan);
+        assert_eq!(ai.arrival_wave.get(&arrival), Some(&held_from));
+        g.turn += 1;
+    }
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(
+        ai.arrival_wave.is_empty(),
+        "patience expired: released alone"
+    );
+    assert_eq!(ai.census.arrival_wave_releases, 0, "not a wave");
+    assert_eq!(ai.census.arrival_wave_lone, 1);
+    assert_eq!(ai.census.arrival_wave_holds, 1, "one unit, held once");
+}
+
+/// A held arrival that comes into contact, or whose group stops engaging,
+/// is no longer held — the tactical layer and the posture logic own it.
+#[test]
+fn arrival_waves_drop_the_hold_once_in_contact() {
+    let (mut g, _front, _defender, target, rear_a, _rear_b) = arrival_wave_board();
+    let arrival = g.spawn_test_unit("warrior", 0, rear_a);
+    let plan = arrival_wave_plan(&g);
+    let mut ai = AdvancedAi::new();
+    ai.enable_arrival_waves();
+    ai.reinforcement_marches.insert(arrival, g.turn - 1);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(ai.arrival_wave.contains_key(&arrival));
+    // An enemy steps up to the held unit: it is in contact now.
+    let raider_tile = g
+        .nbrs(rear_a)
+        .into_iter()
+        .find(|pos| {
+            g.map
+                .get(*pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.units_at(*pos).is_empty()
+                && g.wdist(*pos, target) >= 2
+        })
+        .expect("an open tile beside the rear");
+    g.spawn_test_unit("warrior", 1, raider_tile);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(
+        !ai.arrival_wave.contains_key(&arrival),
+        "in contact: not held"
+    );
+}
+
 #[test]
 fn armies_and_fleets_receive_domain_specific_shared_orders() {
     let mut g = Game::new_full(2, 24, 16, 78, 80, 0, false);
