@@ -177,11 +177,6 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
-/// `war_economy`: how far from the campaign objective a city still counts as
-/// the war machine while the adaptive war economy is routing production.
-/// Beyond it the interior keeps the baseline governor. Twelve covers the
-/// staging ring (3..=5), the reinforcement front (8), and a margin of march.
-const WAR_ECONOMY_FRONT_RADIUS: i32 = 12;
 /// `arrival_waves`: how many rear reinforcements must stand together, inside
 /// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
 /// its front group's orders. Two is the smallest wave that is not "one at a
@@ -5036,12 +5031,7 @@ impl AdvancedAi {
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
         let cities = g.player_city_ids(pid).len();
-        // `war_economy`'s stall clock (cycle three) reads the same
-        // ownership-aware progress the patience clock keeps, so the
-        // observation runs for either flag. The count-based fallback below
-        // keeps its exact reach: controllers with neither flag are
-        // unchanged, including the frozen diplomacy fatigue at 11284.
-        if self.war_patience || self.war_economy {
+        if self.war_patience {
             // Civilization VI preserves a city's id when it changes hands, and
             // the live mirror preserves that identity too. A new Roman city has
             // no prior foreign owner, so it must not buy another full patience
@@ -17807,39 +17797,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
-        // ★★★ `war_economy`, second cut (2026-08-20). The declared-war gate
-        // improved the gene with disjoint intervals in both regimes
-        // (−7.2 → −4.1 native over 2,000 pairs, seeds 45000000..;
-        // −26.7 → −18.1 at war, seeds 44000000..) and it still resolves
-        // harmful: even a declared war does not need EVERY city on war
-        // production for fifty-plus turns. The bound is spatial — cities
-        // within [`WAR_ECONOMY_FRONT_RADIUS`] of the campaign objective are
-        // the war machine; the interior keeps compounding under the baseline
-        // governor, exactly as it would without the flag (the skipped queues
-        // fall through to `delegated_cities`, whose comment already promises
-        // that). An appointed timed war (`war_plan`) and a victory-targeted
-        // seat keep their whole-empire routing — this bounds only the
-        // adaptive war economy that measured harmful.
-        let war_front_only = self.war_economy
-            && self.war_plan.is_none()
-            && self.active_victory_target(g).is_none()
-            && plan.strategy == GrandStrategy::Conquest
-            && plan
-                .target_player
-                .is_some_and(|target| g.is_at_war(pid, target));
-        let front_objective = war_front_only
-            .then(|| {
-                plan.target_city
-                    .and_then(|city| g.cities.get(&city))
-                    .map(|city| city.pos)
-            })
-            .flatten();
         for cid in city_ids {
-            if let Some(objective) = front_objective {
-                if g.wdist(g.cities[&cid].pos, objective) > WAR_ECONOMY_FRONT_RADIUS {
-                    continue;
-                }
-            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -30175,46 +30133,24 @@ impl AdvancedAi {
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
                 || every_lane
-                // An adaptive Conquest plan otherwise falls through to the
-                // Basic governor and fights its war on a peacetime army
-                // target. Same shape as adaptive Recovery immediately above:
-                // `delegated_cities` still runs after this for the queues the
-                // war path leaves empty.
-                //
-                // ★★★★ REPAIRED 2026-08-19: only while the war is DECLARED.
-                // Both gene screens priced the unconditional routing as the
-                // single worst flag on the board — −7.2 pp wins (z −9.6) over
-                // 4,000 all-six-lane pairs (seeds 40000000..), and
-                // **−26.7 pp (z −29) over 3,200 seat-pairs in the
-                // domination,score regime it was built for** (seeds
-                // 41000000..): a seat whose plan merely SAYS Conquest ran its
-                // whole empire through war production, against native wars
-                // that capture nearly nothing (17 declarations, 4 cities, 0
-                // capitals over 12 recorded games) and games that end on
-                // score at t250. The peacetime staging build-up is the
-                // baseline governor's job, exactly as without the flag; the
-                // war economy pays only while there is a war to pay for. An
-                // appointed timed war keeps its own routing via
-                // `war_plan.is_some()` above, unchanged.
-                // ★★★ Cycle three adds the STALL CLOCK, the flag's last
-                // chance before removal: after two repairs (declared-war
-                // gate, front bound) the war regime still priced it at
-                // −7.4 [−10.7, −4.1] over 800 classic pairs (seeds
-                // 48000000..) — a declared, front-bounded war that stops
-                // advancing keeps eating the front's economy for fifty-plus
-                // turns. The routing now also requires the campaign to be
-                // YOUNG OR MOVING: within `WAR_PATIENCE_LIMIT_TURNS`
-                // standard turns of the last observed progress (a foreign
-                // city changing hands; the same ownership-aware clock the
-                // patience flag keeps, observed for either flag). A stalled
-                // war's front cities return to the baseline governor with
-                // the rest of the empire.
-                || (self.war_economy
-                    && plan.strategy == GrandStrategy::Conquest
-                    && plan
-                        .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target))
-                    && !self.war_patience_exhausted(g))
+                // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
+                // 2026-08-20, by its own numbers, after three repairs in
+                // three cycles. Unrepaired it measured −7.2 pp wins over
+                // 4,000 native pairs (seeds 40M) and **−26.7 pp (z −29)**
+                // in the domination,score regime it was built for (seeds
+                // 41M). The declared-war gate took the war regime to −18.1
+                // (seeds 44M); the front bound to −7.4 (seeds 48M); the
+                // stall clock to **−6.8 [−10.0, −3.5], z −4.1** (seeds
+                // 50M) — statistically unmoved. Routing an empire's
+                // production through the war path loses the development
+                // race in every regime and every design measured, however
+                // the routing is bounded. The flag and its PROTECTIVE
+                // halves stay (`live_war_economy_requires_recovery`, the
+                // maintenance-emergency policy cards — they prevent the
+                // recorded bankruptcy disbands); an appointed timed war
+                // keeps its own `war_plan` routing above, unchanged. Do not
+                // re-add a Conquest routing here without a mechanism the
+                // three removed gates did not have.
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }

@@ -1477,12 +1477,10 @@ fn only_the_live_bridge_fights_the_war_conversion_quartet() {
     );
 }
 
-/// The routing in `take_turn` must name the adaptive Conquest plan behind
-/// the flag: `docs/RUSH.md` measured that raising the army anywhere else
-/// is a no-op, because an adaptive Conquest plan historically never
-/// reached `advanced_production` at all.
+/// The removal note stands where the routing stood: `take_turn`'s dispatch
+/// records the three repairs and the numbers that ended them.
 #[test]
-fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
+fn the_war_economy_conquest_routing_is_gone_from_the_dispatch() {
     let src = include_str!("../advanced.rs");
     let block = src
         .split("|| adaptive_expansion_dispatch")
@@ -1492,13 +1490,12 @@ fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
         .next()
         .expect("the routing block ends at the production call");
     assert!(
-        block.contains("self.war_economy")
-            && block.contains("&& plan.strategy == GrandStrategy::Conquest")
-            && block.contains(".is_some_and(|target| g.is_at_war(pid, target))"),
-        "the war economy routes the adaptive Conquest plan only while the \
-         war with its target is DECLARED (repaired 2026-08-19: the
-         unconditional routing measured −7.2 pp native / −26.7 pp in the \
-         domination,score regime)"
+        block.contains("CONQUEST ROUTING WAS REMOVED"),
+        "the dispatch must carry the removal note where the routing stood"
+    );
+    assert!(
+        !block.contains("self.war_economy"),
+        "no war-economy disjunct may return to the dispatch"
     );
 }
 

@@ -3929,114 +3929,33 @@ mod flagged_gene_repairs {
         );
     }
 
-    /// `war-economy`: the war production routing needs a DECLARED war with
-    /// the plan's target — a plan that merely says Conquest leaves the
-    /// empire's queues to the baseline governor, as without the flag.
+    /// `war-economy`'s Conquest routing was REMOVED 2026-08-20 by its own
+    /// numbers (three repairs, war regime −26.7 → −18.1 → −7.4 → −6.8, never
+    /// cleared). This pin keeps it out; the removal note in the dispatch
+    /// carries the full trail.
     #[test]
-    fn war_economy_routing_needs_a_declared_war() {
+    fn war_economy_routing_stays_removed() {
         let source = include_str!("../advanced.rs");
-        let gate = "|| (self.war_economy
-                    && plan.strategy == GrandStrategy::Conquest
-                    && plan
-                        .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target))
-                    && !self.war_patience_exhausted(g))";
         assert!(
-            source.contains(gate),
-            "war-economy's production routing must require a declared war \
-             that is still young or moving (the cycle-three stall clock)"
+            source.contains("CONQUEST ROUTING WAS REMOVED"),
+            "the removal note must stay beside the dispatch"
         );
-        assert_eq!(
-            source
-                .matches("self.war_economy && plan.strategy == GrandStrategy::Conquest")
-                .count(),
-            0,
-            "the unconditional routing must not come back"
-        );
+        for revenant in [
+            "self.war_economy && plan.strategy == GrandStrategy::Conquest",
+            "war_front_only",
+            "WAR_ECONOMY_FRONT_RADIUS",
+        ] {
+            assert!(
+                !source.contains(revenant),
+                "the removed routing must not come back: found {revenant:?}"
+            );
+        }
+        // The protective halves stay.
+        assert!(source.contains("fn live_war_economy_requires_recovery"));
     }
 
-    /// `war-economy` cycle two: with a declared adaptive war, only cities
-    /// within `WAR_ECONOMY_FRONT_RADIUS` of the objective take war-path
-    /// production; the interior is left for the baseline governor (its queue
-    /// stays empty here because `delegated_cities` runs later).
-    #[test]
-    fn war_economy_routes_only_the_front_cities() {
-        let mut g = Game::new_full(2, 40, 16, 63, 120, 0, false);
-        let enemy_city = found_test_city(&mut g, 1);
-        let enemy_capital = (enemy_city, g.cities[&enemy_city].pos);
-        // A fallible founder: the loop below walks toward the map edge and a
-        // site or founding can legally fail; that ends the search rather
-        // than the test.
-        let try_found = |g: &mut Game| -> Option<u32> {
-            let position = g
-                .map
-                .tiles
-                .values()
-                .filter(|tile| {
-                    g.rules.is_passable(tile)
-                        && !g.rules.is_water(tile)
-                        && tile.owner_city.is_none()
-                        && g.city_at(tile.pos).is_none()
-                        && g.units_at(tile.pos).is_empty()
-                        && g.cities
-                            .values()
-                            .all(|city| g.wdist(city.pos, tile.pos) >= 4)
-                })
-                .map(|tile| tile.pos)
-                .next()?;
-            let settler = g.spawn_test_unit("settler", 0, position);
-            g.current = 0;
-            g.apply(0, &Action::FoundCity { unit: settler }).ok()?;
-            g.city_at(position)
-        };
-        let near = found_test_city(&mut g, 0);
-        let mut far = None;
-        for _ in 0..6 {
-            let Some(cid) = try_found(&mut g) else { break };
-            if g.wdist(g.cities[&cid].pos, enemy_capital.1) > WAR_ECONOMY_FRONT_RADIUS {
-                far = Some(cid);
-                break;
-            }
-        }
-        let Some(far) = far else {
-            // The map did not offer a site beyond the radius; the source pin
-            // below still guards the gate.
-            return;
-        };
-        // Drag the near city inside the radius if founding order put it out.
-        let near = if g.wdist(g.cities[&near].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS {
-            near
-        } else {
-            g.player_city_ids(0)
-                .into_iter()
-                .find(|cid| g.wdist(g.cities[cid].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS)
-                .unwrap_or(near)
-        };
-        if g.wdist(g.cities[&near].pos, enemy_capital.1) > WAR_ECONOMY_FRONT_RADIUS {
-            return;
-        }
-        g.at_war.insert((0, 1));
-        let plan = StrategicPlan {
-            strategy: GrandStrategy::Conquest,
-            target_player: Some(1),
-            target_city: Some(enemy_capital.0),
-            threatened_city: None,
-            desired_cities: 4,
-            assessed_turn: g.turn,
-            rush: false,
-        };
-        let mut ai = AdvancedAi::new();
-        ai.enable_war_economy();
-        ai.advanced_production(&mut g, 0, &plan, false);
-        assert!(
-            g.cities[&far].queue.is_empty(),
-            "an interior city beyond the front radius is the baseline's business"
-        );
-        assert!(
-            !g.cities[&near].queue.is_empty(),
-            "a front city takes war-path production"
-        );
-    }
+
+
 
     /// The war-economy front bound keeps its shape — and the reverted
     /// building preemption stays out (it re-measured −3.6 pp wins on 2,000
@@ -4044,12 +3963,7 @@ mod flagged_gene_repairs {
     #[test]
     fn cycle_two_preemptions_are_wired() {
         let source = include_str!("../advanced.rs");
-        for needle in [
-            "let war_front_only = self.war_economy",
-            "&& self.war_plan.is_none()",
-            "> WAR_ECONOMY_FRONT_RADIUS",
-            "MEASURED AND REVERTED",
-        ] {
+        for needle in ["MEASURED AND REVERTED"] {
             assert!(source.contains(needle), "missing {needle:?}");
         }
         assert!(
@@ -4068,8 +3982,6 @@ mod flagged_gene_repairs {
         for needle in [
             "<= SETTLER_ESCORT_THREAT_RADIUS",
             "if self.settler_guards.remove(&uid).is_some() {",
-            "&& !self.war_patience_exhausted(g))",
-            "if self.war_patience || self.war_economy {",
             "MEASURED AND REVERTED the same day",
             "let first_building_of_held_district = self.governor_victory_lanes",
         ] {
