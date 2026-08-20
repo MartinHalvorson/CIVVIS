@@ -385,7 +385,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         verdict: Verdict::Unresolved,
         family_wise: false,
         native: Some(Measure { pairs: 1000, win_delta_pp: 0.2, win_z: 0.277, share_delta_pp: 0.005, share_z: 0.064, source: "2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json" }),
-        war: None,
+        war: Some(Measure { pairs: 800, win_delta_pp: 0.125, win_z: 0.103, share_delta_pp: 0.163, share_z: 0.977, source: "2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json" }),
     },
     GeneVerdict {
         tag: "stranded-settler-discount",

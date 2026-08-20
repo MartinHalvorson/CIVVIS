@@ -79,6 +79,24 @@
         "design": "foldover",
         "start_seed": 50000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json",
+      "regime": "war",
+      "complete_pairs": 800,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 4,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "domination,score",
+        "all_seats": false,
+        "baseline": "repairs",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 51000000
+      }
     }
   ],
   "counts": {
@@ -1695,7 +1713,17 @@
         "read": "~",
         "source": "2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 800,
+        "n_on": 800,
+        "n_off": 800,
+        "win_delta_pp": 0.125,
+        "win_z": 0.103,
+        "share_delta_pp": 0.163,
+        "share_z": 0.977,
+        "read": "~",
+        "source": "2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json"
+      }
     },
     {
       "tag": "stranded-settler-discount",

@@ -52,12 +52,23 @@ path a blind plan stops at the step that revealed new ground.
 | frame poll budget | `await.polls` before each `orders` on the same run | median = max = **1** of 40; the 20-poll frame budget is 20× the observed need |
 | does the native gene fire | four 4p 60×38 150-turn games, repair bundle, all seats (`step_and_reassess_fires_check`, ignored test) | sightings that re-formed the groups: 288, 270, 401, 407 per game; blind cuts 0 (no pool, as expected); wall 5.5–6.1 s per game with the gene, 5.5–8.1 s without |
 | first cut of the gene (parallel leg only) | `gene_screen --genes step-and-reassess`, 4p all-six, seeds 50M | **+0.0 [+0.0, +0.0]** over 204 pairs — every pair byte-identical: the gene never fired in the screen's regime. Recorded in `docs/GENE_SCREEN.md` as the inert-gene signature |
-| the gene, serial leg, all six lanes | same design, 1,000 pairs (2,000 games), seeds 50000000.. | S2_RESULT |
-| the gene, serial leg, war regime | `--victories domination,score`, 800 pairs (1,600 games), seeds 51000000.. | S3_RESULT |
+| the gene, serial leg, all six lanes | same design, 1,000 pairs (2,000 games), seeds 50000000.. | **+0.2 [−1.2, +1.6]** win, +0.00 pp share (z +0.06); resolution ±2.0 pp. Null. |
+| the gene, serial leg, war regime | `--victories domination,score`, 800 pairs (1,600 games), seeds 51000000.. | **+0.1 [−2.3, +2.5]** win, +0.16 pp share (z +0.98); resolution ±3.4 pp. Null. |
 
 ## What it means
 
-S_MEANING
+The native gene is a clean null in both regimes at the resolution a
+thousand pairs buys: the engine already re-decides each step sighted, and
+re-forming the force groups on a sighting changes little that the next
+attack would not have re-formed anyway. It enters the ledger as
+**unresolved — off by default** — and stays in the universe for the prior
+screens to keep pricing; nothing here is evidence against the bridge half,
+which the native board cannot exercise (no exchange, no fog of the host's
+making). The bridge half is what the request was about: the mod now sends
+what a unit revealed within the turn and asks again, and the first ladder
+runs after merge will say what a second exchange per turn is worth on the
+live seat. `civvis --jobs`' blind batch planner, the one place the cut
+fires, is the interactive CLI and is not in any evaluator's path.
 
 ## The second directive, the same day: the defaults are the best genome
 
@@ -72,7 +83,7 @@ the mechanism; the numbers:
 | what | instrument | result |
 |---|---|---|
 | the first ledger | `tools/gene_ledger.py` over the 6p native screen (13,446 seat-pairs), the 4p war screen (3,300) and the repaired genes' war re-screen (1,064) | **10 help (on) · 11 hurt (off) · 44 unresolved (off)**; the live bundle plays the ten plus the host-only flags |
-| what the ledger bought | `gene_screen --baseline best --anchor-pairs 250` — the all-on universe against the best genome, same maps, 4p all-six, seeds 52M | S4_RESULT |
+| what the ledger bought | `gene_screen --baseline best --anchor-pairs 250` — the all-on universe against the best genome, same maps, 4p all-six, shuffled civs, seeds 52M | all-on **18.4%** wins / 20.6% share · best genome **31.2%** / 26.7% — paired win Δ **+12.8 pp ± 3.3** for the best genome (z ≈ 3.9) over 250 pairs |
 | the first gene priced into the ledger | s2 above | `step-and-reassess` unresolved at +0.2 [−1.2, +1.6]: off until a screen says otherwise |
 
 The phase-1 anchors had already said the all-on bundle was not the best

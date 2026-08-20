@@ -15,7 +15,9 @@ writes `docs/gene_ledger.json` and the generated Rust table
 `src/ai/advanced/gene_ledger_table.rs`, which `AdvancedAi::apply_gene_ledger`
 reads to withhold every treatment the ledger does not find helpful and to
 enable every opt-in it does. `--check` re-derives both from the sources the
-JSON ledger recorded and fails if either file has drifted (run in CI).
+JSON ledger recorded and fails if either file has drifted; the same check is
+`tools/test_gene_ledger.py`'s `GeneratedFiles`, which the `collaboration-policy`
+workflow's `unittest discover` runs on every PR.
 
 Verdict rules (repeated in src/ai/advanced/gene_ledger.rs):
 

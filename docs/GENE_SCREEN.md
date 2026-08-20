@@ -343,8 +343,11 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   recorded-tactical-step, siege-muster, siege-tracks-wall, war-reinforcement,
   wide-map-capacity), **11 hurt** (off), **43 unresolved** (off). The live
   bundle therefore plays those ten plus the host-only flags. What the ledger
-  bought is measured by this screen's anchors under `--baseline best`: arm 0
-  is the all-on universe, arm 1 the best genome, same maps.
+  bought is measured by this screen's anchors under `--baseline best` — arm 0
+  the all-on universe, arm 1 the best genome, same maps: **250 pairs, 4p
+  all-six, seeds 52M: all-on 18.4% wins / 20.6% share, best genome 31.2% /
+  26.7%, paired win Δ +12.8 pp ± 3.3 for the best genome** (round:
+  `docs/eval/2026-08-20-the-bridge-talks-more-than-once-a-turn.md`).
 
 ⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
 ledger already holds off is identical to `live` — the screen is that gene's
