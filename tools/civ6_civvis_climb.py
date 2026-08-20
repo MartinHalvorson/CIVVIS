@@ -820,13 +820,26 @@ def outcome_of(tag: str) -> dict:
     whatever only the other one holds; take both.
     """
     merged: dict = {}
-    summary = RUN_ROOT / tag / "summary.json"
+    run_dir = RUN_ROOT / tag
+    summary = run_dir / "summary.json"
     if summary.exists():
         try:
             merged = json.loads(summary.read_text())
         except ValueError:
             merged = {}
-    events = RUN_ROOT / tag / "events.jsonl"
+    # A child can exit after exporting turns but before `civ6_play` reaches its
+    # summary writer. The outer climb records that distinct failure in a
+    # sidecar, so a later ledger backfill does not turn the row back into an
+    # unexplained ordinary exit.
+    child_exit = run_dir / "exit.json"
+    if child_exit.exists():
+        try:
+            detail = json.loads(child_exit.read_text())
+        except ValueError:
+            detail = None
+        if isinstance(detail, dict):
+            merged["child_exit"] = detail
+    events = run_dir / "events.jsonl"
     last_turn, seat, victory, ended_on_screen = None, None, None, None
     if events.exists():
         for line in events.read_text(errors="replace").splitlines():
@@ -909,6 +922,38 @@ def outcome_of(tag: str) -> dict:
         if value is not None or key not in merged:
             merged[key] = value
     return merged
+
+
+def record_unexplained_child_exit(tag: str, watcher_reason: str | None,
+                                  returncode: int | None, outcome: dict) -> dict | None:
+    """Persist a child exit which bypassed ``civ6_play``'s summary writer.
+
+    The outer watcher sees a completed child as ``exited`` whether the game
+    finished cleanly or the process disappeared mid-turn. A real summary is
+    authoritative for the former. For the latter, preserve the actual child
+    status and the event stream's last observed state beside the run and in the
+    ledger row instead of calling it an undifferentiated attempt exit.
+    """
+    if watcher_reason != "exited":
+        return None
+    run_dir = RUN_ROOT / tag
+    if (run_dir / "summary.json").exists():
+        return None
+    detail = {
+        "watcher_reason": watcher_reason,
+        "returncode": returncode,
+        "last_observed": {
+            key: outcome.get(key)
+            for key in ("last_turn", "last_score", "rival_best", "cities", "army")
+        },
+    }
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "exit.json").write_text(json.dumps(detail, sort_keys=True) + "\n")
+    except OSError:
+        # Reporting must not turn an already-ended game into a lost ledger row.
+        pass
+    return detail
 
 
 def won(record: dict) -> bool:
@@ -1800,6 +1845,15 @@ def main() -> int:
             # run dirs.
             record["resumed_from"] = tag
             record["resumes"] = resumes
+        # `civ6_play` normally writes the terminal summary that says why it
+        # stopped. When it instead disappears after a real turn, retain the
+        # process return code and last exported state. This is reporting only:
+        # it changes neither the attempt's reason nor how it is scored.
+        if record.get("reason") is None:
+            child_exit = record_unexplained_child_exit(
+                run_tag, why, getattr(play, "returncode", None), record)
+            if child_exit is not None:
+                record["child_exit"] = child_exit
         # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
         #
         # `outcome_of` reads what `civ6_play` wrote on its way out. A run this
