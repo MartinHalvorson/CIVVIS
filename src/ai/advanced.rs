@@ -4100,7 +4100,7 @@ mod treatment_flags;
 pub mod gene_ledger;
 pub use gene_ledger::{
     deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
-    screenable, GeneLedgerApplied, GeneVerdict, Measure, Verdict,
+    GeneLedgerApplied, GeneVerdict, Measure, Verdict,
 };
 
 

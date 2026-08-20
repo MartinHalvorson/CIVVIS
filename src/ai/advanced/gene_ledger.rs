@@ -210,7 +210,11 @@ mod tests {
     /// is off; a Firaxis-only flag has no native instrument and is left alone.
     #[test]
     fn unmeasured_genes_are_off_only_when_a_screen_could_have_priced_them() {
-        assert_eq!(ledger_default_on("live-trader-route"), None, "Firaxis-only: untouched");
+        assert_eq!(
+            ledger_default_on("live-trader-route"),
+            None,
+            "Firaxis-only: untouched"
+        );
         assert!(!screenable("live-trader-route"));
         for repair in crate::elo::ENGINE_REPAIR_TREATMENTS {
             assert!(screenable(repair));
@@ -269,10 +273,16 @@ mod tests {
         // plus the enabled opt-ins — the same arithmetic, from the tags.
         let deployed = deployment_treatments();
         for tag in &applied.withheld {
-            assert!(!deployed.contains(tag), "{tag} is withheld yet listed as deployed");
+            assert!(
+                !deployed.contains(tag),
+                "{tag} is withheld yet listed as deployed"
+            );
         }
         for tag in &applied.enabled {
-            assert!(deployed.contains(tag), "{tag} is enabled yet not listed as deployed");
+            assert!(
+                deployed.contains(tag),
+                "{tag} is enabled yet not listed as deployed"
+            );
         }
         for tag in crate::elo::LIVE_BRIDGE_TREATMENTS {
             assert_eq!(

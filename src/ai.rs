@@ -292,10 +292,10 @@ mod tactics;
 pub use advanced::{
     deployment_treatments, gene_ledger, gene_ledger_rows, ledger_default_on, ledger_verdict,
     AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GeneLedgerApplied,
-    GeneVerdict, GrandStrategy, LiveTreatment, Measure, StrategicPlan, StrategyCensus,
-    Verdict, VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR,
-    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS,
-    PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS,
+    GeneVerdict, GrandStrategy, LiveTreatment, Measure, StrategicPlan, StrategyCensus, Verdict,
+    VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
+    LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS, PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS,
+    PRODUCTION_TREATMENTS,
 };
 
 const TECH_PRIORITY: [&str; 15] = [

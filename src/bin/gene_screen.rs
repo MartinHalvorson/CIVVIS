@@ -1487,8 +1487,7 @@ fn print_table(header: &Header, rows: &[Row]) {
             "design: prior-weighted — each arm drawn independently from the ledger's prior \
              (genes at p = {}); Δ is the marginal on-versus-off contrast, errors clustered by \
              game; adjΔpp is the map-paired OLS on the arms' differences",
-            by_p
-                .iter()
+            by_p.iter()
                 .map(|(p, n)| format!("{p}×{n}"))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -1547,16 +1546,23 @@ fn print_table(header: &Header, rows: &[Row]) {
         // win difference carries its own standard error over pairs.
         let mut by_key: BTreeMap<(u64, usize, usize), [Option<&Row>; 2]> = BTreeMap::new();
         for row in &anchors {
-            by_key.entry((row.seed, row.seat, row.pair)).or_insert([None, None])
-                [usize::from(row.arm.min(1))] = Some(row);
+            by_key
+                .entry((row.seed, row.seat, row.pair))
+                .or_insert([None, None])[usize::from(row.arm.min(1))] = Some(row);
         }
         let diffs: Vec<f64> = by_key
             .values()
-            .filter_map(|[a, b]| Some(f64::from(u8::from((*a)?.win)) - f64::from(u8::from((*b)?.win))))
+            .filter_map(|[a, b]| {
+                Some(f64::from(u8::from((*a)?.win)) - f64::from(u8::from((*b)?.win)))
+            })
             .collect();
         let (delta, se) = mean_se(&diffs);
         // Under the deployment baseline arm 1 is the best genome, not all-off.
-        let off_label = if header.baseline == "best" { "best genome" } else { "all-off" };
+        let off_label = if header.baseline == "best" {
+            "best genome"
+        } else {
+            "all-off"
+        };
         println!(
             "anchors: all-on {} games win {:.1}% share {:.1}% · {off_label} {} games win {:.1}% share {:.1}% · paired win Δ {:+.1} pp ± {:.1} over {} pairs",
             on.len(),
@@ -2059,8 +2065,12 @@ fn main() {
         }
     };
     let prior_weights = PriorWeights {
-        helps: text(&args, "--p-helps").and_then(|v| v.parse().ok()).unwrap_or(0.9),
-        hurts: text(&args, "--p-hurts").and_then(|v| v.parse().ok()).unwrap_or(0.1),
+        helps: text(&args, "--p-helps")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.9),
+        hurts: text(&args, "--p-hurts")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.1),
         unresolved: text(&args, "--p-unresolved")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.5),
@@ -2272,9 +2282,8 @@ fn main() {
             let seat = pair % players;
             if pair < pairs {
                 if all_seats {
-                    let genomes = all_seat_genomes(
-                        start_seed, pair, players, &screened, arm, design, &prior,
-                    );
+                    let genomes =
+                        all_seat_genomes(start_seed, pair, players, &screened, arm, design, &prior);
                     return play_all_seats(
                         &profile, &genes, &screened, baseline, pair, arm, seed, &genomes,
                     );
@@ -2901,7 +2910,11 @@ mod tests {
         for pair in 0..pairs {
             let a = draw_genome_prior(5, pair, 0, &screened, &prior);
             let b = draw_genome_prior(5, pair, 1, &screened, &prior);
-            assert_eq!(a, draw_genome_prior(5, pair, 0, &screened, &prior), "reproduces");
+            assert_eq!(
+                a,
+                draw_genome_prior(5, pair, 0, &screened, &prior),
+                "reproduces"
+            );
             assert!(!a[3] && !b[3], "an un-screened gene is never drawn on");
             for (i, &bit) in a.iter().enumerate() {
                 on[i] += usize::from(bit);
@@ -2911,10 +2924,17 @@ mod tests {
         let rate = |i: usize| on[i] as f64 / pairs as f64;
         assert!((rate(0) - 0.9).abs() < 0.03, "helper on ~90%: {}", rate(0));
         assert!((rate(1) - 0.1).abs() < 0.03, "harmful on ~10%: {}", rate(1));
-        assert!((rate(2) - 0.5).abs() < 0.03, "unresolved on ~50%: {}", rate(2));
+        assert!(
+            (rate(2) - 0.5).abs() < 0.03,
+            "unresolved on ~50%: {}",
+            rate(2)
+        );
         // Independent arms differ on a p = 0.9 gene in 2·0.9·0.1 = 18% of pairs.
         let discordant = differ as f64 / pairs as f64;
-        assert!((discordant - 0.18).abs() < 0.03, "arms drawn independently: {discordant}");
+        assert!(
+            (discordant - 0.18).abs() < 0.03,
+            "arms drawn independently: {discordant}"
+        );
     }
 
     /// The prior weights come from the ledger's verdict per tag.
@@ -2933,7 +2953,11 @@ mod tests {
             };
             assert_eq!(weights.for_tag(row.tag), expected, "{}", row.tag);
         }
-        assert_eq!(weights.for_tag("no-such-gene"), 0.5, "unmeasured draws at one half");
+        assert_eq!(
+            weights.for_tag("no-such-gene"),
+            0.5,
+            "unmeasured draws at one half"
+        );
     }
 
     /// Under an unbalanced draw the marginal contrast still reads a planted
@@ -2999,14 +3023,29 @@ mod tests {
         }
         let (estimates, pairs, overall_win, _) = estimate(&header, &rows);
         assert_eq!(pairs, 600);
-        assert!((overall_win - 0.9).abs() < 0.05, "a is on 90% of the time: {overall_win}");
+        assert!(
+            (overall_win - 0.9).abs() < 0.05,
+            "a is on 90% of the time: {overall_win}"
+        );
         let a = estimates.iter().find(|e| e.tag == "a").unwrap();
         let b = estimates.iter().find(|e| e.tag == "b").unwrap();
-        assert!(a.n_on > 1000 && a.n_off < 200, "unbalanced: {}/{}", a.n_on, a.n_off);
+        assert!(
+            a.n_on > 1000 && a.n_off < 200,
+            "unbalanced: {}/{}",
+            a.n_on,
+            a.n_off
+        );
         assert!((a.win_on - 1.0).abs() < 1e-9 && a.win_off.abs() < 1e-9);
-        assert!((a.win_delta - 1.0).abs() < 1e-9, "the 90% beat the 10% by the planted 100pp");
+        assert!(
+            (a.win_delta - 1.0).abs() < 1e-9,
+            "the 90% beat the 10% by the planted 100pp"
+        );
         assert!((a.share_delta - 0.2).abs() < 0.02, "{}", a.share_delta);
-        assert!(b.win_delta.abs() < 0.1, "b is planted null: {}", b.win_delta);
+        assert!(
+            b.win_delta.abs() < 0.1,
+            "b is planted null: {}",
+            b.win_delta
+        );
         let (adj_a, _) = a.adjusted.expect("600 pairs support 2 genes");
         assert!((adj_a - 1.0).abs() < 1e-6, "paired OLS recovers a: {adj_a}");
         let (adj_b, _) = b.adjusted.unwrap();
@@ -3025,7 +3064,10 @@ mod tests {
         let reinforcement = genes.iter().find(|g| g.tag == "war-reinforcement").unwrap();
         assert_eq!(best.siege_is_progress, siege.default_on);
         assert_eq!(best.war_reinforcement, reinforcement.default_on);
-        assert_eq!(siege.default_on, civvis::ai::ledger_default_on("siege-is-progress").unwrap());
+        assert_eq!(
+            siege.default_on,
+            civvis::ai::ledger_default_on("siege-is-progress").unwrap()
+        );
         assert_eq!(
             reinforcement.default_on,
             civvis::ai::ledger_default_on("war-reinforcement").unwrap()
