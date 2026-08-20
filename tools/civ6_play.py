@@ -3269,12 +3269,11 @@ def _play(args: argparse.Namespace) -> int:
         if revisions:
             summary["decider_revisions"] = revisions
         # And which GENOME decided it. `--civvis-strategy` is forwarded to
-        # `civvis_orders --strategy` by name, and a name the league snapshot
-        # does not carry under that spelling falls back to the stock controller
-        # with one line in why.log; the supervisor's default (`WildCard9`, a
-        # display name) has done exactly that on every row since it was
-        # written. Both halves go on the record so asked and played can be
-        # compared on the ledger instead of in a log excavation.
+        # `civvis_orders --strategy` by name. New deciders accept an unambiguous
+        # league display label as well as the immutable internal name, but old
+        # ones treated the supervisor's `WildCard9` label as unknown and fell
+        # back to stock. Both halves go on the record so asked and played can
+        # be compared on the ledger instead of in a log excavation.
         genome = civ6_ladder.decider_genome(run_dir / "why.log")
         if genome is not None:
             summary["genome"] = genome
