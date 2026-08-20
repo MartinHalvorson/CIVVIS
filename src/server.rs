@@ -14049,10 +14049,21 @@ mod tests {
         assert!(mountain.contains("const silhouette = () =>"));
         assert!(mountain.contains("cx.fillStyle = \"#8c9991\""));
         assert!(mountain.contains("cx.strokeStyle = \"#263a36\""));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;"));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;"));
+        // The mountain owns nearly the whole usable face: its feet are derived
+        // from the lower corners and its peak from the upper point, with room
+        // for the outline instead of relying on the flat-map clip.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_TILE_EDGE_INSET = 1.75;"));
+        assert!(EMBEDDED_INDEX.contains("S * SQ3 / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("S * YS / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("-S * YS + STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX
+            .contains("STRATEGIC_MOUNTAIN_FOOT_TARGET_X /\n  (STRATEGIC_MOUNTAIN_ICON_SCALE *"));
+        assert!(EMBEDDED_INDEX
+            .contains("(STRATEGIC_MOUNTAIN_FOOT_TARGET_Y - STRATEGIC_MOUNTAIN_PEAK_TARGET_Y) /"));
         assert!(mountain.contains("cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,"));
         assert!(mountain.contains("k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);"));
+        assert!(mountain.contains("cx.translate(0, STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET);"));
+        assert!(mountain.contains("STRATEGIC_MOUNTAIN_SHADOW_Y * iconSize"));
         let volcano = EMBEDDED_INDEX
             .split("function drawMinimalVolcanoCaldera")
             .nth(1)

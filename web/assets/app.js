@@ -8537,40 +8537,82 @@ function drawStrategicVolcanicSoil(t, x, y) {
 
 // Terrain marks should survive the map's smallest useful zoom: one silhouette,
 // two quiet facets, and a single outline are enough to say "mountain" without
-// turning every pass into a miniature illustration. A mountain can be wider
-// and taller without losing that spare language; a volcano needs its crater at
-// the summit, with a lit lava seam that makes it read as a cone rather than a
-// round mark sitting on the ground.
+// turning every pass into a miniature illustration. The mountain's feet now
+// nearly meet the two lower corners of its hex and its summit nearly meets the
+// top point. Keep an outline-width inset so the complete mark remains inside
+// the tile instead of depending on clipping to hide an overhang. A volcano
+// needs its crater at the summit, with a lit lava seam that makes it read as a
+// cone rather than a round mark sitting on the ground.
 const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.04;
-const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;
-const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;
+const STRATEGIC_MOUNTAIN_TILE_EDGE_INSET = 1.75;
+const STRATEGIC_MOUNTAIN_GLYPH_LEFT_FOOT_X = -19;
+const STRATEGIC_MOUNTAIN_GLYPH_RIGHT_FOOT_X = 19;
+const STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y = 8;
+const STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y = -11;
+const STRATEGIC_MOUNTAIN_FOOT_TARGET_X =
+  S * SQ3 / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET;
+const STRATEGIC_MOUNTAIN_FOOT_TARGET_Y =
+  S * YS / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET;
+const STRATEGIC_MOUNTAIN_PEAK_TARGET_Y =
+  -S * YS + STRATEGIC_MOUNTAIN_TILE_EDGE_INSET;
+const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE =
+  STRATEGIC_MOUNTAIN_FOOT_TARGET_X /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_MOUNTAIN_GLYPH_RIGHT_FOOT_X);
+const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE =
+  (STRATEGIC_MOUNTAIN_FOOT_TARGET_Y - STRATEGIC_MOUNTAIN_PEAK_TARGET_Y) /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE *
+   (STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y - STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y));
+const STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET =
+  STRATEGIC_MOUNTAIN_PEAK_TARGET_Y /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE) -
+  STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y;
+// The previous shadow inherited the mountain's new height scale and protruded
+// through the hex's tapering lower sides. It keeps the same quiet foundation,
+// but is laid out directly in the lower tile space.
+const STRATEGIC_MOUNTAIN_SHADOW_Y = S * YS * .62;
+const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_X = S * SQ3 * .31;
+const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_Y = S * YS * .075;
 function drawMinimalMountainGlyph(x, y, k) {
   cx.save();
   cx.translate(x, y);
+  const iconSize = k / STRATEGIC_MOUNTAIN_ICON_SCALE;
+  cx.fillStyle = "rgba(8,13,15,.24)";
+  cx.beginPath(); cx.ellipse(0, STRATEGIC_MOUNTAIN_SHADOW_Y * iconSize,
+                              STRATEGIC_MOUNTAIN_SHADOW_RADIUS_X * iconSize,
+                              STRATEGIC_MOUNTAIN_SHADOW_RADIUS_Y * iconSize,
+                              0, 0, 7); cx.fill();
   cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,
            k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);
+  cx.translate(0, STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET);
   cx.lineJoin = "round";
-  cx.fillStyle = "rgba(8,13,15,.24)";
-  cx.beginPath(); cx.ellipse(1, 10, 17, 4.2, 0, 0, 7); cx.fill();
 
   const silhouette = () => {
     cx.beginPath();
-    cx.moveTo(-18, 8); cx.lineTo(-11, -3); cx.lineTo(-5, 2);
-    cx.lineTo(2, -11); cx.lineTo(8, -2); cx.lineTo(14, -6);
-    cx.lineTo(19, 8); cx.quadraticCurveTo(1, 13, -18, 8); cx.closePath();
+    cx.moveTo(STRATEGIC_MOUNTAIN_GLYPH_LEFT_FOOT_X, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
+    cx.lineTo(-11, -3); cx.lineTo(-5, 2);
+    cx.lineTo(0, STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y); cx.lineTo(8, -2); cx.lineTo(14, -6);
+    cx.lineTo(STRATEGIC_MOUNTAIN_GLYPH_RIGHT_FOOT_X, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
+    cx.quadraticCurveTo(0, 13,
+                        STRATEGIC_MOUNTAIN_GLYPH_LEFT_FOOT_X,
+                        STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
+    cx.closePath();
   };
   silhouette(); cx.fillStyle = "#5f6c67"; cx.fill();
   cx.beginPath();
-  cx.moveTo(-18, 8); cx.lineTo(2, -11); cx.lineTo(2, 8);
+  cx.moveTo(STRATEGIC_MOUNTAIN_GLYPH_LEFT_FOOT_X, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
+  cx.lineTo(0, STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y); cx.lineTo(0, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
   cx.lineTo(-8, 10); cx.closePath();
   cx.fillStyle = "#8c9991"; cx.fill();
   cx.beginPath();
-  cx.moveTo(2, -11); cx.lineTo(19, 8); cx.quadraticCurveTo(10, 10, 2, 8);
+  cx.moveTo(0, STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y);
+  cx.lineTo(STRATEGIC_MOUNTAIN_GLYPH_RIGHT_FOOT_X, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
+  cx.quadraticCurveTo(10, 10, 0, STRATEGIC_MOUNTAIN_GLYPH_FOOT_Y);
   cx.closePath(); cx.fillStyle = "#3e4c48"; cx.fill();
   // A small stone-coloured cap keeps the highest point legible without
   // implying that every mountain is snow-covered.
-  cx.beginPath(); cx.moveTo(-1, -7); cx.lineTo(2, -11); cx.lineTo(5, -6);
-  cx.lineTo(2, -7.5); cx.closePath(); cx.fillStyle = "#c2cec7"; cx.fill();
+  cx.beginPath(); cx.moveTo(-3, -7); cx.lineTo(0, STRATEGIC_MOUNTAIN_GLYPH_PEAK_Y);
+  cx.lineTo(3, -6); cx.lineTo(0, -7.5);
+  cx.closePath(); cx.fillStyle = "#c2cec7"; cx.fill();
   silhouette(); cx.strokeStyle = "#263a36"; cx.lineWidth = 1.15; cx.stroke();
   cx.restore();
 }
