@@ -19915,30 +19915,22 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
-                // ★★★ Cycle three (2026-08-20): the pop floor improved the
-                // gene (−2.8 → −1.7 [−3.8, +0.4] on 2,000 pairs, seeds
-                // 45000000..) and the 6p whole-genome screen still read
-                // −1.9 (z −4.4, seeds 46000000..). The remaining harm has
-                // the same mechanism the wide-map repair priced: a Campus in
-                // every city is an investment the conversion race liquidates
-                // — 60–66% of native games end religious at median t134–158.
-                // So the coverage promise now uses the exact signal that
-                // flipped `wide_map_capacity` to a helper: it stands down
-                // while a religious victory is enabled AND a rival religion
-                // exists, and resumes when the race is absent, over, or
-                // disabled (war lanes keep full coverage by construction).
-                let conversion_race_live = g.victory_conditions.religious
-                    && g.players.iter().any(|player| {
-                        player.id != pid
-                            && player.alive
-                            && !player.is_minor
-                            && !player.is_barbarian
-                            && player.religion.is_some()
-                    });
+                // ★★★ Cycle three tried the conversion-race gate that
+                // flipped `wide_map_capacity` — and the verification said no:
+                // −2.8 [−4.0, −1.6] over 6,000 seat-pairs (seeds 49000000..)
+                // against −1.9 [−2.7, −1.0] without it (seeds 46000000..).
+                // MEASURED AND REVERTED the same day: at six players a rival
+                // religion exists by ~t40, so the gate simply turned coverage
+                // off — and a Campus, unlike a settled city, is not fuel for
+                // the rival's clock; withholding it just made less science.
+                // The pop floor (cycle one) stays: it improved the gene
+                // −2.8 → −1.7 on the classic design. The gene remains
+                // mildly harmful natively; the next lever, unmeasured, is
+                // pricing the ask by remaining game length the way
+                // `campus_payback_horizon` already prices wonders.
                 let campus_keeps_asking = self.campus_every_city
                     && family == "campus"
-                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR
-                    && !conversion_race_live;
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
                 // See `culture_coverage`: the same exemption, for the same
                 // reason — the civic tree cascades out of the Theater Square
                 // the way the tech tree cascades out of the Campus, and being
