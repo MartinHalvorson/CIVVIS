@@ -2693,10 +2693,12 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
 /// 115/432 → 0/349, embarkation leaving the refusal census — and never a paired
 /// outcome.
 ///
-/// `--without <treatment>` closes that. Repeat it to hold several off. An
-/// unknown name is a hard error rather than a warning: a typo that silently
-/// produced a control identical to the treatment would report a null and look
-/// exactly like a real one.
+/// `--without <treatment>` closes that. `--with <treatment>` is its deliberate
+/// complement for a treatment the new genome's ledger holds off: it restores
+/// one live-universe row for a named experiment without changing deployment.
+/// Repeat either flag to select several rows. An unknown name is a hard error
+/// rather than a warning: a typo that silently produced an identical arm would
+/// report a null and look exactly like a real one.
 fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> Result<(), String> {
     // ⚠⚠ THIS WAS A SECOND LIST, AND IT WAS SHORTER THAN THE FIRST.
     //
@@ -2744,31 +2746,105 @@ fn withholdable_treatments() -> String {
         .join(", ")
 }
 
+/// Resolve the ledger-held live genes an explicit `--with` arm may restore.
+/// The live universe already set these flags before the ledger withheld them,
+/// so skipping just that withholding restores the exact named gene without a
+/// second hand-written enable table.
+fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
+    let mut selected = Vec::new();
+    for treatment in forced {
+        match civvis::ai::LIVE_TREATMENTS
+            .iter()
+            .find(|(_, name, _)| *name == treatment)
+        {
+            Some((_, tag, _)) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
+                if !selected.contains(tag) {
+                    selected.push(*tag);
+                }
+            }
+            Some((_, tag, _)) => {
+                return Err(format!(
+                    "--with treatment {treatment:?} already ships in the deployment genome \
+                     (tag {tag:?}); only ledger-held live treatments form a distinct arm"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "unknown --with treatment {treatment:?}; this binary can force: {}",
+                    forceable_live_treatments()
+                ));
+            }
+        }
+    }
+    Ok(selected)
+}
+
+/// Every name a live `--with` arm can restore, in canonical registry order.
+fn forceable_live_treatments() -> String {
+    civvis::ai::gene_ledger::ledger_held_live_treatments().join(", ")
+}
+
+/// Reconstruct the exact live genome for each decision. The default retains
+/// `enable_live_bridge` verbatim; an explicit arm begins from the same
+/// universe and asks the ledger to leave only validated named rows on.
+fn configure_live_bridge(
+    ai: &mut civvis::ai::AdvancedAi,
+    forced_on: &[&str],
+    withheld: &[String],
+) -> Result<(), String> {
+    if forced_on.is_empty() {
+        ai.enable_live_bridge();
+    } else {
+        ai.enable_live_bridge_universe();
+        ai.apply_gene_ledger_with_forced_live(forced_on);
+    }
+    for treatment in withheld {
+        withhold_live_treatment(ai, treatment)?;
+    }
+    Ok(())
+}
+
+/// The immutable live-arm identity. Keeping it as one value prevents a new
+/// experimental gene from growing the already busy turn-decider signature.
+#[derive(Clone, Copy)]
+struct DecisionArm<'a> {
+    war_from_plan: bool,
+    forced_on: &'a [&'a str],
+    withheld: &'a [String],
+}
+
+/// Per-run state the decider carries between host turns.
+struct DecisionMemory<'a> {
+    ours: &'a mut std::collections::BTreeMap<i64, String>,
+    host_peace_retries: &'a mut HostPeaceRetries,
+    host_move_refusals: &'a mut HostMoveRefusals,
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
-    war_from_plan: bool,
-    withheld: &[String],
-    ours: &mut std::collections::BTreeMap<i64, String>,
-    host_peace_retries: &mut HostPeaceRetries,
-    host_move_refusals: &mut HostMoveRefusals,
+    arm: DecisionArm<'_>,
+    memory: DecisionMemory<'_>,
 ) -> String {
+    let DecisionMemory {
+        ours,
+        host_peace_retries,
+        host_move_refusals,
+    } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
     // Every live-bridge adapter and repair, in one place so the headless
     // measurement arms can play the SAME controller the bridge deploys.
     // See `AdvancedAi::enable_live_bridge`.
-    ai.enable_live_bridge();
-    // Held off AFTER the composite is applied, so `--without` names exactly one
-    // mechanism against the deployed configuration. See `withhold_live_treatment`.
-    for treatment in withheld {
-        if let Err(why) = withhold_live_treatment(ai, treatment) {
-            eprintln!("civvis-orders: {why}");
-            std::process::exit(2);
-        }
+    if let Err(why) = configure_live_bridge(ai, arm.forced_on, arm.withheld) {
+        // Names were validated before the first board is read. Keep a hard
+        // error here too: a registry drift must not silently downgrade a live
+        // treatment arm into the deployment arm mid-game.
+        eprintln!("civvis-orders: {why}");
+        std::process::exit(2);
     }
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
@@ -2894,10 +2970,10 @@ fn decide(
         }
     }
     let mut policy_changed = false;
-    if !withheld.is_empty() {
+    if !arm.withheld.is_empty() {
         // ⚠ A control arm that does not say so in its own run log is a control
         // arm nobody can trust afterwards. Wall-clock is not provenance.
-        note_bits.push(format!("withheld=[{}]", withheld.join(",")));
+        note_bits.push(format!("withheld=[{}]", arm.withheld.join(",")));
     }
     if !pre_traders.is_empty() {
         note_bits.push(format!(
@@ -3138,7 +3214,7 @@ fn decide(
         // continuity is broken — but with the persistent mirror, CIVVIS should reach
         // its own declaration, and if it does not that is information, not a gap to fill.
         let already = orders.iter().any(|o| o.kind == "war");
-        if war_from_plan && !already {
+        if arm.war_from_plan && !already {
             if let Some(seat) = report.target_player {
                 if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
                     if !rival.at_war {
@@ -4290,10 +4366,50 @@ fn main() {
     if let Some(chosen) = &rated {
         ai.reweight(chosen.weights.clone());
     }
+    // Repeatable: `--with stacked-escort --with settler-stack-discipline`.
+    // A `--with` arm restores only a ledger-held live treatment; it never
+    // changes the deployment genome when the flag is absent.
+    let forced: Vec<String> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--with")
+        .map(|pair| pair[1].clone())
+        .collect();
+    // Repeatable: `--without come-ashore --without home-defense`.
+    let withheld: Vec<String> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--without")
+        .map(|pair| pair[1].clone())
+        .collect();
+    let forced_on = match forced_live_treatments(&forced) {
+        Ok(selected) => selected,
+        Err(why) => {
+            eprintln!("civvis-orders: {why}");
+            std::process::exit(2);
+        }
+    };
+    if let Some(tag) = forced_on
+        .iter()
+        .find(|tag| withheld.iter().any(|treatment| treatment.as_str() == **tag))
+    {
+        eprintln!("civvis-orders: {tag:?} cannot be both --with and --without in one live arm");
+        std::process::exit(2);
+    }
+    // Validate every requested row before a single turn is driven. Discovering
+    // a typo on turn 1 of a four-hour live run is discovering it too late.
+    {
+        let mut probe = civvis::ai::AdvancedAi::new();
+        if let Err(why) = configure_live_bridge(&mut probe, &forced_on, &withheld) {
+            eprintln!("civvis-orders: {why}");
+            std::process::exit(2);
+        }
+    }
     // Configure before recording the startup identity, so the metadata names
     // the same controller that will answer the first turn. `decide` repeats
-    // this idempotently for fresh agents and after each `--without` ablation.
-    ai.enable_live_bridge();
+    // this idempotently for fresh agents and both kinds of live arm.
+    if let Err(why) = configure_live_bridge(&mut ai, &forced_on, &withheld) {
+        eprintln!("civvis-orders: {why}");
+        std::process::exit(2);
+    }
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -4363,12 +4479,16 @@ fn main() {
             // genome, `LIVE_BRIDGE_TREATMENTS` names what COULD be on; this
             // names what IS — the helpers the screens proved, the opt-ins they
             // proved, and the host-only flags no screen can price.
-            "treatments": civvis::ai::deployment_treatments(),
+            "treatments": civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced_on),
             "ledger_withheld": civvis::elo::LIVE_BRIDGE_TREATMENTS
                 .iter()
-                .filter(|tag| civvis::ai::ledger_default_on(tag) == Some(false))
+                .filter(|tag| {
+                    civvis::ai::ledger_default_on(tag) == Some(false)
+                        && !forced_on.contains(tag)
+                })
                 .copied()
                 .collect::<Vec<_>>(),
+            "forced": &forced_on,
         })
     );
 
@@ -4412,25 +4532,12 @@ fn main() {
     };
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
-    // Repeatable: `--without come-ashore --without home-defense`.
-    let withheld: Vec<String> = args
-        .windows(2)
-        .filter(|pair| pair[0] == "--without")
-        .map(|pair| pair[1].clone())
-        .collect();
-    // Validate before a single turn is driven. Discovering a typo on turn 1 of a
-    // four-hour live run is discovering it too late.
-    {
-        let mut probe = civvis::ai::AdvancedAi::new();
-        probe.enable_live_bridge();
-        for treatment in &withheld {
-            if let Err(why) = withhold_live_treatment(&mut probe, treatment) {
-                eprintln!("civvis-orders: {why}");
-                std::process::exit(2);
-            }
-        }
-    }
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    let arm = DecisionArm {
+        war_from_plan,
+        forced_on: &forced_on,
+        withheld: &withheld,
+    };
 
     // Read the board fresh each time: the mod appends to this file every turn.
     let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
@@ -4977,11 +5084,12 @@ fn main() {
             &mut ai,
             &snapshot,
             &state,
-            war_from_plan,
-            &withheld,
-            &mut ours,
-            &mut host_peace_retries,
-            &mut host_move_refusals,
+            arm,
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut host_peace_retries,
+                host_move_refusals: &mut host_move_refusals,
+            },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
@@ -5124,11 +5232,12 @@ fn main() {
                         &mut ai,
                         &snapshot,
                         &state,
-                        war_from_plan,
-                        &withheld,
-                        &mut ours,
-                        &mut host_peace_retries,
-                        &mut host_move_refusals,
+                        arm,
+                        DecisionMemory {
+                            ours: &mut ours,
+                            host_peace_retries: &mut host_peace_retries,
+                            host_move_refusals: &mut host_move_refusals,
+                        },
                     );
                     live = Some(board);
                     reply
@@ -5150,11 +5259,12 @@ fn main() {
                                 &mut ai,
                                 &snapshot,
                                 &state,
-                                war_from_plan,
-                                &withheld,
-                                &mut ours,
-                                &mut host_peace_retries,
-                                &mut host_move_refusals,
+                                arm,
+                                DecisionMemory {
+                                    ours: &mut ours,
+                                    host_peace_retries: &mut host_peace_retries,
+                                    host_move_refusals: &mut host_move_refusals,
+                                },
                             );
                             live = Some(fresh);
                             reply
@@ -5182,11 +5292,12 @@ fn main() {
                                     &mut throwaway,
                                     &snapshot,
                                     &state,
-                                    war_from_plan,
-                                    &withheld,
-                                    &mut ours,
-                                    &mut host_peace_retries,
-                                    &mut host_move_refusals,
+                                    arm,
+                                    DecisionMemory {
+                                        ours: &mut ours,
+                                        host_peace_retries: &mut host_peace_retries,
+                                        host_move_refusals: &mut host_move_refusals,
+                                    },
                                 )
                             } else {
                                 decide(
@@ -5194,11 +5305,12 @@ fn main() {
                                     &mut ai,
                                     &snapshot,
                                     &state,
-                                    war_from_plan,
-                                    &withheld,
-                                    &mut ours,
-                                    &mut host_peace_retries,
-                                    &mut host_move_refusals,
+                                    arm,
+                                    DecisionMemory {
+                                        ours: &mut ours,
+                                        host_peace_retries: &mut host_peace_retries,
+                                        host_move_refusals: &mut host_move_refusals,
+                                    },
                                 )
                             }
                         }
@@ -5592,12 +5704,52 @@ mod tests {
         assert_eq!(listed, registered);
     }
 
+    /// The ledger's best genome remains the default, but a verification arm
+    /// needs a precise way to restore one held row and record a real contrast.
+    #[test]
+    fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
+        let forced = super::forced_live_treatments(&[
+            "stacked-escort".to_string(),
+            "stacked-escort".to_string(),
+        ])
+        .expect("a named ledger-held gene is a valid live arm");
+        assert_eq!(forced, vec!["stacked-escort"], "the arm is deduplicated");
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        super::configure_live_bridge(&mut ai, &forced, &[])
+            .expect("the validated arm configures the live controller");
+        assert!(
+            civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
+                .contains(&"stacked-escort"),
+            "the requested gene is restored in the arm's genome"
+        );
+        assert!(
+            !ai.settler_stack_discipline(),
+            "a neighbouring held gene stays off until the experiment names it"
+        );
+
+        let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
+            .expect_err("a treatment already in the live genome cannot form a force-on arm");
+        assert!(host_only.contains("already ships"), "{host_only}");
+        let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
+            .expect_err("a typo cannot silently become the deployment arm");
+        assert!(unknown.contains("stacked-escort"), "{unknown}");
+    }
+
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateEmergency,
         StateEmergencyOurs, StateEmergencyScore, StateGovernor, StateGreatPerson, StateGreatWork,
         StateMinor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    fn default_decision_arm() -> DecisionArm<'static> {
+        DecisionArm {
+            war_from_plan: false,
+            forced_on: &[],
+            withheld: &[],
+        }
+    }
 
     #[test]
     fn host_peace_backoff_matches_firaxis_retry_window() {
@@ -5926,11 +6078,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
         let orders = reply["orders"].as_array().expect("orders are an array");
@@ -5968,11 +6121,12 @@ mod tests {
             &mut confirmed_ai,
             &snapshot,
             &confirmed_state,
-            false,
-            &[],
-            &mut confirmed_ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut confirmed_ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the confirmed decision is JSON");
         let envoys = confirmed["orders"]
@@ -6685,11 +6839,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .unwrap();
         let attacks = reply["orders"]
@@ -6749,11 +6904,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .unwrap();
         let (x, y) = civvis::hex::axial_to_offset(target_pos.0, target_pos.1);
@@ -9393,11 +9549,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut ours,
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -9537,11 +9694,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -9727,11 +9885,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         );
 
         assert!(reply.contains("\"turn\":4"));
@@ -9803,11 +9962,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         ))
         .expect("the decision is JSON");
 
@@ -9878,11 +10038,12 @@ mod tests {
             &mut ai,
             &snapshot,
             &state,
-            false,
-            &[],
-            &mut Default::default(),
-            &mut HostPeaceRetries::default(),
-            &mut HostMoveRefusals::default(),
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut Default::default(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
         );
 
         assert!(

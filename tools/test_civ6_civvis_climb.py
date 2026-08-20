@@ -1643,7 +1643,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             campus_specialist=False, envoys=False, envoy_place=False,
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
-            refresh_seconds=None, no_peace_deterrence=False, without=[],
+            refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
             no_counter_resolutions=False, combat_frames=0, replan_frames=2,
             settler_escort_cap_sync=False,
         )
@@ -1720,6 +1720,19 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")),
             "the treatment half withholds nothing",
+        )
+
+    def test_a_batch_can_restore_a_ledger_held_live_gene(self):
+        cmd = climb.play_command(
+            self._play_args(with_=["stacked-escort"]), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--civvis-with")
+        self.assertEqual(cmd[at + 1], "stacked-escort")
+        self.assertNotIn(
+            "--civvis-with",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the deployment arm must not turn a held gene back on",
         )
 
     def test_the_freeze_reaches_the_play_command(self):

@@ -406,6 +406,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command.append("--war-from-plan")
     if args.civvis_refresh_seconds is not None:
         command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    for treatment in args.civvis_with:
+        command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
     return command
@@ -2739,6 +2741,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
     def stop_brain() -> None:
@@ -3232,6 +3235,11 @@ def _play(args: argparse.Namespace) -> int:
         # batches would have been unattributable even once they were run.
         # Empty list means the full shipped bundle played.
         "withheld": sorted(args.civvis_without) if args.civvis_decides else None,
+        # `--civvis-with` is deliberately narrower than a general opt-in: it
+        # can restore only a live treatment the ledger otherwise withholds.
+        # Keep the exact named arm with the summary even if no binary event was
+        # retained, so a force-on run never resembles deployment afterwards.
+        "forced": sorted(args.civvis_with) if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -3557,6 +3565,11 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-with", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for a labeled "
+                         "verification arm, repeatable; the decision worker "
+                         "validates the name and keeps deployment unchanged by default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "

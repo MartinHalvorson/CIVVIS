@@ -411,7 +411,8 @@ class Civ6BrainTest(unittest.TestCase):
 
     def test_decider_passes_the_selected_strategy_and_reported_civilization(self) -> None:
         decider = civ6_brain.Decider(
-            Path("/tmp/civvis-orders"), Path("/tmp/live-run"), "civvis", strategy="auto"
+            Path("/tmp/civvis-orders"), Path("/tmp/live-run"), "civvis",
+            strategy="auto", with_=["stacked-escort"],
         )
         decider.set_civ("CIVILIZATION_ROME")
 
@@ -421,6 +422,21 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertIn("--fresh-board", command)
         self.assertEqual(command[command.index("--strategy") + 1], "auto")
         self.assertEqual(command[command.index("--civ") + 1], "CIVILIZATION_ROME")
+        self.assertEqual(command[command.index("--with") + 1], "stacked-escort")
+
+    def test_per_turn_decider_forwards_the_exact_force_on_arm(self) -> None:
+        response = SimpleNamespace(returncode=0, stdout='{"orders":[]}', stderr="")
+        with mock.patch.object(civ6_brain.subprocess, "run", return_value=response) as run:
+            rows = civ6_brain.civvis_orders(
+                Path("/tmp/civvis-orders"), Path("/tmp/live-run"), 17, "science",
+                without=["peacetime-deterrence"], with_=["stacked-escort"],
+            )
+        self.assertEqual(rows, [])
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--with") + 1], "stacked-escort")
+        self.assertEqual(
+            command[command.index("--without") + 1], "peacetime-deterrence"
+        )
 
     def test_default_decider_keeps_stock_weights(self) -> None:
         decider = civ6_brain.Decider(
@@ -437,6 +453,7 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertEqual(command[command.index("--victory") + 1],
                          civ6_brain.DEFAULT_VICTORY)
         self.assertNotIn("--strategy", command)
+        self.assertNotIn("--with", command)
 
 
 class SeatCivTest(unittest.TestCase):

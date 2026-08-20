@@ -120,15 +120,42 @@ pub fn ledger_default_on(tag: &str) -> Option<bool> {
     }
 }
 
-/// The treatments the deployment genome plays: every live treatment the
-/// ledger does not hold off, plus every opt-in it turns on. This is what the
-/// live seat's `genome` event reports — the list that used to be
-/// `LIVE_BRIDGE_TREATMENTS` whole, which the ledger makes untrue.
-pub fn deployment_treatments() -> Vec<&'static str> {
+/// Whether a live treatment is normally present in the universe but held out
+/// of deployment by the ledger. These are the only live genes an explicit
+/// verification arm may force on: host-only rows already ship as the universe
+/// set them, while production opt-ins are not part of that universe at all.
+pub fn ledger_held_live_treatment(tag: &str) -> bool {
+    ledger_default_on(tag) == Some(false)
+        && super::LIVE_TREATMENTS
+            .iter()
+            .any(|(_, live_tag, _)| *live_tag == tag)
+}
+
+/// Every live treatment an explicit ledger-override arm may restore, in
+/// registry order. This is deliberately narrower than every default-off gene:
+/// the caller begins from the live universe, so only its withheld rows can be
+/// restored without silently enabling a different bundle.
+pub fn ledger_held_live_treatments() -> Vec<&'static str> {
+    super::LIVE_TREATMENTS
+        .iter()
+        .map(|(_, tag, _)| *tag)
+        .filter(|tag| ledger_held_live_treatment(tag))
+        .collect()
+}
+
+/// The treatments a live arm actually plays: every live treatment the ledger
+/// does not hold off, plus any explicitly forced ledger-held live treatment,
+/// and every opt-in the ledger turns on. This is what the live seat's `genome`
+/// event reports — the list that used to be `LIVE_BRIDGE_TREATMENTS` whole,
+/// which the ledger makes untrue.
+pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'static str> {
     let mut tags: Vec<&'static str> = super::LIVE_TREATMENTS
         .iter()
         .map(|(_, tag, _)| *tag)
-        .filter(|tag| ledger_default_on(tag) != Some(false))
+        .filter(|tag| {
+            ledger_default_on(tag) != Some(false)
+                || (ledger_held_live_treatment(tag) && forced_on.contains(tag))
+        })
         .collect();
     tags.extend(
         super::PRODUCTION_OPT_INS
@@ -139,6 +166,12 @@ pub fn deployment_treatments() -> Vec<&'static str> {
     tags
 }
 
+/// The unmodified deployment genome. Kept as a wrapper so every ordinary
+/// controller continues to take the exact existing path.
+pub fn deployment_treatments() -> Vec<&'static str> {
+    deployment_treatments_with_forced_live(&[])
+}
+
 /// What `apply_gene_ledger` did, for the decide note and the tests.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GeneLedgerApplied {
@@ -146,17 +179,30 @@ pub struct GeneLedgerApplied {
     pub withheld: Vec<&'static str>,
     /// Opt-ins the ledger turned on.
     pub enabled: Vec<&'static str>,
+    /// Ledger-held live treatments an explicit verification arm restored.
+    pub forced: Vec<&'static str>,
 }
 
 impl AdvancedAi {
     /// Bring a bundle to the deployment genome. See the module header.
     pub fn apply_gene_ledger(&mut self) -> GeneLedgerApplied {
+        self.apply_gene_ledger_with_forced_live(&[])
+    }
+
+    /// Bring a live universe to the deployment genome while restoring only
+    /// named ledger-held live treatments for a deliberately labeled
+    /// verification arm. Callers must validate names before this point; an
+    /// unrecognized, host-only, or already-deployed tag is ignored here rather
+    /// than becoming a back door around the ledger.
+    pub fn apply_gene_ledger_with_forced_live(&mut self, forced_on: &[&str]) -> GeneLedgerApplied {
         let mut applied = GeneLedgerApplied::default();
         for &(_, tag, disable) in super::LIVE_TREATMENTS
             .iter()
             .chain(super::PRODUCTION_TREATMENTS)
         {
-            if ledger_default_on(tag) == Some(false) {
+            if ledger_held_live_treatment(tag) && forced_on.contains(&tag) {
+                applied.forced.push(tag);
+            } else if ledger_default_on(tag) == Some(false) {
                 disable(self);
                 applied.withheld.push(tag);
             }
@@ -291,5 +337,50 @@ mod tests {
                 "{tag}: deployed exactly unless the ledger holds it off"
             );
         }
+    }
+
+    #[test]
+    fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
+        let forced = ["stacked-escort"];
+        assert!(ledger_held_live_treatment("stacked-escort"));
+        assert!(
+            !ledger_held_live_treatment("parallel-settlers"),
+            "host-only treatments already follow their live-universe default"
+        );
+        assert!(
+            !ledger_held_live_treatment("strategic-wonders"),
+            "a production treatment is not a live-universe override"
+        );
+        assert!(ledger_held_live_treatments().contains(&"stacked-escort"));
+
+        let deployed = deployment_treatments();
+        let forced_deployment = deployment_treatments_with_forced_live(&forced);
+        assert!(
+            !deployed.contains(&"stacked-escort"),
+            "the verification override must not change deployment"
+        );
+        assert!(
+            forced_deployment.contains(&"stacked-escort"),
+            "the genome event must name the treatment the arm actually restored"
+        );
+        assert_eq!(
+            forced_deployment.len(),
+            deployed.len() + 1,
+            "one explicit live gene restores exactly one deployment row"
+        );
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge_universe();
+        let applied = ai.apply_gene_ledger_with_forced_live(&forced);
+        assert!(ai.stacked_escort, "the named live treatment stands");
+        assert!(
+            !ai.settler_stack_discipline(),
+            "neighbouring ledger-held treatments stay off unless named too"
+        );
+        assert_eq!(applied.forced, vec!["stacked-escort"]);
+        assert!(
+            !applied.withheld.contains(&"stacked-escort"),
+            "an explicit arm cannot report its restored gene as withheld"
+        );
     }
 }
