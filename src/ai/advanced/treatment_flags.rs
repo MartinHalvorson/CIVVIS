@@ -152,6 +152,19 @@ impl AdvancedAi {
         self.base.whole_turn_backtrack_guard = false;
     }
 
+    /// A blind-planned unit stops at the first step that revealed new ground
+    /// and finishes its movement sighted; on the bridge its walk is cut at
+    /// the first unrevealed hex so the replan frame sees what it uncovered.
+    /// See [`AdvancedAi::step_and_reassess`].
+    pub fn enable_step_and_reassess(&mut self) {
+        self.step_and_reassess = true;
+    }
+
+    /// Withholding twin for `enable_step_and_reassess`. See `LIVE_TREATMENTS`.
+    pub fn disable_step_and_reassess(&mut self) {
+        self.step_and_reassess = false;
+    }
+
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -667,10 +680,28 @@ impl AdvancedAi {
     /// this same function, so the measured agent and the deployed agent cannot
     /// drift apart.
     ///
-    /// ⚠ ADD NEW BRIDGE FLAGS HERE, not in the binary, or the arm silently
-    /// stops matching the deployment — the exact shape of
-    /// `civvis-the-runner-tree-was-the-broken-link`.
+    /// ⚠ ADD NEW BRIDGE FLAGS TO `enable_live_bridge_universe`, not in the
+    /// binary, or the arm silently stops matching the deployment — the exact
+    /// shape of `civvis-the-runner-tree-was-the-broken-link`.
+    ///
+    /// ★★★★ AND WHAT SHIPS IS THE UNIVERSE MINUS WHAT THE LEDGER HOLDS OFF.
+    /// Operator directive 2026-08-20: the defaults reflect the best genome —
+    /// only genes that provably help are on. `apply_gene_ledger`
+    /// (`advanced/gene_ledger.rs`) ends this helper: a treatment the screens
+    /// have measured and not found helpful is withheld, an opt-in they found
+    /// helpful is enabled, a flag no native screen can price (Firaxis-only)
+    /// stays as the universe set it. A new treatment therefore ships OFF
+    /// until a screen says otherwise; `gene_screen --list` shows each gene's
+    /// verdict and default.
     pub fn enable_live_bridge(&mut self) {
+        self.enable_live_bridge_universe();
+        self.apply_gene_ledger();
+    }
+
+    /// Every live treatment on, the ledger NOT applied: the genome's universe.
+    /// `gene_screen` starts here and sets each gene to its drawn state; the
+    /// membership tests read this body. Deployment is `enable_live_bridge`.
+    pub fn enable_live_bridge_universe(&mut self) {
         self.enable_live_trader_route_adapter();
         self.enable_live_religious_purchase_guard();
         // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
@@ -712,6 +743,11 @@ impl AdvancedAi {
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.
         self.enable_whole_turn_backtrack_guard();
+        // A unit that uncovers new ground re-decides the rest of its movement
+        // on what it saw, instead of finishing a path planned blind. See
+        // `step_and_reassess`; on the bridge it is the brain half of the
+        // mid-turn replan frame.
+        self.enable_step_and_reassess();
         self.enable_bounded_recovery();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
@@ -1182,6 +1218,13 @@ impl AdvancedAi {
     /// flag is ever added to one and not the other, so the bundles cannot
     /// silently drift apart.
     pub fn enable_engine_repairs(&mut self) {
+        self.enable_engine_repairs_universe();
+        self.apply_gene_ledger();
+    }
+
+    /// Every native repair on, the ledger NOT applied — the two halves and
+    /// nothing else. See `enable_live_bridge_universe`.
+    pub fn enable_engine_repairs_universe(&mut self) {
         self.enable_engine_repairs_war();
         self.enable_engine_repairs_economy();
     }
@@ -1205,6 +1248,8 @@ impl AdvancedAi {
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.
         self.enable_whole_turn_backtrack_guard();
+        // And a plan made blind is finished sighted. See `step_and_reassess`.
+        self.enable_step_and_reassess();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.

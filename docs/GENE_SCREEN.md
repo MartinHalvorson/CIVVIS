@@ -176,7 +176,9 @@ not a silent omission.
 | flag | values | meaning |
 |---|---|---|
 | `--genes a,b,c` | tags or field names | screen only these; the rest are held at the baseline |
-| `--baseline` | `repairs` (default) / `stock` | what un-screened engine repairs are held at: on (the `advanced_synergy` bundle) or off (production `advanced`) |
+| `--baseline` | `best` (default) / `repairs` / `stock` | what un-screened genes are held at: the deployment genome (the ledger's defaults — see below), the genome's universe (every repair on), or production `advanced` (every repair off) |
+| `--design` | `foldover` (default) / `prior` | how genomes are drawn: the balanced foldover above, or each arm independently from the ledger's prior (see *Prior-weighted screens* below) |
+| `--p-helps`, `--p-hurts`, `--p-unresolved` | 0.9 / 0.1 / 0.5 | the on-probability a gene draws under `--design prior`, by its ledger verdict |
 | `--field` | `advanced` (default) / `repairs` | the other majors: production `advanced`, or the native repair bundle |
 | `--victories a,b,…` | all six by default | restrict the victory lanes, because **the regime decides which genes can act at all**. `--victories domination,score` gives the 31 war and siege genes a game that does not end by conversion at turn 149. Same spelling and same parser as `civvis --victories` |
 | `--randomize-civs` | off by default | shuffle every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game unless this is on |
@@ -291,6 +293,111 @@ that change how the tool is read:
 - The screen reproduced a known result from a new instrument:
   `governor-every-lane` here, against `advanced_every_lane` at −62 Elo compact /
   −95 deployment over 400 pairs per gate (PR #1955).
+
+## The gene ledger: the defaults are the best genome, and the best genome is data
+
+Operator directive 2026-08-20: *let the defaults for the genes reflect our best
+genome — only genes that provably help; unhelpful genes can default off — so
+our verification games use our best genome. When we test, still test and try
+to improve the less helpful genes.*
+
+Until then "on by default" meant somebody had written `self.enable_x()` into
+the bundle, and the phase-1 anchors had measured that all-on bundle at **7.5%
+wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
+
+- **`docs/gene_ledger.json`** records, per gene, what the screens measured in
+  each regime (`native` = all six lanes, `war` = `domination,score`) and the
+  verdict that follows; **`src/ai/advanced/gene_ledger_table.rs`** is the same
+  table generated into Rust. `tools/gene_ledger.py --write --source <analysis>
+  --regime <native|war> …` builds both from `gene_screen --analyze --json`
+  outputs (the analyses themselves are tracked under `docs/gene_screens/`);
+  `tools/test_gene_ledger.py` fails if either file has drifted from the
+  recorded sources. Later sources override earlier ones per gene and regime,
+  so a repaired gene's re-screen replaces its pre-repair number while the rest
+  of the old screen stands.
+- **Verdict rules** (`tools/gene_ledger.py`, repeated in
+  `src/ai/advanced/gene_ledger.rs`): `helps` = win z ≥ 2 with share z > −2, or
+  share z ≥ 2 with win z > −2 — the screen's own `*` flag; `hurts` the mirror;
+  `unresolved` otherwise, including a gene whose axes disagree past |z| ≥ 2
+  (`conflict`) and a gene no screen has measured. Past the family-wise bar is
+  recorded as `family_wise`, not required: with sixty-odd genes that bar would
+  leave three on. The **native** regime governs when it resolves; a gene
+  unresolved natively takes the **war** verdict when that resolves.
+- **The deployment genome.** `AdvancedAi::enable_live_bridge` and
+  `enable_engine_repairs` now end with `apply_gene_ledger`: every live or
+  production treatment whose verdict is not `helps` is withheld, every opt-in
+  whose verdict is `helps` is enabled, and a flag no native screen can price
+  (the Firaxis-only flags) is left as the bundle set it. A **screenable gene
+  nobody has screened yet is not proven either, and ships off.** The
+  `_universe` twins (`enable_live_bridge_universe`, `enable_engine_repairs_universe`)
+  set every flag and skip the ledger — they are what this screen starts from
+  (it then sets each gene to its drawn state) and what the membership tests
+  read. The live seat's `genome` event lists `treatments` as deployed and
+  `ledger_withheld` beside it; `gene_screen --list` shows each gene's
+  universe state, ledger verdict, default and prior.
+- **First ledger (2026-08-20)**, from the 6p 60k native screen (13,446
+  seat-pairs, `docs/gene_screens/2026-08-20-p4-…`), the 4p war screen (3,300
+  seat-pairs, `…p2-war-…`) and the repaired genes' war re-screen (`…p3b-…`):
+  **10 help** (on: barbarian-scouts-are-scouts, bounded-recovery,
+  buildings-before-projects, garrison-under-fire, loyalty-rate-alarm,
+  recorded-tactical-step, siege-muster, siege-tracks-wall, war-reinforcement,
+  wide-map-capacity), **11 hurt** (off), **43 unresolved** (off). The live
+  bundle therefore plays those ten plus the host-only flags. What the ledger
+  bought is measured by this screen's anchors under `--baseline best` — arm 0
+  the all-on universe, arm 1 the best genome, same maps: **250 pairs, 4p
+  all-six, seeds 52M: all-on 18.4% wins / 20.6% share, best genome 31.2% /
+  26.7%, paired win Δ +12.8 pp ± 3.3 for the best genome** (round:
+  `docs/eval/2026-08-20-the-bridge-talks-more-than-once-a-turn.md`).
+
+⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
+ledger already holds off is identical to `live` — the screen is that gene's
+instrument now. And a treatment PR no longer ships its flag on: it ships it
+into the universe, screens it (a few hundred pairs resolve ±3 pp), and the
+ledger turns it on if it helps.
+
+## Prior-weighted screens: the helpful genes play most of the time, and are still priced
+
+The foldover gives every gene exactly half its games on. The operator's ask
+was different: *in the large batch tests a helpful gene may be activated in
+90% of tests; we should still compare the win rate of the 90% vs the 10%, and
+for a helpful gene the 90% should win more.* That is `--design prior`:
+
+- Each arm of a pair is drawn **independently** from the prior — a gene on
+  with p = 0.9 if the ledger says it helps, 0.1 if it hurts, 0.5 if
+  unresolved or unmeasured (`--p-helps/--p-hurts/--p-unresolved` move them).
+  Both arms still share the map and the seat, and the genomes still reproduce
+  from `(start seed, pair, arm)`. The header records `design` and the
+  per-gene `prior`.
+- The per-gene **Δ is the marginal on-versus-off contrast** over every game —
+  the 90% against the 10% — with errors clustered by game (an all-seats game's
+  rows share a winner). The table's count column becomes `on n/off n`, because
+  the arms are no longer balanced and the off arm of a helper is small: at
+  p = 0.9, pricing a helper to the same resolution needs about 2.8× the games
+  of a foldover (1/(0.9·0.1) against 1/(0.5·0.5)). That is the cost of
+  playing the best genome most of the time, and the table's resolution line
+  says what it bought.
+- **`adjΔpp` is the map-paired OLS** on the arms' differences: `y₀ − y₁` on
+  `x₀ − x₁ ∈ {−1, 0, +1}`, zero for every gene the two arms agree on, so each
+  gene is priced from the pairs that differ on it with the rest of the genome
+  differenced out and the map cancelled exactly.
+- The foldover stays the default and the instrument of record for a gene's
+  first price; the prior design is the *batch* instrument — the large runs
+  that play the deployment genome, verify it, and keep pricing the less
+  helpful genes at one half.
+
+## A Δ of exactly zero is a gene that never fired, not a null
+
+`step-and-reassess` (2026-08-20, `docs/LIVE_TACTICS.md` §11) first screened
+**+0.0 [+0.0, +0.0]** on both axes over 204 pairs: every pair's two games
+ended identically. That is not "no effect" — a gene with any reach at all
+moves at least the score share of some game — it is the signature of a gene
+whose code path is never entered in the regime the screen plays. The cause
+was structural: its first cut lived only on the parallel unit planner, and
+the only thing that installs a `WorkPool` is the interactive `civvis --jobs`
+CLI; every evaluator, `gene_screen` included, and the live decider run units
+serially. The repaired gene carries a serial leg and the next 41 pairs already
+differed. Read the interval's width before the sign: a zero-width interval is
+a fires-check failure, and the fix is in the gene, not in more pairs.
 
 ## What it is not
 

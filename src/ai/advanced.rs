@@ -764,6 +764,12 @@ pub struct StrategyCensus {
     pub arrival_wave_holds: u32,
     pub arrival_wave_releases: u32,
     pub arrival_wave_lone: u32,
+    /// `step_and_reassess`: steps that brought a hostile into view and
+    /// re-formed the force groups (serial path), and blind batch plans cut
+    /// at the step that revealed new ground (parallel path). Zero unless the
+    /// flag is on; zero under the flag says it never fired.
+    pub reveal_regroups: u32,
+    pub step_reassessed: u32,
 }
 
 impl StrategyCensus {
@@ -825,6 +831,8 @@ impl StrategyCensus {
         self.arrival_wave_holds += other.arrival_wave_holds;
         self.arrival_wave_releases += other.arrival_wave_releases;
         self.arrival_wave_lone += other.arrival_wave_lone;
+        self.reveal_regroups += other.reveal_regroups;
+        self.step_reassessed += other.step_reassessed;
     }
 }
 
@@ -3740,6 +3748,38 @@ pub struct AdvancedAi {
     /// `docs/TACTICS.md` §17 carries the measurement.
     pub joint_reach_lines: bool,
 
+    /// ★★★★ A UNIT THAT SEES SOMETHING NEW STOPS AND THINKS AGAIN.
+    ///
+    /// `advanced_units` plans a batch of general units in parallel, each on a
+    /// `speculative_clone` whose `visibility_suppressed` flag means NO step
+    /// reveals anything: up to eight hexes are planned from turn-start
+    /// knowledge and replayed blind (`apply_unit_intents`). A scout planned
+    /// into the fog therefore walks its whole allowance past the coast, the
+    /// rival border or the barbarian camp its first step uncovered, and only
+    /// next turn does anything react. With this on, the replay of a blind
+    /// plan stops at the first step that enlarged `players[pid].explored`,
+    /// and the unit finishes its movement from the live, revealed board
+    /// (`advance_unit_serial`, which re-decides every step with what it can
+    /// now see). The rest of the batch keeps its plan: another unit's reveal
+    /// is not this unit's new fact unless it also walks into it.
+    ///
+    /// Serially (every evaluator and the live decider run without a pool, so
+    /// each step is already re-decided sighted) the gene's other leg acts: a
+    /// step that brings a hostile into view dirties the force groups, which
+    /// are otherwise re-formed only by an attack — the unit that saw the
+    /// barbarian horsemen, and every unit after it, move on the board with
+    /// them on it (`advance_unit_serial`, `reveal_regroups`).
+    ///
+    /// On the live bridge the same gene is the brain half of the mid-turn
+    /// replan frame: `civvis_orders` cuts a unit's coalesced walk at its
+    /// first unrevealed hex when the seat advertises `replan_frames`, so the
+    /// host walks it to the edge of the known, the mod re-exports the board
+    /// it uncovered, and the frame's re-plan spends the remaining movement
+    /// on the new ground. Off for native tournament games and the frozen
+    /// anchor; on for the live bridge and the repair bundle; priced by
+    /// `gene_screen` as `step-and-reassess`. See `docs/LIVE_TACTICS.md` §11.
+    pub step_and_reassess: bool,
+
     /// Admit the friendly-volley extension without the rest of the closed
     /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
     /// and left production with that bundle's removal (#1589, +38 for the
@@ -4058,6 +4098,15 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// The gene ledger: the screens' verdict per gene and the deployment genome
+/// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
+/// applying it; the table is generated. See `advanced/gene_ledger.rs`.
+pub mod gene_ledger;
+pub use gene_ledger::{
+    deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
+    GeneLedgerApplied, GeneVerdict, Measure, Verdict,
+};
 
 
 impl AdvancedAi {
@@ -4684,6 +4733,7 @@ impl AdvancedAi {
             joint_tactics: false,
             joint_tactics_forced_off: false,
             joint_reach_lines: true,
+            step_and_reassess: false,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -28700,6 +28750,20 @@ impl AdvancedAi {
             && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
     }
 
+    /// Hostile units this seat can see right now: barbarians and anyone it
+    /// is at war with, on a tile in its current sight.
+    fn visible_hostiles(g: &Game, pid: usize) -> usize {
+        let frame = g.player_vision_frame(pid);
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && (g.barb_pid == Some(unit.owner) || g.at_war.contains(&(pid, unit.owner)))
+                    && g.sees(&frame, unit.pos)
+            })
+            .count()
+    }
+
     fn advance_unit_serial(
         &mut self,
         g: &mut Game,
@@ -28716,6 +28780,16 @@ impl AdvancedAi {
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
+            // `step_and_reassess`: a step that brings a hostile into view is
+            // new information for every unit still to move. The force groups
+            // are otherwise re-formed only when an ATTACK dirties them
+            // ("movement cannot change the opposing force") — but a step
+            // that reveals one does exactly that.
+            let hostiles_before = if self.step_and_reassess {
+                Self::visible_hostiles(g, pid)
+            } else {
+                0
+            };
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -28743,8 +28817,18 @@ impl AdvancedAi {
                 break;
             }
             took_a_turn = true;
+            self.note_sightings(g, pid, hostiles_before);
         }
         took_a_turn
+    }
+
+    /// After a sighted step: if more hostiles are in view than before it,
+    /// the force groups are re-formed before the next military step.
+    fn note_sightings(&mut self, g: &Game, pid: usize, hostiles_before: usize) {
+        if self.step_and_reassess && Self::visible_hostiles(g, pid) > hostiles_before {
+            self.force_groups_dirty = true;
+            self.census.reveal_regroups += 1;
+        }
     }
 
     fn plan_general_unit_turn(
@@ -28808,6 +28892,10 @@ impl AdvancedAi {
 
             let mut took_a_turn = false;
             let mut valid = true;
+            // `step_and_reassess`: the blind plan is abandoned at the first
+            // step that uncovered new ground, and the unit finishes sighted.
+            let mut reassess = false;
+            let mut walked: Vec<Pos> = Vec::new();
             for action in &intent.actions {
                 let invalidates_followers = match action {
                     Action::Move { to, .. } => {
@@ -28832,6 +28920,8 @@ impl AdvancedAi {
                     }
                     _ => true,
                 };
+                let explored_before = g.players[pid].explored.len();
+                let from = g.units.get(&uid).map(|unit| unit.pos);
                 if g.apply(pid, action).is_err() {
                     valid = false;
                     break;
@@ -28847,8 +28937,36 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                 }
                 snapshot_invalid |= invalidates_followers;
+                if let (Action::Move { .. }, Some(from)) = (action, from) {
+                    walked.push(from);
+                    // ★★★★ THE STEP SHOWED SOMETHING THE PLAN NEVER SAW. The
+                    // plan was made on a clone that reveals nothing, so every
+                    // later step in it was chosen in ignorance of what this
+                    // one uncovered. Stop here and finish from the live board.
+                    if self.step_and_reassess
+                        && g.players[pid].explored.len() > explored_before
+                        && g.units.get(&uid).is_some_and(|unit| unit.moves_left > 0.0)
+                    {
+                        reassess = true;
+                        break;
+                    }
+                }
             }
-            if valid {
+            if reassess && g.units.contains_key(&uid) {
+                // The clone's plan state describes a walk the unit did not
+                // finish; the hops it DID take are what the reversal guard
+                // must know before the sighted continuation chooses a step.
+                self.base.record_walked_steps(uid, g.turn, walked);
+                self.census.step_reassessed += 1;
+                took_a_turn |= self.advance_unit_serial(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    flags.religious_offensive,
+                    flags.decline_settlers,
+                );
+            } else if valid {
                 self.base.merge_unit_plan_state(uid, intent.base_state);
                 took_a_turn |= intent.took_a_turn;
             } else if g.units.contains_key(&uid) {

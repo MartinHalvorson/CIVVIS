@@ -1292,6 +1292,10 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
+         # The mid-turn frames (docs/LIVE_TACTICS.md §8, §11). The combat
+         # frame was never forwarded here, so no ladder run has played it.
+         "--combat-frames", str(args.combat_frames),
+         "--replan-frames", str(args.replan_frames),
          "--window-side", "right",
          "--window-frac", "0.5", "--window-vfrac", "0.5"]
     )
@@ -1589,6 +1593,11 @@ def main() -> int:
                          "measuring something else")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
+    ap.add_argument("--combat-frames", type=int, default=0,
+                    help="forwarded to civ6_play.py: strike-opened mid-turn frames per turn")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="forwarded to civ6_play.py: mid-turn replan frames per turn "
+                         "(revealed ground or a strike re-exports the board; 0 = off)")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--no-build", dest="build", action="store_false", default=True,
                     help="do not rebuild the checkout's release decider before attempts")

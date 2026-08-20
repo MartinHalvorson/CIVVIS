@@ -629,6 +629,19 @@ def build_config(args: argparse.Namespace) -> dict:
         # own short poll budget and no fallback. See docs/LIVE_TACTICS.md §8.
         "CombatFrames": args.combat_frames,
         "CombatFramePolls": args.combat_frame_polls,
+        # ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. A
+        # replan frame (`ReplanFrames` ≥ 1, default 2) opens after the
+        # opening orders settle whenever the seat revealed ground since the
+        # board went out and a unit still has movement to spend on it (or a
+        # strike went out): the revealed plots cross as a `tiles` delta, the
+        # board is exported again, and CIVVIS re-plans the same turn. The
+        # brain's half (`step_and_reassess`) cuts a walk at its first
+        # unrevealed hex so the unit steps to the edge of the known and the
+        # frame spends the rest on what it saw. `TileDelta` sends newly
+        # revealed plots every turn and frame instead of every
+        # `TileExportEvery` turns. See docs/LIVE_TACTICS.md §11.
+        "ReplanFrames": args.replan_frames,
+        "TileDelta": args.tile_delta,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -3237,6 +3250,8 @@ def _play(args: argparse.Namespace) -> int:
             "CancelQueuedPaths": args.cancel_queued_paths,
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
+            "ReplanFrames": args.replan_frames,
+            "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -3586,6 +3601,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--combat-frame-polls", type=int, default=20,
                     help="polls to wait for a combat frame's answer before the frame "
                          "is abandoned by name and the turn ends")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="mid-turn replan frames per turn: after the opening orders "
+                         "settle, if the seat revealed ground since the board went "
+                         "out and a unit can still move (or a strike went out), "
+                         "re-export the board and let CIVVIS re-plan the same turn "
+                         "(0 = off; each frame waits --combat-frame-polls)")
+    ap.add_argument("--no-tile-delta", dest="tile_delta",
+                    action="store_false", default=True,
+                    help="send newly revealed plots only with the periodic sweep "
+                         "(--tile-export-every) instead of every turn and frame")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")
