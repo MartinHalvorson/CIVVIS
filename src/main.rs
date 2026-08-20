@@ -1140,6 +1140,14 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
+                        if census.arrival_wave_holds > 0 {
+                            flags.push_str(&format!(
+                                " ARRIVAL_WAVES held={} in_wave={} alone={}",
+                                census.arrival_wave_holds,
+                                census.arrival_wave_releases,
+                                census.arrival_wave_lone,
+                            ));
+                        }
                         Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,

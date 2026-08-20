@@ -67,6 +67,22 @@ impl AdvancedAi {
         self.live_trader_route_adapter = false;
     }
 
+    /// Rear reinforcements arrive at an engaged front as a wave, not one at a
+    /// time. See [`AdvancedAi::arrival_waves`]. Off everywhere by default;
+    /// opted into by name (`gene_screen`, `victory_eval --with arrival-waves`)
+    /// and listed in `PRODUCTION_OPT_INS`.
+    pub fn enable_arrival_waves(&mut self) {
+        self.arrival_waves = true;
+    }
+
+    /// The twin of `enable_arrival_waves`, so an arm that opted in can put it
+    /// back.
+    pub fn disable_arrival_waves(&mut self) {
+        self.arrival_waves = false;
+        self.reinforcement_marches.clear();
+        self.arrival_wave.clear();
+    }
+
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {
