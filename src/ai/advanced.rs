@@ -177,6 +177,11 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
+/// `war_economy`: how far from the campaign objective a city still counts as
+/// the war machine while the adaptive war economy is routing production.
+/// Beyond it the interior keeps the baseline governor. Twelve covers the
+/// staging ring (3..=5), the reinforcement front (8), and a margin of march.
+const WAR_ECONOMY_FRONT_RADIUS: i32 = 12;
 /// `arrival_waves`: how many rear reinforcements must stand together, inside
 /// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
 /// its front group's orders. Two is the smallest wave that is not "one at a
@@ -17791,7 +17796,39 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        // ★★★ `war_economy`, second cut (2026-08-20). The declared-war gate
+        // improved the gene with disjoint intervals in both regimes
+        // (−7.2 → −4.1 native over 2,000 pairs, seeds 45000000..;
+        // −26.7 → −18.1 at war, seeds 44000000..) and it still resolves
+        // harmful: even a declared war does not need EVERY city on war
+        // production for fifty-plus turns. The bound is spatial — cities
+        // within [`WAR_ECONOMY_FRONT_RADIUS`] of the campaign objective are
+        // the war machine; the interior keeps compounding under the baseline
+        // governor, exactly as it would without the flag (the skipped queues
+        // fall through to `delegated_cities`, whose comment already promises
+        // that). An appointed timed war (`war_plan`) and a victory-targeted
+        // seat keep their whole-empire routing — this bounds only the
+        // adaptive war economy that measured harmful.
+        let war_front_only = self.war_economy
+            && self.war_plan.is_none()
+            && self.active_victory_target(g).is_none()
+            && plan.strategy == GrandStrategy::Conquest
+            && plan
+                .target_player
+                .is_some_and(|target| g.is_at_war(pid, target));
+        let front_objective = war_front_only
+            .then(|| {
+                plan.target_city
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.pos)
+            })
+            .flatten();
         for cid in city_ids {
+            if let Some(objective) = front_objective {
+                if g.wdist(g.cities[&cid].pos, objective) > WAR_ECONOMY_FRONT_RADIUS {
+                    continue;
+                }
+            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -17913,6 +17950,67 @@ impl AdvancedAi {
                     }
                     counts.add_item(g, &trader);
                     continue;
+                }
+            }
+            // ★★★ `governor_every_lane`, second cut (2026-08-20). The trader
+            // preemption above repaired the win axis on 2,000 verification
+            // pairs (−2.8 → +0.8, seeds 45000000..) and left the score-share
+            // drag whole (−4.45 → −4.63, z −33): the rest of the recorded
+            // census fingerprint is buildings at 0.81× of control while
+            // districts hold 0.94× — the lanes raise district shells and
+            // walk away from the buildings that make them compound. So the
+            // routing finishes what it started: an idle city holding a
+            // specialty district whose FIRST building (no building
+            // prerequisite) is producible orders the cheapest such building
+            // before the strategic argmax runs. City-center buildings stay
+            // the baseline's business; a district that already has its first
+            // building is back in the argmax's hands. Scoped to the same
+            // every-lane dispatch as the trader.
+            if committed.is_none() && every_lane_routing {
+                let unfinished: Option<Item> = {
+                    let _memo = g.query_memo();
+                    g.producible_items(pid, cid)
+                        .into_iter()
+                        .filter_map(|item| {
+                            let Item::Building { building } = &item else {
+                                return None;
+                            };
+                            let spec = g.rules.buildings.get(building)?;
+                            if !spec.requires.is_empty() {
+                                return None;
+                            }
+                            let district = spec.district?;
+                            let family = g.district_family(district);
+                            if family == "city_center"
+                                || !g.city_has_district_family(&g.cities[&cid], family)
+                            {
+                                return None;
+                            }
+                            Some((spec.cost, item))
+                        })
+                        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1))))
+                        .map(|(_, item)| item)
+                };
+                if let Some(item) = unfinished {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} finishes {} before the lane's strategic pick",
+                                city_name, Self::plain_item(&item);
+                                "a district without its first building compounds nothing");
+                        }
+                        counts.add_item(g, &item);
+                        continue;
+                    }
                 }
             }
             let best: Option<(f64, String, Item)> = {
