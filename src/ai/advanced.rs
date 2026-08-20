@@ -17952,70 +17952,24 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            // ★★★ `governor_every_lane`, second cut (2026-08-20). The trader
-            // preemption above repaired the win axis on 2,000 verification
-            // pairs (−2.8 → +0.8, seeds 45000000..) and left the score-share
-            // drag whole (−4.45 → −4.63, z −33): the rest of the recorded
-            // census fingerprint is buildings at 0.81× of control while
-            // districts hold 0.94× — the lanes raise district shells and
-            // walk away from the buildings that make them compound. So the
-            // routing finishes what it started: an idle city holding a
-            // specialty district whose FIRST building (no building
-            // prerequisite) is producible orders the cheapest such building
-            // before the strategic argmax runs. City-center buildings stay
-            // the baseline's business; a district that already has its first
-            // building is back in the argmax's hands. Scoped to the same
-            // every-lane dispatch as the trader.
-            if committed.is_none() && every_lane_routing {
-                let unfinished: Option<Item> = {
-                    let _memo = g.query_memo();
-                    g.producible_items(pid, cid)
-                        .into_iter()
-                        .filter_map(|item| {
-                            let Item::Building { building } = &item else {
-                                return None;
-                            };
-                            let spec = g.rules.buildings.get(building)?;
-                            if !spec.requires.is_empty() {
-                                return None;
-                            }
-                            let district = spec.district?;
-                            let family = g.district_family(district);
-                            if family == "city_center"
-                                || !g.city_has_district_family(&g.cities[&cid], family)
-                            {
-                                return None;
-                            }
-                            Some((spec.cost, item))
-                        })
-                        .min_by(|a, b| {
-                            a.0.total_cmp(&b.0)
-                                .then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1)))
-                        })
-                        .map(|(_, item)| item)
-                };
-                if let Some(item) = unfinished {
-                    if g.apply(
-                        pid,
-                        &Action::Produce {
-                            city: cid,
-                            item: item.clone(),
-                        },
-                    )
-                    .is_ok()
-                    {
-                        if self.journal().wants(crate::reasoning::Level::Decision) {
-                            let city_name = g.cities[&cid].name.clone();
-                            think!(self.journal(), Economy, Decision,
-                                "{} finishes {} before the lane's strategic pick",
-                                city_name, Self::plain_item(&item);
-                                "a district without its first building compounds nothing");
-                        }
-                        counts.add_item(g, &item);
-                        continue;
-                    }
-                }
-            }
+            // ★★★ `governor_every_lane`, second cut, MEASURED AND REVERTED
+            // (2026-08-20). The trader preemption above repaired the win axis
+            // (−2.8 → +0.8 over 2,000 pairs, seeds 45000000..) and left the
+            // score-share drag whole (−4.63, z −33); the census fingerprint
+            // named buildings at 0.81× of control, so the second cut had the
+            // routing order the cheapest FIRST building of any specialty
+            // district before the strategic argmax. Re-priced on 2,000
+            // disjoint pairs (seeds 47000000..): win Δ fell to **−3.6
+            // [−5.6, −1.6]** and share to −5.39 (z −37) — worse than either
+            // cycle on both axes. The preemption was removed the same day;
+            // this note stays so the next reader does not retry the naive
+            // form. The 0.81× fingerprint is real but the answer is not "a
+            // building before every argmax": the lanes' district asks and
+            // the buildings compete for the same production, and a hard
+            // preemption starved whatever the argmax would have compounded.
+            // Next lever, unmeasured: scope the completion to the district
+            // the routing itself just raised, or price (never preempt) the
+            // first building into the strategic table.
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let items = g

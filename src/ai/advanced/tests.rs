@@ -4036,8 +4036,9 @@ mod flagged_gene_repairs {
         );
     }
 
-    /// The war-economy front bound and the governor's building completion
-    /// keep their shapes.
+    /// The war-economy front bound keeps its shape — and the reverted
+    /// building preemption stays out (it re-measured −3.6 pp wins on 2,000
+    /// disjoint pairs; the revert note in `advanced_production` records it).
     #[test]
     fn cycle_two_preemptions_are_wired() {
         let source = include_str!("../advanced.rs");
@@ -4045,12 +4046,14 @@ mod flagged_gene_repairs {
             "let war_front_only = self.war_economy",
             "&& self.war_plan.is_none()",
             "> WAR_ECONOMY_FRONT_RADIUS",
-            "if committed.is_none() && every_lane_routing {",
-            "if !spec.requires.is_empty() {",
-            "!g.city_has_district_family(&g.cities[&cid], family)",
+            "MEASURED AND REVERTED",
         ] {
             assert!(source.contains(needle), "missing {needle:?}");
         }
+        assert!(
+            !source.contains("finishes {} before the lane's strategic pick"),
+            "the naive building preemption must stay reverted"
+        );
     }
 
     /// `wide-map-capacity`: the wide target stands while a religious victory
