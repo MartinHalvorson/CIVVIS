@@ -3836,7 +3836,6 @@ mod flagged_gene_repairs {
             if pottery {
                 let granary_tech = g.rules.buildings[&crate::name!("granary")]
                     .tech
-                    .clone()
                     .expect("granary has a tech");
                 g.players[0].techs.insert(granary_tech);
             }
@@ -3884,7 +3883,6 @@ mod flagged_gene_repairs {
         let capital = found_test_city(&mut g, 0);
         let masonry = g.rules.buildings[&crate::name!("walls")]
             .tech
-            .clone()
             .expect("walls have a tech");
         g.players[0].techs.insert(masonry);
         // Peace, no visible hostile: the capital keeps its production.
