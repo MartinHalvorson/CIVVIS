@@ -1,5 +1,35 @@
 # Gene screen: pricing every treatment flag from one batch of games
 
+## The genome doctrine (operator, 2026-08-20)
+
+The controller is treated as a **genome**: every feature is a gene, and genes
+are tested **regularly**, not once at birth. The instrument is this screen —
+very large randomized runs whose aggregate is the signal: each game seats
+genomes drawn at random, so every OTHER gene differs from game to game and
+averages out of every gene's own contrast (and the foldover makes that exact
+per pair, not just in expectation). With `--all-seats`, **every player is a
+test**, so one batch prices the whole genome at once.
+
+The standing cadence this implies:
+
+1. **Screen** the full genome after each batch of landed treatments — a
+   gene's price is not a constant of nature (`wide-map-capacity` measured
+   **−3.4 pp** wins in the all-six native regime and **+19.2 pp** in
+   `domination,score`, from the same code; seeds 40000000../41000000..).
+2. **Repair** what measurably hurts, giving the gate back the premise it
+   claimed (see the 2026-08-19 round: six repairs, each doc-commented with
+   the number that motivated it).
+3. **Re-screen the repaired genes on disjoint seeds** before believing the
+   fix. A repair is a hypothesis until the screen says otherwise.
+4. The matrix gate (`ai_eval`) remains the SHIP decision for promotions;
+   the screen ranks and directs, at two orders of magnitude less cost per
+   gene.
+
+Today's genome is the boolean treatment flags below. The growth direction is
+"hundreds of genes": the remaining `enable_*`/`disable_*` toggle pairs in
+`treatment_flags.rs` (182 exist), and — for the continuous `Weights` — the
+binarized genes `gene_census` already studies.
+
 `gene_screen` (`src/bin/gene_screen.rs`) treats every boolean treatment flag on
 the Advanced controller as a **gene** — on or off — and prices all of them from
 ONE batch of games instead of one arm per flag. It answers, per gene and with

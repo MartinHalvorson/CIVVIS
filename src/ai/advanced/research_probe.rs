@@ -217,15 +217,20 @@ fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
         .split("};")
         .next()
         .expect("the balanced_core block ends");
-    for (flag, family) in [
-        ("self.campus_every_city", "campus"),
-        ("self.culture_coverage", "theater_square"),
-    ] {
-        assert!(
-            block.contains(&format!("{flag} && family == \"{family}\"")),
-            "the {family} exemption must be gated on {flag}"
-        );
-    }
+    // The Campus exemption gained a population floor on 2026-08-19 (see
+    // `campus_every_city`: −2.8 pp wins over 4,000 screened pairs when a
+    // size-three town's Campus outbid its growth buildings), so its gate is
+    // a three-term conjunction; the Theater Square keeps the original pair.
+    assert!(
+        block.contains("self.campus_every_city")
+            && block.contains("&& family == \"campus\"")
+            && block.contains("&& city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR"),
+        "the campus exemption must be gated on its treatment and the pop floor"
+    );
+    assert!(
+        block.contains("self.culture_coverage && family == \"theater_square\""),
+        "the theater_square exemption must be gated on self.culture_coverage"
+    );
     for family in ["commercial_hub", "harbor", "industrial_zone"] {
         assert!(
             !block.contains(&format!("family == \"{family}\"")),
@@ -308,6 +313,35 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
     game.apply(0, &crate::game::Action::FoundCity { unit: settler })
         .expect("found city");
     let cid = game.player_city_ids(0)[0];
+    // The repaired gate (2026-08-19) needs the ceiling to bind the EMPIRE —
+    // one capped city of many measured −2.2 pp wins hijacking research — so
+    // this probe's empire is two cities, capped together below.
+    let second_site = {
+        let home = game.cities[&cid].pos;
+        game.map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .find(|position| {
+                (4..=10).contains(&game.wdist(home, *position))
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, *position) >= 4)
+            })
+            .expect("test map has a nearby city site")
+    };
+    game.found_city_for(0, second_site, None);
+    let second = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|other| *other != cid)
+        .expect("two cities");
 
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge();
@@ -324,14 +358,17 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
         "a comfortable empire must not divert a beaker to this"
     );
 
-    // Grow it until the engine's own band bites.
-    let capped = (2..40)
-        .find(|pop| {
-            game.cities.get_mut(&cid).unwrap().pop = *pop;
-            game.city_housing_headroom(&game.cities[&cid]) < HOUSING_CARD_HEADROOM
-        })
-        .expect("some population overruns this city's housing");
-    game.cities.get_mut(&cid).unwrap().pop = capped;
+    // Grow BOTH cities until the engine's own band bites: the repaired gate
+    // fires only when the cap binds the empire, not one town.
+    for city in [cid, second] {
+        let capped = (2..40)
+            .find(|pop| {
+                game.cities.get_mut(&city).unwrap().pop = *pop;
+                game.city_housing_headroom(&game.cities[&city]) < HOUSING_CARD_HEADROOM
+            })
+            .expect("some population overruns this city's housing");
+        game.cities.get_mut(&city).unwrap().pop = capped;
+    }
     assert_eq!(
         ai.unreachable_housing_tech(&game, 0),
         Some("engineering"),
@@ -461,13 +498,24 @@ fn live_first_campus_writing_precedes_the_housing_research_detour() {
             crate::name!("pottery"),
             crate::name!("astrology"),
         ]);
-        let capped = (2..40)
-            .find(|pop| {
-                game.cities.get_mut(&capital).unwrap().pop = *pop;
-                game.city_housing_headroom(&game.cities[&capital]) < HOUSING_CARD_HEADROOM
-            })
-            .expect("some population overruns this city's housing");
-        game.cities.get_mut(&capital).unwrap().pop = capped;
+        // The repaired gate (2026-08-19) needs the cap to bind the empire
+        // AND to be tech-bound: both cities are capped, and both already
+        // hold the granary production could otherwise answer with — the
+        // live run's own shape (relief built, ceiling still paid).
+        for city in game.player_city_ids(0) {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push(crate::name!("granary"));
+            let capped = (2..40)
+                .find(|pop| {
+                    game.cities.get_mut(&city).unwrap().pop = *pop;
+                    game.city_housing_headroom(&game.cities[&city]) < HOUSING_CARD_HEADROOM
+                })
+                .expect("some population overruns this city's housing");
+            game.cities.get_mut(&city).unwrap().pop = capped;
+        }
         game
     };
     let plan = StrategicPlan {
@@ -1444,8 +1492,13 @@ fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
         .next()
         .expect("the routing block ends at the production call");
     assert!(
-        block.contains("self.war_economy && plan.strategy == GrandStrategy::Conquest"),
-        "the war economy must route exactly the adaptive Conquest plan"
+        block.contains("self.war_economy")
+            && block.contains("&& plan.strategy == GrandStrategy::Conquest")
+            && block.contains(".is_some_and(|target| g.is_at_war(pid, target))"),
+        "the war economy routes the adaptive Conquest plan only while the \
+         war with its target is DECLARED (repaired 2026-08-19: the
+         unconditional routing measured −7.2 pp native / −26.7 pp in the \
+         domination,score regime)"
     );
 }
 
