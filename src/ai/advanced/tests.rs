@@ -4071,6 +4071,7 @@ mod flagged_gene_repairs {
             "&& !self.war_patience_exhausted(g))",
             "if self.war_patience || self.war_economy {",
             "&& !conversion_race_live;",
+            "let first_building_of_held_district = self.governor_victory_lanes",
         ] {
             assert!(source.contains(needle), "missing {needle:?}");
         }

@@ -19613,6 +19613,36 @@ impl AdvancedAi {
                             + if wonder_civ { 120.0 } else { 0.0 }
                     }
                 } else {
+                    // ★★★ `governor_every_lane`, third cut (2026-08-20): the
+                    // lanes' recorded census fingerprint holds buildings at
+                    // 0.81× of control while districts hold 0.94× — the
+                    // routing raises shells and walks away from what makes
+                    // them compound. The second cut PREEMPTED the first
+                    // building and re-measured worse on both axes (−3.6 pp
+                    // win / −5.39 share over 2,000 pairs, seeds 47000000..;
+                    // reverted, its note in `advanced_production`). This is
+                    // the lever that note names instead: PRICE the first
+                    // building of a district this city already stands into
+                    // the same argmax that raised it, and let it compete.
+                    // Gated on the flag whose drag it repairs, so every
+                    // other arm keeps its measured table.
+                    let first_building_of_held_district = self.governor_victory_lanes
+                        && spec.requires.is_empty()
+                        && spec
+                            .district
+                            .map(|district| g.district_family(district))
+                            .is_some_and(|family| {
+                                family != crate::name!("city_center")
+                                    && city
+                                        .districts
+                                        .keys()
+                                        .any(|built| g.district_family(*built) == family)
+                            });
+                    let completion = if first_building_of_held_district {
+                        120.0
+                    } else {
+                        0.0
+                    };
                     let housing_need = (city.pop as f64 + 1.0 - g.city_housing(city)).max(0.0);
                     let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
                     let great_work_slots =
@@ -19794,6 +19824,7 @@ impl AdvancedAi {
                         0.0
                     };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + completion
                         + chain_debt
                         + culture_debt
                         + research_debt
