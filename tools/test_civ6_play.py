@@ -1232,6 +1232,33 @@ class CounterResolutionConfigTests(unittest.TestCase):
         self.assertIs(cfg["CounterResolutions"], False)
 
 
+class SettlerEscortCapSyncConfigTests(unittest.TestCase):
+    """The cap reconciliation is an explicit host experiment, never a default."""
+
+    @staticmethod
+    def _config(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[],
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", **changes))
+
+    def test_only_the_explicit_arm_reaches_the_mod(self) -> None:
+        self.assertIs(self._config(settler_escort_cap_sync=False)
+                      ["SettlerEscortCapSync"], False)
+        self.assertIs(self._config(settler_escort_cap_sync=True)
+                      ["SettlerEscortCapSync"], True)
+
+    def test_the_cli_declares_an_off_default(self) -> None:
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--settler-escort-cap-sync", action="store_true", '
+                      'default=False,', source)
+
+
 class PeaceDeterrenceConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing (#1098's
     lesson): the key has to reach the baked config, and the Lua has to read it.
