@@ -7540,11 +7540,8 @@ impl AdvancedAi {
         // stops digging and lets production and faith answer the race
         // instead of feeding it.
         let conversion_bleeding = {
-            let own: Vec<&crate::game::City> = g
-                .cities
-                .values()
-                .filter(|city| city.owner == pid)
-                .collect();
+            let own: Vec<&crate::game::City> =
+                g.cities.values().filter(|city| city.owner == pid).collect();
             let faith = g.players[pid].religion.as_deref();
             let foreign = own
                 .iter()

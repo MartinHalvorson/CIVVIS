@@ -3947,7 +3947,9 @@ mod flagged_gene_repairs {
             );
         }
         assert_eq!(
-            source.matches("self.wide_map_capacity && !conversion_bleeding").count(),
+            source
+                .matches("self.wide_map_capacity && !conversion_bleeding")
+                .count(),
             2,
             "both the capacity and the floor read the bleed gate"
         );
