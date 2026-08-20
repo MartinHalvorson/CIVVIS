@@ -12226,10 +12226,12 @@ end;
 --     queued path is for.
 -- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
 -- host and the board disagreed. One bare global table (200-local ceiling).
-CivvisBoard = { stats = { capped = 0, no_reach = 0 } };
+CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                         escort_cap_unresolved = 0 } };
 
 CivvisBoard.reset = function()
-	CivvisBoard.stats = { capped = 0, no_reach = 0 };
+	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                     escort_cap_unresolved = 0 };
 end;
 
 -- The furthest plot on the host's path to (x, y) that `unit` reaches this
@@ -12257,6 +12259,92 @@ CivvisBoard.capToTurn = function(unit, x, y)
 	local cy = tonumber(try(function() return plot:GetY(); end, nil));
 	if cx == nil or cy == nil then return nil; end
 	return { x = cx, y = cy, turns = last };
+end;
+
+-- A setter and its guard can be co-located and ordered to the same distant
+-- tile, yet take different host legs: the setter's row is capped while the
+-- guard's faster path reaches the original destination.  This is a narrow,
+-- experimental bridge repair, never a new escort policy: it applies only to
+-- the first MOVE_TO for an already-matching pair, and only when the guard can
+-- reach the setter's capped tile this turn.  Anything ambiguous remains on
+-- today's path and is named for the experiment's ledger.
+CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
+	if cfg.SettlerEscortCapSync ~= true or cfg.CapMovesToReach == false then return; end
+	local first, settling = {}, {};
+	for index, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" then
+			local subject = tonumber(row.subject);
+			if subject ~= nil then
+				if first[subject] == nil then first[subject] = index; end
+				if tostring(row.verb or "") == "FOUND_CITY" then settling[subject] = true; end
+			end
+		end
+	end
+	for index, row in ipairs(rows) do
+		local setterId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and setterId ~= nil and wantX ~= nil and wantY ~= nil
+				and first[setterId] == index and not settling[setterId] then
+			local setter = liveUnit(pid, setterId);
+			if setter ~= nil and unitTypeName(setter) == "UNIT_SETTLER" then
+				local capped = CivvisBoard.capToTurn(setter, wantX, wantY);
+				if type(capped) == "table" then
+					local guardRow, guard, guardId, candidates = nil, nil, nil, 0;
+					local sx = tonumber(try(function() return setter:GetX(); end, nil));
+					local sy = tonumber(try(function() return setter:GetY(); end, nil));
+					for guardIndex, candidate in ipairs(rows) do
+						local candidateId = tonumber(candidate.subject);
+						local cx, cy = tonumber(candidate.x), tonumber(candidate.y);
+						if guardIndex ~= index and tostring(candidate.kind or "") == "unit"
+								and tostring(candidate.verb or "") == "MOVE_TO"
+								and candidateId ~= nil and first[candidateId] == guardIndex
+								and cx == wantX and cy == wantY then
+							local candidateUnit = liveUnit(pid, candidateId);
+							local gx = tonumber(try(function() return candidateUnit:GetX(); end, nil));
+							local gy = tonumber(try(function() return candidateUnit:GetY(); end, nil));
+							local combat = try(function()
+								local definition = GameInfo.Units[candidateUnit:GetUnitType()];
+								return definition ~= nil
+									and ((tonumber(definition.Combat) or 0) > 0
+										or (tonumber(definition.RangedCombat) or 0) > 0);
+							end, false) == true;
+							if candidateUnit ~= nil and sx ~= nil and sy ~= nil
+									and gx ~= nil and gy ~= nil and gx == sx and gy == sy and combat then
+								guardRow, guard, guardId = candidate, candidateUnit, candidateId;
+								candidates = candidates + 1;
+							end
+						end
+					end
+					if candidates == 1 then
+						local guardLeg = CivvisBoard.capToTurn(guard, capped.x, capped.y);
+						if guardLeg == nil then
+							guardRow.x, guardRow.y = capped.x, capped.y;
+							CivvisBoard.stats.escort_cap_synced = CivvisBoard.stats.escort_cap_synced + 1;
+							emit("escort_cap_synced", {
+								turn = turn, settler = setterId, guard = guardId,
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						else
+							CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+							emit("escort_cap_unresolved", {
+								turn = turn, settler = setterId, guard = guardId,
+								reason = guardLeg == false and "guard_no_reach" or "guard_still_capped",
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						end
+					elseif candidates > 1 then
+						CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+						emit("escort_cap_unresolved", {
+							turn = turn, settler = setterId, reason = "ambiguous_guards",
+							candidates = candidates, want = { wantX, wantY },
+							sent = { capped.x, capped.y },
+						});
+					end
+				end
+			end
+		end
+	end
 end;
 
 -- Cancel queued paths on combat units at the start of our turn, and report
@@ -12414,6 +12502,10 @@ end;
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Match the guard to the host-capped settler leg before either row is applied.
+	-- The gate is default-off; with it absent every row remains byte-for-byte on
+	-- the pre-existing path through this function.
+	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
 	-- Civilization VI, not a decision, which is why it belongs here and not in CIVVIS.
@@ -12678,6 +12770,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- turn. See CivvisBoard.
 		move_capped = CivvisBoard.stats.capped,
 		move_no_reach = CivvisBoard.stats.no_reach,
+		-- Experimental reconciliation of a co-located guard with a capped
+		-- settler.  Unresolved candidates deliberately retain their old order.
+		escort_cap_synced = CivvisBoard.stats.escort_cap_synced,
+		escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),

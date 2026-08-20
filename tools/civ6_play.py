@@ -619,6 +619,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # cancelled at turn start; the seat then advertises `moves_at_turn_start`
         # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
         "CapMovesToReach": args.cap_moves_to_reach,
+        # A default-off host experiment: when a capped setter and exactly one
+        # co-located combat row share a MOVE_TO goal, make the guard follow the
+        # setter's actual leg only if it can reach that leg this turn.  This is
+        # bridge reconciliation, not a change to the Rust escort heuristic.
+        "SettlerEscortCapSync": args.settler_escort_cap_sync,
         "CancelQueuedPaths": args.cancel_queued_paths,
         # ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A DIE. With
         # `CombatFrames` ≥ 1 the mod re-exports the board once the opening
@@ -3247,6 +3252,7 @@ def _play(args: argparse.Namespace) -> int:
             "OrderQueue": args.order_queue,
             "ExploreGuard": args.explore_guard,
             "CapMovesToReach": args.cap_moves_to_reach,
+            "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
@@ -3591,6 +3597,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="send a MOVE_TO's whole destination even when the host's path "
                          "outruns the turn (the pre-board rule: the host queues the rest "
                          "and walks it before the next frame)")
+    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
+                    help="experimentally keep a co-located combat escort on a capped "
+                         "settler's actual host leg (off by default)")
     ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
                     action="store_false", default=True,
                     help="leave combat units' queued host paths in place at turn start")
