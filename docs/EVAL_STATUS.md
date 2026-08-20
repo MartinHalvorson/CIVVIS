@@ -23,8 +23,8 @@ How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
 - Withholdable live treatments: **60**
-- Named somewhere in the evidence: **40**
-- **Never named in any round: 20**
+- Named somewhere in the evidence: **44**
+- **Never named in any round: 16**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -40,7 +40,7 @@ them is what stayed invisible.
 
 Never named:
 
-`amenity-district-path` (`live_without_amenity_district_path`), `amenity-project-preemption` (`live_without_amenity_project_preemption`), `barbarian-walls-one-tier` (`live_without_barbarian_walls_one_tier`), `blind-objective-strength` (`live_without_blind_objective_strength`), `blind-objective-units` (`live_without_blind_objective_units`), `endgame-war-runway` (`live_without_endgame_war_runway`), `garrison-under-fire` (`live_without_garrison_under_fire`), `idle-walkers-close-the-pipeline` (`live_without_idle_walkers_close_the_pipeline`), `muster-at-command-radius` (`live_without_muster_at_command_radius`), `relief-targets-the-siege` (`live_without_relief_targets_the_siege`), `settler-guard-holds` (`live_without_settler_guard_holds`), `settler-site-agreement` (`live_without_settler_site_agreement`), `siege-commitment` (`live_without_siege_commitment`), `siege-role` (`live_without_siege_role`), `siege-tracks-wall` (`live_without_siege_tracks_wall`), `stacked-escort` (`live_without_stacked_escort`), `stranded-settler-discount` (`live_without_stranded_settler_discount`), `suzerain-cards` (`live_without_suzerain_cards`), `war-reinforcement` (`live_without_war_reinforcement`), `wonder-ring-settle-value` (`live_without_wonder_ring_settle_value`)
+`amenity-district-path` (`live_without_amenity_district_path`), `amenity-project-preemption` (`live_without_amenity_project_preemption`), `barbarian-walls-one-tier` (`live_without_barbarian_walls_one_tier`), `blind-objective-strength` (`live_without_blind_objective_strength`), `blind-objective-units` (`live_without_blind_objective_units`), `endgame-war-runway` (`live_without_endgame_war_runway`), `idle-walkers-close-the-pipeline` (`live_without_idle_walkers_close_the_pipeline`), `muster-at-command-radius` (`live_without_muster_at_command_radius`), `relief-targets-the-siege` (`live_without_relief_targets_the_siege`), `settler-guard-holds` (`live_without_settler_guard_holds`), `settler-site-agreement` (`live_without_settler_site_agreement`), `siege-commitment` (`live_without_siege_commitment`), `siege-role` (`live_without_siege_role`), `stranded-settler-discount` (`live_without_stranded_settler_discount`), `suzerain-cards` (`live_without_suzerain_cards`), `wonder-ring-settle-value` (`live_without_wonder_ring_settle_value`)
 
 ## Live ladder
 

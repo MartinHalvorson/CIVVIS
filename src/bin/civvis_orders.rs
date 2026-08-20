@@ -4145,6 +4145,45 @@ fn league_dirs(args: &[String]) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// Resolve an explicit strategy selector against one league snapshot.
+///
+/// Internal strategy names are the durable identity and therefore always win.
+/// A league username is also a useful *explicit* selector for a human-facing
+/// launcher, provided it identifies exactly one entry. That compatibility path
+/// is deliberately here rather than in a caller: every invocation still records
+/// the immutable internal name in its genome record, and an ambiguous display
+/// name refuses loudly instead of selecting whichever row happened to be first.
+fn named_strategy<'a>(
+    league: &'a civvis::league::League,
+    want: &str,
+) -> Result<Option<&'a civvis::league::Strategy>, String> {
+    if let Some(strategy) = league
+        .strategies
+        .iter()
+        .find(|strategy| strategy.name == want)
+    {
+        return Ok(Some(strategy));
+    }
+
+    let matches: Vec<_> = league
+        .strategies
+        .iter()
+        .filter(|strategy| !strategy.username.is_empty() && strategy.username == want)
+        .collect();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [strategy] => Ok(Some(*strategy)),
+        _ => Err(format!(
+            "display strategy name {want:?} is ambiguous ({}); use an internal strategy name",
+            matches
+                .iter()
+                .map(|strategy| strategy.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
 /// Pick the genome this seat should play, or `None` to keep the shipped default.
 ///
 /// ★★★★ **`--strategy` IS OPT-IN, AND THAT IS DELIBERATE.** The league's leader is not
@@ -4158,7 +4197,8 @@ fn league_dirs(args: &[String]) -> Vec<std::path::PathBuf> {
 /// lower bound rather than the placement rating — see `league::strongest_strategy`.
 /// `--civ` narrows to the per-civilization table when that pair has history; the civ
 /// comes from the `seat` event because Civilization VI deals it and nothing can
-/// choose it.
+/// choose it. A named `--strategy` accepts its immutable internal name first and a
+/// unique league display username second; the genome record always names the former.
 fn resolve_strategy(args: &[String]) -> Option<ChosenStrategy> {
     let want = arg_text(args, "--strategy")?;
     let civ = arg_text(args, "--civ");
@@ -4177,9 +4217,19 @@ fn resolve_strategy(args: &[String]) -> Option<ChosenStrategy> {
             continue;
         };
         let picked = if want == "auto" {
-            civvis::league::strongest_strategy(&league, civ_key.as_deref())
+            Ok(civvis::league::strongest_strategy(
+                &league,
+                civ_key.as_deref(),
+            ))
         } else {
-            league.strategies.iter().find(|s| s.name == want)
+            named_strategy(&league, &want)
+        };
+        let picked = match picked {
+            Ok(strategy) => strategy,
+            Err(why) => {
+                eprintln!("[genome] {why} in {}", dir.display());
+                return None;
+            }
         };
         let Some(strategy) = picked else {
             eprintln!("[genome] no strategy '{want}' in {}", dir.display());
@@ -5256,6 +5306,26 @@ mod tests {
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
             Some(civvis::ai::VictoryTarget::Diplomacy)
         );
+    }
+
+    /// The operator-facing live launcher historically sent the roster display
+    /// name `WildCard9`; its durable entry is `g56-48`. This is a real
+    /// compatibility contract, not a synthetic alias: if the roster changes
+    /// either side of it, the live selector must fail here before it silently
+    /// falls back to stock again.
+    #[test]
+    fn an_explicit_display_name_resolves_to_its_internal_genome() {
+        let league = civvis::league::shipped_league().expect("the shipped roster parses");
+        let internal = super::named_strategy(&league, "g56-48")
+            .expect("an internal strategy name is never ambiguous")
+            .expect("the pinned live candidate is present");
+        let display = super::named_strategy(&league, "WildCard9")
+            .expect("the displayed live candidate is never ambiguous")
+            .expect("the displayed live candidate is present");
+
+        assert_eq!(internal.name, "g56-48");
+        assert_eq!(display.name, internal.name);
+        assert_eq!(display.username, "WildCard9");
     }
 
     /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat

@@ -273,10 +273,16 @@ const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
 /// a city past it has the defense strength, hitpoints, and production of a
 /// developed city and keeps the ordinary build order.
 const GARRISON_WALLS_POP_FLOOR: i32 = 8;
-/// `garrison_walls`: how close a visible hostile military unit must be to a
-/// city before the walls doctrine intercepts its production in peacetime.
-/// At a declared major war the doctrine fires empire-wide as before.
-const GARRISON_WALLS_THREAT_RADIUS: i32 = 8;
+/// `garrison_walls`: how close visible non-recon hostiles must stand to count
+/// as a raid party against this city.
+const GARRISON_WALLS_THREAT_RADIUS: i32 = 5;
+/// `garrison_walls`: how many visible non-recon hostiles make a raid party.
+const GARRISON_WALLS_RAID_PARTY: usize = 2;
+/// `garrison_walls`: at a declared major war, how close one visible non-recon
+/// hostile must be before a FRONTIER town walls up (the capital needs only
+/// the declaration). Twelve tiles is four-plus turns of marching — the lead
+/// an ancient wall's build time needs.
+const GARRISON_WALLS_WAR_RADIUS: i32 = 12;
 
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
@@ -9531,18 +9537,43 @@ impl BasicAi {
         if !eligible {
             return None;
         }
-        // ★★★ REPAIRED 2026-08-19 after the 4,000-pair native screen priced
-        // the unconditional doctrine at −2.1 pp wins / −0.51 pp score share
-        // (z −2.7 / −3.5, seeds 40000000..): every peaceful capital paid a
-        // granary-then-walls toll before its first district, in a regime two
-        // thirds of whose games are decided by conversion. The live defect
-        // this flag repairs (an unwalled capital falling to a t61
-        // declaration) needs danger, not a standing order: the doctrine now
-        // fires at a declared major war — the measured case — or when a
-        // visible hostile military unit stands within
-        // [`GARRISON_WALLS_THREAT_RADIUS`] of this city (a raider or a camp
-        // party is a real siege risk for a frontier town). A quiet map keeps
-        // its production.
+        // ★★★ REPAIRED 2026-08-19, twice. The 4,000-pair native screen
+        // priced the unconditional doctrine at −2.1 pp wins / −0.51 pp score
+        // share (z −2.7 / −3.5, seeds 40000000..). The first gate — any
+        // declared major war, or any visible hostile military within eight
+        // tiles — re-measured **−3.1 pp [−5.2, −1.0]** on 2,000 verification
+        // pairs (seeds 45000000..): it was open almost always, because the
+        // standing barbarian war makes `is_at_war` true from turn one and a
+        // wandering barbarian scout is a "visible hostile military unit".
+        // A six-game probe says the ordinary build order walls nearly every
+        // city by game end anyway — this flag's whole marginal action is
+        // walling EARLY, ahead of the district lanes, so its gate must price
+        // an actual siege risk:
+        //
+        // - the CAPITAL walls at a declared war with a MAJOR (the measured
+        //   live defect: an unwalled capital falling to a t61 declaration —
+        //   losing it is losing the game, and one early wall is cheap
+        //   insurance), or under a raid party;
+        // - a FRONTIER town walls when the war's enemy is actually near
+        //   (a visible non-recon hostile within
+        //   [`GARRISON_WALLS_WAR_RADIUS`]), or under a raid party;
+        // - a RAID PARTY is at least [`GARRISON_WALLS_RAID_PARTY`] visible
+        //   non-recon hostiles within [`GARRISON_WALLS_THREAT_RADIUS`] —
+        //   two warriors take towns; one scout takes nothing.
+        let hostile_pressure = |radius: i32, minimum: usize| {
+            g.units
+                .values()
+                .filter(|unit| {
+                    unit.owner != pid
+                        && g.is_at_war(pid, unit.owner)
+                        && g.rules.units[unit.kind].class == "military"
+                        && Self::unit_doctrine(g, unit.id) != UnitDoctrine::Recon
+                        && g.unit_visible_to(unit.id, pid)
+                        && g.wdist(unit.pos, city.pos) <= radius
+                })
+                .count()
+                >= minimum
+        };
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -9550,16 +9581,13 @@ impl BasicAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
-        let visible_threat = || {
-            g.units.values().any(|unit| {
-                unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
-                    && g.rules.units[unit.kind].class == "military"
-                    && g.unit_visible_to(unit.id, pid)
-                    && g.wdist(unit.pos, city.pos) <= GARRISON_WALLS_THREAT_RADIUS
-            })
+        let raid_party = hostile_pressure(GARRISON_WALLS_THREAT_RADIUS, GARRISON_WALLS_RAID_PARTY);
+        let endangered = if city.is_capital {
+            at_major_war || raid_party
+        } else {
+            (at_major_war && hostile_pressure(GARRISON_WALLS_WAR_RADIUS, 1)) || raid_party
         };
-        if !at_major_war && !visible_threat() {
+        if !endangered {
             return None;
         }
         let wall = Item::Building {

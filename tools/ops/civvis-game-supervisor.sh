@@ -38,18 +38,29 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
-# ⚠⚠ THIS NAME MUST BE A LEAGUE ENTRANT'S INTERNAL NAME (`g56-48`), NOT ITS
-# DISPLAY NAME. `civvis_orders --strategy` resolves against `strategy.name` in
-# the league snapshot; `WildCard9` is the display name of `g56-48`, and every
-# batch this service has started resolved it to NOTHING — the decider printed
-# "[genome] no strategy 'WildCard9'" and played the stock controller. The
-# ledger now records the genome actually played beside the name asked for
-# (`genome` / `strategy_requested` on each row), so the fallback is visible;
-# it is NOT changed here, because switching the live seat's genome is a
-# strength decision for the operator, not a side effect of a comment.
-# `auto` picks the league's strongest by conservative win bound; a `g*-*`
-# name pins one entrant.
-STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
+# `CIVVIS_STRATEGY` is the explicit genome gate for this host. Pin the stable
+# internal identity, not a leaderboard display label: Rome's selected
+# `g56-48` bound is 0.510 versus the generic fallback's 0.393, and every row
+# records both this request and the resolved genome. The resolver also accepts
+# a unique display label for compatibility with older launchers, but a `g*-*`
+# pin keeps this batch comparable while the candidate is measured in Civ VI.
+# Set `CIVVIS_STRATEGY=auto` to opt into per-civilization re-selection, or
+# `CIVVIS_STRATEGY=stock` to run the untuned control.
+STRATEGY=${CIVVIS_STRATEGY:-g56-48}
+# `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
+# treatments.  It is deliberately empty by default: a comma-separated value
+# (for example `war-economy`) changes this batch's controller, and
+# `civ6_play.py` writes the resolved withheld list into every summary.  Do not
+# turn a native screen result into a deployment change here; name the arm,
+# run its comparable control, and let the ladder read both.
+WITHHELD=${CIVVIS_WITHOUT:-}
+WITHOUT_ARGS=()
+if [[ -n "$WITHHELD" ]]; then
+  for treatment in ${(s:,:)WITHHELD}; do
+    [[ -n "$treatment" ]] || continue
+    WITHOUT_ARGS+=(--without "$treatment")
+  done
+fi
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -99,7 +110,7 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, pinfile=$PINFILE)"
+say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, pinfile=$PINFILE)"
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -415,6 +426,7 @@ while true; do
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      "${WITHOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
