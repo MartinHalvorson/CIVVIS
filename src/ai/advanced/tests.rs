@@ -19413,19 +19413,18 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
     // The repaired machinery engages only under threat: a raider stands six
     // tiles out — inside the engage radius, outside capture reach, so the
     // scene exercises the pure wait rather than the threatened fallback.
-    let raider_post = game
-        .wdisk(source, 6)
-        .into_iter()
-        .find(|position| {
-            game.wdist(source, *position) == 6
-                && *position != lagging
-                && game.units_at(*position).is_empty()
-                && game
-                    .map
-                    .get(*position)
-                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-        })
-        .expect("fixture has a raider post");
+    let raider_post =
+        game.wdisk(source, 6)
+            .into_iter()
+            .find(|position| {
+                game.wdist(source, *position) == 6
+                    && *position != lagging
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a raider post");
     game.spawn_test_unit("warrior", 1, raider_post);
     let mut ai = AdvancedAi::new();
     ai.enable_stacked_escort();
