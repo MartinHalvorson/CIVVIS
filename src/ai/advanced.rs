@@ -177,6 +177,11 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
+/// `war_economy`: how far from the campaign objective a city still counts as
+/// the war machine while the adaptive war economy is routing production.
+/// Beyond it the interior keeps the baseline governor. Twelve covers the
+/// staging ring (3..=5), the reinforcement front (8), and a margin of march.
+const WAR_ECONOMY_FRONT_RADIUS: i32 = 12;
 /// `arrival_waves`: how many rear reinforcements must stand together, inside
 /// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
 /// its front group's orders. Two is the smallest wave that is not "one at a
@@ -17791,7 +17796,39 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        // ★★★ `war_economy`, second cut (2026-08-20). The declared-war gate
+        // improved the gene with disjoint intervals in both regimes
+        // (−7.2 → −4.1 native over 2,000 pairs, seeds 45000000..;
+        // −26.7 → −18.1 at war, seeds 44000000..) and it still resolves
+        // harmful: even a declared war does not need EVERY city on war
+        // production for fifty-plus turns. The bound is spatial — cities
+        // within [`WAR_ECONOMY_FRONT_RADIUS`] of the campaign objective are
+        // the war machine; the interior keeps compounding under the baseline
+        // governor, exactly as it would without the flag (the skipped queues
+        // fall through to `delegated_cities`, whose comment already promises
+        // that). An appointed timed war (`war_plan`) and a victory-targeted
+        // seat keep their whole-empire routing — this bounds only the
+        // adaptive war economy that measured harmful.
+        let war_front_only = self.war_economy
+            && self.war_plan.is_none()
+            && self.active_victory_target(g).is_none()
+            && plan.strategy == GrandStrategy::Conquest
+            && plan
+                .target_player
+                .is_some_and(|target| g.is_at_war(pid, target));
+        let front_objective = war_front_only
+            .then(|| {
+                plan.target_city
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.pos)
+            })
+            .flatten();
         for cid in city_ids {
+            if let Some(objective) = front_objective {
+                if g.wdist(g.cities[&cid].pos, objective) > WAR_ECONOMY_FRONT_RADIUS {
+                    continue;
+                }
+            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -17915,6 +17952,24 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // ★★★ `governor_every_lane`, second cut, MEASURED AND REVERTED
+            // (2026-08-20). The trader preemption above repaired the win axis
+            // (−2.8 → +0.8 over 2,000 pairs, seeds 45000000..) and left the
+            // score-share drag whole (−4.63, z −33); the census fingerprint
+            // named buildings at 0.81× of control, so the second cut had the
+            // routing order the cheapest FIRST building of any specialty
+            // district before the strategic argmax. Re-priced on 2,000
+            // disjoint pairs (seeds 47000000..): win Δ fell to **−3.6
+            // [−5.6, −1.6]** and share to −5.39 (z −37) — worse than either
+            // cycle on both axes. The preemption was removed the same day;
+            // this note stays so the next reader does not retry the naive
+            // form. The 0.81× fingerprint is real but the answer is not "a
+            // building before every argmax": the lanes' district asks and
+            // the buildings compete for the same production, and a hard
+            // preemption starved whatever the argmax would have compounded.
+            // Next lever, unmeasured: scope the completion to the district
+            // the routing itself just raised, or price (never preempt) the
+            // first building into the strategic table.
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let items = g
