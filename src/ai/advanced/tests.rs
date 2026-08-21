@@ -19771,6 +19771,9 @@ fn a_looping_live_scout_does_not_repeat_an_equal_risk_flight_step() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // The escape depends on the step recorder; the ledger decides whether the
+    // gene deploys, this test pins the mechanism with the gene explicitly on.
+    live.enable_recorded_tactical_step();
     for (offset, pos) in [start, retreat, start, retreat, start, retreat, start]
         .into_iter()
         .enumerate()
