@@ -15125,7 +15125,10 @@ mod tests {
             live.begin_movement_turn(&game, 0);
         }
         let first_turn = &live.unit_motion[&scout];
-        assert_eq!(first_turn.fruitless, 1, "twenty replan frames are one host turn");
+        assert_eq!(
+            first_turn.fruitless, 1,
+            "twenty replan frames are one host turn"
+        );
         assert_eq!(first_turn.tiles.len(), 1);
         assert_eq!(first_turn.observed_turn, Some(game.turn));
 
@@ -15133,7 +15136,10 @@ mod tests {
         game.units.get_mut(&scout).unwrap().pos = ground[1];
         live.begin_movement_turn(&game, 0);
         let next_turn = &live.unit_motion[&scout];
-        assert_eq!(next_turn.fruitless, 2, "the next host turn still advances motion");
+        assert_eq!(
+            next_turn.fruitless, 2,
+            "the next host turn still advances motion"
+        );
         assert_eq!(next_turn.tiles.len(), 2);
         assert_eq!(next_turn.observed_turn, Some(game.turn));
     }
@@ -15151,8 +15157,14 @@ mod tests {
         }
         let stood_down = &live.unit_motion[&scout];
         let resume_turn = stood_down.resume_turn;
-        assert!(resume_turn > game.turn, "the two-tile loop stood down after real turns");
-        assert_eq!(stood_down.fruitless, 0, "the retry starts with a clean record");
+        assert!(
+            resume_turn > game.turn,
+            "the two-tile loop stood down after real turns"
+        );
+        assert_eq!(
+            stood_down.fruitless, 0,
+            "the retry starts with a clean record"
+        );
         assert_eq!(stood_down.observed_turn, Some(game.turn));
 
         // `observe_unit_motion` clears the record on a stand-down. Preserve
