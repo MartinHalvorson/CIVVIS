@@ -38,18 +38,88 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
-# ⚠⚠ THIS NAME MUST BE A LEAGUE ENTRANT'S INTERNAL NAME (`g56-48`), NOT ITS
-# DISPLAY NAME. `civvis_orders --strategy` resolves against `strategy.name` in
-# the league snapshot; `WildCard9` is the display name of `g56-48`, and every
-# batch this service has started resolved it to NOTHING — the decider printed
-# "[genome] no strategy 'WildCard9'" and played the stock controller. The
-# ledger now records the genome actually played beside the name asked for
-# (`genome` / `strategy_requested` on each row), so the fallback is visible;
-# it is NOT changed here, because switching the live seat's genome is a
-# strength decision for the operator, not a side effect of a comment.
-# `auto` picks the league's strongest by conservative win bound; a `g*-*`
-# name pins one entrant.
-STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
+# `CIVVIS_STRATEGY` is the explicit genome gate for this host. Pin the stable
+# internal identity, not a leaderboard display label: Rome's selected
+# `g56-48` bound is 0.510 versus the generic fallback's 0.393, and every row
+# records both this request and the resolved genome. The resolver also accepts
+# a unique display label for compatibility with older launchers, but a `g*-*`
+# pin keeps this batch comparable while the candidate is measured in Civ VI.
+# Set `CIVVIS_STRATEGY=auto` to opt into per-civilization re-selection, or
+# `CIVVIS_STRATEGY=stock` to run the untuned control.
+STRATEGY=${CIVVIS_STRATEGY:-g56-48}
+# `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
+# treatments.  It is deliberately empty by default: a comma-separated value
+# (for example `war-economy`) changes this batch's controller, and
+# `civ6_play.py` writes the resolved withheld list into every summary.  Do not
+# turn a native screen result into a deployment change here; name the arm,
+# run its comparable control, and let the ladder read both.
+WITHHELD=${CIVVIS_WITHOUT:-}
+WITHOUT_ARGS=()
+if [[ -n "$WITHHELD" ]]; then
+  for treatment in ${(s:,:)WITHHELD}; do
+    [[ -n "$treatment" ]] || continue
+    WITHOUT_ARGS+=(--without "$treatment")
+  done
+fi
+# `CIVVIS_WITH` is the matching explicit verification gate for a ledger-held
+# live treatment.  Unlike `CIVVIS_WITHOUT`, it cannot change deployment: the
+# decider accepts only a named treatment that the gene ledger has withheld,
+# and records the forced list in every run's genome event and ladder row.
+# Keep it empty in ordinary operation; a comma-separated value (for example
+# `amenity-project-preemption`) is a labeled force-on arm, not a promotion.
+FORCED_ENV=${CIVVIS_WITH:-}
+# A GUI-capable interactive host cannot acquire a new environment variable
+# after it has started, so an authorized operator otherwise has to restart the
+# host merely to schedule a labeled arm.  Read this file only between batches:
+# its absence (or an empty file) is exactly the ordinary deployment genome;
+# its one comma-separated line is the same explicit `CIVVIS_WITH` value.  The
+# per-batch read is deliberate: editing the file can never alter a game that is
+# already running, and one three-attempt batch retains one recorded identity.
+FORCE_FILE=${CIVVIS_WITH_FILE:-$HOME/.civvis-live-force-on}
+FORCED=""
+FORCE_SOURCE="none"
+WITH_ARGS=()
+
+# Resolve the force-on selection once at the no-game batch boundary.  A bad or
+# conflicting operator request must stop before build/launch rather than fall
+# through to an unlabelled control, because that would file the wrong arm under
+# a plausible-looking ladder row.  Whitespace also rejects accidental multi-line
+# files: treatment names are hyphenated tokens and the decider receives every
+# comma member as its own quoted `--with` word below.
+resolve_forced_arm() {
+  local from_file=""
+  FORCED="$FORCED_ENV"
+  FORCE_SOURCE="environment"
+  [[ -n "$FORCED" ]] || FORCE_SOURCE="none"
+
+  if [[ -e "$FORCE_FILE" ]]; then
+    if [[ ! -r "$FORCE_FILE" ]]; then
+      say "force-on file exists but is unreadable ($FORCE_FILE); refusing batch"
+      return 1
+    fi
+    from_file=$(<"$FORCE_FILE")
+    if [[ "$from_file" == *[[:space:]]* ]]; then
+      say "force-on file contains whitespace ($FORCE_FILE); refusing batch"
+      return 1
+    fi
+    if [[ -n "$from_file" ]]; then
+      if [[ -n "$FORCED" && "$FORCED" != "$from_file" ]]; then
+        say "force-on file conflicts with CIVVIS_WITH; refusing batch"
+        return 1
+      fi
+      FORCED="$from_file"
+      FORCE_SOURCE="file:$FORCE_FILE"
+    fi
+  fi
+
+  WITH_ARGS=()
+  if [[ -n "$FORCED" ]]; then
+    for treatment in ${(s:,:)FORCED}; do
+      [[ -n "$treatment" ]] || continue
+      WITH_ARGS+=(--with "$treatment")
+    done
+  fi
+}
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -99,7 +169,7 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, pinfile=$PINFILE)"
+say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -342,6 +412,10 @@ while true; do
       continue
     fi
   fi
+  if ! resolve_forced_arm; then
+    sleep 60
+    continue
+  fi
   HEAD_SHA=${HEAD_SHA:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
@@ -402,7 +476,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -415,6 +489,8 @@ while true; do
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      "${WITHOUT_ARGS[@]}" \
+      "${WITH_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1

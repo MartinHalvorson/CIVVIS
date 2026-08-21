@@ -72,14 +72,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x8162_c919_b83c_40df;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf78a_2b10_c0e3_5945;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 17_482;
+const ANCHOR_DECISIONS: usize = 18_596;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1140,6 +1140,12 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
+                        if census.step_reassessed > 0 {
+                            flags.push_str(&format!(
+                                " REASSESS blind_cuts={}",
+                                census.step_reassessed,
+                            ));
+                        }
                         Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
@@ -2935,7 +2941,6 @@ mod tests {
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),
                 ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
-                ("loyalty_policy_defence", ai.loyalty_policy_defence),
                 // Evaluator-only like the rest of this list: the stalled-settler
                 // fallback must reach neither the anchor nor production until it
                 // has a number.

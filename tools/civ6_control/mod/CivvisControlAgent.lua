@@ -483,6 +483,16 @@ local function survey()
 		-- paths cancelled at turn start, so `moves` at export means movement
 		-- available this turn and the mirror may trust it. See CivvisBoard.
 		moves_at_turn_start = cfg.CapMovesToReach ~= false,
+		-- Mid-turn replan frames: after the opening orders settle, a board
+		-- with newly revealed ground and movement left to spend on it (or a
+		-- strike) is exported again and the same turn re-planned, up to
+		-- `ReplanFrames` times. The brain cuts a walk at its first unrevealed
+		-- hex (`step_and_reassess`) only when this is true: against a mod
+		-- without frames that cut would strand the rest of the movement.
+		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		-- Newly revealed plots cross every turn and every frame as `tiles`
+		-- deltas, not only with the periodic sweep. See CivvisTiles.
+		tile_delta = cfg.TileDelta ~= false,
 	});
 
 	if cfg.SurveyEnums then
@@ -7765,7 +7775,21 @@ local function visibleResourceName(player, plot)
 	end);
 end
 
-local function exportTiles(player, pid, turn)
+-- ★★★★ THE MAP CROSSED EVERY 25 TURNS, AND A SCOUT LEARNS SOMETHING EVERY
+-- STEP. Between two sweeps, everything a unit uncovered — coast, a rival's
+-- border, a barbarian camp, the pass through the hills — was known to the
+-- host and unknown to the brain, which kept planning on the board as it was
+-- at the last sweep. `CivvisTiles.known` remembers which plots have crossed
+-- (and under which owner); `sweep` sends only what is new or changed hands
+-- since, as a `tiles` chunk stamped `delta = true`, every turn and on every
+-- mid-turn frame. The Rust side merges chunks cumulatively already; the
+-- stamp only keeps a delta from being mistaken for a fresh sweep. The full
+-- sweep keeps its cadence (resources, improvements and pillage refresh there)
+-- and re-primes `known`. `TileDelta = false` withholds the deltas.
+-- One bare global table (200-local ceiling).
+CivvisTiles = { known = {} };
+
+local function exportTiles(player, pid, turn, frame, deltaOnly)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
 	-- ⚠ TURN 1 MUST EXPORT, whatever the cadence. `turn % 25` is false for turns
@@ -7773,24 +7797,30 @@ local function exportTiles(player, pid, turn)
 	-- smoke-20260730T105241Z answered "no revealed terrain yet" every turn to turn 9
 	-- and would have to turn 24. The opening is where settling and the first army
 	-- are decided, so that is precisely the window that cannot be handed to a
-	-- fallback. Export on the first turn, then on the cadence.
-	if turn > 1 and turn % every ~= 0 then return; end
+	-- fallback. Export on the first turn, then on the cadence; between sweeps
+	-- (and on a frame) send the delta — see `CivvisTiles`.
+	local full = not deltaOnly and (turn <= 1 or turn % every == 0);
+	if not full and cfg.TileDelta == false then return 0; end
 	local width = try(function() return Map.GetGridSize(); end, 0) or 0;
 	local height = 0;
 	pcall(function() width, height = Map.GetGridSize(); end);
 	if width <= 0 or height <= 0 then return; end
 
-	local chunk, chunks, index = {}, 0, 0;
+	local chunk, chunks, index, fresh = {}, 0, 0, 0;
 	local function flush()
 		if #chunk == 0 then return; end
 		chunks = chunks + 1;
 		emit("tiles", {
 			turn = turn, width = width, height = height,
 			chunk = chunks, plots = chunk,
+			-- nil (absent) on a full sweep, so an older reader sees no change.
+			delta = (not full) and true or nil,
+			frame = (not full) and (frame or 0) or nil,
 		});
 		chunk = {};
 	end
 
+	local known = CivvisTiles.known;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
 			local plot = try(function() return Map.GetPlot(x, y); end);
@@ -7799,7 +7829,12 @@ local function exportTiles(player, pid, turn)
 				-- Unrevealed ground is deliberately sent as a hole rather than
 				-- as its true terrain: the mirror must not know more than the
 				-- seat does, or the simulator would plan on stolen information.
-				if revealed then
+				local owner = revealed and (try(function() return plot:GetOwner(); end, -1) or -1) or nil;
+				local key = y * width + x;
+				local changed = revealed and (full or known[key] == nil or known[key] ~= owner);
+				if changed then
+					known[key] = owner;
+					if not full then fresh = fresh + 1; end
 					index = index + 1;
 					chunk[index] = {
 						x = x, y = y,
@@ -7932,8 +7967,21 @@ local function exportTiles(player, pid, turn)
 		end
 	end
 	flush();
-	emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
+	if full then
+		emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
+		return nil;
+	end
+	if fresh > 0 then
+		emit("tiles_delta", { turn = turn, frame = frame or 0, plots = fresh, chunks = chunks });
+	end
+	return fresh;
 end
+
+-- The delta alone, whatever the cadence: what this seat revealed (or saw
+-- change hands) since the last board went out. Returns the plot count.
+CivvisTiles.sweep = function(player, pid, turn, frame)
+	return exportTiles(player, pid, turn, frame, true);
+end;
 
 -- ★★★★★ CHANNEL PROBE — is there ANY way for a decision to reach a running game?
 --
@@ -8783,6 +8831,61 @@ CivvisLedger.preview = function(unit, verb, x, y)
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
 	return out;
 end;
+
+-- ★★★★★ A MELEE ATTACK IS A MOVE_TO **WITH THE ATTACK MODIFIER**, AND
+-- WITHOUT IT NOTHING EVER ATTACKS.
+--
+-- Measured across every control run this machine holds: 8,828 melee ATTACK
+-- orders were issued and 89 combats came back — a 1.0% landing rate — while
+-- RANGE_ATTACK, which needs no modifier, landed 520 of 841 (61.8%). On run
+-- civvis-20260821T130446Z the seat ordered 208 melee attacks in 104 turns and
+-- fought exactly ZERO of them: a barbarian Slinger (combat strength 5, our
+-- preview promising 63 damage) sat on the same plot at (65,25) from t36 to
+-- t40 being "attacked" every single turn and walked away untouched, and the
+-- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
+-- and an Archer to raiders it could not hit back.
+--
+-- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- — the shipped path behind every melee attack a human ever makes — sets
+--
+--   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
+--       UnitOperationMoveModifiers.ATTACK
+--       + UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+--   UnitManager.RequestOperation( kUnit, UnitOperationTypes.MOVE_TO, tParameters );
+--
+-- before requesting MOVE_TO. Without `ATTACK` the engine reads a plain move,
+-- the pathfinder will not enter a plot an enemy is standing on, and the
+-- request resolves to "walk next to it and stop". `CanStartOperation` still
+-- answers TRUE — the unit genuinely can start moving that way — so `operate`
+-- reported every one of those 8,828 orders as given. This is the same trap
+-- `canOperate` was written for, one level deeper: the parameters were passed,
+-- but not all of them.
+--
+-- ⚠ Resolved defensively and ONCE. `UnitOperationMoveModifiers` is a UI-context
+-- global; if a build does not expose it, `nil` is returned and the caller sends
+-- the parameter table unchanged — the historical behaviour — rather than
+-- throwing on every attack in the game.
+-- ⚠ Hung on `CivvisLedger`, not declared as a main-chunk local: this file sits
+-- ONE slot under Lua's 199-local ceiling for the main chunk and
+-- `test_main_chunk_locals_stay_under_the_limit` fails the build at 199. The
+-- resolution is cached in an upvalue so the enum is read once per game.
+CivvisLedger.attackModifiers = nil;
+do
+	local resolved = false;
+	local cached = nil;
+	CivvisLedger.attackModifiers = function()
+		if resolved then return cached; end
+		resolved = true;
+		cached = try(function()
+			local attack = UnitOperationMoveModifiers.ATTACK;
+			if attack == nil then return nil; end
+			local ignore = UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+			if ignore == nil then return attack; end
+			return attack + ignore;
+		end, nil);
+		return cached;
+	end
+end
 
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
@@ -10955,7 +11058,15 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			if verb == "ATTACK" then CivvisLedger.strike(unit, subject, verb, x, y, turn); end
+			if verb == "ATTACK" then
+				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
+				-- a strike, and the whole army has been swinging at air.
+				local modifiers = CivvisLedger.attackModifiers();
+				if modifiers ~= nil then
+					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
+				end
+				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
 				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
@@ -11573,6 +11684,7 @@ CivvisResolveActions = resolveActions;
 CivvisOrdersReady = ordersReady;
 CivvisFetchOrders = fetchOrders;
 CivvisExportState = exportState;
+CivvisExportTiles = exportTiles;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -12177,10 +12289,12 @@ end;
 --     queued path is for.
 -- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
 -- host and the board disagreed. One bare global table (200-local ceiling).
-CivvisBoard = { stats = { capped = 0, no_reach = 0 } };
+CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                         escort_cap_unresolved = 0 } };
 
 CivvisBoard.reset = function()
-	CivvisBoard.stats = { capped = 0, no_reach = 0 };
+	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                     escort_cap_unresolved = 0 };
 end;
 
 -- The furthest plot on the host's path to (x, y) that `unit` reaches this
@@ -12210,6 +12324,92 @@ CivvisBoard.capToTurn = function(unit, x, y)
 	return { x = cx, y = cy, turns = last };
 end;
 
+-- A setter and its guard can be co-located and ordered to the same distant
+-- tile, yet take different host legs: the setter's row is capped while the
+-- guard's faster path reaches the original destination.  This is a narrow,
+-- experimental bridge repair, never a new escort policy: it applies only to
+-- the first MOVE_TO for an already-matching pair, and only when the guard can
+-- reach the setter's capped tile this turn.  Anything ambiguous remains on
+-- today's path and is named for the experiment's ledger.
+CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
+	if cfg.SettlerEscortCapSync ~= true or cfg.CapMovesToReach == false then return; end
+	local first, settling = {}, {};
+	for index, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" then
+			local subject = tonumber(row.subject);
+			if subject ~= nil then
+				if first[subject] == nil then first[subject] = index; end
+				if tostring(row.verb or "") == "FOUND_CITY" then settling[subject] = true; end
+			end
+		end
+	end
+	for index, row in ipairs(rows) do
+		local setterId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and setterId ~= nil and wantX ~= nil and wantY ~= nil
+				and first[setterId] == index and not settling[setterId] then
+			local setter = liveUnit(pid, setterId);
+			if setter ~= nil and unitTypeName(setter) == "UNIT_SETTLER" then
+				local capped = CivvisBoard.capToTurn(setter, wantX, wantY);
+				if type(capped) == "table" then
+					local guardRow, guard, guardId, candidates = nil, nil, nil, 0;
+					local sx = tonumber(try(function() return setter:GetX(); end, nil));
+					local sy = tonumber(try(function() return setter:GetY(); end, nil));
+					for guardIndex, candidate in ipairs(rows) do
+						local candidateId = tonumber(candidate.subject);
+						local cx, cy = tonumber(candidate.x), tonumber(candidate.y);
+						if guardIndex ~= index and tostring(candidate.kind or "") == "unit"
+								and tostring(candidate.verb or "") == "MOVE_TO"
+								and candidateId ~= nil and first[candidateId] == guardIndex
+								and cx == wantX and cy == wantY then
+							local candidateUnit = liveUnit(pid, candidateId);
+							local gx = tonumber(try(function() return candidateUnit:GetX(); end, nil));
+							local gy = tonumber(try(function() return candidateUnit:GetY(); end, nil));
+							local combat = try(function()
+								local definition = GameInfo.Units[candidateUnit:GetUnitType()];
+								return definition ~= nil
+									and ((tonumber(definition.Combat) or 0) > 0
+										or (tonumber(definition.RangedCombat) or 0) > 0);
+							end, false) == true;
+							if candidateUnit ~= nil and sx ~= nil and sy ~= nil
+									and gx ~= nil and gy ~= nil and gx == sx and gy == sy and combat then
+								guardRow, guard, guardId = candidate, candidateUnit, candidateId;
+								candidates = candidates + 1;
+							end
+						end
+					end
+					if candidates == 1 then
+						local guardLeg = CivvisBoard.capToTurn(guard, capped.x, capped.y);
+						if guardLeg == nil then
+							guardRow.x, guardRow.y = capped.x, capped.y;
+							CivvisBoard.stats.escort_cap_synced = CivvisBoard.stats.escort_cap_synced + 1;
+							emit("escort_cap_synced", {
+								turn = turn, settler = setterId, guard = guardId,
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						else
+							CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+							emit("escort_cap_unresolved", {
+								turn = turn, settler = setterId, guard = guardId,
+								reason = guardLeg == false and "guard_no_reach" or "guard_still_capped",
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						end
+					elseif candidates > 1 then
+						CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+						emit("escort_cap_unresolved", {
+							turn = turn, settler = setterId, reason = "ambiguous_guards",
+							candidates = candidates, want = { wantX, wantY },
+							sent = { capped.x, capped.y },
+						});
+					end
+				end
+			end
+		end
+	end
+end;
+
 -- Cancel queued paths on combat units at the start of our turn, and report
 -- how many units entered the turn with one at all.
 CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
@@ -12237,30 +12437,51 @@ CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
 	end
 end;
 
--- ------------------------------------------------------- mid-turn combat frame
+-- ------------------------------------------------ mid-turn frames (combat + replan)
 --
 -- ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A SINGLE DIE.
 -- Every strike of the turn is planned against the opening board with the
 -- engine's own rolls; the host's roll differs (it has left "sure" kills alive
 -- at 1, 3, 6, 8, 16 and 20 HP), and the next export is next turn. A combat
--- frame closes that gap once per turn: after the opening orders and their
--- per-unit queue have settled, if any strike was issued, the board is
--- exported again with `frame = 1`, the brain re-plans the SAME turn on it
--- (units that acted show the movement and attacks they have left, targets
--- show the damage they took), and the answer is applied like the opening one.
+-- frame closes that gap: after the opening orders and their per-unit queue
+-- have settled, if any strike was issued, the board is exported again with
+-- `frame = N`, the brain re-plans the SAME turn on it (units that acted show
+-- the movement and attacks they have left, targets show the damage they
+-- took), and the answer is applied like the opening one.
 --
--- ⚠ Default OFF (`CombatFrames = 0`) until a live run has been read: a second
--- round trip per contact turn is a second place for the loop to wedge, and
--- the round trip is the one thing this file cannot test offline. The frame
--- wait has its own short budget (`CombatFramePolls`) and no fallback ladder:
--- past it the frame is abandoned by name and the turn ends as it always did.
+-- ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. The same
+-- shape holds for ground: a scout ordered three hexes into the fog reveals the
+-- coast, the rival border or the barbarian camp on its first step and walks
+-- the other two regardless, and the map it uncovered reached the brain only
+-- with the next `tiles` sweep — every `TileExportEvery` turns. A REPLAN frame
+-- (`ReplanFrames = N`, the cap per turn) opens whenever the settled board has
+-- something new to say and somebody left to say it to: plots were revealed
+-- since the board went out (`CivvisTiles.sweep`, which also sends them as a
+-- `tiles` delta so the re-plan SEES them) and at least one unit still has
+-- movement, or a strike went out. The brain's half is `step_and_reassess`:
+-- it cuts a walk at its first unrevealed hex when the seat advertises
+-- `replan_frames`, so the unit steps to the edge of the known, the frame
+-- shows what it found, and the remaining movement is spent on that.
+--
+-- ⚠ `CombatFrames` keeps its old meaning (strike-opened frames only, default
+-- 0). `ReplanFrames` opens on strikes OR revealed ground. Each frame waits
+-- with its own short budget (`CombatFramePolls`) and no fallback ladder:
+-- past it the turn's remaining frames are abandoned by name and the turn
+-- ends as it always did. Every frame re-arms the per-unit queue's tick
+-- budget, so a turn with N frames may hold up to (N+1) x OrderQueueMaxTicks.
 -- One bare global table (200-local ceiling).
-CivvisFrames = { current = 0, strikes = 0, exported = false };
+CivvisFrames = { current = 0, strikes = 0, revealed = 0, movers = 0, reason = nil, settled = false };
 
 CivvisFrames.reset = function()
 	CivvisFrames.current = 0;
 	CivvisFrames.strikes = 0;
-	CivvisFrames.exported = false;
+	CivvisFrames.revealed = 0;
+	CivvisFrames.movers = 0;
+	CivvisFrames.reason = nil;
+	-- True once the turn declined its next frame: `settleTurn` is called
+	-- again on every later tick of the turn (blockers, end-turn retries),
+	-- and the sweep must not run on each of them.
+	CivvisFrames.settled = false;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -12268,36 +12489,86 @@ CivvisFrames.noteStrike = function()
 	CivvisFrames.strikes = CivvisFrames.strikes + 1;
 end;
 
-CivvisFrames.max = function()
+CivvisFrames.combatMax = function()
 	return tonumber(cfg.CombatFrames) or 0;
 end;
 
--- Whether another frame should open now: frames are enabled, the cap is not
--- reached, and a strike was issued since the last board went out.
+CivvisFrames.replanMax = function()
+	return tonumber(cfg.ReplanFrames) or 0;
+end;
+
+CivvisFrames.max = function()
+	return math.max(CivvisFrames.combatMax(), CivvisFrames.replanMax());
+end;
+
+-- Look at the settled board once, before asking `wanted`: how many plots this
+-- seat revealed since the last board went out (sent as a `tiles` delta in the
+-- same breath, so the frame's re-plan has them), and how many units could
+-- still act on them. Pure bookkeeping when frames are off.
+CivvisFrames.observe = function(player, pid, turn)
+	if CivvisFrames.replanMax() <= 0 then return; end
+	CivvisFrames.revealed = CivvisTiles.sweep(player, pid, turn, CivvisFrames.current + 1) or 0;
+	local movers = 0;
+	eachUnit(player, function(unit)
+		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
+		if moves > 0 then movers = movers + 1; end
+	end);
+	CivvisFrames.movers = movers;
+end;
+
+-- Why another frame should open now, or nil: frames are enabled, the cap is
+-- not reached, and either a strike was issued since the last board went out
+-- (combat or replan frames) or ground was revealed with movement left to
+-- spend on it (replan frames only).
+CivvisFrames.why = function()
+	local current = CivvisFrames.current;
+	if CivvisFrames.strikes > 0 and current < CivvisFrames.max() then
+		return "strike";
+	end
+	if current < CivvisFrames.replanMax()
+			and CivvisFrames.revealed > 0 and CivvisFrames.movers > 0 then
+		return "revealed";
+	end
+	return nil;
+end;
+
 CivvisFrames.wanted = function()
-	return CivvisFrames.max() > 0
-		and CivvisFrames.current < CivvisFrames.max()
-		and CivvisFrames.strikes > 0;
+	return CivvisFrames.why() ~= nil;
 end;
 
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
 CivvisFrames.begin = function(player, pid, turn)
+	local reason = CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
-	local strikes = CivvisFrames.strikes;
+	CivvisFrames.reason = reason;
+	CivvisFrames.settled = false;
+	local strikes, revealed = CivvisFrames.strikes, CivvisFrames.revealed;
 	CivvisFrames.strikes = 0;
+	CivvisFrames.revealed = 0;
 	awaiting.frame = CivvisFrames.current;
 	awaiting.done = false;
 	awaiting.polls = 0;
 	awaiting.ticks = 0;
 	awaiting.source = "pending";
-	emit("combat_frame", { turn = turn, frame = CivvisFrames.current, strikes = strikes });
+	-- Each frame's follow-ups get their own queue budget; see the header.
+	CivvisQueue.ticks = 0;
+	-- `combat_frame` keeps its name for the readers that count it; a frame
+	-- opened by revealed ground is a `replan_frame`. Both carry the reason.
+	emit(reason == "strike" and "combat_frame" or "replan_frame", {
+		turn = turn, frame = CivvisFrames.current, reason = reason,
+		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
+	});
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
 end;
 
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Match the guard to the host-capped settler leg before either row is applied.
+	-- The gate is default-off; with it absent every row remains byte-for-byte on
+	-- the pre-existing path through this function.
+	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
 	-- Civilization VI, not a decision, which is why it belongs here and not in CIVVIS.
@@ -12562,6 +12833,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- turn. See CivvisBoard.
 		move_capped = CivvisBoard.stats.capped,
 		move_no_reach = CivvisBoard.stats.no_reach,
+		-- Experimental reconciliation of a co-located guard with a capped
+		-- settler.  Unresolved candidates deliberately retain their old order.
+		escort_cap_synced = CivvisBoard.stats.escort_cap_synced,
+		escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -13080,12 +13355,17 @@ local function settleTurn(player, pid, turn, playFallback)
 			CivvisQueue.drain(player, pid, turn);
 			if CivvisQueue.pendingCount() > 0 then return false; end
 		end
-		-- Everything issued has settled. If a strike went out this frame and
-		-- frames are enabled, open the next one: the brain re-plans the same
-		-- turn on the board as it now stands. See CivvisFrames.
-		if CivvisFrames.wanted() then
-			CivvisFrames.begin(player, pid, turn);
-			return false;
+		-- Everything issued has settled. If a strike went out this frame, or
+		-- ground was revealed that somebody can still act on, and frames are
+		-- enabled, open the next one: the brain re-plans the same turn on the
+		-- board as it now stands. See CivvisFrames.
+		if not CivvisFrames.settled then
+			CivvisFrames.observe(player, pid, turn);
+			if CivvisFrames.wanted() then
+				CivvisFrames.begin(player, pid, turn);
+				return false;
+			end
+			CivvisFrames.settled = true;
 		end
 		return true;
 	end
@@ -13154,8 +13434,13 @@ local function settleTurn(player, pid, turn, playFallback)
 		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 20) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
+			-- Every trigger, and the cap: a brain that could not answer this
+			-- frame in time is not asked again this turn.
 			CivvisFrames.strikes = 0;
-			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls });
+			CivvisFrames.revealed = 0;
+			CivvisFrames.current = CivvisFrames.max();
+			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls,
+			                               reason = CivvisFrames.reason });
 			return true;
 		end
 		return false;

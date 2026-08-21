@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import signal
 import json
 import os
 import subprocess
 import textwrap
+import shutil
 import sys
 import tempfile
 import time
@@ -404,6 +406,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command.append("--war-from-plan")
     if args.civvis_refresh_seconds is not None:
         command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    for treatment in args.civvis_with:
+        command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
     return command
@@ -617,6 +621,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # cancelled at turn start; the seat then advertises `moves_at_turn_start`
         # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
         "CapMovesToReach": args.cap_moves_to_reach,
+        # A default-off host experiment: when a capped setter and exactly one
+        # co-located combat row share a MOVE_TO goal, make the guard follow the
+        # setter's actual leg only if it can reach that leg this turn.  This is
+        # bridge reconciliation, not a change to the Rust escort heuristic.
+        "SettlerEscortCapSync": args.settler_escort_cap_sync,
         "CancelQueuedPaths": args.cancel_queued_paths,
         # ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A DIE. With
         # `CombatFrames` ≥ 1 the mod re-exports the board once the opening
@@ -627,6 +636,19 @@ def build_config(args: argparse.Namespace) -> dict:
         # own short poll budget and no fallback. See docs/LIVE_TACTICS.md §8.
         "CombatFrames": args.combat_frames,
         "CombatFramePolls": args.combat_frame_polls,
+        # ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. A
+        # replan frame (`ReplanFrames` ≥ 1, default 2) opens after the
+        # opening orders settle whenever the seat revealed ground since the
+        # board went out and a unit still has movement to spend on it (or a
+        # strike went out): the revealed plots cross as a `tiles` delta, the
+        # board is exported again, and CIVVIS re-plans the same turn. The
+        # brain's half (`step_and_reassess`) cuts a walk at its first
+        # unrevealed hex so the unit steps to the edge of the known and the
+        # frame spends the rest on what it saw. `TileDelta` sends newly
+        # revealed plots every turn and frame instead of every
+        # `TileExportEvery` turns. See docs/LIVE_TACTICS.md §11.
+        "ReplanFrames": args.replan_frames,
+        "TileDelta": args.tile_delta,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -891,9 +913,10 @@ def place_game(side: str = "left", fraction: float = 0.5,
     the operator asked for the real game in the upper right with a terminal
     beneath it.
 
-    Re-applied on every focus pass rather than once at launch: each ladder
-    attempt relaunches Civ 6, and a fresh process comes up wherever the game
-    last remembered rather than where it was put.
+    The live loop checks the current frame before calling this function.  An
+    unchanged frame is left alone: repeating identical ``set size`` and
+    ``set position`` operations still creates WindowServer geometry traffic,
+    which can make unrelated Terminal windows reflow.
     """
     if side == "none":
         return
@@ -913,6 +936,9 @@ def place_game(side: str = "left", fraction: float = 0.5,
         x, y = screen_w - width, screen_h - height
     else:
         x, y = (0 if side == "left" else screen_w - width), menu
+    desired = (x, y, width, height)
+    if game_window() == desired:
+        return
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
@@ -2207,6 +2233,52 @@ def latest_autosave(directory: Path = AUTOSAVE_DIR,
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+# The staged-resume stem. One fixed name: at most one staged file ever exists,
+# the Load Game row label is a constant the reader has already proven on, and
+# nothing accumulates in the save folder across resumes.
+RESUME_STAGED_STEM = "civvis-resume"
+
+
+def stage_resume_save(load_save: Path,
+                      single_dir: Path | None = None) -> Path:
+    """An autosave copied where the Load Game list shows it unfiltered.
+
+    ★★★★ THE AUTOSAVES FILTER IS A GAMBLE THE RESUME KEPT LOSING. Firaxis's
+    Load Game list opens on the manual saves in ``Saves/Single`` and shows the
+    ``Single/auto`` rotation only while its "Autosaves" checkbox is ticked —
+    and that checkbox is a tiny top-right label the screen reader misses at
+    the operator layout's scale. Both freeze-resumes of 2026-08-19 died
+    exactly there ("Load Game is not visible yet", then ``AutoSave_0062`` "is
+    not visible; refusing to select a row", 0 turns each) — the second one
+    costing a live t139 game at 75 % of the leader and climbing. The manual
+    recovery of 2026-08-16 already proved the alternative: a save COPIED into
+    ``Saves/Single`` (``resume-autosave-0189.Civ6Save``) sits in the default
+    list with no filter to tick.
+
+    So stage the save instead of driving the filter: copy it beside the
+    manual saves under the constant stem ``civvis-resume`` and select that
+    row. A save that already lives outside the autosave rotation is returned
+    untouched — a caller naming a manual save meant that exact row. A copy
+    that fails falls back to the original path, which leaves the old
+    filter-ticking path in force rather than trading a weak resume for none.
+    """
+    destination_dir = single_dir if single_dir is not None else AUTOSAVE_DIR.parent
+    try:
+        if load_save.parent.resolve() != (destination_dir / "auto").resolve():
+            return load_save
+    except OSError:
+        return load_save
+    staged = destination_dir / f"{RESUME_STAGED_STEM}{load_save.suffix}"
+    try:
+        shutil.copy2(load_save, staged)
+    except OSError as error:
+        print(f"could not stage {load_save.name} as {staged.name}: {error}; "
+              "falling back to the Autosaves filter", file=sys.stderr)
+        return load_save
+    print(f"staged {load_save.name} as {staged.name} in the manual save list")
+    return staged
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -2221,7 +2293,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                                     still_loading=still_loading)
 
     patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
-    save_label = Path(args.load_save).stem
+    # See `stage_resume_save`: an autosave is copied into the manual list so
+    # no filter stands between the reader and its row.
+    save_path = stage_resume_save(Path(args.load_save))
+    save_label = save_path.stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -2666,6 +2741,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
     def stop_brain() -> None:
@@ -2684,6 +2760,26 @@ def _play(args: argparse.Namespace) -> int:
     # Covers KeyboardInterrupt and unexpected exceptions between the explicit
     # cleanup sites below. Calling it again after a normal run is harmless.
     atexit.register(stop_brain)
+
+    # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
+    # terminates the process outright, so `stop_brain` above never fires and the
+    # brain outlives the harness — and an orphaned brain is not harmless. The
+    # climb's `busy()` counts any live `civ6_brain.py` as a running game, so the
+    # NEXT attempt dies on "something already holds the game; refusing to stop an
+    # unowned run" while the lock file is empty and Civilization VI is down.
+    # Measured 2026-08-19: a brain from run civvis-20260819T162342Z was still
+    # alive 29 minutes after its game had gone, and every launch in that window
+    # failed that way until it was killed by hand.
+    #
+    # TERM is the ordinary way this process is stopped — the supervisor's own
+    # teardown sends it ("requesting clean stop"), so this is the common path,
+    # not an edge case. Raising SystemExit hands control back to the normal
+    # shutdown, which runs the atexit handler above; 143 is the conventional
+    # 128+SIGTERM status.
+    def _terminate(signum, _frame):  # noqa: ANN001 - signal handler signature
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _terminate)
 
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
@@ -3139,6 +3235,11 @@ def _play(args: argparse.Namespace) -> int:
         # batches would have been unattributable even once they were run.
         # Empty list means the full shipped bundle played.
         "withheld": sorted(args.civvis_without) if args.civvis_decides else None,
+        # `--civvis-with` is deliberately narrower than a general opt-in: it
+        # can restore only a live treatment the ledger otherwise withholds.
+        # Keep the exact named arm with the summary even if no binary event was
+        # retained, so a force-on run never resembles deployment afterwards.
+        "forced": sorted(args.civvis_with) if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -3159,9 +3260,12 @@ def _play(args: argparse.Namespace) -> int:
             "OrderQueue": args.order_queue,
             "ExploreGuard": args.explore_guard,
             "CapMovesToReach": args.cap_moves_to_reach,
+            "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
+            "ReplanFrames": args.replan_frames,
+            "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -3194,12 +3298,11 @@ def _play(args: argparse.Namespace) -> int:
         if revisions:
             summary["decider_revisions"] = revisions
         # And which GENOME decided it. `--civvis-strategy` is forwarded to
-        # `civvis_orders --strategy` by name, and a name the league snapshot
-        # does not carry under that spelling falls back to the stock controller
-        # with one line in why.log; the supervisor's default (`WildCard9`, a
-        # display name) has done exactly that on every row since it was
-        # written. Both halves go on the record so asked and played can be
-        # compared on the ledger instead of in a log excavation.
+        # `civvis_orders --strategy` by name. New deciders accept an unambiguous
+        # league display label as well as the immutable internal name, but old
+        # ones treated the supervisor's `WildCard9` label as unknown and fell
+        # back to stock. Both halves go on the record so asked and played can
+        # be compared on the ledger instead of in a log excavation.
         genome = civ6_ladder.decider_genome(run_dir / "why.log")
         if genome is not None:
             summary["genome"] = genome
@@ -3462,6 +3565,11 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-with", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for a labeled "
+                         "verification arm, repeatable; the decision worker "
+                         "validates the name and keeps deployment unchanged by default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "
@@ -3502,6 +3610,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="send a MOVE_TO's whole destination even when the host's path "
                          "outruns the turn (the pre-board rule: the host queues the rest "
                          "and walks it before the next frame)")
+    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
+                    help="experimentally keep a co-located combat escort on a capped "
+                         "settler's actual host leg (off by default)")
     ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
                     action="store_false", default=True,
                     help="leave combat units' queued host paths in place at turn start")
@@ -3512,6 +3623,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--combat-frame-polls", type=int, default=20,
                     help="polls to wait for a combat frame's answer before the frame "
                          "is abandoned by name and the turn ends")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="mid-turn replan frames per turn: after the opening orders "
+                         "settle, if the seat revealed ground since the board went "
+                         "out and a unit can still move (or a strike went out), "
+                         "re-export the board and let CIVVIS re-plan the same turn "
+                         "(0 = off; each frame waits --combat-frame-polls)")
+    ap.add_argument("--no-tile-delta", dest="tile_delta",
+                    action="store_false", default=True,
+                    help="send newly revealed plots only with the periodic sweep "
+                         "(--tile-export-every) instead of every turn and frame")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")

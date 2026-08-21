@@ -312,7 +312,8 @@ class GitHubRuntimeUpdater:
 
 def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
                   strategy: str | None = None, civ: str | None = None,
-                  without: list[str] | None = None) -> list[tuple]:
+                  without: list[str] | None = None,
+                  with_: list[str] | None = None) -> list[tuple]:
     """Ask CIVVIS. Its stdout is a JSON array of orders; anything else is an error.
 
     ⚠ A non-zero exit or unparseable stdout returns NO orders rather than a guess.
@@ -326,6 +327,8 @@ def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
             command.extend(["--strategy", strategy])
         if civ:
             command.extend(["--civ", civ])
+        for treatment in with_ or []:
+            command.extend(["--with", treatment])
         for treatment in without or []:
             command.extend(["--without", treatment])
         proc = subprocess.run(
@@ -508,7 +511,8 @@ class Decider:
     """
 
     def __init__(self, binary: Path, run_dir: Path, victory: str,
-                 war_from_plan: bool = False, strategy: str | None = None, without: list[str] | None = None):
+                 war_from_plan: bool = False, strategy: str | None = None,
+                 without: list[str] | None = None, with_: list[str] | None = None):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
@@ -522,15 +526,13 @@ class Decider:
         # ZERO declarations. So the decline is an artefact of the reconstruction
         # rather than a judgement about the war.
         self.war_from_plan = war_from_plan
-        # ⚠⚠ THE CONTROL ARM HAD NO ROUTE TO A LIVE GAME. `civvis_orders`
-        # has accepted `--without <treatment>` since the withholding registry
-        # landed, and it stamps `withheld=[...]` into its own run log — but no
-        # launcher between here and the ladder could ask for it, so on the live
-        # seat every one of the 69 registered treatments was unwithholdable and
-        # no live A/B was possible at all. Same four-link shape the
-        # `--probe-citizens` comment records: a decider option with no path
-        # through its own launcher is a decision nobody can make.
+        # The live ledger's comparisons need both a control (`--without`) and
+        # a deliberately labelled restoration of one ledger-held row
+        # (`--with`). Keep both lists on the persistent process, or an arm
+        # would work only on the first non-server turn and quietly disappear
+        # under the normal live controller.
         self.without = list(without or [])
+        self.with_ = list(with_ or [])
         self.civ: str | None = None
         self.proc: subprocess.Popen | None = None
         self.why = None
@@ -545,6 +547,8 @@ class Decider:
             command.extend(["--civ", self.civ])
         if self.war_from_plan:
             command.append("--war-from-plan")
+        for treatment in self.with_:
+            command.extend(["--with", treatment])
         for treatment in self.without:
             command.extend(["--without", treatment])
         return command
@@ -897,6 +901,11 @@ def main() -> int:
                          "repeatable — the control arm of a live A/B. Names "
                          "are civvis_orders' own; an unknown one is a hard "
                          "error there rather than a silent no-op")
+    ap.add_argument("--with", dest="with_", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment in a labelled "
+                         "verification arm; repeatable and validated by "
+                         "civvis_orders")
     ap.add_argument("--server", action="store_true", default=True,
                     help="keep one CIVVIS agent alive across turns (plan continuity)")
     ap.add_argument("--no-server", dest="server", action="store_false",
@@ -926,10 +935,11 @@ def main() -> int:
     runtime_revision = args.runtime_revision or local_revision(repo_root)
     print(f"[brain] mode={args.mode} run={run_tag} db={orders_db} "
           f"decider={'server' if args.server else 'per-turn'} "
-          f"revision={runtime_revision or 'unverified'}", flush=True)
+          f"revision={runtime_revision or 'unverified'} "
+          f"forced={args.with_ or 'none'} withheld={args.without or 'none'}", flush=True)
     strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
     decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy,
-                       without=args.without)
+                       without=args.without, with_=args.with_)
                if args.mode == "civvis" and args.server else None)
     updater = None
     if args.mode == "civvis" and args.github_refresh_seconds > 0:
@@ -1069,7 +1079,7 @@ def main() -> int:
                     record_note(run_dir, turn, note)
             else:
                 rows = civvis_orders(binary, run_dir, turn, args.victory, strategy,
-                                     seat_civ, args.without)
+                                     seat_civ, args.without, args.with_)
             rows, government_blocks = guard_government_orders(
                 event, rows, seen_governments
             )

@@ -289,6 +289,45 @@ fn the_generic_fallback_gives_every_player_id_its_own_primary() {
     );
 }
 
+#[test]
+fn barbarians_use_the_base_game_red_and_black_jersey() {
+    let extract: serde_json::Value =
+        serde_json::from_str(COLORS_JSON).expect("data/civ6_player_colors.json parses");
+    let palette = extract["palette"]
+        .as_object()
+        .expect("the extract carries Civ 6's standard palette");
+    let expected = vec![
+        palette["RED_MD"]
+            .as_str()
+            .expect("red primary is a string")
+            .to_string(),
+        palette["WHITE_DK"]
+            .as_str()
+            .expect("black secondary is a string")
+            .to_string(),
+    ];
+
+    assert_eq!(
+        js_array(INDEX, "BARBARIAN_JERSEY"),
+        expected,
+        "Barbarians should use Civ 6's standard red-and-black jersey"
+    );
+    assert!(
+        INDEX.contains("return player.is_free_city ? FREE_CITY_JERSEY : BARBARIAN_JERSEY;"),
+        "Free Cities only share the is_barbarian simulation flag; they should not inherit the hostile red jersey"
+    );
+    assert_eq!(
+        INDEX.matches("const jersey = nonMajorJersey(p);").count(),
+        2,
+        "both primary and secondary ownership colours must read the same Barbarian jersey"
+    );
+    assert!(
+        INDEX.contains("if (jersey) return jersey[0];")
+            && INDEX.contains("if (jersey) return jersey[1];"),
+        "the red Barbarian jersey must drive both the field and the pictogram/trim"
+    );
+}
+
 /// A two-tone frontier needs its two lanes to look different, or the border
 /// collapses into one band and stops naming its owner.
 #[test]

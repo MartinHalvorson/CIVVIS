@@ -258,6 +258,16 @@ pub struct TilesChunk {
     pub plots: Vec<Plot>,
 }
 
+/// The one stamp a between-sweeps `tiles` delta carries (`CivvisTiles.sweep`:
+/// only the plots revealed or changed hands since the last board went out).
+/// Read beside [`TilesChunk`] rather than on it so the chunk's many literal
+/// constructions stay as they are.
+#[derive(Deserialize)]
+struct TilesDeltaStamp {
+    #[serde(default)]
+    delta: bool,
+}
+
 /// The seat's view of the world at one turn, assembled from its `tiles` chunks.
 ///
 /// Deliberately not a `Game`: the holes have to survive into whatever consumes
@@ -276,20 +286,36 @@ impl Snapshot {
     pub fn from_chunks(chunks: &[TilesChunk]) -> Snapshot {
         let mut snapshot = Snapshot::default();
         for chunk in chunks {
-            snapshot.turn = snapshot.turn.max(chunk.turn);
-            snapshot.width = snapshot.width.max(chunk.width);
-            snapshot.height = snapshot.height.max(chunk.height);
-            for plot in &chunk.plots {
-                snapshot.revealed.insert((plot.x, plot.y), plot.clone());
-            }
+            snapshot.merge_sweep(chunk);
         }
         snapshot
+    }
+
+    /// Merge one chunk of a full sweep: its plots land and its turn advances
+    /// the snapshot's sweep turn.
+    pub fn merge_sweep(&mut self, chunk: &TilesChunk) {
+        self.turn = self.turn.max(chunk.turn);
+        self.merge_delta(chunk);
     }
 
     /// Whether this seat has revealed a plot. Everything outside this is unknown
     /// ground and must never be treated as ordinary ground.
     pub fn is_revealed(&self, pos: (i32, i32)) -> bool {
         self.revealed.contains_key(&pos)
+    }
+
+    /// Merge a between-sweeps delta: its plots land like any chunk's, but
+    /// the snapshot's sweep turn stays where the last FULL sweep put it. The
+    /// `improved` fold (`apply_finished_improvements`) keeps events at or
+    /// after the newest sweep, and a delta carries none of the older plots'
+    /// improvements — letting it stand for a sweep would drop every
+    /// improvement finished since the real one.
+    pub fn merge_delta(&mut self, chunk: &TilesChunk) {
+        self.width = self.width.max(chunk.width);
+        self.height = self.height.max(chunk.height);
+        for plot in &chunk.plots {
+            self.revealed.insert((plot.x, plot.y), plot.clone());
+        }
     }
 
     pub fn plot(&self, pos: (i32, i32)) -> Option<&Plot> {
@@ -489,6 +515,69 @@ mod tests {
         assert!(early.plot((7, 7)).is_none(), "turn 1 must not see turn 10");
         let latest = snapshot_from_events(&path).unwrap();
         assert_eq!(latest.revealed_count(), 2);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(dir);
+    }
+
+    /// ★★★★ A TILES DELTA IS NEW GROUND, NOT A NEW SWEEP. The mod sends what
+    /// a unit revealed since the last board went out, every turn and frame,
+    /// stamped `delta`. It must merge onto the map like any chunk — that is
+    /// the whole point — and must NOT move the snapshot's sweep turn, or the
+    /// `improved` fold would discard every improvement finished between the
+    /// real sweep and the delta (rule 3 of `apply_finished_improvements`).
+    #[test]
+    fn a_tiles_delta_merges_new_ground_without_standing_for_a_sweep() {
+        let dir =
+            std::env::temp_dir().join(format!("civvis-mirror-tiles-delta-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS"}]}"#,
+                r#"{"kind":"improved","turn":3,"x":1,"y":1,"im":"IMPROVEMENT_FARM"}"#,
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS"}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let snapshot = snapshot_from_events(&path).unwrap();
+        assert_eq!(
+            snapshot.revealed_count(),
+            2,
+            "the delta's plot is on the map"
+        );
+        assert_eq!(
+            snapshot.plot((2, 1)).and_then(|plot| plot.t.as_deref()),
+            Some("TERRAIN_PLAINS")
+        );
+        assert_eq!(snapshot.turn, 1, "the sweep turn is the last FULL sweep's");
+        assert_eq!(
+            snapshot.plot((1, 1)).and_then(|plot| plot.im.as_deref()),
+            Some("IMPROVEMENT_FARM"),
+            "an improvement finished after the sweep survives a later delta"
+        );
+
+        // Stream order decides a plot, whichever kind of chunk carried it:
+        // a later sweep overrides an earlier delta's owner, and a later
+        // delta overrides the sweep's.
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":3}]}"#,
+                r#"{"kind":"tiles","turn":25,"width":8,"height":8,"chunk":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":-1}]}"#,
+                r#"{"kind":"tiles","turn":26,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":4}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let at_sweep = snapshot_from_events_at(&path, Some(25)).unwrap();
+        assert_eq!(at_sweep.plot((2, 1)).map(|plot| plot.o), Some(-1));
+        assert_eq!(at_sweep.turn, 25);
+        let latest = snapshot_from_events(&path).unwrap();
+        assert_eq!(latest.plot((2, 1)).map(|plot| plot.o), Some(4));
+        assert_eq!(latest.turn, 25, "the delta at turn 26 is not a sweep");
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir(dir);
     }
@@ -5204,6 +5293,70 @@ mod tests {
         );
     }
 
+    /// A zero-target answer is stronger than a city-local site disagreement. The
+    /// host cannot see a location for this world unique anywhere, so every city must
+    /// stop valuing it — including through the prerequisite-reach query.
+    #[test]
+    fn a_world_unique_the_host_cannot_place_is_blocked_in_every_city() {
+        let mut game = crate::game::Game::new(4, 20, 20, 71, 500, 0);
+        let mut ours: Vec<u32> = game
+            .cities
+            .values()
+            .filter(|city| city.owner == 0)
+            .map(|city| city.id)
+            .collect();
+        while ours.len() < 2 {
+            let seed = ours.len() as i32;
+            let pos = (seed * 5 + 6, seed * 5 + 6);
+            if !game.map.tiles.contains_key(&pos) {
+                break;
+            }
+            game.place_city(0, pos, None);
+            ours = game
+                .cities
+                .values()
+                .filter(|city| city.owner == 0)
+                .map(|city| city.id)
+                .collect();
+        }
+        assert!(ours.len() >= 2, "need two cities to prove the world scope");
+        let (first_city, second_city) = (ours[0], ours[1]);
+        game.players[0].techs = game.rules.techs.keys().copied().collect();
+        game.players[0].civics = game.rules.civics.keys().copied().collect();
+        for city in [first_city, second_city] {
+            game.cities.get_mut(&city).unwrap().pop = 12;
+        }
+        let wonder = game
+            .rules
+            .wonders
+            .keys()
+            .copied()
+            .find(|wonder| {
+                !game.wonder_sites(first_city, wonder).is_empty()
+                    && !game.wonder_sites(second_city, wonder).is_empty()
+            })
+            .expect("some wonder must be sitable in both cities for this to prove anything");
+
+        assert_eq!(
+            game.wonder_missing_prerequisites(first_city, wonder.as_str()),
+            Some(Vec::new()),
+            "the selected wonder is otherwise reachable before the host fact arrives"
+        );
+        game.host_unavailable_wonders.insert(wonder);
+
+        for city in [first_city, second_city] {
+            assert!(
+                game.wonder_sites(city, wonder.as_str()).is_empty(),
+                "the host's zero-target response must block {wonder:?} in city {city}"
+            );
+            assert_eq!(
+                game.wonder_missing_prerequisites(city, wonder.as_str()),
+                None,
+                "a claimed world wonder must not pay prerequisite credit in city {city}"
+            );
+        }
+    }
+
     /// A positive host answer must beat the temporary block emitted beside it.
     /// Otherwise the bridge learns the legal coordinates and still leaves the
     /// district unavailable for all eight cooldown turns.
@@ -8247,18 +8400,26 @@ pub fn snapshot_from_events_at(
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
-    let mut chunks = Vec::new();
+    // In stream order, so a later chunk's plot wins whichever kind it is;
+    // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
+    // see `Snapshot::merge_delta`.
+    let mut snapshot = Snapshot::default();
     for line in raw.lines() {
         if !line.contains("\"tiles\"") {
             continue;
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                chunks.push(chunk);
+                let is_delta =
+                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
+                if is_delta {
+                    snapshot.merge_delta(&chunk);
+                } else {
+                    snapshot.merge_sweep(&chunk);
+                }
             }
         }
     }
-    let mut snapshot = Snapshot::from_chunks(&chunks);
     apply_finished_improvements(&raw, turn, &mut snapshot);
     Ok(snapshot)
 }
@@ -10650,8 +10811,13 @@ pub struct StateSnapshot {
     /// because the mod reports a refused wonder under `building` and a refused
     /// district under `district`, and the two translate against different rulesets.
     #[serde(default)]
-    pub refused_wonders:
-        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    pub refused_wonders: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// World-unique wonders a `build_no_plot` answer ruled out on every host
+    /// location. This is deliberately separate from [`StateSnapshot::refused_wonders`]:
+    /// a city-local refusal can be a terrain mismatch, while an explicit
+    /// `offered: 0` is the host saying the requested wonder has no target at all.
+    #[serde(default)]
+    pub host_unavailable_wonders: std::collections::BTreeSet<String>,
     /// Production items the host has recently reported as unplayable, by its city id.
     /// These are translated and applied as a cooldown rather than a permanent ban.
     #[serde(default)]
@@ -11584,6 +11750,21 @@ pub struct Seat {
     /// before, because the export's `moves` has misled twice in the past.
     #[serde(default)]
     pub moves_at_turn_start: bool,
+    /// The mod opens mid-turn replan frames (`CivvisFrames`, `ReplanFrames`
+    /// ≥ 1): once the opening orders settle on a board with newly revealed
+    /// ground and movement left to spend on it, the board is exported again
+    /// and the same turn re-planned. Only then does `civvis_orders` cut a
+    /// unit's walk at its first unrevealed hex (`step_and_reassess`) — the
+    /// frame is what spends the rest of the movement on what the step
+    /// uncovered; against an older mod the cut would strand it. Absent
+    /// (older mod) reads `false`.
+    #[serde(default)]
+    pub replan_frames: bool,
+    /// Newly revealed plots cross every turn and frame as `tiles` deltas
+    /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
+    /// snapshot merges chunks cumulatively either way.
+    #[serde(default)]
+    pub tile_delta: bool,
 }
 
 /// See [`Seat::victories`]. Each checkbox is independently optional so one
@@ -12251,6 +12432,7 @@ pub fn state_from_events(
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
+        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
         state.refused_promotions = refused_promotions_through(path, turn);
@@ -13102,6 +13284,20 @@ fn blocked_wonders_from(
     out
 }
 
+/// Translate permanent host facts about world-unique wonders. Unlike
+/// [`blocked_wonders_from`], no city id participates: an explicit zero-target
+/// answer says the wonder cannot start in any city.
+fn host_unavailable_wonders_from(
+    unavailable: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    unavailable
+        .iter()
+        .filter_map(|civ6| civvis_node_name(&rules.wonders, civ6, "BUILDING_"))
+        .map(|name| Name::new(&name))
+        .collect()
+}
+
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
 /// Translate host promotion refusals onto CIVVIS unit ids.
 ///
@@ -13323,6 +13519,49 @@ fn refused_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     refused_no_plot_through(path, turn, "building", "BUILDING_")
+}
+
+/// World-unique wonders for which the host found no location at all.
+///
+/// A direct order carries a model-legal wonder site. When Firaxis responds with an
+/// explicit `offered: 0`, its operation-target query found no site in the world, not
+/// merely a different site in this city. The common cause is a rival completing the
+/// world unique outside the partial mirror. Keep the fact forever; a later city does
+/// not make a claimed world wonder available again. An absent `offered` belongs to
+/// older telemetry and deliberately keeps the previous city-scoped behaviour.
+fn host_unavailable_wonders_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<String> {
+    let mut unavailable = std::collections::BTreeSet::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return unavailable;
+    };
+    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some("build_no_plot")
+            || event.get("offered").and_then(|value| value.as_i64()) != Some(0)
+        {
+            continue;
+        }
+        if let Some(limit) = turn {
+            let Some(at) = event.get("turn").and_then(|value| value.as_u64()) else {
+                continue;
+            };
+            if at > u64::from(limit) {
+                continue;
+            }
+        }
+        let Some(wonder) = event.get("building").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if wonder.starts_with("BUILDING_") {
+            unavailable.insert(wonder.to_string());
+        }
+    }
+    unavailable
 }
 
 /// The newest fresh positive placement result for every `(city, district)` pair.
@@ -16389,8 +16628,9 @@ pub fn rebuild_from_state(
         host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
     game.host_wonder_sites =
         host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
-    game.blocked_wonders =
-        blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.blocked_wonders = blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.host_unavailable_wonders =
+        host_unavailable_wonders_from(&state.host_unavailable_wonders, &game.rules);
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
@@ -17243,6 +17483,11 @@ impl LiveMirror {
         for (cid, names) in refused_wonders {
             self.game.blocked_wonders.entry(cid).or_default().extend(names);
         }
+        let unavailable_wonders =
+            host_unavailable_wonders_from(&state.host_unavailable_wonders, &self.game.rules);
+        self.game
+            .host_unavailable_wonders
+            .extend(unavailable_wonders);
         // Unlike impossible district plots, a production refusal can be temporary.
         // Replace this cooldown snapshot so entries disappear after their TTL.
         let blocked_production = blocked_production_from(
@@ -18229,6 +18474,42 @@ mod transient_refusal_tests {
         assert!(
             blocked.contains("DISTRICT_GOVERNMENT"),
             "zero offered plots is the engine saying nowhere, and must still block"
+        );
+    }
+
+    /// A zero-site wonder response is a world fact, not the city-local cooldown
+    /// used for a wrong-coordinate response. Keep only explicit modern telemetry:
+    /// an old event without `offered` cannot prove that the wonder is gone.
+    #[test]
+    fn a_zero_site_wonder_becomes_a_permanent_world_fact() {
+        let p = events(
+            "world_wonder",
+            &[
+                r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_GREAT_BATH","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":41,"city":8,"building":"BUILDING_PYRAMIDS","offered":2}"#,
+                r#"{"kind":"build_no_plot","turn":42,"city":8,"building":"BUILDING_ORACLE"}"#,
+                r#"{"kind":"build_no_plot","city":8,"building":"BUILDING_ORACLE","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":43,"city":8,"building":"BUILDING_NOT_MODELED","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":50,"city":8,"building":"BUILDING_HANGING_GARDENS","offered":0}"#,
+                r#"{"kind":"state","turn":49}"#,
+            ],
+        );
+        let state = state_from_events(&p, None).expect("state at the current turn");
+        assert_eq!(
+            state.host_unavailable_wonders,
+            BTreeSet::from([
+                "BUILDING_GREAT_BATH".to_string(),
+                "BUILDING_NOT_MODELED".to_string(),
+            ]),
+            "only an explicit, timestamped zero-target answer before this board becomes a world fact"
+        );
+        assert_eq!(
+            host_unavailable_wonders_from(
+                &state.host_unavailable_wonders,
+                &crate::rules::Rules::embedded(),
+            ),
+            BTreeSet::from([Name::new("great_bath")]),
+            "unknown host names stay observable in the state but cannot populate a dead gate"
         );
     }
 
