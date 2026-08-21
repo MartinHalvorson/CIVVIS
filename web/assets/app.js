@@ -3789,10 +3789,10 @@ function playerJerseys() {
 }
 // All ownership drawing funnels through pcol/pcol2.  Civ VI's standard red
 // jersey is the visual language for hostile Barbarians: a red field with a
-// crisp white pictogram and trim. Free Cities share `is_barbarian` in the
+// crisp black pictogram and trim. Free Cities share `is_barbarian` in the
 // simulation for diplomacy and victory rules, but are a distinct faction and
 // retain their existing neutral jersey.
-const BARBARIAN_JERSEY = ["#ca1415", "#f9f9f9"];
+const BARBARIAN_JERSEY = ["#ca1415", "#181818"];
 const FREE_CITY_JERSEY = ["#30262a", "#8a3a34"];
 function nonMajorJersey(player) {
   if (!player?.is_barbarian) return null;
