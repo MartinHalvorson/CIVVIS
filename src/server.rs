@@ -13980,9 +13980,9 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_repeat_semantic_pips_without_numeral_badges() {
+    fn browser_tile_yields_use_base_game_formations_and_large_count_badges() {
         assert!(EMBEDDED_INDEX.contains(
-            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+            "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
         let parts = EMBEDDED_INDEX
             .split("function yieldPipParts")
@@ -13993,19 +13993,45 @@ mod tests {
         assert!(parts.contains("pips.push({kind, portion:remainder});"));
         assert!(parts.contains("Math.round(raw * 10) / 10"));
 
+        let formations = EMBEDDED_INDEX
+            .split("function yieldPipOffsets")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipCluster").next())
+            .expect("tile-yield pip formations");
+        assert!(formations.contains("if (count === 2) return [[0, -step / 2], [0, step / 2]];"));
+        assert!(formations.contains("if (count === 3)"));
+        assert!(formations.contains("Math.sqrt(3)"));
+        assert!(formations.contains("if (count === 4) return ["));
+
+        let cluster = EMBEDDED_INDEX
+            .split("function yieldPipCluster")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipRow").next())
+            .expect("tile-yield pip cluster");
+        assert!(cluster.contains("const summary = pips.length >= 5;"));
+        assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
+        assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
-        assert!(renderer.contains("yieldPipLines(yieldPipRuns(full, kinds), r)"));
-        assert!(renderer.contains("drawYieldPip(pip.kind, px, cy, r, pip.portion, worked)"));
-        assert!(renderer.contains("const totalHeight = bands.reduce"));
+        assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
+        assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
+        assert!(renderer.contains("drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,"));
+        assert!(renderer.contains("const totalHeight = visualRows.reduce"));
         assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
-        assert!(EMBEDDED_INDEX.contains("const maxWidth = S * 1.55;"));
-        assert!(!renderer.contains("fillText("));
-        assert!(!renderer.contains("fmtYield("));
-        assert!(!renderer.contains("YICON[kind]"));
+        let pip = EMBEDDED_INDEX
+            .split("function drawYieldPip(kind, x, y, r, portion, worked, label = \"\")")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("numbered tile-yield pip renderer");
+        assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
+        assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
+        assert!(pip.contains("label.length === 1 ? 1.25"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
         assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
         assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
     }
