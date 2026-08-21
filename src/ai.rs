@@ -2613,6 +2613,38 @@ pub struct BasicAi {
     /// (`AdvancedAi::legacy`) so this controller treatment does not itself
     /// move the rating experiment; withheld for pricing by
     /// `advanced_without_adjacent_camp_clear`.
+    /// ★★★★★ OUR OWN WALKERS ARE HOME GROUND TOO, AND EIGHT SETTLERS PAID
+    /// FOR THE FACT THAT THEY WERE NOT.
+    ///
+    /// The admission test that lets the barbarian seat into a unit's enemy
+    /// list at all — `barbarian_presence_at_home_with_camp_radius` — measures
+    /// distance **from our cities**: a raider within six tiles of one, or a
+    /// camp within `camp_radius`. A Settler walking ten tiles to its site is
+    /// outside every one of those rings, so the raider shadowing it is in
+    /// nobody's enemy list, no escort ever scans it as a target, and the walk
+    /// ends with the Settler in barbarian hands. Live run
+    /// civvis-20260821T130446Z lost **eight Settlers, two Builders, a Scout,
+    /// two Warriors, a Slinger and an Archer in 104 turns** to exactly that.
+    ///
+    /// This flag adds the second reading: a barbarian military unit within
+    /// `HOME_THREAT_RADIUS` of one of our civilians in the field admits the
+    /// seat as well. Nothing downstream changes — `nearest_enemy`'s near-home
+    /// and exchange-score gates, the tactical scan's pricing, and the
+    /// half-army recall cap all still apply — so this widens WHO may be shot
+    /// at, never how recklessly.
+    ///
+    /// ⚠ Barbarian Scouts count here, and they are excluded from
+    /// `is_barbarian_raider` on purpose (`barbarian_scouts_are_scouts`: a
+    /// scout must not pin the opening). Both are right. A scout is not a
+    /// reason to mobilise the empire, but in Civilization VI it captures a
+    /// civilian by walking onto it exactly like a Warrior does, and it is the
+    /// unit that carries the target home and turns a camp into a raiding
+    /// party. Next to one of our Settlers it is a threat; six tiles from a
+    /// walled city it is still just a scout.
+    ///
+    /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
+    /// treatment.
+    pub(crate) barbarian_hunt: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
@@ -4264,6 +4296,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_hunt: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4376,6 +4409,16 @@ impl BasicAi {
 
     pub fn disable_camp_reach(&mut self) {
         self.camp_reach = false;
+    }
+
+    /// Count a barbarian unit beside one of our civilians in the field as a
+    /// reason to fight it. See `barbarian_hunt`.
+    pub fn enable_barbarian_hunt(&mut self) {
+        self.barbarian_hunt = true;
+    }
+
+    pub fn disable_barbarian_hunt(&mut self) {
+        self.barbarian_hunt = false;
     }
 
     /// The whole peacetime field army answers home threats and a camp in
@@ -4587,6 +4630,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_hunt: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -12615,6 +12659,120 @@ impl BasicAi {
             .any(|camp| near_home(*camp, camp_radius))
     }
 
+    /// ★★★★★ THE ESCORT THAT GUARDED THE SETTLER AND NEVER SWUNG.
+    ///
+    /// `settler_escort_step` returns `Some(..)` for every unit on escort duty
+    /// and it runs BEFORE the attack scan, so a guard standing shoulder to
+    /// shoulder with the barbarian Scout about to take its charge spends the
+    /// turn re-forming on the Settler instead of killing it. That is the
+    /// second half of the eight-Settler run: the admission test never let the
+    /// raider into the enemy list, and even when it did the escort was not
+    /// asking.
+    ///
+    /// This is deliberately the narrowest possible answer, not a licence to
+    /// hunt: only a barbarian ADJACENT to this unit, only when the exchange
+    /// the ordinary attack scan would price is already positive, and only
+    /// while `barbarian_hunt` is on. The unit does not move, so it is still
+    /// beside its charge when the swing lands; recon keeps its own job.
+    ///
+    /// See `barbarian_hunt`.
+    pub(crate) fn barbarian_kill_beside_this_unit(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> bool {
+        if !self.barbarian_hunt || self.minor || self.barb {
+            return false;
+        }
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if !spec.is_melee_capable() || spec.class != "military" {
+            return false;
+        }
+        let from = unit.pos;
+        let mut best: Option<(f64, Pos)> = None;
+        for target in crate::hex::neighbors(from) {
+            let hostile = g.units_at(target).into_iter().any(|oid| {
+                g.units[&oid].owner == barb && g.rules.units[g.units[&oid].kind].class == "military"
+            });
+            if !hostile {
+                continue;
+            }
+            if self.legal_tactical_candidates && !g.melee_order_is_legal(pid, uid, target) {
+                continue;
+            }
+            let score =
+                self.exchange_score(g, uid, target, false) - self.attack_threshold(g, uid, target);
+            if score <= 0.0 {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|(old, old_pos)| score > *old || (score == *old && target < *old_pos))
+            {
+                best = Some((score, target));
+            }
+        }
+        let Some((score, target)) = best else {
+            return false;
+        };
+        think!(self.journal, Military, Detail,
+               "{} cuts down the raider beside it", plain(&g.units[&uid].kind);
+               "worth {score:.0} on the ordinary exchange, and the guard never \
+                leaves its charge to do it"; target);
+        g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
+    }
+
+    /// Whether a barbarian stands close enough to one of our civilians in the
+    /// FIELD to take it. See `barbarian_hunt`.
+    ///
+    /// "In the field" means a civilian that is not standing on one of our own
+    /// cities: a Settler on the road, a Builder improving a frontier tile, a
+    /// Trader on a route. A civilian inside a city is already covered by the
+    /// city reading above, and counting it here would re-admit the seat for
+    /// every camp the empire ever walks past.
+    ///
+    /// Every barbarian MILITARY unit counts, Scouts included — see the
+    /// `barbarian_hunt` note on why that does not contradict
+    /// `barbarian_scouts_are_scouts`.
+    pub(crate) fn barbarian_threatens_our_field_civilians(g: &Game, pid: usize) -> bool {
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        let my_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        let exposed: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .filter(|unit| g.rules.units[unit.kind].class != "military")
+            .map(|unit| unit.pos)
+            .filter(|pos| !my_cities.contains(pos))
+            .collect();
+        if exposed.is_empty() {
+            return false;
+        }
+        g.units
+            .values()
+            .filter(|unit| unit.owner == barb)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .any(|raider| {
+                exposed
+                    .iter()
+                    .any(|civilian| g.wdist(raider.pos, *civilian) <= HOME_THREAT_RADIUS)
+            })
+    }
+
     /// measured threat *to our own cities*. This does, and answers the worst
     /// threats with the nearest sufficient units before the offensive claims them.
     ///
@@ -13994,8 +14152,14 @@ impl BasicAi {
         // claim.
         if !self.minor && !self.barb {
             if let Some(barb) = g.barb_pid {
+                // `barbarian_hunt` adds the second reading: a raider standing
+                // over one of our Settlers ten tiles from the nearest city is
+                // outside every ring the presence test measures, and eight
+                // Settlers were taken in one 104-turn run inside that gap.
                 if self.barbarian_tactics
-                    && Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
+                    && (Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
+                        || (self.barbarian_hunt
+                            && Self::barbarian_threatens_our_field_civilians(g, pid)))
                     && !enemy_ids.contains(&barb)
                 {
                     enemy_ids.push(barb);
@@ -14274,7 +14438,37 @@ impl BasicAi {
         uid: u32,
         decline_settlers: bool,
     ) -> bool {
-        if !self.civilian_rescue || g.rules.units[g.units[&uid].kind].class != "military" {
+        // ★★★★★ THE BARBARIANS IN THIS ENGINE DO NOT HUNT CIVILIANS, AND THE
+        // ONES IN CIVILIZATION VI DO NOTHING ELSE.
+        //
+        // MEASURED, `ai_eval live live_without_camp_reach`, 6 pairs / 36
+        // seat-games each, 6 players, 150 turns, online speed:
+        // **civilians lost to barbarians 0.31 and 0.25 per game**. The live
+        // Civilization VI seat on the same shape lost **8 Settlers and 2
+        // Builders in 104 turns** on run civvis-20260821T130446Z and **4 and 4
+        // by turn 62** on civvis-20260821T133955Z. That is a factor of roughly
+        // THIRTY, and it is a fidelity bug rather than a tuning question: an
+        // undefended Settler is the single most valuable thing on a
+        // Civilization VI map and the barbarian AI beelines for it.
+        //
+        // The cause is this gate. `capture_adjacent_civilian` is ungated, so a
+        // barbarian takes a Settler that happens to end its turn next to one —
+        // an accident. The PURSUIT, which is what actually costs the empire its
+        // walkers, was gated behind `civilian_rescue`, a flag the barbarian
+        // seat never carries (`BasicAi::new()` ships it off and the barbarian
+        // controller is a `BasicAi`). So raiders marched at the camp's reported
+        // CITY and walked past Settlers on the road.
+        //
+        // ⚠ THIS CHANGES EVERY SIMULATED GAME, deliberately. Any measurement
+        // that priced a settler-protection treatment before this date was
+        // pricing it against an opponent that did not take settlers, and read
+        // as noise for that reason. The raid leash still applies below, so this
+        // is a barbarian that hunts what is in its own raid ring, not one that
+        // chases a walker across the map.
+        let barbarian_hunter = self.barb && self.barbarian_tactics;
+        if (!self.civilian_rescue && !barbarian_hunter)
+            || g.rules.units[g.units[&uid].kind].class != "military"
+        {
             return false;
         }
         let origin = g.units[&uid].pos;
@@ -14315,6 +14509,12 @@ impl BasicAi {
                 }
                 let distance = g.wdist(origin, other.pos);
                 if distance < 2 || distance > reach {
+                    return None;
+                }
+                // The raid ring is what keeps a successful raid from becoming
+                // an all-map chase; a hunted civilian is not an exemption from
+                // it. See `barbarian_target_allowed_for_controller`.
+                if !self.barbarian_target_allowed_for_controller(g, uid, other.pos) {
                     return None;
                 }
                 // A civilian standing under an enemy military unit cannot be
@@ -19059,6 +19259,82 @@ mod tests {
             Some((pid, Action::Pillage { unit })) if *pid == barb && *unit == raider
         ));
         assert!(g.map.tiles[&raid_tile].pillaged);
+    }
+
+    /// ★★★★★ THE BARBARIANS DID NOT TAKE SETTLERS AND THE LIVE SEAT KEPT
+    /// LOSING THEM.
+    ///
+    /// MEASURED before this change, `ai_eval live live_without_camp_reach`,
+    /// 36 seat-games an arm, 6 players, 150 turns, online speed: **0.31 and
+    /// 0.25 civilians lost to barbarians per game**. The live Civilization VI
+    /// seat lost **eight Settlers and two Builders in 104 turns** on run
+    /// civvis-20260821T130446Z. A simulation thirty times gentler than the
+    /// thing it models cannot price a settler-protection treatment at all —
+    /// the effect is smaller than the noise by construction.
+    ///
+    /// `capture_adjacent_civilian` was ungated, so a raider took a Settler it
+    /// happened to end its turn beside. The PURSUIT — walking to one two or
+    /// three tiles off, which is what actually costs an empire its walkers —
+    /// sat behind `civilian_rescue`, and the barbarian seat is a `BasicAi`
+    /// that never carries it.
+    #[test]
+    fn a_barbarian_walks_to_an_undefended_settler_inside_its_raid_ring() {
+        let take = |tactics: bool| -> bool {
+            let (mut g, city, raider) = barbarian_at_the_gates_game(84);
+            let barb = g.units[&raider].owner;
+            let cpos = g.cities[&city].pos;
+            let home = g.units[&raider].pos;
+            // The camp that owns this raider, so the leash below is satisfied
+            // and the walk is a raid rather than an all-map chase.
+            g.barb_camps.insert(home, g.turn + 1_000);
+            g.barb_raider_homes.insert(raider, home);
+            let road = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| {
+                    g.wdist(*pos, home) == 2
+                        && g.wdist(*pos, cpos) > 1
+                        && g.map.get(*pos).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                        && g.units_at(*pos).is_empty()
+                        && g.city_at(*pos).is_none()
+                })
+                .min()
+                .expect("open ground two tiles from the raider");
+            let settler = g.spawn_test_unit("settler", 0, road);
+            let mut ai = BasicAi::new();
+            ai.barb = true;
+            ai.barbarian_tactics = tactics;
+            // Seat-turns, not forced `current` writes: the walk is one step per
+            // call and a unit only gets its movement back when the turn really
+            // comes round to it. Six is three world turns for a two-seat board,
+            // ample for a two-tile approach.
+            for _ in 0..6 {
+                let pid = g.current;
+                if pid == barb {
+                    ai.take_turn(&mut g, barb);
+                    if g.units.get(&settler).is_some_and(|unit| unit.owner == barb) {
+                        return true;
+                    }
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            false
+        };
+        assert!(
+            take(true),
+            "a barbarian two tiles from an undefended Settler must walk onto it"
+        );
+        assert!(
+            !take(false),
+            "and it must still be the barbarian tactics that decide it, so the \
+             frozen no-tactics controller plays the game it always did"
+        );
     }
 
     #[test]

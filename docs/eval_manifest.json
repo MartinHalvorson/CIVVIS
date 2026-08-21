@@ -1,10 +1,11 @@
 {
   "coverage": {
     "named": 43,
-    "never_named": 16,
+    "never_named": 17,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
+      "barbarian-hunt": "live_without_barbarian_hunt",
       "barbarian-walls-one-tier": "live_without_barbarian_walls_one_tier",
       "blind-objective-strength": "live_without_blind_objective_strength",
       "blind-objective-units": "live_without_blind_objective_units",
@@ -23,6 +24,7 @@
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
+      "barbarian-hunt",
       "barbarian-walls-one-tier",
       "blind-objective-strength",
       "blind-objective-units",
@@ -38,14 +40,14 @@
       "suzerain-cards",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 59
+    "withholdable": 60
   },
   "derived": {
-    "eval_only_count": 242,
+    "eval_only_count": 243,
     "firaxis_only_count": 33,
-    "live_bridge_count": 92,
-    "native_engine_repair_count": 59,
-    "withholdable_live_count": 59
+    "live_bridge_count": 93,
+    "native_engine_repair_count": 60,
+    "withholdable_live_count": 60
   },
   "ladder": {
     "ahead": 12,
@@ -143,7 +145,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 59,
+      "declared_count": 60,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -173,6 +175,7 @@
         "recon-replacement",
         "recon-flight",
         "barbarian-scouts-are-scouts",
+        "barbarian-hunt",
         "civilian-rescue",
         "naval-recon",
         "camp-reach",
@@ -207,7 +210,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 33,
+      "declared_count": 34,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -237,6 +240,7 @@
         "recon-replacement",
         "recon-flight",
         "barbarian-scouts-are-scouts",
+        "barbarian-hunt",
         "civilian-rescue",
         "naval-recon",
         "camp-reach",
@@ -245,7 +249,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 242,
+      "declared_count": 243,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -330,6 +334,7 @@
         "live_without_settler_target_hysteresis",
         "live_without_tally_great_people",
         "live_without_barbarian_scouts_are_scouts",
+        "live_without_barbarian_hunt",
         "live_without_camp_reach",
         "live_without_settler_stack_discipline",
         "live_without_camp_party",
@@ -530,7 +535,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 92,
+      "declared_count": 93,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -600,6 +605,7 @@
         "settler-target-hysteresis",
         "tally-great-people",
         "barbarian-scouts-are-scouts",
+        "barbarian-hunt",
         "camp-reach",
         "settler-stack-discipline",
         "camp-party",
