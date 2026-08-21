@@ -3641,6 +3641,29 @@ pub struct AdvancedAi {
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
 
+    /// Open a surprise war when the board offers a prize — an unescorted
+    /// enemy Settler or Builder, or a cluster of unpillaged tiles — within a
+    /// short march of our soldiers, take it, and sue for peace.
+    ///
+    /// ★★★★ NO ROAD TO WAR IN THIS CONTROLLER READS THE BOARD. The elective
+    /// branch, the timed appointment, the ancient rush and victory denial all
+    /// price the empires (`military_power` ratios, a staged army at a city, a
+    /// rival's clock); none asks what is lying around unguarded, which is the
+    /// one thing a human checks before a surprise war. A captured Settler is a
+    /// free city. With this on, `opportunistic_war_diplomacy` prices every
+    /// admissible neighbour's exposed Settlers, Builders and pillage tiles
+    /// within `RAID_STRIKE_TURNS` of a land soldier, declares (by surprise;
+    /// the formal route's five-turn clock cannot reach a moving Settler) when
+    /// the total clears `RAID_WAR_MIN_VALUE` against a neighbour no stronger
+    /// than `RAID_POWER_RATIO` of us, walks the soldiers onto the prizes
+    /// (`raid_prize_step`), keeps the grand strategy on its economic plan
+    /// while the raid is the only war (`raid_only_war`), and proposes peace
+    /// once nothing is left in reach. Off everywhere by default; opt-in gene
+    /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
+    pub opportunistic_war: bool,
+    /// The raid `opportunistic_war` opened and has not yet closed.
+    raid_war: Option<opportunistic_war::RaidWar>,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -4049,6 +4072,11 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// The opportunistic war: a surprise war priced on what the board exposes —
+/// unescorted Settlers and Builders, unpillaged tiles — taken by movement
+/// and closed by peace. See `advanced/opportunistic_war.rs`.
+mod opportunistic_war;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -4664,6 +4692,8 @@ impl AdvancedAi {
             founder_temple: false,
             theology_for_founders: false,
             idle_faith_patronage: false,
+            opportunistic_war: false,
+            raid_war: None,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -7550,6 +7580,12 @@ impl AdvancedAi {
             .filter(|rival| !g.players[*rival].is_minor)
             .collect();
         let at_war = !wartime_rivals.is_empty();
+        // See `opportunistic_war`: a raid is a bounded war the empire chose
+        // for a prize, priced against that one neighbour. While it is the
+        // only major war it neither pins the plan on Conquest nor drops it
+        // into the power-gap Recovery a strong third party would trigger;
+        // a threatened city still does.
+        let raid_only_war = self.raid_only_war(g, pid);
         let strongest_rival = major_rivals
             .iter()
             .map(|o| g.military_power(*o))
@@ -7781,7 +7817,8 @@ impl AdvancedAi {
                     && my_power * 2.0 < g.military_power(rival)
             });
         let (strategy, because) = if at_war
-            && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
+            && (threatened_city.is_some()
+                || (my_power * 1.25 < strongest_rival && !recovery_is_stale && !raid_only_war))
         {
             (
                 GrandStrategy::Recovery,
@@ -7832,7 +7869,7 @@ impl AdvancedAi {
                 counter,
                 "countering a rival close to winning",
             )
-        } else if at_war && !stalemate {
+        } else if at_war && !stalemate && !raid_only_war {
             (
                 GrandStrategy::Conquest,
                 "already at war",
@@ -13500,6 +13537,12 @@ impl AdvancedAi {
             )
         {
             self.base.levy_city_state_military(g, pid, true);
+        }
+        // See `opportunistic_war`: close a raid that has paid, or open one on
+        // a prize the board exposes this turn. A declaration here is the
+        // turn's one declaration.
+        if self.opportunistic_war_diplomacy(g, pid, plan) {
+            return;
         }
         let Some(target) = plan.target_player else {
             return;
@@ -27211,6 +27254,12 @@ impl AdvancedAi {
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
         {
             return true;
+        }
+        // See `opportunistic_war`: during a raid, pillage under our feet or
+        // walk to the nearest prize. The adjacent capture above already took
+        // anything one step away.
+        if let Some(acted) = self.raid_prize_step(g, pid, uid, decline_settlers) {
+            return acted;
         }
         if self.base.tactical_strategy
             && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")

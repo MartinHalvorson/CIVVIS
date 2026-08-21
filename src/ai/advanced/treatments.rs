@@ -193,4 +193,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // A surprise war priced on what the board exposes — an unescorted
+    // Settler or Builder, a cluster of unpillaged tiles — taken by movement
+    // and closed by peace; see `AdvancedAi::opportunistic_war`.
+    ("opportunistic_war", "opportunistic-war", AdvancedAi::enable_opportunistic_war),
 ];

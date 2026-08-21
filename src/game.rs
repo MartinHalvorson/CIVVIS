@@ -36592,7 +36592,18 @@ impl Game {
         Ok(())
     }
 
-    fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+    pub(crate) fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, true)
+    }
+
+    /// `pillageable_at` with the state of war assumed: what a declaration on
+    /// the tile's owner would put on the table. The advanced controller's
+    /// opportunistic war prices a surprise war on this before opening it.
+    pub(crate) fn pillageable_after_declaring(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, false)
+    }
+
+    fn pillageable_at_with(&self, pid: usize, pos: Pos, require_war: bool) -> bool {
         let Some(tile) = self.map.get(pos) else {
             return false;
         };
@@ -36605,7 +36616,10 @@ impl Game {
         let Some(city) = self.cities.get(&cid) else {
             return false;
         };
-        if city.owner == pid || !self.is_at_war(pid, city.owner) || self.city_at(pos).is_some() {
+        if city.owner == pid
+            || (require_war && !self.is_at_war(pid, city.owner))
+            || self.city_at(pos).is_some()
+        {
             return false;
         }
         if let Some(improvement) = tile.improvement.as_deref() {
