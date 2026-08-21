@@ -13036,6 +13036,10 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
         assert!(monsters.contains(".21"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
 
         let seating = EMBEDDED_INDEX
             .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
@@ -13046,6 +13050,8 @@ mod tests {
         assert!(seating.contains("hiddenMapMonsterSeatRadius"));
         assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
         assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE = 10"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13061,7 +13067,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 1.85 *"));
+        assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
