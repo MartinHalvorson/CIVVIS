@@ -113,6 +113,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
     ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
     ("barbarian_bargain", "barbarian-bargain", AdvancedAi::disable_barbarian_bargain),
+    ("barbarian_ranged_answer", "barbarian-ranged-answer", AdvancedAi::disable_barbarian_ranged_answer),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),

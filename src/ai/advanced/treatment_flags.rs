@@ -1195,6 +1195,10 @@ impl AdvancedAi {
         // the barbarians attacked us 867 times to our 290. See
         // `BasicAi::barbarian_bargain`.
         self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -1389,6 +1393,10 @@ impl AdvancedAi {
         // barbarians attacked us 867 times to our 290. See
         // `BasicAi::barbarian_bargain`.
         self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
@@ -1607,9 +1615,18 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
-    /// Deliberate camp clearing as a peacetime errand. See
-    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
-    /// See `BasicAi::barbarian_bargain`; withheld by `barbarian-bargain`.
+    /// Answer a ring of shooters with a shooter. See
+    /// `BasicAi::barbarian_ranged_answer`; withheld by `barbarian-ranged-answer`.
+    pub fn enable_barbarian_ranged_answer(&mut self) {
+        self.base.enable_barbarian_ranged_answer();
+    }
+
+    pub fn disable_barbarian_ranged_answer(&mut self) {
+        self.base.disable_barbarian_ranged_answer();
+    }
+
+    /// Price a raider's life below a major's. See `BasicAi::barbarian_bargain`;
+    /// withheld by `barbarian-bargain`.
     pub fn enable_barbarian_bargain(&mut self) {
         self.base.enable_barbarian_bargain();
     }
@@ -1628,6 +1645,8 @@ impl AdvancedAi {
         self.base.disable_barbarian_hunt();
     }
 
+    /// Deliberate camp clearing as a peacetime errand. See
+    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
     pub fn enable_camp_bounty(&mut self) {
         self.base.camp_bounty = true;
     }

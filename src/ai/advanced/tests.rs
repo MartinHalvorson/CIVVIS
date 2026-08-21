@@ -23704,6 +23704,79 @@ fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
     let _ = raider_again;
 }
 
+/// ★★★★★ WE ANSWER SLINGERS AND ARCHERS WITH SPEARMEN.
+///
+/// `barbarian_defense_item` asks for a melee-capable land defender whatever the
+/// ring is made of. MEASURED across every live run since the melee bridge was
+/// repaired: the barbarians take **45 % of their 867 attacks ranged** while we
+/// take **22 % of our 290** that way — and ranged is the safe half of the
+/// board. Our 65 ranged attacks killed 34 and lost the attacker **zero** times;
+/// our 225 melee attacks killed 119 and lost 6. A Spearman walking at an Archer
+/// eats the shot going in and the counter on arrival.
+#[test]
+fn a_ring_of_shooters_is_answered_by_a_shooter_and_a_melee_ring_is_not() {
+    let ranged_answer = |shooters: usize, brawlers: usize, gene: bool| -> Option<String> {
+        let (mut game, home) = camp_bounty_board(90_079);
+        let barb = game.barb_pid.unwrap();
+        let cid = game.player_city_ids(0)[0];
+        let mut ring: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.wdist(*pos, home) == 2
+                    && game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .collect();
+        ring.sort_unstable();
+        for (placed, kind) in std::iter::repeat_n("archer", shooters)
+            .chain(std::iter::repeat_n("warrior", brawlers))
+            .enumerate()
+        {
+            let pos = ring[placed];
+            game.spawn_test_unit(kind, barb, pos);
+        }
+        let mut ai = AdvancedAi::new();
+        ai.base.barbarian_ranged_answer = gene;
+        match ai.base.barbarian_defense_item(&game, 0, cid) {
+            Some(Item::Unit { unit }) => Some(unit.to_string()),
+            _ => None,
+        }
+    };
+    let (probe, _) = camp_bounty_board(90_079);
+    let shoots = |name: &str| {
+        probe
+            .rules
+            .units
+            .iter()
+            .find(|(key, _)| key.as_str() == name)
+            .map(|(_, spec)| spec.has_ranged_attack())
+            .unwrap_or(false)
+    };
+    let shooter_ring = ranged_answer(2, 0, true).expect("a ring of archers asks for a defender");
+    assert!(
+        shoots(&shooter_ring),
+        "a ring of shooters must be answered by a shooter, got {shooter_ring}"
+    );
+    let same_ring_without = ranged_answer(2, 0, false).expect("still asks for a defender");
+    assert!(
+        !shoots(&same_ring_without),
+        "without the gene the historical melee answer stands, got {same_ring_without}"
+    );
+    // A melee ring keeps the melee answer with the gene ON: this changes WHICH
+    // defender, never how many, and only when the ring is genuinely shooters.
+    let brawler_ring = ranged_answer(0, 2, true).expect("a melee ring asks for a defender");
+    assert!(
+        !shoots(&brawler_ring),
+        "a melee ring must keep its melee answer, got {brawler_ring}"
+    );
+}
+
 /// The gene widens WHO may be shot at, not how far the empire will march. A
 /// barbarian with no civilian of ours anywhere near it is still nobody's
 /// business, or every camp on the map becomes a reason to mobilise — the

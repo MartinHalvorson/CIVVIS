@@ -4872,6 +4872,12 @@ impl AdvancedAi {
         self.base.barbarian_bargain
     }
 
+    /// Whether a shooter answers a ring of shooters. See
+    /// `BasicAi::barbarian_ranged_answer`.
+    pub fn barbarian_ranged_answer(&self) -> bool {
+        self.base.barbarian_ranged_answer
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {
