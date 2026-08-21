@@ -13,7 +13,8 @@ whole-genome screen still appears, from its own screen), the **latest war
 source** supplies the war column, and the deployment verdict comes from the
 ledger. Genes whose code has been removed this cycle are listed from their last
 measurement, as before. Descriptions are the first sentence of each toggle's
-doc comment in `src/ai/advanced/treatment_flags.rs`.
+doc comment in `src/ai/advanced/treatment_flags.rs`. Hand-written follow-ups
+go in `docs/gene_ranking_notes.md` and are carried under the table.
 
 `tools/test_heuristic_gene_ranking.py` holds the file to the sources, so the
 ranking cannot quietly fall behind the ledger.
@@ -30,6 +31,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 ELO_RS = ROOT / "src" / "elo.rs"
@@ -222,6 +224,14 @@ def render(ledger: dict) -> str:
                 f"{100 * m['win_off']:.2f}% | `{src}` |"
             )
 
+    # Hand-written follow-ups live in `docs/gene_ranking_notes.md` and are
+    # carried under the table, so a reading written against one screen is
+    # not lost when the table regenerates.
+    if NOTES_MD.exists():
+        notes = [line for line in NOTES_MD.read_text().splitlines() if not line.startswith("<!--")]
+        body = "\n".join(notes).strip()
+        if body:
+            lines += ["", "## Follow-ups", "", body]
     sources = ", ".join(f"`{Path(s['path']).name}` ({s['regime']}, {s['complete_pairs']:,} pairs)" for s in ledger["sources"])
     lines += [
         "",

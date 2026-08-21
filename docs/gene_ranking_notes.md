@@ -1,0 +1,3 @@
+<!-- Notes the heuristic gene ranking carries verbatim, under its table. Edit here, not in HEURISTIC_GENE_RANKING.md (generated). -->
+
+**Direct follow-up.** This is a ranking screen, not a promotion queue. The subsequent [P9 direct confirmation](docs/eval/2026-08-21-current-genome-settler-guard-direct-confirmation.md) held every other deployment gene fixed and flipped only `settler-guard-holds` across 300 maps / 1,800 treated-seat pairs. It measured exactly **+0.0 pp** on wins and score share; the flag remains unresolved and off. Its +13 row below is retained as historical p7 screen output, not a current recommendation.
