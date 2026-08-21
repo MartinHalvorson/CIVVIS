@@ -3832,6 +3832,25 @@ function lightness(hex) {
 // pictogram the token exists to carry. Prefer the jersey's partner when it has
 // useful contrast, then fall back to map-ink dark or cream.
 function unitTokenInk(owner) {
+  // ⚠ THE BARBARIAN JERSEY IS AUTHORED, NOT ASSIGNED, SO IT IS NOT THE RESCUE'S
+  // TO OVERRULE. Civ 6 dresses Barbarians as a red field with a crisp near-black
+  // pictogram and #2230 adopted exactly that pair -- but the rescue below scores
+  // separation as a LUMINANCE difference, and #ca1415 against #181818 clears
+  // only 0.136 of its 0.34 bar. So the rescue repainted the pictogram cream
+  // (#f0ead8), the token still read red-and-white, and the change looked like it
+  // had never landed. It shipped that way because the jersey test asserted the
+  // CONSTANT and nothing asserted the ink.
+  //
+  // ⚠⚠ BARBARIANS ONLY -- deliberately not every `nonMajorJersey`, and
+  // deliberately not a switch of the rescue to perceptual ΔE:
+  //   * Free Cities wear #30262a on #8a3a34, dark on dark at ΔE 40, and their
+  //     pictogram genuinely is more legible in the rescue's cream.
+  //   * Measured over the 421 authored pairs, a ΔE floor flips 87 (at 70) to
+  //     142 (at 25) of them from cream to their partner, and Barbarian's ΔE 88.9
+  //     sits at the 56th percentile of the rescued set -- no floor separates it
+  //     from the majors whose near-black halves the rescue exists to protect.
+  const player = state.players?.[owner];
+  if (player?.is_barbarian && !player.is_free_city) return BARBARIAN_JERSEY[1];
   const primaryLight = lightness(pcol(owner));
   const partner = pcol2(owner);
   if (Math.abs(primaryLight - lightness(partner)) >= .34) return partner;
