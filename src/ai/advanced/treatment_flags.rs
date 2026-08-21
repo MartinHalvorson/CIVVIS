@@ -148,6 +148,17 @@ impl AdvancedAi {
         self.base.garrison_bleed_tolerance = false;
     }
 
+    /// Patience only while a wall is visibly falling. See
+    /// [`AdvancedAi::war_patience_progress`].
+    pub fn enable_war_patience_progress(&mut self) {
+        self.war_patience_progress = true;
+    }
+
+    /// The twin of `enable_war_patience_progress`.
+    pub fn disable_war_patience_progress(&mut self) {
+        self.war_patience_progress = false;
+    }
+
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {

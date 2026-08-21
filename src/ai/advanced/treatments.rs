@@ -194,5 +194,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // variant-vs-current by single-gene screens.
     ("wide_map_denser", "wide-map-denser", AdvancedAi::enable_wide_map_denser),
     ("garrison_bleed_tolerance", "garrison-bleed-tolerance", AdvancedAi::enable_garrison_bleed_tolerance),
+    ("war_patience_progress", "war-patience-progress", AdvancedAi::enable_war_patience_progress),
 
 ];

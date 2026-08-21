@@ -1388,6 +1388,82 @@ fn only_a_foreign_city_acquisition_refreshes_live_war_patience() {
     assert!(!ai.war_patience_exhausted(&game));
 }
 
+/// `war_patience_progress`: patience holds only while a wall is visibly
+/// falling. Inside the grace window a young war is progressing by
+/// definition; past it, every enemy city at full garrison and wall health
+/// reads as a campaign the army is not fighting, and either pool showing
+/// damage restores the patience. Our own damaged city is not progress, and
+/// the variant ships off everywhere — including the live universe — until a
+/// screen proves it.
+#[test]
+fn war_patience_progress_needs_a_visibly_falling_wall() {
+    let mut game = Game::new_full(2, 24, 16, 7_925, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let my_city = game.player_city_ids(0)[0];
+    let enemy_city = game.player_city_ids(1)[0];
+    game.current = 0;
+    game.turn = 60;
+    game.record_contact(0, 1);
+    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_war_patience();
+    ai.enable_war_patience_progress();
+    ai.observe_campaign(&game, 0);
+    assert_eq!(ai.last_campaign_progress, 60);
+
+    game.turn = 65;
+    assert!(
+        ai.war_patience_progressing(&game, 0),
+        "a war inside its grace window has not had time to crack a wall"
+    );
+
+    game.turn = 80;
+    assert!(!ai.war_patience_exhausted(&game), "the 40-turn limit is not up");
+    assert!(
+        !ai.war_patience_progressing(&game, 0),
+        "past the grace, full garrison and wall health is no progress"
+    );
+
+    game.cities.get_mut(&enemy_city).unwrap().hp = 150;
+    assert!(
+        ai.war_patience_progressing(&game, 0),
+        "a damaged enemy garrison is a wall coming down"
+    );
+    game.cities.get_mut(&enemy_city).unwrap().hp = 200;
+    assert!(!ai.war_patience_progressing(&game, 0));
+
+    game.cities.get_mut(&my_city).unwrap().hp = 120;
+    assert!(
+        !ai.war_patience_progressing(&game, 0),
+        "our own damaged city is the enemy's progress, not ours"
+    );
+    game.cities.get_mut(&my_city).unwrap().hp = 200;
+
+    ai.disable_war_patience_progress();
+    assert!(
+        ai.war_patience_progressing(&game, 0),
+        "with the variant off the gate never bites"
+    );
+
+    assert!(!AdvancedAi::new().war_patience_progress);
+    assert!(!AdvancedAi::legacy().war_patience_progress);
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge_universe();
+    assert!(
+        !live.war_patience_progress,
+        "an unscreened variant ships off, the live universe included"
+    );
+}
+
 /// A stalled war against an overwhelmed campaign target is neither offered
 /// away nor accepted away while `war_patience` is on; a stalled war
 /// against anyone else keeps the shipped fatigue shape.
