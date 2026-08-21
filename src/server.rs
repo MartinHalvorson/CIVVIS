@@ -13986,7 +13986,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_use_base_game_formations_and_large_count_badges() {
+    fn browser_tile_yields_use_compact_base_game_formations_and_large_count_badges() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
@@ -14008,6 +14008,8 @@ mod tests {
         assert!(formations.contains("if (count === 3)"));
         assert!(formations.contains("Math.sqrt(3)"));
         assert!(formations.contains("if (count === 4) return ["));
+        assert!(formations.contains("const gap = .55 * r / 4.4;"));
+        assert!(formations.contains("const step = r * 2 + gap;"));
 
         let cluster = EMBEDDED_INDEX
             .split("function yieldPipCluster")
@@ -14017,6 +14019,7 @@ mod tests {
         assert!(cluster.contains("const summary = pips.length >= 5;"));
         assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
         assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+        assert!(cluster.contains("const edge = sign => sign.r + YIELD_PIP_RIM;"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
@@ -14036,6 +14039,9 @@ mod tests {
         assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
         assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
         assert!(pip.contains("label.length === 1 ? 1.25"));
+        assert!(pip.contains("cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7);"));
+        assert!(pip.contains("cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PIP_RIM = .58;"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
         assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
