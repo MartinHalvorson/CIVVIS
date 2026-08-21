@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -66,6 +67,19 @@ def axes_conflict(win_z: float, share_z: float) -> bool:
     return (win_z >= Z_BAR and share_z <= -Z_BAR) or (share_z >= Z_BAR and win_z <= -Z_BAR)
 
 
+TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
+ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::')
+
+
+def known_tags() -> set[str]:
+    """Every gene tag the repository registers — the `(field, tag, toggle)`
+    rows of `LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS` and
+    `PRODUCTION_OPT_INS` in `src/ai/advanced/treatments.rs`. A screen played
+    on an older build can carry a gene whose code has since been removed;
+    its row must not enter the ledger (the Rust table refuses unknown tags)."""
+    return {tag for _, tag in ROW.findall(TREATMENTS_RS.read_text())}
+
+
 def load_source(path: Path) -> dict:
     data = json.loads(path.read_text())
     if data.get("kind") != "gene_screen_analysis":
@@ -87,11 +101,14 @@ def measure_from(gene: dict, source_name: str) -> dict:
     }
 
 
-def build_ledger(sources: list[tuple[Path, str]]) -> dict:
-    """Merge the sources into one ledger object (the JSON file's content)."""
+def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> dict:
+    """Merge the sources into one ledger object (the JSON file's content).
+    `filter_known=False` keeps every tag (synthetic tests)."""
     measures: dict[str, dict[str, dict]] = {}
     family: dict[str, float] = {}
     recorded = []
+    known = known_tags() if filter_known else set()
+    dropped: set[str] = set()
     for path, regime in sources:
         if regime not in REGIMES:
             raise SystemExit(f"--regime {regime!r} is not one of {REGIMES}")
@@ -116,7 +133,13 @@ def build_ledger(sources: list[tuple[Path, str]]) -> dict:
             },
         })
         for gene in data.get("genes", []):
+            if known and gene["tag"] not in known:
+                dropped.add(gene["tag"])
+                continue
             measures.setdefault(gene["tag"], {})[regime] = measure_from(gene, name)
+    if dropped:
+        print("gene ledger: dropped rows for genes the repository no longer registers: "
+              + ", ".join(sorted(dropped)), file=sys.stderr)
 
     genes = []
     for tag in sorted(measures):
