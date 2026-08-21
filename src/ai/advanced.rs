@@ -27737,14 +27737,29 @@ impl AdvancedAi {
         // No `alive` test on the seat: a barbarian player holds no cities, so
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
+        //
+        // ★★★★★ AND THIS IS THE ADMISSION THE ADVANCED CONTROLLER ACTUALLY
+        // USES. `BasicAi::military_step` holds a second copy of the same rule,
+        // and `barbarian_hunt` was added to that one alone: INSTRUMENTED over
+        // four `ai_eval` pairs, the `BasicAi` block ran **zero** times for the
+        // `live` entrant, because the Advanced controller only falls through to
+        // it when `enemies` is already empty for other reasons. A gene wired
+        // into the copy nobody reaches is a no-op, and the eval said so —
+        // "nothing differed: all 24 maps were neutral on wins AND on terminal
+        // score". Both readings belong in both places.
         if let Some(barb) = g.barb_pid {
+            let camp_reading = BasicAi::barbarian_presence_at_home_with_camp_radius(
+                g,
+                pid,
+                crate::ai::HOME_CAMP_RADIUS,
+            );
+            // A raider standing over a Settler ten tiles out is outside every
+            // ring the camp reading measures. See `BasicAi::barbarian_hunt`.
+            let field_reading =
+                self.barbarian_hunt() && BasicAi::barbarian_threatens_our_field_civilians(g, pid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && BasicAi::barbarian_presence_at_home_with_camp_radius(
-                    g,
-                    pid,
-                    crate::ai::HOME_CAMP_RADIUS,
-                )
+                && (camp_reading || field_reading)
             {
                 enemies.push(barb);
             }
