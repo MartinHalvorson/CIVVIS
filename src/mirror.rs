@@ -10811,8 +10811,7 @@ pub struct StateSnapshot {
     /// because the mod reports a refused wonder under `building` and a refused
     /// district under `district`, and the two translate against different rulesets.
     #[serde(default)]
-    pub refused_wonders:
-        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    pub refused_wonders: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// World-unique wonders a `build_no_plot` answer ruled out on every host
     /// location. This is deliberately separate from [`StateSnapshot::refused_wonders`]:
     /// a city-local refusal can be a terrain mismatch, while an explicit
@@ -12433,8 +12432,7 @@ pub fn state_from_events(
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
-        state.host_unavailable_wonders =
-            host_unavailable_wonders_through(path, Some(state.turn));
+        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
         state.refused_promotions = refused_promotions_through(path, turn);
@@ -16630,8 +16628,7 @@ pub fn rebuild_from_state(
         host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
     game.host_wonder_sites =
         host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
-    game.blocked_wonders =
-        blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.blocked_wonders = blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
     game.host_unavailable_wonders =
         host_unavailable_wonders_from(&state.host_unavailable_wonders, &game.rules);
     let blocked_production =
@@ -18485,15 +18482,18 @@ mod transient_refusal_tests {
     /// an old event without `offered` cannot prove that the wonder is gone.
     #[test]
     fn a_zero_site_wonder_becomes_a_permanent_world_fact() {
-        let p = events("world_wonder", &[
-            r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_GREAT_BATH","offered":0}"#,
-            r#"{"kind":"build_no_plot","turn":41,"city":8,"building":"BUILDING_PYRAMIDS","offered":2}"#,
-            r#"{"kind":"build_no_plot","turn":42,"city":8,"building":"BUILDING_ORACLE"}"#,
-            r#"{"kind":"build_no_plot","city":8,"building":"BUILDING_ORACLE","offered":0}"#,
-            r#"{"kind":"build_no_plot","turn":43,"city":8,"building":"BUILDING_NOT_MODELED","offered":0}"#,
-            r#"{"kind":"build_no_plot","turn":50,"city":8,"building":"BUILDING_HANGING_GARDENS","offered":0}"#,
-            r#"{"kind":"state","turn":49}"#,
-        ]);
+        let p = events(
+            "world_wonder",
+            &[
+                r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_GREAT_BATH","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":41,"city":8,"building":"BUILDING_PYRAMIDS","offered":2}"#,
+                r#"{"kind":"build_no_plot","turn":42,"city":8,"building":"BUILDING_ORACLE"}"#,
+                r#"{"kind":"build_no_plot","city":8,"building":"BUILDING_ORACLE","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":43,"city":8,"building":"BUILDING_NOT_MODELED","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":50,"city":8,"building":"BUILDING_HANGING_GARDENS","offered":0}"#,
+                r#"{"kind":"state","turn":49}"#,
+            ],
+        );
         let state = state_from_events(&p, None).expect("state at the current turn");
         assert_eq!(
             state.host_unavailable_wonders,
