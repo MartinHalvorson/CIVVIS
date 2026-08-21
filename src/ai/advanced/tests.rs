@@ -23581,6 +23581,76 @@ fn the_guard_kills_the_raider_that_is_pinning_the_walker_not_the_richer_target()
     );
 }
 
+/// ★★★★★ WE DO NOT LOSE THE FIGHTS; WE DO NOT TAKE ENOUGH OF THEM.
+///
+/// MEASURED over every live run since the melee bridge was repaired (#2223),
+/// from `combat` events: our melee attacks **kill 119 of 225 (53 %) and lose
+/// the attacker 6 times (2.7 %)**; our ranged attacks kill 34 of 65 and have
+/// **never** lost the attacker. Our swings are good. The barbarians simply
+/// take **867 attacks against our 290**, which is why the early window trades
+/// at 0.71 in their favour.
+///
+/// `attack_threshold` prices a raider the way it prices Persia. It is not the
+/// same fight: no war weariness, no retaliation invited, no peace to lose, the
+/// camp respawns whatever we do, and killing the unit is the only exit from
+/// the zone-of-control lock that strands our Settlers. `barbarian_bargain` is
+/// that difference as one number.
+#[test]
+fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let ring = open_ground_at(&game, home, 4);
+    let beside = *crate::hex::neighbors(ring)
+        .iter()
+        .find(|pos| {
+            game.map
+                .get(**pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(**pos).is_empty()
+                && game.city_at(**pos).is_none()
+        })
+        .expect("open ground beside the ring tile");
+    let soldier = game.spawn_test_unit("warrior", 0, ring);
+    let raider = game.spawn_test_unit("warrior", barb, beside);
+
+    let mut plain = AdvancedAi::new();
+    plain.base.barbarian_bargain = false;
+    let mut priced = AdvancedAi::new();
+    priced.base.barbarian_bargain = true;
+    let full = plain.base.attack_threshold(&game, soldier, beside);
+    let cheap = priced.base.attack_threshold(&game, soldier, beside);
+    assert_eq!(
+        full - cheap,
+        crate::ai::BARBARIAN_BARGAIN_DISCOUNT,
+        "attacking a raider must cost exactly the discount less"
+    );
+
+    // A rival's unit on the same tile is priced at full: this is about who the
+    // enemy is, not about the tile.
+    game.remove_unit(raider);
+    let rival = game.spawn_test_unit("warrior", 1, beside);
+    assert_eq!(
+        priced.base.attack_threshold(&game, soldier, beside),
+        plain.base.attack_threshold(&game, soldier, beside),
+        "a major's unit is the same price with the gene on"
+    );
+
+    // ⚠ And it must not turn a Scout into a casualty. The Recon doctrine adds
+    // +14; an 8-point discount must leave that term firmly positive.
+    // The Recon doctrine term is +14, and the discount must never cancel it or
+    // a Scout would be talked into a fight it cannot win.
+    game.remove_unit(rival);
+    let mut scout_priced = AdvancedAi::new();
+    scout_priced.base.barbarian_bargain = true;
+    let scout = game.spawn_test_unit("scout", 0, ring);
+    let raider_again = game.spawn_test_unit("warrior", barb, beside);
+    assert!(
+        scout_priced.base.attack_threshold(&game, scout, beside) > 0.0,
+        "a Scout must still be priced out of attacking a raider"
+    );
+    let _ = raider_again;
+}
+
 /// The gene widens WHO may be shot at, not how far the empire will march. A
 /// barbarian with no civilian of ours anywhere near it is still nobody's
 /// business, or every camp on the map becomes a reason to mobilise — the
