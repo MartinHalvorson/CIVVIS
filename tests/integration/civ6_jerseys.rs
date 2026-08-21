@@ -144,6 +144,15 @@ fn lab(hex: &str) -> [f64; 3] {
     [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
 }
 
+/// sRGB-weighted lightness, the same arithmetic `unitTokenInk` uses in
+/// `app.js`. Deliberately NOT `lab`/`delta_e` above: the point of the test
+/// below is to reproduce the rescue's own (luminance) measure and show that the
+/// Barbarian jersey fails it, which is why the explicit guard has to exist.
+fn luminance(hex: &str) -> f64 {
+    let channel = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex channel") as f64;
+    (0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)) / 255.0
+}
+
 /// CIE76 ΔE: how far apart two colours look, counting hue and chroma as well as
 /// lightness. See the module comment for why this and not WCAG contrast.
 fn delta_e(a: &str, b: &str) -> f64 {
@@ -352,5 +361,51 @@ fn every_jersey_pair_can_draw_a_two_tone_border() {
     println!(
         "tightest jersey: {name} {}/{} at ΔE {separation:.1} (floor {FLOOR})",
         pair[0], pair[1]
+    );
+}
+
+/// A jersey is only worn if something draws it.
+///
+/// #2230 changed `BARBARIAN_JERSEY` from red-and-white to red-and-black and the
+/// test above asserted exactly that -- the constant. But unit tokens do not read
+/// the constant; they read `unitTokenInk`, which rescues a pictogram whose ink
+/// is too close in LUMINANCE to its field. Barbarian red against near-black
+/// clears 0.136 of that 0.34 bar, so the rescue repainted the pictogram cream
+/// and every barbarian on the map still read red-and-white. Green tests, no
+/// visible change, and the report came from someone looking at the map.
+///
+/// So this asserts the ink reaches the token, and pins the arithmetic that makes
+/// the guard necessary: if the pair ever clears the bar on its own, this fails
+/// loudly and asks to be revisited rather than quietly becoming vacuous.
+#[test]
+fn the_barbarian_token_draws_its_jersey_ink_not_the_contrast_rescue() {
+    let jersey = js_array(INDEX, "BARBARIAN_JERSEY");
+    assert_eq!(
+        jersey.len(),
+        2,
+        "the Barbarian jersey is a [field, ink] pair"
+    );
+    let (field, ink) = (&jersey[0], &jersey[1]);
+
+    let separation = (luminance(field) - luminance(ink)).abs();
+    assert!(
+        separation < 0.34,
+        "Barbarian {field}/{ink} now clears unitTokenInk's contrast rescue at \
+         {separation:.3}; the explicit guard may be redundant -- re-check it \
+         rather than deleting this test"
+    );
+
+    assert!(
+        INDEX.contains(
+            "if (player?.is_barbarian && !player.is_free_city) return BARBARIAN_JERSEY[1];"
+        ),
+        "unitTokenInk must draw the hostile Barbarian pictogram in the jersey's own ink; \
+         without the guard the rescue paints it cream (#f0ead8) and the token reads \
+         red-and-white, exactly the jersey #2230 replaced"
+    );
+    assert!(
+        !INDEX.contains("if (player?.is_barbarian) return BARBARIAN_JERSEY[1];"),
+        "the guard must exclude Free Cities: they wear a dark-on-dark jersey whose \
+         pictogram is more legible in the rescue's cream"
     );
 }
