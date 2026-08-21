@@ -13037,15 +13037,9 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
         assert!(monsters.contains(".21"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
-        assert!(EMBEDDED_INDEX.contains(
-            "HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"
-        ));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
 
         let seating = EMBEDDED_INDEX
             .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
