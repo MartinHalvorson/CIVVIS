@@ -28907,8 +28907,7 @@ fn step_and_reassess_fires_check() {
         }
         eprintln!(
             "FIRES seed={seed} t{} blind_cuts={} engage={} hold={}",
-            game.turn,
-            census.step_reassessed, census.engage, census.hold
+            game.turn, census.step_reassessed, census.engage, census.hold
         );
     }
 }
