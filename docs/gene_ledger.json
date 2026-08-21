@@ -136,9 +136,9 @@
     }
   ],
   "counts": {
-    "helps": 12,
-    "hurts": 11,
-    "unresolved": 47
+    "helps": 11,
+    "hurts": 6,
+    "unresolved": 45
   },
   "genes": [
     {
@@ -259,36 +259,6 @@
         "share_z": -1.08,
         "read": "~",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
-      "tag": "arrival-waves",
-      "verdict": "unresolved",
-      "default_on": false,
-      "deciding_regime": null,
-      "family_wise": false,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -0.149,
-        "win_z": -0.344,
-        "share_delta_pp": -0.102,
-        "share_z": -1.426,
-        "read": "~",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": -3.008,
-        "win_z": -1.621,
-        "share_delta_pp": -0.485,
-        "share_z": -1.211,
-        "read": "~",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
       }
     },
     {
@@ -532,36 +502,6 @@
       }
     },
     {
-      "tag": "campus-every-city",
-      "verdict": "hurts",
-      "default_on": false,
-      "deciding_regime": "native",
-      "family_wise": true,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -1.874,
-        "win_z": -4.391,
-        "share_delta_pp": -0.403,
-        "share_z": -5.719,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": -2.444,
-        "win_z": -1.396,
-        "share_delta_pp": -0.554,
-        "share_z": -1.312,
-        "read": "~",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
-      }
-    },
-    {
       "tag": "civilian-rescue",
       "verdict": "unresolved",
       "default_on": false,
@@ -762,36 +702,6 @@
       }
     },
     {
-      "tag": "garrison-walls",
-      "verdict": "hurts",
-      "default_on": false,
-      "deciding_regime": "native",
-      "family_wise": false,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -1.086,
-        "win_z": -2.529,
-        "share_delta_pp": -0.13,
-        "share_z": -1.864,
-        "read": "hurts *",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.97,
-        "win_z": -0.868,
-        "share_delta_pp": -0.404,
-        "share_z": -1.463,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
       "tag": "governor-every-lane",
       "verdict": "hurts",
       "default_on": false,
@@ -897,36 +807,6 @@
         "win_z": 0.158,
         "share_delta_pp": 0.13,
         "share_z": 0.465,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
-      "tag": "housing-cards",
-      "verdict": "unresolved",
-      "default_on": false,
-      "deciding_regime": null,
-      "family_wise": false,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -0.089,
-        "win_z": -0.215,
-        "share_delta_pp": -0.005,
-        "share_z": -0.074,
-        "read": "~",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.152,
-        "win_z": -1.0,
-        "share_delta_pp": -0.151,
-        "share_z": -0.516,
         "read": "~",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
@@ -1089,36 +969,6 @@
         "share_z": 1.584,
         "read": "~",
         "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
-      }
-    },
-    {
-      "tag": "loyalty-policy-defence",
-      "verdict": "hurts",
-      "default_on": false,
-      "deciding_regime": "native",
-      "family_wise": false,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -1.071,
-        "win_z": -2.472,
-        "share_delta_pp": -0.105,
-        "share_z": -1.495,
-        "read": "hurts *",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.03,
-        "win_z": -0.89,
-        "share_delta_pp": -0.383,
-        "share_z": -1.345,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
     },
     {
@@ -1542,36 +1392,6 @@
       }
     },
     {
-      "tag": "settler-stack-discipline",
-      "verdict": "hurts",
-      "default_on": false,
-      "deciding_regime": "native",
-      "family_wise": true,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -2.32,
-        "win_z": -5.476,
-        "share_delta_pp": -0.309,
-        "share_z": -4.43,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.606,
-        "win_z": -0.537,
-        "share_delta_pp": -0.25,
-        "share_z": -0.913,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
       "default_on": false,
@@ -1657,36 +1477,6 @@
         "win_z": 1.995,
         "share_delta_pp": 0.508,
         "share_z": 1.791,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
-      "tag": "siege-muster",
-      "verdict": "helps",
-      "default_on": true,
-      "deciding_regime": "native",
-      "family_wise": false,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -0.521,
-        "win_z": -1.208,
-        "share_delta_pp": 0.216,
-        "share_z": 3.133,
-        "read": "share helps *",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.424,
-        "win_z": 0.376,
-        "share_delta_pp": 0.269,
-        "share_z": 0.956,
         "read": "~",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
@@ -1778,36 +1568,6 @@
         "share_delta_pp": 0.01,
         "share_z": 0.036,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
-      }
-    },
-    {
-      "tag": "stacked-escort",
-      "verdict": "hurts",
-      "default_on": false,
-      "deciding_regime": "native",
-      "family_wise": true,
-      "conflict": false,
-      "native": {
-        "pairs": 13446,
-        "n_on": 13446,
-        "n_off": 13446,
-        "win_delta_pp": -2.082,
-        "win_z": -4.814,
-        "share_delta_pp": 0.034,
-        "share_z": 0.486,
-        "read": "HURTS **",
-        "source": "2026-08-20-p4-native-6p-allseats-13446-pairs.json"
-      },
-      "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -3.273,
-        "win_z": -2.842,
-        "share_delta_pp": -0.751,
-        "share_z": -2.621,
-        "read": "hurts * \u00b7 share hurts *",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
     },

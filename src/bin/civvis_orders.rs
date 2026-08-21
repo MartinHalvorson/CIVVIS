@@ -5634,14 +5634,6 @@ mod tests {
             .expect("the camp-reach control arm is registered");
         assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
 
-        assert!(ai.settler_stack_discipline());
-        withhold_live_treatment(&mut ai, "settler-stack-discipline")
-            .expect("the settler-stack-discipline control arm is registered");
-        assert!(
-            !ai.settler_stack_discipline(),
-            "the named settler-stack-discipline control must hold it off"
-        );
-
         assert!(ai.camp_party());
         withhold_live_treatment(&mut ai, "camp-party")
             .expect("the camp-party control arm is registered");
@@ -5709,22 +5701,22 @@ mod tests {
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
         let forced = super::forced_live_treatments(&[
-            "stacked-escort".to_string(),
-            "stacked-escort".to_string(),
+            "governor-every-lane".to_string(),
+            "governor-every-lane".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
-        assert_eq!(forced, vec!["stacked-escort"], "the arm is deduplicated");
+        assert_eq!(forced, vec!["governor-every-lane"], "the arm is deduplicated");
 
         let mut ai = civvis::ai::AdvancedAi::new();
         super::configure_live_bridge(&mut ai, &forced, &[])
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"stacked-escort"),
+                .contains(&"governor-every-lane"),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.settler_stack_discipline(),
+            !ai.war_economy,
             "a neighbouring held gene stays off until the experiment names it"
         );
 
@@ -5733,7 +5725,7 @@ mod tests {
         assert!(host_only.contains("already ships"), "{host_only}");
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("stacked-escort"), "{unknown}");
+        assert!(unknown.contains("governor-every-lane"), "{unknown}");
     }
 
     use super::*;
