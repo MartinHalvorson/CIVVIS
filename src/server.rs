@@ -13998,7 +13998,11 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_use_compact_base_game_formations_and_large_count_badges() {
+    fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_percent() {
+        assert!(EMBEDDED_INDEX.contains(
+            "const YPIP = { food:\"#69e64f\", production:\"#ff8b3d\", gold:\"#ffda3b\",\n               science:\"#36cfff\", culture:\"#ca74ff\", faith:\"#f6e5a8\" };"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_YIELD_CENTER_FRACTION = .60;"));
         assert!(EMBEDDED_INDEX.contains(
             "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
@@ -14042,7 +14046,18 @@ mod tests {
         assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
         assert!(renderer.contains("drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,"));
         assert!(renderer.contains("const totalHeight = visualRows.reduce"));
+        assert!(renderer.contains("let top = strategicYieldCenterY(y) - totalHeight / 2;"));
         assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
+        let placement = EMBEDDED_INDEX
+            .split("function strategicYieldCenterY")
+            .nth(1)
+            .and_then(|tail| tail.split("// The tiny signs borrow").next())
+            .expect("strategic tile-yield vertical placement");
+        assert!(placement.contains("const tileTop = y - S * YS;"));
+        assert!(placement.contains("const tileHeight = S * YS * 2;"));
+        assert!(
+            placement.contains("return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;")
+        );
         let pip = EMBEDDED_INDEX
             .split("function drawYieldPip(kind, x, y, r, portion, worked, label = \"\")")
             .nth(1)
