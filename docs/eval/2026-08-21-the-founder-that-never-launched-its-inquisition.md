@@ -50,37 +50,58 @@ at ×0.25 to every rival pressure, the Apostle walk in
 
 ## What was built
 
-`inquisition_on_threat` (`PRODUCTION_OPT_INS`, off everywhere until priced):
-a founder outside the Religion lane researches Theology next; `founder_temple`
-claims an idle Holy Site city (Holy City first) for Shrine then Temple, and
-under pressure preempts the Holy City's queue (gold when the treasury covers
-the 480) — traced, the queue was never idle while the cities flipped;
-`saving_faith_for_inquisition` holds every Faith sink while home is under
-pressure and no Inquisition has launched (Missionaries, Great Person
-patronage, Faith buildings, Faith-bought soldiers, and the baseline's
-Missionary and Faith Builder through `base.saving_faith_for_inquisition`);
-`apostle_cap = 1` with priorities `["apostle"]` while saving; the existing
-step walks the Apostle to the Holy City and launches; the existing
-Inquisitor purchases follow. Census: `inquisition_apostles`.
+Three opt-in genes (`PRODUCTION_OPT_INS`, off everywhere until priced), one
+per gate, so the screen prices each: `theology-for-founders` (a founder
+outside the Religion lane researches Theology next, after its first
+government); `founder-temple` (claims an idle Holy Site city, Holy City first,
+for Shrine then Temple, and under pressure preempts the Holy City's queue —
+gold when the treasury covers the 480 — traced, the queue was never idle while
+the cities flipped); `inquisition-on-threat` (`apostle_cap = 1` for a founder
+under pressure with no Inquisition launched, bought AFTER the Missionary corps
+and only when the bank covers it; the existing step walks it to the Holy City
+and launches; the existing Inquisitor purchases follow; census
+`inquisition_apostles`). The first cut bundled all three and held the whole
+bank for the Apostle; see below for what that measured.
 
 `holy_lane_parity` — the Holy Site priced at 850 like the Culture lane's
 Theater Square instead of 210 — gains toggles and a `PRODUCTION_OPT_INS` row,
 so the prophet race's other half is priced in the same screen.
 
-**Fires-check** (four 6p games, deployment genome + gene on every seat): 10
-Inquisitions launched (0–1 before the saving leg), every founder's Apostle
-bought at turn 98–149 and launched at its Holy City, and **no game ended by
-religious victory** (two of four before, at t152 and t174).
+**Fires-check of the first cut** (four 6p games, deployment genome + gene on
+every seat): 10 Inquisitions launched (0–1 before the saving leg), every
+founder's Apostle bought at turn 98–149 and launched at its Holy City, and no
+game ended by religious victory (two of four before). ⚠ The screen then
+priced that same cut at −8.2 pp (below): when every seat defends, nobody
+wins by religion; when half do, the defenders lose. A fires-check says a
+mechanism runs, never that it pays.
 
 ## How it was measured
 
 | what | instrument | result |
 |---|---|---|
-| both genes against the best genome | `gene_screen --players 6 --all-seats --baseline best --genes inquisition-on-threat,holy-lane-parity`, 1,500 pairs (9,000 seat-pairs), seeds 53M | S5_RESULT |
+| the first cut (Theology + Temple + **the bank held for the Apostle** + the Apostle ahead of any Missionary), with `holy-lane-parity` | `gene_screen --players 6 --all-seats --baseline best`, seeds 53M, stopped at 1,662 seat-pairs | `inquisition-on-threat` **−8.2 pp [−10.3, −6.1]** (z −7.7), share −0.38 pp (z −4.6) — HURTS past the family-wise bar; `holy-lane-parity` +0.8 [−1.3, +3.0] |
+| the second cut (no hoard; the Apostle after the Missionary corps) as three genes, with `holy-lane-parity` | same design, 1,000 pairs (6,000 seat-pairs), seeds 54M | S6_RESULT |
+
+**Why the first cut lost — by founder status, from its own rows (1,662 seat-pairs):**
+
+| seat | gene | n | win | cities under a foreign faith | launched an Inquisition | Faith banked at the end |
+|---|---|---|---|---|---|---|
+| founder | **on** | 832 | **19.5%** | 2.93 | 88% | 1,915 |
+| founder | off | 831 | **35.4%** | 2.10 | 52% | 1,424 |
+| non-founder | on | 834 | 5.6% | 3.94 | 0% | 1,027 |
+| non-founder | off | 833 | 6.2% | 3.88 | 0% | 993 |
+
+Non-founders were untouched, so the whole −8 pp is the founders' −16. The
+gene did what it was built to do — the Inquisition launched in 88% of the
+founders' games against 52% — and the cities flipped *more*. Holding the bank
+for the 400-Faith Apostle meant thirty turns without the 250-Faith Missionary
+the baseline buys, and that Missionary corps is what had been holding the
+pressure race. The lesson generalises: a late strong unit bought by starving a
+steady weak one loses the race in between.
 
 ## What it means
 
-S5_MEANING
+S6_MEANING
 
 ## Not built, ranked
 
