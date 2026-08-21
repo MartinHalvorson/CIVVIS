@@ -103,6 +103,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
+    "live_without_live_formationless_settler_shadow",
     "live_without_counter_in_lane",
     "live_without_era_paced_expansion",
     "live_without_escort_unstick",
@@ -386,6 +387,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "garrison-under-fire",
     "escort-unstick",
     "stacked-escort",
+    "live-formationless-settler-shadow",
     "religion-sues-peace",
     "recon-replacement",
     "stranded-settler-discount",
@@ -590,6 +592,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "host-settler-pop",
     "explore-dead-targets",
     "bank-envoys",
+    // Replaces the host's broken Settler formation channel with ordinary
+    // unit movement; native CIVVIS formations have no corresponding defect.
+    "live-formationless-settler-shadow",
     // Production Advanced already carries committed exploration. It remains
     // a live treatment so the deployment bundle and its ablation registry are
     // complete, not because `advanced_synergy` needs to turn it on again.
@@ -848,6 +853,7 @@ define_arm_kinds! {
     LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
+    LiveWithoutLiveFormationlessSettlerShadow => "live_without_live_formationless_settler_shadow",
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
@@ -4489,6 +4495,9 @@ impl ArmKind {
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
+            Self::LiveWithoutLiveFormationlessSettlerShadow => {
+                live_without("live-formationless-settler-shadow")
+            }
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
@@ -7082,6 +7091,9 @@ mod tests {
             "explore_dead_targets",
             "explore_commit",
             "bank_envoys",
+            // Replaces only the host formation channel with the ordinary
+            // movement shadow; native formations have no corresponding bug.
+            "live_formationless_settler_shadow",
             // The Settler seat's land, at the Settler seat's pace; the league
             // cadence stays bred.
             "land_grab",

@@ -88,6 +88,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("garrison_under_fire", "garrison-under-fire", AdvancedAi::disable_garrison_under_fire),
     ("escort_unstick", "escort-unstick", AdvancedAi::disable_escort_unstick),
     ("stacked_escort", "stacked-escort", AdvancedAi::disable_stacked_escort),
+    ("live_formationless_settler_shadow", "live-formationless-settler-shadow", AdvancedAi::disable_live_formationless_settler_shadow),
     ("religion_sues_peace", "religion-sues-peace", AdvancedAi::disable_religion_sues_peace),
     ("recon_replacement", "recon-replacement", AdvancedAi::disable_recon_replacement),
     ("stranded_settler_discount", "stranded-settler-discount", AdvancedAi::disable_stranded_settler_discount),

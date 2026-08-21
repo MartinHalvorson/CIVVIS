@@ -2692,9 +2692,9 @@ fn advanced_formations_link_breach_support_to_a_compatible_escort() {
 /// ★★★★ The sea link and the stacked escort fought over one settler for
 /// fourteen turns (civvis-20260816T101521Z, settler 2818058 on (18,35)
 /// t92–t105: `ENTER_FORMATION` from the Galley, `EXIT_FORMATION` from the
-/// settler, its own move deferred behind the unlink every frame). Under
-/// `stacked_escort` an embarked settler is left unlinked; the historical
-/// controllers still link it to the ship on its tile.
+/// settler, its own move deferred behind the unlink every frame). Under a
+/// formationless Settler shadow an embarked settler is left unlinked; the
+/// historical controllers still link it to the ship on its tile.
 #[test]
 fn an_embarked_settler_under_the_stacked_escort_is_not_linked_to_a_ship() {
     let mut game = Game::new_full(1, 20, 14, 71_001, 30, 0, false);
@@ -2740,6 +2740,63 @@ fn an_embarked_settler_under_the_stacked_escort_is_not_linked_to_a_ship() {
         "under the stacked escort the settler is never handed to a ship it will unlink from"
     );
     assert_eq!(game.units[&galley].linked_to, None);
+
+    // The native gene is correctly held off by the ledger, but deployment
+    // retains its distinct bridge repair and therefore cannot re-enter the
+    // broken ship formation channel.
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_live_bridge();
+    assert!(
+        !deployed.stacked_escort,
+        "the native gene remains ledger-off"
+    );
+    assert!(deployed.live_formationless_settler_shadow);
+    deployed.advanced_formations(&mut game, 0);
+    assert_eq!(game.units[&settler].linked_to, None);
+    assert_eq!(game.units[&galley].linked_to, None);
+}
+
+/// The same separation applies on land, where the current live game was
+/// repeatedly issuing `ENTER_FORMATION`, `EXIT_FORMATION`, then a delayed
+/// march.  A deployment controller keeps the native gene off and instead
+/// sends the guard through the ordinary shadow path.
+#[test]
+fn deployed_live_shadow_does_not_link_a_land_settler_after_the_native_gene_is_withheld() {
+    let mut game = Game::new_full(1, 20, 14, 71_002, 30, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    let land = *game
+        .map
+        .tiles
+        .iter()
+        .find(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        .map(|(position, _)| position)
+        .expect("the board has passable land");
+    let settler = game.spawn_test_unit("settler", 0, land);
+    let escort = game.spawn_test_unit("heavy_chariot", 0, land);
+
+    let mut historical = AdvancedAi::new();
+    historical.enable_tactical_strategy();
+    historical.settlement_safety = true;
+    historical.settler_targets.insert(settler, land);
+    historical.settler_blocked_turns.insert(settler, 1);
+    historical.advanced_formations(&mut game, 0);
+    assert_eq!(game.units[&settler].linked_to, Some(escort));
+    let _ = game.apply(0, &Action::UnlinkUnits { unit: settler });
+
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_live_bridge();
+    deployed.settler_targets.insert(settler, land);
+    deployed.settler_blocked_turns.insert(settler, 1);
+    assert!(
+        !deployed.stacked_escort,
+        "the native gene remains ledger-off"
+    );
+    assert!(deployed.live_formationless_settler_shadow);
+    deployed.advanced_formations(&mut game, 0);
+    assert_eq!(game.units[&settler].linked_to, None);
+    assert_eq!(game.units[&escort].linked_to, None);
 }
 
 /// ★★★★ Several viable caravels existed in run

@@ -361,8 +361,30 @@ impl AdvancedAi {
 
     pub fn disable_stacked_escort(&mut self) {
         self.stacked_escort = false;
-        self.settler_guards.clear();
-        self.guard_wait.clear();
+        if !self.live_formationless_settler_shadow {
+            self.settler_guards.clear();
+            self.guard_wait.clear();
+        }
+    }
+
+    /// Keep live settlers out of Civilization VI's formation channel while
+    /// leaving the native `stacked_escort` gene independently screenable.
+    ///
+    /// The live bridge recorded formations failing to advance; a guard that
+    /// shadows with normal movement is the already-tested host-safe path.
+    /// This is therefore a live fidelity gate, not a re-promotion of the
+    /// native gene that the ledger correctly holds off.
+    pub fn enable_live_formationless_settler_shadow(&mut self) {
+        self.live_formationless_settler_shadow = true;
+    }
+
+    /// The twin of [`Self::enable_live_formationless_settler_shadow`].
+    pub fn disable_live_formationless_settler_shadow(&mut self) {
+        self.live_formationless_settler_shadow = false;
+        if !self.stacked_escort {
+            self.settler_guards.clear();
+            self.guard_wait.clear();
+        }
     }
 
     /// Settlers decide before the engagement, price capture as capture and
@@ -858,6 +880,10 @@ impl AdvancedAi {
         // the live bridge while two unescorted settlers were captured one
         // turn short of founding; see stacked_escort.
         self.enable_stacked_escort();
+        // The native genome now withholds `stacked_escort`, but that result
+        // does not make the host's formation channel work.  Keep live
+        // settlers on the already-tested ordinary-unit shadow instead.
+        self.enable_live_formationless_settler_shadow();
         // And the settler decides on the real board, prices capture as
         // capture and trusts only a guard on its tile; see
         // settler_stack_discipline.
