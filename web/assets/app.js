@@ -7919,14 +7919,16 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
 }
 
 // First put a private, seeded keep-out distance on each candidate. A fixed
-// radius makes the empty paper look artificially regimented; this 17--26 hex
-// envelope makes the gaps vary while still stopping illustrations from
-// clustering.
+// radius makes the empty paper look artificially regimented; this 20%-tighter,
+// roughly 14--21 hex envelope makes the gaps vary while still stopping
+// illustrations from clustering.
 function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
-  return HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
-    Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
-    Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
-  ) * HIDDEN_MAP_TALE_SEPARATION_RANGE);
+  return HIDDEN_MAP_TALE_SPACING_SCALE * (
+    HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
+      Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
+      Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
+    ) * HIDDEN_MAP_TALE_SEPARATION_RANGE)
+  );
 }
 
 // Rare seeded candidates compete only with other candidates in the larger of
@@ -7937,8 +7939,8 @@ function hiddenMapMonsterSeat(q, r, seedA, seedB) {
   const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
   if (priority >= HIDDEN_MAP_TALE_CANDIDATE_RATE) return false;
   const radius = hiddenMapMonsterSeatRadius(q, r, seedA, seedB);
-  const maxRadius = HIDDEN_MAP_TALE_MIN_SEPARATION +
-                    HIDDEN_MAP_TALE_SEPARATION_RANGE - 1;
+  const maxRadius = Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *
+    (HIDDEN_MAP_TALE_MIN_SEPARATION + HIDDEN_MAP_TALE_SEPARATION_RANGE - 1));
   for (let dq = -maxRadius; dq <= maxRadius; dq++) {
     const from = Math.max(-maxRadius, -dq - maxRadius);
     const to = Math.min(maxRadius, -dq + maxRadius);
