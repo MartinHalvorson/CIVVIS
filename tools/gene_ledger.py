@@ -92,12 +92,18 @@ def measure_from(gene: dict, source_name: str) -> dict:
     # focused on the pooled estimate.
     tranches = []
     for tranche in gene.get("win_tranches", []):
-        tranches.append({
+        recorded = {
             "position": str(tranche["position"]),
             "pairs": int(tranche["pairs"]),
             "win_delta_pp": round(float(tranche["win_delta_pp"]), 3),
             "win_z": round(float(tranche["win_z"]), 3),
-        })
+        }
+        # Retain the standard error when emitted by the newer analyzer.  It
+        # makes the independent-window confidence check auditable from the
+        # ledger, while accepting prefeature JSON fixtures and old sources.
+        if "win_se_pp" in tranche:
+            recorded["win_se_pp"] = round(float(tranche["win_se_pp"]), 3)
+        tranches.append(recorded)
     if tranches:
         measure["win_tranches"] = tranches
     return measure
