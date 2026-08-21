@@ -596,14 +596,6 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
-/// A Builder charge on an idle ordinary tile buys a future yield, while a
-/// charge on a worked tile changes the empire's output immediately. Keep the
-/// former possible — a growing city will need it — but make the latter win the
-/// ordinary target race. Luxury and strategic connections are deliberately
-/// exempt because the engine pays them whether or not a citizen works the
-/// plot. See [`AdvancedAi::builder_worked_tile_priority`].
-const UNWORKED_BUILDER_TARGET_WEIGHT: f64 = 0.25;
-
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1268,6 +1260,15 @@ const SETTLER_STALL_LIMIT: u32 = 3;
 /// the next picks, so a threat that flickers in and out of sight cannot flip
 /// the settler between two sites every frame. See `settler_target_hysteresis`.
 const SETTLER_TARGET_HYSTERESIS_TURNS: u32 = 6;
+/// A visible hostile can make the *approach* to an otherwise excellent city
+/// site unsafe without making the site itself unsafe. Keep that corridor out
+/// of every settler's ranking briefly, then let it compete again once the
+/// military has had a chance to clear the blocker. See `settler_threat_detour`.
+const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
+/// The top route-ranked alternate can share the same attack envelope. Try a
+/// few next-best sites before deciding there is no safe detour; this work runs
+/// only when a visible blocker has already stopped the preferred route.
+const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -1882,9 +1883,8 @@ pub struct AdvancedAi {
     ///
     /// The target sweep keeps a correctly connected luxury or strategic
     /// resource at full priority: its Amenity or stockpile pays regardless of
-    /// its citizen assignment. Other idle tiles retain a quarter of their
-    /// normal score, so the Builder can still prepare a growing city without
-    /// displacing work that changes the empire's output this turn.
+    /// its citizen assignment. An ordinary idle tile earns only the output it
+    /// would add by replacing the city's least valuable current worker.
     ///
     /// Off by default; native opt-in gene `builder-worked-tile-priority`.
     pub builder_worked_tile_priority: bool,
@@ -1982,6 +1982,11 @@ pub struct AdvancedAi {
     /// turn on which it may be reconsidered. Without this cooldown, clearing a
     /// target simply reselects the same top-ranked tile one turn later.
     settler_avoid: BTreeMap<u32, (Pos, u32)>,
+    /// Settlement sites whose *approach* is temporarily blocked by a visible
+    /// threat. Unlike `settler_avoid`, this is keyed by position rather than
+    /// unit: a second Settler must not walk into the same blocked corridor
+    /// while the first one takes a safe alternate. See `settler_threat_detour`.
+    settler_threat_deferrals: BTreeMap<Pos, u32>,
     /// Sites a settler stood on and could not found, each with the turn its
     /// retirement expires. A set rather than the single `settler_avoid` slot:
     /// the stall counter overwrites that slot, and a doomed frontier is usually
@@ -3318,6 +3323,16 @@ pub struct AdvancedAi {
     /// for the live bridge and the native repair bundle (a native settler
     /// flickers the same way beside a wandering barbarian).
     pub settler_target_hysteresis: bool,
+    /// When a visible hostile blocks the next step to an otherwise sound
+    /// settlement target, defer that corridor briefly and send the Settler to
+    /// the best safe runner-up instead of spending several turns dodging it.
+    ///
+    /// The deferral is empire-wide but short-lived: another Settler does not
+    /// repeat the dangerous march, while the original site returns to the
+    /// ordinary ranking once the threat has had time to be cleared. This is a
+    /// native, off-by-default gene; `gene_screen` prices it through
+    /// `PRODUCTION_OPT_INS` before any promotion decision.
+    pub settler_threat_detour: bool,
     /// On the tally seat, banked Faith (or gold) patronizes any Great Person
     /// it can pay for, not only one the empire is already close to earning.
     ///
@@ -4416,6 +4431,7 @@ impl AdvancedAi {
         self.guard_wait.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
+        self.settler_threat_deferrals.clear();
         self.settler_dead_sites.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
@@ -4593,6 +4609,7 @@ impl AdvancedAi {
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
+            settler_threat_deferrals: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             recon_fled: BTreeMap::new(),
@@ -4668,6 +4685,7 @@ impl AdvancedAi {
             bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
+            settler_threat_detour: false,
             tally_great_people: false,
             buildings_before_projects: false,
             barbarian_scouts_are_scouts: false,
@@ -4810,6 +4828,11 @@ impl AdvancedAi {
     /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
     pub fn barbarian_hunt(&self) -> bool {
         self.base.barbarian_hunt
+    }
+
+    /// Whether a raider is priced below a major. See `BasicAi::barbarian_bargain`.
+    pub fn barbarian_bargain(&self) -> bool {
+        self.base.barbarian_bargain
     }
 
     /// Readable so the anchor assertion can check it, since the flag lives on
@@ -22046,7 +22069,10 @@ impl AdvancedAi {
             )
             .into_iter()
             .filter(|(position, _)| {
-                Some(*position) != avoid && !self.settler_site_is_dead(uid, *position)
+                Some(*position) != avoid
+                    && !self.settler_site_is_dead(uid, *position)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(position))
             })
             .collect::<Vec<_>>();
         if !self.settlement_safety {
@@ -22136,6 +22162,119 @@ impl AdvancedAi {
             (Some(local), _) => Some(local),
             (None, global) => global,
         }
+    }
+
+    /// The cached site can remain legal and well-scored while a visible enemy
+    /// makes its NEXT route step unsafe. That is a different failure from
+    /// `settler_target_hysteresis`, whose target validation only sees the site
+    /// itself. A civilian already stopped in a visible zone of control is the
+    /// other concrete route-block shape: `route_step` correctly returns no
+    /// path then, but the own unit's stop plus the visible risk is enough to
+    /// explain the blockage without reading an unseen enemy.
+    fn settler_target_has_visible_route_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        if !self.settlement_safety {
+            return false;
+        }
+        let Some((current, zoc_stopped)) =
+            g.units.get(&uid).map(|unit| (unit.pos, unit.zoc_stopped))
+        else {
+            return false;
+        };
+        if current == target {
+            return false;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        match g.route_step(uid, target, 0) {
+            Some(next) => {
+                self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            }
+            None => {
+                zoc_stopped
+                    && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
+                        > SETTLER_STEP_RISK_LIMIT
+            }
+        }
+    }
+
+    /// Defer a threatened corridor for the whole empire and keep the current
+    /// Settler productive at the highest-ranked alternate it can approach
+    /// safely. The target is deliberately *deferred*, not retired: a guard or
+    /// the ordinary military response may clear the blocker, and the original
+    /// site belongs back in the ranking soon afterward.
+    fn detour_settler_around_visible_threat(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> Option<Pos> {
+        if !self.settler_threat_detour
+            || !self.settler_target_has_visible_route_threat(g, pid, uid, target)
+        {
+            return None;
+        }
+
+        let until = g.turn + g.standard_duration(SETTLER_THREAT_DETOUR_TURNS);
+        let previous = self.settler_threat_deferrals.insert(target, until);
+        let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
+        // `best_settler_target` already orders candidates by city value,
+        // travel cost, and route risk. A threat can cover more than one top
+        // candidate, though, so temporarily set aside each unsafe runner-up
+        // and ask again instead of mistaking the first one for the only one.
+        // These short-lived scratch entries are restored below; only `target`
+        // remains deferred for the empire after this decision.
+        let mut scratch = Vec::new();
+        let mut fallback = None;
+        for _ in 0..SETTLER_THREAT_DETOUR_RETRIES {
+            let Some((candidate, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                break;
+            };
+            if !self.settler_target_has_visible_route_threat(g, pid, uid, candidate) {
+                fallback = Some(candidate);
+                break;
+            }
+            let old = self.settler_threat_deferrals.insert(candidate, until);
+            scratch.push((candidate, old));
+        }
+        for (candidate, old) in scratch {
+            match old {
+                Some(old_until) => {
+                    self.settler_threat_deferrals.insert(candidate, old_until);
+                }
+                None => {
+                    self.settler_threat_deferrals.remove(&candidate);
+                }
+            }
+        }
+        let Some(fallback) = fallback else {
+            match previous {
+                Some(old_until) => {
+                    self.settler_threat_deferrals.insert(target, old_until);
+                }
+                None => {
+                    self.settler_threat_deferrals.remove(&target);
+                }
+            }
+            return None;
+        };
+
+        self.settler_targets.insert(uid, fallback);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        think!(self.journal(), Expansion, Detail,
+               "Settler detours around a visible threat";
+               "the approach to {target:?} is unsafe, so every Settler leaves it alone for \
+                {SETTLER_THREAT_DETOUR_TURNS} standard turns while the army can clear the \
+                blocker; {fallback:?} is the best safe alternate";
+               fallback);
+        Some(fallback)
     }
 
     /// Whether a Settler uses the ordinary-unit shadow instead of the
@@ -22440,6 +22579,10 @@ impl AdvancedAi {
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
             sites.retain(|_, until| *until > g.turn);
         }
+        if self.settler_threat_detour {
+            self.settler_threat_deferrals
+                .retain(|_, until| *until > g.turn);
+        }
         if self
             .settler_avoid
             .get(&uid)
@@ -22604,6 +22747,8 @@ impl AdvancedAi {
                     && tile
                         .owner_city
                         .is_none_or(|cid| g.cities[&cid].owner == pid)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(target))
                     && (*target == current || g.route_step(uid, *target, 0).is_some())
                     && (!self.settlement_safety
                         || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
@@ -22651,6 +22796,10 @@ impl AdvancedAi {
                     self.settler_targets.insert(uid, target);
                 }
                 target
+            });
+            let target = target.map(|target| {
+                self.detour_settler_around_visible_threat(g, pid, uid, target)
+                    .unwrap_or(target)
             });
             if target == Some(current) && g.can_found_city(uid) {
                 if self.settlement_safety
@@ -22760,6 +22909,9 @@ impl AdvancedAi {
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
             }
+            if self.settler_threat_detour && self.settler_threat_deferrals.contains_key(&target) {
+                return Some("the approach is temporarily deferred for a visible threat");
+            }
             // A momentarily unavailable route is not a bad site. Under
             // `settler_commit` the stall counter decides when to give up,
             // not a single blocked turn.
@@ -22852,7 +23004,7 @@ impl AdvancedAi {
                 }
             }
         });
-        let Some(target) = target else {
+        let Some(mut target) = target else {
             // See `idle_walkers_close_the_pipeline`: a walker that found no
             // site this turn is idle, and the pipeline reads that; one idle
             // for twice the replacement threshold founds where it stands if
@@ -22878,6 +23030,9 @@ impl AdvancedAi {
             }
             return self.base.settler_step(g, pid, uid);
         };
+        if let Some(fallback) = self.detour_settler_around_visible_threat(g, pid, uid, target) {
+            target = fallback;
+        }
         if current == target && g.can_found_city(uid) {
             // A cached target may have been safe when it was chosen but become
             // loyalty-doomed while the Settler walked there: a nearby rival can
@@ -23256,8 +23411,26 @@ impl AdvancedAi {
     /// improvement that best fits *one tile*. This second score answers the
     /// empire-level timing question — which job receives this finite charge
     /// now? A luxury or strategic connection is full value even on an idle
-    /// tile; otherwise, the active citizen plan decides whether its yield is
-    /// immediate or merely a future option.
+    /// tile. For any other idle tile, the immediate gain is the prospective
+    /// worked-tile value less the weakest tile the city works today. If no
+    /// citizen can move there, the Builder has not produced output yet.
+    fn builder_worked_tile_value(&self, g: &Game, pos: Pos, strategy: GrandStrategy) -> f64 {
+        self.yield_value(g.rules.worked_tile_yields(&g.map.tiles[&pos]), strategy)
+    }
+
+    fn builder_improved_tile_value(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let mut tile = g.map.tiles[&pos].clone();
+        tile.improvement = Some(Name::new(improvement));
+        tile.pillaged = false;
+        self.yield_value(g.rules.worked_tile_yields(&tile), strategy)
+    }
+
     fn builder_target_value(
         &self,
         g: &Game,
@@ -23265,6 +23438,7 @@ impl AdvancedAi {
         improvement: &str,
         strategy: GrandStrategy,
         worked: bool,
+        weakest_worked_value: Option<f64>,
     ) -> f64 {
         let value = self.improvement_value(g, pos, improvement, strategy);
         if !self.builder_worked_tile_priority
@@ -23275,7 +23449,9 @@ impl AdvancedAi {
         if worked {
             value
         } else {
-            value * UNWORKED_BUILDER_TARGET_WEIGHT
+            weakest_worked_value.map_or(0.0, |weakest| {
+                (self.builder_improved_tile_value(g, pos, improvement, strategy) - weakest).max(0.0)
+            })
         }
     }
 
@@ -23803,17 +23979,6 @@ impl AdvancedAi {
         // guard the moment anything in here starts mutating the game.
         let best = {
             let _memo = g.query_memo();
-            // Computing the citizen plan can inspect every tile in a city.
-            // Read it once per city, rather than once for every candidate
-            // improvement in the target sweep.
-            let worked_tiles: HashSet<Pos> = if self.builder_worked_tile_priority {
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
-                    .collect()
-            } else {
-                HashSet::new()
-            };
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && !self
@@ -23825,6 +23990,24 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        // Computing the citizen plan can inspect every tile in a city.
+                        // Read it once per city, rather than once for every candidate
+                        // improvement in the target sweep.
+                        let (worked_tiles, weakest_worked_value) =
+                            if self.builder_worked_tile_priority {
+                                let plan = g.city_citizen_plan(cid);
+                                let weakest = plan
+                                    .worked_tiles
+                                    .iter()
+                                    .map(|pos| self.builder_worked_tile_value(g, *pos, strategy))
+                                    .reduce(f64::min);
+                                (
+                                    plan.worked_tiles.into_iter().collect::<HashSet<_>>(),
+                                    weakest,
+                                )
+                            } else {
+                                (HashSet::new(), None)
+                            };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) {
                                 continue;
@@ -23837,6 +24020,7 @@ impl AdvancedAi {
                                     &improvement,
                                     strategy,
                                     worked_tiles.contains(pos),
+                                    weakest_worked_value,
                                 ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
