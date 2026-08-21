@@ -1227,9 +1227,16 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 ///
 /// MEASURED, `ai_eval live live_without_camp_reach`, 12 pairs / 72 seat-games
 /// an arm at 6p/150t/online on identical seeds: **0.22 civilians lost to
-/// barbarians per game**, against the live Civilization VI seat losing **8 of
-/// the 12 Settlers that ever walked, in 104 turns** (run
-/// civvis-20260821T130446Z) at a matching city count. Not an exposure
+/// barbarians per game**, against the live Civilization VI seat losing **4 of
+/// the 8 Settlers that ever walked, in 104 turns** (run
+/// civvis-20260821T130446Z) at a matching city count.
+///
+/// ⚠ CORRECTED 2026-08-21: an earlier reading of this run said 8 of 12. The
+/// host emits `unit_lost` when a Settler FOUNDS a city — the operation consumes
+/// the unit, so `CivvisLedger.onUnitRemoved` reports it exactly like a capture.
+/// Counting those events naively doubles the loss. Subtract every `unit_lost`
+/// whose `unit` id also has a `found` event. The gap this version answers is
+/// smaller than first stated and still an order of magnitude. Not an exposure
 /// difference — the opponent. Every arm this project has priced on settler
 /// safety was measured against a barbarian that did not hunt settlers, which
 /// is why the whole family reads neutral-to-harmful in `docs/gene_ledger.json`
