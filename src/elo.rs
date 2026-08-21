@@ -4582,9 +4582,7 @@ impl ArmKind {
             }
             Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutBarbarianBargain => live_without("barbarian-bargain"),
-            Self::LiveWithoutBarbarianRangedAnswer => {
-                live_without("barbarian-ranged-answer")
-            }
+            Self::LiveWithoutBarbarianRangedAnswer => live_without("barbarian-ranged-answer"),
             Self::LiveWithoutCampReach => live_without("camp-reach"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
