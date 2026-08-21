@@ -1467,6 +1467,18 @@ impl AdvancedAi {
         self.builder_reward_survey = true;
     }
 
+    /// Prefer existing Builder work that pays on a tile a citizen currently
+    /// works, while preserving luxury and strategic connections. Native
+    /// opt-in gene `builder-worked-tile-priority`; off in production.
+    pub fn enable_builder_worked_tile_priority(&mut self) {
+        self.builder_worked_tile_priority = true;
+    }
+
+    /// The twin of `enable_builder_worked_tile_priority`.
+    pub fn disable_builder_worked_tile_priority(&mut self) {
+        self.builder_worked_tile_priority = false;
+    }
+
     /// Credit a wonder's missing prerequisite buildings/districts with a
     /// share of the wonder's own production score. Evaluator arm
     /// `advanced_wonder_reach`; off in production.
