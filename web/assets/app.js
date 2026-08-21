@@ -7918,22 +7918,37 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
   );
 }
 
-// A point survives only when it has the lowest seeded priority in its local
-// hex neighborhood. This is a deterministic blue-noise distribution: seats
-// cannot bunch together, yet they do not share rows, columns, phases, or a
-// visible coarse grid. Radius eight has 217 possible cells versus 37 at radius
-// three, making these seats 5.86 times rarer while retaining organic spacing.
-// The quick threshold skips almost every full neighbor walk without materially
-// changing which local minima survive.
-function hiddenMapMonsterSeat(q, r, seedA, seedB, radius = 8) {
+// First put a private, seeded keep-out distance on each candidate. A fixed
+// radius makes the empty paper look artificially regimented; this 10--15 hex
+// envelope makes the gaps vary while still stopping illustrations from
+// clustering.
+function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
+  return HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
+    Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
+    Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
+  ) * HIDDEN_MAP_TALE_SEPARATION_RANGE);
+}
+
+// Rare seeded candidates compete only with other candidates in the larger of
+// their two keep-out envelopes. The lower priority wins deterministically, so
+// a particular world seed always has the same sparse, irregular collection of
+// tales without a coarse lattice or a chance of adjacent scenes.
+function hiddenMapMonsterSeat(q, r, seedA, seedB) {
   const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
-  if (priority >= .04) return false;
-  for (let dq = -radius; dq <= radius; dq++) {
-    const from = Math.max(-radius, -dq - radius);
-    const to = Math.min(radius, -dq + radius);
+  if (priority >= HIDDEN_MAP_TALE_CANDIDATE_RATE) return false;
+  const radius = hiddenMapMonsterSeatRadius(q, r, seedA, seedB);
+  const maxRadius = HIDDEN_MAP_TALE_MIN_SEPARATION +
+                    HIDDEN_MAP_TALE_SEPARATION_RANGE - 1;
+  for (let dq = -maxRadius; dq <= maxRadius; dq++) {
+    const from = Math.max(-maxRadius, -dq - maxRadius);
+    const to = Math.min(maxRadius, -dq + maxRadius);
     for (let dr = from; dr <= to; dr++) {
       if (!dq && !dr) continue;
       const other = hiddenMapMonsterPriority(q + dq, r + dr, seedA, seedB);
+      if (other >= HIDDEN_MAP_TALE_CANDIDATE_RATE) continue;
+      const otherRadius = hiddenMapMonsterSeatRadius(q + dq, r + dr, seedA, seedB);
+      if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) >
+          Math.max(radius, otherRadius)) continue;
       if (other < priority ||
           (other === priority && (dq < 0 || (!dq && dr < 0)))) return false;
     }
@@ -8013,14 +8028,14 @@ function drawHiddenMapMonsters(layer) {
     // coordinate. Zoom changes neither the chosen tale nor its map position.
     const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
     drawHiddenMapMonster(
-      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 1.5,
-      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * .95,
+      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 2.3,
+      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * 1.6,
       S * (HIDDEN_MAP_TALE_SIZE_MIN + detail * HIDDEN_MAP_TALE_SIZE_RANGE),
       Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
                  HIDDEN_MAP_MONSTER_VARIANTS),
-      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
+      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .2,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
-      .26
+      .21
     );
   }
 }
@@ -8832,6 +8847,24 @@ function drawStrategicMarsh(x, y) {
 // sides of this tile instead of floating as three generic waves in its centre.
 // The paired inset bands read as a broad overflow margin while leaving the
 // ground colour visible — especially important for the three floodplain biomes.
+// A fine navy keyline keeps both bands legible against grassland, plains and
+// desert without giving them the visual weight of the river itself.
+const FLOODPLAIN_KEYLINE_COLOR = "#123d58";
+const FLOODPLAIN_KEYLINE_GROWTH = 1.3;
+const FLOODPLAIN_BANDS = [
+  [.67, "#4b94b1", 1.9],
+  [.45, "#91cfdb", 1.25],
+];
+
+function strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale = 1) {
+  cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+  cx.strokeStyle = FLOODPLAIN_KEYLINE_COLOR;
+  cx.lineWidth = (width + FLOODPLAIN_KEYLINE_GROWTH) * scale;
+  cx.stroke();
+  cx.strokeStyle = color; cx.lineWidth = width * scale;
+  cx.stroke();
+}
+
 function drawStrategicFloodplains(t, x, y) {
   const riverSides = [];
   for (let side = 0; side < 6; side++) {
@@ -8847,17 +8880,13 @@ function drawStrategicFloodplains(t, x, y) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const side of riverSides) {
     const [first, second] = EDGE_CORNERS[side];
-    for (const [radius, color, width] of [
-      [S * .67, "#346f8c", 1.9],
-      [S * .45, "#72aec0", 1.25],
-    ]) {
-      const [ax, ay] = corner(x, y, radius, first);
-      const [bx, by] = corner(x, y, radius, second);
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const [ax, ay] = corner(x, y, S * radius, first);
+      const [bx, by] = corner(x, y, S * radius, second);
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      cx.strokeStyle = color; cx.lineWidth = width;
-      cx.beginPath(); cx.moveTo(ax, ay);
-      cx.quadraticCurveTo(mx + (mx - x) * .12, my + (my - y) * .12, bx, by);
-      cx.stroke();
+      strokeFloodplainBand(ax, ay,
+        mx + (mx - x) * .12, my + (my - y) * .12,
+        bx, by, color, width);
     }
   }
   cx.restore();
@@ -18137,12 +18166,12 @@ function drawPlanetStrategicFloodplains(entry, visible, spectator) {
   for (const side of riverSides) {
     const a = points[side], b = points[(side + 1) % points.length];
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    for (const [inset, color, width] of [[.33, "#346f8c", 1.9], [.55, "#72aec0", 1.25]]) {
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const inset = 1 - radius;
       const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
       const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
       const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
-      cx.strokeStyle = color; cx.lineWidth = width * scale;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by); cx.stroke();
+      strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale);
     }
   }
   cx.restore();
@@ -19507,9 +19536,8 @@ function drawPlanetChartMarginalia() {
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
   // longer belongs to the unknown.
-  // The former chart carried five small scenes. One seeded candidate keeps the
-  // requested roughly one-sixth density and can be a proper three-times-larger
-  // marginal illustration without turning the sheet into a collage.
+  // One seeded candidate leaves the pre-globe sheet intentionally open; it is
+  // a single quiet note at a random point rather than a decorated grid.
   const candidates = Array.from({length:48}, (_, i) => ({
     x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
     y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
@@ -19519,13 +19547,13 @@ function drawPlanetChartMarginalia() {
   for (let i = 0; i < seats.length; i++) {
     const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = 3 * Math.max(104, Math.min(210,
-      Math.min(width, height) * (.19 + h * .055)));
+    const size = 1.85 * Math.max(88, Math.min(162,
+      Math.min(width, height) * (.15 + h * .035)));
     drawHiddenMapMonster(
       seat.x, seat.y, size,
       Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
-      hash2(seedB + i * 31, seedA + 29) > .5, .25
+      hash2(seedB + i * 31, seedA + 29) > .5, .21
     );
   }
 }
