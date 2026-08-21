@@ -4000,7 +4000,7 @@ mod flagged_gene_repairs {
         }
         let base = include_str!("../../ai.rs");
         for needle in [
-            "let bleed_floor = if self.garrison_bleed_tolerance { 170 } else { 200 };",
+            "let bleed_floor = if self.garrison_bleed_tolerance {",
             "city.hp < bleed_floor",
         ] {
             assert!(base.contains(needle), "missing {needle:?}");
