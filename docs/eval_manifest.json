@@ -1,7 +1,7 @@
 {
   "coverage": {
-    "named": 36,
-    "never_named": 17,
+    "named": 37,
+    "never_named": 16,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
@@ -13,7 +13,6 @@
       "idle-walkers-close-the-pipeline": "live_without_idle_walkers_close_the_pipeline",
       "muster-at-command-radius": "live_without_muster_at_command_radius",
       "relief-targets-the-siege": "live_without_relief_targets_the_siege",
-      "settler-guard-holds": "live_without_settler_guard_holds",
       "settler-site-agreement": "live_without_settler_site_agreement",
       "siege-commitment": "live_without_siege_commitment",
       "siege-role": "live_without_siege_role",
@@ -32,7 +31,6 @@
       "idle-walkers-close-the-pipeline",
       "muster-at-command-radius",
       "relief-targets-the-siege",
-      "settler-guard-holds",
       "settler-site-agreement",
       "siege-commitment",
       "siege-role",
