@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-Every screenable heuristic gene on the Advanced controller, ranked most beneficial to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the same figure from the screen before that (– when the gene has only one native reading); movement between the two columns is the gene's trend across cycles. *Default* is the deployment ledger's call (`docs/gene_ledger.json`). The *Total* columns pool every native screen that measured the gene, weighted by games. Every screen is a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the instrument; the paired contrasts, intervals and family-wise verdicts stay in `docs/gene_ledger.json`.
+Every screenable heuristic gene on the Advanced controller, ranked most beneficial to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the same figure from the screen before that (– when the gene has only one native reading); movement between the two columns is the gene's trend across cycles. *Default* is the deployment ledger's call (`docs/gene_ledger.json`). The *Total* columns pool every native screen that measured the gene, weighted by games. Every screen is a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the instrument; the paired contrasts, intervals and family-wise verdicts stay in `docs/gene_ledger.json`. Screenable genes awaiting their first native measurement are listed separately below without a rank.
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a four-player screen), so the expected count is 1,667 wins per 10,000 games and the win columns say how far above or below that a seat carrying the gene lands; the whole-genome screen resolves about ±110 wins per 10,000 at 80% power and a single-gene 6,000-seat-pair screen about ±130 — differences inside that band are noise, not nulls. Screens differ in baseline as repairs land, so the *Prior* column reads as history, not a strict A/B against *Last*.
 
@@ -69,6 +69,19 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 | 59 | -26 | +1 | `recon-flight` | Let a recon unit step out of a visible hostile's reach before it explores. | off | 16.54% | 16.80% | 56,892 |
 | 60 | -26 | -45 | `wonder-prereq-reach` | Credit a wonder's missing prerequisite buildings/districts with a share of the wonder's own production score. | off | 16.32% | 17.02% | 56,892 |
 | 61 | -27 | – | `holy-lane-parity` | The Religion lane pays for its Holy Site what the Culture lane pays for its Theater Square. | off | 16.40% | 16.93% | 12,000 |
+
+## Awaiting native measurement
+
+These screenable genes have no native on/off result, so they receive no rank or promotion from this table. Their deployment state remains explicit while a native screen is pending.
+
+| Gene | Default | Description |
+|---|---|---|
+| `barbarian-bargain` | off (unmeasured) | Deliberate camp clearing as a peacetime errand. |
+| `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
+| `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
+| `settler-threat-detour` | off (unmeasured) | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. |
 
 ## Removed from the code
 

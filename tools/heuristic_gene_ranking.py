@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
-ranked by wins added per 10,000 six-player games — from the screens the gene
-ledger records.
+with a native measurement, ranked by wins added per 10,000 six-player games,
+plus the screenable genes still awaiting that measurement.
 
     python3 tools/heuristic_gene_ranking.py --write     # rewrite the table
     python3 tools/heuristic_gene_ranking.py --check     # fail if it is stale
@@ -11,7 +11,8 @@ derived: for each gene the **latest native source** in `docs/gene_ledger.json`
 that measured it supplies the on/off wins and games (so a gene added after the
 whole-genome screen still appears, from its own screen), the **latest war
 source** supplies the war column, and the deployment verdict comes from the
-ledger. Genes whose code has been removed this cycle are listed from their last
+ledger. Screenable genes without a native result are listed separately without
+a rank. Genes whose code has been removed this cycle are listed from their last
 measurement, as before. Descriptions are the first sentence of each toggle's
 doc comment in `src/ai/advanced/treatment_flags.rs`. Hand-written follow-ups
 go in `docs/gene_ranking_notes.md` and are carried under the table.
@@ -152,9 +153,11 @@ def render(ledger: dict) -> str:
     reg = registry()
 
     rows = []
+    unmeasured = []
     for tag in tags:
         history = native.get(tag)
         if not history:
+            unmeasured.append(tag)
             continue
         rows.append((wins_per(history[-1]["win_on"], history[-1]["players"]), tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
@@ -178,7 +181,8 @@ def render(ledger: dict) -> str:
         "major seat carrying its own genome (errors clustered by game pair), so a gene's "
         "on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the "
         "instrument; the paired contrasts, intervals and family-wise verdicts stay in "
-        "`docs/gene_ledger.json`.",
+        "`docs/gene_ledger.json`. Screenable genes awaiting their first native "
+        "measurement are listed separately below without a rank.",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a "
         "four-player screen), so the expected count is 1,667 wins per 10,000 games and the "
@@ -211,6 +215,26 @@ def render(ledger: dict) -> str:
             f"| {rank} | {wins:+d} | {prior} | `{tag}` | {desc.get(tag, '')} | {default} | "
             f"{100 * on_rate:.2f}% | {100 * off_rate:.2f}% | {fmt_int(on_games + off_games)} |"
         )
+
+    if unmeasured:
+        lines += [
+            "",
+            "## Awaiting native measurement",
+            "",
+            "These screenable genes have no native on/off result, so they receive no rank or "
+            "promotion from this table. Their deployment state remains explicit while a native "
+            "screen is pending.",
+            "",
+            "| Gene | Default | Description |",
+            "|---|---|---|",
+        ]
+        for tag in sorted(unmeasured):
+            v = verdict.get(tag, {})
+            default = "**on**" if v.get("default_on") else "off"
+            verdict_word = v.get("verdict", "unmeasured")
+            lines.append(
+                f"| `{tag}` | {default} ({verdict_word}) | {desc.get(tag, '')} |"
+            )
 
     if removed:
         lines += [

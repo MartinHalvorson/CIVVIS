@@ -20,13 +20,16 @@ class TheTableIsDerived(unittest.TestCase):
             "HEURISTIC_GENE_RANKING.md is stale: run tools/heuristic_gene_ranking.py --write",
         )
 
-    def test_every_screenable_gene_with_a_native_measurement_is_ranked(self):
+    def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         native, _, _, _ = ranking.load_sources(ledger)
         text = ranking.RANKING_MD.read_text()
         for tag in ranking.screenable_tags():
             if tag in native:
                 self.assertIn(f"`{tag}`", text, tag)
+            else:
+                self.assertIn("## Awaiting native measurement", text)
+                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
         self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked natively")
 
     def test_descriptions_come_from_the_toggle_docs(self):
