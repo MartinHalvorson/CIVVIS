@@ -2391,7 +2391,6 @@ fn advanced_formations_link_breach_support_to_a_compatible_escort() {
     assert_eq!(game.units[&cavalry].linked_to, None);
 }
 
-
 /// The same separation applies on land, where the current live game was
 /// repeatedly issuing `ENTER_FORMATION`, `EXIT_FORMATION`, then a delayed
 /// march.  A deployment controller keeps the native gene off and instead
