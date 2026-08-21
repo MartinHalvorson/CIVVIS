@@ -41,9 +41,9 @@
     "withholdable": 60
   },
   "derived": {
-    "eval_only_count": 240,
-    "firaxis_only_count": 30,
-    "live_bridge_count": 90,
+    "eval_only_count": 241,
+    "firaxis_only_count": 31,
+    "live_bridge_count": 91,
     "native_engine_repair_count": 60,
     "withholdable_live_count": 60
   },
@@ -247,7 +247,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 240,
+      "declared_count": 241,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -301,6 +301,7 @@
         "live_without_projected_stock_denial",
         "live_without_endgame_war_runway",
         "live_without_stacked_escort",
+        "live_without_live_formationless_settler_shadow",
         "live_without_counter_in_lane",
         "live_without_era_paced_expansion",
         "live_without_escort_unstick",
@@ -492,7 +493,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 30,
+      "declared_count": 31,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -517,6 +518,7 @@
         "host-settler-pop",
         "explore-dead-targets",
         "bank-envoys",
+        "live-formationless-settler-shadow",
         "explore-commit",
         "land-grab",
         "spy-mission-patience",
@@ -527,7 +529,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 90,
+      "declared_count": 91,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -568,6 +570,7 @@
         "garrison-under-fire",
         "escort-unstick",
         "stacked-escort",
+        "live-formationless-settler-shadow",
         "religion-sues-peace",
         "recon-replacement",
         "stranded-settler-discount",
