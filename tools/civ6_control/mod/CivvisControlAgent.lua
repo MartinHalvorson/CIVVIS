@@ -8832,6 +8832,61 @@ CivvisLedger.preview = function(unit, verb, x, y)
 	return out;
 end;
 
+-- ★★★★★ A MELEE ATTACK IS A MOVE_TO **WITH THE ATTACK MODIFIER**, AND
+-- WITHOUT IT NOTHING EVER ATTACKS.
+--
+-- Measured across every control run this machine holds: 8,828 melee ATTACK
+-- orders were issued and 89 combats came back — a 1.0% landing rate — while
+-- RANGE_ATTACK, which needs no modifier, landed 520 of 841 (61.8%). On run
+-- civvis-20260821T130446Z the seat ordered 208 melee attacks in 104 turns and
+-- fought exactly ZERO of them: a barbarian Slinger (combat strength 5, our
+-- preview promising 63 damage) sat on the same plot at (65,25) from t36 to
+-- t40 being "attacked" every single turn and walked away untouched, and the
+-- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
+-- and an Archer to raiders it could not hit back.
+--
+-- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- — the shipped path behind every melee attack a human ever makes — sets
+--
+--   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
+--       UnitOperationMoveModifiers.ATTACK
+--       + UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+--   UnitManager.RequestOperation( kUnit, UnitOperationTypes.MOVE_TO, tParameters );
+--
+-- before requesting MOVE_TO. Without `ATTACK` the engine reads a plain move,
+-- the pathfinder will not enter a plot an enemy is standing on, and the
+-- request resolves to "walk next to it and stop". `CanStartOperation` still
+-- answers TRUE — the unit genuinely can start moving that way — so `operate`
+-- reported every one of those 8,828 orders as given. This is the same trap
+-- `canOperate` was written for, one level deeper: the parameters were passed,
+-- but not all of them.
+--
+-- ⚠ Resolved defensively and ONCE. `UnitOperationMoveModifiers` is a UI-context
+-- global; if a build does not expose it, `nil` is returned and the caller sends
+-- the parameter table unchanged — the historical behaviour — rather than
+-- throwing on every attack in the game.
+-- ⚠ Hung on `CivvisLedger`, not declared as a main-chunk local: this file sits
+-- ONE slot under Lua's 199-local ceiling for the main chunk and
+-- `test_main_chunk_locals_stay_under_the_limit` fails the build at 199. The
+-- resolution is cached in an upvalue so the enum is read once per game.
+CivvisLedger.attackModifiers = nil;
+do
+	local resolved = false;
+	local cached = nil;
+	CivvisLedger.attackModifiers = function()
+		if resolved then return cached; end
+		resolved = true;
+		cached = try(function()
+			local attack = UnitOperationMoveModifiers.ATTACK;
+			if attack == nil then return nil; end
+			local ignore = UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+			if ignore == nil then return attack; end
+			return attack + ignore;
+		end, nil);
+		return cached;
+	end
+end
+
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
 CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
@@ -11003,7 +11058,15 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			if verb == "ATTACK" then CivvisLedger.strike(unit, subject, verb, x, y, turn); end
+			if verb == "ATTACK" then
+				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
+				-- a strike, and the whole army has been swinging at air.
+				local modifiers = CivvisLedger.attackModifiers();
+				if modifiers ~= nil then
+					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
+				end
+				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
 				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
