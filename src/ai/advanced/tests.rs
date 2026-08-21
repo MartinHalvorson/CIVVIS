@@ -23428,7 +23428,7 @@ fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
     // A rival's unit on the same tile is priced at full: this is about who the
     // enemy is, not about the tile.
     game.remove_unit(raider);
-    game.spawn_test_unit("warrior", 1, beside);
+    let rival = game.spawn_test_unit("warrior", 1, beside);
     assert_eq!(
         priced.base.attack_threshold(&game, soldier, beside),
         plain.base.attack_threshold(&game, soldier, beside),
@@ -23437,11 +23437,18 @@ fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
 
     // ⚠ And it must not turn a Scout into a casualty. The Recon doctrine adds
     // +14; an 8-point discount must leave that term firmly positive.
+    // The Recon doctrine term is +14, and the discount must never cancel it or
+    // a Scout would be talked into a fight it cannot win.
+    game.remove_unit(rival);
+    let mut scout_priced = AdvancedAi::new();
+    scout_priced.base.barbarian_bargain = true;
+    let scout = game.spawn_test_unit("scout", 0, ring);
+    let raider_again = game.spawn_test_unit("warrior", barb, beside);
     assert!(
-        crate::ai::BARBARIAN_BARGAIN_DISCOUNT < 14.0,
-        "the discount must never cancel the Recon penalty that keeps scouts \
-         out of fights"
+        scout_priced.base.attack_threshold(&game, scout, beside) > 0.0,
+        "a Scout must still be priced out of attacking a raider"
     );
+    let _ = raider_again;
 }
 
 /// The gene widens WHO may be shot at, not how far the empire will march. A
