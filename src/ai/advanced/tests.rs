@@ -20047,6 +20047,206 @@ fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
     assert!(!AdvancedAi::legacy().settler_target_hysteresis);
 }
 
+/// The target can remain a fine city site while a visible raider makes only
+/// its first route step unsafe. Waiting for the three-stall retirement loses
+/// turns and lets another settler choose the same corridor. The opt-in sends
+/// the first settler to the best safe alternate, holds the corridor out of all
+/// settlers' picks briefly, and then lets the original target back in once the
+/// threat is gone. Run it against both a barbarian and a wartime major: this
+/// is a route-safety policy, not a barbarian-only special case.
+#[test]
+fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
+    let run = |barbarian: bool| {
+        let (mut game, home) = camp_bounty_board(if barbarian { 92_041 } else { 92_042 });
+        game.record_contact(0, 1);
+        game.at_war.insert((0, 1));
+        // Make the nearby alternative sites comparable open ground. The
+        // chosen target is cached deliberately: this test isolates a route
+        // blocker that appears AFTER an otherwise valid target was selected.
+        for position in game.wdisk(home, 10) {
+            if game.city_at(position).is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.hills = false;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+            }
+        }
+        let settler = game.spawn_test_unit("settler", 0, home);
+        let open = |g: &Game, position: Pos| {
+            g.map.get(position).is_some_and(|tile| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && tile
+                        .owner_city
+                        .is_none_or(|city| g.cities[&city].owner == 0)
+            }) && g.city_at(position).is_none()
+                && g.units_at(position).is_empty()
+        };
+        // Start from the controller's real first choice. The test then places
+        // the blocker after that decision, which is the live failure shape:
+        // an attractive target becomes route-dangerous rather than never
+        // qualifying as a settlement site at all.
+        let picker = AdvancedAi::new();
+        let target = picker
+            .best_settler_target(&game, 0, settler, 8, None)
+            .map(|(position, _)| position)
+            .expect("the open board has a normal settlement target");
+        let step = game
+            .route_step(settler, target, 0)
+            .expect("the normal target has a first route step");
+        // Give a different branch a genuinely strong city site. It is the
+        // intended runner-up after the manually cached first choice becomes
+        // dangerous, and its first step must not share that branch.
+        let alternate = game
+            .wdisk(home, 5)
+            .into_iter()
+            .filter(|position| {
+                game.wdist(home, *position) == 4
+                    && game.wdist(*position, target) > 4
+                    && open(&game, *position)
+            })
+            .find(|position| game.route_step(settler, *position, 0) != Some(step))
+            .expect("the city has an alternate settlement branch");
+        for position in game.wdisk(alternate, 2) {
+            if game.city_at(position).is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.feature = None;
+                tile.hills = true;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+            }
+        }
+        let owner = if barbarian {
+            game.barb_pid.expect("the fixture has a barbarian seat")
+        } else {
+            1
+        };
+        // Not every raider position leaves a safe way around it. Select the
+        // real shape the gene promises to solve: the preferred route is in a
+        // capture envelope and the ranking has a different first-step-safe
+        // site after the preferred one is deferred.
+        let mut threat_position = None;
+        for candidate in game.nbrs(step) {
+            if candidate == target
+                || !open(&game, candidate)
+                || game.wdist(candidate, home) > 2
+                || game.wdist(candidate, target) <= 1
+            {
+                continue;
+            }
+            let temporary = game.spawn_test_unit("warrior", owner, candidate);
+            let mut probe = AdvancedAi::new();
+            probe.enable_settler_threat_detour();
+            let visible = probe.battlefront_visibility(&game, 0);
+            let safe_runner_up = if game.sees(&visible, candidate)
+                && probe.settler_target_has_visible_route_threat(&game, 0, settler, target)
+            {
+                probe.settler_threat_deferrals.insert(
+                    target,
+                    game.turn + game.standard_duration(SETTLER_THREAT_DETOUR_TURNS),
+                );
+                probe
+                    .best_settler_target(&game, 0, settler, 8, None)
+                    .map(|(position, _)| position)
+                    .is_some_and(|fallback| {
+                        !probe.settler_target_has_visible_route_threat(&game, 0, settler, fallback)
+                    })
+            } else {
+                false
+            };
+            game.remove_unit(temporary);
+            if safe_runner_up {
+                threat_position = Some(candidate);
+                break;
+            }
+        }
+        let threat_position = threat_position
+            .expect("the first step has a visible threat post with a safe runner-up");
+        let threat = game.spawn_test_unit("warrior", owner, threat_position);
+        let mut ai = AdvancedAi::new();
+        ai.enable_settler_threat_detour();
+        assert!(
+            ai.settlement_safety,
+            "the route gate needs settlement safety"
+        );
+        let visible = ai.battlefront_visibility(&game, 0);
+        assert!(
+            game.sees(&visible, threat_position),
+            "the blocker is visible"
+        );
+        assert!(
+            ai.settlement_tile_risk(&game, 0, Some(settler), step, &visible)
+                > SETTLER_STEP_RISK_LIMIT,
+            "the blocker makes the next route step unsafe"
+        );
+        assert!(
+            ai.settler_target_has_visible_route_threat(&game, 0, settler, target),
+            "the route-specific gate sees the blocker even though the target itself is safe"
+        );
+
+        ai.settler_targets.insert(settler, target);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        assert!(
+            ai.advanced_settler_step(&mut game, 0, settler),
+            "the detour immediately spends the Settler's turn on the safe route"
+        );
+        let fallback = ai.settler_targets[&settler];
+        assert_ne!(fallback, target, "the unsafe corridor is not the runner-up");
+        assert_eq!(
+            ai.settler_threat_deferrals.get(&target).copied(),
+            Some(game.turn + game.standard_duration(SETTLER_THREAT_DETOUR_TURNS)),
+            "the original site is deferred for every settler, not retired as dead"
+        );
+        assert!(
+            !ai.settler_target_has_visible_route_threat(&game, 0, settler, fallback),
+            "the alternate's own first step is safe"
+        );
+
+        // The original high-value location has not been discarded forever.
+        // Once the hostile is gone and the short deferral expires, a later
+        // Settler may keep it as its target again.
+        game.remove_unit(threat);
+        game.remove_unit(settler);
+        game.turn += game.standard_duration(SETTLER_THREAT_DETOUR_TURNS);
+        let later = game.spawn_test_unit("settler", 0, home);
+        ai.settler_targets.insert(later, target);
+        game.units.get_mut(&later).unwrap().moves_left = 2.0;
+        let _ = ai.advanced_settler_step(&mut game, 0, later);
+        assert!(
+            !ai.settler_threat_deferrals.contains_key(&target),
+            "the cleared corridor is available again after its short window"
+        );
+        assert_eq!(
+            ai.settler_targets.get(&later),
+            Some(&target),
+            "the original site is a live target again rather than a dead one"
+        );
+    };
+
+    run(true);
+    run(false);
+}
+
+#[test]
+fn settler_threat_detour_is_an_off_by_default_native_gene() {
+    assert!(!AdvancedAi::new().settler_threat_detour);
+    assert!(!AdvancedAi::legacy().settler_threat_detour);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "settler-threat-detour")
+        .expect("the gene is published for gene_screen and evaluator arms");
+    let mut ai = AdvancedAi::new();
+    enable(&mut ai);
+    assert!(ai.settler_threat_detour);
+    ai.disable_settler_threat_detour();
+    assert!(!ai.settler_threat_detour);
+}
+
 #[test]
 fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
     let (mut game, source, target) = stacked_escort_fixture();
@@ -23428,6 +23628,76 @@ fn the_guard_kills_the_raider_that_is_pinning_the_walker_not_the_richer_target()
         game.units.contains_key(&bystander) && game.units[&bystander].hp == 100,
         "and it must not have spent the swing on the bystander first"
     );
+}
+
+/// ★★★★★ WE DO NOT LOSE THE FIGHTS; WE DO NOT TAKE ENOUGH OF THEM.
+///
+/// MEASURED over every live run since the melee bridge was repaired (#2223),
+/// from `combat` events: our melee attacks **kill 119 of 225 (53 %) and lose
+/// the attacker 6 times (2.7 %)**; our ranged attacks kill 34 of 65 and have
+/// **never** lost the attacker. Our swings are good. The barbarians simply
+/// take **867 attacks against our 290**, which is why the early window trades
+/// at 0.71 in their favour.
+///
+/// `attack_threshold` prices a raider the way it prices Persia. It is not the
+/// same fight: no war weariness, no retaliation invited, no peace to lose, the
+/// camp respawns whatever we do, and killing the unit is the only exit from
+/// the zone-of-control lock that strands our Settlers. `barbarian_bargain` is
+/// that difference as one number.
+#[test]
+fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let ring = open_ground_at(&game, home, 4);
+    let beside = *crate::hex::neighbors(ring)
+        .iter()
+        .find(|pos| {
+            game.map
+                .get(**pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(**pos).is_empty()
+                && game.city_at(**pos).is_none()
+        })
+        .expect("open ground beside the ring tile");
+    let soldier = game.spawn_test_unit("warrior", 0, ring);
+    let raider = game.spawn_test_unit("warrior", barb, beside);
+
+    let mut plain = AdvancedAi::new();
+    plain.base.barbarian_bargain = false;
+    let mut priced = AdvancedAi::new();
+    priced.base.barbarian_bargain = true;
+    let full = plain.base.attack_threshold(&game, soldier, beside);
+    let cheap = priced.base.attack_threshold(&game, soldier, beside);
+    assert_eq!(
+        full - cheap,
+        crate::ai::BARBARIAN_BARGAIN_DISCOUNT,
+        "attacking a raider must cost exactly the discount less"
+    );
+
+    // A rival's unit on the same tile is priced at full: this is about who the
+    // enemy is, not about the tile.
+    game.remove_unit(raider);
+    let rival = game.spawn_test_unit("warrior", 1, beside);
+    assert_eq!(
+        priced.base.attack_threshold(&game, soldier, beside),
+        plain.base.attack_threshold(&game, soldier, beside),
+        "a major's unit is the same price with the gene on"
+    );
+
+    // ⚠ And it must not turn a Scout into a casualty. The Recon doctrine adds
+    // +14; an 8-point discount must leave that term firmly positive.
+    // The Recon doctrine term is +14, and the discount must never cancel it or
+    // a Scout would be talked into a fight it cannot win.
+    game.remove_unit(rival);
+    let mut scout_priced = AdvancedAi::new();
+    scout_priced.base.barbarian_bargain = true;
+    let scout = game.spawn_test_unit("scout", 0, ring);
+    let raider_again = game.spawn_test_unit("warrior", barb, beside);
+    assert!(
+        scout_priced.base.attack_threshold(&game, scout, beside) > 0.0,
+        "a Scout must still be priced out of attacking a raider"
+    );
+    let _ = raider_again;
 }
 
 /// The gene widens WHO may be shot at, not how far the empire will march. A
