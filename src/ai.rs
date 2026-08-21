@@ -296,10 +296,12 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
-    AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GrandStrategy,
-    LiveTreatment, StrategicPlan, StrategyCensus, VictoryTarget, LAND_GRAB_CITY_CEILING,
-    LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS,
-    PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS,
+    deployment_treatments, gene_ledger, gene_ledger_rows, ledger_default_on, ledger_verdict,
+    AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GeneLedgerApplied,
+    GeneVerdict, GrandStrategy, LiveTreatment, Measure, StrategicPlan, StrategyCensus, Verdict,
+    VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
+    LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS, PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS,
+    PRODUCTION_TREATMENTS,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -5862,6 +5864,18 @@ impl BasicAi {
         // Posts are immutable for the turn. A branch may have paid to build a
         // domain's list, so retain that work for later serial fallbacks.
         self.patrol_posts.extend(state.patrol_posts);
+    }
+
+    /// Remember the hops a unit actually took this turn, so a continuation
+    /// from live state (`step_and_reassess`) keeps the reversal guard's
+    /// memory of them. Replaces this turn's record; an older turn's is gone.
+    pub(crate) fn record_walked_steps(&mut self, uid: u32, turn: u32, from_tiles: Vec<Pos>) {
+        let mut trails = self.last_path_step_from.borrow_mut();
+        let entry = trails.entry(uid).or_insert((turn, Vec::new()));
+        if entry.0 != turn {
+            *entry = (turn, Vec::new());
+        }
+        entry.1.extend(from_tiles);
     }
 
     pub(crate) fn clear_prepared_patrol_posts(&mut self) {

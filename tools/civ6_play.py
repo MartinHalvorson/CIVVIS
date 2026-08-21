@@ -406,6 +406,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command.append("--war-from-plan")
     if args.civvis_refresh_seconds is not None:
         command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    for treatment in args.civvis_with:
+        command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
     return command
@@ -619,6 +621,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # cancelled at turn start; the seat then advertises `moves_at_turn_start`
         # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
         "CapMovesToReach": args.cap_moves_to_reach,
+        # A default-off host experiment: when a capped setter and exactly one
+        # co-located combat row share a MOVE_TO goal, make the guard follow the
+        # setter's actual leg only if it can reach that leg this turn.  This is
+        # bridge reconciliation, not a change to the Rust escort heuristic.
+        "SettlerEscortCapSync": args.settler_escort_cap_sync,
         "CancelQueuedPaths": args.cancel_queued_paths,
         # ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A DIE. With
         # `CombatFrames` ≥ 1 the mod re-exports the board once the opening
@@ -629,6 +636,19 @@ def build_config(args: argparse.Namespace) -> dict:
         # own short poll budget and no fallback. See docs/LIVE_TACTICS.md §8.
         "CombatFrames": args.combat_frames,
         "CombatFramePolls": args.combat_frame_polls,
+        # ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. A
+        # replan frame (`ReplanFrames` ≥ 1, default 2) opens after the
+        # opening orders settle whenever the seat revealed ground since the
+        # board went out and a unit still has movement to spend on it (or a
+        # strike went out): the revealed plots cross as a `tiles` delta, the
+        # board is exported again, and CIVVIS re-plans the same turn. The
+        # brain's half (`step_and_reassess`) cuts a walk at its first
+        # unrevealed hex so the unit steps to the edge of the known and the
+        # frame spends the rest on what it saw. `TileDelta` sends newly
+        # revealed plots every turn and frame instead of every
+        # `TileExportEvery` turns. See docs/LIVE_TACTICS.md §11.
+        "ReplanFrames": args.replan_frames,
+        "TileDelta": args.tile_delta,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -2721,6 +2741,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
     def stop_brain() -> None:
@@ -3214,6 +3235,11 @@ def _play(args: argparse.Namespace) -> int:
         # batches would have been unattributable even once they were run.
         # Empty list means the full shipped bundle played.
         "withheld": sorted(args.civvis_without) if args.civvis_decides else None,
+        # `--civvis-with` is deliberately narrower than a general opt-in: it
+        # can restore only a live treatment the ledger otherwise withholds.
+        # Keep the exact named arm with the summary even if no binary event was
+        # retained, so a force-on run never resembles deployment afterwards.
+        "forced": sorted(args.civvis_with) if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -3234,9 +3260,12 @@ def _play(args: argparse.Namespace) -> int:
             "OrderQueue": args.order_queue,
             "ExploreGuard": args.explore_guard,
             "CapMovesToReach": args.cap_moves_to_reach,
+            "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
+            "ReplanFrames": args.replan_frames,
+            "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -3536,6 +3565,11 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-with", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for a labeled "
+                         "verification arm, repeatable; the decision worker "
+                         "validates the name and keeps deployment unchanged by default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "
@@ -3576,6 +3610,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="send a MOVE_TO's whole destination even when the host's path "
                          "outruns the turn (the pre-board rule: the host queues the rest "
                          "and walks it before the next frame)")
+    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
+                    help="experimentally keep a co-located combat escort on a capped "
+                         "settler's actual host leg (off by default)")
     ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
                     action="store_false", default=True,
                     help="leave combat units' queued host paths in place at turn start")
@@ -3586,6 +3623,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--combat-frame-polls", type=int, default=20,
                     help="polls to wait for a combat frame's answer before the frame "
                          "is abandoned by name and the turn ends")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="mid-turn replan frames per turn: after the opening orders "
+                         "settle, if the seat revealed ground since the board went "
+                         "out and a unit can still move (or a strike went out), "
+                         "re-export the board and let CIVVIS re-plan the same turn "
+                         "(0 = off; each frame waits --combat-frame-polls)")
+    ap.add_argument("--no-tile-delta", dest="tile_delta",
+                    action="store_false", default=True,
+                    help="send newly revealed plots only with the periodic sweep "
+                         "(--tile-export-every) instead of every turn and frame")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")

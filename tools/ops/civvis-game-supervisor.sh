@@ -47,6 +47,20 @@ LOGS=$HOME/civvis-climb-logs
 # Set `CIVVIS_STRATEGY=auto` to opt into per-civilization re-selection, or
 # `CIVVIS_STRATEGY=stock` to run the untuned control.
 STRATEGY=${CIVVIS_STRATEGY:-g56-48}
+# `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
+# treatments.  It is deliberately empty by default: a comma-separated value
+# (for example `war-economy`) changes this batch's controller, and
+# `civ6_play.py` writes the resolved withheld list into every summary.  Do not
+# turn a native screen result into a deployment change here; name the arm,
+# run its comparable control, and let the ladder read both.
+WITHHELD=${CIVVIS_WITHOUT:-}
+WITHOUT_ARGS=()
+if [[ -n "$WITHHELD" ]]; then
+  for treatment in ${(s:,:)WITHHELD}; do
+    [[ -n "$treatment" ]] || continue
+    WITHOUT_ARGS+=(--without "$treatment")
+  done
+fi
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -96,7 +110,7 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, pinfile=$PINFILE)"
+say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, pinfile=$PINFILE)"
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -412,6 +426,7 @@ while true; do
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      "${WITHOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1

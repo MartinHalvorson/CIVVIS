@@ -123,6 +123,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_live_religious_purchase_guard",
     "live_without_recorded_tactical_step",
     "live_without_whole_turn_backtrack_guard",
+    "live_without_step_and_reassess",
     "live_without_strike_opening",
     "live_without_ranged_needs_line_of_sight",
     "live_without_one_launch_pad",
@@ -355,6 +356,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "loyalty-policy-defence",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
+    "step-and-reassess",
     "strike-opening",
     "bounded-recovery",
     "army-target-weighs-enemy",
@@ -624,6 +626,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
+    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -694,6 +697,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
+    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -848,6 +852,7 @@ define_arm_kinds! {
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
     LiveWithoutWholeTurnBacktrackGuard => "live_without_whole_turn_backtrack_guard",
+    LiveWithoutStepAndReassess => "live_without_step_and_reassess",
     LiveWithoutStrikeOpening => "live_without_strike_opening",
     LiveWithoutRangedNeedsLineOfSight => "live_without_ranged_needs_line_of_sight",
     LiveWithoutOneLaunchPad => "live_without_one_launch_pad",
@@ -4536,6 +4541,7 @@ impl ArmKind {
             Self::LiveWithoutLiveReligiousPurchaseGuard => live_without("live-religious-purchase"),
             Self::LiveWithoutRecordedTacticalStep => live_without("recorded-tactical-step"),
             Self::LiveWithoutWholeTurnBacktrackGuard => live_without("whole-turn-backtrack-guard"),
+            Self::LiveWithoutStepAndReassess => live_without("step-and-reassess"),
             Self::LiveWithoutStrikeOpening => live_without("strike-opening"),
             Self::LiveWithoutRangedNeedsLineOfSight => live_without("ranged-line-of-sight"),
             Self::LiveWithoutOneLaunchPad => live_without("one-launch-pad"),
@@ -6905,10 +6911,10 @@ mod tests {
             include_str!("ai/advanced/treatment_flags.rs")
         );
         let body = source
-            .split("pub fn enable_live_bridge(&mut self) {")
+            .split("pub fn enable_live_bridge_universe(&mut self) {")
             .nth(1)
             .and_then(|tail| tail.split("\n    }\n").next())
-            .expect("enable_live_bridge body");
+            .expect("enable_live_bridge_universe body");
         let enabled = body.matches("self.enable_").count();
         assert_eq!(
             enabled,
@@ -7121,17 +7127,28 @@ mod tests {
 
         // The parent must actually delegate, or the halves could agree with
         // the bridge while `advanced_synergy` carried neither of them.
-        let parent = calls("enable_engine_repairs");
+        let parent = calls("enable_engine_repairs_universe");
         assert_eq!(
             parent,
             BTreeSet::from([
                 "engine_repairs_economy".to_string(),
                 "engine_repairs_war".to_string(),
             ]),
-            "enable_engine_repairs must be exactly its two halves"
+            "enable_engine_repairs_universe must be exactly its two halves"
         );
+        // And the deployment helpers are each their universe plus the ledger.
+        for (deployed, universe) in [
+            ("enable_engine_repairs", "engine_repairs_universe"),
+            ("enable_live_bridge", "live_bridge_universe"),
+        ] {
+            assert_eq!(
+                calls(deployed),
+                BTreeSet::from([universe.to_string()]),
+                "{deployed} must be its universe and the ledger, nothing else"
+            );
+        }
 
-        let bridge = calls("enable_live_bridge");
+        let bridge = calls("enable_live_bridge_universe");
         let war = calls("enable_engine_repairs_war");
         let economy = calls("enable_engine_repairs_economy");
         let overlap: Vec<&String> = war.intersection(&economy).collect();

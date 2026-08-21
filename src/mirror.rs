@@ -258,6 +258,16 @@ pub struct TilesChunk {
     pub plots: Vec<Plot>,
 }
 
+/// The one stamp a between-sweeps `tiles` delta carries (`CivvisTiles.sweep`:
+/// only the plots revealed or changed hands since the last board went out).
+/// Read beside [`TilesChunk`] rather than on it so the chunk's many literal
+/// constructions stay as they are.
+#[derive(Deserialize)]
+struct TilesDeltaStamp {
+    #[serde(default)]
+    delta: bool,
+}
+
 /// The seat's view of the world at one turn, assembled from its `tiles` chunks.
 ///
 /// Deliberately not a `Game`: the holes have to survive into whatever consumes
@@ -276,20 +286,36 @@ impl Snapshot {
     pub fn from_chunks(chunks: &[TilesChunk]) -> Snapshot {
         let mut snapshot = Snapshot::default();
         for chunk in chunks {
-            snapshot.turn = snapshot.turn.max(chunk.turn);
-            snapshot.width = snapshot.width.max(chunk.width);
-            snapshot.height = snapshot.height.max(chunk.height);
-            for plot in &chunk.plots {
-                snapshot.revealed.insert((plot.x, plot.y), plot.clone());
-            }
+            snapshot.merge_sweep(chunk);
         }
         snapshot
+    }
+
+    /// Merge one chunk of a full sweep: its plots land and its turn advances
+    /// the snapshot's sweep turn.
+    pub fn merge_sweep(&mut self, chunk: &TilesChunk) {
+        self.turn = self.turn.max(chunk.turn);
+        self.merge_delta(chunk);
     }
 
     /// Whether this seat has revealed a plot. Everything outside this is unknown
     /// ground and must never be treated as ordinary ground.
     pub fn is_revealed(&self, pos: (i32, i32)) -> bool {
         self.revealed.contains_key(&pos)
+    }
+
+    /// Merge a between-sweeps delta: its plots land like any chunk's, but
+    /// the snapshot's sweep turn stays where the last FULL sweep put it. The
+    /// `improved` fold (`apply_finished_improvements`) keeps events at or
+    /// after the newest sweep, and a delta carries none of the older plots'
+    /// improvements — letting it stand for a sweep would drop every
+    /// improvement finished since the real one.
+    pub fn merge_delta(&mut self, chunk: &TilesChunk) {
+        self.width = self.width.max(chunk.width);
+        self.height = self.height.max(chunk.height);
+        for plot in &chunk.plots {
+            self.revealed.insert((plot.x, plot.y), plot.clone());
+        }
     }
 
     pub fn plot(&self, pos: (i32, i32)) -> Option<&Plot> {
@@ -489,6 +515,69 @@ mod tests {
         assert!(early.plot((7, 7)).is_none(), "turn 1 must not see turn 10");
         let latest = snapshot_from_events(&path).unwrap();
         assert_eq!(latest.revealed_count(), 2);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(dir);
+    }
+
+    /// ★★★★ A TILES DELTA IS NEW GROUND, NOT A NEW SWEEP. The mod sends what
+    /// a unit revealed since the last board went out, every turn and frame,
+    /// stamped `delta`. It must merge onto the map like any chunk — that is
+    /// the whole point — and must NOT move the snapshot's sweep turn, or the
+    /// `improved` fold would discard every improvement finished between the
+    /// real sweep and the delta (rule 3 of `apply_finished_improvements`).
+    #[test]
+    fn a_tiles_delta_merges_new_ground_without_standing_for_a_sweep() {
+        let dir =
+            std::env::temp_dir().join(format!("civvis-mirror-tiles-delta-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS"}]}"#,
+                r#"{"kind":"improved","turn":3,"x":1,"y":1,"im":"IMPROVEMENT_FARM"}"#,
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS"}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let snapshot = snapshot_from_events(&path).unwrap();
+        assert_eq!(
+            snapshot.revealed_count(),
+            2,
+            "the delta's plot is on the map"
+        );
+        assert_eq!(
+            snapshot.plot((2, 1)).and_then(|plot| plot.t.as_deref()),
+            Some("TERRAIN_PLAINS")
+        );
+        assert_eq!(snapshot.turn, 1, "the sweep turn is the last FULL sweep's");
+        assert_eq!(
+            snapshot.plot((1, 1)).and_then(|plot| plot.im.as_deref()),
+            Some("IMPROVEMENT_FARM"),
+            "an improvement finished after the sweep survives a later delta"
+        );
+
+        // Stream order decides a plot, whichever kind of chunk carried it:
+        // a later sweep overrides an earlier delta's owner, and a later
+        // delta overrides the sweep's.
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":3}]}"#,
+                r#"{"kind":"tiles","turn":25,"width":8,"height":8,"chunk":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":-1}]}"#,
+                r#"{"kind":"tiles","turn":26,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":4}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let at_sweep = snapshot_from_events_at(&path, Some(25)).unwrap();
+        assert_eq!(at_sweep.plot((2, 1)).map(|plot| plot.o), Some(-1));
+        assert_eq!(at_sweep.turn, 25);
+        let latest = snapshot_from_events(&path).unwrap();
+        assert_eq!(latest.plot((2, 1)).map(|plot| plot.o), Some(4));
+        assert_eq!(latest.turn, 25, "the delta at turn 26 is not a sweep");
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir(dir);
     }
@@ -8247,18 +8336,26 @@ pub fn snapshot_from_events_at(
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
-    let mut chunks = Vec::new();
+    // In stream order, so a later chunk's plot wins whichever kind it is;
+    // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
+    // see `Snapshot::merge_delta`.
+    let mut snapshot = Snapshot::default();
     for line in raw.lines() {
         if !line.contains("\"tiles\"") {
             continue;
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                chunks.push(chunk);
+                let is_delta =
+                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
+                if is_delta {
+                    snapshot.merge_delta(&chunk);
+                } else {
+                    snapshot.merge_sweep(&chunk);
+                }
             }
         }
     }
-    let mut snapshot = Snapshot::from_chunks(&chunks);
     apply_finished_improvements(&raw, turn, &mut snapshot);
     Ok(snapshot)
 }
@@ -11584,6 +11681,21 @@ pub struct Seat {
     /// before, because the export's `moves` has misled twice in the past.
     #[serde(default)]
     pub moves_at_turn_start: bool,
+    /// The mod opens mid-turn replan frames (`CivvisFrames`, `ReplanFrames`
+    /// ≥ 1): once the opening orders settle on a board with newly revealed
+    /// ground and movement left to spend on it, the board is exported again
+    /// and the same turn re-planned. Only then does `civvis_orders` cut a
+    /// unit's walk at its first unrevealed hex (`step_and_reassess`) — the
+    /// frame is what spends the rest of the movement on what the step
+    /// uncovered; against an older mod the cut would strand it. Absent
+    /// (older mod) reads `false`.
+    #[serde(default)]
+    pub replan_frames: bool,
+    /// Newly revealed plots cross every turn and frame as `tiles` deltas
+    /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
+    /// snapshot merges chunks cumulatively either way.
+    #[serde(default)]
+    pub tile_delta: bool,
 }
 
 /// See [`Seat::victories`]. Each checkbox is independently optional so one

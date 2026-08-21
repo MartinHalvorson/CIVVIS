@@ -89,7 +89,7 @@ fn only_the_live_bridge_raises_the_housing_ceiling() {
         "the frozen tournament controller must keep its recorded ladders"
     );
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.housing_districts, "the deployment turns it on");
     live.disable_housing_districts();
     assert!(
@@ -105,7 +105,7 @@ fn only_the_live_bridge_lets_a_capped_city_buy_its_ceiling() {
         "the frozen tournament controller must keep its recorded ladders"
     );
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.housing_buildings, "the deployment turns it on");
     live.disable_housing_buildings();
     assert!(
@@ -125,7 +125,7 @@ fn only_the_live_bridge_discounts_a_stranded_settler() {
     );
     assert!(!AdvancedAi::new().settler_founds_when_stalled);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.base.settler_strand_discount,
         "the deployment turns it on"
@@ -148,7 +148,7 @@ fn only_the_live_bridge_discounts_a_stranded_settler() {
 fn only_the_live_bridge_keeps_asking_for_a_campus() {
     assert!(!AdvancedAi::new().campus_every_city);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.campus_every_city);
     live.disable_campus_every_city();
     assert!(!live.campus_every_city);
@@ -248,7 +248,7 @@ fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
 fn only_the_live_bridge_plays_the_housing_cards() {
     assert!(!AdvancedAi::new().housing_cards);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.housing_cards);
     live.disable_housing_cards();
     assert!(!live.housing_cards);
@@ -294,7 +294,7 @@ fn the_housing_cards_go_behind_the_lanes_own_opening() {
 fn only_the_live_bridge_aims_research_at_the_housing_ceiling() {
     assert!(!AdvancedAi::new().housing_research);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.housing_research);
     live.disable_housing_research();
     assert!(!live.housing_research);
@@ -344,7 +344,7 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
         .expect("two cities");
 
     let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge();
+    ai.enable_live_bridge_universe();
 
     // A size-1 city has room to grow, so nothing is being paid.
     game.cities.get_mut(&cid).unwrap().pop = 1;
@@ -403,7 +403,7 @@ fn a_major_war_sends_an_unwalled_empire_at_the_wall_tech() {
     );
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.base.garrison_walls,
         "the walls doctrine is on for the live seat"
@@ -548,7 +548,7 @@ fn live_first_campus_writing_precedes_the_housing_research_detour() {
 
     let mut live_game = setup();
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert_eq!(
         live.first_campus_tech(&live_game, 0),
         Some("writing"),
@@ -577,7 +577,7 @@ fn only_the_live_bridge_replaces_the_recon_arm() {
     assert!(AdvancedAi::new().base.recon_replacement);
     assert!(!AdvancedAi::legacy().base.recon_replacement);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.recon_replacement);
     live.disable_recon_replacement();
     assert!(!live.base.recon_replacement);
@@ -591,7 +591,7 @@ fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
     assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
     assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.wonder_ring_settle_value);
     live.disable_wonder_ring_settle_value();
     assert!(!live.base.wonder_ring_settle_value);
@@ -1072,7 +1072,7 @@ fn live_stalled_settler_refuses_an_unsupported_hostile_frontier() {
     let mut control_board = game.clone();
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.settler_founds_when_stalled);
     assert_eq!(
         live.live_stalled_settlement_is_unsupported_frontline(&game, 0, here),
@@ -1461,7 +1461,7 @@ fn only_the_live_bridge_fights_the_war_conversion_quartet() {
             && !legacy.endgame_war_runway
     );
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.war_economy && live.war_reinforcement && live.war_patience && live.endgame_war_runway
     );
@@ -1551,7 +1551,7 @@ fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
     assert!(!AdvancedAi::new().governor_every_lane);
     assert!(!AdvancedAi::legacy().governor_every_lane);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.governor_every_lane);
     live.disable_governor_every_lane();
     assert!(!live.governor_every_lane);

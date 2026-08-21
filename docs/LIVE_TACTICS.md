@@ -264,6 +264,9 @@ brain-side withholds in `withheld`. Read a comparison with
 | 1 · per-unit order queue | `OrderQueue` (on) | `civ6_play.py --no-order-queue` — the mod applies one order per unit per turn and the seat stops advertising `order_queue`, so the brain defers follow-ups exactly as before | `mod_arms.OrderQueue` |
 | 1 · explore guard | `ExploreGuard` (on), `ExploreGuardRadius` 4 | `--no-explore-guard` | `mod_arms.ExploreGuard` |
 | 1b · combat frame | `CombatFrames` (**0 = off**), `CombatFramePolls` 20 | `--combat-frames 1` turns it ON for a run | `mod_arms.CombatFrames` |
+| 6 · replan frames | `ReplanFrames` (**2**), same `CombatFramePolls` | `--replan-frames 0` — no mid-turn frame opens for revealed ground (nor for strikes unless `CombatFrames` says so), and the seat stops advertising `replan_frames`, so the brain stops cutting walks at the fog | `mod_arms.ReplanFrames` |
+| 6 · tiles delta | `TileDelta` (on) | `--no-tile-delta` — revealed ground crosses only with the `TileExportEvery` sweep, as before | `mod_arms.TileDelta` |
+| 6 · step-and-reassess (brain) | `step_and_reassess` (on in the live bundle) | live: `--without step-and-reassess` (`live_without_step_and_reassess`); natively the gene `step-and-reassess` in `gene_screen` | `withheld` (live) / the gene |
 | 2 · moves capped to this turn's leg, trusted movement | `CapMovesToReach` (on) | `--no-cap-moves-to-reach` — also stops the seat advertising `moves_at_turn_start`, so the mirror returns to the full allowance | `mod_arms.CapMovesToReach` |
 | 2 · queued paths cancelled at turn start | `CancelQueuedPaths` (on) | `--no-cancel-queued-paths` | `mod_arms.CancelQueuedPaths` |
 | 3 · joint search reach lines | `joint_reach_lines` (on wherever the joint search runs) | live: `--without joint-reach-lines` (`live_without_joint_reach_lines` arm); bench/arena: `advanced_joint_tactics_geometric` seats the pre-§17 portfolio — measured to reproduce the old figure exactly (cavalry +398.0 on block 7,200,000) | `withheld` (live) / the arm name |
@@ -347,3 +350,110 @@ Still open from item 4 after this: nothing of it is bridge-enabled, and the
 siege flags it would choreograph remain, as §3 says, unmeasured on the live
 seat — the first live runs with the order queue (seven had run by 11:21Z on
 2026-08-19, on another machine) have not been read.
+
+
+## 11. Step 6 — the bridge talks more than once a turn, and a unit that sees something new thinks again
+
+**What was wrong.** Two things, one shape. (1) One exchange per turn: the
+board went out at turn start, the orders came back, and nothing the turn
+then revealed — a coast, a rival border, a barbarian camp two hexes past a
+scout's first step — reached the brain until the next turn; the combat frame
+(§8) was the one exception, strike-only and off. (2) The map itself crossed
+only with the `tiles` sweep, every `TileExportEvery` turns (25 by default,
+4 on the ladder): `exportTiles` sends every revealed plot or nothing, so the
+ground a unit uncovered on turn 26 was planned on from turn 29 at the
+earliest, and on a plain `civ6_play` run from turn 50. Meanwhile
+`coalesce_unit_paths` sends a unit's whole walk as one `MOVE_TO` to its
+furthest hex: the host walks a scout three hexes into the fog whatever its
+first step showed. Natively the engine does better than the bridge here — every
+evaluator and the live decider run units serially
+(`advance_unit_serial`), one sighted step at a time — except that the force
+groups are re-formed only when an attack dirties them ("movement cannot
+change the opposing force"), so a step that brings a hostile into view
+changes nothing for the units still to move; and the parallel CLI path
+(`civvis --jobs`, the only `WorkPool` installer) plans batched units up to
+eight hexes on a clone that reveals nothing and replays them blind.
+
+**Mechanism, four parts, each its own switch (§9).**
+
+- **Tiles delta** (`CivvisTiles`, mod). `known[plot] = owner` remembers what
+  has crossed; `exportTiles` between sweeps (and `CivvisTiles.sweep` on a
+  frame) sends only plots revealed or re-owned since, as a `tiles` chunk
+  stamped `delta: true` plus a `tiles_delta` summary (`turn`, `frame`,
+  `plots`). The full sweep keeps its cadence and re-primes `known`. Rust
+  merges chunks in stream order; a delta lands its plots but does **not**
+  advance the snapshot's sweep turn (`Snapshot::merge_delta`), because the
+  `improved` fold keeps events at or after the newest sweep and a delta
+  carries none of the older plots' improvements. Cost: one `IsRevealed` and
+  one `GetOwner` per plot per turn (≈3,400 calls on the 74×46 board) and a
+  record only for the new plots — not the per-plot field walk that once took
+  a turn to ten minutes.
+- **Replan frames** (`CivvisFrames`, mod; `ReplanFrames = N`, default 2).
+  `settleTurn`, once the opening orders and the per-unit queue have drained,
+  calls `CivvisFrames.observe` — the tiles delta sweep (so the count IS the
+  export) and a count of units with movement left — and `why()`: `strike`
+  if a strike went out since the last board (combat or replan frames),
+  `revealed` if ground was revealed and somebody can still move (replan
+  frames only). `begin` emits `combat_frame` or `replan_frame` (with
+  `reason`, `strikes`, `revealed`, `movers`), re-arms the handshake and the
+  queue's tick budget (`CivvisQueue.ticks = 0`: a turn with N frames may
+  hold up to (N+1)·`OrderQueueMaxTicks`), and re-exports the board stamped
+  `frame = N`. The brain (`civ6_brain.py`) is frame-generic already: frame
+  N for a served turn is served once more; `Decider.ask(turn)` reads the
+  newest state for the turn, which is the frame; `orders.frame` rows ride at
+  seq 10000·N; `ready` names the newest frame, which is safe because frame
+  N+1 opens only after N's answer was consumed. A frame waits
+  `CombatFramePolls` (20) with no stale answer and no fallback; on timeout
+  the turn's remaining frames are abandoned by name (`combat_frame_timeout`
+  carries the reason) and the turn ends as before. On the recorded run
+  `live-head-rome-religious-actions-20260802T173404Z` every opening answer
+  landed inside the first poll (median and max `polls` = 1 of 40), so 20 is
+  twenty times the observed need. The seat advertises `replan_frames` and
+  `tile_delta`.
+- **The brain's half** (`step_and_reassess`, `civvis_orders`): when the seat
+  advertises `replan_frames`, a unit's PURE walk (one `MOVE_TO`, no later
+  order for the unit this frame) is cut at its first unrevealed hex — the
+  hop `first_unknown_coalesced_steps` recorded before the walk was folded —
+  so the host walks the unit to the edge of the known, the mod exports what
+  it uncovered, and the frame's re-plan spends the remaining movement
+  (`moves_at_turn_start`, step 2) on the new ground. A walk on known ground
+  and a walk with a follow-up keep their furthest hex. `frontier_cuts=N` in
+  the decide note. Without the capability the cut would strand the rest of
+  the movement, so it is never made.
+- **The native gene** (`step_and_reassess`, on in the live bundle and the
+  repair bundle, priced by `gene_screen`): serially, a step that brings a
+  hostile into view sets `force_groups_dirty` (`note_sightings`,
+  `reveal_regroups`), so the groups are re-formed before the next military
+  step; on the parallel path, the replay of a blind plan stops at the first
+  `Move` that enlarged `players[pid].explored` and the unit finishes from
+  the live board (`apply_unit_intents`, `step_reassessed`, with the hops it
+  really took recorded for the reversal guard). ⚠ The first cut of this gene
+  carried only the parallel leg and screened **+0.0 [+0.0, +0.0]** over 204
+  pairs — byte-identical outcomes, the signature of a gene that never fires
+  in the regime measured; no evaluator installs a pool. A gene's native twin
+  has to act where the native games are played.
+
+**What to read on the first ladder runs** (the climb now forwards
+`--replan-frames` and `--combat-frames`; the latter was never forwarded, so
+no ladder run has played the combat frame either): per turn, `replan_frame` /
+`combat_frame` against `combat_frame_timeout` (a timeout rate above a few
+percent says the poll budget or the brain's frame latency needs attention);
+`tiles_delta.plots` per turn against the old sweep gap; `frontier_cuts` in
+the decide notes and, on the frame, whether the cut units were re-ordered
+(`orders.frame ≥ 1` rows for the same subjects); turn wall time against a
+`--replan-frames 0` arm — the frame is a second export and a second decide.
+The decide is cheap: `civvis_orders --mirror <run> --turn 120` on the 20 MB,
+241-turn journal of `live-head-rome-religious-actions-20260802T173404Z`
+answers in 0.26 s wall (0.81 s at turn 60, cold), whole-journal re-reads
+included; what a frame costs is the host's `exportState` and the relay, so
+that is where to look if frames cost more than they return. The arm that withholds everything at
+once is `--replan-frames 0 --no-tile-delta --civvis-without step-and-reassess`.
+
+Tests: `replan_frame_test.lua` (the delta sweep, its withhold and re-prime;
+the revealed/movers/strike triggers; the cap; the queue re-arm; default-off
+inertness), `a_tiles_delta_merges_new_ground_without_standing_for_a_sweep`,
+`a_walk_into_the_unknown_is_cut_at_its_first_unrevealed_hex`,
+`a_step_that_sights_a_hostile_dirties_the_force_groups`,
+`a_blind_plan_stops_at_the_step_that_revealed_new_ground`,
+`step_and_reassess_is_a_live_treatment_and_a_native_repair`,
+`test_the_mid_turn_frames_reach_the_play_command`.
