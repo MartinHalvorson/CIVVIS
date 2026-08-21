@@ -191,4 +191,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("founder_temple", "founder-temple", AdvancedAi::enable_founder_temple),
     ("theology_for_founders", "theology-for-founders", AdvancedAi::enable_theology_for_founders),
     ("holy_lane_parity", "holy-lane-parity", AdvancedAi::enable_holy_lane_parity),
+    // Half the seats never found a religion and bank ~1,000 Faith they
+    // cannot spend; see `AdvancedAi::idle_faith_patronage`.
+    ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
 ];

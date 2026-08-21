@@ -3728,6 +3728,24 @@ pub struct AdvancedAi {
     /// everywhere by default; opt-in gene `founder-temple`.
     pub founder_temple: bool,
 
+    /// ★★★★ A THOUSAND FAITH THAT NOTHING CAN SPEND. Half the seats of a 6p
+    /// game never found a religion (three prophets exist), and those seats
+    /// ended the 6p 60k screen's games with ~1,000 Faith banked — more than
+    /// the founders. Natively a seat without a religion has almost no legal
+    /// Faith sink: no religious units (the city's majority must be a
+    /// religion it can buy for), Builders and Settlers need Monumentality,
+    /// soldiers need Theocracy or a Grand Master's Chapel, and Great Person
+    /// patronage (`advanced_great_people`) buys only a person already 85%
+    /// earned (60% on its own lane). The Faith expires with the game.
+    ///
+    /// With this on, a seat with no religion and at least 600 Faith may
+    /// patronize any offered Great Person with Faith whatever the shortfall
+    /// (the price is 150 + 10 per missing point, so a cold purchase runs
+    /// 400–700): the bank is otherwise worth nothing, and the Scientist,
+    /// Engineer or Merchant is worth something. Gold purchases keep their
+    /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
+    pub idle_faith_patronage: bool,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -4787,6 +4805,7 @@ impl AdvancedAi {
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
+            idle_faith_patronage: false,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -14287,6 +14306,9 @@ impl AdvancedAi {
     fn advanced_great_people(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let city_count = g.player_city_ids(pid).len() as f64;
         let gold_reserve = (150.0 + 50.0 * city_count).max(self.war_treasury_floor(g, pid));
+        let idle_faith = self.idle_faith_patronage
+            && g.players[pid].religion.is_none()
+            && g.players[pid].faith >= 600.0;
         let faith_reserve = match strategy {
             GrandStrategy::Religion => 250.0,
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
@@ -14361,7 +14383,7 @@ impl AdvancedAi {
             } else {
                 0.15
             };
-            if affinity < 0.0 || close_fraction > limit {
+            if affinity < 0.0 {
                 continue;
             }
             let effect_value = person.effects.values().sum::<f64>() * 12.0;
@@ -14369,6 +14391,16 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
+                // See `idle_faith_patronage`: Faith a religion-less seat
+                // cannot otherwise spend buys the person outright.
+                let currency_limit = if currency == "faith" && idle_faith {
+                    1.0
+                } else {
+                    limit
+                };
+                if close_fraction > currency_limit {
+                    continue;
+                }
                 let Some(price) = g.great_person_patronage_price(pid, kind, currency) else {
                     continue;
                 };

@@ -119,6 +119,18 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
+    /// A seat with no religion and 600+ Faith patronizes Great People with it
+    /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
+    /// Opt-in gene.
+    pub fn enable_idle_faith_patronage(&mut self) {
+        self.idle_faith_patronage = true;
+    }
+
+    /// The twin of `enable_idle_faith_patronage`.
+    pub fn disable_idle_faith_patronage(&mut self) {
+        self.idle_faith_patronage = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
