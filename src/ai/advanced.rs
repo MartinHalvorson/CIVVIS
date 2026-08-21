@@ -7866,21 +7866,12 @@ impl AdvancedAi {
                     "the assigned lane can still afford to expand first",
                 )
             } else {
-                (
-                    target.strategy(),
-                    "following the assigned victory lane",
-                )
+                (target.strategy(), "following the assigned victory lane")
             }
         } else if let Some((_, counter)) = actionable_denial {
-            (
-                counter,
-                "countering a rival close to winning",
-            )
+            (counter, "countering a rival close to winning")
         } else if at_war && !stalemate && !raid_only_war {
-            (
-                GrandStrategy::Conquest,
-                "already at war",
-            )
+            (GrandStrategy::Conquest, "already at war")
         } else if !stalemate
             // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
             // no city ever taken, sixteen lost.

@@ -28823,9 +28823,7 @@ fn a_stronger_neighbour_is_not_raided_for_a_settler() {
         let post = raid_tile_at(&game, theirs, 1, theirs, 1);
         game.spawn_test_unit("swordsman", 1, post);
     }
-    assert!(
-        game.military_power(1) > game.military_power(0) * RAID_POWER_RATIO + RAID_POWER_MARGIN
-    );
+    assert!(game.military_power(1) > game.military_power(0) * RAID_POWER_RATIO + RAID_POWER_MARGIN);
     assert!(ai.raid_opportunity(&game, 0).is_none());
 }
 
@@ -28862,7 +28860,7 @@ fn a_raid_is_not_a_reason_to_plan_a_conquest() {
     );
     assert_ne!(plan.strategy, GrandStrategy::Recovery);
     // The same war without the gene's bookkeeping reads "already at war".
-    let mut stock = AdvancedAi::new();
+    let stock = AdvancedAi::new();
     let stock_plan = stock.assess(&game, 0);
     assert_eq!(stock_plan.strategy, GrandStrategy::Conquest);
 }
@@ -28887,11 +28885,17 @@ fn a_raid_sues_for_peace_once_it_has_paid() {
     game.turn = raid.declared + game.standard_duration(RAID_PEACE_EARLIEST) - 1;
     ai.peace_offers.clear();
     assert!(!ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
-    assert!(!peace_offered(&game), "no peace before the war can legally end");
+    assert!(
+        !peace_offered(&game),
+        "no peace before the war can legally end"
+    );
     game.turn = raid.declared + game.standard_duration(RAID_PEACE_EARLIEST);
     ai.peace_offers.clear();
     assert!(!ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
-    assert!(peace_offered(&game), "the prize is taken and nothing is left in reach");
+    assert!(
+        peace_offered(&game),
+        "the prize is taken and nothing is left in reach"
+    );
     assert!(ai.peace_offers.contains(&1));
     // The rival accepting the offer closes the raid's bookkeeping and
     // stands the empire down from fresh wars for a while.
@@ -28912,14 +28916,16 @@ fn a_raid_sues_for_peace_once_it_has_paid() {
 fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     let (mut game, ours, theirs) = raid_fixture();
     let their_city = game.player_city_ids(1)[0];
-    let ring: Vec<Pos> = game
-        .cities[&their_city]
+    let ring: Vec<Pos> = game.cities[&their_city]
         .owned_tiles
         .iter()
         .copied()
         .filter(|position| *position != theirs && g_is_open_land(&game, *position))
         .collect();
-    assert!(ring.len() >= 6, "the fixture capital owns at least six open tiles");
+    assert!(
+        ring.len() >= 6,
+        "the fixture capital owns at least six open tiles"
+    );
     for position in ring.iter().take(6) {
         let tile = game.map.tiles.get_mut(position).unwrap();
         tile.improvement = Some(crate::name!("mine"));
@@ -28956,7 +28962,11 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     assert!(ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
     assert!(game.is_at_war(0, 1));
     // Walk the warrior onto a mine and let the raid step pillage it.
-    let mine = *ring.iter().take(6).find(|position| game.units_at(**position).is_empty()).unwrap();
+    let mine = *ring
+        .iter()
+        .take(6)
+        .find(|position| game.units_at(**position).is_empty())
+        .unwrap();
     game.relocate(warrior, mine);
     game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
     assert!(game.pillageable_at(0, mine));

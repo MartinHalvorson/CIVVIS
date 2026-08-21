@@ -2728,7 +2728,7 @@ mod tests {
                         settlers_captured: 0,
                         builders_captured: 0,
                         pillages: 0,
-                    raid_settler_prizes: 0,
+                        raid_settler_prizes: 0,
                     });
                 }
                 pair += 1;
@@ -2880,7 +2880,7 @@ mod tests {
                         settlers_captured: 0,
                         builders_captured: 0,
                         pillages: 0,
-                    raid_settler_prizes: 0,
+                        raid_settler_prizes: 0,
                     });
                 }
             }
@@ -2928,7 +2928,7 @@ mod tests {
             settlers_captured: 0,
             builders_captured: 0,
             pillages: 0,
-                    raid_settler_prizes: 0,
+            raid_settler_prizes: 0,
         };
         let text = serde_json::to_string(&row).unwrap();
         let back: Row = serde_json::from_str(&text).unwrap();

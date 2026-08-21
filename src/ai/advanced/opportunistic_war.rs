@@ -229,7 +229,8 @@ impl AdvancedAi {
         }
         let in_reach = |pos: Pos, for_pillage: bool| {
             strikers.iter().any(|striker| {
-                (!for_pillage || !striker.lone_garrison) && g.wdist(striker.pos, pos) <= striker.reach
+                (!for_pillage || !striker.lone_garrison)
+                    && g.wdist(striker.pos, pos) <= striker.reach
             })
         };
         let visible = self.battlefront_visibility(g, pid);
@@ -238,8 +239,8 @@ impl AdvancedAi {
             .into_iter()
             .map(|cid| g.cities[&cid].pos)
             .collect();
-        let settler_usable = self.counts(g, pid).settlers == 0
-            && self.base.has_practical_settle_site(g, pid);
+        let settler_usable =
+            self.counts(g, pid).settlers == 0 && self.base.has_practical_settle_site(g, pid);
         for unit in g.units.values() {
             if unit.owner != target || !matches!(unit.kind.as_str(), "settler" | "builder") {
                 continue;
@@ -349,11 +350,9 @@ impl AdvancedAi {
             }
         }
         // One war at a time: a raid is an opening, not a second front.
-        if g
-            .players
-            .iter()
-            .any(|other| other.id != pid && !other.is_minor && !other.is_barbarian && g.is_at_war(pid, other.id))
-        {
+        if g.players.iter().any(|other| {
+            other.id != pid && !other.is_minor && !other.is_barbarian && g.is_at_war(pid, other.id)
+        }) {
             return None;
         }
         let strikers = self.raid_strikers(g, pid);
@@ -436,9 +435,10 @@ impl AdvancedAi {
                 // The stand-down mirrors an accepted peace offer's: no fresh
                 // war for a while, this one's grievances still warm.
                 self.raid_war = None;
-                self.peace_until = self
-                    .peace_until
-                    .max(g.turn.saturating_add(g.standard_duration(RAID_REPEAT_COOLDOWN)));
+                self.peace_until = self.peace_until.max(
+                    g.turn
+                        .saturating_add(g.standard_duration(RAID_REPEAT_COOLDOWN)),
+                );
                 self.major_war_since = None;
                 return false;
             }
@@ -459,7 +459,10 @@ impl AdvancedAi {
             let their_power = g.military_power(opportunity.target);
             let casus = match &action {
                 Action::DeclareWarWithCasusBelli { casus_belli, .. } => {
-                    format!(" under a {} casus belli", crate::reasoning::plain(casus_belli))
+                    format!(
+                        " under a {} casus belli",
+                        crate::reasoning::plain(casus_belli)
+                    )
                 }
                 _ => " by surprise".to_string(),
             };
@@ -503,7 +506,13 @@ impl AdvancedAi {
 
     /// Propose peace once the raid has paid — the engine's minimum war length
     /// has passed and nothing is left in reach — or has run its course.
-    fn close_raid_when_paid(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan, raid: &RaidWar) {
+    fn close_raid_when_paid(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        raid: &RaidWar,
+    ) {
         let age = g.turn.saturating_sub(raid.declared);
         if age < g.standard_duration(RAID_PEACE_EARLIEST) {
             return;
@@ -652,12 +661,23 @@ impl AdvancedAi {
             })
             .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
             .map(|(_, pos)| pos)?;
-        let next = g.route_step(uid, goal, 0).filter(|next| g.can_move(uid, *next))?;
+        let next = g
+            .route_step(uid, goal, 0)
+            .filter(|next| g.can_move(uid, *next))?;
         let kind = unit.kind.as_str();
         think!(self.journal(), Military, Decision,
                "{kind} {uid} marches on a raid prize";
                "{} has something unguarded {} tiles away", g.players[raid.target].civ, g.wdist(unit.pos, goal);
                goal);
-        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+        Some(
+            g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok(),
+        )
     }
 }

@@ -35269,7 +35269,11 @@ impl Game {
                 // taken it first. An evaluator row can say whether a raid
                 // ever paid, not only that it was declared.
                 let from_barbarian = self.players[old].is_barbarian;
-                let key = if from_barbarian { "rescued" } else { "captured" };
+                let key = if from_barbarian {
+                    "rescued"
+                } else {
+                    "captured"
+                };
                 bump(&mut self.players[owner], &format!("{key}:{kind}"));
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
