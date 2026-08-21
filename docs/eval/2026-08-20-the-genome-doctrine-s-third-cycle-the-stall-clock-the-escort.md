@@ -47,8 +47,16 @@ disbands); the appointed timed war keeps its own `war_plan` routing; the
 pins now keep the routing OUT. The next whole-genome screen prices the
 residual.
 
-**6c — the governor's priced completion:**
-<!-- 6C_RESULTS -->
+**6c — the governor's priced completion: reverted, like the preemption.**
+Against 3c's trader-only baseline (+0.8 [−1.3, +2.9] win · −4.63 share), the
+priced completion measured **−2.9 [−4.8, −0.9] win (z −2.9) · −4.52 share
+(z −34)** over 2,000 pairs. Building-first is wrong for the lanes in either
+form — preempted (−3.6, cycle two) or priced (−2.9, this cycle) — and the
+−4.5 pp share drag survives every building-side lever. The trader preemption
+stands as the composite's one verified repair; the note in the valuation
+table records both failures and hands the gate the question the 2026-08-18
+bisect already priced: whether the victory-lanes half carries its weight at
+all (−70..−80 Elo; PR #1955).
 
 ## What was decided
 

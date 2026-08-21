@@ -3981,7 +3981,6 @@ mod flagged_gene_repairs {
             "<= SETTLER_ESCORT_THREAT_RADIUS",
             "if self.settler_guards.remove(&uid).is_some() {",
             "MEASURED AND REVERTED the same day",
-            "let first_building_of_held_district = self.governor_victory_lanes",
         ] {
             assert!(source.contains(needle), "missing {needle:?}");
         }
