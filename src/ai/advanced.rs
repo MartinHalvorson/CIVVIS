@@ -170,6 +170,12 @@ const MULTI_FRONT_RECOVERY_PEACE_RATIO: f64 = 1.5;
 /// Conquest, and production goes back to development. A foreign city changing
 /// hands resets the clock, so a war that IS progressing keeps its patience.
 const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
+/// Standard turns a `war_patience_progress` war may run without a visibly
+/// damaged enemy city before patience stands down. Matches the fatigue
+/// clause's 12-turn progress window: a younger war has not had time to bring
+/// a wall down, and an older one with every enemy city at full health is a
+/// war the army is not fighting.
+const WAR_PATIENCE_PROGRESS_GRACE_TURNS: u32 = 12;
 /// Distance from the campaign objective inside which a force group counts as
 /// the front rather than a rear reinforcement, used by
 /// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
@@ -1592,6 +1598,16 @@ pub struct AdvancedAi {
     /// front fights with whatever staged on declaration day. **Off by
     /// default, live-bridge only.**
     pub war_reinforcement: bool,
+    /// `wide-map-denser`: the hardcore-optimization variant of the genome's
+    /// flagship. `wide_map_capacity` (repaired, cycle one) measured +3.0
+    /// native / +8.9..+19.2 at war across three disjoint seed windows — the
+    /// widest positive effect of any gene — so this variant asks whether its
+    /// parameters are on the efficient frontier: one city per 40 passable
+    /// tiles (was 45) and a ceiling of 14 (was 12), inert unless
+    /// `wide_map_capacity` itself is on and subject to the same
+    /// conversion-race stand-down. Off everywhere; priced as a single-gene
+    /// screen (variant-vs-current on identical maps) before any promotion.
+    pub wide_map_denser: bool,
     /// Do not let the stall clause of the peace rules end a war the empire is
     /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
     /// 12) both offers peace and accepts any white peace at +320; while this
@@ -1602,6 +1618,17 @@ pub struct AdvancedAi {
     /// standard turns without a foreign-city acquisition — see that constant
     /// for the live wars that never landed a city.
     pub war_patience: bool,
+    /// The progress-gated variant of `war_patience`, priced variant-vs-current
+    /// (`gene_screen --genes war-patience-progress`). p7 (15,000 seat-pairs,
+    /// seeds 52000000..) read the base gene win +0.4 [-0.4, +1.2] with score
+    /// share -0.23 at z -3.43 — the patience is paid for in production even
+    /// when it wins. The variant keeps patience only while the campaign is
+    /// visibly working: past a `WAR_PATIENCE_PROGRESS_GRACE_TURNS` grace, some
+    /// city of a war enemy must be observed damaged (hp below 200), or the
+    /// stall clause fires as if patience had lapsed. A wall taking its time to
+    /// fall is damaged the whole time it falls; a wall the army never reaches
+    /// is not.
+    pub war_patience_progress: bool,
     /// Do not open a fresh direct war once the shared endgame reserve leaves
     /// no time to turn a declaration into a capture. Timed attacks already
     /// use this reserve while they are appointed; the direct victory-denial
@@ -4526,7 +4553,9 @@ impl AdvancedAi {
             muster_at_command_radius: false,
             war_economy: false,
             war_reinforcement: false,
+            wide_map_denser: false,
             war_patience: false,
+            war_patience_progress: false,
             endgame_war_runway: false,
             siege_commitment: false,
             relief_targets_the_siege: false,
@@ -4990,6 +5019,30 @@ impl AdvancedAi {
             .last_campaign_progress
             .max(self.major_war_since.unwrap_or(0));
         g.turn.saturating_sub(reference) >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
+    }
+
+    /// The `war_patience_progress` gate: patience holds only while the
+    /// campaign is visibly working. True whenever the variant is off, the war
+    /// is inside its grace window (counted from the same reference as
+    /// `war_patience_exhausted`), or some city of a player we are at war with
+    /// is observed below full health. See the field for the p7 numbers.
+    fn war_patience_progressing(&self, g: &Game, pid: usize) -> bool {
+        if !self.war_patience_progress {
+            return true;
+        }
+        let reference = self
+            .last_campaign_progress
+            .max(self.major_war_since.unwrap_or(0));
+        if g.turn.saturating_sub(reference)
+            < g.standard_duration(WAR_PATIENCE_PROGRESS_GRACE_TURNS).max(1)
+        {
+            return true;
+        }
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && g.is_at_war(pid, city.owner)
+                && (city.hp < 200 || city.wall_hp < g.city_max_wall_hp(city))
+        })
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
@@ -7560,7 +7613,7 @@ impl AdvancedAi {
         let stalemate = at_war
             && self.war_patience
             && threatened_city.is_none()
-            && self.war_patience_exhausted(g);
+            && (self.war_patience_exhausted(g) || !self.war_patience_progressing(g, pid));
 
         let land = g
             .map
@@ -7612,9 +7665,15 @@ impl AdvancedAi {
             } else {
                 land
             };
-            (2 + land / 45)
-                .clamp(3, 12)
-                .max(PRODUCTION_CITY_TARGET_FLOOR)
+            if self.wide_map_denser {
+                (2 + land / 40)
+                    .clamp(3, 14)
+                    .max(PRODUCTION_CITY_TARGET_FLOOR)
+            } else {
+                (2 + land / 45)
+                    .clamp(3, 12)
+                    .max(PRODUCTION_CITY_TARGET_FLOOR)
+            }
         } else {
             (2 + land / 55).clamp(3, 9)
         };
@@ -11081,7 +11140,8 @@ impl AdvancedAi {
             && plan.strategy == GrandStrategy::Conquest
             && plan.target_player == Some(partner)
             && my_power >= partner_power * OVERWHELMING_WAR_RATIO
-            && !self.war_patience_exhausted(g);
+            && !self.war_patience_exhausted(g)
+            && self.war_patience_progressing(g, pid);
         let fatigued = !overwhelming
             && self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
@@ -13379,7 +13439,9 @@ impl AdvancedAi {
                 && plan.strategy == GrandStrategy::Conquest
                 && plan.target_player == Some(*other)
                 && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
-            let overwhelming = overwhelms && !self.war_patience_exhausted(g);
+            let overwhelming = overwhelms
+                && !self.war_patience_exhausted(g)
+                && self.war_patience_progressing(g, pid);
             let fatigued = stalled && !overwhelming;
             if stalled
                 && overwhelms

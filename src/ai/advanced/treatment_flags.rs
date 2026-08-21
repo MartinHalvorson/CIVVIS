@@ -127,6 +127,38 @@ impl AdvancedAi {
         self.holy_lane_parity = false;
     }
 
+    /// The denser wide-map parameters, priced variant-vs-current. See
+    /// [`AdvancedAi::wide_map_denser`].
+    pub fn enable_wide_map_denser(&mut self) {
+        self.wide_map_denser = true;
+    }
+
+    /// The twin of `enable_wide_map_denser`.
+    pub fn disable_wide_map_denser(&mut self) {
+        self.wide_map_denser = false;
+    }
+
+    /// Bleeding means real damage. See [`BasicAi::garrison_bleed_tolerance`].
+    pub fn enable_garrison_bleed_tolerance(&mut self) {
+        self.base.garrison_bleed_tolerance = true;
+    }
+
+    /// The twin of `enable_garrison_bleed_tolerance`.
+    pub fn disable_garrison_bleed_tolerance(&mut self) {
+        self.base.garrison_bleed_tolerance = false;
+    }
+
+    /// Patience only while a wall is visibly falling. See
+    /// [`AdvancedAi::war_patience_progress`].
+    pub fn enable_war_patience_progress(&mut self) {
+        self.war_patience_progress = true;
+    }
+
+    /// The twin of `enable_war_patience_progress`.
+    pub fn disable_war_patience_progress(&mut self) {
+        self.war_patience_progress = false;
+    }
+
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {

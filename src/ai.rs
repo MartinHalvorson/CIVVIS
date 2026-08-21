@@ -2017,6 +2017,34 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// `garrison-bleed-tolerance`: the hardcore-optimization variant of the
+    /// genome's one measured native helper. `garrison_under_fire`'s bleeding
+    /// test fires at ANY hitpoint lost (`hp < 200`), so a single chip from a
+    /// passing raider re-routes production; with this variant on, bleeding
+    /// means real damage (`hp < 170`, above 15%), and the fog-proof siege
+    /// response the helper exists for is otherwise unchanged. Inert unless
+    /// `garrison_under_fire` is on. Off everywhere; priced as a single-gene
+    /// screen before any promotion.
+    pub(crate) garrison_bleed_tolerance: bool,
+    /// Order our OWN ancient walls before the ordinary build order spends the
+    /// production somewhere else — `garrison_under_fire` above reacts to a
+    /// city already bleeding, but the city it reacted to had never been given
+    /// walls to bleed behind. Measured on live run `civvis-20260807T181839Z`
+    /// (conquest DEFEAT t158), whose t115 export is the whole diagnosis:
+    /// Rome — the capital of a TWO-CITY empire — at damage 35/200 with
+    /// `max_wall_damage: 0`, buildings `[MONUMENT, PALACE, GRANARY,
+    /// AMPHITHEATER]`, and an EMPTY fog-gated hostile list while it bled.
+    /// Production had gone to the culture lane; no walls were ever ordered in
+    /// the whole run, nor in the other conquest loss of the same day
+    /// (`civvis-20260807T172510Z`, t227). `siege_tracks_the_wall` models
+    /// ENEMY walls and nothing priced building our own, so threat-priced
+    /// defense read zero exactly when the threat was fog-hidden.
+    ///
+    /// Once Masonry is in, ancient walls outrank every non-granary building
+    /// in the capital and in any frontier city under
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them, and enabled explicitly by the
+    /// Civilization VI bridge.
     /// Barbarian pressure buys ancient walls and nothing above them.
     ///
     /// ★★★★ `barbarian_defense_item` walked `walls → medieval_walls →
@@ -4184,6 +4212,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_bleed_tolerance: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -4516,6 +4545,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_bleed_tolerance: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -9282,8 +9312,13 @@ impl BasicAi {
         // city count while COSTING score: walls and defenders displace the
         // buildings and districts score is actually made of. A raiding party is
         // what takes a city, and a raiding party is more than one unit.
-        let bleeding =
-            self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+        let bleed_floor = if self.garrison_bleed_tolerance {
+            170
+        } else {
+            200
+        };
+        let bleeding = self.garrison_under_fire
+            && g.cities.get(&cid).is_some_and(|city| city.hp < bleed_floor);
         if !bleeding {
             return None;
         }
