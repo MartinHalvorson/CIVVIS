@@ -289,6 +289,56 @@ fn the_generic_fallback_gives_every_player_id_its_own_primary() {
     );
 }
 
+#[test]
+fn barbarians_use_the_base_game_red_jersey() {
+    let extract: serde_json::Value =
+        serde_json::from_str(COLORS_JSON).expect("data/civ6_player_colors.json parses");
+    let red = extract["generic"]
+        .as_array()
+        .expect("the extract carries generic jerseys")
+        .iter()
+        .find(|jersey| {
+            jersey
+                .as_array()
+                .and_then(|pair| pair.get(2))
+                .and_then(serde_json::Value::as_str)
+                == Some("PLAYERCOLOR_RED")
+        })
+        .expect("the Civ 6 extract carries PLAYERCOLOR_RED")
+        .as_array()
+        .expect("a generic jersey is [primary, secondary, name]");
+    let expected = vec![
+        red[0]
+            .as_str()
+            .expect("red primary is a string")
+            .to_string(),
+        red[1]
+            .as_str()
+            .expect("red secondary is a string")
+            .to_string(),
+    ];
+
+    assert_eq!(
+        js_array(INDEX, "BARBARIAN_JERSEY"),
+        expected,
+        "Barbarians should use Civ 6's standard red-and-white jersey"
+    );
+    assert!(
+        INDEX.contains("return player.is_free_city ? FREE_CITY_JERSEY : BARBARIAN_JERSEY;"),
+        "Free Cities only share the is_barbarian simulation flag; they should not inherit the hostile red jersey"
+    );
+    assert_eq!(
+        INDEX.matches("const jersey = nonMajorJersey(p);").count(),
+        2,
+        "both primary and secondary ownership colours must read the same Barbarian jersey"
+    );
+    assert!(
+        INDEX.contains("if (jersey) return jersey[0];")
+            && INDEX.contains("if (jersey) return jersey[1];"),
+        "the red Barbarian jersey must drive both the field and the pictogram/trim"
+    );
+}
+
 /// A two-tone frontier needs its two lanes to look different, or the border
 /// collapses into one band and stops naming its owner.
 #[test]
