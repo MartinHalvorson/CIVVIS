@@ -1498,3 +1498,38 @@ decisions** and `0x8162_c919_b83c_40df` across the five anchor profiles.
 
 Rows before and after v17 are not comparable. This is a rules correction, not a
 compatibility re-pin.
+
+---
+
+## v18 (2026-08-21) — a Barbarian Scout reports the walkers it sees
+
+`Game::barbarian_phase` gates every raid behind a Scout's report, and v16 gave
+each reported outpost a finite, difficulty-shaped party. The report itself
+still accepted **a city alone**, so a camp's whole raid throughput was one
+Scout's round trip to a settlement — and an empire's Settlers, which is what a
+Civilization VI barbarian actually takes, could not start a raid at all. A
+Settler walking past a camp was not a sighting.
+
+MEASURED before the change, `ai_eval live live_without_camp_reach`, 12 pairs /
+72 seat-games an arm at 6p/150t/online on identical seeds: **0.22 civilians
+lost to barbarians per game**. The live Civilization VI seat on the same shape
+(run `civvis-20260821T130446Z`) lost **8 of the 12 Settlers that ever walked,
+in 104 turns**, at a matching city count — 2 cities at t60 against the
+simulation's 2.53. Not an exposure difference; the opponent.
+
+With the sighting extended, and with the raider pursuit of #2227 that this
+version follows, the same measurement reads **0.61**.
+
+Like v16 this is a **shared native-world rule with no controller gate**: the
+Scout phase runs in the engine and every participant faces the same camps, so
+`AdvancedAi::legacy()` cannot hold it away from the anchor the way
+`barbarian_tactics = false` holds #2227's raider pursuit away. The anchor moves
+from v17's 17,482 decisions and `0x8162_c919_b83c_40df` to **18,596 and
+`0xf78a_2b10_c0e3_5945`** across its five profiles.
+
+⚠ Rows from v17 and earlier are not comparable with v18 — and that includes
+every settler-safety and barbarian-response verdict in `docs/gene_ledger.json`,
+each priced at 13,446 pairs against a barbarian that did not hunt civilians.
+That family needs re-pricing under v18: `home-defense`, `camp-reach`,
+`camp-party`, `civilian-rescue`, `settler-guard-holds`, `stacked-escort`,
+`escort-unstick`, `stranded-settler-discount`.
