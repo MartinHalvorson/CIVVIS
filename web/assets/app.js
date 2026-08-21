@@ -3787,9 +3787,21 @@ function playerJerseys() {
   jerseyCache = assigned;
   return assigned;
 }
+// All ownership drawing funnels through pcol/pcol2.  Civ VI's standard red
+// jersey is the visual language for hostile Barbarians: a red field with a
+// crisp white pictogram and trim. Free Cities share `is_barbarian` in the
+// simulation for diplomacy and victory rules, but are a distinct faction and
+// retain their existing neutral jersey.
+const BARBARIAN_JERSEY = ["#ca1415", "#f9f9f9"];
+const FREE_CITY_JERSEY = ["#30262a", "#8a3a34"];
+function nonMajorJersey(player) {
+  if (!player?.is_barbarian) return null;
+  return player.is_free_city ? FREE_CITY_JERSEY : BARBARIAN_JERSEY;
+}
 function pcol(id) {
   const p = state.players[id];
-  if (p && p.is_barbarian) return "#30262a";
+  const jersey = nonMajorJersey(p);
+  if (jersey) return jersey[0];
   if (p && p.is_minor) return CITY_STATE_TINT;
   return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
 }
@@ -3801,7 +3813,8 @@ function ownerIsCityState(owner) {
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
 function pcol2(id) {
   const p = state.players[id];
-  if (p && p.is_barbarian) return "#8a3a34";
+  const jersey = nonMajorJersey(p);
+  if (jersey) return jersey[1];
   if (p && p.is_minor)
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
   return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
@@ -3815,9 +3828,9 @@ function lightness(hex) {
           + 0.0722 * (n & 255)) / 255;
 }
 // Command tokens are ownership colour plus type ink. Some real Civ VI primary
-// jerseys are near-black (as are barbarians and city-states), so fixed black
-// ink erases the very pictogram the token exists to carry. Prefer the jersey's
-// partner when it has useful contrast, then fall back to map-ink dark or cream.
+// jerseys and city-states are near-black, so fixed black ink erases the very
+// pictogram the token exists to carry. Prefer the jersey's partner when it has
+// useful contrast, then fall back to map-ink dark or cream.
 function unitTokenInk(owner) {
   const primaryLight = lightness(pcol(owner));
   const partner = pcol2(owner);
