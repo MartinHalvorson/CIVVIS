@@ -41,9 +41,9 @@
     "withholdable": 60
   },
   "derived": {
-    "eval_only_count": 241,
-    "firaxis_only_count": 31,
-    "live_bridge_count": 91,
+    "eval_only_count": 242,
+    "firaxis_only_count": 32,
+    "live_bridge_count": 92,
     "native_engine_repair_count": 60,
     "withholdable_live_count": 60
   },
@@ -247,7 +247,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 241,
+      "declared_count": 242,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -302,6 +302,7 @@
         "live_without_endgame_war_runway",
         "live_without_stacked_escort",
         "live_without_live_formationless_settler_shadow",
+        "live_without_live_motion_turn_accounting",
         "live_without_counter_in_lane",
         "live_without_era_paced_expansion",
         "live_without_escort_unstick",
@@ -493,7 +494,7 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 31,
+      "declared_count": 32,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -517,6 +518,7 @@
         "parallel-settlers",
         "host-settler-pop",
         "explore-dead-targets",
+        "live-motion-turn-accounting",
         "bank-envoys",
         "live-formationless-settler-shadow",
         "explore-commit",
@@ -529,7 +531,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 91,
+      "declared_count": 92,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -539,6 +541,7 @@
         "home-defense",
         "loyalty-policy-defence",
         "recorded-tactical-step",
+        "live-motion-turn-accounting",
         "whole-turn-backtrack-guard",
         "step-and-reassess",
         "strike-opening",
