@@ -69,6 +69,15 @@ pub(super) const TILE_PURCHASE_DISTRICT_DISCOUNT: f64 = 0.6;
 /// A plot the border will take in this many turns or fewer is not bought.
 pub(super) const TILE_PURCHASE_FREE_SOON: f64 = 2.0;
 
+/// One legal `BuyPlot` as the engine quoted it: the buying city, the plot
+/// and the Gold it asks.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PlotOffer {
+    pub city: u32,
+    pub pos: Pos,
+    pub cost: f64,
+}
+
 /// Per-city facts a plot-purchase pass reuses across every border hex of
 /// that city, so a large empire's scan does not re-plan citizens per plot.
 #[derive(Default)]
@@ -289,17 +298,19 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
-        cid: u32,
-        pos: Pos,
-        cost: f64,
+        offer: PlotOffer,
         cache: &mut PlotPurchaseCache,
     ) -> Option<f64> {
+        let PlotOffer {
+            city: cid,
+            pos,
+            cost,
+        } = offer;
         let strategy = plan.strategy;
-        if !cache.cities.contains_key(&cid) {
-            let facts = self.city_purchase_facts(g, pid, plan, cid);
-            cache.cities.insert(cid, facts);
-        }
-        let facts = &cache.cities[&cid];
+        let facts = cache
+            .cities
+            .entry(cid)
+            .or_insert_with(|| self.city_purchase_facts(g, pid, plan, cid));
         let gold_loss = cost
             * self.yield_value(
                 Yields {
@@ -674,7 +685,17 @@ mod tests {
         let plan = plan(GrandStrategy::Expansion, game.turn);
         let mut cache = PlotPurchaseCache::default();
         let score = ai
-            .priced_plot_purchase_score(&game, 0, &plan, city, candidate, cost, &mut cache)
+            .priced_plot_purchase_score(
+                &game,
+                0,
+                &plan,
+                PlotOffer {
+                    city,
+                    pos: candidate,
+                    cost,
+                },
+                &mut cache,
+            )
             .expect("a 2/2 plot beside a plains-only capital is worth its price");
         let gold_loss = cost
             * ai.yield_value(
@@ -703,7 +724,17 @@ mod tests {
         let plan = plan(GrandStrategy::Expansion, game.turn);
         let mut cache = PlotPurchaseCache::default();
         assert_eq!(
-            ai.priced_plot_purchase_score(&game, 0, &plan, city, candidate, cost, &mut cache),
+            ai.priced_plot_purchase_score(
+                &game,
+                0,
+                &plan,
+                PlotOffer {
+                    city,
+                    pos: candidate,
+                    cost
+                },
+                &mut cache
+            ),
             None
         );
     }
@@ -718,7 +749,17 @@ mod tests {
         let plan = plan(GrandStrategy::Expansion, game.turn);
         let mut cache = PlotPurchaseCache::default();
         assert_eq!(
-            ai.priced_plot_purchase_score(&game, 0, &plan, city, candidate, cost, &mut cache),
+            ai.priced_plot_purchase_score(
+                &game,
+                0,
+                &plan,
+                PlotOffer {
+                    city,
+                    pos: candidate,
+                    cost
+                },
+                &mut cache
+            ),
             None
         );
     }

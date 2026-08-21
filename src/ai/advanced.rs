@@ -4068,7 +4068,7 @@ mod treatment_flags;
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
-use site_lookahead::PlotPurchaseCache;
+use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -14280,15 +14280,14 @@ impl AdvancedAi {
                     // speculative clone. A `None` is a plot not worth its
                     // price; it is not shortlisted.
                     if self.priced_tile_purchase {
-                        if let Some(score) = self.priced_plot_purchase_score(
-                            g,
-                            pid,
-                            plan,
-                            *city,
-                            *pos,
-                            *cost,
-                            &mut plot_cache,
-                        ) {
+                        let offer = PlotOffer {
+                            city: *city,
+                            pos: *pos,
+                            cost: *cost,
+                        };
+                        if let Some(score) =
+                            self.priced_plot_purchase_score(g, pid, plan, offer, &mut plot_cache)
+                        {
                             plot_options.push((
                                 score,
                                 score,
