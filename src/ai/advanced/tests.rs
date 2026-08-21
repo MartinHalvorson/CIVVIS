@@ -16504,8 +16504,16 @@ fn a_founder_under_pressure_buys_the_apostle_after_its_missionaries_only_with_th
     for _ in 0..3 {
         off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
     }
-    assert_eq!(apostles(&control), 0, "the shipped caps buy no Apostle off the offensive");
-    assert_eq!(missionaries(&control), 2, "…the defensive Missionary corps instead");
+    assert_eq!(
+        apostles(&control),
+        0,
+        "the shipped caps buy no Apostle off the offensive"
+    );
+    assert_eq!(
+        missionaries(&control),
+        2,
+        "…the defensive Missionary corps instead"
+    );
     assert_eq!(off.census.inquisition_apostles, 0);
 
     // With the gene: the Missionary corps first, then the Apostle, then no second.
@@ -16514,7 +16522,11 @@ fn a_founder_under_pressure_buys_the_apostle_after_its_missionaries_only_with_th
     on.enable_inquisition_on_threat();
     on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
     on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(missionaries(&treated), 2, "the Missionary corps still comes first");
+    assert_eq!(
+        missionaries(&treated),
+        2,
+        "the Missionary corps still comes first"
+    );
     assert_eq!(apostles(&treated), 0);
     on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
     assert_eq!(apostles(&treated), 1, "then the Apostle");
@@ -16529,7 +16541,11 @@ fn a_founder_under_pressure_buys_the_apostle_after_its_missionaries_only_with_th
     poor.enable_inquisition_on_threat();
     poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
     poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
-    assert_eq!(missionaries(&short), 1, "250 buys one Missionary and then waits");
+    assert_eq!(
+        missionaries(&short),
+        1,
+        "250 buys one Missionary and then waits"
+    );
     assert_eq!(apostles(&short), 0);
     // Once the Inquisition is launched the gene has nothing left to do.
     let mut launched = game.clone();
@@ -16570,7 +16586,10 @@ fn a_founder_outside_the_religion_lane_gets_its_shrine_and_temple_only_with_the_
 
     let mut control = game.clone();
     AdvancedAi::new().founder_temple(&mut control, 0);
-    assert!(control.cities[&home].queue.is_empty(), "off: the idle city is left alone");
+    assert!(
+        control.cities[&home].queue.is_empty(),
+        "off: the idle city is left alone"
+    );
 
     let mut treated = game.clone();
     let mut on = AdvancedAi::new();
@@ -16586,7 +16605,10 @@ fn a_founder_outside_the_religion_lane_gets_its_shrine_and_temple_only_with_the_
     done.cities.get_mut(&home).unwrap().buildings =
         vec![crate::name!("shrine"), crate::name!("temple")];
     on.founder_temple(&mut done, 0);
-    assert!(done.cities[&home].queue.is_empty(), "a Temple anywhere ends the gene's work");
+    assert!(
+        done.cities[&home].queue.is_empty(),
+        "a Temple anywhere ends the gene's work"
+    );
 }
 
 /// The religion genes are opt-ins: off in every bundle, flippable by name,
