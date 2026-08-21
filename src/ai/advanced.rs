@@ -596,6 +596,14 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// A Builder charge on an idle ordinary tile buys a future yield, while a
+/// charge on a worked tile changes the empire's output immediately. Keep the
+/// former possible — a growing city will need it — but make the latter win the
+/// ordinary target race. Luxury and strategic connections are deliberately
+/// exempt because the engine pays them whether or not a citizen works the
+/// plot. See [`AdvancedAi::builder_worked_tile_priority`].
+const UNWORKED_BUILDER_TARGET_WEIGHT: f64 = 0.25;
+
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1869,6 +1877,17 @@ pub struct AdvancedAi {
     ///
     /// Off by default; evaluator arm `advanced_builder_survey`.
     pub builder_reward_survey: bool,
+
+    /// Prefer Builder work that improves a tile the city is using now.
+    ///
+    /// The target sweep keeps a correctly connected luxury or strategic
+    /// resource at full priority: its Amenity or stockpile pays regardless of
+    /// its citizen assignment. Other idle tiles retain a quarter of their
+    /// normal score, so the Builder can still prepare a growing city without
+    /// displacing work that changes the empire's output this turn.
+    ///
+    /// Off by default; native opt-in gene `builder-worked-tile-priority`.
+    pub builder_worked_tile_priority: bool,
 
     /// Credit strength-per-production and a civ's own unique unit when
     /// pricing military production.
@@ -3621,39 +3640,6 @@ pub struct AdvancedAi {
     /// Engineer or Merchant is worth something. Gold purchases keep their
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
-    /// Let the production scorer buy a second and third Scout while
-    /// city-states remain unmet.
-    ///
-    /// ★★★★ THE EMPIRE'S ENVOY ECONOMY IS ITS ONE OPENING SCOUT. Before
-    /// Political Philosophy a Chiefdom makes 1 Influence a turn against a
-    /// threshold of 100, so the government pays its first Envoy on turn 100
-    /// and every Envoy before that comes from first contact with a city-state
-    /// (`Game::record_meeting` grants the first major to discover one an Envoy
-    /// standing at it). A six-seat census of the deployed genome on the
-    /// 250-turn Online board — seeds 90000010.., 74x46, nine city-states —
-    /// measures exactly that: **2.0 city-states met and 2.2 Envoys held at
-    /// t40**, 5.2 and 5.5 at t80, 6.8 and 11.7 at t120. Contacts and Envoys
-    /// are the same number until the government starts paying.
-    ///
-    /// The reason the number is 2.0 is one line in this scorer: a Scout is
-    /// priced at `-2_000` once the empire holds one, so the opening Scout is
-    /// the only one ever built. `BasicAi::recon_is_the_missing_arm` already
-    /// wants a second eye at two cities and a third for a city-state sweep,
-    /// but the only path that consults it here is
-    /// `reserve_idle_land_recon`, which claims an EMPTY queue — and a
-    /// developing empire rarely has one.
-    ///
-    /// With this on, the veto stands down while the empire holds fewer than
-    /// `CITY_STATE_RECON_SCOUT_MAX` Scouts and a living city-state it has
-    /// never met, and the Scout is scored at
-    /// `CITY_STATE_RECON_UNMET_VALUE` per unmet city-state, discounted by the
-    /// eyes already out and by `research_horizon` so a Scout begun at t230 is
-    /// worth a tenth of one begun at t20. Every other veto in the arm — the
-    /// domain ceiling, the threatened city, the barbarian gap — is untouched,
-    /// and a Scout that loses to a defender still loses to it.
-    ///
-    /// Off everywhere by default; opt-in gene `city-state-recon`.
-    pub city_state_recon: bool,
 
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
@@ -3952,26 +3938,6 @@ const EXPANSION_HALL_FULL_SHORTFALL: f64 = 6.0;
 /// one's debt by this factor: the University is owed less than the Library,
 /// the Research Lab less again.
 const DISTRICT_BUILDING_CHAIN_TIER_DECAY: f64 = 0.7;
-/// The most Scouts `city_state_recon` will let an empire hold at once. Two
-/// is one more eye than the arm the reserve path already targets
-/// (`RECON_ARM_MAX`); the third is the sweep `city_state_sweep_needs_third_eye`
-/// asks for and could never buy through this scorer.
-const CITY_STATE_RECON_SCOUT_MAX: usize = 3;
-/// What one unmet city-state is worth to the Scout that would find it, before
-/// the horizon and the per-eye discount.
-///
-/// Priced off the thing first contact actually pays: Civilization VI hands the
-/// first major to discover a city-state one Envoy *at that city-state*
-/// (`Game::record_meeting`), which is the 1-Envoy type tier outright. On a
-/// scientific seat that tier is +1 Science in the Palace city and +1 in every
-/// city holding a Library, so at the measured mid-game shape (2.8 Libraries at
-/// t120) it is ~3.8 Science a turn, forever, for nothing. A Library buys 2
-/// Science for 90 production. One contact is therefore worth about two
-/// Libraries — call it 180 — and a Scout is 30. This constant is deliberately
-/// under that: the contact is a race the seat can lose, not every city-state
-/// is aligned with the lane, and the veto this replaces was there to stop the
-/// arm from eating the opening.
-const CITY_STATE_RECON_UNMET_VALUE: f64 = 90.0;
 /// The most a repeatable district project is worth, before the (7 + turns)
 /// normalisation, while its city can still build a Library, University,
 /// Research Lab or Workshop it lacks. See `buildings_before_projects`. Low
@@ -4595,6 +4561,7 @@ impl AdvancedAi {
             production_builder_floor: true,
             production_settler_deadline: true,
             builder_reward_survey: false,
+            builder_worked_tile_priority: false,
             unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
@@ -4697,7 +4664,6 @@ impl AdvancedAi {
             founder_temple: false,
             theology_for_founders: false,
             idle_faith_patronage: false,
-            city_state_recon: false,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -9007,39 +8973,6 @@ impl AdvancedAi {
         let budget = g.max_turns.max(1) as f64;
         let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
         ((budget - g.turn as f64) / window).clamp(0.0, 1.0)
-    }
-
-    /// What a Scout is worth to an empire that has not met its city-states.
-    /// Zero — and the historical veto stands — whenever the flag is off, the
-    /// recon arm is already at `CITY_STATE_RECON_SCOUT_MAX`, or every living
-    /// city-state is already on this seat's contact ledger.
-    ///
-    /// Reads only that ledger, never the map or another major's contacts: the
-    /// first-contact Envoy is a race, but which city-states a rival has
-    /// already reached is not something this seat is entitled to know.
-    fn city_state_recon_value(&self, g: &Game, pid: usize, counts: &EmpireCounts) -> f64 {
-        if !self.city_state_recon || counts.scouts >= CITY_STATE_RECON_SCOUT_MAX {
-            return 0.0;
-        }
-        let unmet = g
-            .players
-            .iter()
-            .filter(|minor| {
-                minor.alive
-                    && minor.is_minor
-                    && !minor.is_barbarian
-                    && !minor.is_free_city
-                    && !g.has_met(pid, minor.id)
-            })
-            .count();
-        if unmet == 0 {
-            return 0.0;
-        }
-        // Each eye already out discounts the next: the second Scout charts
-        // ground the first would have reached eventually, the third less
-        // again.
-        CITY_STATE_RECON_UNMET_VALUE * unmet as f64 * Self::research_horizon(g)
-            / (counts.scouts + 1) as f64
     }
 
     /// Set this turn's science floor. Called once per decision, before any
@@ -19198,15 +19131,7 @@ impl AdvancedAi {
                     {
                         return -2_000.0;
                     }
-                    // See `city_state_recon`: this line is why the empire
-                    // builds one Scout and never another, and why it holds
-                    // two Envoys at t40 on a board with nine city-states.
-                    let city_state_recon = if unit == "scout" {
-                        self.city_state_recon_value(g, pid, counts)
-                    } else {
-                        0.0
-                    };
-                    if unit == "scout" && counts.scouts >= 1 && city_state_recon <= 0.0 {
+                    if unit == "scout" && counts.scouts >= 1 {
                         return -2_000.0;
                     }
                     let power = spec.strength.max(spec.ranged_attack_strength());
@@ -19348,7 +19273,6 @@ impl AdvancedAi {
                         }
                         + efficiency
                         + unique_window
-                        + city_state_recon
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
@@ -23259,6 +23183,50 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
+    /// Does this improvement connect a resource whose empire-wide benefit is
+    /// paid without assigning a citizen to its tile?
+    fn improvement_connects_global_resource(g: &Game, pos: Pos, improvement: &str) -> bool {
+        let Some(resource) = g.map.tiles[&pos].resource.as_ref() else {
+            return false;
+        };
+        matches!(
+            g.rules.resources[resource].class.as_str(),
+            "luxury" | "strategic"
+        ) && g.rules.improvements[improvement]
+            .resources
+            .iter()
+            .any(|entry| entry == resource)
+    }
+
+    /// The score used to choose an existing Builder's destination.
+    ///
+    /// `improvement_value` is intentionally the raw value: it selects the
+    /// improvement that best fits *one tile*. This second score answers the
+    /// empire-level timing question — which job receives this finite charge
+    /// now? A luxury or strategic connection is full value even on an idle
+    /// tile; otherwise, the active citizen plan decides whether its yield is
+    /// immediate or merely a future option.
+    fn builder_target_value(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        worked: bool,
+    ) -> f64 {
+        let value = self.improvement_value(g, pos, improvement, strategy);
+        if !self.builder_worked_tile_priority
+            || Self::improvement_connects_global_resource(g, pos, improvement)
+        {
+            return value;
+        }
+        if worked {
+            value
+        } else {
+            value * UNWORKED_BUILDER_TARGET_WEIGHT
+        }
+    }
+
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -23783,6 +23751,17 @@ impl AdvancedAi {
         // guard the moment anything in here starts mutating the game.
         let best = {
             let _memo = g.query_memo();
+            // Computing the citizen plan can inspect every tile in a city.
+            // Read it once per city, rather than once for every candidate
+            // improvement in the target sweep.
+            let worked_tiles: HashSet<Pos> = if self.builder_worked_tile_priority {
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
+                    .collect()
+            } else {
+                HashSet::new()
+            };
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && !self
@@ -23800,8 +23779,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value(g, *pos, &improvement, strategy)
-                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.builder_target_value(
+                                    g,
+                                    *pos,
+                                    &improvement,
+                                    strategy,
+                                    worked_tiles.contains(pos),
+                                ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)

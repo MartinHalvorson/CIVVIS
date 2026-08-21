@@ -114,18 +114,6 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
-    /// Let the production scorer buy a second and third Scout while unmet
-    /// city-states remain: the first-contact Envoy is the whole Envoy economy
-    /// before Political Philosophy. See [`AdvancedAi::city_state_recon`].
-    pub fn enable_city_state_recon(&mut self) {
-        self.city_state_recon = true;
-    }
-
-    /// The twin of `enable_city_state_recon`.
-    pub fn disable_city_state_recon(&mut self) {
-        self.city_state_recon = false;
-    }
-
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
@@ -1477,6 +1465,18 @@ impl AdvancedAi {
     /// Evaluator arm `advanced_builder_survey`; off in production.
     pub fn enable_builder_reward_survey(&mut self) {
         self.builder_reward_survey = true;
+    }
+
+    /// Prefer existing Builder work that pays on a tile a citizen currently
+    /// works, while preserving luxury and strategic connections. Native
+    /// opt-in gene `builder-worked-tile-priority`; off in production.
+    pub fn enable_builder_worked_tile_priority(&mut self) {
+        self.builder_worked_tile_priority = true;
+    }
+
+    /// The twin of `enable_builder_worked_tile_priority`.
+    pub fn disable_builder_worked_tile_priority(&mut self) {
+        self.builder_worked_tile_priority = false;
     }
 
     /// Credit a wonder's missing prerequisite buildings/districts with a

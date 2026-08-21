@@ -11348,6 +11348,111 @@ fn a_first_luxury_outbids_a_duplicate_and_a_worked_tile_outbids_an_idle_one() {
     );
 }
 
+/// The native destination scorer previously selected an idle Mine (2.2
+/// Expansion value) over a worked Farm (2.0), even though only the Farm changes
+/// output now. The opt-in reverses that ordinary comparison, but must retain
+/// luxury and strategic connections because their Amenity or stockpile pays
+/// without a worked citizen.
+#[test]
+fn builder_worked_tile_priority_prefers_active_yields_but_keeps_global_resources() {
+    let (mut game, city, home) = empire_with_a_capital(71_011);
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    game.players[0].techs.extend([
+        crate::name!("mining"),
+        crate::name!("bronze_working"),
+        crate::name!("irrigation"),
+    ]);
+    let ring: Vec<Pos> = game
+        .nbrs(home)
+        .into_iter()
+        .filter(|pos| game.cities[&city].owned_tiles.contains(pos))
+        .collect();
+    assert!(ring.len() >= 3, "the capital needs three adjacent tiles");
+    let (worked, idle, resource_tile) = (ring[0], ring[1], ring[2]);
+    game.map.tiles.get_mut(&idle).unwrap().hills = true;
+    game.observed_city_worked_tiles.insert(city, vec![worked]);
+    let builder = game.spawn_unit("builder", 0, home);
+    let strategy = GrandStrategy::Expansion;
+
+    assert!(
+        game.valid_improvements(0, worked)
+            .iter()
+            .any(|name| name == "farm")
+            && game
+                .valid_improvements(0, idle)
+                .iter()
+                .any(|name| name == "mine"),
+        "the controlled tiles must expose the ordinary Farm and Mine jobs"
+    );
+    let plain = AdvancedAi::new();
+    assert!(
+        plain.improvement_value(&game, idle, "mine", strategy)
+            > plain.improvement_value(&game, worked, "farm", strategy),
+        "the fixture needs the old raw scorer to prefer the idle Mine"
+    );
+    let mut stock_game = game.clone();
+    let mut stock = AdvancedAi::new();
+    assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, strategy));
+    assert_eq!(stock.builder_targets.get(&builder), Some(&idle));
+
+    let mut treated = AdvancedAi::new();
+    assert!(!treated.builder_worked_tile_priority);
+    treated.enable_builder_worked_tile_priority();
+    assert!(
+        treated.builder_target_value(&game, worked, "farm", strategy, true)
+            > treated.builder_target_value(&game, idle, "mine", strategy, false)
+    );
+    let mut treated_game = game.clone();
+    assert!(treated.advanced_builder_step(&mut treated_game, 0, builder, strategy));
+    assert_eq!(treated.builder_targets.get(&builder), Some(&worked));
+
+    for (resource, improvement) in [("iron", "mine"), ("citrus", "plantation")] {
+        let mut connected_game = game.clone();
+        let tile = connected_game.map.tiles.get_mut(&resource_tile).unwrap();
+        tile.resource = Some(Name::new(resource));
+        tile.hills = improvement == "mine";
+        assert!(
+            matches!(
+                connected_game.rules.resources[resource].class.as_str(),
+                "luxury" | "strategic"
+            ) && connected_game
+                .valid_improvements(0, resource_tile)
+                .iter()
+                .any(|name| name == improvement),
+            "{resource} must be a legal {improvement} connection"
+        );
+        let mut connected = AdvancedAi::new();
+        connected.enable_builder_worked_tile_priority();
+        assert!(
+            connected.builder_target_value(
+                &connected_game,
+                resource_tile,
+                improvement,
+                strategy,
+                false,
+            ) > connected.builder_target_value(&connected_game, worked, "farm", strategy, true)
+        );
+        assert!(connected.advanced_builder_step(&mut connected_game, 0, builder, strategy,));
+        assert_eq!(
+            connected.builder_targets.get(&builder),
+            Some(&resource_tile)
+        );
+    }
+
+    assert!(PRODUCTION_OPT_INS.iter().any(|(field, tag, _)| {
+        *field == "builder_worked_tile_priority" && *tag == "builder-worked-tile-priority"
+    }));
+    treated.disable_builder_worked_tile_priority();
+    assert!(!treated.builder_worked_tile_priority);
+}
+
 #[test]
 fn the_civs_own_unique_unit_earns_its_window() {
     let mut game = Game::new_full(1, 20, 14, 71_012, 200, 0, false);
@@ -15505,163 +15610,6 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
     rich.players[0].gold = 5_000.0;
     ai.advanced_great_people(&mut rich, 0, GrandStrategy::Expansion);
     assert_eq!(claimed(&rich), 0, "gold does not buy a 40% race");
-}
-
-/// A capital on a board that holds city-states, its opening units cleared and
-/// one Scout standing: the shape `city_state_recon` was written for.
-fn empire_among_city_states(seed: u64) -> (Game, u32) {
-    let mut game = Game::new_full(2, 74, 46, seed, 250, 6, false);
-    game.current = 0;
-    let settler = game
-        .player_unit_ids(0)
-        .into_iter()
-        .find(|unit| game.units[unit].kind == "settler")
-        .unwrap();
-    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    let city = game.player_city_ids(0)[0];
-    for unit in game.player_unit_ids(0) {
-        game.remove_unit(unit);
-    }
-    let home = game.cities[&city].pos;
-    game.spawn_unit("scout", 0, home);
-    (game, city)
-}
-
-fn scout_price(ai: &AdvancedAi, game: &Game, city: u32) -> f64 {
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Science,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 4,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    ai.production_value(
-        game,
-        0,
-        city,
-        &Item::Unit {
-            unit: crate::name!("scout"),
-        },
-        &plan,
-        &ai.counts(game, 0),
-    )
-}
-
-/// ★★★★ TWO CITY-STATES MET BY TURN 40 ON A BOARD THAT HOLDS NINE. The
-/// production scorer vetoes a Scout at -2000 once the empire holds one, so the
-/// opening Scout is the only one ever built, and before Political Philosophy a
-/// first contact is the only Envoy the empire earns. See `city_state_recon`.
-#[test]
-fn city_state_recon_lifts_the_second_scout_veto_while_contacts_are_unmade() {
-    let (game, city) = empire_among_city_states(74_301);
-    let mut off = AdvancedAi::new();
-    off.enable_engine_repairs();
-    assert_eq!(off.counts(&game, 0).scouts, 1, "one Scout already stands");
-    assert!(
-        scout_price(&off, &game, city) < -1_000.0,
-        "the deployed genome vetoes the second Scout outright"
-    );
-
-    let mut on = off.clone();
-    on.enable_city_state_recon();
-    let priced = scout_price(&on, &game, city);
-    assert!(
-        priced > 0.0,
-        "unmet city-states make the second Scout a positive buy, not a veto \
-         (priced {priced})"
-    );
-}
-
-/// The gene buys eyes for contacts, not Scouts for their own sake: with every
-/// living city-state already on the contact ledger there is no first-contact
-/// Envoy left to win, and the historical veto stands.
-#[test]
-fn city_state_recon_stands_down_once_every_city_state_is_met() {
-    let (mut game, city) = empire_among_city_states(74_302);
-    let mut ai = AdvancedAi::new();
-    ai.enable_engine_repairs();
-    ai.enable_city_state_recon();
-    assert!(
-        scout_price(&ai, &game, city) > 0.0,
-        "unmet city-states are what the gene is for"
-    );
-
-    let minors: Vec<usize> = game
-        .players
-        .iter()
-        .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
-        .map(|player| player.id)
-        .collect();
-    assert!(minors.len() >= 4, "the fixture board carries city-states");
-    for minor in minors {
-        game.players[0].met.insert(minor);
-    }
-    assert!(
-        scout_price(&ai, &game, city) < -1_000.0,
-        "with nothing left to meet the Scout is vetoed exactly as before"
-    );
-}
-
-/// The arm is bounded. `CITY_STATE_RECON_SCOUT_MAX` Scouts is where the gene
-/// stops asking, however many city-states remain unmet — the veto it stands
-/// down from was there to stop recon eating the opening, and it still does.
-#[test]
-fn city_state_recon_is_capped_at_three_eyes() {
-    let (mut game, city) = empire_among_city_states(74_303);
-    let mut ai = AdvancedAi::new();
-    ai.enable_engine_repairs();
-    ai.enable_city_state_recon();
-    let home = game.cities[&city].pos;
-    let one = scout_price(&ai, &game, city);
-    game.spawn_unit("scout", 0, home);
-    let two = scout_price(&ai, &game, city);
-    assert!(
-        two > 0.0 && two < one,
-        "each eye already out discounts the next ({one} then {two})"
-    );
-    while ai.counts(&game, 0).scouts < CITY_STATE_RECON_SCOUT_MAX {
-        game.spawn_unit("scout", 0, home);
-    }
-    assert!(
-        scout_price(&ai, &game, city) < -1_000.0,
-        "at the cap the Scout is vetoed exactly as before"
-    );
-}
-
-/// The value decays with the game: a Scout begun in the closing turns cannot
-/// repay the contact it would make, and must not outbid a defender.
-#[test]
-fn city_state_recon_decays_with_the_horizon() {
-    let (mut game, city) = empire_among_city_states(74_304);
-    let mut ai = AdvancedAi::new();
-    ai.enable_engine_repairs();
-    ai.enable_city_state_recon();
-    let early = scout_price(&ai, &game, city);
-    game.turn = 230;
-    let late = scout_price(&ai, &game, city);
-    assert!(
-        late < early,
-        "a late Scout is worth less than an early one ({early} then {late})"
-    );
-}
-
-/// The gene is an opt-in: off in every bundle, flippable by name, in
-/// `PRODUCTION_OPT_INS`.
-#[test]
-fn city_state_recon_is_a_native_opt_in() {
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    assert!(!ai.city_state_recon);
-    let (_, _, enable) = PRODUCTION_OPT_INS
-        .iter()
-        .find(|(_, tag, _)| *tag == "city-state-recon")
-        .expect("an opt-in row");
-    enable(&mut ai);
-    assert!(ai.city_state_recon);
-    ai.disable_city_state_recon();
-    assert!(!ai.city_state_recon);
 }
 
 /// The gene is an opt-in: off in every bundle, flippable by name, in
