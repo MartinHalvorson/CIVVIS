@@ -490,6 +490,12 @@ local function survey()
 		-- hex (`step_and_reassess`) only when this is true: against a mod
 		-- without frames that cut would strand the rest of the movement.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		-- ...and how many such frames a turn may open, so the brain can tell
+		-- the last frame it will be asked on: a walk cut at the edge of the
+		-- known on that frame would strand the rest of the unit's movement,
+		-- because nobody re-plans what the cut uncovered. On the last frame
+		-- the brain sends the whole walk instead.
+		replan_frames_max = tonumber(cfg.ReplanFrames) or 0,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -10942,11 +10948,28 @@ local function applyOrder(player, pid, row, turn)
 		-- that is not a workaround: it is how Civilization VI resolves it.
 		if verb == "FOUND_CITY" then
 			-- ⚠ READ THE PLOT BEFORE FOUNDING. A settler founds where it STANDS, so
-			-- the order carries no x/y, and the unit is consumed by the operation —
+			-- the operation takes no x/y, and the unit is consumed by it —
 			-- afterwards there is nothing left to ask. The refusal path below can
 			-- still call `unit:GetX()` precisely because it did not found.
 			local atX = try(function() return unit:GetX(); end);
 			local atY = try(function() return unit:GetY(); end);
+			-- ★★★★★ FOUND ONLY ON THE SITE THE BRAIN CHOSE. The row now carries
+			-- the site (the hex the planned walk ends on). `applyOrders` runs
+			-- every FOUND_CITY row BEFORE the settler's own MOVE_TO and re-queues
+			-- a refused one behind the walk, which was right while the host
+			-- refused an off-site found — but Civilization VI refuses a found
+			-- only where founding is ILLEGAL, and the hex one step short of a
+			-- chosen site is legal far more often than not (`CITY_MIN_RANGE` 3).
+			-- So a planned "step, then settle" founded on the hex BEFORE the
+			-- step, and a walk the host capped short founded on the capped hex
+			-- once the settler arrived there with movement to spare. A row
+			-- without a site (an older brain) keeps the old behaviour. The
+			-- miss is named, not blocked: `found_refused` feeds the brain's
+			-- permanent `blocked_city_sites`, and standing one hex off is not
+			-- a verdict on the ground.
+			if x ~= nil and y ~= nil and (atX ~= x or atY ~= y) then
+				return false, "found_off_site";
+			end
 			local placed = operate(unit, OP["UNITOPERATION_FOUND_CITY"], {});
 			-- ★★★★★ ASK THE ENGINE WHY, DO NOT INFER IT.
 			--
@@ -12025,6 +12048,10 @@ CivvisQueue = {
 	pending = {},   -- host unit id -> { rows, next, expect, ready, wait }
 	order = {},     -- unit ids in the order they were first queued
 	count = 0,
+	-- Units whose OPENING walk is still in flight and have nothing queued
+	-- behind it: a rows-less entry that only holds the turn until the walk
+	-- has landed. See `CivvisQueue.watch`.
+	watching = 0,
 	turn = -1,
 	ticks = 0,
 	stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
@@ -12041,7 +12068,7 @@ CivvisQueue.reset = function(turn)
 		q.stats.refusals.queue_turn_over = (q.stats.refusals.queue_turn_over or 0) + left;
 		CivvisQueue.report(q.turn, "turn_over");
 	end
-	q.pending = {}; q.order = {}; q.count = 0; q.turn = turn; q.ticks = 0;
+	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0; q.turn = turn; q.ticks = 0;
 	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
 	            strikes_planned = 0, queued = 0 };
 end;
@@ -12069,6 +12096,9 @@ CivvisQueue.push = function(subject, row, expect)
 		entry = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
 		q.pending[subject] = entry;
 		q.order[#q.order + 1] = subject;
+	elseif #entry.rows == 0 then
+		-- A watch on the opening walk becomes a real queue entry.
+		q.watching = q.watching - 1;
 	end
 	entry.rows[#entry.rows + 1] = row;
 	q.count = q.count + 1;
@@ -12076,10 +12106,37 @@ CivvisQueue.push = function(subject, row, expect)
 	if CivvisQueue.isStrike(row) then q.stats.strikes_planned = q.stats.strikes_planned + 1; end
 end;
 
-CivvisQueue.pendingCount = function() return CivvisQueue.count; end;
+CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.watching; end;
+
+-- ★★★★ HOLD THE TURN UNTIL THE OPENING WALK HAS LANDED, EVEN WITH NOTHING
+-- QUEUED BEHIND IT. `settleTurn` decides whether to open a replan frame the
+-- first time the queue is empty — and a unit whose whole order was one
+-- MOVE_TO never entered the queue, so that decision was taken while the
+-- unit was still walking: nothing revealed yet, no frame, the turn latched
+-- settled, and the movement the brain had deliberately left for the frame
+-- (`step_and_reassess` cuts the walk at the edge of the known) was never
+-- spent. A watch is a rows-less entry: it settles like any queued order
+-- (arrival, no movement left, the host's own event, or the grace period)
+-- and is dropped; it never issues anything and names no refusal.
+CivvisQueue.watch = function(subject, expect)
+	local q = CivvisQueue;
+	if q.pending[subject] ~= nil then return; end
+	q.pending[subject] = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+	q.order[#q.order + 1] = subject;
+	q.watching = q.watching + 1;
+end;
+
+CivvisQueue.dropWatch = function(subject, entry)
+	local q = CivvisQueue;
+	if #entry.rows > 0 then return false; end
+	q.pending[subject] = nil;
+	q.watching = q.watching - 1;
+	return true;
+end;
 
 CivvisQueue.refuseRest = function(subject, entry, why)
 	local q = CivvisQueue;
+	if CivvisQueue.dropWatch(subject, entry) then return; end
 	local left = #entry.rows - entry.next + 1;
 	if left > 0 then
 		q.stats.refused = q.stats.refused + left;
@@ -12114,7 +12171,7 @@ end;
 -- Returns how many orders ran on this call.
 CivvisQueue.drain = function(player, pid, turn)
 	local q = CivvisQueue;
-	if q.count <= 0 then return 0; end
+	if q.count + q.watching <= 0 then return 0; end
 	-- The host's own `UnitMoveComplete` / `UnitOperationDeactivated` mark a
 	-- unit ready the moment its order settles; the grace period is only the
 	-- fallback for a host that never says so, and it is deliberately long —
@@ -12136,7 +12193,9 @@ CivvisQueue.drain = function(player, pid, turn)
 					or (ux == entry.expect.x and uy == entry.expect.y);
 				local spent = moves ~= nil and moves <= 0;
 				local ready = entry.ready or arrived or spent or entry.wait >= grace;
-				if ready then
+				if ready and CivvisQueue.dropWatch(subject, entry) then
+					-- The opening walk has landed; nothing follows it.
+				elseif ready then
 					local row = entry.rows[entry.next];
 					local verb = tostring(row.verb or "");
 					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
@@ -12173,9 +12232,10 @@ CivvisQueue.drain = function(player, pid, turn)
 			end
 		end
 	end
-	if q.count <= 0 then
+	if q.count + q.watching <= 0 then
 		q.pending = {}; q.order = {};
-		CivvisQueue.report(turn, "drained");
+		-- A turn that only watched walks land has nothing to report.
+		if q.stats.queued > 0 then CivvisQueue.report(turn, "drained"); end
 	end
 	return ran;
 end;
@@ -12186,7 +12246,7 @@ CivvisQueue.giveUp = function(turn)
 	for subject, entry in pairs(q.pending) do
 		CivvisQueue.refuseRest(subject, entry, "queue_stalled");
 	end
-	q.pending = {}; q.order = {}; q.count = 0;
+	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0;
 	CivvisQueue.report(turn, "stalled");
 end;
 
@@ -12743,6 +12803,11 @@ local function applyOrders(player, pid, turn, rows)
 				if isUnit then
 					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
 					if not ok then firstRefused[subject] = true; end
+					-- Hold the turn until this walk lands (see CivvisQueue.watch);
+					-- a queued follow-up for the unit replaces the watch.
+					if queueOn and ok and firstRun[subject].expect ~= nil then
+						CivvisQueue.watch(subject, firstRun[subject].expect);
+					end
 					if queueOn and ok and foundRetry[subject] ~= nil
 							and tostring(row.verb or "") == "MOVE_TO" then
 						CivvisQueue.push(subject, foundRetry[subject], firstRun[subject].expect);
@@ -13339,6 +13404,9 @@ local function beginTurn(player, pid, turn)
 	civvisBuild = {};
 end
 
+-- Exposed for the offline step-turn-actions regression (see CivvisSettleTurn).
+CivvisBeginTurn = beginTurn;
+
 -- Poll for CIVVIS's answer. Returns true once the turn's decisions are settled,
 -- by CIVVIS or by the fallback; the caller must not end the turn before then.
 local function settleTurn(player, pid, turn, playFallback)
@@ -13422,7 +13490,21 @@ local function settleTurn(player, pid, turn, playFallback)
 			awaiting.source = "civvis";
 			awaiting.done = true;
 			applyOrders(player, pid, turn, rows);
-			return true;
+			-- ★★★★★ NOT `return true` — THAT ENDED THE TURN ON THE TICK THE
+			-- OPENING ORDERS WENT OUT. The caller requests `ACTION_ENDTURN` the
+			-- moment this returns true, and on this tick every unit has just
+			-- been handed its FIRST order: the walk is in flight, the strike,
+			-- the found and the second step are still on the per-unit queue,
+			-- and no replan frame has been considered. Whenever the host took
+			-- that request at once (nothing blocking: every unit busy walking),
+			-- the turn ended under the queue — its leftovers refused as
+			-- `queue_turn_over` — and the frame never opened: a unit stepped,
+			-- stood, and kept the rest of its movement. The `awaiting.done`
+			-- branch above is the one written to drain the queue, open the
+			-- frame and only then release the turn; it just never got a tick.
+			-- One more tick is all this costs. The same holds for a frame's
+			-- answer, which arrives through this branch too.
+			return false;
 		end
 	end
 
@@ -13458,7 +13540,8 @@ local function settleTurn(player, pid, turn, playFallback)
 				applyOrders(player, pid, turn, rows);
 				emit("orders_stale", { turn = turn, used = stale,
 				                       behind = turn - stale, polls = awaiting.polls });
-				return true;
+				-- As above: the queue drains on the next tick, then the turn ends.
+				return false;
 			end
 		end
 	end
@@ -13482,6 +13565,11 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 	return false;
 end
+
+-- Exposed for the offline step-turn-actions regression
+-- (step_turn_actions_test.lua), with `beginTurn` below it.
+CivvisSettleTurn = settleTurn;
+CivvisSurvey = survey;
 
 local function playTurn(player, pid, turn)
 	local research, civic;

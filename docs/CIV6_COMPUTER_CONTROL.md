@@ -256,7 +256,19 @@ every one still passes `CanStartOperation`. Refusals are named:
 `queue_no_moves`, `queue_stalled`, `queue_prior_refused`, `unit_gone:<id>`,
 `queue_turn_over`. `settleTurn` holds the turn while a queue is pending,
 bounded by `OrderQueueMaxTicks`; a wedged operation costs decision quality,
-never progress. A settler's refused `FOUND_CITY` is retried behind its walk.
+never progress. ⚠ Until 2026-08-21 it did not hold the turn on the tick the
+opening orders went out — that tick returned true and the caller requested
+`ACTION_ENDTURN` at once, so the queue (and any replan frame) lived only
+while the host refused the request; the apply tick now returns false and the
+next tick drains, frames, and releases (`step_turn_actions_test.lua`). The
+queue also *watches* each unit's opening walk (`CivvisQueue.watch`, a
+rows-less entry that settles like any queued order and issues nothing), so
+the frame decision waits for the walk to land. A
+settler's refused `FOUND_CITY` is retried behind its walk, and a `FOUND_CITY`
+row now carries its site: the mod founds only with the settler standing on
+it, and names a miss `found_off_site` (a found on the hex one step short of
+the site is legal far more often than not, and that is where the settler
+stands when the found runs first).
 The `seat` event advertises `order_queue`, and `civvis_orders` sends a unit's
 whole sequence only when it does. `orders` gains `queued` and
 `explore_guarded`; a per-turn `orders_queue` event carries `applied`,

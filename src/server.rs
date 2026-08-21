@@ -14116,7 +14116,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("minimal strategic mountain icon renderer");
-        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
+        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size,\n                              false, null, true)"));
         assert!(icon.contains("drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
         assert!(!icon.contains("Atlas"));
         let mountain = EMBEDDED_INDEX
@@ -14142,13 +14142,28 @@ mod tests {
         assert!(mountain.contains("k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);"));
         assert!(mountain.contains("cx.translate(0, STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET);"));
         assert!(mountain.contains("STRATEGIC_MOUNTAIN_SHADOW_Y * iconSize"));
+
+        // The volcano uses the matching lower-left/lower-right vertices (the
+        // 8 and 4 o'clock corners) and stops its glowing summit at 90% of the
+        // tile's upper half-height. Its shadow stays in raw tile coordinates
+        // so the taller cone does not rely on clipping to appear contained.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_X = S * SQ3 / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_Y = S * YS / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_TOP_TARGET_Y = -S * YS * .90;"));
         let volcano = EMBEDDED_INDEX
             .split("function drawMinimalVolcanoCaldera")
             .nth(1)
             .and_then(|tail| tail.split("function drawStrategicMountainIcon").next())
             .expect("minimal volcano caldera renderer");
         assert!(volcano.contains("const silhouette = () =>"));
-        assert!(volcano.contains("cx.ellipse(0, -6.2, 5.3, 1.8"));
+        assert!(volcano.contains("cx.scale(k * STRATEGIC_VOLCANO_ICON_WIDTH_SCALE,"));
+        assert!(volcano.contains("k * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE);"));
+        assert!(volcano.contains("cx.translate(0, STRATEGIC_VOLCANO_GLYPH_Y_OFFSET);"));
+        assert!(volcano.contains("STRATEGIC_VOLCANO_SHADOW_Y * iconSize"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_GLYPH_TOP_Y = -73 / 9;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_CALDERA_Y ="));
+        assert!(volcano.contains("const craterY = strategic ? STRATEGIC_VOLCANO_CALDERA_Y : -6.2;"));
+        assert!(volcano.contains("strategic ? \"#ff8a32\" : \"#ed6b35\""));
         assert!(volcano.contains("cx.strokeStyle = \"#e75e31\";"));
         assert!(!volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
         assert!(volcano.contains("if (!ice)"));

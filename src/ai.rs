@@ -157,6 +157,12 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// native slot. Deliberately NOT a gene: the genome is pinned at 40.
 const CAMP_BOUNTY_PARTY: usize = 2;
 
+/// How much cheaper a barbarian is to attack than the same fight against a
+/// major. See `barbarian_bargain`. Eight points is the size of the whole
+/// `strength_drive` term, so it moves a marginal trade without ever inverting
+/// the Recon penalty (+14) that keeps scouts out of fights.
+pub(crate) const BARBARIAN_BARGAIN_DISCOUNT: f64 = 8.0;
+
 /// A raider may operate this far from the camp that raised it. The camp's
 /// scout supplies the target; this leash keeps a successful raid from turning
 /// into an all-map chase that abandons the outpost.
@@ -2144,6 +2150,12 @@ pub struct BasicAi {
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
     /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
+    /// The advanced controller's `priced_tile_purchase` has taken over plot
+    /// purchases for this seat: its pass prices every border plot against
+    /// its Gold, so the baseline `buy_gold_plot` fallthrough must not buy
+    /// the same plots on a flat score behind it. Set only by
+    /// `AdvancedAi::enable_priced_tile_purchase`.
+    pub(crate) plot_purchase_delegated: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -2585,6 +2597,37 @@ pub struct BasicAi {
     /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
     /// treatment.
     pub(crate) barbarian_hunt: bool,
+    /// ★★★★★ WE DO NOT LOSE THE FIGHTS. WE DO NOT TAKE ENOUGH OF THEM.
+    ///
+    /// MEASURED across every live run since the melee bridge was repaired
+    /// (#2223), counting `combat` events:
+    ///
+    /// | | attacks | kills | attacker died |
+    /// |---|---:|---:|---:|
+    /// | ours, melee | 225 | 119 (53 %) | **6 (2.7 %)** |
+    /// | ours, ranged | 65 | 34 (52 %) | **0** |
+    /// | barbarians, melee | 479 | | |
+    /// | barbarians, ranged | 388 | | |
+    ///
+    /// Our attacks are good: better than even odds of a kill, and the attacker
+    /// dies once in thirty-seven. **The barbarians simply attack us three times
+    /// as often — 867 against 290.** The early window is a 0.71 exchange
+    /// (44 kills for 62 losses over seven runs) not because our swings are bad
+    /// but because we take so few of them.
+    ///
+    /// `attack_threshold` prices a fight the way a major-war fight is priced.
+    /// A barbarian is not that: there is no war weariness, no retaliation to
+    /// invite, no peace to lose, the camp respawns whatever we do, and killing
+    /// the unit is the only exit from the zone-of-control lock that strands our
+    /// Settlers. So a trade that is marginal against Persia is worth taking
+    /// against a raider, and this flag says so with one number.
+    ///
+    /// ⚠ Deliberately NOT a licence for Recon: the doctrine term already adds
+    /// +14 for a scout, so a −8 discount still leaves it +6 and scouts keep out
+    /// of fights. The barbarian controller never gets it (`!self.barb`).
+    ///
+    /// Entrant `live_without_barbarian_bargain`; treatment `barbarian-bargain`.
+    pub(crate) barbarian_bargain: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
@@ -3901,7 +3944,22 @@ impl BasicAi {
                 _ => 0.0,
             }
         };
-        self.w.attack_floor + role + target_adjustment - strength_drive
+        // A raider's life is cheaper than a major's: no war weariness, no
+        // retaliation invited, no peace to lose, the camp respawns whatever we
+        // do, and killing the unit is the only exit from the zone-of-control
+        // lock that strands our Settlers. See `barbarian_bargain`.
+        let bargain = if self.barbarian_bargain
+            && !self.barb
+            && g.barb_pid.is_some_and(|barb| {
+                g.units_at(target)
+                    .into_iter()
+                    .any(|other| g.units[&other].owner == barb)
+            }) {
+            BARBARIAN_BARGAIN_DISCOUNT
+        } else {
+            0.0
+        };
+        self.w.attack_floor + role + target_adjustment - strength_drive - bargain
     }
 
     /// Non-generic actions that define a unit's strategic job. Fast raiders
@@ -4190,6 +4248,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -4235,6 +4294,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_hunt: false,
+            barbarian_bargain: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4347,6 +4407,15 @@ impl BasicAi {
 
     pub fn disable_camp_reach(&mut self) {
         self.camp_reach = false;
+    }
+
+    /// Price a raider's life below a major's. See `barbarian_bargain`.
+    pub fn enable_barbarian_bargain(&mut self) {
+        self.barbarian_bargain = true;
+    }
+
+    pub fn disable_barbarian_bargain(&mut self) {
+        self.barbarian_bargain = false;
     }
 
     /// Count a barbarian unit beside one of our civilians in the field as a
@@ -4522,6 +4591,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -4567,6 +4637,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_hunt: false,
+            barbarian_bargain: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -9032,7 +9103,7 @@ impl BasicAi {
         // Plots are a surplus investment after concrete unit and building
         // gaps are filled. Keep another 200 Gold above the ordinary reserve
         // so border appetite cannot crowd out next turn's Builder or upgrade.
-        if self.buy_gold_plot(g, pid, reserve + 200.0) {
+        if !self.plot_purchase_delegated && self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 
