@@ -57,6 +57,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("home_defense", "home-defense", AdvancedAi::disable_home_defense),
     ("loyalty_policy_defence", "loyalty-policy-defence", AdvancedAi::disable_loyalty_policy_defence),
     ("recorded_tactical_step", "recorded-tactical-step", AdvancedAi::disable_recorded_tactical_step),
+    ("live_motion_turn_accounting", "live-motion-turn-accounting", AdvancedAi::disable_live_motion_turn_accounting),
     ("whole_turn_backtrack_guard", "whole-turn-backtrack-guard", AdvancedAi::disable_whole_turn_backtrack_guard),
     ("step_and_reassess", "step-and-reassess", AdvancedAi::disable_step_and_reassess),
     ("strike_opening", "strike-opening", AdvancedAi::disable_strike_opening),

@@ -189,6 +189,18 @@ impl AdvancedAi {
         self.base.recorded_tactical_step = true;
     }
 
+    /// A Civ6 replan frame is another view of the current host turn, not a
+    /// second turn of a unit's livelock history. Keep that bridge-only
+    /// accounting behind a separately withholdable treatment.
+    pub fn enable_live_motion_turn_accounting(&mut self) {
+        self.base.enable_live_motion_turn_accounting();
+    }
+
+    /// Withholding twin for `enable_live_motion_turn_accounting`.
+    pub fn disable_live_motion_turn_accounting(&mut self) {
+        self.base.disable_live_motion_turn_accounting();
+    }
+
     /// Withholding twin for the base military picker's engine-legality
     /// candidate screen (`BasicAi::legal_tactical_candidates`), which
     /// production enables in `promoted_policy_envoy`. Only the
@@ -822,6 +834,7 @@ impl AdvancedAi {
         // replay of run `civvis-20260801T224944Z`: 217 of 217 refused moves were
         // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
         // steps recorded.
+        self.enable_live_motion_turn_accounting();
         self.enable_recorded_tactical_step();
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.

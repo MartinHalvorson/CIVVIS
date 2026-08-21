@@ -104,6 +104,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_endgame_war_runway",
     "live_without_stacked_escort",
     "live_without_live_formationless_settler_shadow",
+    "live_without_live_motion_turn_accounting",
     "live_without_counter_in_lane",
     "live_without_era_paced_expansion",
     "live_without_escort_unstick",
@@ -356,6 +357,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "home-defense",
     "loyalty-policy-defence",
     "recorded-tactical-step",
+    "live-motion-turn-accounting",
     "whole-turn-backtrack-guard",
     "step-and-reassess",
     "strike-opening",
@@ -591,6 +593,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "parallel-settlers",
     "host-settler-pop",
     "explore-dead-targets",
+    // The host invokes the bridge again after some accepted orders. That is a
+    // replan frame, not a second game turn for persistent unit motion.
+    "live-motion-turn-accounting",
     "bank-envoys",
     // Replaces the host's broken Settler formation channel with ordinary
     // unit movement; native CIVVIS formations have no corresponding defect.
@@ -854,6 +859,7 @@ define_arm_kinds! {
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
     LiveWithoutLiveFormationlessSettlerShadow => "live_without_live_formationless_settler_shadow",
+    LiveWithoutLiveMotionTurnAccounting => "live_without_live_motion_turn_accounting",
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
@@ -4498,6 +4504,9 @@ impl ArmKind {
             Self::LiveWithoutLiveFormationlessSettlerShadow => {
                 live_without("live-formationless-settler-shadow")
             }
+            Self::LiveWithoutLiveMotionTurnAccounting => {
+                live_without("live-motion-turn-accounting")
+            }
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
@@ -7094,6 +7103,9 @@ mod tests {
             // Replaces only the host formation channel with the ordinary
             // movement shadow; native formations have no corresponding bug.
             "live_formationless_settler_shadow",
+            // Firaxis can ask the bridge for same-turn replans after an order;
+            // native turns have no duplicate motion snapshots to coalesce.
+            "live_motion_turn_accounting",
             // The Settler seat's land, at the Settler seat's pace; the league
             // cadence stays bred.
             "land_grab",

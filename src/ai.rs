@@ -1751,6 +1751,10 @@ struct UnitMotion {
     /// The tile this unit began each of its last `LIVELOCK_WINDOW` turns on,
     /// newest last.
     tiles: VecDeque<Pos>,
+    /// The host turn that supplied the current sample when the live bridge is
+    /// accounting for motion by host turn. A post-order replan is another
+    /// view of that turn, not another fruitless turn for this unit.
+    observed_turn: Option<u32>,
     /// The work fingerprint as of the last turn it changed.
     work: WorkMark,
     /// Consecutive turns since the fingerprint last changed.
@@ -2344,6 +2348,12 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Count a unit's livelock history once per Civilization VI turn, not once
+    /// per live replan frame. The bridge can ask again after an order lands;
+    /// that second snapshot sees the same host turn and used to accelerate a
+    /// premature stand-down. Native play never supplies
+    /// those mirror frames, so it remains off outside the live bridge.
+    live_motion_turn_accounting: bool,
     /// Refuse a step back onto **any** tile this unit has already stood on
     /// this turn, not merely the one it just left.
     ///
@@ -4223,6 +4233,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
@@ -4317,6 +4328,17 @@ impl BasicAi {
     /// through `AdvancedAi::enable_explore_dead_targets`.
     pub fn enable_explore_dead_targets(&mut self) {
         self.explore_dead_targets = true;
+    }
+
+    /// Let the live bridge count a persistent unit's motion once for each host
+    /// turn, even when Firaxis asks for a same-turn replan after an order.
+    pub(crate) fn enable_live_motion_turn_accounting(&mut self) {
+        self.live_motion_turn_accounting = true;
+    }
+
+    /// The withholding twin for the live evaluator control arm.
+    pub(crate) fn disable_live_motion_turn_accounting(&mut self) {
+        self.live_motion_turn_accounting = false;
     }
 
     /// Hold an exploration goal and sweep outward from home (see
@@ -4534,6 +4556,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
@@ -5895,6 +5918,11 @@ impl BasicAi {
             let pos = g.units[&uid].pos;
             let (was_looping, looping, fruitless, footprint, stand_down) = {
                 let motion = self.unit_motion.entry(uid).or_default();
+                if self.live_motion_turn_accounting && motion.observed_turn == Some(g.turn) {
+                    continue;
+                }
+                let observed_turn = self.live_motion_turn_accounting.then_some(g.turn);
+                motion.observed_turn = observed_turn;
                 let was_looping = motion.looping;
                 if motion.tiles.is_empty() {
                     motion.work = mark;
@@ -5906,6 +5934,7 @@ impl BasicAi {
                     *motion = UnitMotion {
                         work: mark,
                         resume_turn: motion.resume_turn,
+                        observed_turn,
                         ..UnitMotion::default()
                     };
                 } else {
@@ -5928,6 +5957,7 @@ impl BasicAi {
                     *motion = UnitMotion {
                         work: mark,
                         resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                        observed_turn,
                         ..UnitMotion::default()
                     };
                 }
@@ -15071,6 +15101,81 @@ mod tests {
             g.turn += 1;
         }
         (ai, g, ground, scout)
+    }
+
+    #[test]
+    fn live_motion_turn_accounting_counts_replan_frames_once() {
+        let (mut game, ground, scout) = scouted_world();
+        game.turn = 42;
+
+        // A normal controller retains the historical per-decision accounting.
+        // Four tiles keep the unit outside the three-tile loop bound, so the
+        // assertion observes the counter rather than a later stand-down reset.
+        let mut native = BasicAi::new();
+        for frame in 0..20 {
+            game.units.get_mut(&scout).unwrap().pos = ground[frame % 4];
+            native.begin_movement_turn(&game, 0);
+        }
+        assert_eq!(native.unit_motion[&scout].fruitless, 20);
+
+        let mut live = BasicAi::new();
+        live.enable_live_motion_turn_accounting();
+        for frame in 0..20 {
+            game.units.get_mut(&scout).unwrap().pos = ground[frame % 4];
+            live.begin_movement_turn(&game, 0);
+        }
+        let first_turn = &live.unit_motion[&scout];
+        assert_eq!(
+            first_turn.fruitless, 1,
+            "twenty replan frames are one host turn"
+        );
+        assert_eq!(first_turn.tiles.len(), 1);
+        assert_eq!(first_turn.observed_turn, Some(game.turn));
+
+        game.turn += 1;
+        game.units.get_mut(&scout).unwrap().pos = ground[1];
+        live.begin_movement_turn(&game, 0);
+        let next_turn = &live.unit_motion[&scout];
+        assert_eq!(
+            next_turn.fruitless, 2,
+            "the next host turn still advances motion"
+        );
+        assert_eq!(next_turn.tiles.len(), 2);
+        assert_eq!(next_turn.observed_turn, Some(game.turn));
+    }
+
+    #[test]
+    fn a_live_motion_stand_down_is_not_restarted_by_its_replan_frame() {
+        let (mut game, ground, scout) = scouted_world();
+        let mut live = BasicAi::new();
+        live.enable_live_motion_turn_accounting();
+
+        for elapsed in 0..LIVELOCK_STAND_DOWN_AFTER {
+            game.turn = 100 + elapsed;
+            game.units.get_mut(&scout).unwrap().pos = ground[elapsed as usize % 2];
+            live.begin_movement_turn(&game, 0);
+        }
+        let stood_down = &live.unit_motion[&scout];
+        let resume_turn = stood_down.resume_turn;
+        assert!(
+            resume_turn > game.turn,
+            "the two-tile loop stood down after real turns"
+        );
+        assert_eq!(
+            stood_down.fruitless, 0,
+            "the retry starts with a clean record"
+        );
+        assert_eq!(stood_down.observed_turn, Some(game.turn));
+
+        // `observe_unit_motion` clears the record on a stand-down. Preserve
+        // its same-turn marker too, or this replan would immediately start a
+        // new artificial fruitless turn.
+        live.begin_movement_turn(&game, 0);
+        let replanned = &live.unit_motion[&scout];
+        assert_eq!(replanned.resume_turn, resume_turn);
+        assert_eq!(replanned.fruitless, 0);
+        assert!(replanned.tiles.is_empty());
+        assert_eq!(replanned.observed_turn, Some(game.turn));
     }
 
     #[test]
