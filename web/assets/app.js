@@ -7919,7 +7919,7 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
 }
 
 // First put a private, seeded keep-out distance on each candidate. A fixed
-// radius makes the empty paper look artificially regimented; this 10--15 hex
+// radius makes the empty paper look artificially regimented; this 17--26 hex
 // envelope makes the gaps vary while still stopping illustrations from
 // clustering.
 function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
@@ -19689,7 +19689,7 @@ function drawPlanetChartMarginalia() {
   for (let i = 0; i < seats.length; i++) {
     const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = 1.85 * Math.max(88, Math.min(162,
+    const size = 1.85 * HIDDEN_MAP_TALE_SCALE * Math.max(88, Math.min(162,
       Math.min(width, height) * (.15 + h * .035)));
     drawHiddenMapMonster(
       seat.x, seat.y, size,
