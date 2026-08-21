@@ -23808,61 +23808,56 @@ fn clear_barbarian_fixture(game: &mut Game) {
 /// target like any other and the ordinary exchange gate decides the rest.
 #[test]
 fn a_raider_beside_a_settler_in_the_field_is_a_target_only_under_barbarian_hunt() {
-    let run = |hunt: bool| -> (bool, bool) {
-        let (mut game, home) = camp_bounty_board(90_079);
-        let barb = game.barb_pid.unwrap();
-        let road = open_ground_at(&game, home, 10);
-        let beside: Vec<Pos> = crate::hex::neighbors(road)
-            .into_iter()
-            .filter(|pos| {
-                game.map
-                    .get(*pos)
-                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                    && game.units_at(*pos).is_empty()
-                    && game.city_at(*pos).is_none()
-            })
-            .collect();
-        assert!(!beside.is_empty(), "the road tile needs an open neighbour");
-        game.spawn_test_unit("settler", 0, road);
-        let escort = game.spawn_test_unit("warrior", 0, beside[0]);
-        // The raider stands beside the ESCORT as well as near the Settler —
-        // the shape the live game kept producing, and the one escort duty was
-        // answering by re-forming instead of swinging.
-        let touching = *crate::hex::neighbors(beside[0])
-            .iter()
-            .find(|pos| {
-                game.map
-                    .get(**pos)
-                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                    && game.units_at(**pos).is_empty()
-                    && game.city_at(**pos).is_none()
-            })
-            .expect("open ground beside the escort");
-        let raider = game.spawn_test_unit("scout", barb, touching);
-        let mut ai = AdvancedAi::new();
-        ai.base.barbarian_hunt = hunt;
-        // Three seats per world turn; six world turns is ample for one swing
-        // between two adjacent units and leaves no room for a march from home.
-        let mut fought = false;
-        for _ in 0..18 {
-            let pid = game.current;
-            if pid == 0 {
-                ai.take_turn(&mut game, 0);
-                if game
-                    .units
-                    .get(&raider)
-                    .is_none_or(|unit| unit.hp < 100)
-                {
-                    fought = true;
+    let run =
+        |hunt: bool| -> (bool, bool) {
+            let (mut game, home) = camp_bounty_board(90_079);
+            let barb = game.barb_pid.unwrap();
+            let road = open_ground_at(&game, home, 10);
+            let beside: Vec<Pos> = crate::hex::neighbors(road)
+                .into_iter()
+                .filter(|pos| {
+                    game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(*pos).is_empty()
+                        && game.city_at(*pos).is_none()
+                })
+                .collect();
+            assert!(!beside.is_empty(), "the road tile needs an open neighbour");
+            game.spawn_test_unit("settler", 0, road);
+            let escort = game.spawn_test_unit("warrior", 0, beside[0]);
+            // The raider stands beside the ESCORT as well as near the Settler —
+            // the shape the live game kept producing, and the one escort duty was
+            // answering by re-forming instead of swinging.
+            let touching = *crate::hex::neighbors(beside[0])
+                .iter()
+                .find(|pos| {
+                    game.map.get(**pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(**pos).is_empty()
+                        && game.city_at(**pos).is_none()
+                })
+                .expect("open ground beside the escort");
+            let raider = game.spawn_test_unit("scout", barb, touching);
+            let mut ai = AdvancedAi::new();
+            ai.base.barbarian_hunt = hunt;
+            // Three seats per world turn; six world turns is ample for one swing
+            // between two adjacent units and leaves no room for a march from home.
+            let mut fought = false;
+            for _ in 0..18 {
+                let pid = game.current;
+                if pid == 0 {
+                    ai.take_turn(&mut game, 0);
+                    if game.units.get(&raider).is_none_or(|unit| unit.hp < 100) {
+                        fought = true;
+                    }
+                }
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
                 }
             }
-            if game.winner.is_none() && game.current == pid {
-                let _ = game.apply(pid, &Action::EndTurn);
-            }
-        }
-        let escort_alive = game.units.contains_key(&escort);
-        (fought, escort_alive)
-    };
+            let escort_alive = game.units.contains_key(&escort);
+            (fought, escort_alive)
+        };
     let (without, _) = run(false);
     let (with, escort_alive) = run(true);
     assert!(

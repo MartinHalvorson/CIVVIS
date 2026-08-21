@@ -4572,7 +4572,9 @@ impl ArmKind {
             Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
             Self::LiveWithoutSettlerTargetHysteresis => live_without("settler-target-hysteresis"),
             Self::LiveWithoutTallyGreatPeople => live_without("tally-great-people"),
-            Self::LiveWithoutBarbarianScoutsAreScouts => live_without("barbarian-scouts-are-scouts"),
+            Self::LiveWithoutBarbarianScoutsAreScouts => {
+                live_without("barbarian-scouts-are-scouts")
+            }
             Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutCampReach => live_without("camp-reach"),
             Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
