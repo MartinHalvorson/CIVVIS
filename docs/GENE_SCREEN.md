@@ -349,6 +349,19 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   26.7%, paired win Δ +12.8 pp ± 3.3 for the best genome** (round:
   `docs/eval/2026-08-20-the-bridge-talks-more-than-once-a-turn.md`).
 
+- **The war column, re-priced (2026-08-21).** Every gene's war verdict now
+  comes from one screen against the best genome
+  (`docs/gene_screens/2026-08-21-s8-war-rerank-vs-best-4p-allseats.json`:
+  4p all-seats, `domination,score`, 5,844 seat-pairs, ±2.0 pp), replacing the
+  pre-repair p2/p3b rows. It turned on `score-horizon`, `joint-tactics` and
+  `blind-objective-strength` (unresolved natively, helps at war) and held
+  off `siege-role`, `housing-districts`, `settler-site-agreement`,
+  `holy-lane-parity` and `inquisition-on-threat` (unresolved natively, hurt
+  at war); `wide-map-capacity` reads **+15.6 pp** at war. A screen played on
+  an older build can carry a gene whose code has since been removed; the
+  tool now drops those rows and says so, because the Rust table refuses a tag
+  the registry does not know.
+
 ⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
 ledger already holds off is identical to `live` — the screen is that gene's
 instrument now. And a treatment PR no longer ships its flag on: it ships it

@@ -596,6 +596,14 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// A Builder charge on an idle ordinary tile buys a future yield, while a
+/// charge on a worked tile changes the empire's output immediately. Keep the
+/// former possible — a growing city will need it — but make the latter win the
+/// ordinary target race. Luxury and strategic connections are deliberately
+/// exempt because the engine pays them whether or not a citizen works the
+/// plot. See [`AdvancedAi::builder_worked_tile_priority`].
+const UNWORKED_BUILDER_TARGET_WEIGHT: f64 = 0.25;
+
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1878,6 +1886,17 @@ pub struct AdvancedAi {
     ///
     /// Off by default; evaluator arm `advanced_builder_survey`.
     pub builder_reward_survey: bool,
+
+    /// Prefer Builder work that improves a tile the city is using now.
+    ///
+    /// The target sweep keeps a correctly connected luxury or strategic
+    /// resource at full priority: its Amenity or stockpile pays regardless of
+    /// its citizen assignment. Other idle tiles retain a quarter of their
+    /// normal score, so the Builder can still prepare a growing city without
+    /// displacing work that changes the empire's output this turn.
+    ///
+    /// Off by default; native opt-in gene `builder-worked-tile-priority`.
+    pub builder_worked_tile_priority: bool,
 
     /// Credit strength-per-production and a civ's own unique unit when
     /// pricing military production.
@@ -4567,6 +4586,7 @@ impl AdvancedAi {
             production_builder_floor: true,
             production_settler_deadline: true,
             builder_reward_survey: false,
+            builder_worked_tile_priority: false,
             unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
@@ -23322,6 +23342,50 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
+    /// Does this improvement connect a resource whose empire-wide benefit is
+    /// paid without assigning a citizen to its tile?
+    fn improvement_connects_global_resource(g: &Game, pos: Pos, improvement: &str) -> bool {
+        let Some(resource) = g.map.tiles[&pos].resource.as_ref() else {
+            return false;
+        };
+        matches!(
+            g.rules.resources[resource].class.as_str(),
+            "luxury" | "strategic"
+        ) && g.rules.improvements[improvement]
+            .resources
+            .iter()
+            .any(|entry| entry == resource)
+    }
+
+    /// The score used to choose an existing Builder's destination.
+    ///
+    /// `improvement_value` is intentionally the raw value: it selects the
+    /// improvement that best fits *one tile*. This second score answers the
+    /// empire-level timing question — which job receives this finite charge
+    /// now? A luxury or strategic connection is full value even on an idle
+    /// tile; otherwise, the active citizen plan decides whether its yield is
+    /// immediate or merely a future option.
+    fn builder_target_value(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        worked: bool,
+    ) -> f64 {
+        let value = self.improvement_value(g, pos, improvement, strategy);
+        if !self.builder_worked_tile_priority
+            || Self::improvement_connects_global_resource(g, pos, improvement)
+        {
+            return value;
+        }
+        if worked {
+            value
+        } else {
+            value * UNWORKED_BUILDER_TARGET_WEIGHT
+        }
+    }
+
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -23846,6 +23910,17 @@ impl AdvancedAi {
         // guard the moment anything in here starts mutating the game.
         let best = {
             let _memo = g.query_memo();
+            // Computing the citizen plan can inspect every tile in a city.
+            // Read it once per city, rather than once for every candidate
+            // improvement in the target sweep.
+            let worked_tiles: HashSet<Pos> = if self.builder_worked_tile_priority {
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
+                    .collect()
+            } else {
+                HashSet::new()
+            };
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && !self
@@ -23863,8 +23938,13 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.improvement_value(g, *pos, &improvement, strategy)
-                                    - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.builder_target_value(
+                                    g,
+                                    *pos,
+                                    &improvement,
+                                    strategy,
+                                    worked_tiles.contains(pos),
+                                ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
