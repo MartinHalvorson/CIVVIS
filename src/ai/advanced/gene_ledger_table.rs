@@ -213,6 +213,13 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: -1.455, win_z: -1.302, share_delta_pp: -0.716, share_z: -2.566, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
+        tag: "idle-faith-patronage",
+        verdict: Verdict::Helps,
+        family_wise: true,
+        native: Some(Measure { pairs: 6000, win_delta_pp: 0.467, win_z: 2.276, share_delta_pp: 0.062, share_z: 3.959, source: "2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json" }),
+        war: None,
+    },
+    GeneVerdict {
         tag: "idle-walkers-close-the-pipeline",
         verdict: Verdict::Unresolved,
         family_wise: false,

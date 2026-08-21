@@ -115,10 +115,28 @@
         "design": "foldover",
         "start_seed": 54000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json",
+      "regime": "native",
+      "complete_pairs": 6000,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 6,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "baseline": "best",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 55000000
+      }
     }
   ],
   "counts": {
-    "helps": 11,
+    "helps": 12,
     "hurts": 11,
     "unresolved": 47
   },
@@ -972,6 +990,26 @@
         "read": "share hurts *",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
+    },
+    {
+      "tag": "idle-faith-patronage",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": false,
+      "native": {
+        "pairs": 6000,
+        "n_on": 6000,
+        "n_off": 6000,
+        "win_delta_pp": 0.467,
+        "win_z": 2.276,
+        "share_delta_pp": 0.062,
+        "share_z": 3.959,
+        "read": "HELPS ** \u00b7 share HELPS **",
+        "source": "2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json"
+      },
+      "war": null
     },
     {
       "tag": "idle-walkers-close-the-pipeline",
