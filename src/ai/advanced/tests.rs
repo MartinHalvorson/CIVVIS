@@ -16012,7 +16012,11 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
 
     let mut stock = game.clone();
     AdvancedAi::new().advanced_great_people(&mut stock, 0, GrandStrategy::Expansion);
-    assert_eq!(claimed(&stock), 0, "the shipped gate leaves a 40% race alone");
+    assert_eq!(
+        claimed(&stock),
+        0,
+        "the shipped gate leaves a 40% race alone"
+    );
     assert_eq!(stock.players[0].faith, 900.0);
 
     let mut ai = AdvancedAi::new();
