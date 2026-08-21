@@ -114,6 +114,18 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// Buy the second and third Scout while the world's borders are still
+    /// open — after Early Empire a city-state cannot be met by land at all.
+    /// See [`AdvancedAi::early_contact_window`].
+    pub fn enable_early_contact_window(&mut self) {
+        self.early_contact_window = true;
+    }
+
+    /// The twin of `enable_early_contact_window`.
+    pub fn disable_early_contact_window(&mut self) {
+        self.early_contact_window = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair

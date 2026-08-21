@@ -193,4 +193,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // Every major adopts Early Empire on turns 23-30, and a Scout's sight of 2
+    // cannot see a city-state's seat from outside its border. The land route
+    // to first contact closes once and never reopens; see
+    // `AdvancedAi::early_contact_window`.
+    ("early_contact_window", "early-contact-window", AdvancedAi::enable_early_contact_window),
 ];

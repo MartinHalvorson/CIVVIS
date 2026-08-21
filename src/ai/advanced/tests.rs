@@ -15695,6 +15695,71 @@ fn idle_faith_patronage_is_a_native_opt_in() {
     assert!(!ai.idle_faith_patronage);
 }
 
+/// `early-contact-window` is separately screenable and never changes a stock,
+/// live, or deployed seat unless the evaluator explicitly selects it.
+#[test]
+fn early_contact_window_is_an_off_by_default_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.early_contact_window);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "early-contact-window")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.early_contact_window);
+    ai.disable_early_contact_window();
+    assert!(!ai.early_contact_window);
+}
+
+/// The extra Scout is valuable only inside the one window the gene names:
+/// there must be a living unmet city-state, the seat must not have reached
+/// Early Empire, and the three-eye ceiling must still have room.
+#[test]
+fn early_contact_value_closes_at_the_civic_contact_and_scout_gates() {
+    let mut game = Game::new(2, 24, 16, 90_007_001, 80, 1);
+    let city_state = game
+        .players
+        .iter()
+        .find(|player| player.is_minor && !player.is_barbarian)
+        .map(|player| player.id)
+        .expect("one city-state");
+    game.players[0].met.remove(&city_state);
+    game.players[city_state].met.remove(&0);
+
+    let mut ai = AdvancedAi::new();
+    let one_eye = EmpireCounts {
+        scouts: 1,
+        ..EmpireCounts::default()
+    };
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+
+    ai.enable_early_contact_window();
+    assert_eq!(
+        ai.early_contact_value(&game, 0, &one_eye),
+        EARLY_CONTACT_UNMET_VALUE / 2.0
+    );
+
+    let three_eyes = EmpireCounts {
+        scouts: EARLY_CONTACT_SCOUT_MAX,
+        ..EmpireCounts::default()
+    };
+    assert_eq!(ai.early_contact_value(&game, 0, &three_eyes), 0.0);
+
+    game.players[0].civics.insert(crate::name!("early_empire"));
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+    game.players[0].civics.remove(&crate::name!("early_empire"));
+
+    game.players[0].met.insert(city_state);
+    game.players[city_state].met.insert(0);
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+
+    game.players[0].met.remove(&city_state);
+    game.players[city_state].met.remove(&0);
+    game.players[city_state].alive = false;
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+}
+
 #[test]
 fn great_person_patronage_buys_close_strategy_races_without_spending_the_reserve() {
     let mut game = Game::new(2, 24, 16, 7_102, 200, 0);

@@ -101,9 +101,18 @@ The three tags are now native repairs, screenable and (being unmeasured) off at
 deployment. The screen is 6p all-seats, foldover, `--baseline best --field
 repairs`, seeds 71000000...
 
-## Two measurements that did not become code
+The preserved screen prefix contains 1,134 complete seat-pairs across 378
+games. It remains unresolved for all three genes: `culture-coverage` measured
++0.9 pp wins (95% CI −1.0 to +2.7, z=0.93),
+`district-building-chain` +0.2 pp (−1.8 to +2.1, z=0.18), and
+`culture-building-debt` −0.2 pp (−2.0 to +1.6, z=−0.19). Their score-share
+contrasts were +0.02, −0.02, and −0.07 pp respectively, all below |z|=1. The
+interrupted prefix is evidence, not a promotion verdict, so all three remain
+off at deployment.
 
-**More Scouts do not buy more contacts.** The Envoy economy before Political
+## What the exploration measurements changed
+
+**More late Scouts do not buy more contacts.** The Envoy economy before Political
 Philosophy really is first contact — a Chiefdom makes 1 Influence a turn against
 a threshold of 100, `Game::record_meeting` gives the first major to discover a
 city-state one Envoy standing at it, and Political Philosophy's own Eureka is
@@ -116,7 +125,19 @@ Scout as land military) moved t40 from 2.33 Scouts / 2.67 met to 2.50 / 2.50. At
 900 per unmet city-state with a cap of six the mechanism fired and the answer
 got worse: seed 90002001 at t120 held **5.50 Scouts and had met 4.67
 city-states**, against the baseline's 3.83 and 6.00. Exploration is saturated at
-two or three eyes; the constraint is walking distance.
+two or three eyes after the opening; the constraint is walking distance.
+
+**The useful lever is the short contact window, not the long research
+horizon.** A follow-up six-seat census found every major adopting Early Empire
+on turns 23–30. That civic closes peaceful borders, and a Scout's sight of two
+cannot see a developed city-state's seat from outside its radius-2–3 border.
+A land flood from the capital could stand beside all 9 city-states on turns 10
+and 25, but only 0.17 on average by turn 40 even though 87% of the map remained
+walkable. The `early-contact-window` opt-in therefore lifts the two historical
+Scout vetoes only before this seat adopts Early Empire, only while a living
+city-state remains unmet, and only up to three Scouts. It is separately
+screenable and remains off by default; the culture screen above did not vary
+it.
 
 **The Envoy allocation is close to its ceiling.** Against a greedy-optimal
 spread of the same Envoys over the same city-states met, the seat's actual Envoy
