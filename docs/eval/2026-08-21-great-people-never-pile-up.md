@@ -80,9 +80,16 @@ Nine behaviour tests pin the ladder (`a_writer_at_the_price_…`,
 
 | what | instrument | result |
 |---|---|---|
-| the pile-up itself, gene off v on | the probe above on the same seeds, every major carrying the gene | PROBE_RESULT |
-| the gene against the best genome | `gene_screen --players 6 --all-seats --baseline best --genes great-person-housing`, 1,000 pairs (6,000 seat-pairs), seeds 75M | SCREEN_RESULT |
+| the pile-up itself, gene off v on | the probe above on the same six seeds, every major carrying the gene in the on arm | explicit blocker seat-turns fell from 670 to 445 and seats with any blocked class from 22/36 to 17/36; Engineer blockage fell from 52 turns to 1 while Engineer claims rose from 7 to 13 |
+| the gene against the best genome | two disjoint `gene_screen --players 6 --all-seats --baseline best --genes great-person-housing` windows, seeds 75M and 76M | 384 complete seat-pairs across 128 games: win Δ +1.0 pp (95% CI −2.2 to +4.3, z=0.63), score-share Δ +0.09 pp (z=0.81); unresolved at this size |
 
 ## What it means
 
-MEANING
+The behaviour tests and probe show that the gene reaches the intended
+blockers and can materially shorten the worst one. The probe is diagnostic,
+not an efficacy estimate: turning the gene on changes game length and who
+wins, so raw blocker totals are not a paired outcome measure. The randomized
+screen is the efficacy evidence, and its completed prefix is still compatible
+with both a modest loss and a modest gain. The gene therefore ships as a
+native, off-by-default opt-in; the interrupted 1,000-pair screen is not used to
+promote it.

@@ -80,6 +80,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
 | `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
 | `settler-threat-detour` | off (unmeasured) | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. |
 
