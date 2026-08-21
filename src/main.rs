@@ -1148,10 +1148,10 @@ fn main() {
                                 census.arrival_wave_lone,
                             ));
                         }
-                        if census.reveal_regroups + census.step_reassessed > 0 {
+                        if census.step_reassessed > 0 {
                             flags.push_str(&format!(
-                                " REASSESS sightings={} blind_cuts={}",
-                                census.reveal_regroups, census.step_reassessed,
+                                " REASSESS blind_cuts={}",
+                                census.step_reassessed,
                             ));
                         }
                         Some((w.map(|w| w.civ.clone()), format!(
