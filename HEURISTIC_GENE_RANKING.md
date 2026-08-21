@@ -80,6 +80,8 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
 | `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
+| `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `opportunistic-war` | off (unmeasured) | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
 | `raid-pillage-prizes` | off (unmeasured) | Count a neighbour's unpillaged tiles within reach as raid prizes and send raiding soldiers to them. |
