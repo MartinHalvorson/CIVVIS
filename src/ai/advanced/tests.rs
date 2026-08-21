@@ -15612,6 +15612,61 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
     assert_eq!(claimed(&rich), 0, "gold does not buy a 40% race");
 }
 
+/// ★★★★ A ZERO-WIDTH CONFIDENCE INTERVAL IS NOT A NULL. `gene_screen` builds
+/// its treated seat from `enable_engine_repairs_universe` and flips only the
+/// genes whose drawn bit differs from `Gene::after_setup_on`, which the gene
+/// table asserts is `true` for every `ENGINE_REPAIR_TREATMENTS` tag. A repair
+/// the universe never turns on is off in BOTH arms, the arms play identical
+/// games, and the screen prints `Δ +0.0 [+0.0, +0.0] z +0.00` — which reads
+/// like a measured null and is not one. The culture economy's three tags
+/// reached the tables before their enables did and burned 30 games saying
+/// nothing.
+///
+/// This pins the two halves of the contract for them: the universe carries
+/// them, so the screen can vary them, and the ledger withholds them, so
+/// nothing ships unmeasured.
+#[test]
+fn the_culture_economy_is_in_the_native_universe_and_out_of_the_deployment() {
+    let mut universe = AdvancedAi::new();
+    universe.enable_engine_repairs_universe();
+    assert!(
+        universe.culture_coverage
+            && universe.culture_building_debt
+            && universe.district_building_chain,
+        "the native repair universe must carry every ENGINE_REPAIR_TREATMENTS tag, \
+         or the screen varies nothing"
+    );
+
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_engine_repairs();
+    assert!(
+        !deployed.culture_coverage
+            && !deployed.culture_building_debt
+            && !deployed.district_building_chain,
+        "unmeasured means off at deployment; `apply_gene_ledger` withholds them"
+    );
+
+    for tag in [
+        "culture-coverage",
+        "culture-building-debt",
+        "district-building-chain",
+    ] {
+        assert!(
+            crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag),
+            "{tag} is a native repair"
+        );
+        assert!(
+            !crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&tag),
+            "{tag} left the host-only list"
+        );
+        assert_eq!(
+            crate::ai::ledger_default_on(tag),
+            Some(false),
+            "{tag}: screenable and unmeasured, so off"
+        );
+    }
+}
+
 /// The gene is an opt-in: off in every bundle, flippable by name, in
 /// `PRODUCTION_OPT_INS`.
 #[test]

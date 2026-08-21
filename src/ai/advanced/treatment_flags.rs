@@ -1372,6 +1372,26 @@ impl AdvancedAi {
         // Keeping it loyal, and not slotting cards that multiply zero.
         self.enable_loyalty_rate_alarm();
         self.enable_suzerain_cards_need_a_suzerainty();
+        // ★★★★ A TAG IN `ENGINE_REPAIR_TREATMENTS` WHOSE ENABLE IS MISSING
+        // HERE SCREENS AS EXACTLY INERT, AND SAYS SO IN A WAY THAT IS EASY TO
+        // READ AS A RESULT. `gene_screen` builds its treated seat from
+        // `enable_engine_repairs_universe` and then flips only the genes whose
+        // drawn bit differs from `Gene::after_setup_on` — which the table
+        // asserts is `true` for every engine repair. A repair this bundle
+        // never turns on is therefore off in BOTH arms of every pair, the two
+        // arms play byte-identical games, and the screen reports `Δ +0.0
+        // [+0.0, +0.0] z +0.00` for the gene. That is the signature: a
+        // zero-width confidence interval is not a null, it is a gene that was
+        // never varied. Three tags reached the tables before this line and
+        // burned 30 games saying nothing.
+        //
+        // The research economy's two counterparts on the culture tree, and the
+        // chain that fills every specialty district. `enable_engine_repairs`
+        // applies the ledger after this, so an unmeasured one is still off at
+        // deployment.
+        self.enable_culture_building_debt();
+        self.enable_culture_coverage();
+        self.enable_district_building_chain();
     }
 
     /// Plan each engagement's attacks as one joint problem instead of one
