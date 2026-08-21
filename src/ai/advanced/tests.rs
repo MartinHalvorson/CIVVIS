@@ -28651,7 +28651,9 @@ fn great_person_housing_fixture(seed: u64) -> (Game, u32) {
             .unwrap();
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.remove_unit(settler);
-        game.players[pid].civics.insert(crate::name!("drama_poetry"));
+        game.players[pid]
+            .civics
+            .insert(crate::name!("drama_poetry"));
         game.players[pid].techs.insert(crate::name!("writing"));
         game.players[pid].gold = 1_000.0;
     }
@@ -28716,7 +28718,10 @@ fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane()
     );
     let mut untouched = game.clone();
     assert!(!stock.great_person_housing(&mut untouched, 0, &plan));
-    assert!(untouched.cities[&capital].queue.is_empty(), "off: nothing is reserved");
+    assert!(
+        untouched.cities[&capital].queue.is_empty(),
+        "off: nothing is reserved"
+    );
 
     let mut ai = AdvancedAi::new();
     ai.enable_great_person_housing();
@@ -28736,7 +28741,7 @@ fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane()
 /// points that are still forty turns out.
 #[test]
 fn the_slot_building_starts_within_the_lead_and_not_before() {
-    let (mut game, capital) = great_person_housing_fixture(71_302);
+    let (game, capital) = great_person_housing_fixture(71_302);
     let rate = game.great_person_points_per_turn(0)["writer"];
     assert!(rate > 0.0, "a Theater Square earns Writer points");
     let cost = game.gp_cost(0, "writer");
@@ -28841,13 +28846,21 @@ fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
     assert!(!game.can_house_great_works(0, "writing", 2));
     assert!(!game.can_activate_current_great_person(0, "writer"));
     assert!(
-        game.quick_deals(0).iter().any(|deal| deal.category == "great_work"
-            && deal.direction == "sell"
-            && deal.item == "writing"),
+        game.quick_deals(0)
+            .iter()
+            .any(|deal| deal.category == "great_work"
+                && deal.direction == "sell"
+                && deal.item == "writing"),
         "the market quotes the duplicate"
     );
     let plan = great_person_housing_plan(&game, GrandStrategy::Science);
-    let claimed = |game: &Game| game.players[0].gp_claimed.get("writer").copied().unwrap_or(0);
+    let claimed = |game: &Game| {
+        game.players[0]
+            .gp_claimed
+            .get("writer")
+            .copied()
+            .unwrap_or(0)
+    };
 
     let mut kept = game.clone();
     assert!(!AdvancedAi::new().great_person_housing(&mut kept, 0, &plan));
@@ -28859,21 +28872,24 @@ fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
     let mut sold = game.clone();
     assert!(ai.great_person_housing(&mut sold, 0, &plan));
     assert_eq!(claimed(&sold), 1, "the Writer is recruited the same turn");
-    assert_eq!(
-        writing_works(&sold, 0),
-        3,
-        "one work sold, two written"
-    );
+    assert_eq!(writing_works(&sold, 0), 3, "one work sold, two written");
     assert_eq!(writing_works(&sold, 1), 1);
     assert!(sold.players[0].gold > 1_000.0, "the sale is paid");
-    assert!(sold.cities[&capital].queue.is_empty(), "no building was reserved");
+    assert!(
+        sold.cities[&capital].queue.is_empty(),
+        "no building was reserved"
+    );
 
     let mut targeted = game.clone();
     let mut hostile = great_person_housing_plan(&targeted, GrandStrategy::Conquest);
     hostile.target_player = Some(1);
     assert!(!ai.great_person_housing(&mut targeted, 0, &hostile));
     assert_eq!(writing_works(&targeted, 0), 2);
-    assert_eq!(claimed(&targeted), 0, "the campaign target is never sold a work");
+    assert_eq!(
+        claimed(&targeted),
+        0,
+        "the campaign target is never sold a work"
+    );
 }
 
 /// A slot building outranks a sale: with the Amphitheater full but a second
@@ -28929,7 +28945,8 @@ fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_pr
         turns_to_due: if due { 0.0 } else { 8.0 },
     };
     assert!(
-        ai.great_person_housing_item(&game, 0, capital, &scientist(false)).is_none(),
+        ai.great_person_housing_item(&game, 0, capital, &scientist(false))
+            .is_none(),
         "a district is a bet for points still eight turns out"
     );
     assert!(
@@ -29050,7 +29067,10 @@ fn a_due_wonder_engineer_starts_the_cheapest_wonder_for_its_charges() {
     assert_eq!(stuck.len(), 1, "ten turns out is inside the lead");
     assert!(!stuck[0].due);
     assert!(!ai.great_person_housing(&mut soon, 0, &plan));
-    assert!(soon.cities[&capital].queue.is_empty(), "a wonder is not started on speculation");
+    assert!(
+        soon.cities[&capital].queue.is_empty(),
+        "a wonder is not started on speculation"
+    );
 }
 
 /// An Admiral who leads a formation waits on a military sea unit (75 blocked
@@ -29059,7 +29079,9 @@ fn a_due_wonder_engineer_starts_the_cheapest_wonder_for_its_charges() {
 #[test]
 fn a_due_formation_admiral_is_answered_with_a_ship_not_a_harbor() {
     let effects: std::collections::BTreeMap<String, f64> =
-        [("naval_unit_formation".to_string(), 1.0)].into_iter().collect();
+        [("naval_unit_formation".to_string(), 1.0)]
+            .into_iter()
+            .collect();
     assert_eq!(
         AdvancedAi::great_person_remedy("admiral", &effects),
         Some(GreatPersonRemedy::SeaUnit)
@@ -29071,19 +29093,25 @@ fn a_due_formation_admiral_is_answered_with_a_ship_not_a_harbor() {
         Some(GreatPersonRemedy::District("harbor"))
     );
     let promotion: std::collections::BTreeMap<String, f64> =
-        [("land_unit_promotion_level".to_string(), 1.0)].into_iter().collect();
+        [("land_unit_promotion_level".to_string(), 1.0)]
+            .into_iter()
+            .collect();
     assert_eq!(
         AdvancedAi::great_person_remedy("general", &promotion),
         Some(GreatPersonRemedy::LandUnit)
     );
     let imhotep: std::collections::BTreeMap<String, f64> =
-        [("wonder_production".to_string(), 175.0)].into_iter().collect();
+        [("wonder_production".to_string(), 175.0)]
+            .into_iter()
+            .collect();
     assert_eq!(
         AdvancedAi::great_person_remedy("engineer", &imhotep),
         Some(GreatPersonRemedy::Wonder)
     );
     let leonardo: std::collections::BTreeMap<String, f64> =
-        [("modern_tech_boosts".to_string(), 1.0)].into_iter().collect();
+        [("modern_tech_boosts".to_string(), 1.0)]
+            .into_iter()
+            .collect();
     assert_eq!(
         AdvancedAi::great_person_remedy("engineer", &leonardo),
         Some(GreatPersonRemedy::District("industrial_zone"))
