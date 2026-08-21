@@ -1513,9 +1513,19 @@ Settler walking past a camp was not a sighting.
 MEASURED before the change, `ai_eval live live_without_camp_reach`, 12 pairs /
 72 seat-games an arm at 6p/150t/online on identical seeds: **0.22 civilians
 lost to barbarians per game**. The live Civilization VI seat on the same shape
-(run `civvis-20260821T130446Z`) lost **8 of the 12 Settlers that ever walked,
+(run `civvis-20260821T130446Z`) lost **4 of the 8 Settlers that ever walked,
 in 104 turns**, at a matching city count — 2 cities at t60 against the
 simulation's 2.53. Not an exposure difference; the opponent.
+
+⚠ **CORRECTED 2026-08-21.** This entry first read "8 of 12". The host emits
+`unit_lost` when a Settler **founds a city** — the operation consumes the unit,
+so `CivvisLedger.onUnitRemoved` reports a founding exactly like a capture, and
+counting those events naively doubles the loss. Always subtract the `unit_lost`
+events whose `unit` id also carries a `found` event. Across 89 live runs the
+real settler-loss rate to turn 100 is **23 %**, not the 56 % a naive count
+gives. The conclusion this version rests on is unchanged — the simulation was
+an order of magnitude gentler than the host — but the figure was wrong and is
+corrected here rather than left to propagate.
 
 With the sighting extended, and with the raider pursuit of #2227 that this
 version follows, the same measurement reads **0.61**.
