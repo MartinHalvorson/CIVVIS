@@ -13037,9 +13037,20 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
         assert!(monsters.contains(".21"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SPACING_SCALE = .8"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
+
+        let seating_radius = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeatRadius(q, r, seedA, seedB)")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
+                    .next()
+            })
+            .expect("scaled hidden-map monster seating radius");
+        assert!(seating_radius.contains("HIDDEN_MAP_TALE_SPACING_SCALE *"));
 
         let seating = EMBEDDED_INDEX
             .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
@@ -13048,6 +13059,7 @@ mod tests {
             .expect("minimum-distance hidden-map monster seating");
         assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
         assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *"));
         assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
         assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
