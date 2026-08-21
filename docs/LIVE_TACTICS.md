@@ -288,6 +288,12 @@ arena regimes.
 
 ## 10. Step 4, first cut — arrive together (`arrival-waves`, opt-in, off)
 
+> **REMOVED 2026-08-21.** Two screens priced the wave at −3.0 [−6.7, +0.6]
+> (war, seeds 44M) and −35 wins/10k (6p native, seeds 52M) — never a
+> measured help — and the operator's fix-or-remove directive took the code
+> with the bottom of the ranking (PR #2235). The section below is the
+> historical record of what it was.
+
 Item 4 asked for an army plan with per-unit ETAs, a go/no-go on the muster
 ring, a siege as ring → walls → capture, and wounded rotation. Reading the
 controller before writing any of it: most of that already exists, behind

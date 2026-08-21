@@ -177,21 +177,6 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
-/// `arrival_waves`: how many rear reinforcements must stand together, inside
-/// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
-/// its front group's orders. Two is the smallest wave that is not "one at a
-/// time", which is the shape `docs/LIVE_TACTICS.md` item 4 names: on the live
-/// seat 73 of 231 combat losses were taken at a >30-point strength gap by
-/// units that reached an engaged front alone.
-const ARRIVAL_WAVE_SIZE: usize = 2;
-/// `arrival_waves`: the most turns a lone arrival is held short of an engaged
-/// front waiting for company. After this it joins on its own — a held unit is
-/// still a unit not fighting, and the front may need it more than the wave.
-const ARRIVAL_WAVE_PATIENCE_TURNS: u32 = 3;
-/// `arrival_waves`: how close two held arrivals must be to count as one wave —
-/// `command_radius` (6), the same clique radius force groups are built at, so
-/// a released wave is one group's worth of units, not two.
-const ARRIVAL_WAVE_RADIUS: i32 = 6;
 
 /// How long the defensive-war `Recovery` posture may hold on the power-gap
 /// trigger alone before the empire returns to its own lane, in standard turns.
@@ -757,17 +742,6 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
-    /// `arrival_waves`: fresh reinforcements held short of an engaging front
-    /// (units, once per hold), units released as part of a wave of
-    /// [`ARRIVAL_WAVE_SIZE`] or more, and units released alone because
-    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`] ran out. All zero unless the flag is
-    /// on, so a census that reads zero under the flag says the mechanism
-    /// never fired — the question every treatment ends on. A held unit that
-    /// comes into contact or whose group stops engaging is dropped without
-    /// a release, so `holds` may exceed `releases + lone`.
-    pub arrival_wave_holds: u32,
-    pub arrival_wave_releases: u32,
-    pub arrival_wave_lone: u32,
     /// `step_and_reassess`: blind batch plans cut at the step that revealed
     /// new ground (the parallel CLI path; no evaluator installs a pool, so
     /// this is zero in every screen and the gene is priced on the bridge).
@@ -831,9 +805,6 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
-        self.arrival_wave_holds += other.arrival_wave_holds;
-        self.arrival_wave_releases += other.arrival_wave_releases;
-        self.arrival_wave_lone += other.arrival_wave_lone;
         self.step_reassessed += other.step_reassessed;
     }
 }
@@ -1491,17 +1462,6 @@ pub struct AdvancedAi {
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
     battlefront_frame: Option<BattlefrontFrame>,
-    /// Hold a promotion back until its healing would actually land.
-    ///
-    /// **Off by default. Native/eval only — deliberately NOT in
-    /// `enable_live_bridge`**, because the +50 health is CIVVIS's own model and
-    /// Civilization VI's real promotion rule is unverified here. See
-    /// [`AdvancedAi::promotion_heal_is_wasted`].
-    /// Pull the loyalty policy cards when a city is bleeding loyalty.
-    ///
-    /// `false` in `AdvancedAi::new()` and set only by `enable_live_bridge`, so every
-    /// configured, legacy and Elo agent slots exactly the cards it always did.
-    pub loyalty_policy_defence: bool,
     pub promote_when_wounded: bool,
     /// Credit a tile for the attack it opens, not only charge it for the
     /// threat it accepts.
@@ -1632,32 +1592,6 @@ pub struct AdvancedAi {
     /// front fights with whatever staged on declaration day. **Off by
     /// default, live-bridge only.**
     pub war_reinforcement: bool,
-    /// Rear reinforcements reach an engaged front as a wave, not one at a
-    /// time. `wartime_reinforcement_step` walks the standing-still rear to the
-    /// objective's staging ring, and the turn a marcher comes inside
-    /// `command_radius` of the front it joins that clique and takes its
-    /// orders — which, for an `Engage`/`Advance` front, means walking into
-    /// the fight alone with whatever strength it brought. While this flag is
-    /// on, a unit that marched as a reinforcement last turn and is now in an
-    /// engaging group holds where it stands (fortified, out of contact) until
-    /// [`ARRIVAL_WAVE_SIZE`] such arrivals stand within
-    /// [`ARRIVAL_WAVE_RADIUS`] of each other or it has waited
-    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`]; then the whole wave is released in the
-    /// same turn. Item 4 of `docs/LIVE_TACTICS.md` ("arrive together"),
-    /// reduced to the one mechanism the recorded evidence names. **Off by
-    /// default everywhere**; opt-in by name (`gene_screen`,
-    /// `victory_eval --with arrival-waves`) until a screen has priced it.
-    pub arrival_waves: bool,
-    /// `arrival_waves` memory: the last turn each unit marched as a rear
-    /// reinforcement (`wartime_reinforcement_step`). A unit whose entry is
-    /// last turn's is a fresh arrival when it first takes group orders.
-    reinforcement_marches: BTreeMap<u32, u32>,
-    /// `arrival_waves` memory: the units currently held short of the front,
-    /// keyed to the turn they were first held. Cleared for a unit when its
-    /// wave is released, it comes into contact, or it leaves an engaging
-    /// group; rebuilt by [`AdvancedAi::plan_arrival_waves`] every time the
-    /// force groups are.
-    arrival_wave: BTreeMap<u32, u32>,
     /// Do not let the stall clause of the peace rules end a war the empire is
     /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
     /// 12) both offers peace and accepts any white peace at +320; while this
@@ -1968,30 +1902,6 @@ pub struct AdvancedAi {
     /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
     /// self-march. Native tournament controllers keep the frozen behaviour.
     escort_unstick: bool,
-    /// Escort settlers by stacked co-movement instead of formations.
-    ///
-    /// ★★★★ THE FORMATION CHANNEL DOES NOT WALK ON THE LIVE BRIDGE. Run
-    /// civvis-20260815T081505Z (Rome, Settler/Small/Online): seven escorts
-    /// were linked over 117 turns and every one was released by "Escort
-    /// abandoning a route without progress" — 0-for-7 — with two further
-    /// `cannot_enter_formation` refusals in the ledger. Meanwhile the two
-    /// settlers that marched alone were both CAPTURED by barbarians while
-    /// standing on or beside their chosen site with 0 moves left (t45-46 at
-    /// offset (55,31); t102-103 at (50,22), one turn before founding a
-    /// 213-point city). A civilian arrives with nothing left to spend, so it
-    /// must survive a full enemy turn alone on the frontier before
-    /// FOUND_CITY can be issued — unless a military unit shares its tile,
-    /// which blocks capture outright in both rule sets.
-    ///
-    /// Under the treatment no `LinkUnits`/`ENTER_FORMATION` is ever issued
-    /// for a settler. Instead a designated guard follows the settler with
-    /// plain `MoveTo` onto the settler's own tile — the one order this
-    /// bridge demonstrably applies (534/541 that run) — and the settler
-    /// waits, briefly and boundedly, when its guard has fallen off the pair.
-    /// Settlers act before military units in `advanced_units`, so a guard
-    /// that starts a turn stacked can always mirror the settler's step: it
-    /// pays the same terrain costs from the same tile.
-    stacked_escort: bool,
     /// Use that same formationless shadow only on the live bridge.
     ///
     /// `stacked_escort` is a native-screened genome gene and the ledger holds
@@ -2001,46 +1911,6 @@ pub struct AdvancedAi {
     /// the bridge from re-entering that broken channel without restoring the
     /// native gene.  The threat-scoped guard logic remains the existing one.
     live_formationless_settler_shadow: bool,
-    /// A Settler decides on the board as it really stands, prices capture
-    /// as capture, and trusts only a guard ON its tile.
-    ///
-    /// ★★★★ THREE SETTLERS CARRIED OFF WITHIN SIGHT OF THE CAPITAL, EACH
-    /// WITH ITS GUARD ONE TILE AWAY. Run civvis-20260816T200454Z, t23, t61,
-    /// t71 — the second city at t39, the third at t68, 381 against 609 at
-    /// t154. Replayed step by step, three things did it, all in the
-    /// settler's own safety model:
-    ///
-    /// 1. The joint engagement plays BEFORE the settler moves. On the board
-    ///    a guard's attack kills the raider and the guard walks into its
-    ///    tile; the settler then reads the tile beside the (dead) raider as
-    ///    risk 0.0 and steps there — t60, `planned_risk 0.0` beside a slinger
-    ///    the host had not touched (the chariot's attack never executed —
-    ///    the export read `moves: 0`; even had it landed, a strike that
-    ///    fails to kill leaves the settler on the doorstep). Under this
-    ///    treatment settlers act before the engagement, on the position
-    ///    every hostile still occupies, and a bound guard is kept out of the
-    ///    joint plan so it is not spent attacking away from its settler.
-    /// 2. `nearby_escort` discounted risk by 0.55 for a guard on an ADJACENT
-    ///    tile. An adjacent guard prevents nothing — capture is a move onto
-    ///    the civilian's tile — so 36 became 16, under the 30 step limit,
-    ///    and the settler walked in. Only a unit ON the tile counts now, and
-    ///    then the discount is 0.15 (a stacked civilian cannot be taken while
-    ///    its guard stands).
-    /// 3. A hostile that could REACH the tile next turn was priced at
-    ///    12 + 0.15·strength — the "approach" tier, half the step limit —
-    ///    while only a hostile already in ATTACK range paid the 34 tier. For
-    ///    a civilian reach IS capture: any military land unit that can enter
-    ///    the tile takes it, slinger or swordsman alike (the t61 captor was a
-    ///    slinger). So for a civilian mover a hostile within its movement is
-    ///    priced at the capture tier, one tile beyond that at the approach
-    ///    tier, and a tile inside one of our own cities at nothing.
-    ///
-    /// The step limit itself is unchanged: with capture priced as capture a
-    /// single hostile in reach refuses the step unless the tile holds a guard
-    /// or a city, which is exactly the rule a careful player follows. Behind
-    /// `stacked_escort`; off for the frozen native controllers, on for the
-    /// live bridge and the native repair bundle.
-    settler_stack_discipline: bool,
     /// The military unit assigned to shadow each settler under
     /// `stacked_escort`, keyed by settler id. Values are unique: a guard
     /// serves one settler. No `linked_to` is involved, so this survives the
@@ -3932,22 +3802,6 @@ pub struct AdvancedAi {
     /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
     /// evaluator control can measure it; on in the promoted production agent.
     pub research_economy: bool,
-    /// Keep the first Campus reachable, then keep asking for one in every city
-    /// that can still repay it.
-    ///
-    /// Two terms in the district valuation stop the empire at half coverage:
-    /// `balanced_core`'s `district_count * 2 < city_count` cliff, and
-    /// `RESEARCH_CAMPUS_COVERAGE`'s game-fraction horizon. Live end-of-game
-    /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. The
-    /// research handoff stops an early housing detour from delaying Writing
-    /// past the point where this valuation can act. Off for the frozen native
-    /// controllers.
-    pub campus_every_city: bool,
-    /// Put the two reachable housing cards in the deck. See
-    /// `HOUSING_DECK_INSERT`: `medina_quarter` is slotted in 0 of 107 live runs
-    /// and `insulae` in 1, while 71.7% of city-turns are housing-capped. Off for
-    /// the frozen native controllers.
-    pub housing_cards: bool,
     /// Let the research chooser aim at the tech that raises the housing ceiling.
     /// See `unreachable_housing_tech`: 27% of live runs never unlock
     /// `engineering` at all and the rest reach it at a median turn 116. Off for
@@ -4125,11 +3979,6 @@ const HOUSING_DECK_INSERT: usize = 4;
 /// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
 /// growth band, where `housing_growth_mult` stops paying 1.0 and starts halving.
 const HOUSING_CARD_HEADROOM: f64 = 2.0;
-/// `campus_every_city`: the population a city needs before the coverage
-/// promise exempts its Campus from the half-empire district cliff. Seven
-/// citizens is a city that can staff the Library the science funnel hangs
-/// off; below it the ask waits for growth.
-const CAMPUS_EVERY_CITY_POP_FLOOR: i32 = 7;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -4533,8 +4382,6 @@ impl AdvancedAi {
         self.settler_retreats.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
-        self.reinforcement_marches.clear();
-        self.arrival_wave.clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
     }
@@ -4590,19 +4437,6 @@ impl AdvancedAi {
             .settler_closest
             .iter()
             .filter_map(|(uid, progress)| map.get(uid).map(|new| (*new, *progress)))
-            .collect();
-        // Wave memory is unit-keyed too: a held arrival whose id shifted
-        // would otherwise be released by amnesia, which is the piecemeal
-        // arrival the flag exists to stop.
-        self.reinforcement_marches = self
-            .reinforcement_marches
-            .iter()
-            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
-            .collect();
-        self.arrival_wave = self
-            .arrival_wave
-            .iter()
-            .filter_map(|(uid, since)| map.get(uid).map(|new| (*new, *since)))
             .collect();
         // ★★★★ Retired sites and retreat counts are settler memory too, and
         // the live bridge rebuilds its board every turn: without this remap a
@@ -4680,7 +4514,6 @@ impl AdvancedAi {
             live_trader_route_adapter: false,
             solvent_faith_army: false,
             battlefront_frame: None,
-            loyalty_policy_defence: false,
             promote_when_wounded: false,
             strike_opening: false,
             ranged_needs_line_of_sight: false,
@@ -4693,9 +4526,6 @@ impl AdvancedAi {
             muster_at_command_radius: false,
             war_economy: false,
             war_reinforcement: false,
-            arrival_waves: false,
-            reinforcement_marches: BTreeMap::new(),
-            arrival_wave: BTreeMap::new(),
             war_patience: false,
             endgame_war_runway: false,
             siege_commitment: false,
@@ -4715,9 +4545,7 @@ impl AdvancedAi {
             unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
-            stacked_escort: false,
             live_formationless_settler_shadow: false,
-            settler_stack_discipline: false,
             settler_guards: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
@@ -4829,8 +4657,6 @@ impl AdvancedAi {
             tactics_plans: 0,
             tactics_decisions: 0,
             research_economy: false,
-            campus_every_city: false,
-            housing_cards: false,
             housing_research: false,
             research_weight: 0.0,
         }
@@ -4856,12 +4682,6 @@ impl AdvancedAi {
         Self::promoted_policy_envoy(weights, Some(target))
     }
 
-    /// Whether the settler stack discipline is on. See
-    /// `settler_stack_discipline`.
-    pub fn settler_stack_discipline(&self) -> bool {
-        self.settler_stack_discipline
-    }
-
     /// Whether the peacetime camp party is on. See `BasicAi::camp_party`.
     pub fn camp_party(&self) -> bool {
         self.base.camp_party()
@@ -4873,7 +4693,8 @@ impl AdvancedAi {
     /// the live bridge calls it before its finishing volley, `take_turn`
     /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
     pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
-        if !self.settler_stack_discipline || self.turn_start_hostiles_turn == Some(g.turn) {
+        if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
+        {
             return;
         }
         self.turn_start_hostiles_turn = Some(g.turn);
@@ -4913,7 +4734,7 @@ impl AdvancedAi {
     /// spent one tile away from the civilian it shields. Empty when the
     /// discipline is off.
     pub fn bound_settler_guards(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
-        if !self.settler_stack_discipline {
+        if !self.live_formationless_settler_shadow {
             return BTreeSet::new();
         }
         self.settler_guards
@@ -9573,37 +9394,14 @@ impl AdvancedAi {
         if value <= baseline + 0.01 {
             return;
         }
-        let _ = g.apply(pid, &Action::MoveProduct { from, to, product: Name::new(&product) });
-    }
-
-    /// The tech that makes the live plan's first Campus legal.
-    ///
-    /// A Campus valuation cannot pay for the technology that unlocks the
-    /// district: before Writing, the district is absent from every production
-    /// menu. That gap surfaced in live run `civvis-20260815T103152Z`: the
-    /// Prophet race correctly chose Astrology at turn 32, but the live housing
-    /// goal then chose Wheel toward Engineering at turn 34 and Writing did not
-    /// arrive until turn 83. Three Holy Sites and two Theatre Squares filled
-    /// the intervening opening without a Campus.
-    ///
-    /// Keep the finite-race opener and any war or victory beeline above this
-    /// handoff. Once an empire has two cities including a legal Campus site,
-    /// though, its live coverage promise needs Writing before the optional housing
-    /// detour. `campus_every_city` is false for frozen controllers, preserving
-    /// the recorded `advanced_v1` research order exactly.
-    fn first_campus_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if !self.campus_every_city
-            || g.players[pid].techs.contains(&crate::name!("writing"))
-        {
-            return None;
-        }
-        let campus = crate::name!("campus");
-        let cities = g.player_city_ids(pid);
-        (cities.len() >= 2
-            && cities
-                .iter()
-                .any(|city| !g.district_sites(*city, campus).is_empty()))
-        .then_some("writing")
+        let _ = g.apply(
+            pid,
+            &Action::MoveProduct {
+                from,
+                to,
+                product: Name::new(&product),
+            },
+        );
     }
 
     /// The technology behind the best Campus building this empire is already
@@ -9695,93 +9493,6 @@ impl AdvancedAi {
         best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
     }
 
-    /// The tech that lets a housing-capped empire raise its own ceiling.
-    ///
-    /// ⚠⚠ THE RESEARCH CHOOSER HAS A GOAL FOR SCIENCE AND NONE FOR GROWTH, AND
-    /// GROWTH IS WHERE THE SCIENCE COMES FROM. Housing is the dominant band:
-    /// over 13,214 host-exported city-turns **71.7% are housing-capped**
-    /// (headroom < 2) at a mean growth multiplier of **0.510**, against the
-    /// Amenity band's 0.872. Science is ~1.16 per citizen, so the housing
-    /// ceiling is the science ceiling.
-    ///
-    /// And the repair is behind a tech the argmax never aims at. Measured over
-    /// 94 live runs (median final tech count **30 of 77**):
-    ///
-    /// | tech | unlocks | runs reaching it | median turn |
-    /// |---|---|---|---|
-    /// | `writing` | Library | 90% | 59 |
-    /// | `education` | University | 73% | 107 |
-    /// | **`engineering`** | **Aqueduct** | **73%** | **116** |
-    /// | `sanitation` | Sewer | **11%** | 170 |
-    /// | `chemistry` | Research Lab | **11%** | 195 |
-    ///
-    /// So **27% of runs never unlock the Aqueduct at all**, and the ones that do
-    /// get it at turn 116 — which is why the live median Aqueduct ORDER lands at
-    /// turn 164. Making the district reachable in the build lists (#1087, #1091)
-    /// cannot beat the tech that gates it.
-    ///
-    /// Same shape and the same last-place slot as
-    /// `unreachable_science_building_tech`: a goal that exists because the
-    /// target is absent from what the argmax will ever take on merit, not
-    /// because it ranks below something else. Gated on the empire ACTUALLY being
-    /// housing-capped, so a comfortable empire never diverts a beaker to it.
-    /// The tech that unlocks the first Walls, when a major war is on (or a
-    /// city of ours is threatened), some city of ours has no walls at all and
-    /// cannot start them for want of that tech.
-    ///
-    /// ★★★★ THE WALLS DOCTRINE NEEDS THE WALL TECH. `garrison_walls` and
-    /// `besieged_city_item` both put Ancient Walls first for a threatened city
-    /// — and both are silent when Masonry is unresearched. Run
-    /// civvis-20260816T040537Z: Khmer declared at t61 on a nine-tech empire
-    /// with Bronze Working but no Masonry; the research chooser then took Iron
-    /// Working, Irrigation, Shipbuilding, Currency and Celestial Navigation
-    /// (Masonry "at 16" against Celestial Navigation's 18 on t78) while Rome,
-    /// unwalled at defence 27, went 0 → 156 damage from t72 and fell on t79 —
-    /// the capital, to a Settler AI. Behind `garrison_walls`, the live walls
-    /// doctrine, which the frozen anchor never sets. Asked from the ruleset
-    /// (`buildings["walls"].tech`), so a moved unlock stays correct.
-    fn walls_tech_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if !self.base.garrison_walls {
-            return None;
-        }
-        let major_war = g.players.iter().any(|other| {
-            other.id != pid
-                && other.alive
-                && !other.is_minor
-                && !other.is_barbarian
-                && g.is_at_war(pid, other.id)
-        });
-        if !major_war && self.threatened_city(g, pid).is_none() {
-            return None;
-        }
-        let walls = crate::name!("walls");
-        let spec = g.rules.buildings.get(&walls)?;
-        let tech = spec.tech.as_ref()?;
-        if g.players[pid].techs.contains(tech) {
-            return None;
-        }
-        let unwalled = g.cities.values().any(|city| {
-            city.owner == pid
-                && !city.buildings.iter().any(|built| {
-                    g.rules
-                        .buildings
-                        .get(built)
-                        .is_some_and(|spec| spec.outer_defense > 0)
-                })
-        });
-        if !unwalled {
-            return None;
-        }
-        // The chooser walks the cheapest step toward the goal, so name the
-        // tech itself; a static name is what the goal chain carries.
-        g.rules
-            .techs
-            .keys()
-            .find(|known| **known == *tech)
-            .map(|known| known.as_str())
-            .and_then(|name| WALL_TECH_NAMES.iter().copied().find(|w| *w == name))
-    }
-
     fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
         if !self.housing_research {
             return None;
@@ -9871,11 +9582,7 @@ impl AdvancedAi {
                 || self.diplomatic_science_backup(g, pid, plan);
             let great_person_goal =
                 BasicAi::live_great_person_tech_goal(g, pid);
-            // ★★★★ A city under attack that cannot wall itself researches the
-            // wall before anything else. See `walls_tech_goal`.
-            let walls_goal = self.walls_tech_goal(g, pid);
             let forced_goal = match objective {
-                _ if walls_goal.is_some() => walls_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) => self
@@ -9936,11 +9643,6 @@ impl AdvancedAi {
             // worthless prerequisite the argmax will never take on merit.
             let forced_goal =
                 forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
-            // A live Campus promise has to make its first district legal before
-            // an optional housing detour can spend the same slot. Strategy
-            // openings above this point (including Astrology) still win; this
-            // only bridges their handoff to the production treatment below.
-            let forced_goal = forced_goal.or_else(|| self.first_campus_tech(g, pid));
             // And after THAT, the growth ceiling: a Campus the empire can reach
             // still only makes beakers out of citizens it is allowed to have.
             // Behind the science goals on purpose — this never takes a slot the
@@ -10732,28 +10434,7 @@ impl AdvancedAi {
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
             }
         }
-        // The same shape for the growth band the empire actually pays. A card
-        // that multiplies something we do not have is worth zero, so this is
-        // gated on a city that is BOTH short of housing and already carrying
-        // enough specialty districts for the card to fire — never on the mere
-        // existence of the card. See `HOUSING_DECK_INSERT` for the corpus.
-        //
-        // Medina Quarter before Insulae: +2 against +1, and a city with three
-        // specialty districts has two, so the stronger card is never blocked by
-        // the weaker one taking the slot first.
-        if self.housing_cards {
-            const HOUSING_CARDS: [&str; 2] = ["medina_quarter", "insulae"];
-            let pays = city_ids.iter().any(|cid| {
-                let city = &g.cities[cid];
-                g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM
-                    && g.city_specialty_district_count(city) >= 2
-            });
-            if pays {
-                desired.retain(|card| !HOUSING_CARDS.contains(card));
-                let at = desired.len().min(HOUSING_DECK_INSERT);
-                desired.splice(at..at, HOUSING_CARDS);
-            }
-        }
+
         // ⚠⚠ A CARD THAT MULTIPLIES SOMETHING WE DO NOT HAVE IS WORTH ZERO, and
         // the deck lists above are static, so nothing noticed. Every one of these
         // scales off SUZERAIN city-states:
@@ -10921,29 +10602,6 @@ impl AdvancedAi {
         if self.expansion_pantheon && self.pantheon_faith_card_pays(g, pid) {
             temporary.retain(|card| *card != "god_king");
             temporary.insert(0, "god_king");
-        }
-        let bleeding = if !self.loyalty_policy_defence {
-            0
-        } else {
-            g.player_city_ids(pid)
-                .into_iter()
-                .filter(|cid| {
-                    g.cities
-                        .get(cid)
-                        .is_some_and(|city| g.city_loyalty_per_turn(city) < 0.0)
-                })
-                .count()
-        };
-        if bleeding > 0 {
-            let mut loyalty_cards = vec![
-                "limitanei",
-                "praetorium",
-                "colonial_offices",
-                "communications_office",
-                "martial_law",
-            ];
-            loyalty_cards.extend(temporary);
-            temporary = loyalty_cards;
         }
 
         temporary.extend(desired);
@@ -13168,118 +12826,16 @@ impl AdvancedAi {
                    objective, g.wdist(here, objective);
                    objective);
         }
-        let marched = g
-            .apply(
+        Some(
+            g.apply(
                 pid,
                 &Action::Move {
                     unit: uid,
                     to: next,
                 },
             )
-            .is_ok();
-        if marched && self.arrival_waves {
-            self.reinforcement_marches.insert(uid, g.turn);
-        }
-        Some(marched)
-    }
-
-    /// `arrival_waves`: decide, once per force-group rebuild, which fresh
-    /// arrivals hold short of their engaging front and which waves go.
-    ///
-    /// A candidate is a land military unit in an `Engage` or `Advance` group
-    /// that is not in contact (no enemy within 2) and is either already held
-    /// or marched as a rear reinforcement last turn. Candidates standing
-    /// within [`ARRIVAL_WAVE_RADIUS`] of at least `ARRIVAL_WAVE_SIZE - 1`
-    /// others are released together; a candidate held for
-    /// [`ARRIVAL_WAVE_PATIENCE_TURNS`] is released alone. Everything else is
-    /// held. Release also forgets the unit's march, so a second rebuild in the
-    /// same turn (after an attack dirties the groups) cannot re-hold it — the
-    /// plan is idempotent within a turn.
-    ///
-    /// A held unit still counts in its group: it is inside the clique radius,
-    /// so its strength is in the front's `local_strength_ratio` and its
-    /// presence in the front's `readiness`. That is the point — a front that
-    /// was too weak to advance may clear the floor the turn the wave stands
-    /// beside it, and then the whole group goes, not the newcomer alone.
-    fn plan_arrival_waves(&mut self, g: &Game, enemies: &[usize]) {
-        if !self.arrival_waves {
-            return;
-        }
-        let turn = g.turn;
-        let mut candidates: Vec<(u32, Pos, u32)> = Vec::new();
-        for group in &self.force_groups {
-            if !matches!(group.posture, ForcePosture::Engage | ForcePosture::Advance) {
-                continue;
-            }
-            for &uid in &group.units {
-                let Some(unit) = g.units.get(&uid) else {
-                    continue;
-                };
-                let spec = &g.rules.units[unit.kind];
-                if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                {
-                    continue;
-                }
-                let in_contact = g.units.values().any(|enemy| {
-                    enemies.contains(&enemy.owner) && g.wdist(unit.pos, enemy.pos) <= 2
-                });
-                if in_contact {
-                    continue;
-                }
-                let since = match self.arrival_wave.get(&uid) {
-                    Some(since) => *since,
-                    None if self
-                        .reinforcement_marches
-                        .get(&uid)
-                        .is_some_and(|marched| marched + 1 == turn) =>
-                    {
-                        turn
-                    }
-                    None => continue,
-                };
-                candidates.push((uid, unit.pos, since));
-            }
-        }
-        // Anyone no longer a candidate — dead, in contact, out of the
-        // engaging group — is no longer held.
-        self.arrival_wave
-            .retain(|uid, _| candidates.iter().any(|(other, _, _)| other == uid));
-        let mut released = Vec::new();
-        for &(uid, pos, since) in &candidates {
-            let company = candidates
-                .iter()
-                .filter(|(other, opos, _)| {
-                    *other != uid && g.wdist(pos, *opos) <= ARRIVAL_WAVE_RADIUS
-                })
-                .count();
-            let waited = turn.saturating_sub(since);
-            if company + 1 >= ARRIVAL_WAVE_SIZE || waited >= ARRIVAL_WAVE_PATIENCE_TURNS {
-                released.push((uid, company + 1, waited));
-            } else {
-                // Units, not rebuilds: the groups are rebuilt after every
-                // attack, and a unit held across three rebuilds of one turn
-                // was held once.
-                if self.arrival_wave.insert(uid, since).is_none() {
-                    self.census.arrival_wave_holds += 1;
-                }
-            }
-        }
-        for (uid, wave, waited) in released {
-            self.arrival_wave.remove(&uid);
-            self.reinforcement_marches.remove(&uid);
-            if wave >= ARRIVAL_WAVE_SIZE {
-                self.census.arrival_wave_releases += 1;
-            } else {
-                self.census.arrival_wave_lone += 1;
-            }
-            if self.journal().wants(crate::reasoning::Level::Detail) {
-                think!(self.journal(), Military, Detail,
-                       "A reinforcement wave of {} joins the front", wave;
-                       "held {} turn(s) short of an engaging front so it would not arrive alone",
-                       waited;
-                       g.units[&uid].pos);
-            }
-        }
+            .is_ok(),
+        )
     }
 
     /// A predecessor that missed the breakthrough upgrade because it was
@@ -17372,74 +16928,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Let the Recovery plan's one identified bastion begin ancient Walls
-    /// before it bleeds. `garrison_walls_item` already identifies the capital
-    /// and small frontier cities that need this live-only doctrine, but it
-    /// normally reaches only an empty queue. In live run
-    /// `civvis-20260815T064852Z`, threatened Cumae sat unwalled in an
-    /// eighteen-turn University at t109 and fell before that queue emptied.
-    ///
-    /// This is a preventive counterpart to `redirect_unsafe_city_queue_for_defense`:
-    /// it reuses the existing wall eligibility, only accepts Walls (never the
-    /// doctrine's ordinary Granary carve-out), only acts during an active major
-    /// war and Recovery, and can reclaim exactly the plan's threatened city.
-    fn redirect_threatened_recovery_queue_for_walls(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) {
-        if !self.base.garrison_walls || plan.strategy != GrandStrategy::Recovery {
-            return;
-        }
-        let active_major_war = g.players.iter().any(|player| {
-            player.id != pid
-                && player.alive
-                && !player.is_minor
-                && !player.is_barbarian
-                && g.is_at_war(pid, player.id)
-        });
-        if !active_major_war {
-            return;
-        }
-        let Some(city) = plan.threatened_city else {
-            return;
-        };
-        let Some(committed) = g
-            .cities
-            .get(&city)
-            .filter(|candidate| candidate.owner == pid)
-            .and_then(|candidate| candidate.queue.first())
-            .cloned()
-        else {
-            return;
-        };
-        if Self::active_queue_is_defensive(g, &committed) {
-            return;
-        }
-        let Some(walls) = self.base.garrison_walls_item(g, pid, city) else {
-            return;
-        };
-        if !matches!(&walls, Item::Building { building } if building == "walls") {
-            return;
-        }
 
-        let city_name = g.cities[&city].name.clone();
-        if g.apply(
-            pid,
-            &Action::Produce {
-                city,
-                item: walls.clone(),
-            },
-        )
-        .is_ok()
-            && self.journal().wants(crate::reasoning::Level::Decision)
-        {
-            think!(self.journal(), Economy, Decision,
-                "{} pauses {} for walls", city_name, Self::plain_item(&committed);
-                "Recovery identifies it as threatened and the live garrison doctrine can defend it now");
-        }
-    }
 
     /// Let a peaceful live city plan reclaim one queue from a repeatable
     /// economic project when the plan has another city to found. The
@@ -20117,22 +19606,8 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
-                // ★★★ Cycle three tried the conversion-race gate that
-                // flipped `wide_map_capacity` — and the verification said no:
-                // −2.8 [−4.0, −1.6] over 6,000 seat-pairs (seeds 49000000..)
-                // against −1.9 [−2.7, −1.0] without it (seeds 46000000..).
-                // MEASURED AND REVERTED the same day: at six players a rival
-                // religion exists by ~t40, so the gate simply turned coverage
-                // off — and a Campus, unlike a settled city, is not fuel for
-                // the rival's clock; withholding it just made less science.
-                // The pop floor (cycle one) stays: it improved the gene
-                // −2.8 → −1.7 on the classic design. The gene remains
-                // mildly harmful natively; the next lever, unmeasured, is
-                // pricing the ask by remaining game length the way
-                // `campus_payback_horizon` already prices wonders.
-                let campus_keeps_asking = self.campus_every_city
-                    && family == "campus"
-                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
+                let campus_keeps_asking = false;
+
                 // See `culture_coverage`: the same exemption, for the same
                 // reason — the civic tree cascades out of the Theater Square
                 // the way the tech tree cascades out of the Campus, and being
@@ -20381,12 +19856,7 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE
-                        * if self.campus_every_city {
-                            Self::campus_payback_horizon(g)
-                        } else {
-                            Self::research_horizon(g)
-                        }
+                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
                 } else {
                     0.0
                 };
@@ -21518,7 +20988,7 @@ impl AdvancedAi {
         // See `settler_stack_discipline`: a civilian mover — a Settler, not the
         // military leader of a formation — is captured by any hostile that can
         // enter its tile, and is protected only by a unit standing ON it.
-        let civilian_mover = self.settler_stack_discipline
+        let civilian_mover = self.live_formationless_settler_shadow
             && uid
                 .and_then(|unit| g.units.get(&unit))
                 .is_some_and(|unit| g.rules.units[unit.kind].class != "military");
@@ -22600,7 +22070,7 @@ impl AdvancedAi {
     /// formation channel.  The native gene remains independently screenable;
     /// the live bridge adds its own fidelity repair beside it.
     fn formationless_settler_escort(&self) -> bool {
-        self.stacked_escort || self.live_formationless_settler_shadow
+        self.live_formationless_settler_shadow
     }
 
     /// The settler half of `stacked_escort`: keep a guard bound, and hold
@@ -25428,7 +24898,6 @@ impl AdvancedAi {
             });
         }
         self.force_groups.sort_by_key(|group| group.id);
-        self.plan_arrival_waves(g, &enemies);
         // What the armies have been told to do. This is the layer between the
         // grand strategy and the individual attacks below it, and it is the
         // one an observer cannot infer from watching units move: a group that
@@ -28420,15 +27889,6 @@ impl AdvancedAi {
             return acted;
         }
         if let Some(orders) = &group {
-            // `arrival_waves`: a fresh arrival held short of an engaging
-            // front waits here, fortified, until its wave is released by
-            // `plan_arrival_waves`. Its immediate combat scan above already
-            // ran (a held unit is out of contact by construction), and the
-            // reinforcement march above declined it, so the only order it is
-            // declining is the one that would walk it into the fight alone.
-            if self.arrival_waves && self.arrival_wave.contains_key(&uid) {
-                return self.base.fortify_or_stop(g, pid, uid);
-            }
             return self.coordinated_tactical_step(
                 g,
                 pid,
@@ -29450,7 +28910,7 @@ impl AdvancedAi {
         // beside a live slinger). Settlers already lead the unit order; this
         // only moves them ahead of the one thing that used to run first.
         let mut settled_first: Vec<u32> = Vec::new();
-        if self.settler_stack_discipline {
+        if self.live_formationless_settler_shadow {
             let mut settlers: Vec<u32> = g
                 .player_unit_ids(pid)
                 .into_iter()
@@ -30324,7 +29784,6 @@ impl AdvancedAi {
         // the existing wall doctrine protect the plan's one threatened city
         // before it begins taking damage.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
-        self.redirect_threatened_recovery_queue_for_walls(g, pid, &plan);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
