@@ -183,7 +183,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
-    ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
     // The religion race decides two thirds of native games, and a founder
     // that loses its own cities wins as rarely as a seat that never founded
     // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the
