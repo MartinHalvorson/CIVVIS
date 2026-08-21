@@ -102,6 +102,32 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
+    /// A settler scores a site by the districts the plan would build there,
+    /// each on its own plot. See [`AdvancedAi::district_lookahead_settle`].
+    /// Opt-in gene `district-lookahead-settle`.
+    pub fn enable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = true;
+    }
+
+    /// The twin of `enable_district_lookahead_settle`.
+    pub fn disable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = false;
+    }
+
+    /// A border plot is bought only when its priced benefit clears its Gold
+    /// by a margin. See [`AdvancedAi::priced_tile_purchase`]. Opt-in gene
+    /// `priced-tile-purchase`.
+    pub fn enable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = true;
+        self.base.plot_purchase_delegated = true;
+    }
+
+    /// The twin of `enable_priced_tile_purchase`.
+    pub fn disable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = false;
+        self.base.plot_purchase_delegated = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.
@@ -503,6 +529,8 @@ impl AdvancedAi {
         self.price_the_suzerainty = true;
     }
 
+    /// Suzerain policy cards are valued only while a suzerainty actually
+    /// exists.
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
         self.suzerain_cards_need_a_suzerainty = true;
     }
@@ -573,6 +601,7 @@ impl AdvancedAi {
         self.base.come_ashore = false;
     }
 
+    /// Size the siege train by the wall it has to breach.
     pub fn enable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = true;
     }
@@ -1161,6 +1190,11 @@ impl AdvancedAi {
         // distance to our cities: eight Settlers taken in 104 turns on run
         // civvis-20260821T130446Z. See `barbarian_hunt`.
         self.enable_barbarian_hunt();
+        // And a raider is cheaper to kill than a major: over the repaired
+        // bridge our 225 melee attacks killed 119 and cost 6 attackers, while
+        // the barbarians attacked us 867 times to our 290. See
+        // `BasicAi::barbarian_bargain`.
+        self.enable_barbarian_bargain();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -1350,6 +1384,11 @@ impl AdvancedAi {
         // measures distance from our CITIES, so the walk to a site ten tiles
         // out is unguarded ground by construction. See `BasicAi::barbarian_hunt`.
         self.enable_barbarian_hunt();
+        // And a raider is cheaper to kill than a major: 225 melee attacks over
+        // the repaired bridge killed 119 and cost 6 attackers, while the
+        // barbarians attacked us 867 times to our 290. See
+        // `BasicAi::barbarian_bargain`.
+        self.enable_barbarian_bargain();
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
@@ -1570,6 +1609,15 @@ impl AdvancedAi {
 
     /// Deliberate camp clearing as a peacetime errand. See
     /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
+    /// See `BasicAi::barbarian_bargain`; withheld by `barbarian-bargain`.
+    pub fn enable_barbarian_bargain(&mut self) {
+        self.base.enable_barbarian_bargain();
+    }
+
+    pub fn disable_barbarian_bargain(&mut self) {
+        self.base.disable_barbarian_bargain();
+    }
+
     /// See `BasicAi::barbarian_hunt`; withheld by the `barbarian-hunt`
     /// treatment.
     pub fn enable_barbarian_hunt(&mut self) {
@@ -1947,6 +1995,17 @@ impl AdvancedAi {
         self.settler_target_hysteresis = false;
     }
 
+    /// Let a Settler switch to the best safe alternate when a visible threat
+    /// blocks the next step toward an otherwise sound settlement site. See
+    /// `settler_threat_detour`.
+    pub fn enable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = true;
+    }
+
+    pub fn disable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {
@@ -2044,8 +2103,6 @@ impl AdvancedAi {
         self.housing_research = false;
     }
 
-    /// Require a faith-bought soldier's gold upkeep to be payable. Native
-    /// tournament games leave this disabled so their ladders stay comparable.
     /// Rank loyalty emergencies by turns-to-flip instead of by level. Native
     /// tournament games leave this disabled.
     pub fn enable_loyalty_rate_alarm(&mut self) {
