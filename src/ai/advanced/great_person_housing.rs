@@ -47,7 +47,7 @@
 //!    nothing with a slot buildable and no buyer starts a Theater Square in
 //!    a city that has none — the only remaining way the class ever clears.
 //!
-//! Both rungs are measured as one gene; the screen decides whether the
+//! All three rungs are measured as one gene; the screen decides whether the
 //! bundle ships ON. Off everywhere by default until then.
 
 use super::{AdvancedAi, StrategicPlan};
