@@ -1995,6 +1995,15 @@ pub struct AdvancedAi {
     /// that starts a turn stacked can always mirror the settler's step: it
     /// pays the same terrain costs from the same tile.
     stacked_escort: bool,
+    /// Use that same formationless shadow only on the live bridge.
+    ///
+    /// `stacked_escort` is a native-screened genome gene and the ledger holds
+    /// it off: always binding an army unit costs native six-player wins.  The
+    /// Civilization VI formation channel is a different fact — it repeatedly
+    /// leaves an escorted Settler motionless — so this live-only flag keeps
+    /// the bridge from re-entering that broken channel without restoring the
+    /// native gene.  The threat-scoped guard logic remains the existing one.
+    live_formationless_settler_shadow: bool,
     /// A Settler decides on the board as it really stands, prices capture
     /// as capture, and trusts only a guard ON its tile.
     ///
@@ -4707,6 +4716,7 @@ impl AdvancedAi {
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             stacked_escort: false,
+            live_formationless_settler_shadow: false,
             settler_stack_discipline: false,
             settler_guards: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
@@ -22581,6 +22591,13 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether a Settler uses the ordinary-unit shadow instead of the
+    /// formation channel.  The native gene remains independently screenable;
+    /// the live bridge adds its own fidelity repair beside it.
+    fn formationless_settler_escort(&self) -> bool {
+        self.stacked_escort || self.live_formationless_settler_shadow
+    }
+
     /// The settler half of `stacked_escort`: keep a guard bound, and hold
     /// position — briefly and boundedly — when the guard has fallen off the
     /// pair.
@@ -22598,7 +22615,7 @@ impl AdvancedAi {
     /// always arrives with 0 moves and must survive a full enemy turn before
     /// it can found.
     fn stacked_escort_pace(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
-        if !self.stacked_escort {
+        if !self.formationless_settler_escort() {
             return None;
         }
         // ★★★ REPAIRED 2026-08-20 (cycle three) after the 6p whole-genome
@@ -22936,7 +22953,7 @@ impl AdvancedAi {
         // is left alone; otherwise, when the tile itself is over the step
         // limit, take the neighbour that lowers the risk most and let the
         // target wait for the next turn's march.
-        if self.stacked_escort && self.settlement_safety {
+        if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
             let visible_now = self
@@ -27318,7 +27335,7 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
-        if self.stacked_escort {
+        if self.formationless_settler_escort() {
             return self.stacked_guard_step(g, pid, uid);
         }
         if !self.settlement_safety {
@@ -27608,7 +27625,7 @@ impl AdvancedAi {
         // holds there before it heals or retreats — leaving is what exposes
         // the civilian, and the settler's own step decides for the pair.
         if self.settler_guard_holds
-            && self.stacked_escort
+            && self.formationless_settler_escort()
             && spec.class == "military"
             && self.settler_guards.iter().any(|(settler, guard)| {
                 *guard == uid
@@ -28645,30 +28662,31 @@ impl AdvancedAi {
             }
         }
 
-        // Under `stacked_escort` no land settler is ever linked: the guard
+        // Under a formationless Settler shadow no land settler is ever linked: the guard
         // shadows it with plain moves instead, because the formation channel
         // went 0-for-7 on the live bridge. (Sea links used to stay; see the
         // measured fight below — they go too.)
-        let land_settlers: Vec<u32> = if self.settlement_safety && !self.stacked_escort {
-            g.player_unit_ids(pid)
-                .into_iter()
-                .filter(|uid| {
-                    let unit = &g.units[uid];
-                    let Some(target) = self.settler_targets.get(uid) else {
-                        return false;
-                    };
-                    unit.kind == "settler"
-                        && unit.linked_to.is_none()
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| !g.rules.is_water(tile))
-                        && (g.wdist(unit.pos, *target) >= SETTLER_ESCORT_DISTANCE
-                            || self.settler_blocked_turns.get(uid).copied().unwrap_or(0) > 0)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let land_settlers: Vec<u32> =
+            if self.settlement_safety && !self.formationless_settler_escort() {
+                g.player_unit_ids(pid)
+                    .into_iter()
+                    .filter(|uid| {
+                        let unit = &g.units[uid];
+                        let Some(target) = self.settler_targets.get(uid) else {
+                            return false;
+                        };
+                        unit.kind == "settler"
+                            && unit.linked_to.is_none()
+                            && g.map
+                                .get(unit.pos)
+                                .is_some_and(|tile| !g.rules.is_water(tile))
+                            && (g.wdist(unit.pos, *target) >= SETTLER_ESCORT_DISTANCE
+                                || self.settler_blocked_turns.get(uid).copied().unwrap_or(0) > 0)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
         for with in land_settlers {
             let pos = g.units[&with].pos;
             let escort = g
@@ -28698,7 +28716,7 @@ impl AdvancedAi {
             }
         }
 
-        // ★★★★ AND UNDER `stacked_escort` NO EMBARKED SETTLER IS LINKED TO A
+        // ★★★★ AND UNDER A FORMATIONLESS SETTLER SHADOW NO EMBARKED SETTLER IS LINKED TO A
         // SHIP EITHER. The comment above kept the sea link because "naval carry
         // is a different lane" — but `stacked_escort_pace` sheds EVERY link the
         // settler carries, so the two fought: run civvis-20260816T101521Z,
@@ -28711,7 +28729,7 @@ impl AdvancedAi {
         // tile off the shore, a 37-turn walk that founded four tiles from where
         // it had stood. A settler at sea marches on its own movement, exactly
         // as it does on land under this treatment; the guard follows.
-        let embarked_settlers: Vec<u32> = if self.stacked_escort {
+        let embarked_settlers: Vec<u32> = if self.formationless_settler_escort() {
             Vec::new()
         } else {
             g.player_unit_ids(pid)
