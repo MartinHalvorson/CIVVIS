@@ -20262,7 +20262,10 @@ fn settle_sooner_prices_each_turn_of_the_walk_dearer_the_longer_it_has_lasted() 
     let mut map = BTreeMap::new();
     map.insert(settler, settler + 1000);
     ai.remap_unit_memory(&map);
-    assert_eq!(ai.settler_walk_started.get(&(settler + 1000)), Some(&started));
+    assert_eq!(
+        ai.settler_walk_started.get(&(settler + 1000)),
+        Some(&started)
+    );
     assert!(!ai.settler_walk_started.contains_key(&settler));
     ai.forget_unit_memory();
     assert!(ai.settler_walk_started.is_empty());
@@ -20323,7 +20326,9 @@ fn settle_sooner_walk_costs_read_terrain_beyond_the_first_turn() {
 fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
     let mut nearer = 0;
     let mut boards = 0;
-    for seed in [93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208] {
+    for seed in [
+        93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208,
+    ] {
         let (mut game, home) = camp_bounty_board(seed);
         game.set_fog_memory(false);
         let settler = game.spawn_test_unit("settler", 0, home);
@@ -20334,7 +20339,8 @@ fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
                 .unwrap_or_else(|| g.wdist(g.units[&settler].pos, site) as f64)
         };
         let plain = AdvancedAi::new();
-        let Some((base_site, _)) = plain.best_reachable_settle_site_except(&game, 0, settler, 8, None)
+        let Some((base_site, _)) =
+            plain.best_reachable_settle_site_except(&game, 0, settler, 8, None)
         else {
             continue;
         };
@@ -20355,9 +20361,7 @@ fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
         }
         // A Settler that has already walked a patience window leans nearer
         // still, never farther.
-        treated
-            .settler_walk_started
-            .insert(settler, game.turn);
+        treated.settler_walk_started.insert(settler, game.turn);
         game.turn += game.standard_duration(SETTLE_SOONER_PATIENCE);
         let (late_site, _) = treated
             .best_reachable_settle_site_except(&game, 0, settler, 8, None)
@@ -29126,7 +29130,12 @@ fn settler_walk_census() {
     }
     let opt_ins: Vec<String> = std::env::var("CIVVIS_CENSUS_OPT_INS")
         .ok()
-        .map(|text| text.split(',').filter(|t| !t.is_empty()).map(str::to_string).collect())
+        .map(|text| {
+            text.split(',')
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default();
     let maps = std::env::var("CIVVIS_CENSUS_MAPS")
         .ok()
@@ -29181,11 +29190,16 @@ fn settler_walk_census() {
                     let mut near_value = f64::NEG_INFINITY;
                     let mut near_site = None;
                     for pos in game.wdisk(origin, 6) {
-                        let Some(tile) = game.map.get(pos) else { continue };
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
                         if game.rules.is_water(tile)
                             || !game.rules.is_passable(tile)
                             || game.tile_is_natural_wonder(tile)
-                            || game.cities.values().any(|city| game.wdist(city.pos, pos) < 4)
+                            || game
+                                .cities
+                                .values()
+                                .any(|city| game.wdist(city.pos, pos) < 4)
                             || tile
                                 .owner_city
                                 .is_some_and(|cid| game.cities[&cid].owner != pid)
@@ -29231,14 +29245,13 @@ fn settler_walk_census() {
             for (cid, _) in &new_cities {
                 known_cities.insert(*cid);
             }
-            let tracked: Vec<(u64, u32)> = walks
-                .keys()
-                .filter(|(s, _)| *s == seed)
-                .copied()
-                .collect();
+            let tracked: Vec<(u64, u32)> =
+                walks.keys().filter(|(s, _)| *s == seed).copied().collect();
             for key in tracked {
                 let uid = key.1;
-                let Some(walk) = walks.get_mut(&key) else { continue };
+                let Some(walk) = walks.get_mut(&key) else {
+                    continue;
+                };
                 if walk.owner != pid {
                     continue;
                 }
@@ -29266,7 +29279,11 @@ fn settler_walk_census() {
                                     walk.tiles,
                                     walk.targets.len(),
                                     chosen,
-                                    if walk.near_site.is_some() { walk.near_value } else { f64::NAN },
+                                    if walk.near_site.is_some() {
+                                        walk.near_value
+                                    } else {
+                                        f64::NAN
+                                    },
                                     walk.born,
                                 ));
                             }
@@ -29292,7 +29309,8 @@ fn settler_walk_census() {
     };
     let mut turns: Vec<u32> = founded.iter().map(|row| row.0).collect();
     turns.sort_unstable();
-    let mean = |values: &[u32]| values.iter().map(|&v| v as f64).sum::<f64>() / values.len().max(1) as f64;
+    let mean =
+        |values: &[u32]| values.iter().map(|&v| v as f64).sum::<f64>() / values.len().max(1) as f64;
     println!(
         "\n=== settler walk census: {} settlers founded, {} lost, over {maps} maps (6p 60x38 online, deployment genome{}) ===",
         founded.len(),
@@ -29345,7 +29363,7 @@ fn settler_walk_census() {
         .filter(|row| row.6 > 1 && row.4.is_finite() && row.5.is_finite())
         .map(|row| (row.0, row.4 - row.5, row.4))
         .collect();
-    bought.sort_by(|a, b| a.0.cmp(&b.0));
+    bought.sort_by_key(|a| a.0);
     if !bought.is_empty() {
         let mean_value = bought.iter().map(|row| row.2).sum::<f64>() / bought.len() as f64;
         println!(
