@@ -12696,37 +12696,113 @@ impl BasicAi {
             return false;
         }
         let from = unit.pos;
-        let mut best: Option<(f64, Pos)> = None;
-        for target in crate::hex::neighbors(from) {
-            let hostile = g.units_at(target).into_iter().any(|oid| {
-                g.units[&oid].owner == barb && g.rules.units[g.units[&oid].kind].class == "military"
-            });
-            if !hostile {
-                continue;
-            }
-            if self.legal_tactical_candidates && !g.melee_order_is_legal(pid, uid, target) {
-                continue;
-            }
-            let score =
-                self.exchange_score(g, uid, target, false) - self.attack_threshold(g, uid, target);
-            if score <= 0.0 {
-                continue;
-            }
-            if best
-                .as_ref()
-                .is_none_or(|(old, old_pos)| score > *old || (score == *old && target < *old_pos))
-            {
-                best = Some((score, target));
+        // ★★★★★ THE FIRST VERSION OF THIS RULE ANSWERED A SITUATION THAT
+        // BARELY HAPPENS, AND THE SCREEN SAID SO ON THIRTY MAPS.
+        //
+        // "A barbarian adjacent to the guard" is not the shape the live seat
+        // dies in. Counted over run civvis-20260821T153531Z: **"Guard stands
+        // with its settler" 33 times**, against "Settler falls back toward its
+        // guard" 38, "waits for its guard" 14, "HELD short" 18 and "walking in
+        // circles" 10 — eighty turns of a Settler not advancing while its guard
+        // sits ON its tile. The raider is not next to the guard; it is
+        // loitering two or three tiles off, pinning the walk by its presence
+        // until it closes and takes the Settler. Ten Settlers went that way in
+        // one game.
+        //
+        // So the firing position is the thing to widen, not the leash. This
+        // unit may strike from where it stands OR from any tile it can reach
+        // this turn that is STILL beside its charge — which puts a raider two
+        // tiles out inside reach without the guard ever leaving the civilian's
+        // side. A stacked civilian cannot be captured, and a guard one tile
+        // away is one step from restacking; both invariants survive because
+        // every firing position considered is within one tile of the charge.
+        let charge = Self::escorted_civilian(g, pid, uid);
+        let mut positions: Vec<Pos> = vec![from];
+        if let Some(charge) = charge {
+            for step in crate::hex::neighbors(from) {
+                if g.wdist(step, charge) <= 1 && g.can_move(uid, step) {
+                    positions.push(step);
+                }
             }
         }
-        let Some((score, target)) = best else {
+        let mut best: Option<(f64, Pos, Pos)> = None;
+        for stand in positions {
+            for target in crate::hex::neighbors(stand) {
+                let hostile = g.units_at(target).into_iter().any(|oid| {
+                    g.units[&oid].owner == barb
+                        && g.rules.units[g.units[&oid].kind].class == "military"
+                });
+                if !hostile {
+                    continue;
+                }
+                if stand == from
+                    && self.legal_tactical_candidates
+                    && !g.melee_order_is_legal(pid, uid, target)
+                {
+                    continue;
+                }
+                let score = self.exchange_score(g, uid, target, false)
+                    - self.attack_threshold(g, uid, target);
+                if score <= 0.0 {
+                    continue;
+                }
+                // Striking from where we already stand beats walking to it, so
+                // a tie never spends a move.
+                let rank = (score, stand == from);
+                let better = best.as_ref().is_none_or(|(old, old_stand, old_target)| {
+                    (score, stand == from) > (*old, *old_stand == from)
+                        || (rank == (*old, *old_stand == from)
+                            && (stand, target) < (*old_stand, *old_target))
+                });
+                if better {
+                    best = Some((score, stand, target));
+                }
+            }
+        }
+        let Some((score, stand, target)) = best else {
             return false;
         };
+        if stand != from {
+            // Step onto the firing position; the unit loop's next pass finds
+            // the raider adjacent and this same rule takes the swing.
+            think!(self.journal, Military, Detail,
+                   "{} steps up to the raider pinning its charge", plain(&g.units[&uid].kind);
+                   "worth {score:.0} on the ordinary exchange, and the new tile \
+                    is still beside the civilian"; target);
+            return g
+                .apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: stand,
+                    },
+                )
+                .is_ok();
+        }
         think!(self.journal, Military, Detail,
                "{} cuts down the raider beside it", plain(&g.units[&uid].kind);
                "worth {score:.0} on the ordinary exchange, and the guard never \
                 leaves its charge to do it"; target);
         g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
+    }
+
+    /// The civilian this unit is standing guard over: one of ours sharing its
+    /// tile or beside it. That is the escort shape the live seat actually
+    /// forms — "a guard joins the settler; it will share the settler's tile"
+    /// and "the guard is 1 tiles away" — rather than the formation link, which
+    /// the deployment genome does not always carry.
+    fn escorted_civilian(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        let from = g.units.get(&uid)?.pos;
+        crate::hex::neighbors(from)
+            .into_iter()
+            .chain([from])
+            .find(|position| {
+                g.units_at(*position).into_iter().any(|oid| {
+                    oid != uid
+                        && g.units[&oid].owner == pid
+                        && matches!(g.units[&oid].kind.as_str(), "settler" | "builder")
+                })
+            })
     }
 
     /// Whether a barbarian stands close enough to one of our civilians in the
