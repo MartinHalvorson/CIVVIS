@@ -287,6 +287,7 @@ impl AdvancedAi {
     /// slot building first (more slots of the wanted kind, then cheaper),
     /// then the prerequisite Amphitheater, then — only once the person is due
     /// — the district, wonder, or soldier.
+    #[cfg(test)]
     pub(super) fn great_person_housing_item(
         &self,
         g: &Game,
