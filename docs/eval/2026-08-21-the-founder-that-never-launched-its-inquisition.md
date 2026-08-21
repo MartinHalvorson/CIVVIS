@@ -80,7 +80,7 @@ mechanism runs, never that it pays.
 | what | instrument | result |
 |---|---|---|
 | the first cut (Theology + Temple + **the bank held for the Apostle** + the Apostle ahead of any Missionary), with `holy-lane-parity` | `gene_screen --players 6 --all-seats --baseline best`, seeds 53M, stopped at 1,662 seat-pairs | `inquisition-on-threat` **−8.2 pp [−10.3, −6.1]** (z −7.7), share −0.38 pp (z −4.6) — HURTS past the family-wise bar; `holy-lane-parity` +0.8 [−1.3, +3.0] |
-| the second cut (no hoard; the Apostle after the Missionary corps) as three genes, with `holy-lane-parity` | same design, 1,000 pairs (6,000 seat-pairs), seeds 54M | S6_RESULT |
+| the second cut (no hoard; the Apostle after the Missionary corps) as three genes, with `holy-lane-parity` | same design, 1,000 pairs (6,000 seat-pairs), seeds 54M; resolves ±1.3 pp | `founder-temple` **+1.0 [+0.1, +1.9]** (z +2.14, helps \*) · `inquisition-on-threat` +0.7 [−0.2, +1.6] (z +1.5) · `theology-for-founders` −0.1 [−1.0, +0.8] · `holy-lane-parity` −0.5 [−1.4, +0.3] |
 
 **Why the first cut lost — by founder status, from its own rows (1,662 seat-pairs):**
 
@@ -101,7 +101,24 @@ steady weak one loses the race in between.
 
 ## What it means
 
-S6_MEANING
+Of the four gates, the one worth a point is the **Temple**: a founder that
+builds its Shrine and Temple outside the Religion lane wins +1.0 pp more,
+and the ledger (`docs/gene_ledger.json`, source `2026-08-21-s6-…`) turns
+`founder-temple` on in the deployment genome — the eleventh proven helper.
+The Apostle on top of it reads +0.7 and does not resolve at six thousand
+seat-pairs; Theology forced early and the Holy Site priced like a Theater
+Square are null. All three stay in the universe, off, for the prior screens.
+
+Two things generalise. The first cut's −8 pp against the second cut's +1:
+the same mechanism, with and without starving a steady weak unit for a late
+strong one. And the decomposition that found it — the screen's rows carry
+`founded_religion`, `foreign_faith_cities`, `inquisition` and `faith` per
+seat, so a negative verdict can be split by the population the gene acts on
+in one query. The native winners are founders on offense (47% of the
+founders who kept their cities won by their own religion); defense was worth
+a point, not the twenty-five between keeping and losing the cities, because
+the founders who lose their cities are the weaker empires (39.5 techs
+against 45.7) and the Faith they bank is the same.
 
 ## Not built, ranked
 

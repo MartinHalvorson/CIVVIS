@@ -97,12 +97,30 @@
         "design": "foldover",
         "start_seed": 51000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json",
+      "regime": "native",
+      "complete_pairs": 6000,
+      "family_wise_z": 2.498,
+      "profile": {
+        "players": 6,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "baseline": "best",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 54000000
+      }
     }
   ],
   "counts": {
-    "helps": 10,
+    "helps": 11,
     "hurts": 11,
-    "unresolved": 44
+    "unresolved": 47
   },
   "genes": [
     {
@@ -676,6 +694,26 @@
       }
     },
     {
+      "tag": "founder-temple",
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "native",
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 6000,
+        "n_on": 6000,
+        "n_off": 6000,
+        "win_delta_pp": 0.967,
+        "win_z": 2.136,
+        "share_delta_pp": 0.019,
+        "share_z": 0.49,
+        "read": "helps *",
+        "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
+      },
+      "war": null
+    },
+    {
       "tag": "garrison-under-fire",
       "verdict": "helps",
       "default_on": true,
@@ -764,6 +802,26 @@
         "read": "HURTS ** \u00b7 share HURTS **",
         "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
       }
+    },
+    {
+      "tag": "holy-lane-parity",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 6000,
+        "n_on": 6000,
+        "n_off": 6000,
+        "win_delta_pp": -0.533,
+        "win_z": -1.193,
+        "share_delta_pp": -0.05,
+        "share_z": -1.341,
+        "read": "~",
+        "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
+      },
+      "war": null
     },
     {
       "tag": "home-defense",
@@ -944,6 +1002,26 @@
         "read": "~",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
+    },
+    {
+      "tag": "inquisition-on-threat",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 6000,
+        "n_on": 6000,
+        "n_off": 6000,
+        "win_delta_pp": 0.7,
+        "win_z": 1.529,
+        "share_delta_pp": -0.025,
+        "share_z": -0.64,
+        "read": "~",
+        "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
+      },
+      "war": null
     },
     {
       "tag": "joint-tactics",
@@ -1844,6 +1922,26 @@
         "read": "~",
         "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
       }
+    },
+    {
+      "tag": "theology-for-founders",
+      "verdict": "unresolved",
+      "default_on": false,
+      "deciding_regime": null,
+      "family_wise": false,
+      "conflict": false,
+      "native": {
+        "pairs": 6000,
+        "n_on": 6000,
+        "n_off": 6000,
+        "win_delta_pp": -0.1,
+        "win_z": -0.213,
+        "share_delta_pp": -0.028,
+        "share_z": -0.733,
+        "read": "~",
+        "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
+      },
+      "war": null
     },
     {
       "tag": "war-economy",
