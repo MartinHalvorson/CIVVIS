@@ -734,6 +734,9 @@ pub struct StrategyCensus {
     pub science: u32,
     pub culture: u32,
     pub religion: u32,
+    /// `inquisition_on_threat`: Apostles bought for the Inquisition because a
+    /// home city was under conversion pressure. Zero unless the flag is on.
+    pub inquisition_apostles: u32,
     pub diplomacy: u32,
     pub conquest: u32,
     pub recovery: u32,
@@ -819,6 +822,7 @@ impl StrategyCensus {
         self.science += other.science;
         self.culture += other.culture;
         self.religion += other.religion;
+        self.inquisition_apostles += other.inquisition_apostles;
         self.diplomacy += other.diplomacy;
         self.conquest += other.conquest;
         self.recovery += other.recovery;
@@ -3678,8 +3682,31 @@ pub struct AdvancedAi {
     /// worked". Everything else about the lane is untouched, so a gain here is
     /// the Religion empire building its own district sooner and nothing else.
     ///
-    /// Off by default; evaluator arm `advanced_holy_lane`.
+    /// Off by default; evaluator arm `advanced_holy_lane`, and the native
+    /// gene `holy-lane-parity` (`PRODUCTION_OPT_INS`) since 2026-08-21.
     pub holy_lane_parity: bool,
+
+    /// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. The 6p 60k
+    /// screen (13,446 seat-pairs, 2026-08-20): a seat that founded a religion
+    /// and kept its cities won 52.5% of games; one that founded and ended
+    /// with three or more cities under a rival faith won 3.0% — the same as
+    /// never founding — and that was 46% of every founder. Of the seats lost
+    /// to a rival's religion, 12% had ever launched an Inquisition, and 58%
+    /// died with 300+ Faith banked. The mechanism: outside an offensive
+    /// posture `religious_spending_with_reserve` sets `apostle_cap = 0`, so
+    /// the one unit that can launch the Inquisition is never bought, so
+    /// `inquisitor_cap` (which needs the launch) stays 0, and the founder's
+    /// whole defence is two Missionaries while the Inquisitor — the unit that
+    /// strips 75% of every rival's pressure in a city — stays locked.
+    ///
+    /// With this on, a founder whose home is under conversion pressure and
+    /// who has not launched buys ONE Apostle ahead of any Missionary;
+    /// `advanced_religious_step` already walks it to the Holy City and
+    /// launches, after which the existing Inquisitor purchases follow. The
+    /// reserve is already zero under home pressure, so this costs the bank
+    /// one Apostle. Off everywhere by default; a native opt-in gene
+    /// (`inquisition-on-threat`) until the screen has priced it.
+    pub inquisition_on_threat: bool,
 
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
@@ -4729,6 +4756,7 @@ impl AdvancedAi {
             congress_banks_a_decided_vote: false,
             envoy_infrastructure: false,
             holy_lane_parity: false,
+            inquisition_on_threat: false,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -9932,6 +9960,15 @@ impl AdvancedAi {
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if first_government => Some("political_philosophy"),
+                // See `inquisition_on_threat`: a founder's Temple needs
+                // Theology, and outside the Religion lane nothing asked for
+                // it before turn 100–130 — after the cities were gone.
+                _ if self.inquisition_on_threat
+                    && g.players[pid].religion.is_some()
+                    && !g.players[pid].civics.contains(&crate::name!("theology")) =>
+                {
+                    Some("theology")
+                }
                 GrandStrategy::Culture => [
                     "humanism",
                     "conservation",
@@ -14221,6 +14258,8 @@ impl AdvancedAi {
         let city_count = g.player_city_ids(pid).len() as f64;
         let gold_reserve = (150.0 + 50.0 * city_count).max(self.war_treasury_floor(g, pid));
         let faith_reserve = match strategy {
+            // See `inquisition_on_threat`: the bank is the Apostle's.
+            _ if self.saving_faith_for_inquisition(g, pid) => f64::INFINITY,
             GrandStrategy::Religion => 250.0,
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
             _ => 100.0,
@@ -15032,6 +15071,122 @@ impl AdvancedAi {
         }
     }
 
+    /// `inquisition_on_threat`, leg three: THE BANK IS THE APOSTLE'S. A
+    /// founder whose home is under conversion pressure, with no Inquisition
+    /// launched and no Apostle yet, keeps its Faith for the 400-Faith Apostle:
+    /// no Missionaries (`religious_spending_with_reserve`), no Great Person
+    /// patronage with Faith, no Faith buildings, no Faith-bought soldiers.
+    /// Traced: with those sinks open, founders under pressure sat at 100–250
+    /// Faith for sixty turns and never reached the price.
+    fn saving_faith_for_inquisition(&self, g: &Game, pid: usize) -> bool {
+        if !self.inquisition_on_threat {
+            return false;
+        }
+        let Some(religion) = g.players[pid].religion.as_deref() else {
+            return false;
+        };
+        let launched = g.players[pid]
+            .counters
+            .get("inquisition")
+            .copied()
+            .unwrap_or(0)
+            > 0;
+        if launched {
+            return false;
+        }
+        let has_apostle = g
+            .units
+            .values()
+            .any(|unit| unit.owner == pid && unit.kind == "apostle");
+        if has_apostle {
+            return false;
+        }
+        g.player_city_ids(pid)
+            .iter()
+            .any(|cid| Self::city_needs_religious_support(g, pid, &g.cities[cid], religion))
+    }
+
+    /// `inquisition_on_threat`, leg one: THE FOUNDER'S TEMPLE. An Apostle
+    /// needs a Temple (`requires_building`), an Inquisitor too, and
+    /// `religious_production` builds one only while the plan is Religion —
+    /// which a founder leaves the turn it founds. Traced on four 6p games:
+    /// two of three founders stood at `temples=0` from turn 75 to 145, lost
+    /// every city's majority by 135, and died with 200–500 Faith that could
+    /// buy nothing. Outside the Religion lane this claims one idle Holy Site
+    /// city (the Holy City first) for the Shrine and then the Temple, and
+    /// while home is under conversion pressure buys the Temple with gold if
+    /// the treasury covers it. Inert once any city has a Temple.
+    fn founder_temple(&self, g: &mut Game, pid: usize) {
+        if !self.inquisition_on_threat {
+            return;
+        }
+        let Some(religion) = g.players[pid].religion.clone() else {
+            return;
+        };
+        let city_ids = g.player_city_ids(pid);
+        let owns = |g: &Game, cid: u32, building: &str| {
+            g.cities[&cid]
+                .buildings
+                .iter()
+                .any(|owned| owned.as_str() == building)
+        };
+        if city_ids.iter().any(|cid| owns(g, *cid, "temple")) {
+            return;
+        }
+        let under_pressure = city_ids
+            .iter()
+            .any(|cid| Self::city_needs_religious_support(g, pid, &g.cities[cid], &religion));
+        let holy_city = g.players[pid].holy_city;
+        let mut candidates: Vec<u32> = city_ids
+            .iter()
+            .copied()
+            .filter(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")))
+            .collect();
+        candidates.sort_by_key(|cid| (Some(*cid) != holy_city, *cid));
+        for building in ["shrine", "temple"] {
+            for &cid in &candidates {
+                if owns(g, cid, building) {
+                    continue;
+                }
+                let item = Item::Building {
+                    building: Name::new(building),
+                };
+                if under_pressure {
+                    // The engine prices it (and says no when the building is
+                    // already queued or not buildable here yet).
+                    if let Some(price) = g.building_purchase_cost(pid, cid, building, "gold") {
+                        if g.players[pid].gold >= price
+                            && g.apply(
+                                pid,
+                                &Action::BuyBuilding {
+                                    city: cid,
+                                    building: Name::new(building),
+                                    currency: "gold".to_string(),
+                                },
+                            )
+                            .is_ok()
+                        {
+                            return;
+                        }
+                    }
+                    // Under pressure the Holy City's queue is preempted: the
+                    // Temple goes to the front (`Produce` keeps the displaced
+                    // item's progress) — traced, the queue was never idle
+                    // while the cities flipped.
+                    if g.can_produce(pid, cid, &item) {
+                        let _ = g.apply(pid, &Action::Produce { city: cid, item });
+                        return;
+                    }
+                } else if g.cities[&cid].queue.is_empty() && g.can_produce(pid, cid, &item) {
+                    let _ = g.apply(pid, &Action::Produce { city: cid, item });
+                    return;
+                }
+            }
+            // The Temple needs the Shrine first: if any Holy Site city lacks
+            // a Shrine and nothing could be started, do not look past it.
+        }
+    }
+
     /// A rival founder's religion holding the majority in one of our cities.
     /// The religious victory requires every living major, so home
     /// reconversion alone denies it — this is the trigger for the
@@ -15102,7 +15257,7 @@ impl AdvancedAi {
     /// religion. Founders reuse the emergency spending path; everyone else
     /// buys Missionaries of an adopted non-threat majority faith, which the
     /// engine now assigns from the purchase city (stock rule).
-    fn religious_defense(&self, g: &mut Game, pid: usize, threat: &str) {
+    fn religious_defense(&mut self, g: &mut Game, pid: usize, threat: &str) {
         if g.players[pid].religion.is_some() {
             self.religious_spending(g, pid, false);
             return;
@@ -15192,12 +15347,12 @@ impl AdvancedAi {
         active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
 
-    fn religious_spending(&self, g: &mut Game, pid: usize, offensive: bool) {
+    fn religious_spending(&mut self, g: &mut Game, pid: usize, offensive: bool) {
         self.religious_spending_with_reserve(g, pid, offensive, 80.0);
     }
 
     fn religious_spending_with_reserve(
-        &self,
+        &mut self,
         g: &mut Game,
         pid: usize,
         offensive: bool,
@@ -15252,7 +15407,18 @@ impl AdvancedAi {
         } else {
             (1 + defensive_targets.div_ceil(2)).min(2)
         };
-        let apostle_cap = if offensive { 2 } else { 0 };
+        // See `inquisition_on_threat`: the one Apostle that unlocks the
+        // Inquisitors, bought before a Missionary spends the same Faith on a
+        // 200-pressure nudge the rival out-pressures next turn.
+        let defend_with_inquisition =
+            self.inquisition_on_threat && home_under_pressure && !inquisition_launched;
+        let apostle_cap = if offensive {
+            2
+        } else if defend_with_inquisition {
+            1
+        } else {
+            0
+        };
         let guru_cap = usize::from(offensive && apostles > 0);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
             2
@@ -15262,6 +15428,12 @@ impl AdvancedAi {
         let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
+        } else if defend_with_inquisition && apostles == 0 {
+            // Save for it: a Missionary bought while the bank is short of the
+            // Apostle's price is exactly why the Apostle was never affordable
+            // (traced: founders under pressure held 100–250 Faith for sixty
+            // turns, buying a Missionary every time the bank reached one).
+            &["apostle"]
         } else if !offensive {
             &["missionary", "inquisitor"]
         } else if apostles < 2 {
@@ -15333,7 +15505,7 @@ impl AdvancedAi {
                 if g.players[pid].faith + f64::EPSILON < price + reserve {
                     continue;
                 }
-                if g.apply(
+                let bought = g.apply(
                     pid,
                     &Action::Buy {
                         city: cid,
@@ -15341,9 +15513,11 @@ impl AdvancedAi {
                         formation: 0,
                         currency: "faith".to_string(),
                     },
-                )
-                .is_ok()
-                {
+                );
+                if bought.is_ok() {
+                    if defend_with_inquisition && *unit == "apostle" {
+                        self.census.inquisition_apostles += 1;
+                    }
                     return;
                 }
             }
@@ -15418,6 +15592,9 @@ impl AdvancedAi {
     }
 
     fn faith_building_spending(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        if self.saving_faith_for_inquisition(g, pid) {
+            return;
+        }
         let reserve = match strategy {
             GrandStrategy::Religion => 180.0,
             GrandStrategy::Culture if !g.national_park_sites(pid).is_empty() => {
@@ -15928,6 +16105,9 @@ impl AdvancedAi {
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
     fn military_faith_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
+        if self.saving_faith_for_inquisition(g, pid) {
+            return false;
+        }
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
@@ -30005,6 +30185,7 @@ impl AdvancedAi {
         self.base.pursue_religion = g.has_ability(pid, "taxis")
             || active_victory_target.is_none()
             || active_victory_target == Some(VictoryTarget::Religion);
+        self.base.saving_faith_for_inquisition = self.saving_faith_for_inquisition(g, pid);
         if self.base.minor || self.base.barb {
             self.base.take_turn(g, pid);
             return;
@@ -30164,9 +30345,16 @@ impl AdvancedAi {
             // policy in paired evaluation.
             if self.victory_planning && plan.strategy == GrandStrategy::Religion {
                 self.religious_production(g, pid);
-            } else if self.victory_planning
+            } else if self.victory_planning && g.victory_conditions.religious {
+                // A founder outside the Religion lane still gets its Temple,
+                // or its Apostles and Inquisitors exist only on paper. See
+                // `inquisition_on_threat` (exact no-op while that flag is off).
+                self.founder_temple(g, pid);
+            }
+            if self.victory_planning
                 && g.victory_conditions.religious
                 && g.players[pid].religion.is_none()
+                && plan.strategy != GrandStrategy::Religion
             {
                 // Every other strategy still defends its homeland: a rival's
                 // religious victory needs a majority in every living major,

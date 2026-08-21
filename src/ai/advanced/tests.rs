@@ -10629,7 +10629,7 @@ fn religious_match_point_spends_the_reserve_only_in_own_faith_cities() {
             .insert("Runaway Faith".to_string(), 1_000.0);
     }
 
-    let ai = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
     let emergency = ai
         .victory_denial(&game, 0)
         .is_some_and(|(_, counter)| counter == GrandStrategy::Religion);
@@ -10748,7 +10748,7 @@ fn non_founder_buys_adopted_faith_missionaries_to_defend_home() {
         .pressure
         .insert("Neighbor Faith".to_string(), 1_000.0);
 
-    let ai = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
     let threat = ai
         .home_conversion_threat(&game, 0)
         .expect("a rival majority in the capital is a home threat");
@@ -10836,7 +10836,7 @@ fn non_founder_buys_defense_before_an_approaching_rival_missionary_spreads() {
     let rival = game.spawn_test_unit("missionary", 1, approach);
     game.units.get_mut(&rival).unwrap().religion = Some("Runaway Faith".to_string());
 
-    let ai = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
     assert_eq!(
         ai.home_conversion_threat(&game, 0).as_deref(),
         Some("Runaway Faith"),
@@ -16372,7 +16372,7 @@ fn religious_spending_uses_own_faith_inquisitors_without_funding_a_rival() {
         ("Rival Faith".to_string(), 600.0),
     ]);
 
-    let ai = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
     let mut converted = game.clone();
     converted
         .cities
@@ -16449,6 +16449,122 @@ fn religious_spending_stops_at_a_target_scaled_unit_ceiling() {
     assert_eq!(game.players[0].faith, before_faith);
 }
 
+/// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. A founder whose
+/// home city is under a rival's pressure, not in an offensive posture: the
+/// shipped caps buy Missionaries and never the Apostle that unlocks the
+/// Inquisitors. With `inquisition_on_threat` the first Faith buys that
+/// Apostle; once the Inquisition is launched the gene steps aside.
+#[test]
+fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, home, "holy_site");
+    game.cities.get_mut(&home).unwrap().buildings =
+        vec![crate::name!("shrine"), crate::name!("temple")];
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].civics.insert(crate::name!("theology"));
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    // Our majority still holds, but the rival's pressure is past half of
+    // ours: `city_needs_religious_support` — home under pressure.
+    let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 1_000.0);
+    pressure.insert("Rival Faith".to_string(), 700.0);
+    game.players[0].faith = game.game_speed.scale(2_000.0);
+
+    let apostles = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "apostle")
+            .count()
+    };
+    let missionaries = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "missionary")
+            .count()
+    };
+
+    let mut control = game.clone();
+    let mut off = AdvancedAi::new();
+    off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
+    assert_eq!(apostles(&control), 0, "the shipped caps buy no Apostle off the offensive");
+    assert_eq!(missionaries(&control), 1, "…a Missionary instead");
+    assert_eq!(off.census.inquisition_apostles, 0);
+
+    let mut treated = game.clone();
+    let mut on = AdvancedAi::new();
+    on.enable_inquisition_on_threat();
+    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
+    assert_eq!(apostles(&treated), 1, "the gene buys the Apostle first");
+    assert_eq!(missionaries(&treated), 0);
+    assert_eq!(on.census.inquisition_apostles, 1, "and counts it");
+    // One is enough: the next purchase is not a second Apostle.
+    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
+    assert_eq!(apostles(&treated), 1);
+    // And the baseline's 250-Faith Missionary stands aside while the bank is
+    // being saved — it was the drain that pinned every founder under 400.
+    let mut baseline = game.clone();
+    baseline.players[0].faith = 300.0;
+    let mut saver = AdvancedAi::new();
+    saver.enable_inquisition_on_threat();
+    assert!(saver.saving_faith_for_inquisition(&baseline, 0));
+    saver.base.saving_faith_for_inquisition = true;
+    saver.base.cities(&mut baseline, 0);
+    assert_eq!(missionaries(&baseline), 0, "the baseline does not spend the saved bank");
+    let mut spender = game.clone();
+    spender.players[0].faith = 300.0;
+    let mut plain = AdvancedAi::new();
+    plain.base.cities(&mut spender, 0);
+    assert_eq!(missionaries(&spender), 1, "without the gene the baseline buys its Missionary");
+    // Once the Inquisition is launched the gene has nothing left to do.
+    let mut launched = game.clone();
+    launched.players[0].counters.insert("inquisition".to_string(), 1);
+    let mut after = AdvancedAi::new();
+    after.enable_inquisition_on_threat();
+    after.religious_spending_with_reserve(&mut launched, 0, false, 80.0);
+    assert_eq!(apostles(&launched), 0, "no defensive Apostle once launched");
+    assert_eq!(after.census.inquisition_apostles, 0);
+}
+
+/// Both religion genes are opt-ins: off in every bundle, flippable by name,
+/// and discovered by the screen through `PRODUCTION_OPT_INS`.
+#[test]
+fn the_religion_genes_are_native_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.inquisition_on_threat && !ai.holy_lane_parity);
+    for (field, _, enable) in PRODUCTION_OPT_INS
+        .iter()
+        .filter(|(field, _, _)| *field == "inquisition_on_threat" || *field == "holy_lane_parity")
+    {
+        let mut seat = AdvancedAi::new();
+        enable(&mut seat);
+        match *field {
+            "inquisition_on_threat" => assert!(seat.inquisition_on_threat),
+            "holy_lane_parity" => assert!(seat.holy_lane_parity),
+            _ => unreachable!(),
+        }
+    }
+    let mut on = AdvancedAi::new();
+    on.enable_holy_lane_parity();
+    assert!(on.holy_lane_parity);
+    on.disable_holy_lane_parity();
+    assert!(!on.holy_lane_parity);
+}
+
 #[test]
 fn surplus_faith_keeps_a_founded_secondary_campaign_in_motion() {
     let mut game = Game::new_full(2, 30, 18, 7_115, 200, 0, false);
@@ -16482,7 +16598,7 @@ fn surplus_faith_keeps_a_founded_secondary_campaign_in_motion() {
         .pressure
         .insert("Rival Faith".to_string(), 1_000.0);
 
-    let ai = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
     let reserve = game.game_speed.scale(1_200.0);
     game.players[0].faith = reserve;
     assert!(!ai.religious_offensive_posture(&game, 0, GrandStrategy::Science));
@@ -16570,7 +16686,7 @@ fn nonreligious_strategy_buys_defense_only_when_its_home_is_pressured() {
         .pressure
         .insert("Rival Faith".to_string(), 1_000.0);
 
-    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     let mut safe = game.clone();
     safe.cities
         .get_mut(&home)
@@ -28620,6 +28736,39 @@ fn step_and_reassess_fires_check() {
         eprintln!(
             "FIRES seed={seed} t{} sightings={} blind_cuts={} engage={} hold={}",
             game.turn, census.reveal_regroups, census.step_reassessed, census.engage, census.hold
+        );
+    }
+}
+
+/// Fires-check for the religion genes, run by hand: four 6p games with the
+/// deployment genome plus the gene on every seat, counting defensive
+/// Apostles, founders and Inquisitions.
+/// `cargo test --profile ci --lib -- --ignored --nocapture religion_genes_fires_check`
+#[test]
+#[ignore]
+fn religion_genes_fires_check() {
+    for seed in 0..4u64 {
+        let mut game = Game::new(6, 60, 38, 611 + seed, 200, 6);
+        let mut ais = AdvancedAi::fleet(&game);
+        for ai in ais.iter_mut() {
+            ai.enable_engine_repairs();
+            ai.enable_inquisition_on_threat();
+        }
+        crate::ai::run_game(&mut game, &mut ais);
+        let mut census = StrategyCensus::default();
+        for ai in ais.iter().take(6) {
+            census.absorb(&ai.strategy_census());
+        }
+        let founders = game.players.iter().take(6).filter(|p| p.religion.is_some()).count();
+        let inquisitions = game
+            .players
+            .iter()
+            .take(6)
+            .filter(|p| p.counters.get("inquisition").copied().unwrap_or(0) > 0)
+            .count();
+        eprintln!(
+            "FIRES seed={seed} t{} victory={:?} founders={founders} inquisitions={inquisitions} defensive_apostles={}",
+            game.turn, game.victory_type, census.inquisition_apostles
         );
     }
 }
