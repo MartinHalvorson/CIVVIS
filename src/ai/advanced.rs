@@ -4682,10 +4682,6 @@ impl AdvancedAi {
         Self::promoted_policy_envoy(weights, Some(target))
     }
 
-    /// Whether the settler stack discipline is on. See
-    /// `settler_stack_discipline`.
-
-
     /// Whether the peacetime camp party is on. See `BasicAi::camp_party`.
     pub fn camp_party(&self) -> bool {
         self.base.camp_party()
@@ -4697,7 +4693,8 @@ impl AdvancedAi {
     /// the live bridge calls it before its finishing volley, `take_turn`
     /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
     pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
-        if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn) {
+        if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
+        {
             return;
         }
         self.turn_start_hostiles_turn = Some(g.turn);
@@ -9397,10 +9394,15 @@ impl AdvancedAi {
         if value <= baseline + 0.01 {
             return;
         }
-        let _ = g.apply(pid, &Action::MoveProduct { from, to, product: Name::new(&product) });
+        let _ = g.apply(
+            pid,
+            &Action::MoveProduct {
+                from,
+                to,
+                product: Name::new(&product),
+            },
+        );
     }
-
-
 
     /// The technology behind the best Campus building this empire is already
     /// equipped to use and cannot research its way to on merit.
@@ -9490,8 +9492,6 @@ impl AdvancedAi {
         }
         best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
     }
-
-
 
     fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
         if !self.housing_research {
@@ -12826,10 +12826,17 @@ impl AdvancedAi {
                    objective, g.wdist(here, objective);
                    objective);
         }
-        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+        Some(
+            g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok(),
+        )
     }
-
-
 
     /// A predecessor that missed the breakthrough upgrade because it was
     /// abroad returns to the nearest owned city before joining the staging

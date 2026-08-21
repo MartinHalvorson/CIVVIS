@@ -19233,9 +19233,11 @@ fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
     // Either path satisfies the contract; the positional asserts above are
     // the contract.
     assert!(
-        !journal.since(0).thoughts.iter().any(|thought| thought
-            .headline
-            .starts_with("Settler waits for its guard")),
+        !journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.headline.starts_with("Settler waits for its guard")),
         "whatever moved it, a threatened settler must not have chosen to wait"
     );
 

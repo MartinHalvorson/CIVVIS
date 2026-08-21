@@ -5705,7 +5705,11 @@ mod tests {
             "governor-every-lane".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
-        assert_eq!(forced, vec!["governor-every-lane"], "the arm is deduplicated");
+        assert_eq!(
+            forced,
+            vec!["governor-every-lane"],
+            "the arm is deduplicated"
+        );
 
         let mut ai = civvis::ai::AdvancedAi::new();
         super::configure_live_bridge(&mut ai, &forced, &[])

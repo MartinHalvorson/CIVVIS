@@ -177,8 +177,6 @@ const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
 /// garrison ordered at this range is in place before the attacker arrives.
 pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
-
-
 /// Own military units within `GARRISON_HOLD_RADIUS` of an unhurt city that
 /// make one more raid-response defender unnecessary. See `besieged_city_item`.
 const GARRISON_HOLD_UNITS: usize = 2;
@@ -9259,10 +9257,6 @@ impl BasicAi {
             .map(|(_, _, item)| item)
     }
 
-
-
-
-
     /// What a city with enemies already at its gates should build instead of
     /// whatever the ordinary build order wanted.
     ///
@@ -9288,8 +9282,8 @@ impl BasicAi {
         // city count while COSTING score: walls and defenders displace the
         // buildings and districts score is actually made of. A raiding party is
         // what takes a city, and a raiding party is more than one unit.
-        let bleeding = self.garrison_under_fire
-            && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+        let bleeding =
+            self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
         if !bleeding {
             return None;
         }
@@ -9440,8 +9434,6 @@ impl BasicAi {
             })
         })
     }
-
-
 
     /// Whether one district in this family is already finished or committed
     /// somewhere in the empire.
@@ -9787,8 +9779,7 @@ impl BasicAi {
             (self.w.mil_per_city * n_cities as f64).max(self.rush_military_floor as f64)
         } else {
             self.w.mil_per_city * n_cities as f64
-        }
-;
+        };
         // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.
         //
         // `military_floor` is `mil_per_city * n_cities`. It counts bodies and
@@ -19717,17 +19708,14 @@ mod tests {
     /// capital bled behind no walls: Masonry in, monument and granary built,
     /// the culture lane open, and nothing hostile in vision. See
     /// `garrison_walls_item`.
-    
 
     /// With the treatment on, the capital that previously spent this turn on
     /// the culture lane orders ancient walls; with it off, behavior is
     /// unchanged; without Masonry, nothing changes either.
-    
 
     /// The frontier/population-floor boundary: a small frontier city walls
     /// up, the same city at the floor does not, an interior city never does,
     /// and the capital is eligible at any size.
-    
 
     #[test]
     fn even_barbarian_trades_are_taken_not_shadowed() {
