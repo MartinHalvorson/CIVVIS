@@ -7819,7 +7819,29 @@ impl Game {
             }
             if !self.barb_scout_targets.contains_key(&unit) {
                 let visible = self.unit_visible_tiles(unit);
-                if let Some(city) = self
+                // ★★★★★ A SETTLER WALKING PAST A CAMP WAS NOT A SIGHTING, SO
+                // NOTHING A CAMP EVER DID WAS TRIGGERED BY THE THING WORTH
+                // RAIDING.
+                //
+                // Only a CITY could be reported, so a camp's entire raid
+                // throughput was one Scout's round trip to a settlement and
+                // back — and an empire's walkers, which is what a
+                // Civilization VI barbarian actually takes, were invisible to
+                // the pipeline that decides whether a camp raises anybody at
+                // all. MEASURED with the report as cities-only, `ai_eval`
+                // 72 seat-games an arm at 6p/150t/online: 0.47 civilians lost
+                // to barbarians per game, against 8 Settlers in 104 turns on
+                // the live Civilization VI seat — a seventeen-fold gap that
+                // no tuning value inside the alert window can close, because
+                // the window mostly never opens near an expanding empire.
+                //
+                // A Civilization VI Scout reports what it SEES. So does this
+                // one now: the nearest visible major settlement or unit,
+                // whichever is closer. Everything downstream is unchanged —
+                // the Scout still has to walk home before the camp is
+                // alerted, the alert still expires, and the party size still
+                // comes from the difficulty band.
+                let city = self
                     .cities
                     .values()
                     .filter(|city| {
@@ -7827,9 +7849,21 @@ impl Game {
                         owner.alive && !owner.is_minor && !owner.is_barbarian
                     })
                     .filter(|city| visible.contains(&city.pos))
-                    .min_by_key(|city| (self.wdist(position, city.pos), city.id))
-                {
-                    self.barb_scout_targets.insert(unit, city.pos);
+                    .map(|city| (self.wdist(position, city.pos), city.pos));
+                // A Scout that has to walk home before anything happens cannot
+                // chase; the sighting is a REPORT, and the position it carries
+                // is where our people were standing when it saw them.
+                let quarry = self
+                    .units
+                    .values()
+                    .filter(|other| {
+                        let owner = &self.players[other.owner];
+                        owner.alive && !owner.is_minor && !owner.is_barbarian
+                    })
+                    .filter(|other| visible.contains(&other.pos))
+                    .map(|other| (self.wdist(position, other.pos), other.pos));
+                if let Some((_, target)) = city.chain(quarry).min() {
+                    self.barb_scout_targets.insert(unit, target);
                 }
             }
             if let Some(target) = self.barb_scout_targets.get(&unit).copied() {

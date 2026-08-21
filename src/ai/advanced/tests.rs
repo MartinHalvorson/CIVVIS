@@ -23791,6 +23791,336 @@ fn clear_barbarian_fixture(game: &mut Game) {
 /// Board for the camp-errand pins: two founded capitals, no stray units,
 /// no camps, `current = 0`. Returns the game, player 0's capital, and a
 /// placer for open ground at an exact distance from it.
+/// ★★★★★ THE SETTLER THAT NOBODY WAS ALLOWED TO DEFEND.
+///
+/// Live run civvis-20260821T130446Z lost EIGHT Settlers in 104 turns. The
+/// reason is not that the escort lost the fight — it is that the escort never
+/// scanned the raider as a target at all. The admission test that lets the
+/// barbarian seat into a unit's enemy list measures distance from OUR CITIES,
+/// so a Settler ten tiles out with a raider on its heels sits outside every
+/// ring the test knows about and the seat stays unadmitted.
+///
+/// The board below is that situation and nothing else: an escort and a Settler
+/// far from home, one barbarian Scout beside them, no camp anywhere, no city in
+/// reach. A Scout is the exact unit the live game watched walk away — combat
+/// strength 5 against our Warrior's 20, and it takes a Settler by stepping onto
+/// it. Without `barbarian_hunt` the escort stands there. With it the Scout is a
+/// target like any other and the ordinary exchange gate decides the rest.
+#[test]
+fn a_raider_beside_a_settler_in_the_field_is_a_target_only_under_barbarian_hunt() {
+    let run =
+        |hunt: bool| -> (bool, bool) {
+            let (mut game, home) = camp_bounty_board(90_079);
+            let barb = game.barb_pid.unwrap();
+            let road = open_ground_at(&game, home, 10);
+            let beside: Vec<Pos> = crate::hex::neighbors(road)
+                .into_iter()
+                .filter(|pos| {
+                    game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(*pos).is_empty()
+                        && game.city_at(*pos).is_none()
+                })
+                .collect();
+            assert!(!beside.is_empty(), "the road tile needs an open neighbour");
+            game.spawn_test_unit("settler", 0, road);
+            let escort = game.spawn_test_unit("warrior", 0, beside[0]);
+            // The raider stands beside the ESCORT as well as near the Settler —
+            // the shape the live game kept producing, and the one escort duty was
+            // answering by re-forming instead of swinging.
+            let touching = *crate::hex::neighbors(beside[0])
+                .iter()
+                .find(|pos| {
+                    game.map.get(**pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(**pos).is_empty()
+                        && game.city_at(**pos).is_none()
+                })
+                .expect("open ground beside the escort");
+            let raider = game.spawn_test_unit("scout", barb, touching);
+            let mut ai = AdvancedAi::new();
+            ai.base.barbarian_hunt = hunt;
+            // Three seats per world turn; six world turns is ample for one swing
+            // between two adjacent units and leaves no room for a march from home.
+            let mut fought = false;
+            for _ in 0..18 {
+                let pid = game.current;
+                if pid == 0 {
+                    ai.take_turn(&mut game, 0);
+                    if game.units.get(&raider).is_none_or(|unit| unit.hp < 100) {
+                        fought = true;
+                    }
+                }
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+            }
+            let escort_alive = game.units.contains_key(&escort);
+            (fought, escort_alive)
+        };
+    let (without, _) = run(false);
+    let (with, escort_alive) = run(true);
+    assert!(
+        !without,
+        "the escort must be unable to see the raider without the gene — if this \
+         fires the admission test already covers the field and the gene is moot"
+    );
+    assert!(
+        with,
+        "barbarian_hunt must let the escort fight the raider standing over its Settler"
+    );
+    assert!(
+        escort_alive,
+        "a Warrior spending its swing on a strength-5 Scout does not die doing it"
+    );
+}
+
+/// ★★★★★ THE GENE WAS WIRED INTO THE COPY NOBODY REACHES.
+///
+/// `BasicAi::military_step` and `AdvancedAi::advanced_military_step` each hold
+/// their own admission for the barbarian seat. `barbarian_hunt` shipped in
+/// #2223 patched the `BasicAi` one only — and INSTRUMENTED over four `ai_eval`
+/// pairs at 6p/150t/online, that block ran **zero** times for the `live`
+/// entrant: the Advanced controller reaches it only when `enemies` is already
+/// empty for other reasons. The screen agreed and said so in as many words —
+/// "nothing differed: all 24 maps were neutral on wins AND on terminal score,
+/// so live and live_without_barbarian_hunt played the same games".
+///
+/// This pins the Advanced reading directly, so a future edit to one copy
+/// cannot silently leave the other behind again.
+#[test]
+fn the_advanced_admission_carries_the_field_reading_too() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let road = open_ground_at(&game, home, 10);
+    game.spawn_test_unit("settler", 0, road);
+    let beside = *crate::hex::neighbors(road)
+        .iter()
+        .find(|pos| {
+            game.map
+                .get(**pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(**pos).is_empty()
+        })
+        .expect("open ground beside the Settler");
+    game.spawn_test_unit("warrior", barb, beside);
+
+    // The camp reading is blind here by construction: no camp anywhere, and the
+    // raider is ten tiles from the only city.
+    assert!(
+        !BasicAi::barbarian_presence_at_home_with_camp_radius(
+            &game,
+            0,
+            crate::ai::HOME_CAMP_RADIUS
+        ),
+        "the fixture must sit outside every ring the camp reading measures"
+    );
+    assert!(
+        BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "and inside the field reading"
+    );
+
+    // The Advanced controller's own admission is the one that decides whether
+    // any of its units may scan the raider at all.
+    let source = include_str!("../advanced.rs");
+    let block = source
+        .split("if let Some(barb) = g.barb_pid {")
+        .nth(1)
+        .expect("the advanced admission exists");
+    let block = block.split("enemies.push(barb);").next().unwrap();
+    assert!(
+        block.contains("barbarian_threatens_our_field_civilians"),
+        "the Advanced admission must carry the field reading, not only the camp one"
+    );
+    assert!(
+        block.contains("self.barbarian_hunt()"),
+        "and it must stay behind the gene"
+    );
+}
+
+/// ★★★★★ THE RAIDER THAT PINS A SETTLER IS NEVER THE ONE STANDING NEXT TO
+/// THE GUARD.
+///
+/// The first version of `barbarian_hunt` only swung at a barbarian ALREADY
+/// adjacent to the escort, and a 30-map `ai_eval` with the arms genuinely
+/// differing reported "nothing differed … it did not fire on this profile".
+/// The live log says why: counted over run civvis-20260821T153531Z, **"Guard
+/// stands with its settler" 33 times** against "Settler falls back toward its
+/// guard" 38, "waits for its guard" 14, "HELD short" 18 and "walking in
+/// circles" 10. Eighty turns of a Settler not advancing while its guard sits
+/// on its tile and a raider loiters two tiles off. Ten Settlers were taken.
+///
+/// So the guard now strikes from any tile it can reach that is still beside
+/// its charge. This board is exactly that shape: guard stacked on the settler,
+/// raider two tiles away, and one open tile between them that keeps the guard
+/// adjacent to the civilian.
+#[test]
+fn the_guard_steps_up_to_the_raider_pinning_its_settler() {
+    let run = |hunt: bool| -> (bool, bool) {
+        let (mut game, home) = camp_bounty_board(90_079);
+        let barb = game.barb_pid.unwrap();
+        let road = open_ground_at(&game, home, 10);
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+        };
+        // A step tile beside the road, and a raider tile beside THAT but two
+        // from the road — the loiterer the old rule could never reach.
+        let (step, perch) = crate::hex::neighbors(road)
+            .into_iter()
+            .filter(|s| open(&game, *s) && game.units_at(*s).is_empty())
+            .find_map(|s| {
+                crate::hex::neighbors(s)
+                    .into_iter()
+                    .find(|p| {
+                        open(&game, *p) && game.units_at(*p).is_empty() && game.wdist(*p, road) == 2
+                    })
+                    .map(|p| (s, p))
+            })
+            .expect("the board has a step tile and a perch two out");
+        let settler = game.spawn_test_unit("settler", 0, road);
+        // Stacked, the shape the live seat forms: "it will share the settler's
+        // tile; a stacked civilian cannot be captured".
+        let guard = game.spawn_test_unit("warrior", 0, road);
+        let raider = game.spawn_test_unit("scout", barb, perch);
+        let mut ai = AdvancedAi::new();
+        ai.base.barbarian_hunt = hunt;
+        let mut fought = false;
+        for _ in 0..12 {
+            let pid = game.current;
+            if pid == 0 {
+                ai.take_turn(&mut game, 0);
+                if game.units.get(&raider).is_none_or(|u| u.hp < 100) {
+                    fought = true;
+                }
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let kept_station = game
+            .units
+            .get(&guard)
+            .zip(game.units.get(&settler))
+            .is_some_and(|(g0, s0)| game.wdist(g0.pos, s0.pos) <= 1);
+        let _ = step;
+        (fought, kept_station)
+    };
+    let (without, _) = run(false);
+    let (with, kept_station) = run(true);
+    assert!(
+        !without,
+        "without the gene the guard must leave the loiterer alone — if this \
+         fires, the plain attack scan already covers it and the rule is moot"
+    );
+    assert!(
+        with,
+        "barbarian_hunt must let the guard reach the raider that is pinning \
+         its Settler two tiles out"
+    );
+    assert!(
+        kept_station,
+        "and it must never be more than one tile from the civilian while it \
+         does — abandoning the charge is how the Settler is taken"
+    );
+}
+
+/// The gene widens WHO may be shot at, not how far the empire will march. A
+/// barbarian with no civilian of ours anywhere near it is still nobody's
+/// business, or every camp on the map becomes a reason to mobilise — the
+/// measured failure of the withdrawn native home-defense slot.
+#[test]
+fn barbarian_hunt_ignores_a_raider_with_no_civilian_of_ours_in_reach() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let far = open_ground_at(&game, home, 12);
+    game.spawn_test_unit("warrior", barb, far);
+    assert!(
+        !BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "no civilian of ours is in the field, so nothing is threatened"
+    );
+    // A civilian standing IN the city does not re-open the reading either: the
+    // city ring already answers for it, and counting it would admit the seat
+    // for every raider that walks past the capital.
+    game.spawn_test_unit("builder", 0, home);
+    assert!(
+        !BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "a civilian inside our own city is covered by the city reading"
+    );
+}
+
+/// ⚠ Barbarian SCOUTS count here and are excluded from `is_barbarian_raider`
+/// on purpose. Both rules are right: `barbarian_scouts_are_scouts` keeps a
+/// scout from pinning the opening six tiles from a walled city, while in
+/// Civilization VI a Scout captures a civilian by walking onto it exactly like
+/// a Warrior does. Beside our Settler it is a threat; away from it, it is not.
+#[test]
+fn a_barbarian_scout_beside_our_settler_counts_and_one_off_alone_does_not() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let road = open_ground_at(&game, home, 10);
+    let beside = *crate::hex::neighbors(road)
+        .iter()
+        .find(|pos| {
+            game.map
+                .get(**pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(**pos).is_empty()
+        })
+        .expect("open ground beside the road");
+    let scout = game.spawn_test_unit("scout", barb, beside);
+    // Registered as a camp scout, which is what makes `is_barbarian_scout`
+    // true — the exemption is a role the camp system hands out, not a unit
+    // type.
+    game.barb_scout_homes.insert(scout, home);
+    assert!(
+        !BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "a scout with nothing to take is not a threat"
+    );
+    game.spawn_test_unit("settler", 0, road);
+    assert!(
+        BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "a scout one step from our Settler can take it this turn"
+    );
+    // And the older reading is untouched: the same scout is still not a raider.
+    assert!(
+        !BasicAi::is_barbarian_raider(&game, &game.units[&scout]),
+        "barbarian_hunt must not reclassify scouts for the city-ring reading"
+    );
+}
+
+/// The live bridge ships the gene on, and the published treatment takes it
+/// back out — the two halves a screen needs. Native production and the frozen
+/// anchor keep the historical rule, so this treatment does not move the
+/// tournament ladder on its own.
+#[test]
+fn the_live_bridge_hunts_and_the_treatment_withholds_it() {
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge_universe();
+    assert!(
+        live.barbarian_hunt(),
+        "the live bridge carries the field-civilian reading"
+    );
+    let mut withheld = AdvancedAi::new();
+    withheld.enable_live_bridge_universe();
+    withheld.disable_barbarian_hunt();
+    assert!(!withheld.barbarian_hunt());
+    assert!(
+        !AdvancedAi::new().barbarian_hunt(),
+        "native production keeps the historical rule until a screen prices this"
+    );
+    assert!(
+        crate::ai::advanced::treatments::LIVE_TREATMENTS
+            .iter()
+            .any(|(flag, arm, _)| *flag == "barbarian_hunt" && *arm == "barbarian-hunt"),
+        "the arm must be published so a screen can price it"
+    );
+    // The frozen anchor keeps the historical rule.
+    assert!(!AdvancedAi::legacy().barbarian_hunt());
+}
+
 fn camp_bounty_board(seed: u64) -> (Game, Pos) {
     let mut game = Game::new_full(2, 30, 20, seed, 120, 0, true);
     for player in 0..2 {

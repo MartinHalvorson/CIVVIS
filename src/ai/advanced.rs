@@ -4944,6 +4944,11 @@ impl AdvancedAi {
         self.base.adjacent_camp_clear
     }
 
+    /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
+    pub fn barbarian_hunt(&self) -> bool {
+        self.base.barbarian_hunt
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {
@@ -27675,6 +27680,13 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
         }
+        // ⚠ BEFORE escort duty, not after. `settler_escort_step` answers
+        // `Some(..)` for every guard it owns, so a unit standing beside the
+        // raider that is about to take its Settler never reaches the attack
+        // scan below. See `BasicAi::barbarian_kill_beside_this_unit`.
+        if self.base.barbarian_kill_beside_this_unit(g, pid, uid) {
+            return true;
+        }
         if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
             return acted;
         }
@@ -27725,14 +27737,29 @@ impl AdvancedAi {
         // No `alive` test on the seat: a barbarian player holds no cities, so
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
+        //
+        // ★★★★★ AND THIS IS THE ADMISSION THE ADVANCED CONTROLLER ACTUALLY
+        // USES. `BasicAi::military_step` holds a second copy of the same rule,
+        // and `barbarian_hunt` was added to that one alone: INSTRUMENTED over
+        // four `ai_eval` pairs, the `BasicAi` block ran **zero** times for the
+        // `live` entrant, because the Advanced controller only falls through to
+        // it when `enemies` is already empty for other reasons. A gene wired
+        // into the copy nobody reaches is a no-op, and the eval said so —
+        // "nothing differed: all 24 maps were neutral on wins AND on terminal
+        // score". Both readings belong in both places.
         if let Some(barb) = g.barb_pid {
+            let camp_reading = BasicAi::barbarian_presence_at_home_with_camp_radius(
+                g,
+                pid,
+                crate::ai::HOME_CAMP_RADIUS,
+            );
+            // A raider standing over a Settler ten tiles out is outside every
+            // ring the camp reading measures. See `BasicAi::barbarian_hunt`.
+            let field_reading =
+                self.barbarian_hunt() && BasicAi::barbarian_threatens_our_field_civilians(g, pid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && BasicAi::barbarian_presence_at_home_with_camp_radius(
-                    g,
-                    pid,
-                    crate::ai::HOME_CAMP_RADIUS,
-                )
+                && (camp_reading || field_reading)
             {
                 enemies.push(barb);
             }

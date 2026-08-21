@@ -134,6 +134,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_target_hysteresis",
     "live_without_tally_great_people",
     "live_without_barbarian_scouts_are_scouts",
+    "live_without_barbarian_hunt",
     "live_without_camp_reach",
     "live_without_settler_stack_discipline",
     "live_without_camp_party",
@@ -417,6 +418,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-target-hysteresis",
     "tally-great-people",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "camp-reach",
     "settler-stack-discipline",
     "camp-party",
@@ -663,6 +665,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "civilian-rescue",
     "naval-recon",
     "camp-reach",
@@ -733,6 +736,7 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "civilian-rescue",
     "naval-recon",
     "camp-reach",
@@ -875,6 +879,7 @@ define_arm_kinds! {
     LiveWithoutSettlerTargetHysteresis => "live_without_settler_target_hysteresis",
     LiveWithoutTallyGreatPeople => "live_without_tally_great_people",
     LiveWithoutBarbarianScoutsAreScouts => "live_without_barbarian_scouts_are_scouts",
+    LiveWithoutBarbarianHunt => "live_without_barbarian_hunt",
     LiveWithoutCampReach => "live_without_camp_reach",
     LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
     LiveWithoutCampParty => "live_without_camp_party",
@@ -1248,9 +1253,34 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// gate: the market every participant recruits from is the same one. The
 /// anchor moves again, to **17,482 decisions and `0x8162_c919_b83c_40df`**.
 ///
+/// **v18 (2026-08-21) — a Barbarian Scout reports the WALKERS it sees, not
+/// only cities.** v16 gave each reported outpost a finite raiding party, but
+/// the report itself still accepted a city alone — so a camp's whole raid
+/// throughput was one Scout's round trip to a settlement, and an empire's
+/// Settlers, which is what a Civilization VI barbarian actually takes, could
+/// not start a raid at all.
+///
+/// MEASURED, `ai_eval live live_without_camp_reach`, 12 pairs / 72 seat-games
+/// an arm at 6p/150t/online on identical seeds: **0.22 civilians lost to
+/// barbarians per game**, against the live Civilization VI seat losing **8 of
+/// the 12 Settlers that ever walked, in 104 turns** (run
+/// civvis-20260821T130446Z) at a matching city count. Not an exposure
+/// difference — the opponent. Every arm this project has priced on settler
+/// safety was measured against a barbarian that did not hunt settlers, which
+/// is why the whole family reads neutral-to-harmful in `docs/gene_ledger.json`
+/// at 13,446 pairs apiece and ships off.
+///
+/// With the sighting extended, and with the raider pursuit of #2227 that this
+/// version follows, the same measurement reads **0.61**.
+///
+/// Like v16 this is a shared native-world rule with no controller gate — the
+/// Scout phase runs in `Game::barbarian_phase` and every participant faces the
+/// same camps. The anchor therefore moves again, to **18,596 decisions and
+/// `0xf78a_2b10_c0e3_5945`**.
+///
 /// Each of these is a rules correction, not a compatibility re-pin: rows from
-/// v15, v16 and v17 are not comparable.
-pub const ELO_PROTOCOL_VERSION: u32 = 17;
+/// v15, v16, v17 and v18 are not comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 18;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -4569,7 +4599,10 @@ impl ArmKind {
             Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
             Self::LiveWithoutSettlerTargetHysteresis => live_without("settler-target-hysteresis"),
             Self::LiveWithoutTallyGreatPeople => live_without("tally-great-people"),
-            Self::LiveWithoutBarbarianScoutsAreScouts => live_without("barbarian-scouts-are-scouts"),
+            Self::LiveWithoutBarbarianScoutsAreScouts => {
+                live_without("barbarian-scouts-are-scouts")
+            }
+            Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutCampReach => live_without("camp-reach"),
             Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
             Self::LiveWithoutCampParty => live_without("camp-party"),

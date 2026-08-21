@@ -1501,6 +1501,63 @@ class PeacetimeWarFloorsTest(unittest.TestCase):
         )
 
 
+class MeleeStrikeCarriesTheAttackModifierTest(unittest.TestCase):
+    """A melee ATTACK must be a MOVE_TO *with* the ATTACK modifier.
+
+    ⚠ WITHOUT THE MODIFIER THE ARMY SWINGS AT AIR AND NOTHING SAYS SO.
+    Measured over every control run this repository's seat has recorded:
+    8,828 melee ATTACK orders were issued and 89 combats came back — a 1.0%
+    landing rate — while RANGE_ATTACK, which needs no modifier, landed 520 of
+    841 (61.8%). On run civvis-20260821T130446Z the seat ordered 208 melee
+    attacks across 104 turns and fought ZERO of them; a barbarian Slinger held
+    (65,25) from t36 to t40 under an "attack" order every turn, and the empire
+    lost eight Settlers to raiders it never once hit.
+
+    Firaxis's shipped `Civ6Common.lua:RequestMoveOperation` sets
+    `PARAM_MODIFIERS = ATTACK + MOVE_IGNORE_UNEXPLORED_DESTINATION` before
+    requesting MOVE_TO. Without `ATTACK` the engine reads a plain move, the
+    pathfinder refuses to enter an occupied plot, and the unit walks next to
+    the target and stops -- while `CanStartOperation` answers TRUE, so
+    `operate` reports the order as given and no refusal is ever logged.
+    """
+
+    def _agent_source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_attack_verb_sets_param_modifiers_before_requesting_move_to(self) -> None:
+        source = self._agent_source()
+        block = source.split('if verb == "MOVE_TO" or verb == "ATTACK" then', 1)[1]
+        block = block.split('local moved = operate(', 1)[0]
+
+        self.assertIn("CivvisLedger.attackModifiers()", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers", block)
+        # The modifier belongs to ATTACK alone: a plain MOVE_TO that carried it
+        # would attack whatever happened to be standing on the destination.
+        guard = block.split('if verb == "ATTACK" then', 1)[1]
+        self.assertIn("PARAM_MODIFIERS", guard)
+
+    def test_the_modifier_resolves_the_shipped_pair_and_survives_their_absence(self) -> None:
+        source = self._agent_source()
+        helper = source.split("CivvisLedger.attackModifiers = function()", 1)[1]
+        helper = helper.split("CivvisLedger.strike = function", 1)[0]
+
+        self.assertIn("UnitOperationMoveModifiers.ATTACK", helper)
+        self.assertIn(
+            "UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION", helper
+        )
+        # An absent enum must send the historical parameter table, not throw on
+        # every attack for the rest of the game.
+        self.assertIn("if attack == nil then return nil; end", helper)
+        self.assertIn("if ignore == nil then return attack; end", helper)
+
+    def test_the_helper_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = self._agent_source()
+        self.assertIn("CivvisLedger.attackModifiers = function()", source)
+        self.assertNotIn("\nlocal attackModifiers", source)
+        self.assertNotIn("\nlocal function attackModifiers", source)
+
+
 class AgentChunkLocalLimitTest(unittest.TestCase):
     """The agent's main chunk must stay inside Lua's 200-local ceiling.
 
