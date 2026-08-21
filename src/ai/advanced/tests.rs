@@ -16500,7 +16500,11 @@ fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_g
     let mut control = game.clone();
     let mut off = AdvancedAi::new();
     off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
-    assert_eq!(apostles(&control), 0, "the shipped caps buy no Apostle off the offensive");
+    assert_eq!(
+        apostles(&control),
+        0,
+        "the shipped caps buy no Apostle off the offensive"
+    );
     assert_eq!(missionaries(&control), 1, "…a Missionary instead");
     assert_eq!(off.census.inquisition_apostles, 0);
 
@@ -16523,15 +16527,25 @@ fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_g
     assert!(saver.saving_faith_for_inquisition(&baseline, 0));
     saver.base.saving_faith_for_inquisition = true;
     saver.base.cities(&mut baseline, 0);
-    assert_eq!(missionaries(&baseline), 0, "the baseline does not spend the saved bank");
+    assert_eq!(
+        missionaries(&baseline),
+        0,
+        "the baseline does not spend the saved bank"
+    );
     let mut spender = game.clone();
     spender.players[0].faith = 300.0;
     let mut plain = AdvancedAi::new();
     plain.base.cities(&mut spender, 0);
-    assert_eq!(missionaries(&spender), 1, "without the gene the baseline buys its Missionary");
+    assert_eq!(
+        missionaries(&spender),
+        1,
+        "without the gene the baseline buys its Missionary"
+    );
     // Once the Inquisition is launched the gene has nothing left to do.
     let mut launched = game.clone();
-    launched.players[0].counters.insert("inquisition".to_string(), 1);
+    launched.players[0]
+        .counters
+        .insert("inquisition".to_string(), 1);
     let mut after = AdvancedAi::new();
     after.enable_inquisition_on_threat();
     after.religious_spending_with_reserve(&mut launched, 0, false, 80.0);
@@ -28759,7 +28773,12 @@ fn religion_genes_fires_check() {
         for ai in ais.iter().take(6) {
             census.absorb(&ai.strategy_census());
         }
-        let founders = game.players.iter().take(6).filter(|p| p.religion.is_some()).count();
+        let founders = game
+            .players
+            .iter()
+            .take(6)
+            .filter(|p| p.religion.is_some())
+            .count();
         let inquisitions = game
             .players
             .iter()

@@ -15140,7 +15140,11 @@ impl AdvancedAi {
         let mut candidates: Vec<u32> = city_ids
             .iter()
             .copied()
-            .filter(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")))
+            .filter(|cid| {
+                g.cities[cid]
+                    .districts
+                    .contains_key(crate::name!("holy_site"))
+            })
             .collect();
         candidates.sort_by_key(|cid| (Some(*cid) != holy_city, *cid));
         for building in ["shrine", "temple"] {
