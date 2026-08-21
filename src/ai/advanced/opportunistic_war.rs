@@ -28,7 +28,11 @@
 //!
 //! Off by default: `PRODUCTION_OPT_INS` row `opportunistic-war`. It ships
 //! into the genome unmeasured and stays off until a screen says it helps
-//! (`gene_ledger`); `gene_screen --genes opportunistic-war` prices it.
+//! (`gene_ledger`); `gene_screen --genes opportunistic-war` prices it. The
+//! pillage half is its own opt-in, `raid-pillage-prizes`: with it off a raid
+//! is priced and pursued on civilians alone (a soldier standing on an enemy
+//! improvement still pillages it), so one screen of both genes says whether
+//! the tiles are worth the wars they open.
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan};
 use crate::game::{Action, ActionFamilies, Game};
@@ -238,6 +242,9 @@ impl AdvancedAi {
                 }
             }
         }
+        if !self.raid_pillage_prizes {
+            return prizes;
+        }
         let tile_value = Self::pillage_prize_value(g);
         let explored = &g.players[pid].explored;
         for cid in g.player_city_ids(target) {
@@ -418,6 +425,17 @@ impl AdvancedAi {
         self.base.war_eve_liquidation(g, pid, &action);
         if g.apply(pid, &action).is_err() {
             return false;
+        }
+        // The seat's own record of the raids it opened, beside the engine's
+        // `captured:*` and `pillages` counters, so an evaluator row can
+        // report how often the gene fired and what it took.
+        for (key, count) in [
+            ("raid_wars", 1),
+            ("raid_prize:settler", settlers),
+            ("raid_prize:builder", builders),
+            ("raid_prize:pillage", pillage_tiles),
+        ] {
+            *g.players[pid].counters.entry(key.to_string()).or_insert(0) += count as i64;
         }
         self.raid_war = Some(RaidWar {
             target: opportunity.target,

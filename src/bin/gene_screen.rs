@@ -280,6 +280,22 @@ struct Row {
     /// paired. Empty in files written before the field existed.
     #[serde(default)]
     civ: String,
+    /// The war this seat chose and what it took: surprise wars the
+    /// `opportunistic-war` gene opened (`raid_wars`), Settlers and Builders
+    /// captured by entering their tile (`captured:*`), tiles and district
+    /// layers pillaged (`pillages`). A gene that fires in no game measures
+    /// nothing — these say whether it fired.
+    #[serde(default)]
+    raid_wars: i64,
+    #[serde(default)]
+    settlers_captured: i64,
+    #[serde(default)]
+    builders_captured: i64,
+    #[serde(default)]
+    pillages: i64,
+    /// Settlers counted as prizes at the raids' declarations.
+    #[serde(default)]
+    raid_settler_prizes: i64,
 }
 
 /// The first line of the JSONL file: the gene order every genome string is
@@ -540,6 +556,7 @@ fn row_for_seat(
                 .is_some_and(|faith| Some(faith) != religion.as_deref())
         })
         .count();
+    let counter = |key: &str| game.players[seat].counters.get(key).copied().unwrap_or(0);
     Row {
         kind: kind.to_string(),
         pair,
@@ -571,6 +588,11 @@ fn row_for_seat(
         techs: game.players[seat].techs.len(),
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
+        raid_wars: counter("raid_wars"),
+        settlers_captured: counter("captured:settler"),
+        builders_captured: counter("captured:builder"),
+        pillages: counter("pillages"),
+        raid_settler_prizes: counter("raid_prize:settler"),
     }
 }
 
@@ -2597,6 +2619,11 @@ mod tests {
                     techs: 0,
                     military: 0.0,
                     civ: String::new(),
+                    raid_wars: 0,
+                    settlers_captured: 0,
+                    builders_captured: 0,
+                    pillages: 0,
+                    raid_settler_prizes: 0,
                 });
             }
         }
@@ -2697,6 +2724,11 @@ mod tests {
                         techs: 0,
                         military: 0.0,
                         civ: String::new(),
+                        raid_wars: 0,
+                        settlers_captured: 0,
+                        builders_captured: 0,
+                        pillages: 0,
+                    raid_settler_prizes: 0,
                     });
                 }
                 pair += 1;
@@ -2844,6 +2876,11 @@ mod tests {
                         techs: 0,
                         military: 0.0,
                         civ: ["rome", "egypt", "greece", "china"][seat].into(),
+                        raid_wars: 0,
+                        settlers_captured: 0,
+                        builders_captured: 0,
+                        pillages: 0,
+                    raid_settler_prizes: 0,
                     });
                 }
             }
@@ -2887,6 +2924,11 @@ mod tests {
             techs: 40,
             military: 820.0,
             civ: "rome".into(),
+            raid_wars: 0,
+            settlers_captured: 0,
+            builders_captured: 0,
+            pillages: 0,
+                    raid_settler_prizes: 0,
         };
         let text = serde_json::to_string(&row).unwrap();
         let back: Row = serde_json::from_str(&text).unwrap();
@@ -3018,6 +3060,11 @@ mod tests {
                     techs: 0,
                     military: 0.0,
                     civ: String::new(),
+                    raid_wars: 0,
+                    settlers_captured: 0,
+                    builders_captured: 0,
+                    pillages: 0,
+                    raid_settler_prizes: 0,
                 });
             }
         }

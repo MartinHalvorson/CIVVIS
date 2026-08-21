@@ -3661,6 +3661,12 @@ pub struct AdvancedAi {
     /// once nothing is left in reach. Off everywhere by default; opt-in gene
     /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
     pub opportunistic_war: bool,
+    /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
+    /// improvements and districts within reach as prizes, and walk raiding
+    /// soldiers to them. Off, a raid is priced on civilians alone. Its own
+    /// opt-in gene, `raid-pillage-prizes`, so the screen prices the tiles
+    /// apart from the Settlers; inert unless `opportunistic_war` is on.
+    pub raid_pillage_prizes: bool,
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
 
@@ -4693,6 +4699,7 @@ impl AdvancedAi {
             theology_for_founders: false,
             idle_faith_patronage: false,
             opportunistic_war: false,
+            raid_pillage_prizes: false,
             raid_war: None,
             diplomatic_opening: false,
             envoy_priority: false,

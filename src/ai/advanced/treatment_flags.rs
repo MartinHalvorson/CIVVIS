@@ -128,6 +128,18 @@ impl AdvancedAi {
         self.raid_war = None;
     }
 
+    /// Count a neighbour's unpillaged tiles within reach as raid prizes and
+    /// send raiding soldiers to them. See [`AdvancedAi::raid_pillage_prizes`].
+    /// Opt-in gene; inert unless `opportunistic_war` is on.
+    pub fn enable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = true;
+    }
+
+    /// The twin of `enable_raid_pillage_prizes`.
+    pub fn disable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair

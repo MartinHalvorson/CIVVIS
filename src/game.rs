@@ -35263,6 +35263,14 @@ impl Game {
                 if mover_is_barbarian {
                     bump(&mut self.players[old], "civilians_lost_to_barbarians");
                 }
+                // `captured:settler` / `captured:builder`: how many of each
+                // this seat has taken from a rival by entering their tile;
+                // `rescued:*` is the same take from a barbarian that had
+                // taken it first. An evaluator row can say whether a raid
+                // ever paid, not only that it was declared.
+                let from_barbarian = self.players[old].is_barbarian;
+                let key = if from_barbarian { "rescued" } else { "captured" };
+                bump(&mut self.players[owner], &format!("{key}:{kind}"));
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 let old = self.units[&oid].owner;
@@ -36759,6 +36767,10 @@ impl Game {
         if !self.pillageable_at(pid, pos) {
             return Err("nothing pillageable there".into());
         }
+        // `pillages`: tiles and district layers this seat has pillaged,
+        // barbarian camps included. The same evaluator reading as the
+        // capture counters above.
+        bump(&mut self.players[pid], "pillages");
         let enemy = self.map.tiles[&pos]
             .owner_city
             .and_then(|city| self.cities.get(&city))

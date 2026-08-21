@@ -197,4 +197,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Settler or Builder, a cluster of unpillaged tiles — taken by movement
     // and closed by peace; see `AdvancedAi::opportunistic_war`.
     ("opportunistic_war", "opportunistic-war", AdvancedAi::enable_opportunistic_war),
+    // The pillage half of the raid, priced apart: inert unless the row
+    // above is on. See `AdvancedAi::raid_pillage_prizes`.
+    ("raid_pillage_prizes", "raid-pillage-prizes", AdvancedAi::enable_raid_pillage_prizes),
 ];
