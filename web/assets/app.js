@@ -9181,13 +9181,18 @@ function drawNaturalWonderPerimeters(tiles) {
 // then a square — so the count reads from silhouette before a player has to
 // inspect it. Five signs would obscure the tile, so five-or-more becomes one
 // deliberately larger, numbered sign instead.
-const YPIP = { food:"#4f9c30", production:"#c8762b", gold:"#dcae2b",
-               science:"#3f9ed4", culture:"#9a5ccb", faith:"#d6cfbb" };
+// Keep Civ's familiar yield colour families, but turn up their chroma so the
+// strategic layer reads immediately against terrain, fog, and ownership paint.
+const YPIP = { food:"#69e64f", production:"#ff8b3d", gold:"#ffda3b",
+               science:"#36cfff", culture:"#ca74ff", faith:"#f6e5a8" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
                science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
 // The charcoal rim ties a same-yield stack together without making it read
 // like a row of separate black tokens.
 const YIELD_PIP_RIM = .58;
+// Place the visual centre below the tile's midpoint, measured from its top
+// point to bottom point. This preserves the same seat on flat and globe maps.
+const STRATEGIC_YIELD_CENTER_FRACTION = .60;
 // The material row is the first row a player reads. Extra yield kinds make a
 // second row directly above it, preserving the requested Food → Faith order.
 const YIELD_ROWS = [
@@ -9331,6 +9336,12 @@ function yieldPipLayout(yields, baseR) {
   return yieldPipRows(yields, r);
 }
 
+function strategicYieldCenterY(y) {
+  const tileTop = y - S * YS;
+  const tileHeight = S * YS * 2;
+  return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;
+}
+
 // The tiny signs borrow Civ's familiar six silhouettes rather than browser
 // emoji, whose colour-font rendering would turn a strategic layer into a row
 // of inconsistent stickers.  Colour remains the fast first cue; the white
@@ -9447,7 +9458,7 @@ function drawTileYields(t, x, y, worked) {
   const rowGap = 2.7 * r / 4.4;
   const totalHeight = visualRows.reduce((height, row, index) => height + row.height +
     (index ? rowGap : 0), 0);
-  let top = y + 9 - totalHeight / 2;
+  let top = strategicYieldCenterY(y) - totalHeight / 2;
   cx.save();
   for (const row of visualRows) {
     let px = x - row.width / 2;
