@@ -3365,10 +3365,10 @@ pub struct AdvancedAi {
     /// `settler_walk_census` measured the deployment genome walking a mean of
     /// 7.3 turns per founding on the screen's 6-player map, with the long tail
     /// re-picking its site several times. Under this gene every turn of the
-    /// route costs `SETTLE_SOONER_TURN_PRICE` more, and that price doubles
-    /// every `SETTLE_SOONER_PATIENCE` standard turns the Settler has already
-    /// spent walking, so a Settler that keeps re-picking converges on the
-    /// nearest sound site instead of wandering. A really good site still wins
+    /// route costs `SETTLE_SOONER_TURN_PRICE` more, and that price adds another
+    /// base price for every `SETTLE_SOONER_PATIENCE` standard turns the Settler
+    /// has already spent walking, so a Settler that keeps re-picking converges
+    /// on the nearest sound site instead of wandering. A really good site still wins
     /// a long walk: the price is linear in turns, never a cap. Native,
     /// off-by-default gene priced through `PRODUCTION_OPT_INS`.
     pub settle_sooner: bool,
@@ -22170,7 +22170,7 @@ impl AdvancedAi {
 
     /// The price of one turn of this Settler's walk and the Settler's own
     /// pace, under `settle_sooner`; `None` when the gene is off. The price
-    /// is `SETTLE_SOONER_TURN_PRICE`, doubled for every
+    /// begins at `SETTLE_SOONER_TURN_PRICE` and adds that base price for every
     /// `SETTLE_SOONER_PATIENCE` standard turns the Settler has already been
     /// walking (`settler_walk_started`, stamped by `advanced_settler_step`).
     fn settle_sooner_walk_price(&self, g: &Game, uid: u32) -> Option<(f64, f64)> {
