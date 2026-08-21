@@ -189,4 +189,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // A target can be excellent while a visible hostile makes its next route
+    // step unsafe. This holds that corridor aside briefly and sends the
+    // Settler to the best safe runner-up; see `settler_threat_detour`.
+    ("settler_threat_detour", "settler-threat-detour", AdvancedAi::enable_settler_threat_detour),
 ];

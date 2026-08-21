@@ -1909,6 +1909,17 @@ impl AdvancedAi {
         self.settler_target_hysteresis = false;
     }
 
+    /// Let a Settler switch to the best safe alternate when a visible threat
+    /// blocks the next step toward an otherwise sound settlement site. See
+    /// `settler_threat_detour`.
+    pub fn enable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = true;
+    }
+
+    pub fn disable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {
