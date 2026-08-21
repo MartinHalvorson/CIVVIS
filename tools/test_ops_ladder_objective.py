@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -189,6 +190,72 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                                       capture_output=True, text=True, check=True)
                 words = [word for word in done.stdout.split("\n") if word]
                 self.assertEqual(words, expected)
+
+    def test_the_installed_supervisor_forwards_a_named_ledger_force_on_or_file_as_words(self):
+        """A force-on arm stays explicit through either approved control path.
+
+        The deployment genome withholds an unresolved gene by default.  The
+        supervisor is the only safe owner of this host's Civ VI slot, so it
+        must be able to pass the deliberately named `--with` verification arm
+        through as repeated argv words rather than silently leaving a force-on
+        experiment impossible to schedule.  The GUI host cannot change its
+        inherited environment during a long-running session, so an absent-by-
+        default batch file is the second path; its value must be the same arm
+        and a disagreement fails closed before a game can launch.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("FORCED_ENV=${CIVVIS_WITH:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${WITH_ARGS[@]}"', source[invocation_start:invocation_end])
+        self.assertIn("resolve_forced_arm", gate)
+        resolve_call = source.index("if ! resolve_forced_arm;")
+        build_call = source.index("if ! cargo build --release --bin civvis_orders")
+        self.assertLess(resolve_call, build_call,
+                        "the arm must be resolved before this batch can build or launch")
+        script = (
+            "say() { :; }\n" + gate
+            + '\nresolve_forced_arm || exit $?\n'
+            + 'for word in "${WITH_ARGS[@]}"; do print -r -- "$word"; done\n'
+        )
+        for env_arm, file_arm, expected in (
+            (None, None, []),
+            (None, "", []),
+            ("amenity-project-preemption", None,
+             ["--with", "amenity-project-preemption"]),
+            (None, "amenity-project-preemption",
+             ["--with", "amenity-project-preemption"]),
+            ("amenity-project-preemption",
+             "amenity-project-preemption,idle-walkers-close-the-pipeline",
+             None),
+            ("amenity-project-preemption,idle-walkers-close-the-pipeline",
+             "amenity-project-preemption,idle-walkers-close-the-pipeline",
+             ["--with", "amenity-project-preemption",
+              "--with", "idle-walkers-close-the-pipeline"]),
+            (None, "amenity-project-preemption\nidle-walkers-close-the-pipeline", None),
+        ):
+            with self.subTest(env_arm=env_arm, file_arm=file_arm):
+                with tempfile.TemporaryDirectory() as directory:
+                    force_file = Path(directory) / "force-on"
+                    if file_arm is not None:
+                        force_file.write_text(file_arm)
+                    env = {key: value for key, value in os.environ.items()
+                           if not key.startswith("CIVVIS_")}
+                    env["CIVVIS_WITH_FILE"] = str(force_file)
+                    if env_arm is not None:
+                        env["CIVVIS_WITH"] = env_arm
+                    done = subprocess.run(["zsh", "-c", script], env=env,
+                                          capture_output=True, text=True)
+                    if expected is None:
+                        self.assertNotEqual(done.returncode, 0, done.stderr)
+                    else:
+                        self.assertEqual(done.returncode, 0, done.stderr)
+                        words = [word for word in done.stdout.split("\n") if word]
+                        self.assertEqual(words, expected)
 
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
