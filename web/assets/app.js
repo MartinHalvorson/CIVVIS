@@ -8843,53 +8843,59 @@ function drawStrategicMarsh(x, y) {
   cx.restore();
 }
 
-// Floodplains belong to a river, so their strategic mark follows the river
-// sides of this tile instead of floating as three generic waves in its centre.
-// The paired inset bands read as a broad overflow margin while leaving the
-// ground colour visible — especially important for the three floodplain biomes.
-// A fine navy keyline keeps both bands legible against grassland, plains and
-// desert without giving them the visual weight of the river itself.
-const FLOODPLAIN_KEYLINE_COLOR = "#123d58";
-const FLOODPLAIN_KEYLINE_GROWTH = 1.3;
-const FLOODPLAIN_BANDS = [
-  [.67, "#4b94b1", 1.9],
-  [.45, "#91cfdb", 1.25],
+// Civ VI's floodplain mark is a small scatter of shallow pools, each carrying
+// a little fallen debris, rather than an extra stripe that competes with the
+// river itself. The wide layout leaves enough of the cluster visible beside a
+// unit token while its dark rims keep it readable over all three floodplain
+// biomes.
+const FLOODPLAIN_WATER = "#5bafd0";
+const FLOODPLAIN_WATER_HIGHLIGHT = "#c5eef0";
+const FLOODPLAIN_RIM = "#173e57";
+const FLOODPLAIN_DEBRIS_RIM = "#2e2820";
+const FLOODPLAIN_DEBRIS = "#765231";
+const FLOODPLAIN_POOLS = [
+  [-9.4, -7.4, 6.1, 2.7, -.18,  .22],
+  [ 4.2, -7.8, 5.5, 2.5,  .14, -.28],
+  [10.5,  1.5, 4.7, 2.2, -.20,  .18],
+  [-9.8,  2.9, 5.5, 2.6,  .13, -.20],
+  [ 0.1,  8.0, 6.2, 2.8, -.18,  .24],
 ];
 
-function strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale = 1) {
-  cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
-  cx.strokeStyle = FLOODPLAIN_KEYLINE_COLOR;
-  cx.lineWidth = (width + FLOODPLAIN_KEYLINE_GROWTH) * scale;
-  cx.stroke();
-  cx.strokeStyle = color; cx.lineWidth = width * scale;
-  cx.stroke();
-}
-
-function drawStrategicFloodplains(t, x, y) {
-  const riverSides = [];
-  for (let side = 0; side < 6; side++) {
-    if (t.river_edges?.[side]) riverSides.push(side);
-  }
-  // Imported or old observations can identify the feature without carrying
-  // edge metadata. Give those tiles one stable bank rather than reverting to
-  // a centred symbol that means something different.
-  if (!riverSides.length)
-    riverSides.push(Math.floor(hash2(t.pos[0] * 31 + 5, t.pos[1] * 37 + 9) * 6));
-
+function drawFloodplainPoolCluster(x, y, scale = 1) {
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-  for (const side of riverSides) {
-    const [first, second] = EDGE_CORNERS[side];
-    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
-      const [ax, ay] = corner(x, y, S * radius, first);
-      const [bx, by] = corner(x, y, S * radius, second);
-      const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      strokeFloodplainBand(ax, ay,
-        mx + (mx - x) * .12, my + (my - y) * .12,
-        bx, by, color, width);
-    }
+  for (const [ox, oy, baseRx, baseRy, angle, debrisAngle] of FLOODPLAIN_POOLS) {
+    const px = x + ox * scale, py = y + oy * scale;
+    const rx = baseRx * scale, ry = baseRy * scale;
+    cx.fillStyle = FLOODPLAIN_WATER;
+    cx.strokeStyle = FLOODPLAIN_RIM;
+    cx.lineWidth = 1.3 * scale;
+    cx.beginPath(); cx.ellipse(px, py, rx, ry, angle, 0, Math.PI * 2);
+    cx.fill(); cx.stroke();
+
+    // A short pale crescent gives every tiny pool a water surface at survey
+    // zoom without filling it with texture.
+    cx.strokeStyle = FLOODPLAIN_WATER_HIGHLIGHT;
+    cx.lineWidth = .68 * scale;
+    cx.beginPath();
+    cx.ellipse(px - rx * .12, py - ry * .08, rx * .6, ry * .55, angle,
+               Math.PI * .86, Math.PI * 1.72);
+    cx.stroke();
+
+    const half = rx * .42;
+    const dx = Math.cos(debrisAngle) * half, dy = Math.sin(debrisAngle) * half;
+    cx.strokeStyle = FLOODPLAIN_DEBRIS_RIM;
+    cx.lineWidth = 1.45 * scale;
+    cx.beginPath(); cx.moveTo(px - dx, py - dy); cx.lineTo(px + dx, py + dy); cx.stroke();
+    cx.strokeStyle = FLOODPLAIN_DEBRIS;
+    cx.lineWidth = .7 * scale;
+    cx.beginPath(); cx.moveTo(px - dx, py - dy); cx.lineTo(px + dx, py + dy); cx.stroke();
   }
   cx.restore();
+}
+
+function drawStrategicFloodplains(_t, x, y) {
+  drawFloodplainPoolCluster(x, y);
 }
 
 // A strategic unit can fill most of its cell at survey zoom, so a small
@@ -18293,29 +18299,12 @@ function drawPlanetNaturalWonder(placement, visible, spectator) {
 }
 
 function drawPlanetStrategicFloodplains(entry, visible, spectator) {
-  const {tile, cell, points, center} = entry;
-  const riverSides = [];
-  for (let side = 0; side < points.length; side++) {
-    if (tile.river_edges?.[side]) riverSides.push(side);
-  }
-  if (!riverSides.length)
-    riverSides.push(Math.floor(hash2(tile.pos[0] * 31 + 5, tile.pos[1] * 37 + 9) * points.length));
+  const {points, center} = entry;
   const scale = planetStrategicScale(entry);
   cx.save();
   planetPath(cx, points); cx.clip();
   cx.globalAlpha *= planetStrategicAlpha(entry, visible, spectator);
-  cx.lineCap = "round"; cx.lineJoin = "round";
-  for (const side of riverSides) {
-    const a = points[side], b = points[(side + 1) % points.length];
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
-      const inset = 1 - radius;
-      const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
-      const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
-      const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
-      strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale);
-    }
-  }
+  drawFloodplainPoolCluster(center.x, center.y, scale);
   cx.restore();
 }
 
