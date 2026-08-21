@@ -15968,6 +15968,95 @@ fn bread_and_circuses_value_tracks_real_loyalty_need() {
     );
 }
 
+/// ★★★★ A THOUSAND FAITH THAT NOTHING CAN SPEND. A seat with no religion and
+/// a bank of 900 Faith, forty percent of the way to a Scientist: the shipped
+/// gate buys only a person 85% earned, so the Faith sits; with
+/// `idle_faith_patronage` the Faith buys the Scientist outright. Gold keeps
+/// its gate, a founder keeps its Faith, and a bank under 600 is not idle.
+#[test]
+fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
+    let mut game = Game::new(2, 24, 16, 7_102, 200, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    let campus = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&city].pos)
+        .unwrap();
+    game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("campus"), campus);
+    let cost = game.gp_cost(0, "scientist");
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost * 0.4);
+    game.players[0].religion = None;
+    game.players[0].gold = 0.0;
+    game.players[0].faith = 900.0;
+    let claimed = |game: &Game| {
+        game.players[0]
+            .gp_claimed
+            .get("scientist")
+            .copied()
+            .unwrap_or(0)
+    };
+
+    let mut stock = game.clone();
+    AdvancedAi::new().advanced_great_people(&mut stock, 0, GrandStrategy::Expansion);
+    assert_eq!(claimed(&stock), 0, "the shipped gate leaves a 40% race alone");
+    assert_eq!(stock.players[0].faith, 900.0);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_idle_faith_patronage();
+    let mut idle = game.clone();
+    ai.advanced_great_people(&mut idle, 0, GrandStrategy::Expansion);
+    assert_eq!(claimed(&idle), 1, "idle Faith buys the Scientist");
+    assert!(idle.players[0].faith < 900.0, "…with Faith");
+
+    // A founder's Faith is not idle.
+    let mut founder = game.clone();
+    founder.players[0].religion = Some("Our Faith".to_string());
+    ai.advanced_great_people(&mut founder, 0, GrandStrategy::Expansion);
+    assert_eq!(claimed(&founder), 0);
+    // Under 600 the bank is not idle either.
+    let mut thin = game.clone();
+    thin.players[0].faith = 500.0;
+    ai.advanced_great_people(&mut thin, 0, GrandStrategy::Expansion);
+    assert_eq!(claimed(&thin), 0);
+    // Gold keeps its gate even with the gene on.
+    let mut rich = game.clone();
+    rich.players[0].faith = 0.0;
+    rich.players[0].gold = 5_000.0;
+    ai.advanced_great_people(&mut rich, 0, GrandStrategy::Expansion);
+    assert_eq!(claimed(&rich), 0, "gold does not buy a 40% race");
+}
+
+/// The gene is an opt-in: off in every bundle, flippable by name, in
+/// `PRODUCTION_OPT_INS`.
+#[test]
+fn idle_faith_patronage_is_a_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.idle_faith_patronage);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "idle-faith-patronage")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.idle_faith_patronage);
+    ai.disable_idle_faith_patronage();
+    assert!(!ai.idle_faith_patronage);
+}
+
 #[test]
 fn great_person_patronage_buys_close_strategy_races_without_spending_the_reserve() {
     let mut game = Game::new(2, 24, 16, 7_102, 200, 0);
