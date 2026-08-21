@@ -14274,7 +14274,37 @@ impl BasicAi {
         uid: u32,
         decline_settlers: bool,
     ) -> bool {
-        if !self.civilian_rescue || g.rules.units[g.units[&uid].kind].class != "military" {
+        // ★★★★★ THE BARBARIANS IN THIS ENGINE DO NOT HUNT CIVILIANS, AND THE
+        // ONES IN CIVILIZATION VI DO NOTHING ELSE.
+        //
+        // MEASURED, `ai_eval live live_without_camp_reach`, 6 pairs / 36
+        // seat-games each, 6 players, 150 turns, online speed:
+        // **civilians lost to barbarians 0.31 and 0.25 per game**. The live
+        // Civilization VI seat on the same shape lost **8 Settlers and 2
+        // Builders in 104 turns** on run civvis-20260821T130446Z and **4 and 4
+        // by turn 62** on civvis-20260821T133955Z. That is a factor of roughly
+        // THIRTY, and it is a fidelity bug rather than a tuning question: an
+        // undefended Settler is the single most valuable thing on a
+        // Civilization VI map and the barbarian AI beelines for it.
+        //
+        // The cause is this gate. `capture_adjacent_civilian` is ungated, so a
+        // barbarian takes a Settler that happens to end its turn next to one —
+        // an accident. The PURSUIT, which is what actually costs the empire its
+        // walkers, was gated behind `civilian_rescue`, a flag the barbarian
+        // seat never carries (`BasicAi::new()` ships it off and the barbarian
+        // controller is a `BasicAi`). So raiders marched at the camp's reported
+        // CITY and walked past Settlers on the road.
+        //
+        // ⚠ THIS CHANGES EVERY SIMULATED GAME, deliberately. Any measurement
+        // that priced a settler-protection treatment before this date was
+        // pricing it against an opponent that did not take settlers, and read
+        // as noise for that reason. The raid leash still applies below, so this
+        // is a barbarian that hunts what is in its own raid ring, not one that
+        // chases a walker across the map.
+        let barbarian_hunter = self.barb && self.barbarian_tactics;
+        if (!self.civilian_rescue && !barbarian_hunter)
+            || g.rules.units[g.units[&uid].kind].class != "military"
+        {
             return false;
         }
         let origin = g.units[&uid].pos;
@@ -14315,6 +14345,12 @@ impl BasicAi {
                 }
                 let distance = g.wdist(origin, other.pos);
                 if distance < 2 || distance > reach {
+                    return None;
+                }
+                // The raid ring is what keeps a successful raid from becoming
+                // an all-map chase; a hunted civilian is not an exemption from
+                // it. See `barbarian_target_allowed_for_controller`.
+                if !self.barbarian_target_allowed_for_controller(g, uid, other.pos) {
                     return None;
                 }
                 // A civilian standing under an enemy military unit cannot be
@@ -19059,6 +19095,82 @@ mod tests {
             Some((pid, Action::Pillage { unit })) if *pid == barb && *unit == raider
         ));
         assert!(g.map.tiles[&raid_tile].pillaged);
+    }
+
+    /// ★★★★★ THE BARBARIANS DID NOT TAKE SETTLERS AND THE LIVE SEAT KEPT
+    /// LOSING THEM.
+    ///
+    /// MEASURED before this change, `ai_eval live live_without_camp_reach`,
+    /// 36 seat-games an arm, 6 players, 150 turns, online speed: **0.31 and
+    /// 0.25 civilians lost to barbarians per game**. The live Civilization VI
+    /// seat lost **eight Settlers and two Builders in 104 turns** on run
+    /// civvis-20260821T130446Z. A simulation thirty times gentler than the
+    /// thing it models cannot price a settler-protection treatment at all —
+    /// the effect is smaller than the noise by construction.
+    ///
+    /// `capture_adjacent_civilian` was ungated, so a raider took a Settler it
+    /// happened to end its turn beside. The PURSUIT — walking to one two or
+    /// three tiles off, which is what actually costs an empire its walkers —
+    /// sat behind `civilian_rescue`, and the barbarian seat is a `BasicAi`
+    /// that never carries it.
+    #[test]
+    fn a_barbarian_walks_to_an_undefended_settler_inside_its_raid_ring() {
+        let take = |tactics: bool| -> bool {
+            let (mut g, city, raider) = barbarian_at_the_gates_game(84);
+            let barb = g.units[&raider].owner;
+            let cpos = g.cities[&city].pos;
+            let home = g.units[&raider].pos;
+            // The camp that owns this raider, so the leash below is satisfied
+            // and the walk is a raid rather than an all-map chase.
+            g.barb_camps.insert(home, g.turn + 1_000);
+            g.barb_raider_homes.insert(raider, home);
+            let road = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| {
+                    g.wdist(*pos, home) == 2
+                        && g.wdist(*pos, cpos) > 1
+                        && g.map.get(*pos).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                        && g.units_at(*pos).is_empty()
+                        && g.city_at(*pos).is_none()
+                })
+                .min()
+                .expect("open ground two tiles from the raider");
+            let settler = g.spawn_test_unit("settler", 0, road);
+            let mut ai = BasicAi::new();
+            ai.barb = true;
+            ai.barbarian_tactics = tactics;
+            // Seat-turns, not forced `current` writes: the walk is one step per
+            // call and a unit only gets its movement back when the turn really
+            // comes round to it. Six is three world turns for a two-seat board,
+            // ample for a two-tile approach.
+            for _ in 0..6 {
+                let pid = g.current;
+                if pid == barb {
+                    ai.take_turn(&mut g, barb);
+                    if g.units.get(&settler).is_some_and(|unit| unit.owner == barb) {
+                        return true;
+                    }
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            false
+        };
+        assert!(
+            take(true),
+            "a barbarian two tiles from an undefended Settler must walk onto it"
+        );
+        assert!(
+            !take(false),
+            "and it must still be the barbarian tactics that decide it, so the \
+             frozen no-tactics controller plays the game it always did"
+        );
     }
 
     #[test]
