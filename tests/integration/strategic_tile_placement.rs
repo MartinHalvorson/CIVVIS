@@ -40,6 +40,27 @@ fn strategic_improvements_use_the_tile_centre_in_both_renderers() {
 }
 
 #[test]
+fn coastal_cliffs_are_unmistakable_escarpments_in_both_strategic_views() {
+    let cliffs = function_source("function drawCliffEscarpments");
+
+    // A thin shoreline ribbon is not enough to communicate that this edge is
+    // impassable. The mark needs a substantial face, an outlined pale crest,
+    // and fractures that make its vertical drop legible at map zoom.
+    assert!(cliffs.contains("const depth = 14.5 * scale;"));
+    assert!(cliffs.contains("const foot = depth * 1.18;"));
+    assert!(cliffs.contains("cx.strokeStyle = \"#211914\";"));
+    assert!(cliffs.contains("cx.strokeStyle = \"#f2d79c\";"));
+    assert!(cliffs.contains("[[.19, -.34], [.50, .24], [.81, -.27]]"));
+
+    let planet = function_source("function drawPlanetStrategicCliffs");
+    assert!(planet.contains("drawCliffEscarpments(groups.byWeight.values());"));
+    assert!(
+        INDEX.contains("drawCliffEscarpments([{cliffs: cliffEscarpments, weight:1, alpha:1}]);"),
+        "the flat strategic renderer must use the same clear cliff vocabulary"
+    );
+}
+
+#[test]
 fn feitoria_has_a_distinct_coastal_trading_post_marker() {
     let painter = function_source("function paintImprovementMarker");
     let feitoria = painter
