@@ -190,6 +190,42 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                 words = [word for word in done.stdout.split("\n") if word]
                 self.assertEqual(words, expected)
 
+    def test_the_installed_supervisor_forwards_a_named_ledger_force_on_as_words(self):
+        """A forced arm stays explicit from the supervisor to the decider.
+
+        The deployment genome withholds an unresolved gene by default.  The
+        supervisor is the only safe owner of this host's Civ VI slot, so it
+        must be able to pass the deliberately named `--with` verification arm
+        through as repeated argv words rather than silently leaving a force-on
+        experiment impossible to schedule.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("FORCED=${CIVVIS_WITH:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${WITH_ARGS[@]}"', source[invocation_start:invocation_end])
+        script = gate + '\nfor word in "${WITH_ARGS[@]}"; do print -r -- "$word"; done\n'
+        for raw, expected in (
+            (None, []),
+            ("amenity-project-preemption", ["--with", "amenity-project-preemption"]),
+            ("amenity-project-preemption,idle-walkers-close-the-pipeline",
+             ["--with", "amenity-project-preemption",
+              "--with", "idle-walkers-close-the-pipeline"]),
+        ):
+            with self.subTest(raw=raw):
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("CIVVIS_")}
+                if raw is not None:
+                    env["CIVVIS_WITH"] = raw
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True, check=True)
+                words = [word for word in done.stdout.split("\n") if word]
+                self.assertEqual(words, expected)
+
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("civ6_ladder_policy.py", source)

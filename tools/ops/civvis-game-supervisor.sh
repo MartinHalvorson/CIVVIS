@@ -61,6 +61,20 @@ if [[ -n "$WITHHELD" ]]; then
     WITHOUT_ARGS+=(--without "$treatment")
   done
 fi
+# `CIVVIS_WITH` is the matching explicit verification gate for a ledger-held
+# live treatment.  Unlike `CIVVIS_WITHOUT`, it cannot change deployment: the
+# decider accepts only a named treatment that the gene ledger has withheld,
+# and records the forced list in every run's genome event and ladder row.
+# Keep it empty in ordinary operation; a comma-separated value (for example
+# `amenity-project-preemption`) is a labeled force-on arm, not a promotion.
+FORCED=${CIVVIS_WITH:-}
+WITH_ARGS=()
+if [[ -n "$FORCED" ]]; then
+  for treatment in ${(s:,:)FORCED}; do
+    [[ -n "$treatment" ]] || continue
+    WITH_ARGS+=(--with "$treatment")
+  done
+fi
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -110,7 +124,7 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, pinfile=$PINFILE)"
+say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, forced=${FORCED:-none}, pinfile=$PINFILE)"
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -427,6 +441,7 @@ while true; do
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
       "${WITHOUT_ARGS[@]}" \
+      "${WITH_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
