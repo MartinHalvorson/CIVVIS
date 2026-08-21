@@ -467,7 +467,7 @@ const HARBOR_DISTRICT_OUTLINE = "#cbad73";
 const districtOutlineColor = (district, fallback = "#101716") =>
   DISTRICT_FAMILY[district] === "harbor" ? HARBOR_DISTRICT_OUTLINE : fallback;
 // Text yields — tooltips and the sidebar, where a yield is a word in a line
-// rather than a mark on the map. The map's numbered-marker palette lives with
+// rather than a mark on the map. The map's strategic-pip palette lives with
 // `drawTileYields`.
 const YICON = { food:"🍞", production:"⚙️", gold:"🪙", science:"🔬",
                 culture:"🎭", faith:"✡" };
@@ -9174,18 +9174,20 @@ function drawNaturalWonderPerimeters(tiles) {
 // ---------------------------------------------------------------- tile yields
 //
 // Civ's strategic map reads a tile as a little bundle of yield signs: two
-// Food means two Food signs, not a Food sign carrying a "2".  That is quicker
-// to scan when choosing a settle or a worked plot, and the amount still holds
-// at a glance when a tile gets unusually rich.  Knowledge stays above material
-// in the same stable order as before, while small gaps between kinds make each
-// run legible without spending a label on it.
+// Food means two Food signs, not a Food sign carrying a "2". Keep those
+// bundles in the base game's compact formations — a vertical pair, a triangle,
+// then a square — so the count reads from silhouette before a player has to
+// inspect it. Five signs would obscure the tile, so five-or-more becomes one
+// deliberately larger, numbered sign instead.
 const YPIP = { food:"#4f9c30", production:"#c8762b", gold:"#dcae2b",
                science:"#3f9ed4", culture:"#9a5ccb", faith:"#d6cfbb" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
                science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
+// The material row is the first row a player reads. Extra yield kinds make a
+// second row directly above it, preserving the requested Food → Faith order.
 const YIELD_ROWS = [
-  ["science", "culture", "faith"],
   ["food", "production", "gold"],
+  ["science", "culture", "faith"],
 ];
 // Hover details follow the reading order requested for the single, compact
 // yield row. The colours and pips are exactly the map renderer's YPIP/YINK
@@ -9233,37 +9235,90 @@ function tileDetailYieldWords(yields, sign = false) {
     .join(" ");
 }
 
-function yieldPipRuns(yields, kinds) {
-  return kinds.map(kind => ({kind, pips:yieldPipParts(kind, yields?.[kind])}))
-    .filter(run => run.pips.length);
+// One to four pips form the small, instantly-recognisable Civ-style stacks.
+// The distance includes a hairline of breathing room so adjacent marks remain
+// separately countable instead of touching into an opaque blob.
+function yieldPipOffsets(count, r) {
+  const gap = 1.15 * r / 4.4;
+  // Measure from the dark rim, not just the coloured fill, so the visible
+  // circles retain a deliberate breathing gap at every zoom level.
+  const step = (r + 1.05) * 2 + gap;
+  if (count === 2) return [[0, -step / 2], [0, step / 2]];
+  if (count === 3) {
+    const top = -step / Math.sqrt(3), bottom = step / (2 * Math.sqrt(3));
+    return [[0, top], [-step / 2, bottom], [step / 2, bottom]];
+  }
+  if (count === 4) return [
+    [-step / 2, -step / 2], [step / 2, -step / 2],
+    [-step / 2, step / 2], [step / 2, step / 2],
+  ];
+  return [[0, 0]];
 }
 
-// Keep a rich tile compact enough to remain inside its hex, but never exchange
-// its additional yield for a numeral.  A six-Food tile simply gains another
-// short line of Food signs — an intentional visual signal that it is special.
-function yieldPipLines(runs, r) {
-  const diameter = r * 2;
-  const scale = r / 4.4;
-  const pipGap = 1.35 * scale, kindGap = 3 * scale;
+function yieldPipCluster(kind, amount, r) {
+  const pips = yieldPipParts(kind, amount);
+  if (!pips.length) return null;
+  // A partial fifth sign would be no clearer than a fifth full one. Collapse
+  // it too, but retain the exact value in the oversized label.
+  const summary = pips.length >= 5;
+  const iconR = summary ? r * 1.7 : r;
+  const label = summary ? fmtYield(Number(amount)) : "";
+  const signs = (summary ? [[0, 0]] : yieldPipOffsets(pips.length, r))
+    .map(([x, y], index) => ({
+      kind, x, y, r:iconR,
+      portion:summary ? 1 : pips[index].portion,
+      label,
+    }));
+  const edge = sign => sign.r + 1.05;
+  const minX = Math.min(...signs.map(sign => sign.x - edge(sign)));
+  const maxX = Math.max(...signs.map(sign => sign.x + edge(sign)));
+  const minY = Math.min(...signs.map(sign => sign.y - edge(sign)));
+  const maxY = Math.max(...signs.map(sign => sign.y + edge(sign)));
+  const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+  return {
+    kind,
+    signs:signs.map(sign => ({...sign, x:sign.x - centerX, y:sign.y - centerY})),
+    width:maxX - minX,
+    height:maxY - minY,
+  };
+}
+
+function yieldPipRow(yields, kinds, r) {
+  const clusters = kinds.map(kind => yieldPipCluster(kind, yields?.[kind], r))
+    .filter(Boolean);
+  if (!clusters.length) return null;
+  const gap = 3.1 * r / 4.4;
+  return {
+    clusters,
+    gap,
+    width:clusters.reduce((total, cluster, index) => total + cluster.width +
+      (index ? gap : 0), 0),
+    height:Math.max(...clusters.map(cluster => cluster.height)),
+  };
+}
+
+// All three material kinds hold the first row. A second row is only created
+// when science, culture, or faith is actually present, and it is placed above
+// the material row by the renderer below.
+function yieldPipRows(yields, r) {
+  return YIELD_ROWS.map(kinds => yieldPipRow(yields, kinds, r)).filter(Boolean);
+}
+
+function yieldPipLayout(yields, baseR) {
   const maxWidth = S * 1.55;
-  const lines = [];
-  let line = {pips:[], width:0};
-  for (const run of runs) {
-    for (const pip of run.pips) {
-      let gap = line.pips.length
-        ? (line.pips[line.pips.length - 1].kind === pip.kind ? pipGap : kindGap)
-        : 0;
-      if (line.pips.length && line.width + gap + diameter > maxWidth) {
-        lines.push(line);
-        line = {pips:[], width:0};
-        gap = 0;
-      }
-      line.pips.push({...pip, gap});
-      line.width += gap + diameter;
-    }
+  let r = baseR, rows = [];
+  // Rich-but-valid combinations can make three compact formations wider than
+  // a hex. Tighten all signs together before sacrificing the stable two-row
+  // order; the numbered five-plus sign still remains 70% larger than its row.
+  for (let pass = 0; pass < 2; pass++) {
+    rows = yieldPipRows(yields, r);
+    const widest = Math.max(0, ...rows.map(row => row.width));
+    if (widest <= maxWidth) break;
+    const next = Math.max(baseR * .62, r * maxWidth / widest);
+    if (Math.abs(next - r) < .05) break;
+    r = next;
   }
-  if (line.pips.length) lines.push(line);
-  return lines;
+  return rows;
 }
 
 // The tiny signs borrow Civ's familiar six silhouettes rather than browser
@@ -9327,9 +9382,10 @@ function drawYieldPipGlyph(kind, x, y, r) {
   cx.restore();
 }
 
-function drawYieldPip(kind, x, y, r, portion, worked) {
+function drawYieldPip(kind, x, y, r, portion, worked, label = "") {
   const fill = YPIP[kind] || "#cccccc";
   const fraction = Math.max(.05, Math.min(1, portion));
+  const isSummary = !!label;
   cx.save();
   cx.shadowColor = "rgba(7,10,7,.5)";
   cx.shadowBlur = 2.3; cx.shadowOffsetY = 1;
@@ -9342,9 +9398,22 @@ function drawYieldPip(kind, x, y, r, portion, worked) {
   cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
   cx.restore();
   cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.82)";
-  cx.lineWidth = worked ? 1.15 : .85;
+  cx.lineWidth = worked ? 1.15 : (isSummary ? 1.05 : .85);
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
-  if (fraction >= .35) {
+  if (isSummary) {
+    // The count is painted over the larger sign, with a dark keyline so it
+    // remains readable on every yield colour and over a bright terrain tile.
+    const labelSize = r * (label.length === 1 ? 1.25 : label.length === 2 ? 1.08 : .88);
+    cx.save();
+    cx.font = `800 ${labelSize}px ui-sans-serif, system-ui, sans-serif`;
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.lineWidth = Math.max(1, r * .18);
+    cx.strokeStyle = "rgba(11,15,10,.92)";
+    cx.fillStyle = "#fffdf5";
+    cx.strokeText(label, x, y + r * .04);
+    cx.fillText(label, x, y + r * .04);
+    cx.restore();
+  } else if (fraction >= .35) {
     cx.globalAlpha *= .4 + fraction * .6;
     drawYieldPipGlyph(kind, x, y, r);
   }
@@ -9356,32 +9425,33 @@ function drawTileYields(t, x, y, worked) {
   const full = tileYieldFull(t);
   // At the far edge of the useful strategic range the pips yield just enough
   // physical room to keep their silhouettes distinct rather than merging into
-  // a coloured barcode.  Close in, they remain small map signs, not badges.
+  // a coloured barcode. Close in, ordinary yields remain small map signs;
+  // only the five-plus summary is intentionally a larger numbered badge.
   const r = 4.4 * Math.pow(UI_K(), .24);
-  const bands = YIELD_ROWS.map(kinds => yieldPipLines(yieldPipRuns(full, kinds), r))
-    .filter(lines => lines.length);
-  if (!bands.length) return;
+  const rows = yieldPipLayout(full, r);
+  if (!rows.length) return;
 
-  const diameter = r * 2, scale = r / 4.4;
-  const lineGap = 1.8 * scale, bandGap = 3.4 * scale;
-  const totalHeight = bands.reduce((height, lines, index) => height +
-    lines.length * diameter + Math.max(0, lines.length - 1) * lineGap +
-    (index ? bandGap : 0), 0);
-  let cy = y + 9 - totalHeight / 2 + r;
+  // The first semantic row is Food/Production/Gold. Draw in reverse so the
+  // optional science/culture/faith row sits immediately above that foundation.
+  const visualRows = rows.slice().reverse();
+  const rowGap = 3.4 * r / 4.4;
+  const totalHeight = visualRows.reduce((height, row, index) => height + row.height +
+    (index ? rowGap : 0), 0);
+  let top = y + 9 - totalHeight / 2;
   cx.save();
-  for (let band = 0; band < bands.length; band++) {
-    const lines = bands[band];
-    for (let row = 0; row < lines.length; row++) {
-      const line = lines[row];
-      let px = x - line.width / 2;
-      for (const pip of line.pips) {
-        px += pip.gap + r;
-        drawYieldPip(pip.kind, px, cy, r, pip.portion, worked);
-        px += r;
+  for (const row of visualRows) {
+    let px = x - row.width / 2;
+    const cy = top + row.height / 2;
+    for (let index = 0; index < row.clusters.length; index++) {
+      const cluster = row.clusters[index];
+      const clusterX = px + cluster.width / 2;
+      for (const sign of cluster.signs) {
+        drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,
+          sign.r, sign.portion, worked, sign.label);
       }
-      cy += diameter + (row + 1 < lines.length ? lineGap : 0);
+      px += cluster.width + (index + 1 < row.clusters.length ? row.gap : 0);
     }
-    if (band + 1 < bands.length) cy += bandGap;
+    top += row.height + rowGap;
   }
   cx.restore();
 }
