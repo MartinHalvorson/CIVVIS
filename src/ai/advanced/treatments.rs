@@ -113,6 +113,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
     ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
     ("barbarian_bargain", "barbarian-bargain", AdvancedAi::disable_barbarian_bargain),
+    ("barbarian_ranged_answer", "barbarian-ranged-answer", AdvancedAi::disable_barbarian_ranged_answer),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
@@ -203,4 +204,11 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // `advanced/site_lookahead.rs`.
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // `governor-every-lane` is a losing composite: the deployment screen's
+    // score-share drag is large enough that the two pre-existing halves need
+    // their own randomised comparisons before either can be retained. The
+    // composite remains the live-bridge compatibility switch; these opt-ins
+    // let a native seat turn on exactly one of its established predicates.
+    ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
+    ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
 ];

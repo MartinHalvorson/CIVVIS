@@ -76,10 +76,13 @@ These screenable genes have no native on/off result, so they receive no rank or 
 
 | Gene | Default | Description |
 |---|---|---|
-| `barbarian-bargain` | off (unmeasured) | Deliberate camp clearing as a peacetime errand. |
+| `barbarian-bargain` | off (unmeasured) | Price a raider's life below a major's. |
 | `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
+| `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
 | `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
+| `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
 | `settler-threat-detour` | off (unmeasured) | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. |
 

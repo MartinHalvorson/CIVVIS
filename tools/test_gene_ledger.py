@@ -25,6 +25,7 @@ def analysis(regime: str, genes: list[dict], pairs: int = 1000, family: float = 
                 "win_delta_pp": g.get("win", 0.0), "win_z": g.get("wz", 0.0),
                 "share_delta_pp": g.get("share", 0.0), "share_z": g.get("sz", 0.0),
                 "read": "",
+                "win_tranches": g.get("tranches", []),
             }
             for g in genes
         ],
@@ -105,6 +106,23 @@ class Merging(unittest.TestCase):
         by = {g["tag"]: g for g in ledger["genes"]}
         self.assertTrue(by["strong"]["family_wise"])
         self.assertFalse(by["weak"]["family_wise"])
+
+    def test_chronological_win_tranches_survive_in_the_ledger(self):
+        ledger = self.build([("native", analysis("native", [{
+            "tag": "repeated-harm",
+            "wz": -3.0,
+            "tranches": [
+                {"position": "latest", "pairs": 10002, "win_delta_pp": -1.2345, "win_se_pp": 0.3444, "win_z": -2.3456},
+                {"position": "previous", "pairs": 9996, "win_delta_pp": -0.9876, "win_se_pp": 0.4655, "win_z": -2.1234},
+                {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.1111, "win_se_pp": 0.4366, "win_z": -2.5432},
+            ],
+        }]))])
+        measure = ledger["genes"][0]["native"]
+        self.assertEqual(measure["win_tranches"], [
+            {"position": "latest", "pairs": 10002, "win_delta_pp": -1.234, "win_se_pp": 0.344, "win_z": -2.346},
+            {"position": "previous", "pairs": 9996, "win_delta_pp": -0.988, "win_se_pp": 0.466, "win_z": -2.123},
+            {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.111, "win_se_pp": 0.437, "win_z": -2.543},
+        ])
 
     def test_a_war_file_recorded_as_native_is_refused(self):
         with self.assertRaises(SystemExit):
