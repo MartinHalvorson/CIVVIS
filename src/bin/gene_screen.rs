@@ -2493,6 +2493,36 @@ mod tests {
         assert!(!treated_seat(&genes, &off, &one_screened, Baseline::Repairs).siege_is_progress);
     }
 
+    /// The harmful `governor-every-lane` composite is deliberately split in
+    /// the controller. These two rows make that split a real genome choice:
+    /// a targeted screen can enable either established predicate while its
+    /// sibling and the historical composite stay off.
+    #[test]
+    fn governor_halves_are_independent_opt_in_genes() {
+        let genes = gene_table();
+        let arm = |tag: &str| {
+            let index = genes
+                .iter()
+                .position(|gene| gene.tag == tag)
+                .unwrap_or_else(|| panic!("{tag} is a screenable gene"));
+            let mut screened = vec![false; genes.len()];
+            let mut genome = vec![false; genes.len()];
+            screened[index] = true;
+            genome[index] = true;
+            treated_seat(&genes, &genome, &screened, Baseline::Stock)
+        };
+
+        let victory = arm("governor-victory-lanes");
+        assert!(victory.governor_victory_lanes);
+        assert!(!victory.governor_expansion_lane);
+        assert!(!victory.governor_every_lane);
+
+        let expansion = arm("governor-expansion-lane");
+        assert!(!expansion.governor_victory_lanes);
+        assert!(expansion.governor_expansion_lane);
+        assert!(!expansion.governor_every_lane);
+    }
+
     #[test]
     fn the_read_column_names_both_axes() {
         assert_eq!(read_column(0.5, -0.3, 3.33), "~");

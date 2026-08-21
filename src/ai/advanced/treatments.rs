@@ -183,6 +183,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
+    ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
     // The religion race decides two thirds of native games, and a founder
     // that loses its own cities wins as rarely as a seat that never founded
     // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the
@@ -203,4 +204,11 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // `advanced/site_lookahead.rs`.
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // `governor-every-lane` is a losing composite: the deployment screen's
+    // score-share drag is large enough that the two pre-existing halves need
+    // their own randomised comparisons before either can be retained. The
+    // composite remains the live-bridge compatibility switch; these opt-ins
+    // let a native seat turn on exactly one of its established predicates.
+    ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
+    ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
 ];
