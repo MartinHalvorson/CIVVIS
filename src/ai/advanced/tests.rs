@@ -23875,6 +23875,69 @@ fn a_raider_beside_a_settler_in_the_field_is_a_target_only_under_barbarian_hunt(
     );
 }
 
+/// ★★★★★ THE GENE WAS WIRED INTO THE COPY NOBODY REACHES.
+///
+/// `BasicAi::military_step` and `AdvancedAi::advanced_military_step` each hold
+/// their own admission for the barbarian seat. `barbarian_hunt` shipped in
+/// #2223 patched the `BasicAi` one only — and INSTRUMENTED over four `ai_eval`
+/// pairs at 6p/150t/online, that block ran **zero** times for the `live`
+/// entrant: the Advanced controller reaches it only when `enemies` is already
+/// empty for other reasons. The screen agreed and said so in as many words —
+/// "nothing differed: all 24 maps were neutral on wins AND on terminal score,
+/// so live and live_without_barbarian_hunt played the same games".
+///
+/// This pins the Advanced reading directly, so a future edit to one copy
+/// cannot silently leave the other behind again.
+#[test]
+fn the_advanced_admission_carries_the_field_reading_too() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let road = open_ground_at(&game, home, 10);
+    game.spawn_test_unit("settler", 0, road);
+    let beside = *crate::hex::neighbors(road)
+        .iter()
+        .find(|pos| {
+            game.map
+                .get(**pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(**pos).is_empty()
+        })
+        .expect("open ground beside the Settler");
+    game.spawn_test_unit("warrior", barb, beside);
+
+    // The camp reading is blind here by construction: no camp anywhere, and the
+    // raider is ten tiles from the only city.
+    assert!(
+        !BasicAi::barbarian_presence_at_home_with_camp_radius(
+            &game,
+            0,
+            crate::ai::HOME_CAMP_RADIUS
+        ),
+        "the fixture must sit outside every ring the camp reading measures"
+    );
+    assert!(
+        BasicAi::barbarian_threatens_our_field_civilians(&game, 0),
+        "and inside the field reading"
+    );
+
+    // The Advanced controller's own admission is the one that decides whether
+    // any of its units may scan the raider at all.
+    let source = include_str!("../advanced.rs");
+    let block = source
+        .split("if let Some(barb) = g.barb_pid {")
+        .nth(1)
+        .expect("the advanced admission exists");
+    let block = block.split("enemies.push(barb);").next().unwrap();
+    assert!(
+        block.contains("barbarian_threatens_our_field_civilians"),
+        "the Advanced admission must carry the field reading, not only the camp one"
+    );
+    assert!(
+        block.contains("self.barbarian_hunt()"),
+        "and it must stay behind the gene"
+    );
+}
+
 /// The gene widens WHO may be shot at, not how far the empire will march. A
 /// barbarian with no civilian of ours anywhere near it is still nobody's
 /// business, or every camp on the map becomes a reason to mobilise — the
