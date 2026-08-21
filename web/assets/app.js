@@ -8602,6 +8602,42 @@ const STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET =
 const STRATEGIC_MOUNTAIN_SHADOW_Y = S * YS * .62;
 const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_X = S * SQ3 * .31;
 const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_Y = S * YS * .075;
+// A volcano occupies the same lower two corners as a mountain, but its
+// caldera deliberately stops short of the upper point.  Ninety percent of the
+// half-height leaves a small, intentional breath of basalt above the glow.
+// Unlike the mountain, the cone's old local summit is a curved shoulder, so
+// its visual high point rather than an invisible control point defines the
+// vertical fit.
+const STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X = -19;
+const STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X = 19;
+const STRATEGIC_VOLCANO_GLYPH_FOOT_Y = 8;
+// The two symmetric summit curves reach their extrema at -73 / 9. Using that
+// visible apex rather than either curve's control point makes 90% a literal
+// screen-space boundary for the finished cone.
+const STRATEGIC_VOLCANO_GLYPH_TOP_Y = -73 / 9;
+const STRATEGIC_VOLCANO_FOOT_TARGET_X = S * SQ3 / 2;
+const STRATEGIC_VOLCANO_FOOT_TARGET_Y = S * YS / 2;
+const STRATEGIC_VOLCANO_TOP_TARGET_Y = -S * YS * .90;
+const STRATEGIC_VOLCANO_GLOW_RADIUS_Y = .62;
+const STRATEGIC_VOLCANO_CALDERA_Y =
+  STRATEGIC_VOLCANO_GLYPH_TOP_Y + STRATEGIC_VOLCANO_GLOW_RADIUS_Y;
+const STRATEGIC_VOLCANO_ICON_WIDTH_SCALE =
+  STRATEGIC_VOLCANO_FOOT_TARGET_X /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X);
+const STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE =
+  (STRATEGIC_VOLCANO_FOOT_TARGET_Y - STRATEGIC_VOLCANO_TOP_TARGET_Y) /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE *
+   (STRATEGIC_VOLCANO_GLYPH_FOOT_Y - STRATEGIC_VOLCANO_GLYPH_TOP_Y));
+const STRATEGIC_VOLCANO_GLYPH_Y_OFFSET =
+  STRATEGIC_VOLCANO_TOP_TARGET_Y /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE) -
+  STRATEGIC_VOLCANO_GLYPH_TOP_Y;
+// Draw the shadow in tile coordinates rather than scaling the old compact
+// shadow with the tall cone; otherwise it runs out through the tapering lower
+// face before the feet can reach the 4 and 8 o'clock corners.
+const STRATEGIC_VOLCANO_SHADOW_Y = S * YS * .56;
+const STRATEGIC_VOLCANO_SHADOW_RADIUS_X = S * SQ3 * .28;
+const STRATEGIC_VOLCANO_SHADOW_RADIUS_Y = S * YS * .06;
 function drawMinimalMountainGlyph(x, y, k) {
   cx.save();
   cx.translate(x, y);
@@ -8647,56 +8683,104 @@ function drawMinimalMountainGlyph(x, y, k) {
   cx.restore();
 }
 
-function drawMinimalVolcanoCaldera(x, y, k, ice = false, tint = null) {
+function drawMinimalVolcanoCaldera(x, y, k, ice = false, tint = null,
+                                   strategic = false) {
   cx.save();
-  cx.translate(x, y); cx.scale(k, k);
+  cx.translate(x, y);
+  if (strategic) {
+    const iconSize = k / STRATEGIC_MOUNTAIN_ICON_SCALE;
+    cx.fillStyle = "rgba(8,10,11,.24)";
+    cx.beginPath();
+    cx.ellipse(0, STRATEGIC_VOLCANO_SHADOW_Y * iconSize,
+               STRATEGIC_VOLCANO_SHADOW_RADIUS_X * iconSize,
+               STRATEGIC_VOLCANO_SHADOW_RADIUS_Y * iconSize,
+               0, 0, 7); cx.fill();
+    cx.scale(k * STRATEGIC_VOLCANO_ICON_WIDTH_SCALE,
+             k * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE);
+    cx.translate(0, STRATEGIC_VOLCANO_GLYPH_Y_OFFSET);
+  } else {
+    cx.scale(k, k);
+    cx.fillStyle = "rgba(8,10,11,.24)";
+    cx.beginPath(); cx.ellipse(1, 10.2, 18, 4.3, 0, 0, 7); cx.fill();
+  }
   cx.lineJoin = "round"; cx.lineCap = "round";
-  cx.fillStyle = "rgba(8,10,11,.24)";
-  cx.beginPath(); cx.ellipse(1, 10.2, 18, 4.3, 0, 0, 7); cx.fill();
 
   const silhouette = () => {
     cx.beginPath();
-    cx.moveTo(-19, 8); cx.lineTo(-13, -1); cx.lineTo(-7, -7);
+    cx.moveTo(STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+              STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.lineTo(-13, -1); cx.lineTo(-7, -7);
     cx.quadraticCurveTo(-4, -9, -1, -7.4);
     cx.quadraticCurveTo(2, -9, 5, -7); cx.lineTo(11, -2);
-    cx.lineTo(19, 8); cx.quadraticCurveTo(2, 12.5, -19, 8); cx.closePath();
+    cx.lineTo(STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X,
+              STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.quadraticCurveTo(2, 12.5,
+                        STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+                        STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.closePath();
   };
   silhouette(); cx.fillStyle = tint ? shade(tint, .82) : "#5a4439"; cx.fill();
   // Two faces make the cone legible before the tiny crater resolves.
   cx.beginPath();
-  cx.moveTo(-19, 8); cx.lineTo(-7, -7); cx.quadraticCurveTo(-4, -9, -1, -7.4);
-  cx.lineTo(-1, 8); cx.quadraticCurveTo(-10, 10, -19, 8); cx.closePath();
+  cx.moveTo(STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+            STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.lineTo(-7, -7); cx.quadraticCurveTo(-4, -9, -1, -7.4);
+  cx.lineTo(-1, STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.quadraticCurveTo(-10, 10,
+                      STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+                      STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.closePath();
   cx.fillStyle = tint ? shade(tint, 1.02) : "#78594a"; cx.fill();
   cx.beginPath();
   cx.moveTo(-1, -7.4); cx.quadraticCurveTo(2, -9, 5, -7);
-  cx.lineTo(19, 8); cx.quadraticCurveTo(10, 10.5, -1, 8); cx.closePath();
+  cx.lineTo(STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X,
+            STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.quadraticCurveTo(10, 10.5, -1, STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.closePath();
   cx.fillStyle = tint ? shade(tint, .57) : "#392d2a"; cx.fill();
   silhouette(); cx.strokeStyle = "#241d1b"; cx.lineWidth = 1.2; cx.stroke();
 
-  // The old wide oval read as a detached target. Seat a narrow crater in the
-  // summit instead, then let its hot seam run a short way down the cone.
+  // The wide oval that used to live in the middle of the cone read as a
+  // detached target. The strategic version seats an especially thin, glowing
+  // orange caldera on the summit; the unscaled Natural Wonder keeps its
+  // existing compact crater proportions.
+  const craterY = strategic ? STRATEGIC_VOLCANO_CALDERA_Y : -6.2;
+  const craterRadiusY = strategic ? .42 : 1.8;
   cx.fillStyle = ice ? "#73848a" : "#241817";
-  cx.beginPath(); cx.ellipse(0, -6.2, 5.3, 1.8, -.08, 0, 7); cx.fill();
-  cx.strokeStyle = tint ? shade(tint, 1.3) : "#a47761"; cx.lineWidth = 1;
+  cx.beginPath(); cx.ellipse(0, craterY, 5.3, craterRadiusY, -.08, 0, 7); cx.fill();
+  cx.strokeStyle = tint ? shade(tint, 1.3) : "#a47761";
+  cx.lineWidth = strategic ? .5 : 1;
   cx.stroke();
-  cx.fillStyle = ice ? "#d9e8e9" : "#ed6b35";
-  cx.beginPath(); cx.ellipse(0, -6.25, 2.7, .72, -.08, 0, 7); cx.fill();
+  if (strategic && !ice) {
+    // A translucent outer band makes the heat read as light while the small
+    // solid oval keeps it crisp at survey zoom.
+    cx.fillStyle = "rgba(255,101,36,.42)";
+    cx.beginPath(); cx.ellipse(0, craterY, 4.65,
+                               STRATEGIC_VOLCANO_GLOW_RADIUS_Y, -.08, 0, 7); cx.fill();
+  }
+  cx.fillStyle = ice ? "#d9e8e9" : strategic ? "#ff8a32" : "#ed6b35";
+  cx.beginPath(); cx.ellipse(0, strategic ? craterY - .02 : -6.25,
+                             strategic ? 3.7 : 2.7,
+                             strategic ? .16 : .72, -.08, 0, 7); cx.fill();
   if (!ice) {
     cx.fillStyle = "#ffc06a";
-    cx.beginPath(); cx.ellipse(-.65, -6.4, 1.05, .3, -.08, 0, 7); cx.fill();
+    cx.beginPath(); cx.ellipse(-.65, strategic ? craterY - .1 : -6.4,
+                               1.05, strategic ? .06 : .3, -.08, 0, 7); cx.fill();
     cx.strokeStyle = "#e75e31"; cx.lineWidth = 1.25;
-    cx.beginPath(); cx.moveTo(-.35, -5.35);
+    cx.beginPath(); cx.moveTo(-.35, strategic ? -7.15 : -5.35);
     cx.quadraticCurveTo(.8, -2.2, -.55, .5);
     cx.quadraticCurveTo(-1.25, 2.3, -.8, 4.7); cx.stroke();
     cx.strokeStyle = "#ffc06a"; cx.lineWidth = .48;
-    cx.beginPath(); cx.moveTo(-.35, -5.1);
+    cx.beginPath(); cx.moveTo(-.35, strategic ? -6.9 : -5.1);
     cx.quadraticCurveTo(.35, -2.25, -.35, -.15); cx.stroke();
   }
   cx.restore();
 }
 
 function drawStrategicMountainIcon(x, y, volcano, size = 1) {
-  if (volcano) drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size);
+  if (volcano)
+    drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size,
+                              false, null, true);
   else drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size);
 }
 
@@ -18139,16 +18223,18 @@ function drawCliffEscarpments(groups) {
     const scale = group.weight || 1;
     const alpha = group.alpha ?? 1;
 
-    // The old four-pixel ribbon disappeared into the tile texture. A cliff is
-    // a landform with a face, so give it enough depth to survive survey zoom
-    // while retaining the local strategic scale on the globe.
-    const depth = 9.2 * scale;
-    const foot = depth * 1.12;
+    // A cliff needs to read as a landform at the same glance as a mountain or
+    // a river. The former face was only a quarter of a hex in depth, which
+    // made it look like an ordinary coastline shadow at the strategic zoom.
+    // This broader, high-contrast escarpment has a visible crest, wall, and
+    // waterline while still leaving most of the neighboring sea tile open.
+    const depth = 14.5 * scale;
+    const foot = depth * 1.18;
 
     // Start with a cool silhouette under the rock. It is deliberately wider
     // than the face: that thin seawater-side lip is what separates relief
     // from an outline when a cliff meets deep blue water.
-    cx.fillStyle = "#182a2d"; cx.globalAlpha = alpha * .72;
+    cx.fillStyle = "#10242b"; cx.globalAlpha = alpha * .88;
     cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -18161,7 +18247,7 @@ function drawCliffEscarpments(groups) {
     // The face has a sunward upper plane and a cooler lower cut. Keeping these
     // as nested polygons is cheaper than per-edge gradients and remains crisp
     // on the globe where projected cells are not axis-aligned.
-    cx.fillStyle = "#725c49"; cx.globalAlpha = alpha * .94;
+    cx.fillStyle = "#68503d"; cx.globalAlpha = alpha * .98;
     cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -18171,7 +18257,7 @@ function drawCliffEscarpments(groups) {
     }
     cx.fill();
 
-    cx.fillStyle = "#a38764"; cx.globalAlpha = alpha * .42;
+    cx.fillStyle = "#c29a68"; cx.globalAlpha = alpha * .68;
     cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -18181,7 +18267,7 @@ function drawCliffEscarpments(groups) {
     }
     cx.fill();
 
-    cx.fillStyle = "#3b2d27"; cx.globalAlpha = alpha * .54;
+    cx.fillStyle = "#30231f"; cx.globalAlpha = alpha * .72;
     cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax + nx * depth * .56, ay + ny * depth * .56);
@@ -18194,65 +18280,68 @@ function drawCliffEscarpments(groups) {
 
     // The waterline anchors the foot; a second dark stroke just under the
     // crest makes the top lip read as a ledge instead of a painted border.
-    cx.strokeStyle = "#101d24"; cx.lineWidth = Math.max(.8, 2.05 * scale);
-    cx.globalAlpha = alpha * .82; cx.beginPath();
+    cx.strokeStyle = "#09191f"; cx.lineWidth = Math.max(.9, 2.65 * scale);
+    cx.globalAlpha = alpha * .92; cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax + nx * foot, ay + ny * foot);
       cx.lineTo(bx + nx * foot, by + ny * foot);
     }
     cx.stroke();
-    cx.strokeStyle = "#30241d"; cx.lineWidth = Math.max(.8, 2.7 * scale);
-    cx.globalAlpha = alpha * .86; cx.beginPath();
-    for (const [ax, ay, bx, by] of escarpments) {
-      cx.moveTo(ax, ay); cx.lineTo(bx, by);
-    }
-    cx.stroke();
-    cx.strokeStyle = "#ead6aa"; cx.lineWidth = Math.max(.65, 2.15 * scale);
+    // An outlined pale crest is the shorthand that makes the mark legible as
+    // a cliff rather than a generic brown shore. It stays on the land/water
+    // seam, so it cannot be mistaken for an improvement inside either tile.
+    cx.strokeStyle = "#211914"; cx.lineWidth = Math.max(.9, 4.15 * scale);
     cx.globalAlpha = alpha * .94; cx.beginPath();
     for (const [ax, ay, bx, by] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
     }
     cx.stroke();
+    cx.strokeStyle = "#f2d79c"; cx.lineWidth = Math.max(.7, 2.15 * scale);
+    cx.globalAlpha = alpha; cx.beginPath();
+    for (const [ax, ay, bx, by] of escarpments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.stroke();
 
-    // Broken horizontal shelves give the face scale. They are offset from the
-    // edge rather than drawn as a second outline, so a run of cliffs reads as
-    // a continuous geological wall without becoming a fence.
+    // Broken horizontal shelves give the broader face a geological texture.
+    // The gaps and unequal lengths keep a continuous run from becoming a
+    // fence, but their contrast remains large enough to survive survey zoom.
     for (const [fraction, color, width, opacity] of [
-      [.30, "#c09b70", 1.15, .62],
-      [.56, "#4b382c", 1.25, .78],
-      [.79, "#8e6e52", .95, .68],
+      [.25, "#efd09a", 1.45, .82],
+      [.53, "#3e2d25", 1.65, .94],
+      [.79, "#b7855b", 1.25, .84],
     ]) {
       cx.strokeStyle = color; cx.lineWidth = Math.max(.42, width * scale);
       cx.globalAlpha = alpha * opacity; cx.beginPath();
       for (const [ax, ay, bx, by, nx, ny] of escarpments) {
         const dx = bx - ax, dy = by - ay;
         const along = dx * .035, down = dy * .035;
-        cx.moveTo(ax + dx * .06 + along + nx * depth * fraction,
-                  ay + dy * .06 + down + ny * depth * fraction);
-        cx.lineTo(bx - dx * .06 + along + nx * depth * fraction,
-                  by - dy * .06 + down + ny * depth * fraction);
+        cx.moveTo(ax + dx * .10 + along + nx * depth * fraction,
+                  ay + dy * .10 + down + ny * depth * fraction);
+        cx.lineTo(bx - dx * .10 + along + nx * depth * fraction,
+                  by - dy * .10 + down + ny * depth * fraction);
       }
       cx.stroke();
     }
 
-    // Two irregular fractures and a short branch make the wall feel carved by
-    // weather rather than stamped. They stay inside the face so the contrast
-    // remains useful on the coastline, not in the neighbouring water tile.
-    cx.strokeStyle = "#352a20"; cx.lineWidth = Math.max(.35, .9 * scale);
-    cx.globalAlpha = alpha * .74; cx.beginPath();
+    // Three bold fractures give the symbol its vertical drop. They stay inside
+    // the face, where they clarify a cliff without becoming another shoreline
+    // or leaking into the neighboring water tile.
+    cx.strokeStyle = "#2d211b"; cx.lineWidth = Math.max(.5, 1.25 * scale);
+    cx.globalAlpha = alpha * .90; cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       const dx = bx - ax, dy = by - ay;
-      for (const [fraction, bend] of [[.24, -.36], [.68, .30]]) {
+      for (const [fraction, bend] of [[.19, -.34], [.50, .24], [.81, -.27]]) {
         const px = ax + dx * fraction, py = ay + dy * fraction;
-        const midX = px + nx * depth * .43 + dx * bend * scale / 8;
-        const midY = py + ny * depth * .43 + dy * bend * scale / 8;
-        cx.moveTo(px + nx * depth * .08, py + ny * depth * .08);
+        const midX = px + nx * depth * .46 + dx * bend * scale / 6;
+        const midY = py + ny * depth * .46 + dy * bend * scale / 6;
+        cx.moveTo(px + nx * depth * .10, py + ny * depth * .10);
         cx.lineTo(midX, midY);
-        cx.lineTo(px + nx * depth * .78 + dx * bend * scale / 5,
-                  py + ny * depth * .78 + dy * bend * scale / 5);
+        cx.lineTo(px + nx * depth * .82 + dx * bend * scale / 4,
+                  py + ny * depth * .82 + dy * bend * scale / 4);
         cx.moveTo(midX, midY);
-        cx.lineTo(midX + nx * depth * .13 - dy * bend * scale / 9,
-                  midY + ny * depth * .13 + dx * bend * scale / 9);
+        cx.lineTo(midX + nx * depth * .16 - dy * bend * scale / 8,
+                  midY + ny * depth * .16 + dx * bend * scale / 8);
       }
     }
     cx.stroke();

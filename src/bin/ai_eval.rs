@@ -1567,6 +1567,25 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+fn native_competitions_requested(args: &[String]) -> bool {
+    args.iter()
+        .any(|argument| argument == "--native-competitions")
+}
+
+/// Apply the world rules that the evaluator is explicitly pricing.
+///
+/// Native competitions remain opt-in so historical evaluator records keep
+/// their ruleset. A run that asks for them must set the flag on every seat of
+/// every paired game, rather than merely report the requested command line.
+fn configure_evaluation_game(
+    game: &mut Game,
+    victory_conditions: VictoryConditions,
+    native_competitions: bool,
+) {
+    game.victory_conditions = victory_conditions;
+    game.native_competitions = native_competitions;
+}
+
 #[derive(Clone, Copy)]
 struct MatrixProfile {
     name: &'static str,
@@ -1701,6 +1720,36 @@ const PROMOTION_PROFILES: [MatrixProfile; 3] = [
 /// This must not depend on `--pairs`: increasing a preregistered sample must
 /// extend each profile's existing seed prefix, not silently select a new one.
 const MATRIX_PROFILE_SEED_STRIDE: u64 = 1_000_000;
+
+/// World axes fixed by the recorded promotion profiles.
+///
+/// The matrix deliberately has no pass-through for these: accepting an axis
+/// it does not supply to its children would silently report a different world
+/// than the one the promotion gate names.
+const MATRIX_PROFILE_FLAGS: [&str; 13] = [
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--turns",
+    "--speed",
+    "--map",
+    "--shape",
+    "--poles",
+    "--victories",
+    "--randomize-civs",
+    // Native scored competitions add a global Diplomatic Victory ruleset.
+    "--native-competitions",
+    // Who else is on the board decides which victory conditions are reachable.
+    "--field",
+];
+
+fn matrix_profile_flag(args: &[String]) -> Option<&'static str> {
+    MATRIX_PROFILE_FLAGS
+        .iter()
+        .copied()
+        .find(|flag| args.iter().any(|argument| argument == flag))
+}
 
 fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
     seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
@@ -1892,28 +1941,7 @@ fn matrix_job_budgets(total_jobs: usize) -> Vec<usize> {
 }
 
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
-    const PROFILE_FLAGS: [&str; 12] = [
-        "--players",
-        "--width",
-        "--height",
-        "--city-states",
-        "--turns",
-        "--speed",
-        "--map",
-        "--shape",
-        "--poles",
-        "--victories",
-        "--randomize-civs",
-        // Who else is on the board is a profile axis, and the strongest one:
-        // it decides which victory conditions the run can produce at all. The
-        // matrix's two recorded profiles are fieldless and every promotion
-        // number in `docs/EVAL.md` was taken that way.
-        "--field",
-    ];
-    if let Some(flag) = PROFILE_FLAGS
-        .into_iter()
-        .find(|flag| args.iter().any(|argument| argument == flag))
-    {
+    if let Some(flag) = matrix_profile_flag(args) {
         eprintln!("--matrix owns the promotion profiles; remove conflicting profile flag {flag}");
         std::process::exit(2);
     }
@@ -2329,6 +2357,7 @@ here and any null is uninformative"
         std::process::exit(2);
     });
     let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
+    let native_competitions = native_competitions_requested(&args);
     // The difficulty ladder as an external yardstick: the challenger plays
     // the human side of the handicap and its opponents play the AI side, so
     // "beats Emperor" means what a Civ player would expect it to mean.
@@ -2352,7 +2381,7 @@ here and any null is uninformative"
         .collect::<Vec<_>>()
         .join(",");
     println!(
-        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}",
+        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}, native competitions {}",
         map_script.id(),
         map_topology.id(),
         map_poles.id(),
@@ -2360,6 +2389,11 @@ here and any null is uninformative"
             "randomized"
         } else {
             "fixed"
+        },
+        if native_competitions {
+            "enabled"
+        } else {
+            "disabled (default)"
         },
     );
     // A result is never filed without saying who was in the game. Printed
@@ -2457,7 +2491,7 @@ here and any null is uninformative"
                 randomize_civs,
                 ..GameOptions::new(players, width, height, game_seed, turns, city_states)
             });
-            game.victory_conditions = victory_conditions;
+            configure_evaluation_game(&mut game, victory_conditions, native_competitions);
             let mut ais: Vec<Box<dyn Ai>> = game
                 .players
                 .iter()
@@ -3498,48 +3532,42 @@ mod tests {
         }
     }
 
-    /// The promotion matrix cannot be handed a different board.
+    /// The promotion matrix cannot be handed a different world.
     ///
-    /// Who else is in the game decides which victory conditions are reachable
-    /// at all, which makes it the strongest profile axis there is. The matrix's
-    /// recorded profiles are fieldless, so `--field` has to be refused there
-    /// with the rest of them.
+    /// World rules decide which victories are reachable. The recorded matrix
+    /// pins those rules, including its fieldless roster and the default-off
+    /// native competition system, so a direct evaluator experiment cannot
+    /// silently alter an existing promotion profile.
     #[test]
-    fn the_promotion_matrix_refuses_a_field() {
-        // Mirrors `run_profile_matrix`'s own list, which cannot be reached from
-        // a test because it diverges. Pinning the membership is the part that
-        // would silently regress.
-        let flags = [
-            "--players",
-            "--width",
-            "--height",
-            "--city-states",
-            "--turns",
-            "--speed",
-            "--map",
-            "--shape",
-            "--poles",
-            "--victories",
-            "--randomize-civs",
-            "--field",
-        ];
-        let source = include_str!("ai_eval.rs");
-        let declared = source
-            .split("const PROFILE_FLAGS: [&str; ")
-            .nth(1)
-            .and_then(|tail| tail.split("];").next())
-            .expect("the matrix profile-flag list is where this test can read it");
-        assert!(
-            declared.starts_with(&format!("{}]", flags.len())),
-            "PROFILE_FLAGS is no longer {} long; update this list with it: {declared}",
-            flags.len()
-        );
-        for flag in flags {
-            assert!(
-                declared.contains(&format!("\"{flag}\"")),
-                "{flag} is not refused by --matrix"
+    fn the_promotion_matrix_owns_every_world_profile_axis() {
+        for flag in MATRIX_PROFILE_FLAGS {
+            let args = vec![flag.to_string()];
+            assert_eq!(
+                matrix_profile_flag(&args),
+                Some(flag),
+                "{flag} must be refused by --matrix"
             );
         }
+        assert!(MATRIX_PROFILE_FLAGS.contains(&"--native-competitions"));
+        assert_eq!(matrix_profile_flag(&["--pairs".to_string()]), None);
+    }
+
+    #[test]
+    fn evaluator_applies_native_competitions_to_each_configured_game() {
+        let victories = VictoryConditions::parse("diplomatic,score")
+            .expect("the fixture names supported victory conditions");
+        let mut game = Game::new(2, 20, 14, 52_200, 40, 0);
+
+        assert!(!native_competitions_requested(&[]));
+        configure_evaluation_game(&mut game, victories, false);
+        assert_eq!(game.victory_conditions, victories);
+        assert!(!game.native_competitions);
+
+        let requested = vec!["--native-competitions".to_string()];
+        assert!(native_competitions_requested(&requested));
+        configure_evaluation_game(&mut game, victories, true);
+        assert_eq!(game.victory_conditions, victories);
+        assert!(game.native_competitions);
     }
 
     #[test]
