@@ -1589,10 +1589,8 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
-    /// Deliberate camp clearing as a peacetime errand. See
-    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
-    /// See `BasicAi::barbarian_ranged_answer`; withheld by
-    /// `barbarian-ranged-answer`.
+    /// Answer a ring of shooters with a shooter. See
+    /// `BasicAi::barbarian_ranged_answer`; withheld by `barbarian-ranged-answer`.
     pub fn enable_barbarian_ranged_answer(&mut self) {
         self.base.enable_barbarian_ranged_answer();
     }
@@ -1601,7 +1599,8 @@ impl AdvancedAi {
         self.base.disable_barbarian_ranged_answer();
     }
 
-    /// See `BasicAi::barbarian_bargain`; withheld by `barbarian-bargain`.
+    /// Price a raider's life below a major's. See `BasicAi::barbarian_bargain`;
+    /// withheld by `barbarian-bargain`.
     pub fn enable_barbarian_bargain(&mut self) {
         self.base.enable_barbarian_bargain();
     }
@@ -1620,6 +1619,8 @@ impl AdvancedAi {
         self.base.disable_barbarian_hunt();
     }
 
+    /// Deliberate camp clearing as a peacetime errand. See
+    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
     pub fn enable_camp_bounty(&mut self) {
         self.base.camp_bounty = true;
     }
