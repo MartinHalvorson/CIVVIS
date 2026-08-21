@@ -183,4 +183,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
     ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
+    // Hardcore-optimization variants of the two flagship genes (operator
+    // directive 2026-08-20): parameter changes as genes, priced
+    // variant-vs-current by single-gene screens.
+    ("wide_map_denser", "wide-map-denser", AdvancedAi::enable_wide_map_denser),
+    ("garrison_bleed_tolerance", "garrison-bleed-tolerance", AdvancedAi::enable_garrison_bleed_tolerance),
 ];

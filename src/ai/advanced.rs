@@ -1631,6 +1631,16 @@ pub struct AdvancedAi {
     /// front fights with whatever staged on declaration day. **Off by
     /// default, live-bridge only.**
     pub war_reinforcement: bool,
+    /// `wide-map-denser`: the hardcore-optimization variant of the genome's
+    /// flagship. `wide_map_capacity` (repaired, cycle one) measured +3.0
+    /// native / +8.9..+19.2 at war across three disjoint seed windows — the
+    /// widest positive effect of any gene — so this variant asks whether its
+    /// parameters are on the efficient frontier: one city per 40 passable
+    /// tiles (was 45) and a ceiling of 14 (was 12), inert unless
+    /// `wide_map_capacity` itself is on and subject to the same
+    /// conversion-race stand-down. Off everywhere; priced as a single-gene
+    /// screen (variant-vs-current on identical maps) before any promotion.
+    pub wide_map_denser: bool,
     /// Rear reinforcements reach an engaged front as a wave, not one at a
     /// time. `wartime_reinforcement_step` walks the standing-still rear to the
     /// objective's staging ring, and the turn a marcher comes inside
@@ -4611,6 +4621,7 @@ impl AdvancedAi {
             muster_at_command_radius: false,
             war_economy: false,
             war_reinforcement: false,
+            wide_map_denser: false,
             arrival_waves: false,
             reinforcement_marches: BTreeMap::new(),
             arrival_wave: BTreeMap::new(),
@@ -7699,9 +7710,15 @@ impl AdvancedAi {
             } else {
                 land
             };
-            (2 + land / 45)
-                .clamp(3, 12)
-                .max(PRODUCTION_CITY_TARGET_FLOOR)
+            if self.wide_map_denser {
+                (2 + land / 40)
+                    .clamp(3, 14)
+                    .max(PRODUCTION_CITY_TARGET_FLOOR)
+            } else {
+                (2 + land / 45)
+                    .clamp(3, 12)
+                    .max(PRODUCTION_CITY_TARGET_FLOOR)
+            }
         } else {
             (2 + land / 55).clamp(3, 9)
         };

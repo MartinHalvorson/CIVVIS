@@ -75,6 +75,27 @@ impl AdvancedAi {
         self.arrival_waves = true;
     }
 
+    /// The denser wide-map parameters, priced variant-vs-current. See
+    /// [`AdvancedAi::wide_map_denser`].
+    pub fn enable_wide_map_denser(&mut self) {
+        self.wide_map_denser = true;
+    }
+
+    /// The twin of `enable_wide_map_denser`.
+    pub fn disable_wide_map_denser(&mut self) {
+        self.wide_map_denser = false;
+    }
+
+    /// Bleeding means real damage. See [`BasicAi::garrison_bleed_tolerance`].
+    pub fn enable_garrison_bleed_tolerance(&mut self) {
+        self.base.garrison_bleed_tolerance = true;
+    }
+
+    /// The twin of `enable_garrison_bleed_tolerance`.
+    pub fn disable_garrison_bleed_tolerance(&mut self) {
+        self.base.garrison_bleed_tolerance = false;
+    }
+
     /// The twin of `enable_arrival_waves`, so an arm that opted in can put it
     /// back.
     pub fn disable_arrival_waves(&mut self) {

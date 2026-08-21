@@ -3986,6 +3986,36 @@ mod flagged_gene_repairs {
         }
     }
 
+    /// The hardcore-optimization variants change exactly one parameter each,
+    /// and only inside their base gene's own gate.
+    #[test]
+    fn flagship_variants_are_scoped_to_their_base_genes() {
+        let source = include_str!("../advanced.rs");
+        for needle in [
+            "if self.wide_map_denser {",
+            "(2 + land / 40)",
+            ".clamp(3, 14)",
+        ] {
+            assert!(source.contains(needle), "missing {needle:?}");
+        }
+        let base = include_str!("../../ai.rs");
+        for needle in [
+            "let bleed_floor = if self.garrison_bleed_tolerance { 170 } else { 200 };",
+            "city.hp < bleed_floor",
+        ] {
+            assert!(base.contains(needle), "missing {needle:?}");
+        }
+        // Inert without their bases: the denser numbers live inside the
+        // wide-map branch, and the bleed floor is read only under
+        // `garrison_under_fire`'s own conjunction.
+        let mut ai = AdvancedAi::new();
+        ai.enable_wide_map_denser();
+        ai.enable_garrison_bleed_tolerance();
+        assert!(!ai.wide_map_capacity);
+        assert!(ai.wide_map_denser);
+        assert!(ai.base.garrison_bleed_tolerance);
+    }
+
     /// `wide-map-capacity`: the wide target stands while a religious victory
     /// is disabled or no rival has founded a religion; from the first rival
     /// founding the conversion race is live and the narrow target stands.

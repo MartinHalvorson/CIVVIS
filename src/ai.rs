@@ -2046,6 +2046,15 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// `garrison-bleed-tolerance`: the hardcore-optimization variant of the
+    /// genome's one measured native helper. `garrison_under_fire`'s bleeding
+    /// test fires at ANY hitpoint lost (`hp < 200`), so a single chip from a
+    /// passing raider re-routes production; with this variant on, bleeding
+    /// means real damage (`hp < 170`, above 15%), and the fog-proof siege
+    /// response the helper exists for is otherwise unchanged. Inert unless
+    /// `garrison_under_fire` is on. Off everywhere; priced as a single-gene
+    /// screen before any promotion.
+    pub(crate) garrison_bleed_tolerance: bool,
     /// Order our OWN ancient walls before the ordinary build order spends the
     /// production somewhere else — `garrison_under_fire` above reacts to a
     /// city already bleeding, but the city it reacted to had never been given
@@ -4202,6 +4211,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_bleed_tolerance: false,
             garrison_walls: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
@@ -4513,6 +4523,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_bleed_tolerance: false,
             garrison_walls: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
@@ -9344,8 +9355,9 @@ impl BasicAi {
         // city count while COSTING score: walls and defenders displace the
         // buildings and districts score is actually made of. A raiding party is
         // what takes a city, and a raiding party is more than one unit.
+        let bleed_floor = if self.garrison_bleed_tolerance { 170 } else { 200 };
         let bleeding = self.garrison_under_fire
-            && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+            && g.cities.get(&cid).is_some_and(|city| city.hp < bleed_floor);
         if !bleeding && self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
             return None;
         }
