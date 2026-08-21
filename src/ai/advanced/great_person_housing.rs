@@ -356,6 +356,19 @@ impl AdvancedAi {
         let Some((work, count)) = stuck.work() else {
             return 0;
         };
+        // A mirrored seat's works are the host's to move; the physical-person
+        // helper builds its way out there. The market exposes only
+        // duplicates, so an inventory under two has nothing to quote.
+        if g.players[pid].live_great_person_offers.is_some()
+            || g.players[pid]
+                .counters
+                .get(&format!("great_work:{work}"))
+                .copied()
+                .unwrap_or(0)
+                < 2
+        {
+            return 0;
+        }
         let mut sold = 0;
         for _ in 0..count {
             if g.can_house_great_works(pid, work, count) {
