@@ -477,6 +477,8 @@ impl AdvancedAi {
         self.price_the_suzerainty = true;
     }
 
+    /// Suzerain policy cards are valued only while a suzerainty actually
+    /// exists.
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
         self.suzerain_cards_need_a_suzerainty = true;
     }
@@ -547,6 +549,7 @@ impl AdvancedAi {
         self.base.come_ashore = false;
     }
 
+    /// Size the siege train by the wall it has to breach.
     pub fn enable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = true;
     }
@@ -2018,8 +2021,6 @@ impl AdvancedAi {
         self.housing_research = false;
     }
 
-    /// Require a faith-bought soldier's gold upkeep to be payable. Native
-    /// tournament games leave this disabled so their ladders stay comparable.
     /// Rank loyalty emergencies by turns-to-flip instead of by level. Native
     /// tournament games leave this disabled.
     pub fn enable_loyalty_rate_alarm(&mut self) {

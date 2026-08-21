@@ -362,6 +362,14 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   tool now drops those rows and says so, because the Rust table refuses a tag
   the registry does not know.
 
+- **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
+  at the repository root — every screenable gene ranked by wins added per
+  10,000 six-player games, each from the latest native screen that measured
+  it, with the war figure and the ledger's default beside it. It is generated
+  (`python3 tools/heuristic_gene_ranking.py --write`) and
+  `tools/test_heuristic_gene_ranking.py` fails when it is older than the
+  ledger's sources; regenerate it in the same change that adds a source.
+
 ⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
 ledger already holds off is identical to `live` — the screen is that gene's
 instrument now. And a treatment PR no longer ships its flag on: it ships it
