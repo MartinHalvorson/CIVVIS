@@ -165,6 +165,10 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 /// targeted regime it exists for before any promotion question is asked.
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+    // A Builder does not walk into a visible Barbarian-capture envelope; its
+    // target and retreat both use the same fog-honest risk model as Settlers.
+    // `gene_screen` discovers this native opt-in directly from this row.
+    ("builder_barbarian_safety", "builder-barbarian-safety", AdvancedAi::enable_builder_barbarian_safety),
     // A Builder's finite charges first pay today's worked yields, except for
     // luxury and strategic connections that pay empire-wide either way.
     // `gene_screen` discovers this native opt-in directly from this row.

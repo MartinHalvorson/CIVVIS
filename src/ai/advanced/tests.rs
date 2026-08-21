@@ -11453,6 +11453,227 @@ fn builder_worked_tile_priority_prefers_active_yields_but_keeps_global_resources
     assert!(!treated.builder_worked_tile_priority);
 }
 
+/// `civvis-20260821T204930Z` lost a Builder stacked with its Warrior on t18:
+/// the Barbarian killed the Warrior, then captured the Builder in the same
+/// hostile phase.  The next Builder stepped out on t22 and was captured before
+/// it completed a job.  A guard is useful, but it is not a reason to send a
+/// civilian into a tile a visible raider can enter next turn.
+#[test]
+fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
+    let setup = || {
+        let (mut game, city, home) = empire_with_a_capital(71_013);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner != 0 {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.barb_naval_camps.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = Some(crate::name!("farm"));
+            tile.pillaged = false;
+        }
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        let target = game
+            .nbrs(home)
+            .into_iter()
+            .find(|position| {
+                game.cities[&city].owned_tiles.contains(position)
+                    && game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("the capital owns a passable neighbouring tile");
+        game.map.tiles.get_mut(&target).unwrap().improvement = None;
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        // `empire_with_a_capital` is deliberately a compact two-major board.
+        // Recast the cleared opponent as the Barbarian seat, just as the
+        // capture-risk fixtures above do, so the raider follows the real
+        // barbarian branch rather than a generic rival branch.
+        let barb = 1;
+        game.players[barb].is_barbarian = true;
+        game.barb_pid = Some(barb);
+        let raider_at = game
+            .wdisk(target, 1)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, target) == 1
+                    && game.wdist(*position, home) > 1
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("an open raider tile one step from the Builder job");
+        let raider = game.spawn_test_unit("warrior", barb, raider_at);
+        assert!(
+            game.valid_improvements(0, target)
+                .iter()
+                .any(|improvement| improvement == "farm"),
+            "the exposed tile must be a real Builder job"
+        );
+        (game, home, target, raider)
+    };
+
+    // The untreated controller pursues the only job, even though the target
+    // is inside a Barbarian Warrior's immediate capture reach.
+    let (mut stock_game, home, target, raider) = setup();
+    let builder = stock_game.spawn_test_unit("builder", 0, home);
+    let mut stock = AdvancedAi::new();
+    assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(stock.builder_targets.get(&builder), Some(&target));
+    assert_ne!(
+        stock_game.units[&builder].pos, home,
+        "the untreated Builder starts toward the exposed job"
+    );
+    stock_game.current = 1;
+    assert!(stock_game.can_move(raider, target));
+    stock_game
+        .apply(
+            1,
+            &Action::Move {
+                unit: raider,
+                to: target,
+            },
+        )
+        .expect("the Barbarian can take the exposed Builder in its hostile phase");
+    assert_eq!(
+        stock_game.units[&builder].owner, 1,
+        "the untreated route turns the live-shaped threat into a captured Builder"
+    );
+
+    // With the gene, the same job remains assigned but its unsafe first step
+    // is refused.  Keeping the assignment lets the Builder resume immediately
+    // when the raider moves or a responder clears it, instead of permanently
+    // replacing a productive job with a worse distant one. This is deliberately
+    // the raw civilian risk: a friendly unit beside the target would not make a
+    // Builder safe if that unit can die first.
+    let (mut cautious_game, home, target, raider) = setup();
+    let builder = cautious_game.spawn_test_unit("builder", 0, home);
+    let mut cautious = AdvancedAi::new();
+    cautious.enable_builder_barbarian_safety();
+    let visible = cautious.battlefront_visibility(&cautious_game, 0);
+    assert!(
+        cautious.builder_barbarian_capture_risk(&cautious_game, 0, builder, target, &visible)
+            > BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT,
+        "the fixture must put the only job inside direct capture reach"
+    );
+    assert!(
+        !cautious.advanced_builder_step(&mut cautious_game, 0, builder, GrandStrategy::Expansion),
+        "the safety gene refuses an exposed target instead of donating the Builder"
+    );
+    assert_eq!(cautious_game.units[&builder].pos, home);
+    assert!(
+        cautious.builder_targets.get(&builder) == Some(&target),
+        "the safe hold must retain the productive job for a later clear turn"
+    );
+    cautious_game.current = 1;
+    assert!(cautious_game.can_move(raider, target));
+    cautious_game
+        .apply(
+            1,
+            &Action::Move {
+                unit: raider,
+                to: target,
+            },
+        )
+        .expect("the same Barbarian can enter the exposed job after the safe hold");
+    assert_eq!(
+        cautious_game.units[&builder].owner, 0,
+        "the gene's positive outcome is one preserved Builder rather than one capture"
+    );
+    assert_eq!(
+        cautious_game.units[&builder].charges, 3,
+        "the preserved Builder keeps all of its improvement capacity"
+    );
+
+    // An ordinary major-war threat is not this gene's premise. The first
+    // broader cut suppressed Builder work around every hostile army and its
+    // matched screen trended negative; the live failure was a Barbarian
+    // capture. Recasting the same raider as a major must leave the Builder's
+    // productive route alone.
+    let (mut major_game, home, target, _raider) = setup();
+    major_game.players[1].is_barbarian = false;
+    major_game.barb_pid = None;
+    let builder = major_game.spawn_test_unit("builder", 0, home);
+    let mut barbarian_only = AdvancedAi::new();
+    barbarian_only.enable_builder_barbarian_safety();
+    let visible = barbarian_only.battlefront_visibility(&major_game, 0);
+    assert_eq!(
+        barbarian_only.builder_barbarian_capture_risk(&major_game, 0, builder, target, &visible),
+        0.0,
+        "a major-war unit must not trigger the Barbarian-only safety gene"
+    );
+    assert!(barbarian_only.advanced_builder_step(
+        &mut major_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(barbarian_only.builder_targets.get(&builder), Some(&target));
+
+    // A military unit already standing on a *future* Builder tile does not
+    // erase a direct Barbarian capture threat: it can walk away before the
+    // Builder reaches it. The live t18 guard died first and the Builder was
+    // taken in that same hostile phase, so the gene does not grant an unbound
+    // nearby-escort credit.
+    let (mut guarded_game, home, target, _raider) = setup();
+    let builder = guarded_game.spawn_test_unit("builder", 0, home);
+    guarded_game.spawn_test_unit("warrior", 0, target);
+    let mut guarded = AdvancedAi::new();
+    guarded.enable_builder_barbarian_safety();
+    let visible = guarded.battlefront_visibility(&guarded_game, 0);
+    assert!(
+        guarded.builder_barbarian_capture_risk(&guarded_game, 0, builder, target, &visible)
+            > BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT,
+        "a merely adjacent guard is not a reason to donate a Builder to the raider"
+    );
+
+    // An already exposed Builder retreats to the city before it improves the
+    // tile.  The stock path would spend its charge on the same doomed tile.
+    let (mut retreat_game, home, target, _raider) = setup();
+    let builder = retreat_game.spawn_test_unit("builder", 0, target);
+    let mut retreating = AdvancedAi::new();
+    retreating.enable_builder_barbarian_safety();
+    assert!(retreating.advanced_builder_step(
+        &mut retreat_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(retreat_game.units[&builder].pos, home);
+    assert_eq!(
+        retreat_game.units[&builder].charges, 3,
+        "the retreat takes precedence over spending a charge in capture reach"
+    );
+
+    let (mut unsafe_game, _home, target, _raider) = setup();
+    let builder = unsafe_game.spawn_test_unit("builder", 0, target);
+    let mut unsafe_ai = AdvancedAi::new();
+    assert!(unsafe_ai.advanced_builder_step(
+        &mut unsafe_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(unsafe_game.units[&builder].charges, 2);
+
+    assert!(PRODUCTION_OPT_INS.iter().any(|(field, tag, _)| {
+        *field == "builder_barbarian_safety" && *tag == "builder-barbarian-safety"
+    }));
+    cautious.disable_builder_barbarian_safety();
+    assert!(!cautious.builder_barbarian_safety);
+}
+
 #[test]
 fn the_civs_own_unique_unit_earns_its_window() {
     let mut game = Game::new_full(1, 20, 14, 71_012, 200, 0, false);
