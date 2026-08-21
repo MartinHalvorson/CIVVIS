@@ -35,6 +35,9 @@
 //! - an OLS-adjusted Δ that regresses the paired difference on the whole
 //!   ±1 sign matrix at once, so a gene is not credited with the chance
 //!   imbalance of its neighbours (printed once the pair count can support it).
+//! - three newest-first, non-overlapping ≈10,000-pair win tranches. They make
+//!   an apparent win or loss auditable for replication before it changes the
+//!   genome; every seat from one all-seats map pair stays in the same tranche.
 //!
 //! ⚠ It is a SCREEN. Fifty-seven genes at |z| ≥ 2 flag ~2.6 of them by chance
 //! alone; the table prints that number, the family-wise |z| bar, and the
@@ -897,6 +900,30 @@ impl GeneEstimate {
     }
 }
 
+/// A chronological replication tranche contains this many complete on/off
+/// comparisons, rounded only enough to keep an all-seats game pair whole.
+/// The latter is important: seats from one game share a winner, so putting
+/// them into two tranches would make the purported replications correlated.
+const REPRO_WINDOW_PAIRS: usize = 10_000;
+const REPRO_WINDOW_COUNT: usize = 3;
+
+/// A complete foldover pair plus its position in the JSONL stream. `ordinal`
+/// is deliberately the input order rather than the seed: appended runs can
+/// use any disjoint seed range, while input order is what "latest 10k" means.
+#[derive(Clone, Copy)]
+struct CompletePair<'a> {
+    a: &'a Row,
+    b: &'a Row,
+    ordinal: usize,
+}
+
+/// One newest-first, non-overlapping replication tranche.
+#[derive(Clone, Debug)]
+struct ReproTranche {
+    pairs: usize,
+    estimates: Vec<GeneEstimate>,
+}
+
 /// Group `game` rows into complete pairs and estimate every gene.
 ///
 /// A pair is complete when both arms are present for one `(seed, seat, pair)`
@@ -904,24 +931,130 @@ impl GeneEstimate {
 /// unpaired game. Merged files may repeat a key only if they replayed the same
 /// pair, in which case the later row wins.
 /// The screened rows grouped into complete foldover pairs, in (arm 0, arm 1)
-/// order.
+/// order and annotated with their position in the input stream.
 ///
 /// A pair is complete when both arms are present for one `(seed, seat, pair)`
 /// key; an unfinished run's odd row is dropped rather than counted as an
 /// unpaired game. Merged files may repeat a key only if they replayed the same
 /// pair, in which case the later row wins.
-fn complete_pairs(rows: &[Row]) -> Vec<(&Row, &Row)> {
-    let mut pairs: BTreeMap<(u64, usize, usize), [Option<&Row>; 2]> = BTreeMap::new();
-    for row in rows.iter().filter(|row| row.kind == "game") {
+fn complete_pairs_with_order(rows: &[Row]) -> Vec<CompletePair<'_>> {
+    let mut pairs: BTreeMap<(u64, usize, usize), [Option<(usize, &Row)>; 2]> = BTreeMap::new();
+    for (ordinal, row) in rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.kind == "game")
+    {
         let slot = pairs
             .entry((row.seed, row.seat, row.pair))
             .or_insert([None, None]);
-        slot[usize::from(row.arm.min(1))] = Some(row);
+        slot[usize::from(row.arm.min(1))] = Some((ordinal, row));
     }
     pairs
         .values()
-        .filter_map(|[a, b]| Some(((*a)?, (*b)?)))
+        .filter_map(|[a, b]| {
+            let (a_ordinal, a) = (*a)?;
+            let (b_ordinal, b) = (*b)?;
+            Some(CompletePair {
+                a,
+                b,
+                ordinal: a_ordinal.max(b_ordinal),
+            })
+        })
         .collect()
+}
+
+fn complete_pairs(rows: &[Row]) -> Vec<(&Row, &Row)> {
+    complete_pairs_with_order(rows)
+        .into_iter()
+        .map(|pair| (pair.a, pair.b))
+        .collect()
+}
+
+/// Split the newest data into non-overlapping, chronological replication
+/// tranches. A whole `(seed, pair)` cluster moves as one unit; in all-seats
+/// files that is every seat from the two games on one map. The requested
+/// width is therefore approximate only when it would otherwise split a
+/// correlated cluster.
+fn reproducibility_tranches(
+    header: &Header,
+    rows: &[Row],
+    window_pairs: usize,
+    window_count: usize,
+) -> Vec<ReproTranche> {
+    let mut grouped: BTreeMap<(u64, usize), Vec<CompletePair<'_>>> = BTreeMap::new();
+    for pair in complete_pairs_with_order(rows) {
+        grouped
+            .entry((pair.a.seed, pair.a.pair))
+            .or_default()
+            .push(pair);
+    }
+    let mut clusters: Vec<(usize, Vec<CompletePair<'_>>)> = grouped
+        .into_values()
+        .map(|pairs| {
+            let ordinal = pairs.iter().map(|pair| pair.ordinal).max().unwrap_or(0);
+            (ordinal, pairs)
+        })
+        .collect();
+    // `complete_pairs_with_order` preserves later-row-wins semantics; the
+    // ordinal then makes this correct for both --append and several --analyze
+    // input files, even if their disjoint seed ranges are not increasing.
+    clusters.sort_by_key(|(ordinal, _)| *ordinal);
+
+    let target = window_pairs.max(1);
+    let mut end = clusters.len();
+    let mut tranches = Vec::new();
+    while end > 0 && tranches.len() < window_count {
+        let mut start = end;
+        let mut count = 0usize;
+        while start > 0 && count < target {
+            start -= 1;
+            count += clusters[start].1.len();
+        }
+        // Choose the closest boundary, but never create an empty window. For
+        // six treated seats a 10,000-pair target becomes 10,002 rather than
+        // splitting four seats from the next map pair away from their peers.
+        if count > target {
+            let without_first = count - clusters[start].1.len();
+            if without_first > 0 && target - without_first < count - target {
+                start += 1;
+            }
+        }
+        let selected: Vec<CompletePair<'_>> = clusters[start..end]
+            .iter()
+            .flat_map(|(_, pairs)| pairs.iter().copied())
+            .collect();
+        let mut tranche_rows = Vec::with_capacity(selected.len() * 2);
+        for pair in selected {
+            tranche_rows.push(pair.a.clone());
+            tranche_rows.push(pair.b.clone());
+        }
+        let (estimates, pairs, _, _) = estimate(header, &tranche_rows);
+        tranches.push(ReproTranche { pairs, estimates });
+        end = start;
+    }
+    tranches
+}
+
+fn tranche_estimate<'a>(tranche: &'a ReproTranche, tag: &str) -> Option<&'a GeneEstimate> {
+    tranche
+        .estimates
+        .iter()
+        .find(|estimate| estimate.tag == tag)
+}
+
+/// A compact table cell for one chronological win-rate replication tranche.
+/// The effect is in percentage points and the z retains the window's paired,
+/// cluster-aware uncertainty rather than pretending the raw seat rows are
+/// independent.
+fn tranche_cell(tranche: Option<&ReproTranche>, tag: &str) -> String {
+    match tranche.and_then(|tranche| tranche_estimate(tranche, tag)) {
+        Some(estimate) => format!(
+            "{:+.1}pp z{:+.2}",
+            100.0 * estimate.win_delta,
+            estimate.win_z()
+        ),
+        None => "—".to_string(),
+    }
 }
 
 /// The ±1 sign vector of a pair's arm-0 genome, restricted to screened genes,
@@ -1060,10 +1193,29 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
 /// deployment genome is derived from the screens rather than typed in.
 fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
     let (estimates, pairs, overall_win, overall_share) = estimate(header, rows);
+    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_PAIRS, REPRO_WINDOW_COUNT);
     let family_z = family_wise_z(estimates.len());
     let genes: Vec<serde_json::Value> = estimates
         .iter()
         .map(|e| {
+            let win_tranches: Vec<serde_json::Value> = tranches
+                .iter()
+                .enumerate()
+                .filter_map(|(index, tranche)| {
+                    let estimate = tranche_estimate(tranche, &e.tag)?;
+                    Some(serde_json::json!({
+                        "position": match index {
+                            0 => "latest",
+                            1 => "previous",
+                            _ => "earlier",
+                        },
+                        "pairs": tranche.pairs,
+                        "win_delta_pp": 100.0 * estimate.win_delta,
+                        "win_se_pp": 100.0 * estimate.win_se,
+                        "win_z": estimate.win_z(),
+                    }))
+                })
+                .collect();
             serde_json::json!({
                 "tag": e.tag,
                 "pairs": e.pairs,
@@ -1080,6 +1232,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
+                "win_tranches": win_tranches,
             })
         })
         .collect();
@@ -1097,6 +1250,11 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "overall_win": overall_win,
         "overall_share": overall_share,
         "family_wise_z": family_z,
+        "reproducibility": {
+            "unit": "complete paired comparisons",
+            "target_pairs_per_window": REPRO_WINDOW_PAIRS,
+            "windows": "newest first; whole game-pair clusters only",
+        },
         "genes": genes,
     });
     std::fs::write(
@@ -1632,6 +1790,24 @@ fn print_table(header: &Header, rows: &[Row]) {
         println!("no screened genes with complete pairs");
         return;
     }
+    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_PAIRS, REPRO_WINDOW_COUNT);
+    let tranche_sizes = tranches
+        .iter()
+        .enumerate()
+        .map(|(index, tranche)| {
+            let label = match index {
+                0 => "latest",
+                1 => "previous",
+                _ => "earlier",
+            };
+            format!("{label}={}", tranche.pairs)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!(
+        "reproducibility windows (newest first): {tranche_sizes} complete paired comparisons; \
+         target 10,000 each, rounded only to keep every all-seats game pair whole"
+    );
     let k = estimates.len();
     let family_z = normal_quantile_upper(0.025 / k as f64);
     let median_se = {
@@ -1671,13 +1847,15 @@ fn print_table(header: &Header, rows: &[Row]) {
     estimates.sort_by(|a, b| b.win_z().total_cmp(&a.win_z()));
     let prior_design = header.design == "prior";
     println!(
-        "\n{:<28} {:>11} {:>6} {:>6} {:>7} {:>15} {:>6}  {:>8} {:>6}  {:>9}  read",
+        "\n{:<28} {:>11} {:>6} {:>6} {:>16} {:>16} {:>16} {:>15} {:>6}  {:>8} {:>6}  {:>9}  read",
         "gene",
         if prior_design { "on n/off n" } else { "pairs" },
         "on%",
         "off%",
-        "Δpp",
-        "95% CI",
+        "latest 10k",
+        "prior 10k",
+        "earlier 10k",
+        "all 95% CI",
         "z",
         "shareΔ",
         "z",
@@ -1695,13 +1873,18 @@ fn print_table(header: &Header, rows: &[Row]) {
         } else {
             e.pairs.to_string()
         };
+        let latest = tranche_cell(tranches.first(), &e.tag);
+        let previous = tranche_cell(tranches.get(1), &e.tag);
+        let earlier = tranche_cell(tranches.get(2), &e.tag);
         println!(
-            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>+7.1} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {}",
+            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>16} {:>16} {:>16} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {}",
             e.tag,
             count,
             100.0 * e.win_on,
             100.0 * e.win_off,
-            100.0 * e.win_delta,
+            latest,
+            previous,
+            earlier,
             100.0 * (e.win_delta - 1.96 * e.win_se),
             100.0 * (e.win_delta + 1.96 * e.win_se),
             z,
@@ -1714,7 +1897,8 @@ fn print_table(header: &Header, rows: &[Row]) {
     println!(
         "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
-         this size, NOT no effect. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ \
+         this size, NOT no effect. Each 10k cell is that window's win Δpp / paired z; on% minus \
+         off% is the pooled win Δ. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ \
          over the whole sign matrix."
     );
 }
@@ -2382,6 +2566,57 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn test_header(genes: &[&str], all_seats: bool) -> Header {
+        Header {
+            kind: "header".into(),
+            genes: genes.iter().map(|gene| (*gene).to_string()).collect(),
+            screened: genes.iter().map(|gene| (*gene).to_string()).collect(),
+            players: if all_seats { 3 } else { 4 },
+            width: 1,
+            height: 1,
+            turns: 1,
+            city_states: 0,
+            speed: "online".into(),
+            map: "pangaea".into(),
+            baseline: "best".into(),
+            field: "advanced".into(),
+            start_seed: 1,
+            randomize_civs: false,
+            victories: String::new(),
+            all_seats,
+            design: "foldover".into(),
+            prior: Vec::new(),
+        }
+    }
+
+    fn test_row(pair: usize, seat: usize, arm: u8, genome: &str, win: bool) -> Row {
+        Row {
+            kind: "game".into(),
+            pair,
+            arm,
+            seed: pair as u64,
+            seat,
+            genome: genome.into(),
+            win,
+            winner: None,
+            victory: String::new(),
+            turn: 1,
+            score: 0,
+            score_share: if win { 0.4 } else { 0.2 },
+            rank: 1,
+            cities: 0,
+            alive: true,
+            secs: 0.0,
+            founded_religion: false,
+            foreign_faith_cities: 0,
+            faith: 0.0,
+            inquisition: false,
+            techs: 0,
+            military: 0.0,
+            civ: String::new(),
+        }
+    }
+
     /// The gene table is discovered from the repository's tables and every
     /// row can actually be flipped on a real controller.
     #[test]
@@ -2654,6 +2889,37 @@ mod tests {
             ..rows[0].clone()
         });
         assert_eq!(estimate(&header, &rows).1, 300);
+    }
+
+    /// A 10k tranche is a chronological replication, not an arbitrary slice
+    /// of seat rows. This deliberately asks for four comparisons when one
+    /// all-seats game contributes three: the nearest whole cluster is three,
+    /// so a result from one map can never leak into two windows.
+    #[test]
+    fn reproducibility_tranches_are_newest_first_and_cluster_safe() {
+        let header = test_header(&["a"], true);
+        let mut rows = Vec::new();
+        for (pair, on_wins) in [(0, false), (1, false), (2, false), (3, true)] {
+            for seat in 0..3 {
+                rows.push(test_row(pair, seat, 0, "1", on_wins));
+                rows.push(test_row(pair, seat, 1, "0", !on_wins));
+            }
+        }
+
+        let tranches = reproducibility_tranches(&header, &rows, 4, 3);
+        assert_eq!(tranches.len(), 3);
+        assert_eq!(
+            tranches
+                .iter()
+                .map(|tranche| tranche.pairs)
+                .collect::<Vec<_>>(),
+            vec![3, 3, 3],
+            "a four-pair target must not divide the three-seat game cluster"
+        );
+        let effect = |index: usize| tranches[index].estimates[0].win_delta;
+        assert!((effect(0) - 1.0).abs() < 1e-9, "latest map is helpful");
+        assert!((effect(1) + 1.0).abs() < 1e-9, "previous map is harmful");
+        assert!((effect(2) + 1.0).abs() < 1e-9, "older map is harmful");
     }
 
     /// Synthetic rows with a planted interaction and planted main effects: the
