@@ -21116,27 +21116,26 @@ impl AdvancedAi {
         visible: &TileBits,
         discount_support: bool,
     ) -> f64 {
-        let escorted = discount_support && uid
-            .and_then(|unit| g.units.get(&unit))
-            .and_then(|unit| unit.linked_to)
-            .and_then(|escort| g.units.get(&escort))
-            .is_some_and(|escort| {
-                escort.owner == pid
-                    && g.rules.units[escort.kind].class == "military"
-                    && g.rules.units[escort.kind].domain.as_deref() != Some("air")
-            });
+        let escorted = discount_support
+            && uid
+                .and_then(|unit| g.units.get(&unit))
+                .and_then(|unit| unit.linked_to)
+                .and_then(|escort| g.units.get(&escort))
+                .is_some_and(|escort| {
+                    escort.owner == pid
+                        && g.rules.units[escort.kind].class == "military"
+                        && g.rules.units[escort.kind].domain.as_deref() != Some("air")
+                });
         // See `settler_stack_discipline`: a civilian mover — a Settler, or an
         // opted-in Builder rather than the military leader of a formation — is
         // captured by any hostile that can enter its tile, and is protected
         // only by a unit standing ON it.
-        let civilian_mover = uid
-            .and_then(|unit| g.units.get(&unit))
-            .is_some_and(|unit| {
-                let civilian = g.rules.units[unit.kind].class != "military";
-                civilian
-                    && (self.live_formationless_settler_shadow
-                        || (self.builder_barbarian_safety && unit.kind == "builder"))
-            });
+        let civilian_mover = uid.and_then(|unit| g.units.get(&unit)).is_some_and(|unit| {
+            let civilian = g.rules.units[unit.kind].class != "military";
+            civilian
+                && (self.live_formationless_settler_shadow
+                    || (self.builder_barbarian_safety && unit.kind == "builder"))
+        });
         let escort_reach = if civilian_mover { 0 } else { 1 };
         // A stacked guard mirrors the settler's step (`stacked_guard_step`
         // runs after the settler and walks onto its tile), so a settler that

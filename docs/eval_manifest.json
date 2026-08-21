@@ -1,12 +1,11 @@
 {
   "coverage": {
-    "named": 37,
-    "never_named": 18,
+    "named": 38,
+    "never_named": 17,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
       "barbarian-bargain": "live_without_barbarian_bargain",
-      "barbarian-hunt": "live_without_barbarian_hunt",
       "barbarian-ranged-answer": "live_without_barbarian_ranged_answer",
       "barbarian-walls-one-tier": "live_without_barbarian_walls_one_tier",
       "blind-objective-strength": "live_without_blind_objective_strength",
@@ -26,7 +25,6 @@
       "amenity-district-path",
       "amenity-project-preemption",
       "barbarian-bargain",
-      "barbarian-hunt",
       "barbarian-ranged-answer",
       "barbarian-walls-one-tier",
       "blind-objective-strength",
