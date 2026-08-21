@@ -83,6 +83,55 @@ impl AdvancedAi {
         self.arrival_wave.clear();
     }
 
+    /// A founder under conversion pressure may hold one Apostle for the
+    /// Inquisition, bought after its Missionaries when the bank covers it.
+    /// See [`AdvancedAi::inquisition_on_threat`]. Off everywhere by default;
+    /// opted into by name (`gene_screen`, `victory_eval --with
+    /// inquisition-on-threat`) and listed in `PRODUCTION_OPT_INS`.
+    pub fn enable_inquisition_on_threat(&mut self) {
+        self.inquisition_on_threat = true;
+    }
+
+    /// The twin of `enable_inquisition_on_threat`.
+    pub fn disable_inquisition_on_threat(&mut self) {
+        self.inquisition_on_threat = false;
+    }
+
+    /// A founder outside the Religion lane still builds its Shrine and
+    /// Temple. See [`AdvancedAi::founder_temple`]. Opt-in gene.
+    pub fn enable_founder_temple(&mut self) {
+        self.founder_temple = true;
+    }
+
+    /// The twin of `enable_founder_temple`.
+    pub fn disable_founder_temple(&mut self) {
+        self.founder_temple = false;
+    }
+
+    /// A founder researches Theology next. See
+    /// [`AdvancedAi::theology_for_founders`]. Opt-in gene.
+    pub fn enable_theology_for_founders(&mut self) {
+        self.theology_for_founders = true;
+    }
+
+    /// The twin of `enable_theology_for_founders`.
+    pub fn disable_theology_for_founders(&mut self) {
+        self.theology_for_founders = false;
+    }
+
+    /// The Religion lane pays for its Holy Site what the Culture lane pays
+    /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
+    /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
+    /// makes it a native opt-in gene (`PRODUCTION_OPT_INS`).
+    pub fn enable_holy_lane_parity(&mut self) {
+        self.holy_lane_parity = true;
+    }
+
+    /// The twin of `enable_holy_lane_parity`.
+    pub fn disable_holy_lane_parity(&mut self) {
+        self.holy_lane_parity = false;
+    }
+
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {

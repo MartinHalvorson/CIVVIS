@@ -183,4 +183,12 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
     ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
+    // The religion race decides two thirds of native games, and a founder
+    // that loses its own cities wins as rarely as a seat that never founded
+    // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the
+    // deployment genome before either ships; see the fields' docs.
+    ("inquisition_on_threat", "inquisition-on-threat", AdvancedAi::enable_inquisition_on_threat),
+    ("founder_temple", "founder-temple", AdvancedAi::enable_founder_temple),
+    ("theology_for_founders", "theology-for-founders", AdvancedAi::enable_theology_for_founders),
+    ("holy_lane_parity", "holy-lane-parity", AdvancedAi::enable_holy_lane_parity),
 ];

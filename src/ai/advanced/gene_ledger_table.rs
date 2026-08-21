@@ -143,6 +143,13 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: -2.606, win_z: -2.263, share_delta_pp: -0.263, share_z: -0.908, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
+        tag: "founder-temple",
+        verdict: Verdict::Helps,
+        family_wise: false,
+        native: Some(Measure { pairs: 6000, win_delta_pp: 0.967, win_z: 2.136, share_delta_pp: 0.019, share_z: 0.49, source: "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json" }),
+        war: None,
+    },
+    GeneVerdict {
         tag: "garrison-under-fire",
         verdict: Verdict::Helps,
         family_wise: false,
@@ -162,6 +169,13 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: true,
         native: Some(Measure { pairs: 13446, win_delta_pp: -1.116, win_z: -2.516, share_delta_pp: -3.377, share_z: -51.501, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 1064, win_delta_pp: -9.023, win_z: -5.069, share_delta_pp: -2.74, share_z: -6.581, source: "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json" }),
+    },
+    GeneVerdict {
+        tag: "holy-lane-parity",
+        verdict: Verdict::Unresolved,
+        family_wise: false,
+        native: Some(Measure { pairs: 6000, win_delta_pp: -0.533, win_z: -1.193, share_delta_pp: -0.05, share_z: -1.341, source: "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json" }),
+        war: None,
     },
     GeneVerdict {
         tag: "home-defense",
@@ -204,6 +218,13 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: false,
         native: Some(Measure { pairs: 13446, win_delta_pp: -0.372, win_z: -0.864, share_delta_pp: -0.034, share_z: -0.485, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 3300, win_delta_pp: -0.788, win_z: -0.69, share_delta_pp: -0.17, share_z: -0.592, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
+    },
+    GeneVerdict {
+        tag: "inquisition-on-threat",
+        verdict: Verdict::Unresolved,
+        family_wise: false,
+        native: Some(Measure { pairs: 6000, win_delta_pp: 0.7, win_z: 1.529, share_delta_pp: -0.025, share_z: -0.64, source: "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json" }),
+        war: None,
     },
     GeneVerdict {
         tag: "joint-tactics",
@@ -414,6 +435,13 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: false,
         native: Some(Measure { pairs: 13446, win_delta_pp: 0.283, win_z: 0.65, share_delta_pp: -0.009, share_z: -0.122, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 3300, win_delta_pp: -0.121, win_z: -0.105, share_delta_pp: 0.033, share_z: 0.117, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
+    },
+    GeneVerdict {
+        tag: "theology-for-founders",
+        verdict: Verdict::Unresolved,
+        family_wise: false,
+        native: Some(Measure { pairs: 6000, win_delta_pp: -0.1, win_z: -0.213, share_delta_pp: -0.028, share_z: -0.733, source: "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json" }),
+        war: None,
     },
     GeneVerdict {
         tag: "war-economy",
