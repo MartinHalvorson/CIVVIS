@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
-ranked by wins added per 10,000 six-player games — from the screens the gene
-ledger records.
+"""Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene
+with a native measurement, ranked by wins added per 10,000 six-player games,
+plus the screenable genes still awaiting that measurement.
 
     python3 tools/heuristic_gene_ranking.py --write     # rewrite the table
     python3 tools/heuristic_gene_ranking.py --check     # fail if it is stale
 
 The table used to be written once, by hand, from one screen's rows. Now it is
-derived: for each gene the **latest native source** in `docs/gene_ledger.json`
-that measured it supplies the on/off wins and games (so a gene added after the
-whole-genome screen still appears, from its own screen), the **latest war
-source** supplies the war column, and the deployment verdict comes from the
-ledger. Genes whose code has been removed this cycle are listed from their last
+derived: for each measured gene the **latest native source** in
+`docs/gene_ledger.json` supplies the on/off wins and games (so a gene added
+after the whole-genome screen still appears, from its own screen), the **latest
+war source** supplies the war column, and the deployment verdict comes from the
+ledger. Screenable genes without a native result are listed separately without
+a rank. Genes whose code has been removed this cycle are listed from their last
 measurement, as before. Descriptions are the first sentence of each toggle's
 doc comment in `src/ai/advanced/treatment_flags.rs`. Hand-written follow-ups
 go in `docs/gene_ranking_notes.md` and are carried under the table.
@@ -149,9 +150,11 @@ def render(ledger: dict) -> str:
     reg = registry()
 
     rows = []
+    unmeasured = []
     for tag in tags:
         m = native.get(tag)
         if m is None:
+            unmeasured.append(tag)
             continue
         rows.append((wins_per(m["win_on"], m["players"]), tag, m))
     rows.sort(key=lambda r: (-r[0], r[1]))
@@ -163,8 +166,10 @@ def render(ledger: dict) -> str:
     lines = [
         "# The heuristic gene ranking",
         "",
-        "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by **wins added per 10,000 six-player games** at its measured on-rate. "
+        "Every screenable heuristic gene with a native measurement on the Advanced controller, "
+        "ranked most beneficial to least by **wins added per 10,000 six-player games** at its "
+        "measured on-rate. Screenable genes awaiting their first native measurement are listed "
+        "separately below without a rank. "
         "Each gene's row comes from the **latest native screen that measured it** (the "
         "column *Source*), so a gene added after the whole-genome screen appears from its "
         "own screen; the *War* column is the same figure from the latest `domination,score` "
@@ -201,6 +206,26 @@ def render(ledger: dict) -> str:
             f"{fmt_int(m['n_on'])}/{fmt_int(m['n_off'])} | {m['win_z']:+.2f} | {m['share_z']:+.2f} | "
             f"{war_cell} | `{native_src[tag]}` |"
         )
+
+    if unmeasured:
+        lines += [
+            "",
+            "## Awaiting native measurement",
+            "",
+            "These screenable genes have no native on/off result, so they receive no rank or "
+            "promotion from this table. Their deployment state remains explicit while a native "
+            "screen is pending.",
+            "",
+            "| Gene | Default | Description |",
+            "|---|---|---|",
+        ]
+        for tag in sorted(unmeasured):
+            v = verdict.get(tag, {})
+            default = "**on**" if v.get("default_on") else "off"
+            verdict_word = v.get("verdict", "unmeasured")
+            lines.append(
+                f"| `{tag}` | {default} ({verdict_word}) | {desc.get(tag, '')} |"
+            )
 
     if removed:
         lines += [
