@@ -596,14 +596,6 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
-/// A Builder charge on an idle ordinary tile buys a future yield, while a
-/// charge on a worked tile changes the empire's output immediately. Keep the
-/// former possible — a growing city will need it — but make the latter win the
-/// ordinary target race. Luxury and strategic connections are deliberately
-/// exempt because the engine pays them whether or not a citizen works the
-/// plot. See [`AdvancedAi::builder_worked_tile_priority`].
-const UNWORKED_BUILDER_TARGET_WEIGHT: f64 = 0.25;
-
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1891,9 +1883,8 @@ pub struct AdvancedAi {
     ///
     /// The target sweep keeps a correctly connected luxury or strategic
     /// resource at full priority: its Amenity or stockpile pays regardless of
-    /// its citizen assignment. Other idle tiles retain a quarter of their
-    /// normal score, so the Builder can still prepare a growing city without
-    /// displacing work that changes the empire's output this turn.
+    /// its citizen assignment. An ordinary idle tile earns only the output it
+    /// would add by replacing the city's least valuable current worker.
     ///
     /// Off by default; native opt-in gene `builder-worked-tile-priority`.
     pub builder_worked_tile_priority: bool,
@@ -23368,8 +23359,26 @@ impl AdvancedAi {
     /// improvement that best fits *one tile*. This second score answers the
     /// empire-level timing question — which job receives this finite charge
     /// now? A luxury or strategic connection is full value even on an idle
-    /// tile; otherwise, the active citizen plan decides whether its yield is
-    /// immediate or merely a future option.
+    /// tile. For any other idle tile, the immediate gain is the prospective
+    /// worked-tile value less the weakest tile the city works today. If no
+    /// citizen can move there, the Builder has not produced output yet.
+    fn builder_worked_tile_value(&self, g: &Game, pos: Pos, strategy: GrandStrategy) -> f64 {
+        self.yield_value(g.rules.worked_tile_yields(&g.map.tiles[&pos]), strategy)
+    }
+
+    fn builder_improved_tile_value(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let mut tile = g.map.tiles[&pos].clone();
+        tile.improvement = Some(Name::new(improvement));
+        tile.pillaged = false;
+        self.yield_value(g.rules.worked_tile_yields(&tile), strategy)
+    }
+
     fn builder_target_value(
         &self,
         g: &Game,
@@ -23377,6 +23386,7 @@ impl AdvancedAi {
         improvement: &str,
         strategy: GrandStrategy,
         worked: bool,
+        weakest_worked_value: Option<f64>,
     ) -> f64 {
         let value = self.improvement_value(g, pos, improvement, strategy);
         if !self.builder_worked_tile_priority
@@ -23387,7 +23397,9 @@ impl AdvancedAi {
         if worked {
             value
         } else {
-            value * UNWORKED_BUILDER_TARGET_WEIGHT
+            weakest_worked_value.map_or(0.0, |weakest| {
+                (self.builder_improved_tile_value(g, pos, improvement, strategy) - weakest).max(0.0)
+            })
         }
     }
 
@@ -23915,17 +23927,6 @@ impl AdvancedAi {
         // guard the moment anything in here starts mutating the game.
         let best = {
             let _memo = g.query_memo();
-            // Computing the citizen plan can inspect every tile in a city.
-            // Read it once per city, rather than once for every candidate
-            // improvement in the target sweep.
-            let worked_tiles: HashSet<Pos> = if self.builder_worked_tile_priority {
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
-                    .collect()
-            } else {
-                HashSet::new()
-            };
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && !self
@@ -23937,6 +23938,24 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        // Computing the citizen plan can inspect every tile in a city.
+                        // Read it once per city, rather than once for every candidate
+                        // improvement in the target sweep.
+                        let (worked_tiles, weakest_worked_value) =
+                            if self.builder_worked_tile_priority {
+                                let plan = g.city_citizen_plan(cid);
+                                let weakest = plan
+                                    .worked_tiles
+                                    .iter()
+                                    .map(|pos| self.builder_worked_tile_value(g, *pos, strategy))
+                                    .reduce(f64::min);
+                                (
+                                    plan.worked_tiles.into_iter().collect::<HashSet<_>>(),
+                                    weakest,
+                                )
+                            } else {
+                                (HashSet::new(), None)
+                            };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) {
                                 continue;
@@ -23949,6 +23968,7 @@ impl AdvancedAi {
                                     &improvement,
                                     strategy,
                                     worked_tiles.contains(pos),
+                                    weakest_worked_value,
                                 ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))

@@ -11348,13 +11348,14 @@ fn a_first_luxury_outbids_a_duplicate_and_a_worked_tile_outbids_an_idle_one() {
     );
 }
 
-/// The native destination scorer previously selected an idle Mine (2.2
-/// Expansion value) over a worked Farm (2.0), even though only the Farm changes
-/// output now. The opt-in reverses that ordinary comparison, but must retain
-/// luxury and strategic connections because their Amenity or stockpile pays
-/// without a worked citizen.
+/// The native destination scorer prices an idle job from only its improvement
+/// yield. The opt-in instead pays an ordinary idle improvement for the value it
+/// adds when a citizen can leave the city's weakest current tile. A Mine that
+/// materially upgrades that worker can still win; one that merely ties the
+/// worker earns nothing. Luxury and strategic connections retain their full
+/// priority because their Amenity or stockpile pays without a worked citizen.
 #[test]
-fn builder_worked_tile_priority_prefers_active_yields_but_keeps_global_resources() {
+fn builder_worked_tile_priority_prices_idle_tiles_by_marginal_worker_swap() {
     let (mut game, city, home) = empire_with_a_capital(71_011);
     for tile in game.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");
@@ -11405,13 +11406,46 @@ fn builder_worked_tile_priority_prefers_active_yields_but_keeps_global_resources
     let mut treated = AdvancedAi::new();
     assert!(!treated.builder_worked_tile_priority);
     treated.enable_builder_worked_tile_priority();
+    let weakest = treated.builder_worked_tile_value(&game, worked, strategy);
+    let worked_charge =
+        treated.builder_target_value(&game, worked, "farm", strategy, true, Some(weakest));
+    let idle_potential = treated.builder_improved_tile_value(&game, idle, "mine", strategy);
+    let idle_charge =
+        treated.builder_target_value(&game, idle, "mine", strategy, false, Some(weakest));
     assert!(
-        treated.builder_target_value(&game, worked, "farm", strategy, true)
-            > treated.builder_target_value(&game, idle, "mine", strategy, false)
+        (idle_charge - (idle_potential - weakest)).abs() < 1e-9,
+        "an idle job is its potential worked tile less the marginal worker"
+    );
+    assert!(
+        idle_charge > worked_charge,
+        "the Mine should win only because it can replace the weak worked Grassland"
     );
     let mut treated_game = game.clone();
     assert!(treated.advanced_builder_step(&mut treated_game, 0, builder, strategy));
-    assert_eq!(treated.builder_targets.get(&builder), Some(&worked));
+    assert_eq!(treated.builder_targets.get(&builder), Some(&idle));
+
+    let mut no_swap_game = game.clone();
+    let high_worked = no_swap_game.map.tiles.get_mut(&worked).unwrap();
+    high_worked.hills = true;
+    high_worked.improvement = Some(Name::new("mine"));
+    let no_swap_floor = treated.builder_worked_tile_value(&no_swap_game, worked, strategy);
+    assert_eq!(
+        treated.builder_target_value(
+            &no_swap_game,
+            idle,
+            "mine",
+            strategy,
+            false,
+            Some(no_swap_floor),
+        ),
+        0.0,
+        "an idle tile that cannot replace any current worker has no immediate charge value"
+    );
+    assert_eq!(
+        treated.builder_target_value(&game, idle, "mine", strategy, false, None),
+        0.0,
+        "a city without a worked tile cannot receive an immediate worker-swap gain"
+    );
 
     for (resource, improvement) in [("iron", "mine"), ("citrus", "plantation")] {
         let mut connected_game = game.clone();
@@ -11430,14 +11464,29 @@ fn builder_worked_tile_priority_prefers_active_yields_but_keeps_global_resources
         );
         let mut connected = AdvancedAi::new();
         connected.enable_builder_worked_tile_priority();
+        let connection_value = connected.builder_target_value(
+            &connected_game,
+            resource_tile,
+            improvement,
+            strategy,
+            false,
+            Some(weakest),
+        );
+        assert_eq!(
+            connection_value,
+            connected.improvement_value(&connected_game, resource_tile, improvement, strategy),
+            "a {resource} connection keeps its full empire-wide value"
+        );
         assert!(
-            connected.builder_target_value(
-                &connected_game,
-                resource_tile,
-                improvement,
-                strategy,
-                false,
-            ) > connected.builder_target_value(&connected_game, worked, "farm", strategy, true)
+            connection_value
+                > connected.builder_target_value(
+                    &connected_game,
+                    worked,
+                    "farm",
+                    strategy,
+                    true,
+                    Some(weakest),
+                )
         );
         assert!(connected.advanced_builder_step(&mut connected_game, 0, builder, strategy,));
         assert_eq!(
