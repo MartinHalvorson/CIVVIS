@@ -183,4 +183,11 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
     ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
+    // `governor-every-lane` is a losing composite: the deployment screen's
+    // score-share drag is large enough that the two pre-existing halves need
+    // their own randomised comparisons before either can be retained. The
+    // composite remains the live-bridge compatibility switch; these opt-ins
+    // let a native seat turn on exactly one of its established predicates.
+    ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
+    ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
 ];
