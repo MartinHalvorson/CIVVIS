@@ -5034,7 +5034,8 @@ impl AdvancedAi {
             .last_campaign_progress
             .max(self.major_war_since.unwrap_or(0));
         if g.turn.saturating_sub(reference)
-            < g.standard_duration(WAR_PATIENCE_PROGRESS_GRACE_TURNS).max(1)
+            < g.standard_duration(WAR_PATIENCE_PROGRESS_GRACE_TURNS)
+                .max(1)
         {
             return true;
         }

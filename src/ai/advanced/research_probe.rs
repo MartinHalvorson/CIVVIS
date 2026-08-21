@@ -1427,7 +1427,10 @@ fn war_patience_progress_needs_a_visibly_falling_wall() {
     );
 
     game.turn = 80;
-    assert!(!ai.war_patience_exhausted(&game), "the 40-turn limit is not up");
+    assert!(
+        !ai.war_patience_exhausted(&game),
+        "the 40-turn limit is not up"
+    );
     assert!(
         !ai.war_patience_progressing(&game, 0),
         "past the grace, full garrison and wall health is no progress"
