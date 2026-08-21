@@ -3929,111 +3929,29 @@ mod flagged_gene_repairs {
         );
     }
 
-    /// `war-economy`: the war production routing needs a DECLARED war with
-    /// the plan's target — a plan that merely says Conquest leaves the
-    /// empire's queues to the baseline governor, as without the flag.
+    /// `war-economy`'s Conquest routing was REMOVED 2026-08-20 by its own
+    /// numbers (three repairs, war regime −26.7 → −18.1 → −7.4 → −6.8, never
+    /// cleared). This pin keeps it out; the removal note in the dispatch
+    /// carries the full trail.
     #[test]
-    fn war_economy_routing_needs_a_declared_war() {
+    fn war_economy_routing_stays_removed() {
         let source = include_str!("../advanced.rs");
-        let gate = "|| (self.war_economy
-                    && plan.strategy == GrandStrategy::Conquest
-                    && plan
-                        .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target)))";
         assert!(
-            source.contains(gate),
-            "war-economy's production routing must require a declared war"
+            source.contains("CONQUEST ROUTING WAS REMOVED"),
+            "the removal note must stay beside the dispatch"
         );
-        assert_eq!(
-            source
-                .matches("self.war_economy && plan.strategy == GrandStrategy::Conquest")
-                .count(),
-            0,
-            "the unconditional routing must not come back"
-        );
-    }
-
-    /// `war-economy` cycle two: with a declared adaptive war, only cities
-    /// within `WAR_ECONOMY_FRONT_RADIUS` of the objective take war-path
-    /// production; the interior is left for the baseline governor (its queue
-    /// stays empty here because `delegated_cities` runs later).
-    #[test]
-    fn war_economy_routes_only_the_front_cities() {
-        let mut g = Game::new_full(2, 40, 16, 63, 120, 0, false);
-        let enemy_city = found_test_city(&mut g, 1);
-        let enemy_capital = (enemy_city, g.cities[&enemy_city].pos);
-        // A fallible founder: the loop below walks toward the map edge and a
-        // site or founding can legally fail; that ends the search rather
-        // than the test.
-        let try_found = |g: &mut Game| -> Option<u32> {
-            let position = g
-                .map
-                .tiles
-                .values()
-                .filter(|tile| {
-                    g.rules.is_passable(tile)
-                        && !g.rules.is_water(tile)
-                        && tile.owner_city.is_none()
-                        && g.city_at(tile.pos).is_none()
-                        && g.units_at(tile.pos).is_empty()
-                        && g.cities
-                            .values()
-                            .all(|city| g.wdist(city.pos, tile.pos) >= 4)
-                })
-                .map(|tile| tile.pos)
-                .next()?;
-            let settler = g.spawn_test_unit("settler", 0, position);
-            g.current = 0;
-            g.apply(0, &Action::FoundCity { unit: settler }).ok()?;
-            g.city_at(position)
-        };
-        let near = found_test_city(&mut g, 0);
-        let mut far = None;
-        for _ in 0..6 {
-            let Some(cid) = try_found(&mut g) else { break };
-            if g.wdist(g.cities[&cid].pos, enemy_capital.1) > WAR_ECONOMY_FRONT_RADIUS {
-                far = Some(cid);
-                break;
-            }
+        for revenant in [
+            "self.war_economy && plan.strategy == GrandStrategy::Conquest",
+            "war_front_only",
+            "WAR_ECONOMY_FRONT_RADIUS",
+        ] {
+            assert!(
+                !source.contains(revenant),
+                "the removed routing must not come back: found {revenant:?}"
+            );
         }
-        let Some(far) = far else {
-            // The map did not offer a site beyond the radius; the source pin
-            // below still guards the gate.
-            return;
-        };
-        // Drag the near city inside the radius if founding order put it out.
-        let near = if g.wdist(g.cities[&near].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS {
-            near
-        } else {
-            g.player_city_ids(0)
-                .into_iter()
-                .find(|cid| g.wdist(g.cities[cid].pos, enemy_capital.1) <= WAR_ECONOMY_FRONT_RADIUS)
-                .unwrap_or(near)
-        };
-        if g.wdist(g.cities[&near].pos, enemy_capital.1) > WAR_ECONOMY_FRONT_RADIUS {
-            return;
-        }
-        g.at_war.insert((0, 1));
-        let plan = StrategicPlan {
-            strategy: GrandStrategy::Conquest,
-            target_player: Some(1),
-            target_city: Some(enemy_capital.0),
-            threatened_city: None,
-            desired_cities: 4,
-            assessed_turn: g.turn,
-            rush: false,
-        };
-        let mut ai = AdvancedAi::new();
-        ai.enable_war_economy();
-        ai.advanced_production(&mut g, 0, &plan, false);
-        assert!(
-            g.cities[&far].queue.is_empty(),
-            "an interior city beyond the front radius is the baseline's business"
-        );
-        assert!(
-            !g.cities[&near].queue.is_empty(),
-            "a front city takes war-path production"
-        );
+        // The protective halves stay.
+        assert!(source.contains("fn live_war_economy_requires_recovery"));
     }
 
     /// The war-economy front bound keeps its shape — and the reverted
@@ -4042,18 +3960,30 @@ mod flagged_gene_repairs {
     #[test]
     fn cycle_two_preemptions_are_wired() {
         let source = include_str!("../advanced.rs");
-        for needle in [
-            "let war_front_only = self.war_economy",
-            "&& self.war_plan.is_none()",
-            "> WAR_ECONOMY_FRONT_RADIUS",
-            "MEASURED AND REVERTED",
-        ] {
-            assert!(source.contains(needle), "missing {needle:?}");
-        }
+        assert!(
+            source.contains("MEASURED AND REVERTED"),
+            "the building-preemption revert note must stay"
+        );
         assert!(
             !source.contains("finishes {} before the lane's strategic pick"),
             "the naive building preemption must stay reverted"
         );
+    }
+
+    /// Cycle three's three gates keep their shapes: the escort machinery
+    /// engages on a visible threat and releases on quiet ground; the war
+    /// economy requires a young-or-moving war; the campus coverage promise
+    /// reads the same conversion-race signal that repaired wide-map.
+    #[test]
+    fn cycle_three_gates_are_wired() {
+        let source = include_str!("../advanced.rs");
+        for needle in [
+            "<= SETTLER_ESCORT_THREAT_RADIUS",
+            "if self.settler_guards.remove(&uid).is_some() {",
+            "MEASURED AND REVERTED the same day",
+        ] {
+            assert!(source.contains(needle), "missing {needle:?}");
+        }
     }
 
     /// `wide-map-capacity`: the wide target stands while a religious victory
@@ -19033,7 +18963,15 @@ fn blocked_land_settler_links_to_one_escort_and_the_escort_leads() {
 /// plains disk, a settler with a committed target 4-8 tiles out, and a
 /// clean unit slate. Returns (game, source, target).
 fn stacked_escort_fixture() -> (Game, Pos, Pos) {
-    let mut game = Game::new_full(1, 24, 16, 8_119, 120, 0, false);
+    // Two majors at war: since the cycle-three repair, the escort machinery
+    // engages only under a visible threat, so each test spawns the raider
+    // its scenario needs.
+    let mut game = Game::new_full(2, 24, 16, 8_119, 120, 0, false);
+    game.record_contact(0, 1);
+    game.at_war.insert((0, 1));
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
     let founding_settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -19098,6 +19036,9 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
     ai.settler_targets.insert(settler, target);
     let plan = stacked_escort_plan(&game);
 
+    // The repaired machinery engages only under threat: a raider shadows
+    // the expedition, re-seated beside the settler every turn.
+    let mut raider = None;
     let mut last = game.wdist(source, target);
     for _ in 0..8 {
         for unit in [settler, guard] {
@@ -19107,6 +19048,22 @@ fn a_stacked_guard_shadows_the_settler_without_a_formation() {
                 unit.fortified = false;
             }
         }
+        if let Some(old) = raider.take() {
+            game.remove_unit(old);
+        }
+        let beside = game
+            .wdisk(game.units[&settler].pos, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, game.units[&settler].pos) == 2
+                    && *position != target
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("open ground beside the settler");
+        raider = Some(game.spawn_test_unit("warrior", 1, beside));
         ai.advanced_settler_step(&mut game, 0, settler);
         if !game.units.contains_key(&settler) {
             // Founded: the march is over and the pairing held throughout.
@@ -19363,6 +19320,22 @@ fn a_settler_waits_for_its_guard_only_within_patience() {
             })
             .expect("fixture has a lagging guard post");
     let guard = game.spawn_test_unit("warrior", 0, lagging);
+    // The repaired machinery engages only under threat: a raider stands six
+    // tiles out — inside the engage radius, outside capture reach, so the
+    // scene exercises the pure wait rather than the threatened fallback.
+    let raider_post =
+        game.wdisk(source, 6)
+            .into_iter()
+            .find(|position| {
+                game.wdist(source, *position) == 6
+                    && *position != lagging
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a raider post");
+    game.spawn_test_unit("warrior", 1, raider_post);
     let mut ai = AdvancedAi::new();
     ai.enable_stacked_escort();
     ai.settler_targets.insert(settler, target);
@@ -19501,15 +19474,21 @@ fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
         "the fallback is journaled"
     );
 
-    // Quiet: the same settler waits in place, as before.
+    // Quiet: since the cycle-three repair the machinery stands down with no
+    // visible hostile in reach — the settler marches instead of paying for a
+    // guard against a risk that is not there, and no binding is held.
     let (mut calm, settler, _guard, source) = build(false);
     let mut ai = AdvancedAi::new();
     ai.enable_stacked_escort();
     calm.units.get_mut(&settler).unwrap().moves_left = 2.0;
     let _ = ai.advanced_settler_step(&mut calm, 0, settler);
-    assert_eq!(
+    assert_ne!(
         calm.units[&settler].pos, source,
-        "on a quiet tile the settler holds for its guard"
+        "on quiet ground the escort stands down and the settler marches"
+    );
+    assert!(
+        ai.settler_guards.is_empty(),
+        "no guard is bound against a risk that is not there"
     );
 }
 

@@ -177,11 +177,6 @@ const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// anywhere on or just off the ring; a Hold at that range is the measured
 /// posture logic doing its job, not a unit that failed to reach the war.
 const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
-/// `war_economy`: how far from the campaign objective a city still counts as
-/// the war machine while the adaptive war economy is routing production.
-/// Beyond it the interior keeps the baseline governor. Twelve covers the
-/// staging ring (3..=5), the reinforcement front (8), and a margin of march.
-const WAR_ECONOMY_FRONT_RADIUS: i32 = 12;
 /// `arrival_waves`: how many rear reinforcements must stand together, inside
 /// [`ARRIVAL_WAVE_RADIUS`] of each other, before a held arrival is released to
 /// its front group's orders. Two is the smallest wave that is not "one at a
@@ -542,6 +537,12 @@ const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
 const SETTLER_REPLACEMENT_BLOCKED_TURNS: u32 = 3;
 const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
+/// `stacked_escort` / `settler_stack_discipline`: how close a visible hostile
+/// military unit must be before the escort machinery engages (and past which
+/// a bound guard is released back to the army). Eight tiles is two turns of
+/// cavalry plus a margin — the doorstep captures the flags exist for all
+/// began inside it.
+const SETTLER_ESCORT_THREAT_RADIUS: i32 = 8;
 /// How many consecutive turns a settler holds position for a guard that has
 /// fallen off the pair before marching on unescorted. Two turns covers every
 /// ordinary desync (a refused step, a zone of control, a re-stack after the
@@ -17846,39 +17847,7 @@ impl AdvancedAi {
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
-        // ★★★ `war_economy`, second cut (2026-08-20). The declared-war gate
-        // improved the gene with disjoint intervals in both regimes
-        // (−7.2 → −4.1 native over 2,000 pairs, seeds 45000000..;
-        // −26.7 → −18.1 at war, seeds 44000000..) and it still resolves
-        // harmful: even a declared war does not need EVERY city on war
-        // production for fifty-plus turns. The bound is spatial — cities
-        // within [`WAR_ECONOMY_FRONT_RADIUS`] of the campaign objective are
-        // the war machine; the interior keeps compounding under the baseline
-        // governor, exactly as it would without the flag (the skipped queues
-        // fall through to `delegated_cities`, whose comment already promises
-        // that). An appointed timed war (`war_plan`) and a victory-targeted
-        // seat keep their whole-empire routing — this bounds only the
-        // adaptive war economy that measured harmful.
-        let war_front_only = self.war_economy
-            && self.war_plan.is_none()
-            && self.active_victory_target(g).is_none()
-            && plan.strategy == GrandStrategy::Conquest
-            && plan
-                .target_player
-                .is_some_and(|target| g.is_at_war(pid, target));
-        let front_objective = war_front_only
-            .then(|| {
-                plan.target_city
-                    .and_then(|city| g.cities.get(&city))
-                    .map(|city| city.pos)
-            })
-            .flatten();
         for cid in city_ids {
-            if let Some(objective) = front_objective {
-                if g.wdist(g.cities[&cid].pos, objective) > WAR_ECONOMY_FRONT_RADIUS {
-                    continue;
-                }
-            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -19652,6 +19621,25 @@ impl AdvancedAi {
                             + if wonder_civ { 120.0 } else { 0.0 }
                     }
                 } else {
+                    // ★★★ `governor_every_lane`, third cut, MEASURED AND
+                    // REVERTED (2026-08-20) — like the second. The census
+                    // fingerprint (buildings 0.81× of control under the
+                    // lanes) suggested completing a held district's first
+                    // building; the second cut PREEMPTED it and re-measured
+                    // −3.6 pp wins; this cut PRICED it (+120 in this table,
+                    // competing in the argmax) and re-measured **−2.9
+                    // [−4.8, −0.9] wins, share −4.52 (z −34)** over 2,000
+                    // pairs (seeds 51000000..) against the trader-only
+                    // +0.8 / −4.63 (seeds 45000000..). Building-first is
+                    // wrong for the lanes in either form: the win axis pays
+                    // for every production the districts and traders lose.
+                    // What stands after three levers: the trader preemption
+                    // (kept — it repaired the win axis), and the recorded
+                    // fact that the −4.5 pp share drag survives every
+                    // building-side lever. The remaining question for the
+                    // gate is the one the 2026-08-18 bisect priced: whether
+                    // the victory-lanes half of the composite carries its
+                    // weight at all (−70..−80 Elo there; PR #1955).
                     let housing_need = (city.pop as f64 + 1.0 - g.city_housing(city)).max(0.0);
                     let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
                     let great_work_slots =
@@ -19923,6 +19911,19 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
+                // ★★★ Cycle three tried the conversion-race gate that
+                // flipped `wide_map_capacity` — and the verification said no:
+                // −2.8 [−4.0, −1.6] over 6,000 seat-pairs (seeds 49000000..)
+                // against −1.9 [−2.7, −1.0] without it (seeds 46000000..).
+                // MEASURED AND REVERTED the same day: at six players a rival
+                // religion exists by ~t40, so the gate simply turned coverage
+                // off — and a Campus, unlike a settled city, is not fuel for
+                // the rival's clock; withholding it just made less science.
+                // The pop floor (cycle one) stays: it improved the gene
+                // −2.8 → −1.7 on the classic design. The gene remains
+                // mildly harmful natively; the next lever, unmeasured, is
+                // pricing the ask by remaining game length the way
+                // `campus_payback_horizon` already prices wonders.
                 let campus_keeps_asking = self.campus_every_city
                     && family == "campus"
                     && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
@@ -22409,11 +22410,50 @@ impl AdvancedAi {
         if !self.stacked_escort {
             return None;
         }
-        // A real formation link — reconciled from the host, or left over from
-        // an older controller — would make the linked branch below defer to
-        // the very channel this treatment retires. Shed it.
+        // ★★★ REPAIRED 2026-08-20 (cycle three) after the 6p whole-genome
+        // screen priced escort-always at **−2.1 pp wins (z −4.8)** for this
+        // flag and **−2.3 (z −5.4)** for `settler_stack_discipline` over
+        // 13,386 game-pairs (seeds 46000000..): every settler bound a
+        // military guard full-time and waited for it, in a regime where the
+        // recorded census says the native engine loses ~zero civilians
+        // (settlers.py: live seat 43 of 127 captured; native 0.00). The
+        // machinery was army-thinning overhead paid against a risk that was
+        // not there. It now engages ON THREAT: a guard is bound and the
+        // pacing below runs only while a visible hostile military unit
+        // stands within [`SETTLER_ESCORT_THREAT_RADIUS`] of the settler —
+        // the recorded live captures (t22–t25 of run civvis-20260815T230003Z
+        // among them) all had exactly such a unit in sight. On quiet ground
+        // any bound guard is RELEASED back to the army and the settler
+        // marches normally. The live seat keeps its protection the moment a
+        // raider shows; the native game stops paying for ghosts.
+        // Shedding a stale formation link is bookkeeping about a channel
+        // this treatment retires — it happens whether or not anything
+        // threatens the settler, so it runs before the threat gate.
         if g.units[&uid].linked_to.is_some() {
             return Some(g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok());
+        }
+        let threatened = {
+            let position = g.units[&uid].pos;
+            g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.unit_visible_to(unit.id, pid)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                    && !(self.barbarian_scouts_are_scouts
+                        && g.players[unit.owner].is_barbarian
+                        && g.rules.units[unit.kind].promotion_class == "recon")
+                    && g.wdist(unit.pos, position) <= SETTLER_ESCORT_THREAT_RADIUS
+            })
+        };
+        if !threatened {
+            if self.settler_guards.remove(&uid).is_some() {
+                self.guard_wait.remove(&uid);
+                think!(self.journal(), Expansion, Detail, "The settler's guard stands down";
+                       "no visible hostile within {SETTLER_ESCORT_THREAT_RADIUS} tiles; \
+                        the army gets its body back");
+            }
+            return None;
         }
         let current = g.units[&uid].pos;
         if let Some(guard) = self.settler_guards.get(&uid).copied() {
@@ -30199,32 +30239,24 @@ impl AdvancedAi {
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
                 || every_lane
-                // An adaptive Conquest plan otherwise falls through to the
-                // Basic governor and fights its war on a peacetime army
-                // target. Same shape as adaptive Recovery immediately above:
-                // `delegated_cities` still runs after this for the queues the
-                // war path leaves empty.
-                //
-                // ★★★★ REPAIRED 2026-08-19: only while the war is DECLARED.
-                // Both gene screens priced the unconditional routing as the
-                // single worst flag on the board — −7.2 pp wins (z −9.6) over
-                // 4,000 all-six-lane pairs (seeds 40000000..), and
-                // **−26.7 pp (z −29) over 3,200 seat-pairs in the
-                // domination,score regime it was built for** (seeds
-                // 41000000..): a seat whose plan merely SAYS Conquest ran its
-                // whole empire through war production, against native wars
-                // that capture nearly nothing (17 declarations, 4 cities, 0
-                // capitals over 12 recorded games) and games that end on
-                // score at t250. The peacetime staging build-up is the
-                // baseline governor's job, exactly as without the flag; the
-                // war economy pays only while there is a war to pay for. An
-                // appointed timed war keeps its own routing via
-                // `war_plan.is_some()` above, unchanged.
-                || (self.war_economy
-                    && plan.strategy == GrandStrategy::Conquest
-                    && plan
-                        .target_player
-                        .is_some_and(|target| g.is_at_war(pid, target)))
+            // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
+            // 2026-08-20, by its own numbers, after three repairs in
+            // three cycles. Unrepaired it measured −7.2 pp wins over
+            // 4,000 native pairs (seeds 40M) and **−26.7 pp (z −29)**
+            // in the domination,score regime it was built for (seeds
+            // 41M). The declared-war gate took the war regime to −18.1
+            // (seeds 44M); the front bound to −7.4 (seeds 48M); the
+            // stall clock to **−6.8 [−10.0, −3.5], z −4.1** (seeds
+            // 50M) — statistically unmoved. Routing an empire's
+            // production through the war path loses the development
+            // race in every regime and every design measured, however
+            // the routing is bounded. The flag and its PROTECTIVE
+            // halves stay (`live_war_economy_requires_recovery`, the
+            // maintenance-emergency policy cards — they prevent the
+            // recorded bankruptcy disbands); an appointed timed war
+            // keeps its own `war_plan` routing above, unchanged. Do not
+            // re-add a Conquest routing here without a mechanism the
+            // three removed gates did not have.
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
