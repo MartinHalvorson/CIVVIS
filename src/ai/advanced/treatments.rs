@@ -166,6 +166,10 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 /// targeted regime it exists for before any promotion question is asked.
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+    // A Builder's finite charges first pay today's worked yields, except for
+    // luxury and strategic connections that pay empire-wide either way.
+    // `gene_screen` discovers this native opt-in directly from this row.
+    ("builder_worked_tile_priority", "builder-worked-tile-priority", AdvancedAi::enable_builder_worked_tile_priority),
     ("wonder_prereq_reach", "wonder-prereq-reach", AdvancedAi::enable_wonder_prereq_reach),
     ("apostle_promotion_by_role", "apostle-promotion-by-role", AdvancedAi::enable_apostle_promotion_by_role),
     // The joint engagement search (`docs/TACTICS.md`): production ships it

@@ -151,12 +151,30 @@
         "design": "foldover",
         "start_seed": 52000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-s8-war-rerank-vs-best-4p-allseats.json",
+      "regime": "war",
+      "complete_pairs": 5844,
+      "family_wise_z": 3.384,
+      "profile": {
+        "players": 4,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "domination,score",
+        "all_seats": true,
+        "baseline": "best",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 56000000
+      }
     }
   ],
   "counts": {
-    "helps": 17,
-    "hurts": 5,
-    "unresolved": 40
+    "helps": 20,
+    "hurts": 9,
+    "unresolved": 33
   },
   "genes": [
     {
@@ -178,15 +196,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.606,
-        "win_z": 0.522,
-        "share_delta_pp": 0.228,
-        "share_z": 0.797,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.479,
+        "win_z": -0.69,
+        "share_delta_pp": -0.017,
+        "share_z": -0.098,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -208,15 +226,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.939,
-        "win_z": 1.727,
-        "share_delta_pp": 0.261,
-        "share_z": 0.95,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.171,
+        "win_z": 0.244,
+        "share_delta_pp": -0.054,
+        "share_z": -0.308,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -238,15 +256,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.03,
-        "win_z": -0.932,
-        "share_delta_pp": -0.246,
-        "share_z": -0.885,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.856,
+        "win_z": -1.17,
+        "share_delta_pp": -0.056,
+        "share_z": -0.313,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -268,15 +286,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -2.121,
-        "win_z": -1.921,
-        "share_delta_pp": -0.291,
-        "share_z": -1.08,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.068,
+        "win_z": -0.096,
+        "share_delta_pp": 0.132,
+        "share_z": 0.753,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -298,15 +316,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.455,
-        "win_z": 1.276,
-        "share_delta_pp": 0.632,
-        "share_z": 2.152,
-        "read": "share helps *",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.916,
+        "win_z": 2.639,
+        "share_delta_pp": 0.383,
+        "share_z": 2.12,
+        "read": "helps * \u00b7 share helps *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -328,22 +346,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.152,
-        "win_z": 1.035,
-        "share_delta_pp": 0.151,
-        "share_z": 0.557,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.369,
+        "win_z": 1.987,
+        "share_delta_pp": 0.251,
+        "share_z": 1.437,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "blind-objective-strength",
-      "verdict": "unresolved",
-      "default_on": false,
-      "deciding_regime": null,
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -358,15 +376,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.667,
-        "win_z": -0.58,
-        "share_delta_pp": 0.221,
-        "share_z": 0.756,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.506,
+        "win_z": 2.134,
+        "share_delta_pp": 0.137,
+        "share_z": 0.781,
+        "read": "helps *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -388,15 +406,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.152,
-        "win_z": -1.029,
-        "share_delta_pp": -0.054,
-        "share_z": -0.194,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.89,
+        "win_z": -1.281,
+        "share_delta_pp": -0.221,
+        "share_z": -1.253,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -418,15 +436,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.545,
-        "win_z": 0.48,
-        "share_delta_pp": 0.342,
-        "share_z": 1.257,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.103,
+        "win_z": -0.141,
+        "share_delta_pp": -0.021,
+        "share_z": -0.12,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -435,7 +453,7 @@
       "default_on": true,
       "deciding_regime": "native",
       "family_wise": false,
-      "conflict": true,
+      "conflict": false,
       "native": {
         "pairs": 15000,
         "n_on": 15000,
@@ -448,15 +466,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -2.485,
-        "win_z": -2.157,
-        "share_delta_pp": -0.208,
-        "share_z": -0.739,
-        "read": "hurts *",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.411,
+        "win_z": -0.585,
+        "share_delta_pp": 0.052,
+        "share_z": 0.294,
+        "read": "~",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -478,15 +496,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.515,
-        "win_z": 1.295,
-        "share_delta_pp": 0.468,
-        "share_z": 1.645,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.205,
+        "win_z": 0.291,
+        "share_delta_pp": 0.023,
+        "share_z": 0.132,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -508,15 +526,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.212,
-        "win_z": -1.098,
-        "share_delta_pp": -0.367,
-        "share_z": -1.269,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.376,
+        "win_z": 0.548,
+        "share_delta_pp": 0.164,
+        "share_z": 0.977,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -538,15 +556,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.606,
-        "win_z": -0.555,
-        "share_delta_pp": -0.215,
-        "share_z": -0.756,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.548,
+        "win_z": 0.79,
+        "share_delta_pp": 0.127,
+        "share_z": 0.751,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -568,15 +586,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.364,
-        "win_z": -0.313,
-        "share_delta_pp": 0.073,
-        "share_z": 0.242,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.548,
+        "win_z": 0.777,
+        "share_delta_pp": 0.069,
+        "share_z": 0.398,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -598,15 +616,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.273,
-        "win_z": -1.169,
-        "share_delta_pp": -0.072,
-        "share_z": -0.267,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.274,
+        "win_z": 0.378,
+        "share_delta_pp": -0.002,
+        "share_z": -0.013,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -628,22 +646,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.061,
-        "win_z": -0.054,
-        "share_delta_pp": 0.129,
-        "share_z": 0.451,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.3,
+        "win_z": -1.883,
+        "share_delta_pp": -0.076,
+        "share_z": -0.439,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "escort-unstick",
-      "verdict": "hurts",
+      "verdict": "unresolved",
       "default_on": false,
-      "deciding_regime": "war",
+      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -658,15 +676,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -2.606,
-        "win_z": -2.263,
-        "share_delta_pp": -0.263,
-        "share_z": -0.908,
-        "read": "hurts *",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.719,
+        "win_z": -1.026,
+        "share_delta_pp": -0.054,
+        "share_z": -0.306,
+        "read": "~",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -687,7 +705,17 @@
         "read": "helps *",
         "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.548,
+        "win_z": -0.792,
+        "share_delta_pp": -0.209,
+        "share_z": -1.208,
+        "read": "~",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "garrison-under-fire",
@@ -708,15 +736,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.576,
-        "win_z": 1.395,
-        "share_delta_pp": 0.497,
-        "share_z": 1.804,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.513,
+        "win_z": 0.721,
+        "share_delta_pp": 0.299,
+        "share_z": 1.688,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -738,22 +766,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": -9.023,
-        "win_z": -5.069,
-        "share_delta_pp": -2.74,
-        "share_z": -6.581,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -5.236,
+        "win_z": -7.385,
+        "share_delta_pp": -1.701,
+        "share_z": -9.423,
         "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "holy-lane-parity",
-      "verdict": "unresolved",
+      "verdict": "hurts",
       "default_on": false,
-      "deciding_regime": null,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -767,7 +795,17 @@
         "read": "~",
         "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.103,
+        "win_z": 0.143,
+        "share_delta_pp": -0.402,
+        "share_z": -2.257,
+        "read": "share hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "home-defense",
@@ -788,15 +826,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.121,
-        "win_z": -0.106,
-        "share_delta_pp": -0.223,
-        "share_z": -0.802,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.787,
+        "win_z": 1.135,
+        "share_delta_pp": 0.025,
+        "share_z": 0.141,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -818,22 +856,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.182,
-        "win_z": 0.158,
-        "share_delta_pp": 0.13,
-        "share_z": 0.465,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.068,
+        "win_z": -0.096,
+        "share_delta_pp": 0.116,
+        "share_z": 0.654,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "housing-districts",
-      "verdict": "unresolved",
+      "verdict": "hurts",
       "default_on": false,
-      "deciding_regime": null,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -848,15 +886,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.758,
-        "win_z": -1.567,
-        "share_delta_pp": -0.477,
-        "share_z": -1.666,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -2.156,
+        "win_z": -3.05,
+        "share_delta_pp": -0.516,
+        "share_z": -2.931,
+        "read": "hurts * \u00b7 share hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -878,15 +916,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.455,
-        "win_z": -1.302,
-        "share_delta_pp": -0.716,
-        "share_z": -2.566,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.369,
+        "win_z": -1.922,
+        "share_delta_pp": -0.373,
+        "share_z": -2.014,
         "read": "share hurts *",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -907,7 +945,17 @@
         "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.548,
+        "win_z": 0.771,
+        "share_delta_pp": 0.31,
+        "share_z": 1.757,
+        "read": "~",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "idle-walkers-close-the-pipeline",
@@ -928,22 +976,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.788,
-        "win_z": -0.69,
-        "share_delta_pp": -0.17,
-        "share_z": -0.592,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.787,
+        "win_z": -1.132,
+        "share_delta_pp": -0.198,
+        "share_z": -1.131,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "inquisition-on-threat",
-      "verdict": "unresolved",
+      "verdict": "hurts",
       "default_on": false,
-      "deciding_regime": null,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -957,13 +1005,23 @@
         "read": "~",
         "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.095,
+        "win_z": -1.585,
+        "share_delta_pp": -0.411,
+        "share_z": -2.335,
+        "read": "share hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "joint-tactics",
-      "verdict": "unresolved",
-      "default_on": false,
-      "deciding_regime": null,
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -978,15 +1036,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": 2.256,
-        "win_z": 1.178,
-        "share_delta_pp": 0.658,
-        "share_z": 1.584,
-        "read": "~",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.513,
+        "win_z": 0.706,
+        "share_delta_pp": 0.462,
+        "share_z": 2.632,
+        "read": "share helps *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1008,15 +1066,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.424,
-        "win_z": -0.373,
-        "share_delta_pp": 0.117,
-        "share_z": 0.415,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 2.225,
+        "win_z": 3.185,
+        "share_delta_pp": 0.932,
+        "share_z": 5.301,
+        "read": "helps * \u00b7 share HELPS **",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1038,15 +1096,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.545,
-        "win_z": 0.49,
-        "share_delta_pp": -0.084,
-        "share_z": -0.312,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.616,
+        "win_z": -0.854,
+        "share_delta_pp": 0.057,
+        "share_z": 0.324,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1068,15 +1126,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.182,
-        "win_z": 0.163,
-        "share_delta_pp": -0.024,
-        "share_z": -0.087,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.821,
+        "win_z": 1.117,
+        "share_delta_pp": -0.052,
+        "share_z": -0.288,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1098,15 +1156,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.455,
-        "win_z": -1.302,
-        "share_delta_pp": -0.129,
-        "share_z": -0.456,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.274,
+        "win_z": -0.389,
+        "share_delta_pp": -0.038,
+        "share_z": -0.218,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1128,15 +1186,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.788,
-        "win_z": 0.706,
-        "share_delta_pp": 0.301,
-        "share_z": 1.07,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.677,
+        "win_z": 2.392,
+        "share_delta_pp": 0.425,
+        "share_z": 2.377,
+        "read": "helps * \u00b7 share helps *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1158,15 +1216,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.455,
-        "win_z": 1.276,
-        "share_delta_pp": 0.347,
-        "share_z": 1.224,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.684,
+        "win_z": -0.976,
+        "share_delta_pp": -0.097,
+        "share_z": -0.545,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1188,15 +1246,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.606,
-        "win_z": -0.527,
-        "share_delta_pp": -0.189,
-        "share_z": -0.644,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.548,
+        "win_z": -0.782,
+        "share_delta_pp": -0.238,
+        "share_z": -1.366,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1218,15 +1276,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.273,
-        "win_z": 1.112,
-        "share_delta_pp": -0.154,
-        "share_z": -0.539,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.437,
+        "win_z": 1.995,
+        "share_delta_pp": 0.319,
+        "share_z": 1.788,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1248,15 +1306,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.152,
-        "win_z": -1.014,
-        "share_delta_pp": 0.05,
-        "share_z": 0.173,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.171,
+        "win_z": -0.237,
+        "share_delta_pp": 0.213,
+        "share_z": 1.194,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1278,15 +1336,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.697,
-        "win_z": 1.445,
-        "share_delta_pp": -0.056,
-        "share_z": -0.195,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.034,
+        "win_z": 0.049,
+        "share_delta_pp": 0.091,
+        "share_z": 0.514,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1308,22 +1366,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.606,
-        "win_z": -0.541,
-        "share_delta_pp": -0.467,
-        "share_z": -1.635,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.274,
+        "win_z": 0.393,
+        "share_delta_pp": 0.007,
+        "share_z": 0.041,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "score-horizon",
-      "verdict": "unresolved",
-      "default_on": false,
-      "deciding_regime": null,
+      "verdict": "helps",
+      "default_on": true,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -1338,15 +1396,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.758,
-        "win_z": -1.532,
-        "share_delta_pp": -0.251,
-        "share_z": -0.857,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 1.882,
+        "win_z": 2.732,
+        "share_delta_pp": 0.303,
+        "share_z": 1.722,
+        "read": "helps *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1368,22 +1426,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.394,
-        "win_z": -1.25,
-        "share_delta_pp": -0.425,
-        "share_z": -1.556,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.342,
+        "win_z": -0.487,
+        "share_delta_pp": 0.051,
+        "share_z": 0.289,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "settler-site-agreement",
-      "verdict": "unresolved",
+      "verdict": "hurts",
       "default_on": false,
-      "deciding_regime": null,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -1398,15 +1456,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.667,
-        "win_z": -0.597,
-        "share_delta_pp": 0.104,
-        "share_z": 0.387,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.992,
+        "win_z": -1.394,
+        "share_delta_pp": -0.381,
+        "share_z": -2.151,
+        "read": "share hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1428,15 +1486,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.667,
-        "win_z": 0.58,
-        "share_delta_pp": 0.113,
-        "share_z": 0.404,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.103,
+        "win_z": -0.142,
+        "share_delta_pp": 0.158,
+        "share_z": 0.893,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1458,15 +1516,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.03,
-        "win_z": 0.921,
-        "share_delta_pp": -0.006,
-        "share_z": -0.023,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.034,
+        "win_z": -0.048,
+        "share_delta_pp": -0.011,
+        "share_z": -0.065,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1488,22 +1546,22 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 2.303,
-        "win_z": 1.995,
-        "share_delta_pp": 0.508,
-        "share_z": 1.791,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.856,
+        "win_z": -1.202,
+        "share_delta_pp": -0.06,
+        "share_z": -0.337,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "siege-role",
-      "verdict": "unresolved",
+      "verdict": "hurts",
       "default_on": false,
-      "deciding_regime": null,
+      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
       "native": {
@@ -1518,15 +1576,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.061,
-        "win_z": -0.053,
-        "share_delta_pp": 0.176,
-        "share_z": 0.634,
-        "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.437,
+        "win_z": -2.066,
+        "share_delta_pp": -0.199,
+        "share_z": -1.153,
+        "read": "hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1548,15 +1606,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.273,
-        "win_z": 1.124,
-        "share_delta_pp": 0.137,
-        "share_z": 0.48,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.684,
+        "win_z": -0.983,
+        "share_delta_pp": -0.168,
+        "share_z": -0.951,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1578,15 +1636,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.152,
-        "win_z": -1.044,
-        "share_delta_pp": 0.01,
-        "share_z": 0.036,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.24,
+        "win_z": -0.33,
+        "share_delta_pp": 0.055,
+        "share_z": 0.311,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1608,15 +1666,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 800,
-        "n_on": 800,
-        "n_off": 800,
-        "win_delta_pp": 0.125,
-        "win_z": 0.103,
-        "share_delta_pp": 0.163,
-        "share_z": 0.977,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.171,
+        "win_z": -0.235,
+        "share_delta_pp": 0.157,
+        "share_z": 0.874,
         "read": "~",
-        "source": "2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1638,15 +1696,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 1.394,
-        "win_z": 1.253,
-        "share_delta_pp": 0.172,
-        "share_z": 0.592,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.513,
+        "win_z": 0.713,
+        "share_delta_pp": 0.169,
+        "share_z": 0.956,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1668,15 +1726,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.303,
-        "win_z": 0.262,
-        "share_delta_pp": 0.209,
-        "share_z": 0.739,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.24,
+        "win_z": -0.344,
+        "share_delta_pp": -0.197,
+        "share_z": -1.117,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1698,15 +1756,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.788,
-        "win_z": 0.682,
-        "share_delta_pp": -0.035,
-        "share_z": -0.122,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.205,
+        "win_z": -0.281,
+        "share_delta_pp": 0.244,
+        "share_z": 1.354,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1728,15 +1786,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.121,
-        "win_z": -0.105,
-        "share_delta_pp": 0.033,
-        "share_z": 0.117,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.068,
+        "win_z": -0.098,
+        "share_delta_pp": -0.285,
+        "share_z": -1.599,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1757,7 +1815,17 @@
         "read": "~",
         "source": "2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json"
       },
-      "war": null
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -0.958,
+        "win_z": -1.373,
+        "share_delta_pp": -0.125,
+        "share_z": -0.705,
+        "read": "~",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "war-economy",
@@ -1765,7 +1833,7 @@
       "default_on": true,
       "deciding_regime": "native",
       "family_wise": true,
-      "conflict": true,
+      "conflict": false,
       "native": {
         "pairs": 15000,
         "n_on": 15000,
@@ -1778,15 +1846,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": -17.857,
-        "win_z": -10.531,
-        "share_delta_pp": -3.73,
-        "share_z": -9.854,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 2.122,
+        "win_z": 2.943,
+        "share_delta_pp": 1.33,
+        "share_z": 7.778,
+        "read": "helps * \u00b7 share HELPS **",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1808,15 +1876,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -1.455,
-        "win_z": -1.291,
-        "share_delta_pp": -0.021,
-        "share_z": -0.074,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.445,
+        "win_z": 0.628,
+        "share_delta_pp": 0.098,
+        "share_z": 0.545,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1838,15 +1906,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.909,
-        "win_z": 0.787,
-        "share_delta_pp": 0.428,
-        "share_z": 1.526,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.129,
+        "win_z": -1.572,
+        "share_delta_pp": 0.069,
+        "share_z": 0.398,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1868,15 +1936,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.242,
-        "win_z": 0.219,
-        "share_delta_pp": -0.023,
-        "share_z": -0.084,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.856,
+        "win_z": 1.196,
+        "share_delta_pp": 0.161,
+        "share_z": 0.916,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1898,15 +1966,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 1064,
-        "n_on": 1064,
-        "n_off": 1064,
-        "win_delta_pp": 14.474,
-        "win_z": 8.663,
-        "share_delta_pp": 4.915,
-        "share_z": 13.448,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 15.606,
+        "win_z": 23.033,
+        "share_delta_pp": 5.799,
+        "share_z": 35.576,
         "read": "HELPS ** \u00b7 share HELPS **",
-        "source": "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1928,15 +1996,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": 0.364,
-        "win_z": 0.315,
-        "share_delta_pp": 0.158,
-        "share_z": 0.546,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": -1.164,
+        "win_z": -1.625,
+        "share_delta_pp": 0.03,
+        "share_z": 0.166,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1958,15 +2026,15 @@
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       },
       "war": {
-        "pairs": 3300,
-        "n_on": 3300,
-        "n_off": 3300,
-        "win_delta_pp": -0.485,
-        "win_z": -0.431,
-        "share_delta_pp": -0.278,
-        "share_z": -1.004,
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.137,
+        "win_z": 0.192,
+        "share_delta_pp": -0.015,
+        "share_z": -0.086,
         "read": "~",
-        "source": "2026-08-19-p2-war-4p-allseats-3300-pairs.json"
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     }
   ]
