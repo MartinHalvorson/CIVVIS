@@ -12725,7 +12725,7 @@ impl BasicAi {
                 }
             }
         }
-        let mut best: Option<(f64, Pos, Pos)> = None;
+        let mut best: Option<(bool, f64, Pos, Pos)> = None;
         for stand in positions {
             for target in crate::hex::neighbors(stand) {
                 let hostile = g.units_at(target).into_iter().any(|oid| {
@@ -12746,20 +12746,42 @@ impl BasicAi {
                 if score <= 0.0 {
                     continue;
                 }
-                // Striking from where we already stand beats walking to it, so
-                // a tie never spends a move.
-                let rank = (score, stand == from);
-                let better = best.as_ref().is_none_or(|(old, old_stand, old_target)| {
-                    (score, stand == from) > (*old, *old_stand == from)
-                        || (rank == (*old, *old_stand == from)
-                            && (stand, target) < (*old_stand, *old_target))
-                });
+                // ★★★★★ KILL THE ONE THAT IS ACTUALLY HOLDING THE WALKER,
+                // NOT THE ONE THAT PRICES BEST.
+                //
+                // A Civilization VI Warrior and a Slinger both carry
+                // `zone_of_control`, so a raider standing beside our Settler
+                // does not merely threaten it — it makes `Game::can_move`
+                // REFUSE the next step. Run civvis-20260821T153531Z journals
+                // **"Settler HELD short … the next tile refuses it and nothing
+                // is standing there" 86 times in 226 turns**, and fourteen of
+                // fourteen sampled had barbarians on the board. The Settler
+                // then falls back (38), waits for its guard (14) and walks in
+                // circles (10) — trying to walk out of a lock that has no walk
+                // out of it. Killing the unit is the ONLY exit, which is also
+                // why every threat-AVOIDANCE gene in this family reads
+                // neutral-to-harmful in `docs/gene_ledger.json`.
+                //
+                // So a target beside the charge outranks a better-priced one
+                // that is not: clearing a fat target two tiles off the walker
+                // leaves the lock exactly where it was. The exchange gate still
+                // has the final say — this only reorders candidates that have
+                // already passed it.
+                let pins = charge.is_some_and(|held| g.wdist(target, held) <= 1);
+                let rank = (pins, score, stand == from);
+                let better = best
+                    .as_ref()
+                    .is_none_or(|(old_pins, old, old_stand, old_target)| {
+                        rank > (*old_pins, *old, *old_stand == from)
+                            || (rank == (*old_pins, *old, *old_stand == from)
+                                && (stand, target) < (*old_stand, *old_target))
+                    });
                 if better {
-                    best = Some((score, stand, target));
+                    best = Some((pins, score, stand, target));
                 }
             }
         }
-        let Some((score, stand, target)) = best else {
+        let Some((pins, score, stand, target)) = best else {
             return false;
         };
         if stand != from {
@@ -12767,8 +12789,10 @@ impl BasicAi {
             // the raider adjacent and this same rule takes the swing.
             think!(self.journal, Military, Detail,
                    "{} steps up to the raider pinning its charge", plain(&g.units[&uid].kind);
-                   "worth {score:.0} on the ordinary exchange, and the new tile \
-                    is still beside the civilian"; target);
+                   "worth {score:.0} on the ordinary exchange{}, and the new tile \
+                    is still beside the civilian",
+                   if pins { " and its zone of control is what is holding the walker" } else { "" };
+                   target);
             return g
                 .apply(
                     pid,
@@ -12781,8 +12805,10 @@ impl BasicAi {
         }
         think!(self.journal, Military, Detail,
                "{} cuts down the raider beside it", plain(&g.units[&uid].kind);
-               "worth {score:.0} on the ordinary exchange, and the guard never \
-                leaves its charge to do it"; target);
+               "worth {score:.0} on the ordinary exchange{}, and the guard never \
+                leaves its charge to do it",
+               if pins { " and its zone of control is what is holding the walker" } else { "" };
+               target);
         g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
     }
 
