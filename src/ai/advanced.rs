@@ -596,14 +596,6 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
-/// A Builder charge on an idle ordinary tile buys a future yield, while a
-/// charge on a worked tile changes the empire's output immediately. Keep the
-/// former possible — a growing city will need it — but make the latter win the
-/// ordinary target race. Luxury and strategic connections are deliberately
-/// exempt because the engine pays them whether or not a citizen works the
-/// plot. See [`AdvancedAi::builder_worked_tile_priority`].
-const UNWORKED_BUILDER_TARGET_WEIGHT: f64 = 0.25;
-
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1909,9 +1901,8 @@ pub struct AdvancedAi {
     ///
     /// The target sweep keeps a correctly connected luxury or strategic
     /// resource at full priority: its Amenity or stockpile pays regardless of
-    /// its citizen assignment. Other idle tiles retain a quarter of their
-    /// normal score, so the Builder can still prepare a growing city without
-    /// displacing work that changes the empire's output this turn.
+    /// its citizen assignment. An ordinary idle tile earns only the output it
+    /// would add by replacing the city's least valuable current worker.
     ///
     /// Off by default; native opt-in gene `builder-worked-tile-priority`.
     pub builder_worked_tile_priority: bool,
@@ -3372,7 +3363,7 @@ pub struct AdvancedAi {
     /// the 40-turn forecast loses to a turn of delay — the ranking is
     /// indifferent between founding now and founding the same value later.
     /// `settler_walk_census` measured the deployment genome walking a mean of
-    /// N turns per founding on the screen's 6-player map, with the long tail
+    /// 7.3 turns per founding on the screen's 6-player map, with the long tail
     /// re-picking its site several times. Under this gene every turn of the
     /// route costs `SETTLE_SOONER_TURN_PRICE` more, and that price doubles
     /// every `SETTLE_SOONER_PATIENCE` standard turns the Settler has already
@@ -3711,6 +3702,21 @@ pub struct AdvancedAi {
     /// `theology-for-founders`, priced apart because a civic detour for half
     /// the seats is exactly the kind of cost the Apostle cannot see.
     pub theology_for_founders: bool,
+
+    /// Score a settle site by the districts this city would actually build
+    /// — the lane's first families, each on its own plot, at the lane's
+    /// yield weights — instead of every family's best plot summed
+    /// (`adjacency_site_planning`, which this replaces while on). See
+    /// `advanced/site_lookahead.rs`. Off everywhere by default; opt-in gene
+    /// `district-lookahead-settle`.
+    pub district_lookahead_settle: bool,
+
+    /// Buy a border plot only when its priced benefit — the job it improves,
+    /// the resource it connects, the district plot it unlocks, over a payback
+    /// horizon cut short where culture would claim it anyway — clears the
+    /// Gold at the lane's price by a margin. See `advanced/site_lookahead.rs`.
+    /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
+    pub priced_tile_purchase: bool,
 
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
@@ -4112,6 +4118,11 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// The district look-ahead at settlement and the priced tile purchase: two
+/// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
+mod site_lookahead;
+use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -4737,6 +4748,8 @@ impl AdvancedAi {
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
+            district_lookahead_settle: false,
+            priced_tile_purchase: false,
             idle_faith_patronage: false,
             diplomatic_opening: false,
             envoy_priority: false,
@@ -14320,6 +14333,7 @@ impl AdvancedAi {
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
+            let mut plot_cache = PlotPurchaseCache::default();
             let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
             // here and once inside `production_value`. The guard borrows the
@@ -14327,13 +14341,30 @@ impl AdvancedAi {
             // dropped below.
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
-                if let Action::BuyPlot {
-                    city: _,
-                    pos,
-                    cost,
-                } = &action
-                {
+                if let Action::BuyPlot { city, pos, cost } = &action {
                     if bank + f64::EPSILON < reserve + 200.0 + cost {
+                        continue;
+                    }
+                    // See `priced_tile_purchase`: the plot is an investment
+                    // priced against its Gold, not a shortlist hint plus a
+                    // speculative clone. A `None` is a plot not worth its
+                    // price; it is not shortlisted.
+                    if self.priced_tile_purchase {
+                        let offer = PlotOffer {
+                            city: *city,
+                            pos: *pos,
+                            cost: *cost,
+                        };
+                        if let Some(score) =
+                            self.priced_plot_purchase_score(g, pid, plan, offer, &mut plot_cache)
+                        {
+                            plot_options.push((
+                                score,
+                                score,
+                                std::cmp::Reverse(format!("{action:?}")),
+                                action,
+                            ));
+                        }
                         continue;
                     }
                     let tile = &g.map.tiles[pos];
@@ -14484,8 +14515,18 @@ impl AdvancedAi {
                         .total_cmp(&left.0)
                         .then_with(|| left.2.cmp(&right.2))
                 });
-                plot_options.truncate(4);
-                let plot_scores = self.gold_plot_scores(score_context, &plot_options);
+                // The priced path already holds a final score per plot and
+                // needs no clone, so it keeps every candidate; the shipped
+                // path clones the game per plot and keeps four.
+                let plot_scores = if self.priced_tile_purchase {
+                    plot_options
+                        .iter()
+                        .map(|(_, score, _, _)| Some(*score))
+                        .collect()
+                } else {
+                    plot_options.truncate(4);
+                    self.gold_plot_scores(score_context, &plot_options)
+                };
                 for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
                     if let Some(score) = score {
                         candidates.push((
@@ -20820,11 +20861,13 @@ impl AdvancedAi {
             .take(SETTLEMENT_FORECAST_POPULATION)
             .filter(|tile| tile.yields.food >= 2.0 || tile.yields.production >= 2.0)
             .count() as f64;
-        let mut value = forecast.score
-            + (housing - 2.0) * 4.0
-            + growth_readiness
-            + dependable_jobs * 0.75;
-        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        let mut value =
+            forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
+        value += if self.district_lookahead_settle {
+            self.settlement_district_lookahead_value(g, pid, pos, &positions)
+        } else {
+            self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
+        };
         value += self.natural_wonder_ring_value(g, &positions);
 
         let enemy_distance = g
@@ -23515,8 +23558,26 @@ impl AdvancedAi {
     /// improvement that best fits *one tile*. This second score answers the
     /// empire-level timing question — which job receives this finite charge
     /// now? A luxury or strategic connection is full value even on an idle
-    /// tile; otherwise, the active citizen plan decides whether its yield is
-    /// immediate or merely a future option.
+    /// tile. For any other idle tile, the immediate gain is the prospective
+    /// worked-tile value less the weakest tile the city works today. If no
+    /// citizen can move there, the Builder has not produced output yet.
+    fn builder_worked_tile_value(&self, g: &Game, pos: Pos, strategy: GrandStrategy) -> f64 {
+        self.yield_value(g.rules.worked_tile_yields(&g.map.tiles[&pos]), strategy)
+    }
+
+    fn builder_improved_tile_value(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let mut tile = g.map.tiles[&pos].clone();
+        tile.improvement = Some(Name::new(improvement));
+        tile.pillaged = false;
+        self.yield_value(g.rules.worked_tile_yields(&tile), strategy)
+    }
+
     fn builder_target_value(
         &self,
         g: &Game,
@@ -23524,6 +23585,7 @@ impl AdvancedAi {
         improvement: &str,
         strategy: GrandStrategy,
         worked: bool,
+        weakest_worked_value: Option<f64>,
     ) -> f64 {
         let value = self.improvement_value(g, pos, improvement, strategy);
         if !self.builder_worked_tile_priority
@@ -23534,7 +23596,9 @@ impl AdvancedAi {
         if worked {
             value
         } else {
-            value * UNWORKED_BUILDER_TARGET_WEIGHT
+            weakest_worked_value.map_or(0.0, |weakest| {
+                (self.builder_improved_tile_value(g, pos, improvement, strategy) - weakest).max(0.0)
+            })
         }
     }
 
@@ -24062,17 +24126,6 @@ impl AdvancedAi {
         // guard the moment anything in here starts mutating the game.
         let best = {
             let _memo = g.query_memo();
-            // Computing the citizen plan can inspect every tile in a city.
-            // Read it once per city, rather than once for every candidate
-            // improvement in the target sweep.
-            let worked_tiles: HashSet<Pos> = if self.builder_worked_tile_priority {
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .flat_map(|cid| g.city_citizen_plan(cid).worked_tiles)
-                    .collect()
-            } else {
-                HashSet::new()
-            };
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && !self
@@ -24084,6 +24137,24 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        // Computing the citizen plan can inspect every tile in a city.
+                        // Read it once per city, rather than once for every candidate
+                        // improvement in the target sweep.
+                        let (worked_tiles, weakest_worked_value) =
+                            if self.builder_worked_tile_priority {
+                                let plan = g.city_citizen_plan(cid);
+                                let weakest = plan
+                                    .worked_tiles
+                                    .iter()
+                                    .map(|pos| self.builder_worked_tile_value(g, *pos, strategy))
+                                    .reduce(f64::min);
+                                (
+                                    plan.worked_tiles.into_iter().collect::<HashSet<_>>(),
+                                    weakest,
+                                )
+                            } else {
+                                (HashSet::new(), None)
+                            };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) {
                                 continue;
@@ -24096,6 +24167,7 @@ impl AdvancedAi {
                                     &improvement,
                                     strategy,
                                     worked_tiles.contains(pos),
+                                    weakest_worked_value,
                                 ) - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))

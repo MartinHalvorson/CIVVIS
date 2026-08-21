@@ -60,6 +60,11 @@ pub struct DistrictForecast {
     pub sites: Vec<SiteForecast>,
 }
 
+/// One wanted district's forecast in a settlement look-ahead: the plot the
+/// greedy assignment gave it and the adjacency it would earn there. `None`
+/// when no unclaimed plot in the disk can legally hold it.
+pub type LookaheadSite = Option<(Pos, Yields)>;
+
 impl Game {
     /// The district `pid`'s civilization actually builds for `family`: the
     /// civ's unique replacement where one exists, otherwise the family
@@ -209,23 +214,8 @@ impl Game {
             for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
                 neighbor_tiles[index] = self.map.get(neighbor);
             }
-            let gaul = self
-                .map
-                .get(pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|city_id| self.cities.get(&city_id))
-                .is_some_and(|city| self.players[city.owner].civ == "Gaul");
-            let district_count = neighbor_tiles
-                .iter()
-                .flatten()
-                .filter(|tile| {
-                    !gaul
-                        && ((tile.district.is_some() && !tile.pillaged)
-                            || self.city_at(tile.pos).is_some()
-                            || assume.treats_as_city_center(tile.pos)
-                            || (assume.foundations && tile.district_foundation.is_some()))
-                })
-                .count();
+            let district_count =
+                self.settlement_neighbor_district_count(pos, &neighbor_tiles, &assume);
             for (district_index, (district, family)) in districts.iter().copied().enumerate() {
                 if !self.plot_fits_placement_with_neighbors(
                     pid,
@@ -256,6 +246,142 @@ impl Game {
             summary.add(best_yields);
         }
         summary
+    }
+
+    /// The settle-scoring look-ahead: given the district **families** a new
+    /// city would most likely build, in the order it would build them, the
+    /// plot each one would actually get and the adjacency it would pay
+    /// there.
+    ///
+    /// This differs from [`Self::settlement_adjacency_summary`] in the two
+    /// ways that matter to a settler choosing between sites:
+    ///
+    /// - It prices only the districts the planner is going to ask for, not
+    ///   every adjacency-bearing family the ruleset knows. A Science seat's
+    ///   site is its Campus plot; a Holy Site's +4 at the same site is
+    ///   nothing to it, and the summary counted both.
+    /// - Plots are assigned **once**, first district first. The summary let
+    ///   every family claim the same best plot, so one river-mountain hex
+    ///   was paid for as a Campus, a Holy Site and a Commercial Hub at the
+    ///   same time.
+    ///
+    /// Families are resolved to the civilization's own variant
+    /// (`seowon` for Korea's `campus`). Same placement and adjacency rules,
+    /// same assumptions (`center` as the city, foundations as districts) as
+    /// the summary; tech and ownership gates are ignored — the future city
+    /// will own the ground and research the unlocks.
+    pub fn settlement_district_lookahead_from_positions(
+        &self,
+        pid: usize,
+        center: Pos,
+        positions: &[Pos],
+        families: &[Name],
+    ) -> Vec<LookaheadSite> {
+        let assume = PlanAssumption {
+            city_center: Some(center),
+            foundations: true,
+        };
+        let districts: Vec<(Name, Name)> = families
+            .iter()
+            .map(|family| (self.civ_district_variant(pid, family), *family))
+            .collect();
+        // Every plot's adjacency for every wanted district, computed once;
+        // the greedy pass below only reads it.
+        let mut table: Vec<(Pos, Vec<Option<Yields>>)> = Vec::new();
+        for pos in positions
+            .iter()
+            .copied()
+            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
+        {
+            let candidate_neighbors = self.nbrs(pos);
+            let mut neighbor_tiles = [None; 6];
+            for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
+                neighbor_tiles[index] = self.map.get(neighbor);
+            }
+            let district_count =
+                self.settlement_neighbor_district_count(pos, &neighbor_tiles, &assume);
+            let row = districts
+                .iter()
+                .copied()
+                .map(|(district, family)| {
+                    if !self.rules.districts.contains_name(district)
+                        || !self.plot_fits_placement_with_neighbors(
+                            pid,
+                            district,
+                            pos,
+                            center,
+                            &candidate_neighbors,
+                        )
+                    {
+                        return None;
+                    }
+                    Some(
+                        self.district_adjacency_assuming_with_family_and_neighbors_and_district_count(
+                            district,
+                            pos,
+                            Some(&assume),
+                            None,
+                            family,
+                            &neighbor_tiles,
+                            district_count,
+                        ),
+                    )
+                })
+                .collect();
+            table.push((pos, row));
+        }
+        let mut taken: Vec<Pos> = Vec::with_capacity(districts.len());
+        let mut sites = Vec::with_capacity(districts.len());
+        for district_index in 0..districts.len() {
+            let mut best: LookaheadSite = None;
+            for (pos, row) in &table {
+                if taken.contains(pos) {
+                    continue;
+                }
+                let Some(yields) = row[district_index] else {
+                    continue;
+                };
+                // Strictly better wins; a tie keeps the earlier plot so the
+                // answer does not depend on how `positions` was ordered
+                // beyond its own determinism.
+                if best.is_none_or(|(_, held)| yields.total() > held.total()) {
+                    best = Some((*pos, yields));
+                }
+            }
+            if let Some((pos, _)) = best {
+                taken.push(pos);
+            }
+            sites.push(best);
+        }
+        sites
+    }
+
+    /// How many standing or assumed districts neighbour `pos` — the count
+    /// the `district` adjacency key pays on. Shared by the summary and the
+    /// look-ahead so the two cannot disagree about what a neighbour is.
+    fn settlement_neighbor_district_count(
+        &self,
+        pos: Pos,
+        neighbor_tiles: &[Option<&crate::world::Tile>; 6],
+        assume: &PlanAssumption,
+    ) -> usize {
+        let gaul = self
+            .map
+            .get(pos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city_id| self.cities.get(&city_id))
+            .is_some_and(|city| self.players[city.owner].civ == "Gaul");
+        neighbor_tiles
+            .iter()
+            .flatten()
+            .filter(|tile| {
+                !gaul
+                    && ((tile.district.is_some() && !tile.pillaged)
+                        || self.city_at(tile.pos).is_some()
+                        || assume.treats_as_city_center(tile.pos)
+                        || (assume.foundations && tile.district_foundation.is_some()))
+            })
+            .count()
     }
 
     /// Unclaimed, physically buildable plots within `radius` of `center`.
@@ -316,7 +442,13 @@ impl Game {
     /// `center` standing in for the city.  Aqueducts, Dams and Canals never
     /// reach this (no adjacency rules), so their branches answer `false`
     /// rather than approximating hydrology the settler cannot see anyway.
-    fn plot_fits_placement(&self, pid: usize, district: Name, pos: Pos, center: Pos) -> bool {
+    pub(crate) fn plot_fits_placement(
+        &self,
+        pid: usize,
+        district: Name,
+        pos: Pos,
+        center: Pos,
+    ) -> bool {
         let neighbors = self.nbrs(pos);
         self.plot_fits_placement_with_neighbors(pid, district, pos, center, &neighbors)
     }
@@ -504,6 +636,92 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The look-ahead hands each wanted district its own plot, first
+    /// district first: a Campus and a Holy Site both want the one plot
+    /// that touches three mountains, and only the family named first gets
+    /// it. The summary, by contrast, pays both for the same hex.
+    #[test]
+    fn lookahead_assigns_distinct_plots_first_district_first() {
+        let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let center =
+            land.into_iter()
+                .find(|pos| {
+                    game.map.get(*pos).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && game
+                        .wdisk(*pos, 3)
+                        .iter()
+                        .all(|ring| game.map.get(*ring).is_some())
+                })
+                .expect("an interior site");
+        for pos in game.wdisk(center, 3) {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = Name::new("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.river_edges = [false; 6];
+            tile.owner_city = None;
+        }
+        let anchor = game.nbrs(center).into_iter().next().unwrap();
+        let peaks: Vec<Pos> = game
+            .nbrs(anchor)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert_eq!(peaks.len(), 3);
+        for pos in &peaks {
+            game.map.tiles.get_mut(pos).unwrap().terrain = Name::new("mountain");
+        }
+        let positions = game.wdisk(center, 2);
+        let campus_first = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("campus"), Name::new("holy_site")],
+        );
+        let (campus_plot, campus_adjacency) = campus_first[0].expect("a Campus plot");
+        let (holy_plot, holy_adjacency) = campus_first[1].expect("a Holy Site plot");
+        assert_eq!(
+            campus_plot, anchor,
+            "the first family takes the three-peak plot"
+        );
+        assert_ne!(
+            holy_plot, anchor,
+            "the second family is handed a different plot"
+        );
+        assert!(campus_adjacency.science >= 3.0);
+        assert!(holy_adjacency.faith < 3.0);
+
+        let holy_first = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("holy_site"), Name::new("campus")],
+        );
+        assert_eq!(
+            holy_first[0].unwrap().0,
+            anchor,
+            "order decides who gets the plot"
+        );
+        assert_ne!(holy_first[1].unwrap().0, anchor);
+
+        // A district no unclaimed plot can hold comes back as `None` rather
+        // than as a zero that looks like a placed district.
+        let harbor_inland = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("harbor")],
+        );
+        assert!(harbor_inland[0].is_none(), "no coast, no Harbor plot");
     }
 
     /// A foundation under construction already pays neighbouring plans: the

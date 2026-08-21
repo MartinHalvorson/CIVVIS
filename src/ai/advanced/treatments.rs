@@ -202,4 +202,16 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // same value later; this prices every turn of the walk, dearer the longer
     // the Settler has been out. See `settle_sooner`.
     ("settle_sooner", "settle-sooner", AdvancedAi::enable_settle_sooner),
+    // A settler prices a site by the districts the plan would build there,
+    // and a treasury buys a border plot only when it pays for itself. See
+    // `advanced/site_lookahead.rs`.
+    ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
+    ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // `governor-every-lane` is a losing composite: the deployment screen's
+    // score-share drag is large enough that the two pre-existing halves need
+    // their own randomised comparisons before either can be retained. The
+    // composite remains the live-bridge compatibility switch; these opt-ins
+    // let a native seat turn on exactly one of its established predicates.
+    ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
+    ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
 ];

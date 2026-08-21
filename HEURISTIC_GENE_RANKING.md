@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-Every screenable heuristic gene on the Advanced controller, ranked most beneficial to least by **wins added per 10,000 six-player games** at its measured on-rate. Each gene's row comes from the **latest native screen that measured it** (the column *Source*), so a gene added after the whole-genome screen appears from its own screen; the *War* column is the same figure from the latest `domination,score` screen; *Default* is the deployment ledger's verdict (`docs/gene_ledger.json`, native regime governing, war filling in). Every screen is a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off columns cover the same maps. `docs/GENE_SCREEN.md` documents the instrument.
+Every screenable heuristic gene with a native measurement on the Advanced controller, ranked most beneficial to least by **wins added per 10,000 six-player games** at its measured on-rate. Screenable genes awaiting their first native measurement are listed separately below without a rank. Each gene's row comes from the **latest native screen that measured it** (the column *Source*), so a gene added after the whole-genome screen appears from its own screen; the *War* column is the same figure from the latest `domination,score` screen; *Default* is the deployment ledger's verdict (`docs/gene_ledger.json`, native regime governing, war filling in). Every screen is a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off columns cover the same maps. `docs/GENE_SCREEN.md` documents the instrument.
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a four-player war screen), so *Wins ±10k* is how many wins above or below chance a seat carrying the gene collects per 10,000 games; the whole-genome screen resolves ±1.1 pp (≈ ±110 wins per 10,000) at 80% power and a single-gene 6,000-seat-pair screen ±1.3 pp — differences inside that band are noise, not nulls. `z` is the paired on−off win contrast; `share z` the score-share contrast, which resolves an edge at a fraction of the games a win count needs.
 
@@ -69,6 +69,22 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 | 59 | -26 | `recon-flight` | off (unresolved) | Let a recon unit step out of a visible hostile's reach before it explores. | 16.41% | 16.93% | 15,000/15,000 | -1.32 | -0.48 | -27 | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | 60 | -26 | `wonder-prereq-reach` | off (unresolved) | Credit a wonder's missing prerequisite buildings/districts with a share of the wonder's own production score. | 16.41% | 16.93% | 15,000/15,000 | -1.31 | -0.51 | -58 | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | 61 | -27 | `holy-lane-parity` | off (hurts) | The Religion lane pays for its Holy Site what the Culture lane pays for its Theater Square. | 16.40% | 16.93% | 6,000/6,000 | -1.19 | -1.34 | +5 | `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` |
+
+## Awaiting native measurement
+
+These screenable genes have no native on/off result, so they receive no rank or promotion from this table. Their deployment state remains explicit while a native screen is pending.
+
+| Gene | Default | Description |
+|---|---|---|
+| `barbarian-bargain` | off (unmeasured) | Deliberate camp clearing as a peacetime errand. |
+| `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
+| `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
+| `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
+| `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
+| `settle-sooner` | off (unmeasured) | Price a Settler's walk in turns, each turn dearer the longer the Settler has already been walking, so expansion founds sooner without giving up a site good e… |
+| `settler-threat-detour` | off (unmeasured) | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. |
 
 ## Removed from the code
 

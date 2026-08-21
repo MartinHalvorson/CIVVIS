@@ -88,7 +88,7 @@ def load_source(path: Path) -> dict:
 
 
 def measure_from(gene: dict, source_name: str) -> dict:
-    return {
+    measure = {
         "pairs": int(gene["pairs"]),
         "n_on": int(gene.get("n_on", gene["pairs"])),
         "n_off": int(gene.get("n_off", gene["pairs"])),
@@ -99,6 +99,28 @@ def measure_from(gene: dict, source_name: str) -> dict:
         "read": gene.get("read", ""),
         "source": source_name,
     }
+    # Newer analyzer outputs retain three chronological, non-overlapping win
+    # tranches. Keep them in the ledger JSON so a later drop decision can ask
+    # whether its harm replicated, while older sources remain byte-for-byte
+    # compatible and the generated Rust runtime table stays intentionally
+    # focused on the pooled estimate.
+    tranches = []
+    for tranche in gene.get("win_tranches", []):
+        recorded = {
+            "position": str(tranche["position"]),
+            "pairs": int(tranche["pairs"]),
+            "win_delta_pp": round(float(tranche["win_delta_pp"]), 3),
+            "win_z": round(float(tranche["win_z"]), 3),
+        }
+        # Retain the standard error when emitted by the newer analyzer.  It
+        # makes the independent-window confidence check auditable from the
+        # ledger, while accepting prefeature JSON fixtures and old sources.
+        if "win_se_pp" in tranche:
+            recorded["win_se_pp"] = round(float(tranche["win_se_pp"]), 3)
+        tranches.append(recorded)
+    if tranches:
+        measure["win_tranches"] = tranches
+    return measure
 
 
 def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> dict:
