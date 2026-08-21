@@ -112,6 +112,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("tally_great_people", "tally-great-people", AdvancedAi::disable_tally_great_people),
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
     ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
+    ("barbarian_bargain", "barbarian-bargain", AdvancedAi::disable_barbarian_bargain),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
@@ -193,4 +194,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // A target can be excellent while a visible hostile makes its next route
+    // step unsafe. This holds that corridor aside briefly and sends the
+    // Settler to the best safe runner-up; see `settler_threat_detour`.
+    ("settler_threat_detour", "settler-threat-detour", AdvancedAi::enable_settler_threat_detour),
 ];
