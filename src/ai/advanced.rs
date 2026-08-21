@@ -1268,6 +1268,15 @@ const SETTLER_STALL_LIMIT: u32 = 3;
 /// the next picks, so a threat that flickers in and out of sight cannot flip
 /// the settler between two sites every frame. See `settler_target_hysteresis`.
 const SETTLER_TARGET_HYSTERESIS_TURNS: u32 = 6;
+/// A visible hostile can make the *approach* to an otherwise excellent city
+/// site unsafe without making the site itself unsafe. Keep that corridor out
+/// of every settler's ranking briefly, then let it compete again once the
+/// military has had a chance to clear the blocker. See `settler_threat_detour`.
+const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
+/// The top route-ranked alternate can share the same attack envelope. Try a
+/// few next-best sites before deciding there is no safe detour; this work runs
+/// only when a visible blocker has already stopped the preferred route.
+const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -1982,6 +1991,11 @@ pub struct AdvancedAi {
     /// turn on which it may be reconsidered. Without this cooldown, clearing a
     /// target simply reselects the same top-ranked tile one turn later.
     settler_avoid: BTreeMap<u32, (Pos, u32)>,
+    /// Settlement sites whose *approach* is temporarily blocked by a visible
+    /// threat. Unlike `settler_avoid`, this is keyed by position rather than
+    /// unit: a second Settler must not walk into the same blocked corridor
+    /// while the first one takes a safe alternate. See `settler_threat_detour`.
+    settler_threat_deferrals: BTreeMap<Pos, u32>,
     /// Sites a settler stood on and could not found, each with the turn its
     /// retirement expires. A set rather than the single `settler_avoid` slot:
     /// the stall counter overwrites that slot, and a doomed frontier is usually
@@ -3318,6 +3332,16 @@ pub struct AdvancedAi {
     /// for the live bridge and the native repair bundle (a native settler
     /// flickers the same way beside a wandering barbarian).
     pub settler_target_hysteresis: bool,
+    /// When a visible hostile blocks the next step to an otherwise sound
+    /// settlement target, defer that corridor briefly and send the Settler to
+    /// the best safe runner-up instead of spending several turns dodging it.
+    ///
+    /// The deferral is empire-wide but short-lived: another Settler does not
+    /// repeat the dangerous march, while the original site returns to the
+    /// ordinary ranking once the threat has had time to be cleared. This is a
+    /// native, off-by-default gene; `gene_screen` prices it through
+    /// `PRODUCTION_OPT_INS` before any promotion decision.
+    pub settler_threat_detour: bool,
     /// On the tally seat, banked Faith (or gold) patronizes any Great Person
     /// it can pay for, not only one the empire is already close to earning.
     ///
@@ -4396,6 +4420,7 @@ impl AdvancedAi {
         self.guard_wait.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
+        self.settler_threat_deferrals.clear();
         self.settler_dead_sites.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
@@ -4573,6 +4598,7 @@ impl AdvancedAi {
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
+            settler_threat_deferrals: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             recon_fled: BTreeMap::new(),
@@ -4648,6 +4674,7 @@ impl AdvancedAi {
             bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
+            settler_threat_detour: false,
             tally_great_people: false,
             buildings_before_projects: false,
             barbarian_scouts_are_scouts: false,
@@ -21994,7 +22021,10 @@ impl AdvancedAi {
             )
             .into_iter()
             .filter(|(position, _)| {
-                Some(*position) != avoid && !self.settler_site_is_dead(uid, *position)
+                Some(*position) != avoid
+                    && !self.settler_site_is_dead(uid, *position)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(position))
             })
             .collect::<Vec<_>>();
         if !self.settlement_safety {
@@ -22084,6 +22114,119 @@ impl AdvancedAi {
             (Some(local), _) => Some(local),
             (None, global) => global,
         }
+    }
+
+    /// The cached site can remain legal and well-scored while a visible enemy
+    /// makes its NEXT route step unsafe. That is a different failure from
+    /// `settler_target_hysteresis`, whose target validation only sees the site
+    /// itself. A civilian already stopped in a visible zone of control is the
+    /// other concrete route-block shape: `route_step` correctly returns no
+    /// path then, but the own unit's stop plus the visible risk is enough to
+    /// explain the blockage without reading an unseen enemy.
+    fn settler_target_has_visible_route_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        if !self.settlement_safety {
+            return false;
+        }
+        let Some((current, zoc_stopped)) =
+            g.units.get(&uid).map(|unit| (unit.pos, unit.zoc_stopped))
+        else {
+            return false;
+        };
+        if current == target {
+            return false;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        match g.route_step(uid, target, 0) {
+            Some(next) => {
+                self.settlement_tile_risk(g, pid, Some(uid), next, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            }
+            None => {
+                zoc_stopped
+                    && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
+                        > SETTLER_STEP_RISK_LIMIT
+            }
+        }
+    }
+
+    /// Defer a threatened corridor for the whole empire and keep the current
+    /// Settler productive at the highest-ranked alternate it can approach
+    /// safely. The target is deliberately *deferred*, not retired: a guard or
+    /// the ordinary military response may clear the blocker, and the original
+    /// site belongs back in the ranking soon afterward.
+    fn detour_settler_around_visible_threat(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> Option<Pos> {
+        if !self.settler_threat_detour
+            || !self.settler_target_has_visible_route_threat(g, pid, uid, target)
+        {
+            return None;
+        }
+
+        let until = g.turn + g.standard_duration(SETTLER_THREAT_DETOUR_TURNS);
+        let previous = self.settler_threat_deferrals.insert(target, until);
+        let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
+        // `best_settler_target` already orders candidates by city value,
+        // travel cost, and route risk. A threat can cover more than one top
+        // candidate, though, so temporarily set aside each unsafe runner-up
+        // and ask again instead of mistaking the first one for the only one.
+        // These short-lived scratch entries are restored below; only `target`
+        // remains deferred for the empire after this decision.
+        let mut scratch = Vec::new();
+        let mut fallback = None;
+        for _ in 0..SETTLER_THREAT_DETOUR_RETRIES {
+            let Some((candidate, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                break;
+            };
+            if !self.settler_target_has_visible_route_threat(g, pid, uid, candidate) {
+                fallback = Some(candidate);
+                break;
+            }
+            let old = self.settler_threat_deferrals.insert(candidate, until);
+            scratch.push((candidate, old));
+        }
+        for (candidate, old) in scratch {
+            match old {
+                Some(old_until) => {
+                    self.settler_threat_deferrals.insert(candidate, old_until);
+                }
+                None => {
+                    self.settler_threat_deferrals.remove(&candidate);
+                }
+            }
+        }
+        let Some(fallback) = fallback else {
+            match previous {
+                Some(old_until) => {
+                    self.settler_threat_deferrals.insert(target, old_until);
+                }
+                None => {
+                    self.settler_threat_deferrals.remove(&target);
+                }
+            }
+            return None;
+        };
+
+        self.settler_targets.insert(uid, fallback);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        think!(self.journal(), Expansion, Detail,
+               "Settler detours around a visible threat";
+               "the approach to {target:?} is unsafe, so every Settler leaves it alone for \
+                {SETTLER_THREAT_DETOUR_TURNS} standard turns while the army can clear the \
+                blocker; {fallback:?} is the best safe alternate";
+               fallback);
+        Some(fallback)
     }
 
     /// Whether a Settler uses the ordinary-unit shadow instead of the
@@ -22388,6 +22531,10 @@ impl AdvancedAi {
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
             sites.retain(|_, until| *until > g.turn);
         }
+        if self.settler_threat_detour {
+            self.settler_threat_deferrals
+                .retain(|_, until| *until > g.turn);
+        }
         if self
             .settler_avoid
             .get(&uid)
@@ -22552,6 +22699,8 @@ impl AdvancedAi {
                     && tile
                         .owner_city
                         .is_none_or(|cid| g.cities[&cid].owner == pid)
+                    && (!self.settler_threat_detour
+                        || !self.settler_threat_deferrals.contains_key(target))
                     && (*target == current || g.route_step(uid, *target, 0).is_some())
                     && (!self.settlement_safety
                         || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
@@ -22599,6 +22748,10 @@ impl AdvancedAi {
                     self.settler_targets.insert(uid, target);
                 }
                 target
+            });
+            let target = target.map(|target| {
+                self.detour_settler_around_visible_threat(g, pid, uid, target)
+                    .unwrap_or(target)
             });
             if target == Some(current) && g.can_found_city(uid) {
                 if self.settlement_safety
@@ -22708,6 +22861,9 @@ impl AdvancedAi {
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");
             }
+            if self.settler_threat_detour && self.settler_threat_deferrals.contains_key(&target) {
+                return Some("the approach is temporarily deferred for a visible threat");
+            }
             // A momentarily unavailable route is not a bad site. Under
             // `settler_commit` the stall counter decides when to give up,
             // not a single blocked turn.
@@ -22800,7 +22956,7 @@ impl AdvancedAi {
                 }
             }
         });
-        let Some(target) = target else {
+        let Some(mut target) = target else {
             // See `idle_walkers_close_the_pipeline`: a walker that found no
             // site this turn is idle, and the pipeline reads that; one idle
             // for twice the replacement threshold founds where it stands if
@@ -22826,6 +22982,9 @@ impl AdvancedAi {
             }
             return self.base.settler_step(g, pid, uid);
         };
+        if let Some(fallback) = self.detour_settler_around_visible_threat(g, pid, uid, target) {
+            target = fallback;
+        }
         if current == target && g.can_found_city(uid) {
             // A cached target may have been safe when it was chosen but become
             // loyalty-doomed while the Settler walked there: a nearby rival can
