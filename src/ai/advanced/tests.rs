@@ -16196,8 +16196,11 @@ fn on_the_tally_seat_banked_faith_patronizes_a_great_person_far_from_recruitment
         0
     );
 
+    // The universe, not the deployment genome: the ledger now turns on
+    // `idle_faith_patronage`, which also buys this race for a seat with no
+    // religion; this test is about the tally gene alone.
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_tally_great_people();
     let mut kept = game.clone();
     withheld.advanced_great_people(&mut kept, 0, GrandStrategy::Science);
