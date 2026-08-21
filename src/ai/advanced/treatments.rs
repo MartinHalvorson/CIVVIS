@@ -198,4 +198,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // step unsafe. This holds that corridor aside briefly and sends the
     // Settler to the best safe runner-up; see `settler_threat_detour`.
     ("settler_threat_detour", "settler-threat-detour", AdvancedAi::enable_settler_threat_detour),
+    // The site ranking is indifferent between founding now and founding the
+    // same value later; this prices every turn of the walk, dearer the longer
+    // the Settler has been out. See `settle_sooner`.
+    ("settle_sooner", "settle-sooner", AdvancedAi::enable_settle_sooner),
 ];

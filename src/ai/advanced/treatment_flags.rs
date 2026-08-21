@@ -1954,6 +1954,17 @@ impl AdvancedAi {
         self.settler_threat_detour = false;
     }
 
+    /// Price a Settler's walk in turns, each turn dearer the longer the
+    /// Settler has already been walking, so expansion founds sooner without
+    /// giving up a site good enough to pay for its walk. See `settle_sooner`.
+    pub fn enable_settle_sooner(&mut self) {
+        self.settle_sooner = true;
+    }
+
+    pub fn disable_settle_sooner(&mut self) {
+        self.settle_sooner = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {
