@@ -1140,14 +1140,6 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
-                        if census.arrival_wave_holds > 0 {
-                            flags.push_str(&format!(
-                                " ARRIVAL_WAVES held={} in_wave={} alone={}",
-                                census.arrival_wave_holds,
-                                census.arrival_wave_releases,
-                                census.arrival_wave_lone,
-                            ));
-                        }
                         if census.step_reassessed > 0 {
                             flags.push_str(&format!(
                                 " REASSESS blind_cuts={}",
@@ -2949,7 +2941,6 @@ mod tests {
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),
                 ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
-                ("loyalty_policy_defence", ai.loyalty_policy_defence),
                 // Evaluator-only like the rest of this list: the stalled-settler
                 // fallback must reach neither the anchor nor production until it
                 // has a number.

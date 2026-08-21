@@ -350,8 +350,8 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        let forced = ["stacked-escort"];
-        assert!(ledger_held_live_treatment("stacked-escort"));
+        let forced = ["governor-every-lane"];
+        assert!(ledger_held_live_treatment("governor-every-lane"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -360,16 +360,16 @@ mod tests {
             !ledger_held_live_treatment("strategic-wonders"),
             "a production treatment is not a live-universe override"
         );
-        assert!(ledger_held_live_treatments().contains(&"stacked-escort"));
+        assert!(ledger_held_live_treatments().contains(&"governor-every-lane"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"stacked-escort"),
+            !deployed.contains(&"governor-every-lane"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"stacked-escort"),
+            forced_deployment.contains(&"governor-every-lane"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -381,14 +381,14 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.stacked_escort, "the named live treatment stands");
+        assert!(ai.governor_victory_lanes, "the named live treatment stands");
         assert!(
-            !ai.settler_stack_discipline(),
+            !ai.war_economy,
             "neighbouring ledger-held treatments stay off unless named too"
         );
-        assert_eq!(applied.forced, vec!["stacked-escort"]);
+        assert_eq!(applied.forced, vec!["governor-every-lane"]);
         assert!(
-            !applied.withheld.contains(&"stacked-escort"),
+            !applied.withheld.contains(&"governor-every-lane"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

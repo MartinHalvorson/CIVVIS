@@ -53,9 +53,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("joint_reach_lines", "joint-reach-lines", AdvancedAi::disable_joint_reach_lines),
     ("live_trader_route_adapter", "live-trader-route", AdvancedAi::disable_live_trader_route_adapter),
     ("live_religious_purchase_guard", "live-religious-purchase", AdvancedAi::disable_live_religious_purchase_guard),
-    ("siege_muster", "siege-muster", AdvancedAi::disable_siege_muster),
     ("home_defense", "home-defense", AdvancedAi::disable_home_defense),
-    ("loyalty_policy_defence", "loyalty-policy-defence", AdvancedAi::disable_loyalty_policy_defence),
     ("recorded_tactical_step", "recorded-tactical-step", AdvancedAi::disable_recorded_tactical_step),
     ("live_motion_turn_accounting", "live-motion-turn-accounting", AdvancedAi::disable_live_motion_turn_accounting),
     ("whole_turn_backtrack_guard", "whole-turn-backtrack-guard", AdvancedAi::disable_whole_turn_backtrack_guard),
@@ -78,8 +76,6 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("suzerain_cards", "suzerain-cards", AdvancedAi::disable_suzerain_cards_need_a_suzerainty),
     ("muster_at_command_radius", "muster-at-command-radius", AdvancedAi::disable_muster_at_command_radius),
     ("housing_districts", "housing-districts", AdvancedAi::disable_housing_districts),
-    ("campus_every_city", "campus-every-city", AdvancedAi::disable_campus_every_city),
-    ("housing_cards", "housing-cards", AdvancedAi::disable_housing_cards),
     ("housing_research", "housing-research", AdvancedAi::disable_housing_research),
     ("war_economy", "war-economy", AdvancedAi::disable_war_economy),
     ("war_reinforcement", "war-reinforcement", AdvancedAi::disable_war_reinforcement),
@@ -88,14 +84,12 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("wide_map_capacity", "wide-map-capacity", AdvancedAi::disable_wide_map_capacity),
     ("garrison_under_fire", "garrison-under-fire", AdvancedAi::disable_garrison_under_fire),
     ("escort_unstick", "escort-unstick", AdvancedAi::disable_escort_unstick),
-    ("stacked_escort", "stacked-escort", AdvancedAi::disable_stacked_escort),
     ("live_formationless_settler_shadow", "live-formationless-settler-shadow", AdvancedAi::disable_live_formationless_settler_shadow),
     ("religion_sues_peace", "religion-sues-peace", AdvancedAi::disable_religion_sues_peace),
     ("recon_replacement", "recon-replacement", AdvancedAi::disable_recon_replacement),
     ("stranded_settler_discount", "stranded-settler-discount", AdvancedAi::disable_stranded_settler_discount),
     ("siege_commitment", "siege-commitment", AdvancedAi::disable_siege_commitment),
     ("wonder_ring_settle_value", "wonder-ring-settle-value", AdvancedAi::disable_wonder_ring_settle_value),
-    ("garrison_walls", "garrison-walls", AdvancedAi::disable_garrison_walls),
     ("housing_buildings", "housing-buildings", AdvancedAi::disable_housing_buildings),
     ("amenity_project_preemption", "amenity-project-preemption", AdvancedAi::disable_amenity_project_preemption),
     ("amenity_district_path", "amenity-district-path", AdvancedAi::disable_amenity_district_path),
@@ -119,7 +113,6 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
     ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
-    ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
     ("deny_while_targeted", "deny-while-targeted", AdvancedAi::disable_deny_while_targeted),
@@ -185,7 +178,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
-    ("arrival_waves", "arrival-waves", AdvancedAi::enable_arrival_waves),
     // The religion race decides two thirds of native games, and a founder
     // that loses its own cities wins as rarely as a seat that never founded
     // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the

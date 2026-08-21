@@ -1,6 +1,6 @@
 {
   "coverage": {
-    "named": 44,
+    "named": 37,
     "never_named": 16,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
@@ -38,14 +38,14 @@
       "suzerain-cards",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 60
+    "withholdable": 53
   },
   "derived": {
-    "eval_only_count": 243,
+    "eval_only_count": 236,
     "firaxis_only_count": 33,
-    "live_bridge_count": 93,
-    "native_engine_repair_count": 60,
-    "withholdable_live_count": 60
+    "live_bridge_count": 86,
+    "native_engine_repair_count": 53,
+    "withholdable_live_count": 53
   },
   "ladder": {
     "ahead": 12,
@@ -112,11 +112,9 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 26,
+      "declared_count": 21,
       "items": [
         "escort-unstick",
-        "stacked-escort",
-        "settler-stack-discipline",
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
@@ -129,12 +127,9 @@
         "amenity-project-preemption",
         "amenity-district-path",
         "governor-every-lane",
-        "housing-cards",
         "housing-research",
-        "campus-every-city",
         "district-coverage",
         "slot-kind-tiebreak",
-        "loyalty-policy-defence",
         "loyalty-rate-alarm",
         "suzerain-cards",
         "score-horizon",
@@ -143,7 +138,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 60,
+      "declared_count": 53,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -157,7 +152,6 @@
         "peacetime-deterrence",
         "war-economy",
         "bounded-recovery",
-        "siege-muster",
         "siege-role",
         "siege-tracks-wall",
         "siege-commitment",
@@ -166,7 +160,6 @@
         "endgame-war-runway",
         "home-defense",
         "garrison-under-fire",
-        "garrison-walls",
         "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
@@ -180,8 +173,6 @@
         "camp-party",
         "religion-sues-peace",
         "escort-unstick",
-        "stacked-escort",
-        "settler-stack-discipline",
         "buildings-before-projects",
         "wonder-ring-settle-value",
         "settler-site-agreement",
@@ -194,12 +185,9 @@
         "amenity-project-preemption",
         "amenity-district-path",
         "governor-every-lane",
-        "housing-cards",
         "housing-research",
-        "campus-every-city",
         "district-coverage",
         "slot-kind-tiebreak",
-        "loyalty-policy-defence",
         "loyalty-rate-alarm",
         "suzerain-cards",
         "score-horizon",
@@ -208,7 +196,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 34,
+      "declared_count": 32,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -222,7 +210,6 @@
         "peacetime-deterrence",
         "war-economy",
         "bounded-recovery",
-        "siege-muster",
         "siege-role",
         "siege-tracks-wall",
         "siege-commitment",
@@ -231,7 +218,6 @@
         "endgame-war-runway",
         "home-defense",
         "garrison-under-fire",
-        "garrison-walls",
         "barbarian-walls-one-tier",
         "strike-opening",
         "ranged-line-of-sight",
@@ -247,7 +233,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 243,
+      "declared_count": 236,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -271,9 +257,7 @@
         "live_without_home_defense",
         "live_without_joint_tactics",
         "live_without_joint_reach_lines",
-        "live_without_loyalty_policy_defence",
         "live_without_solvent_faith_army",
-        "live_without_siege_muster",
         "live_without_district_coverage",
         "live_without_slot_kind_tiebreak",
         "live_without_bounded_recovery",
@@ -290,8 +274,6 @@
         "live_without_loyalty_rate_alarm",
         "live_without_housing_districts",
         "live_without_housing_buildings",
-        "live_without_campus_every_city",
-        "live_without_housing_cards",
         "live_without_housing_research",
         "live_without_war_economy",
         "live_without_war_reinforcement",
@@ -300,7 +282,6 @@
         "live_without_stock_denial_lead_time",
         "live_without_projected_stock_denial",
         "live_without_endgame_war_runway",
-        "live_without_stacked_escort",
         "live_without_live_formationless_settler_shadow",
         "live_without_live_motion_turn_accounting",
         "live_without_counter_in_lane",
@@ -308,7 +289,6 @@
         "live_without_escort_unstick",
         "live_without_frontier_loyalty",
         "live_without_garrison_under_fire",
-        "live_without_garrison_walls",
         "live_without_naval_recon",
         "live_without_recon_flight",
         "live_without_recon_replacement",
@@ -334,7 +314,6 @@
         "live_without_barbarian_scouts_are_scouts",
         "live_without_barbarian_hunt",
         "live_without_camp_reach",
-        "live_without_settler_stack_discipline",
         "live_without_camp_party",
         "live_without_buildings_before_projects",
         "live_without_parallel_settlers",
@@ -533,15 +512,13 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 93,
+      "declared_count": 86,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
-        "siege-muster",
         "home-defense",
-        "loyalty-policy-defence",
         "recorded-tactical-step",
         "live-motion-turn-accounting",
         "whole-turn-backtrack-guard",
@@ -564,8 +541,6 @@
         "suzerain-cards",
         "muster-at-command-radius",
         "housing-districts",
-        "campus-every-city",
-        "housing-cards",
         "housing-research",
         "war-economy",
         "war-reinforcement",
@@ -574,14 +549,12 @@
         "wide-map-capacity",
         "garrison-under-fire",
         "escort-unstick",
-        "stacked-escort",
         "live-formationless-settler-shadow",
         "religion-sues-peace",
         "recon-replacement",
         "stranded-settler-discount",
         "siege-commitment",
         "wonder-ring-settle-value",
-        "garrison-walls",
         "housing-buildings",
         "amenity-project-preemption",
         "amenity-district-path",
@@ -605,7 +578,6 @@
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
         "camp-reach",
-        "settler-stack-discipline",
         "camp-party",
         "buildings-before-projects",
         "deny-while-targeted",

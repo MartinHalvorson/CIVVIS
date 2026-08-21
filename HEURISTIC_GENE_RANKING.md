@@ -2,6 +2,19 @@
 
 Every boolean heuristic gene on the Advanced controller, ranked most beneficial to least, from the cycle-4 whole-genome screen: **15,000 foldover pairs = 30,000 six-player seat-games** (seeds 52000000.., 6p 60×38 Online-250, all victory lanes, shuffled civs, every major seat carrying its own random genome, errors clustered by game pair; baseline = the deployment gene ledger). Each gene was ON in exactly one arm of every pair, so its on/off columns cover the same 15,000 maps. `docs/GENE_SCREEN.md` documents the instrument; `docs/gene_ledger.json` holds the machine-readable verdicts.
 
+**Removed 2026-08-21** (operator directive: the bottom of the table leaves the code; PR #2235 carries each mechanism's deletion — the live settler protection now rides the single `live-formationless-settler-shadow` fidelity gate):
+
+| Gene | Wins ±10k at removal | What it did |
+|---|---:|---|
+| `housing-cards` | -33 | Put medina_quarter and insulae in the deck when a city is short of housing and already carries the districts they key off. |
+| `arrival-waves` | -34 | Rear reinforcements arrive at an engaged front as a wave, not one at a time. |
+| `loyalty-policy-defence` | -35 | Hold a promotion until its healing would land. |
+| `siege-muster` | -36 | Let a besieged city raise its standing-army floor against hostiles it has no diplomatic state with. |
+| `settler-stack-discipline` | -81 | Settlers decide before the engagement, price capture as capture and trust only a guard on their tile. |
+| `stacked-escort` | -83 | Escort settlers by stacked co-movement instead of formations. |
+| `garrison-walls` | -84 | Order our own ancient walls in the capital and small frontier cities once Masonry is in. |
+| `campus-every-city` | -90 | Keep asking for a Campus in every city that can still repay one. |
+
 **Reading the table.** A six-player seat wins 1-in-6 by chance, so out of 10,000 games the expected count is **1,667**; column 2 is how many wins above or below that a seat carrying the gene would collect at its measured on-rate. The screen resolves a win Δ of ±1.1 pp (≈ ±110 wins per 10,000) at 80% power; differences inside that band are noise, not nulls. Regenerate after each whole-genome screen: the numbers move as repairs land.
 
 | Rank | Wins ±10k (vs 1,667) | Gene | Description | Wins (on) | Games (on) | Win rate (on) | Wins (off) | Games (off) | Win rate (off) |
@@ -63,13 +76,5 @@ Every boolean heuristic gene on the Advanced controller, ranked most beneficial 
 | 55 | -26 | `camp-reach` | Count a barbarian camp within nine tiles of a city as home ground the guard clears. | 2,461 | 15,000 | 16.41% | 2,539 | 15,000 | 16.93% |
 | 56 | -26 | `wonder-prereq-reach` | Credit a wonder's missing prerequisite buildings/districts with a share of the wonder's own production score. | 2,461 | 15,000 | 16.41% | 2,539 | 15,000 | 16.93% |
 | 57 | -27 | `step-and-reassess` | A blind-planned unit stops at the first step that revealed new ground and finishes its movement sighted; on the bridge its walk is cut at the first unrevealed hex so t… | 2,460 | 15,000 | 16.40% | 2,540 | 15,000 | 16.93% |
-| 58 | -33 | `housing-cards` | Put medina_quarter and insulae in the deck when a city is short of housing and already carries the districts they key off. | 2,450 | 15,000 | 16.33% | 2,550 | 15,000 | 17.00% |
-| 59 | -34 | `arrival-waves` | Rear reinforcements arrive at an engaged front as a wave, not one at a time. | 2,449 | 15,000 | 16.33% | 2,551 | 15,000 | 17.01% |
-| 60 | -35 | `loyalty-policy-defence` | Hold a promotion until its healing would land. | 2,448 | 15,000 | 16.32% | 2,552 | 15,000 | 17.01% |
-| 61 | -36 | `siege-muster` | Let a besieged city raise its standing-army floor against hostiles it has no diplomatic state with. | 2,446 | 15,000 | 16.31% | 2,554 | 15,000 | 17.03% |
-| 62 | -81 | `settler-stack-discipline` | Settlers decide before the engagement, price capture as capture and trust only a guard on their tile. | 2,379 | 15,000 | 15.86% | 2,621 | 15,000 | 17.47% |
-| 63 | -83 | `stacked-escort` | Escort settlers by stacked co-movement instead of formations. | 2,375 | 15,000 | 15.83% | 2,625 | 15,000 | 17.50% |
-| 64 | -84 | `garrison-walls` | Order our own ancient walls in the capital and small frontier cities once Masonry is in. | 2,374 | 15,000 | 15.83% | 2,626 | 15,000 | 17.51% |
-| 65 | -90 | `campus-every-city` | Keep asking for a Campus in every city that can still repay one. | 2,365 | 15,000 | 15.77% | 2,635 | 15,000 | 17.57% |
 
 _Generated from `gene_screen` run p7 (2026-08-21). The paired on−off contrast, intervals, and family-wise verdicts live in `docs/gene_ledger.json`; this table is the operator's wins-per-million view of the same games._

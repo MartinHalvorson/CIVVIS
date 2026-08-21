@@ -73,9 +73,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_home_defense",
     "live_without_joint_tactics",
     "live_without_joint_reach_lines",
-    "live_without_loyalty_policy_defence",
     "live_without_solvent_faith_army",
-    "live_without_siege_muster",
     "live_without_district_coverage",
     "live_without_slot_kind_tiebreak",
     "live_without_bounded_recovery",
@@ -92,8 +90,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_loyalty_rate_alarm",
     "live_without_housing_districts",
     "live_without_housing_buildings",
-    "live_without_campus_every_city",
-    "live_without_housing_cards",
     "live_without_housing_research",
     "live_without_war_economy",
     "live_without_war_reinforcement",
@@ -102,7 +98,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_stock_denial_lead_time",
     "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
-    "live_without_stacked_escort",
     "live_without_live_formationless_settler_shadow",
     "live_without_live_motion_turn_accounting",
     "live_without_counter_in_lane",
@@ -110,7 +105,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_escort_unstick",
     "live_without_frontier_loyalty",
     "live_without_garrison_under_fire",
-    "live_without_garrison_walls",
     "live_without_naval_recon",
     "live_without_recon_flight",
     "live_without_recon_replacement",
@@ -136,7 +130,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_barbarian_scouts_are_scouts",
     "live_without_barbarian_hunt",
     "live_without_camp_reach",
-    "live_without_settler_stack_discipline",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
     "live_without_parallel_settlers",
@@ -354,9 +347,7 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "joint-reach-lines",
     "live-trader-route",
     "live-religious-purchase",
-    "siege-muster",
     "home-defense",
-    "loyalty-policy-defence",
     "recorded-tactical-step",
     "live-motion-turn-accounting",
     "whole-turn-backtrack-guard",
@@ -379,8 +370,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "suzerain-cards",
     "muster-at-command-radius",
     "housing-districts",
-    "campus-every-city",
-    "housing-cards",
     "housing-research",
     "war-economy",
     "war-reinforcement",
@@ -389,14 +378,12 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "wide-map-capacity",
     "garrison-under-fire",
     "escort-unstick",
-    "stacked-escort",
     "live-formationless-settler-shadow",
     "religion-sues-peace",
     "recon-replacement",
     "stranded-settler-discount",
     "siege-commitment",
     "wonder-ring-settle-value",
-    "garrison-walls",
     "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
@@ -420,7 +407,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "barbarian-scouts-are-scouts",
     "barbarian-hunt",
     "camp-reach",
-    "settler-stack-discipline",
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
@@ -649,7 +635,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
     "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
@@ -658,7 +643,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
@@ -676,8 +660,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
 /// The economic half: settlement, growth, districts, and the policy deck.
 pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
@@ -690,12 +672,9 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
@@ -720,7 +699,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
     "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
@@ -729,7 +707,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
@@ -743,8 +720,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "camp-party",
     "religion-sues-peace",
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
@@ -757,12 +732,9 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
@@ -818,9 +790,7 @@ define_arm_kinds! {
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
     LiveWithoutJointReachLines => "live_without_joint_reach_lines",
-    LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
-    LiveWithoutSiegeMuster => "live_without_siege_muster",
     LiveWithoutDistrictCoverage => "live_without_district_coverage",
     LiveWithoutSlotKindTiebreak => "live_without_slot_kind_tiebreak",
     LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
@@ -837,8 +807,6 @@ define_arm_kinds! {
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     LiveWithoutHousingDistricts => "live_without_housing_districts",
     LiveWithoutHousingBuildings => "live_without_housing_buildings",
-    LiveWithoutCampusEveryCity => "live_without_campus_every_city",
-    LiveWithoutHousingCards => "live_without_housing_cards",
     LiveWithoutHousingResearch => "live_without_housing_research",
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
@@ -852,7 +820,6 @@ define_arm_kinds! {
     LiveWithoutEscortUnstick => "live_without_escort_unstick",
     LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
     LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
-    LiveWithoutGarrisonWalls => "live_without_garrison_walls",
     LiveWithoutNavalRecon => "live_without_naval_recon",
     LiveWithoutReconFlight => "live_without_recon_flight",
     LiveWithoutReconReplacement => "live_without_recon_replacement",
@@ -863,7 +830,6 @@ define_arm_kinds! {
     LiveWithoutTallyCulture => "live_without_tally_culture",
     LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
-    LiveWithoutStackedEscort => "live_without_stacked_escort",
     LiveWithoutLiveFormationlessSettlerShadow => "live_without_live_formationless_settler_shadow",
     LiveWithoutLiveMotionTurnAccounting => "live_without_live_motion_turn_accounting",
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
@@ -881,7 +847,6 @@ define_arm_kinds! {
     LiveWithoutBarbarianScoutsAreScouts => "live_without_barbarian_scouts_are_scouts",
     LiveWithoutBarbarianHunt => "live_without_barbarian_hunt",
     LiveWithoutCampReach => "live_without_camp_reach",
-    LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
     LiveWithoutParallelSettlers => "live_without_parallel_settlers",
@@ -3491,9 +3456,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // measured +32/+34 on seeds 10800000/11000000 and +38 (CI +10..+66)
         // on the corrected-gate matrix at seed stream 18000000; this arm asks
         // the inverse question if anyone re-opens the axis.
+        // ⚠ `siege_muster` was removed from the code on 2026-08-21 (ranking
+        // row −36/10k, inside the noise band, removed by operator directive
+        // with the bottom of the table); this historical re-addition arm
+        // carries the surviving three of its four flags.
         "advanced_war_half" => {
             let mut ai = AdvancedAi::new();
-            ai.enable_siege_muster();
             ai.enable_home_defense();
             ai.enable_tactical_strategy();
             ai.enable_unit_objective_memory();
@@ -3662,7 +3630,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.adjacency_site_planning = false;
             ai.research_economy = false;
             ai.disable_amenity_districts();
-            ai.disable_siege_muster();
             ai.disable_home_defense();
             ai.disable_tactical_strategy();
             ai.disable_unit_objective_memory();
@@ -4532,7 +4499,6 @@ impl ArmKind {
             }
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
-            Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutLiveFormationlessSettlerShadow => {
                 live_without("live-formationless-settler-shadow")
             }
@@ -4543,7 +4509,6 @@ impl ArmKind {
             Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
             Self::LiveWithoutSolventFaithArmy => live_without("solvent-faith-army"),
-            Self::LiveWithoutSiegeMuster => live_without("siege-muster"),
             Self::LiveWithoutDistrictCoverage => live_without("district-coverage"),
             Self::LiveWithoutLoyaltyRateAlarm => live_without("loyalty-rate-alarm"),
             Self::LiveWithoutBoundedRecovery => live_without("bounded-recovery"),
@@ -4558,12 +4523,9 @@ impl ArmKind {
             Self::LiveWithoutMusterAtCommandRadius => live_without("muster-at-command-radius"),
             Self::LiveWithoutSlotKindTiebreak => live_without("slot-kind-tiebreak"),
             Self::LiveWithoutHousingDistricts => live_without("housing-districts"),
-            Self::LiveWithoutCampusEveryCity => live_without("campus-every-city"),
-            Self::LiveWithoutHousingCards => live_without("housing-cards"),
             Self::LiveWithoutHousingResearch => live_without("housing-research"),
             Self::LiveWithoutHousingBuildings => live_without("housing-buildings"),
             Self::LiveWithoutPeacetimeDeterrence => live_without("peacetime-deterrence"),
-            Self::LiveWithoutLoyaltyPolicyDefence => live_without("loyalty-policy-defence"),
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
@@ -4576,7 +4538,6 @@ impl ArmKind {
             Self::LiveWithoutEscortUnstick => live_without("escort-unstick"),
             Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
             Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
-            Self::LiveWithoutGarrisonWalls => live_without("garrison-walls"),
             Self::LiveWithoutNavalRecon => live_without("naval-recon"),
             Self::LiveWithoutReconFlight => live_without("recon-flight"),
             Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
@@ -4604,7 +4565,6 @@ impl ArmKind {
             }
             Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutCampReach => live_without("camp-reach"),
-            Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
             Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),

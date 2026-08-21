@@ -38,13 +38,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: -2.121, win_z: -1.921, share_delta_pp: -0.291, share_z: -1.08, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
-        tag: "arrival-waves",
-        verdict: Verdict::Unresolved,
-        family_wise: false,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -0.149, win_z: -0.344, share_delta_pp: -0.102, share_z: -1.426, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 1064, win_delta_pp: -3.008, win_z: -1.621, share_delta_pp: -0.485, share_z: -1.211, source: "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json" }),
-    },
-    GeneVerdict {
         tag: "barbarian-scouts-are-scouts",
         verdict: Verdict::Helps,
         family_wise: false,
@@ -101,13 +94,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: -1.212, win_z: -1.098, share_delta_pp: -0.367, share_z: -1.269, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
-        tag: "campus-every-city",
-        verdict: Verdict::Hurts,
-        family_wise: true,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -1.874, win_z: -4.391, share_delta_pp: -0.403, share_z: -5.719, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 1064, win_delta_pp: -2.444, win_z: -1.396, share_delta_pp: -0.554, share_z: -1.312, source: "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json" }),
-    },
-    GeneVerdict {
         tag: "civilian-rescue",
         verdict: Verdict::Unresolved,
         family_wise: false,
@@ -157,13 +143,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: 1.576, win_z: 1.395, share_delta_pp: 0.497, share_z: 1.804, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
-        tag: "garrison-walls",
-        verdict: Verdict::Hurts,
-        family_wise: false,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -1.086, win_z: -2.529, share_delta_pp: -0.13, share_z: -1.864, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: -0.97, win_z: -0.868, share_delta_pp: -0.404, share_z: -1.463, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
-    },
-    GeneVerdict {
         tag: "governor-every-lane",
         verdict: Verdict::Hurts,
         family_wise: true,
@@ -190,13 +169,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: false,
         native: Some(Measure { pairs: 13446, win_delta_pp: -0.283, win_z: -0.655, share_delta_pp: -0.12, share_z: -1.743, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 3300, win_delta_pp: 0.182, win_z: 0.158, share_delta_pp: 0.13, share_z: 0.465, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
-    },
-    GeneVerdict {
-        tag: "housing-cards",
-        verdict: Verdict::Unresolved,
-        family_wise: false,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -0.089, win_z: -0.215, share_delta_pp: -0.005, share_z: -0.074, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: -1.152, win_z: -1.0, share_delta_pp: -0.151, share_z: -0.516, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
         tag: "housing-districts",
@@ -239,13 +211,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: false,
         native: Some(Measure { pairs: 13446, win_delta_pp: -0.357, win_z: -0.841, share_delta_pp: 0.04, share_z: 0.59, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 1064, win_delta_pp: 2.256, win_z: 1.178, share_delta_pp: 0.658, share_z: 1.584, source: "2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json" }),
-    },
-    GeneVerdict {
-        tag: "loyalty-policy-defence",
-        verdict: Verdict::Hurts,
-        family_wise: false,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -1.071, win_z: -2.472, share_delta_pp: -0.105, share_z: -1.495, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: -1.03, win_z: -0.89, share_delta_pp: -0.383, share_z: -1.345, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
         tag: "loyalty-rate-alarm",
@@ -346,13 +311,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: -0.667, win_z: -0.597, share_delta_pp: 0.104, share_z: 0.387, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
-        tag: "settler-stack-discipline",
-        verdict: Verdict::Hurts,
-        family_wise: true,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -2.32, win_z: -5.476, share_delta_pp: -0.309, share_z: -4.43, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: -0.606, win_z: -0.537, share_delta_pp: -0.25, share_z: -0.913, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
-    },
-    GeneVerdict {
         tag: "settler-target-hysteresis",
         verdict: Verdict::Unresolved,
         family_wise: false,
@@ -374,13 +332,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 3300, win_delta_pp: 2.303, win_z: 1.995, share_delta_pp: 0.508, share_z: 1.791, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
-        tag: "siege-muster",
-        verdict: Verdict::Helps,
-        family_wise: false,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -0.521, win_z: -1.208, share_delta_pp: 0.216, share_z: 3.133, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: 0.424, win_z: 0.376, share_delta_pp: 0.269, share_z: 0.956, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
-    },
-    GeneVerdict {
         tag: "siege-role",
         verdict: Verdict::Unresolved,
         family_wise: false,
@@ -400,13 +351,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         family_wise: false,
         native: Some(Measure { pairs: 13446, win_delta_pp: 0.521, win_z: 1.217, share_delta_pp: -0.043, share_z: -0.625, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
         war: Some(Measure { pairs: 3300, win_delta_pp: -1.152, win_z: -1.044, share_delta_pp: 0.01, share_z: 0.036, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
-    },
-    GeneVerdict {
-        tag: "stacked-escort",
-        verdict: Verdict::Hurts,
-        family_wise: true,
-        native: Some(Measure { pairs: 13446, win_delta_pp: -2.082, win_z: -4.814, share_delta_pp: 0.034, share_z: 0.486, source: "2026-08-20-p4-native-6p-allseats-13446-pairs.json" }),
-        war: Some(Measure { pairs: 3300, win_delta_pp: -3.273, win_z: -2.842, share_delta_pp: -0.751, share_z: -2.621, source: "2026-08-19-p2-war-4p-allseats-3300-pairs.json" }),
     },
     GeneVerdict {
         tag: "step-and-reassess",
