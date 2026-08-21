@@ -4770,6 +4770,11 @@ impl AdvancedAi {
         self.base.barbarian_hunt
     }
 
+    /// Whether a raider is priced below a major. See `BasicAi::barbarian_bargain`.
+    pub fn barbarian_bargain(&self) -> bool {
+        self.base.barbarian_bargain
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {
