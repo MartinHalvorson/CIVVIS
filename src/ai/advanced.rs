@@ -28666,26 +28666,27 @@ impl AdvancedAi {
         // shadows it with plain moves instead, because the formation channel
         // went 0-for-7 on the live bridge. (Sea links used to stay; see the
         // measured fight below — they go too.)
-        let land_settlers: Vec<u32> = if self.settlement_safety && !self.formationless_settler_escort() {
-            g.player_unit_ids(pid)
-                .into_iter()
-                .filter(|uid| {
-                    let unit = &g.units[uid];
-                    let Some(target) = self.settler_targets.get(uid) else {
-                        return false;
-                    };
-                    unit.kind == "settler"
-                        && unit.linked_to.is_none()
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| !g.rules.is_water(tile))
-                        && (g.wdist(unit.pos, *target) >= SETTLER_ESCORT_DISTANCE
-                            || self.settler_blocked_turns.get(uid).copied().unwrap_or(0) > 0)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let land_settlers: Vec<u32> =
+            if self.settlement_safety && !self.formationless_settler_escort() {
+                g.player_unit_ids(pid)
+                    .into_iter()
+                    .filter(|uid| {
+                        let unit = &g.units[uid];
+                        let Some(target) = self.settler_targets.get(uid) else {
+                            return false;
+                        };
+                        unit.kind == "settler"
+                            && unit.linked_to.is_none()
+                            && g.map
+                                .get(unit.pos)
+                                .is_some_and(|tile| !g.rules.is_water(tile))
+                            && (g.wdist(unit.pos, *target) >= SETTLER_ESCORT_DISTANCE
+                                || self.settler_blocked_turns.get(uid).copied().unwrap_or(0) > 0)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
         for with in land_settlers {
             let pos = g.units[&with].pos;
             let escort = g
