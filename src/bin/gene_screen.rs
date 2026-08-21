@@ -917,6 +917,10 @@ struct CompletePair<'a> {
     ordinal: usize,
 }
 
+type PairKey = (u64, usize, usize);
+type OrderedRow<'a> = (usize, &'a Row);
+type PairSlots<'a> = [Option<OrderedRow<'a>>; 2];
+
 /// One newest-first, non-overlapping replication tranche.
 #[derive(Clone, Debug)]
 struct ReproTranche {
@@ -932,7 +936,7 @@ struct ReproTranche {
 /// unpaired game. Merged files may repeat a key only if they replayed the same
 /// pair, in which case the later row wins.
 fn complete_pairs_with_order(rows: &[Row]) -> Vec<CompletePair<'_>> {
-    let mut pairs: BTreeMap<(u64, usize, usize), [Option<(usize, &Row)>; 2]> = BTreeMap::new();
+    let mut pairs: BTreeMap<PairKey, PairSlots<'_>> = BTreeMap::new();
     for (ordinal, row) in rows
         .iter()
         .enumerate()
