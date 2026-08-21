@@ -1617,6 +1617,94 @@ fn barbarian_scout_reports_a_city_and_alerts_its_home_camp() {
     assert!(game.barb_camps[&home] <= game.turn + 1);
 }
 
+/// ★★★★★ A SETTLER WALKING PAST THE CAMP WAS NOT A SIGHTING.
+///
+/// The report accepted only a CITY, so a camp's whole raid throughput was one
+/// Scout's round trip to a settlement — and the empire's WALKERS, which is
+/// what a Civilization VI barbarian actually takes, could not start a raid at
+/// all. MEASURED at 0.47 civilians lost to barbarians per game (`ai_eval`, 72
+/// seat-games, 6p/150t/online) against **8 Settlers in 104 turns** on the live
+/// Civilization VI seat. A tuning value inside the alert window cannot close
+/// a seventeen-fold gap when the window mostly never opens.
+///
+/// The Scout still has to walk home before anything happens, so this is a
+/// report and not a chase; the position it carries is where our people were
+/// standing when it saw them.
+#[test]
+fn a_barbarian_scout_reports_the_settler_it_sees_with_no_city_anywhere() {
+    let mut game = Game::new_full(2, 26, 16, 88_101, 100, 0, true);
+    let barbarian = game.barb_pid.unwrap();
+    let home = *game.barb_camps.keys().next().unwrap();
+    game.barb_scout_homes.clear();
+    game.barb_scout_targets.clear();
+    // No city on the board at all: every opening Settler is removed, so the
+    // only thing left to report is a walker.
+    for unit in game
+        .units
+        .values()
+        .filter(|unit| !game.players[unit.owner].is_barbarian)
+        .map(|unit| unit.id)
+        .collect::<Vec<_>>()
+    {
+        game.remove_unit(unit);
+    }
+    assert!(
+        game.cities.is_empty(),
+        "the fixture must have no settlement"
+    );
+
+    let road =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.wdist(*position, home) > 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .min()
+            .expect("open ground away from the camp");
+    let settler = game.spawn_unit("settler", 0, road);
+    let scout_position = game
+        .nbrs(road)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(*position).is_empty()
+        })
+        .expect("open ground beside the Settler");
+    let scout = game.spawn_unit("scout", barbarian, scout_position);
+    game.barb_scout_homes.insert(scout, home);
+
+    game.barbarian_scout_phase(barbarian);
+    assert_eq!(
+        game.barb_scout_targets.get(&scout),
+        Some(&road),
+        "a Scout standing next to an undefended Settler has seen something worth raiding"
+    );
+
+    // And the report still has to be carried home before the camp raises anybody.
+    assert!(
+        !game.barb_alerted_until.contains_key(&home),
+        "a sighting alone must not alert the camp — the Scout walks back first"
+    );
+    let doorstep = game
+        .nbrs(home)
+        .into_iter()
+        .find(|position| game.map.tiles.contains_key(position))
+        .unwrap();
+    game.relocate(scout, doorstep);
+    game.barbarian_scout_phase(barbarian);
+    assert_eq!(game.barb_camp_targets.get(&home), Some(&road));
+    assert!(game.barb_alerted_until[&home] > game.turn);
+    let _ = settler;
+}
+
 #[test]
 fn barbarian_scouts_report_only_cities_they_can_really_see() {
     let mut game = Game::new_full(1, 26, 16, 88_102, 100, 0, true);
