@@ -57,7 +57,7 @@ class Merging(unittest.TestCase):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
                 paths.append((path, regime))
-            return gene_ledger.build_ledger(paths)
+            return gene_ledger.build_ledger(paths, filter_known=False)
 
     def test_native_governs_and_war_fills_in_when_native_is_unresolved(self):
         ledger = self.build([
@@ -109,6 +109,23 @@ class Merging(unittest.TestCase):
     def test_a_war_file_recorded_as_native_is_refused(self):
         with self.assertRaises(SystemExit):
             self.build([("native", analysis("domination,score", [{"tag": "a"}]))])
+
+
+class KnownTags(unittest.TestCase):
+    def test_the_registry_is_read_and_a_removed_gene_is_dropped(self):
+        known = gene_ledger.known_tags()
+        self.assertGreater(len(known), 50, "the treatments registry scrape found too few tags")
+        self.assertIn("wide-map-capacity", known)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis("native", [
+                {"tag": "wide-map-capacity", "wz": 2.5},
+                {"tag": "a-gene-whose-code-was-removed", "wz": 3.0},
+            ])))
+            ledger = gene_ledger.build_ledger([(path, "native")])
+        tags = [g["tag"] for g in ledger["genes"]]
+        self.assertIn("wide-map-capacity", tags)
+        self.assertNotIn("a-gene-whose-code-was-removed", tags)
 
 
 class GeneratedFiles(unittest.TestCase):
