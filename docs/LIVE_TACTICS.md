@@ -288,6 +288,12 @@ arena regimes.
 
 ## 10. Step 4, first cut — arrive together (`arrival-waves`, opt-in, off)
 
+> **REMOVED 2026-08-21.** Two screens priced the wave at −3.0 [−6.7, +0.6]
+> (war, seeds 44M) and −35 wins/10k (6p native, seeds 52M) — never a
+> measured help — and the operator's fix-or-remove directive took the code
+> with the bottom of the ranking (PR #2235). The section below is the
+> historical record of what it was.
+
 Item 4 asked for an army plan with per-unit ETAs, a go/no-go on the muster
 ring, a siege as ring → walls → capture, and wounded rotation. Reading the
 controller before writing any of it: most of that already exists, behind
@@ -420,18 +426,21 @@ eight hexes on a clone that reveals nothing and replays them blind.
   and a walk with a follow-up keep their furthest hex. `frontier_cuts=N` in
   the decide note. Without the capability the cut would strand the rest of
   the movement, so it is never made.
-- **The native gene** (`step_and_reassess`, on in the live bundle and the
-  repair bundle, priced by `gene_screen`): serially, a step that brings a
-  hostile into view sets `force_groups_dirty` (`note_sightings`,
-  `reveal_regroups`), so the groups are re-formed before the next military
-  step; on the parallel path, the replay of a blind plan stops at the first
-  `Move` that enlarged `players[pid].explored` and the unit finishes from
-  the live board (`apply_unit_intents`, `step_reassessed`, with the hops it
-  really took recorded for the reversal guard). ⚠ The first cut of this gene
-  carried only the parallel leg and screened **+0.0 [+0.0, +0.0]** over 204
+- **The gene is host-only** (`step_and_reassess`, on in the live bundle,
+  `FIRAXIS_ONLY_TREATMENTS`): the cut exists because the host executes one
+  coalesced walk per unit, a fact of the bridge with no native meaning — the
+  engine already re-decides every step sighted. Two native stand-ins were
+  tried and retired, and both are worth remembering. The first carried only
+  the parallel-planner cut (`apply_unit_intents`, `step_reassessed`; still
+  in place for `civvis --jobs`) and screened **+0.0 [+0.0, +0.0]** over 204
   pairs — byte-identical outcomes, the signature of a gene that never fires
-  in the regime measured; no evaluator installs a pool. A gene's native twin
-  has to act where the native games are played.
+  in the regime measured; no evaluator installs a pool. The second made a
+  sighted step that brought a hostile into view re-form the force groups; it
+  fired ~350 times a game, screened null natively (+0.2 [−1.2, +1.6]) and at
+  war (+0.1 [−2.3, +2.5]), and then **share −0.15 pp (z −2.3)** on the 6p
+  re-rank against the best genome (15,000 seat-pairs, 2026-08-21) — so it is
+  gone, and `ledger_default_on` now refuses to let a native row govern a
+  host-only flag. The ladder prices the bridge half; §9 lists the arm.
 
 **What to read on the first ladder runs** (the climb now forwards
 `--replan-frames` and `--combat-frames`; the latter was never forwarded, so

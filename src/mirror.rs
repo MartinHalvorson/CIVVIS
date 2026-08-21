@@ -5293,6 +5293,70 @@ mod tests {
         );
     }
 
+    /// A zero-target answer is stronger than a city-local site disagreement. The
+    /// host cannot see a location for this world unique anywhere, so every city must
+    /// stop valuing it — including through the prerequisite-reach query.
+    #[test]
+    fn a_world_unique_the_host_cannot_place_is_blocked_in_every_city() {
+        let mut game = crate::game::Game::new(4, 20, 20, 71, 500, 0);
+        let mut ours: Vec<u32> = game
+            .cities
+            .values()
+            .filter(|city| city.owner == 0)
+            .map(|city| city.id)
+            .collect();
+        while ours.len() < 2 {
+            let seed = ours.len() as i32;
+            let pos = (seed * 5 + 6, seed * 5 + 6);
+            if !game.map.tiles.contains_key(&pos) {
+                break;
+            }
+            game.place_city(0, pos, None);
+            ours = game
+                .cities
+                .values()
+                .filter(|city| city.owner == 0)
+                .map(|city| city.id)
+                .collect();
+        }
+        assert!(ours.len() >= 2, "need two cities to prove the world scope");
+        let (first_city, second_city) = (ours[0], ours[1]);
+        game.players[0].techs = game.rules.techs.keys().copied().collect();
+        game.players[0].civics = game.rules.civics.keys().copied().collect();
+        for city in [first_city, second_city] {
+            game.cities.get_mut(&city).unwrap().pop = 12;
+        }
+        let wonder = game
+            .rules
+            .wonders
+            .keys()
+            .copied()
+            .find(|wonder| {
+                !game.wonder_sites(first_city, wonder).is_empty()
+                    && !game.wonder_sites(second_city, wonder).is_empty()
+            })
+            .expect("some wonder must be sitable in both cities for this to prove anything");
+
+        assert_eq!(
+            game.wonder_missing_prerequisites(first_city, wonder.as_str()),
+            Some(Vec::new()),
+            "the selected wonder is otherwise reachable before the host fact arrives"
+        );
+        game.host_unavailable_wonders.insert(wonder);
+
+        for city in [first_city, second_city] {
+            assert!(
+                game.wonder_sites(city, wonder.as_str()).is_empty(),
+                "the host's zero-target response must block {wonder:?} in city {city}"
+            );
+            assert_eq!(
+                game.wonder_missing_prerequisites(city, wonder.as_str()),
+                None,
+                "a claimed world wonder must not pay prerequisite credit in city {city}"
+            );
+        }
+    }
+
     /// A positive host answer must beat the temporary block emitted beside it.
     /// Otherwise the bridge learns the legal coordinates and still leaves the
     /// district unavailable for all eight cooldown turns.
@@ -10747,8 +10811,13 @@ pub struct StateSnapshot {
     /// because the mod reports a refused wonder under `building` and a refused
     /// district under `district`, and the two translate against different rulesets.
     #[serde(default)]
-    pub refused_wonders:
-        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    pub refused_wonders: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// World-unique wonders a `build_no_plot` answer ruled out on every host
+    /// location. This is deliberately separate from [`StateSnapshot::refused_wonders`]:
+    /// a city-local refusal can be a terrain mismatch, while an explicit
+    /// `offered: 0` is the host saying the requested wonder has no target at all.
+    #[serde(default)]
+    pub host_unavailable_wonders: std::collections::BTreeSet<String>,
     /// Production items the host has recently reported as unplayable, by its city id.
     /// These are translated and applied as a cooldown rather than a permanent ban.
     #[serde(default)]
@@ -12363,6 +12432,7 @@ pub fn state_from_events(
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
+        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
         state.refused_promotions = refused_promotions_through(path, turn);
@@ -13214,6 +13284,20 @@ fn blocked_wonders_from(
     out
 }
 
+/// Translate permanent host facts about world-unique wonders. Unlike
+/// [`blocked_wonders_from`], no city id participates: an explicit zero-target
+/// answer says the wonder cannot start in any city.
+fn host_unavailable_wonders_from(
+    unavailable: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    unavailable
+        .iter()
+        .filter_map(|civ6| civvis_node_name(&rules.wonders, civ6, "BUILDING_"))
+        .map(|name| Name::new(&name))
+        .collect()
+}
+
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
 /// Translate host promotion refusals onto CIVVIS unit ids.
 ///
@@ -13435,6 +13519,49 @@ fn refused_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     refused_no_plot_through(path, turn, "building", "BUILDING_")
+}
+
+/// World-unique wonders for which the host found no location at all.
+///
+/// A direct order carries a model-legal wonder site. When Firaxis responds with an
+/// explicit `offered: 0`, its operation-target query found no site in the world, not
+/// merely a different site in this city. The common cause is a rival completing the
+/// world unique outside the partial mirror. Keep the fact forever; a later city does
+/// not make a claimed world wonder available again. An absent `offered` belongs to
+/// older telemetry and deliberately keeps the previous city-scoped behaviour.
+fn host_unavailable_wonders_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<String> {
+    let mut unavailable = std::collections::BTreeSet::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return unavailable;
+    };
+    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some("build_no_plot")
+            || event.get("offered").and_then(|value| value.as_i64()) != Some(0)
+        {
+            continue;
+        }
+        if let Some(limit) = turn {
+            let Some(at) = event.get("turn").and_then(|value| value.as_u64()) else {
+                continue;
+            };
+            if at > u64::from(limit) {
+                continue;
+            }
+        }
+        let Some(wonder) = event.get("building").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if wonder.starts_with("BUILDING_") {
+            unavailable.insert(wonder.to_string());
+        }
+    }
+    unavailable
 }
 
 /// The newest fresh positive placement result for every `(city, district)` pair.
@@ -16501,8 +16628,9 @@ pub fn rebuild_from_state(
         host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
     game.host_wonder_sites =
         host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
-    game.blocked_wonders =
-        blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.blocked_wonders = blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.host_unavailable_wonders =
+        host_unavailable_wonders_from(&state.host_unavailable_wonders, &game.rules);
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
@@ -17355,6 +17483,11 @@ impl LiveMirror {
         for (cid, names) in refused_wonders {
             self.game.blocked_wonders.entry(cid).or_default().extend(names);
         }
+        let unavailable_wonders =
+            host_unavailable_wonders_from(&state.host_unavailable_wonders, &self.game.rules);
+        self.game
+            .host_unavailable_wonders
+            .extend(unavailable_wonders);
         // Unlike impossible district plots, a production refusal can be temporary.
         // Replace this cooldown snapshot so entries disappear after their TTL.
         let blocked_production = blocked_production_from(
@@ -18341,6 +18474,42 @@ mod transient_refusal_tests {
         assert!(
             blocked.contains("DISTRICT_GOVERNMENT"),
             "zero offered plots is the engine saying nowhere, and must still block"
+        );
+    }
+
+    /// A zero-site wonder response is a world fact, not the city-local cooldown
+    /// used for a wrong-coordinate response. Keep only explicit modern telemetry:
+    /// an old event without `offered` cannot prove that the wonder is gone.
+    #[test]
+    fn a_zero_site_wonder_becomes_a_permanent_world_fact() {
+        let p = events(
+            "world_wonder",
+            &[
+                r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_GREAT_BATH","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":41,"city":8,"building":"BUILDING_PYRAMIDS","offered":2}"#,
+                r#"{"kind":"build_no_plot","turn":42,"city":8,"building":"BUILDING_ORACLE"}"#,
+                r#"{"kind":"build_no_plot","city":8,"building":"BUILDING_ORACLE","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":43,"city":8,"building":"BUILDING_NOT_MODELED","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":50,"city":8,"building":"BUILDING_HANGING_GARDENS","offered":0}"#,
+                r#"{"kind":"state","turn":49}"#,
+            ],
+        );
+        let state = state_from_events(&p, None).expect("state at the current turn");
+        assert_eq!(
+            state.host_unavailable_wonders,
+            BTreeSet::from([
+                "BUILDING_GREAT_BATH".to_string(),
+                "BUILDING_NOT_MODELED".to_string(),
+            ]),
+            "only an explicit, timestamped zero-target answer before this board becomes a world fact"
+        );
+        assert_eq!(
+            host_unavailable_wonders_from(
+                &state.host_unavailable_wonders,
+                &crate::rules::Rules::embedded(),
+            ),
+            BTreeSet::from([Name::new("great_bath")]),
+            "unknown host names stay observable in the state but cannot populate a dead gate"
         );
     }
 

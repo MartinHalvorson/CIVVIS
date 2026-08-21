@@ -12997,7 +12997,7 @@ mod tests {
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 2_000_000);
         assert_eq!(
             u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
             1536
@@ -13035,15 +13035,35 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains(".26"));
+        assert!(monsters.contains(".21"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SPACING_SCALE = .8"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
+
+        let seating_radius = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeatRadius(q, r, seedA, seedB)")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
+                    .next()
+            })
+            .expect("scaled hidden-map monster seating radius");
+        assert!(seating_radius.contains("HIDDEN_MAP_TALE_SPACING_SCALE *"));
 
         let seating = EMBEDDED_INDEX
-            .split("function hiddenMapMonsterSeat")
+            .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
             .nth(1)
             .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
             .expect("minimum-distance hidden-map monster seating");
-        assert!(seating.contains("radius = 8"));
-        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
+        assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE = 10"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13059,7 +13079,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 3 *"));
+        assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -13978,23 +13998,66 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+    fn browser_tile_yields_use_compact_base_game_formations_and_large_count_badges() {
         assert!(EMBEDDED_INDEX.contains(
-            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+            "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
+        let parts = EMBEDDED_INDEX
+            .split("function yieldPipParts")
+            .nth(1)
+            .and_then(|tail| tail.split("function tileYieldMarkers").next())
+            .expect("tile-yield pip expansion");
+        assert!(parts.contains("pips.push({kind, portion:1});"));
+        assert!(parts.contains("pips.push({kind, portion:remainder});"));
+        assert!(parts.contains("Math.round(raw * 10) / 10"));
+
+        let formations = EMBEDDED_INDEX
+            .split("function yieldPipOffsets")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipCluster").next())
+            .expect("tile-yield pip formations");
+        assert!(formations.contains("if (count === 2) return [[0, -step / 2], [0, step / 2]];"));
+        assert!(formations.contains("if (count === 3)"));
+        assert!(formations.contains("Math.sqrt(3)"));
+        assert!(formations.contains("if (count === 4) return ["));
+        assert!(formations.contains("const gap = .55 * r / 4.4;"));
+        assert!(formations.contains("const step = r * 2 + gap;"));
+
+        let cluster = EMBEDDED_INDEX
+            .split("function yieldPipCluster")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipRow").next())
+            .expect("tile-yield pip cluster");
+        assert!(cluster.contains("const summary = pips.length >= 5;"));
+        assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
+        assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+        assert!(cluster.contains("const edge = sign => sign.r + YIELD_PIP_RIM;"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
-        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
-        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
-        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
-        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
-        assert!(renderer.contains("const label = fmtYield(amount)"));
-        assert!(!renderer.contains("YICON[kind]"));
-        assert!(!renderer.contains("yieldGlyph"));
+        assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
+        assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
+        assert!(renderer.contains("drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,"));
+        assert!(renderer.contains("const totalHeight = visualRows.reduce"));
+        assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
+        let pip = EMBEDDED_INDEX
+            .split("function drawYieldPip(kind, x, y, r, portion, worked, label = \"\")")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("numbered tile-yield pip renderer");
+        assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
+        assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
+        assert!(pip.contains("label.length === 1 ? 1.25"));
+        assert!(pip.contains("cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7);"));
+        assert!(pip.contains("cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PIP_RIM = .58;"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
+        assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
     }
 
     #[test]
@@ -16432,8 +16495,10 @@ mod tests {
             "function tileYieldMarkers(yields)",
             "function tileDetailYieldWords(yields, sign = false)",
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-group\"",
             "class=\"tip-yield-marker\"",
-            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};",
+            "--tip-yield-portion:${Math.round(portion * 100)}%",
             "function tileBuiltTipLines(t, city)",
             "function districtTipLines(t)",
             "Base district yields:",

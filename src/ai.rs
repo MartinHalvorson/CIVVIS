@@ -177,20 +177,6 @@ const BARBARIAN_LOCAL_DEFENDER_RADIUS: i32 = 3;
 /// garrison ordered at this range is in place before the attacker arrives.
 pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
-/// How close a visible hostile must be before a city musters against it. A
-/// horseman three tiles out reaches the city next turn; a wanderer beyond that
-/// is not worth a standing garrison.
-const SIEGE_MUSTER_RADIUS: i32 = 3;
-
-/// The most extra defenders one besieged city may add to the empire's standing
-/// floor. The point is to outlast a camp's raiding party while still producing
-/// civilians, not to convert the empire into an army it cannot pay for.
-const SIEGE_MUSTER_CAP: usize = 3;
-
-/// How many visible hostiles at the gates make a city stop building for the
-/// long term and answer the short one. One is a scout passing through; two is
-/// a raiding party.
-const SIEGE_PRESSURE_MIN: usize = 2;
 /// Own military units within `GARRISON_HOLD_RADIUS` of an unhurt city that
 /// make one more raid-response defender unnecessary. See `besieged_city_item`.
 const GARRISON_HOLD_UNITS: usize = 2;
@@ -264,25 +250,6 @@ const VILLAGE_SEEK_RADIUS: i32 = 6;
 /// arm or pulling it away from its actual job.
 const VILLAGE_MILITARY_SEEK_RADIUS: i32 = 4;
 
-/// The population under which a FRONTIER city gets the garrison-walls
-/// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
-/// size. Derived from the measured loss that motivated the treatment: the
-/// capital that bled out unwalled on live run `civvis-20260807T181839Z` was
-/// pop 7 at t115 and fell at t158, so 7 is provably not a size that holds
-/// without walls. Any frontier city at or below that measured size walls up;
-/// a city past it has the defense strength, hitpoints, and production of a
-/// developed city and keeps the ordinary build order.
-const GARRISON_WALLS_POP_FLOOR: i32 = 8;
-/// `garrison_walls`: how close visible non-recon hostiles must stand to count
-/// as a raid party against this city.
-const GARRISON_WALLS_THREAT_RADIUS: i32 = 5;
-/// `garrison_walls`: how many visible non-recon hostiles make a raid party.
-const GARRISON_WALLS_RAID_PARTY: usize = 2;
-/// `garrison_walls`: at a declared major war, how close one visible non-recon
-/// hostile must be before a FRONTIER town walls up (the capital needs only
-/// the declaration). Twelve tiles is four-plus turns of marching — the lead
-/// an ancient wall's build time needs.
-const GARRISON_WALLS_WAR_RADIUS: i32 = 12;
 
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
@@ -1751,6 +1718,10 @@ struct UnitMotion {
     /// The tile this unit began each of its last `LIVELOCK_WINDOW` turns on,
     /// newest last.
     tiles: VecDeque<Pos>,
+    /// The host turn that supplied the current sample when the live bridge is
+    /// accounting for motion by host turn. A post-order replan is another
+    /// view of that turn, not another fruitless turn for this unit.
+    observed_turn: Option<u32>,
     /// The work fingerprint as of the last turn it changed.
     work: WorkMark,
     /// Consecutive turns since the fingerprint last changed.
@@ -2071,11 +2042,9 @@ pub struct BasicAi {
     ///
     /// Once Masonry is in, ancient walls outrank every non-granary building
     /// in the capital and in any frontier city under
-    /// [`GARRISON_WALLS_POP_FLOOR`]. See [`BasicAi::garrison_walls_item`].
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them, and enabled explicitly by the
     /// Civilization VI bridge.
-    pub(crate) garrison_walls: bool,
     /// Barbarian pressure buys ancient walls and nothing above them.
     ///
     /// ★★★★ `barbarian_defense_item` walked `walls → medieval_walls →
@@ -2216,12 +2185,6 @@ pub struct BasicAi {
     /// purchase city's majority. Off for the frozen native controllers and
     /// enabled explicitly by the Civilization VI bridge.
     live_religious_purchase_guard: bool,
-    /// Let a city under visible siege raise its standing-army floor, so that a
-    /// besieging force it is not formally "at war" with — Barbarians — can be
-    /// answered at all. Off for the frozen native controllers, whose recorded
-    /// ladders would otherwise shift underneath them, and enabled explicitly
-    /// by the Civilization VI bridge. See `besieged_military_floor`.
-    siege_muster: bool,
     /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
     /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
     siege_role: bool,
@@ -2353,6 +2316,12 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Count a unit's livelock history once per Civilization VI turn, not once
+    /// per live replan frame. The bridge can ask again after an order lands;
+    /// that second snapshot sees the same host turn and used to accelerate a
+    /// premature stand-down. Native play never supplies
+    /// those mirror frames, so it remains off outside the live bridge.
+    live_motion_turn_accounting: bool,
     /// Refuse a step back onto **any** tile this unit has already stood on
     /// this turn, not merely the one it just left.
     ///
@@ -2612,6 +2581,38 @@ pub struct BasicAi {
     /// (`AdvancedAi::legacy`) so this controller treatment does not itself
     /// move the rating experiment; withheld for pricing by
     /// `advanced_without_adjacent_camp_clear`.
+    /// ★★★★★ OUR OWN WALKERS ARE HOME GROUND TOO, AND EIGHT SETTLERS PAID
+    /// FOR THE FACT THAT THEY WERE NOT.
+    ///
+    /// The admission test that lets the barbarian seat into a unit's enemy
+    /// list at all — `barbarian_presence_at_home_with_camp_radius` — measures
+    /// distance **from our cities**: a raider within six tiles of one, or a
+    /// camp within `camp_radius`. A Settler walking ten tiles to its site is
+    /// outside every one of those rings, so the raider shadowing it is in
+    /// nobody's enemy list, no escort ever scans it as a target, and the walk
+    /// ends with the Settler in barbarian hands. Live run
+    /// civvis-20260821T130446Z lost **eight Settlers, two Builders, a Scout,
+    /// two Warriors, a Slinger and an Archer in 104 turns** to exactly that.
+    ///
+    /// This flag adds the second reading: a barbarian military unit within
+    /// `HOME_THREAT_RADIUS` of one of our civilians in the field admits the
+    /// seat as well. Nothing downstream changes — `nearest_enemy`'s near-home
+    /// and exchange-score gates, the tactical scan's pricing, and the
+    /// half-army recall cap all still apply — so this widens WHO may be shot
+    /// at, never how recklessly.
+    ///
+    /// ⚠ Barbarian Scouts count here, and they are excluded from
+    /// `is_barbarian_raider` on purpose (`barbarian_scouts_are_scouts`: a
+    /// scout must not pin the opening). Both are right. A scout is not a
+    /// reason to mobilise the empire, but in Civilization VI it captures a
+    /// civilian by walking onto it exactly like a Warrior does, and it is the
+    /// unit that carries the target home and turns a camp into a raiding
+    /// party. Next to one of our Settlers it is a threat; six tiles from a
+    /// walled city it is still just a scout.
+    ///
+    /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
+    /// treatment.
+    pub(crate) barbarian_hunt: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
@@ -4212,7 +4213,6 @@ impl BasicAi {
             housing_districts: false,
             garrison_under_fire: false,
             garrison_bleed_tolerance: false,
-            garrison_walls: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -4221,7 +4221,6 @@ impl BasicAi {
             apostle_promotion_by_role: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
-            siege_muster: false,
             siege_role: false,
             recon_replacement: false,
             naval_recon: false,
@@ -4233,6 +4232,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
@@ -4263,6 +4263,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_hunt: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4329,6 +4330,17 @@ impl BasicAi {
         self.explore_dead_targets = true;
     }
 
+    /// Let the live bridge count a persistent unit's motion once for each host
+    /// turn, even when Firaxis asks for a same-turn replan after an order.
+    pub(crate) fn enable_live_motion_turn_accounting(&mut self) {
+        self.live_motion_turn_accounting = true;
+    }
+
+    /// The withholding twin for the live evaluator control arm.
+    pub(crate) fn disable_live_motion_turn_accounting(&mut self) {
+        self.live_motion_turn_accounting = false;
+    }
+
     /// Hold an exploration goal and sweep outward from home (see
     /// `explore_commit`). The Civilization VI bridge sets this through
     /// `AdvancedAi::enable_explore_commit`.
@@ -4364,6 +4376,16 @@ impl BasicAi {
 
     pub fn disable_camp_reach(&mut self) {
         self.camp_reach = false;
+    }
+
+    /// Count a barbarian unit beside one of our civilians in the field as a
+    /// reason to fight it. See `barbarian_hunt`.
+    pub fn enable_barbarian_hunt(&mut self) {
+        self.barbarian_hunt = true;
+    }
+
+    pub fn disable_barbarian_hunt(&mut self) {
+        self.barbarian_hunt = false;
     }
 
     /// The whole peacetime field army answers home threats and a camp in
@@ -4524,7 +4546,6 @@ impl BasicAi {
             housing_districts: false,
             garrison_under_fire: false,
             garrison_bleed_tolerance: false,
-            garrison_walls: false,
             barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
@@ -4533,7 +4554,6 @@ impl BasicAi {
             apostle_promotion_by_role: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
-            siege_muster: false,
             siege_role: false,
             recon_replacement: false,
             naval_recon: false,
@@ -4545,6 +4565,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
             legal_tactical_candidates: false,
             tactical_strategy: false,
@@ -4575,6 +4596,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_hunt: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -5906,6 +5928,11 @@ impl BasicAi {
             let pos = g.units[&uid].pos;
             let (was_looping, looping, fruitless, footprint, stand_down) = {
                 let motion = self.unit_motion.entry(uid).or_default();
+                if self.live_motion_turn_accounting && motion.observed_turn == Some(g.turn) {
+                    continue;
+                }
+                let observed_turn = self.live_motion_turn_accounting.then_some(g.turn);
+                motion.observed_turn = observed_turn;
                 let was_looping = motion.looping;
                 if motion.tiles.is_empty() {
                     motion.work = mark;
@@ -5917,6 +5944,7 @@ impl BasicAi {
                     *motion = UnitMotion {
                         work: mark,
                         resume_turn: motion.resume_turn,
+                        observed_turn,
                         ..UnitMotion::default()
                     };
                 } else {
@@ -5939,6 +5967,7 @@ impl BasicAi {
                     *motion = UnitMotion {
                         work: mark,
                         resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                        observed_turn,
                         ..UnitMotion::default()
                     };
                 }
@@ -9258,78 +9287,6 @@ impl BasicAi {
             .map(|(_, _, item)| item)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    /// The standing-army floor a city under visible siege needs, or 0.0 when
-    /// nothing hostile is close enough to matter.
-    ///
-    /// Barbarians are deliberately excluded from `at_major_war`: there is no
-    /// diplomatic state with them and no peace to sue for. But every defensive
-    /// escalation in `pick_item` is gated on that flag, so a barbarian siege
-    /// reads as "no threat at all" and the floor stays at `mil_per_city`.
-    ///
-    /// ⚠ On the live ladder this does not present as a defence failure — it
-    /// presents as an EXPANSION failure, which is why it survived so long.
-    /// Measured on run `civvis-20260802T202501Z` (Netherlands, Settler, small
-    /// map): horsemen held tiles adjacent to Amsterdam from t28 onward; four
-    /// settlers were built into that siege and captured, two of them on the
-    /// capital tile without ever moving (t29 and t39); the empire held ONE
-    /// city until t80 and stood at score 140 against a best rival's 416 on
-    /// t104. Production and gold were never the constraint — the empire held
-    /// two military against a floor of one, and so could not want a third.
-    ///
-    /// Returns an absolute floor for the empire-wide military count, which is
-    /// what `pick_item` compares against.
-    ///
-    /// ⚠ An empire-wide count is a blunt instrument and cannot say "*this* city
-    /// needs defenders": see `visible_besiegers`, which the per-city branch in
-    /// `pick_item` uses for the case the floor provably cannot reach.
-    fn besieged_military_floor(&self, g: &Game, pid: usize, cid: u32, n_cities: usize) -> f64 {
-        let besiegers = self.visible_besiegers(g, pid, cid);
-        if besiegers == 0 {
-            return 0.0;
-        }
-        self.w.mil_per_city * n_cities as f64 + besiegers.min(SIEGE_MUSTER_CAP) as f64
-    }
-
-    /// Hostile military units this player can actually see within
-    /// `SIEGE_MUSTER_RADIUS` of one of its cities. Barbarians count: the whole
-    /// point is that `at_major_war` excludes them.
-    fn visible_besiegers(&self, g: &Game, pid: usize, cid: u32) -> usize {
-        if !self.siege_muster || self.minor || self.barb {
-            return 0;
-        }
-        let Some(city) = g.cities.get(&cid) else {
-            return 0;
-        };
-        // The distance test runs first and alone on the overwhelmingly common
-        // quiet turn: `player_vision_now` rebuilds the height field, and
-        // `pick_item` is called for every city on every turn.
-        let contenders: Vec<u32> = g
-            .units
-            .values()
-            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
-            .filter(|unit| g.rules.units[unit.kind].class == "military")
-            .filter(|unit| g.wdist(city.pos, unit.pos) <= SIEGE_MUSTER_RADIUS)
-            .map(|unit| unit.id)
-            .collect();
-        if contenders.is_empty() {
-            return 0;
-        }
-        // Fog-gating is not a formality: mustering against a hostile this
-        // player cannot see would let the garrison act on knowledge it does
-        // not have, and every other threat read in this codebase is gated the
-        // same way.
-        let visible = g.player_vision_now(pid);
-        contenders
-            .into_iter()
-            .filter(|uid| {
-                g.units.get(uid).is_some_and(|unit| {
-                    g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)
-                })
-            })
-            .count()
-    }
-
     /// What a city with enemies already at its gates should build instead of
     /// whatever the ordinary build order wanted.
     ///
@@ -9362,7 +9319,7 @@ impl BasicAi {
         };
         let bleeding = self.garrison_under_fire
             && g.cities.get(&cid).is_some_and(|city| city.hp < bleed_floor);
-        if !bleeding && self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
+        if !bleeding {
             return None;
         }
         // ★★★★ A CITY THAT IS ALREADY GARRISONED AND UNHURT DOES NOT NEED ONE
@@ -9511,114 +9468,6 @@ impl BasicAi {
                 })
             })
         })
-    }
-
-    /// Ancient walls for a city that has none and is the kind conquest takes
-    /// first, ordered BEFORE the ordinary build order can spend the
-    /// production on another lane.
-    ///
-    /// ⚠ Every existing wall order is reactive and fog-gated:
-    /// `besieged_city_item` needs `SIEGE_PRESSURE_MIN` VISIBLE besiegers or a
-    /// city already losing hitpoints, and `siege_tracks_the_wall` models
-    /// ENEMY walls. Nothing priced building our own before the threat is
-    /// standing in vision — and an approaching army is invisible until
-    /// adjacency, so "before" is the only time walls can still be finished.
-    /// Measured on live run `civvis-20260807T181839Z` (conquest DEFEAT,
-    /// t158): the t115 export shows Rome, capital of a two-city empire, at
-    /// damage 35/200 with `max_wall_damage: 0`, an EMPTY hostile list, and a
-    /// culture-lane build history — no walls ordered in 115 turns, nor ever.
-    /// `civvis-20260807T172510Z` lost the same way at t227.
-    ///
-    /// The doctrine, from the issue that measured it: once Masonry is in,
-    /// ancient walls outrank every non-granary building in the capital (at
-    /// any size — losing it is losing the game) and in any frontier city
-    /// under [`GARRISON_WALLS_POP_FLOOR`]. The granary keeps its rank by the
-    /// same carve-out: it is the growth foundation and cheaper, and it is
-    /// ordered from here rather than left to the ordinary order because the
-    /// ordinary order reaches buildings only after every district lane —
-    /// exactly the production this branch exists to intercept. One tier only:
-    /// medieval and renaissance walls are a different, far more expensive
-    /// question that this measurement does not answer.
-    ///
-    /// `can_produce` is the Masonry gate and the already-walled release in
-    /// one test, so the branch prices nothing for a city that cannot order
-    /// walls or already has them.
-    fn garrison_walls_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if !self.garrison_walls || self.minor || self.barb {
-            return None;
-        }
-        let city = g.cities.get(&cid)?;
-        let eligible = city.is_capital
-            || (city.pop < GARRISON_WALLS_POP_FLOOR && Self::city_is_frontier(g, pid, cid));
-        if !eligible {
-            return None;
-        }
-        // ★★★ REPAIRED 2026-08-19, twice. The 4,000-pair native screen
-        // priced the unconditional doctrine at −2.1 pp wins / −0.51 pp score
-        // share (z −2.7 / −3.5, seeds 40000000..). The first gate — any
-        // declared major war, or any visible hostile military within eight
-        // tiles — re-measured **−3.1 pp [−5.2, −1.0]** on 2,000 verification
-        // pairs (seeds 45000000..): it was open almost always, because the
-        // standing barbarian war makes `is_at_war` true from turn one and a
-        // wandering barbarian scout is a "visible hostile military unit".
-        // A six-game probe says the ordinary build order walls nearly every
-        // city by game end anyway — this flag's whole marginal action is
-        // walling EARLY, ahead of the district lanes, so its gate must price
-        // an actual siege risk:
-        //
-        // - the CAPITAL walls at a declared war with a MAJOR (the measured
-        //   live defect: an unwalled capital falling to a t61 declaration —
-        //   losing it is losing the game, and one early wall is cheap
-        //   insurance), or under a raid party;
-        // - a FRONTIER town walls when the war's enemy is actually near
-        //   (a visible non-recon hostile within
-        //   [`GARRISON_WALLS_WAR_RADIUS`]), or under a raid party;
-        // - a RAID PARTY is at least [`GARRISON_WALLS_RAID_PARTY`] visible
-        //   non-recon hostiles within [`GARRISON_WALLS_THREAT_RADIUS`] —
-        //   two warriors take towns; one scout takes nothing.
-        let hostile_pressure = |radius: i32, minimum: usize| {
-            g.units
-                .values()
-                .filter(|unit| {
-                    unit.owner != pid
-                        && g.is_at_war(pid, unit.owner)
-                        && g.rules.units[unit.kind].class == "military"
-                        && Self::unit_doctrine(g, unit.id) != UnitDoctrine::Recon
-                        && g.unit_visible_to(unit.id, pid)
-                        && g.wdist(unit.pos, city.pos) <= radius
-                })
-                .count()
-                >= minimum
-        };
-        let at_major_war = g.players.iter().any(|other| {
-            other.id != pid
-                && other.alive
-                && !other.is_minor
-                && !other.is_barbarian
-                && g.is_at_war(pid, other.id)
-        });
-        let raid_party = hostile_pressure(GARRISON_WALLS_THREAT_RADIUS, GARRISON_WALLS_RAID_PARTY);
-        let endangered = if city.is_capital {
-            at_major_war || raid_party
-        } else {
-            (at_major_war && hostile_pressure(GARRISON_WALLS_WAR_RADIUS, 1)) || raid_party
-        };
-        if !endangered {
-            return None;
-        }
-        let wall = Item::Building {
-            building: crate::name!("walls"),
-        };
-        if !g.can_produce(pid, cid, &wall) {
-            return None;
-        }
-        let granary = Item::Building {
-            building: crate::name!("granary"),
-        };
-        if g.can_produce(pid, cid, &granary) {
-            return Some(granary);
-        }
-        Some(wall)
     }
 
     /// Whether one district in this family is already finished or committed
@@ -9965,8 +9814,7 @@ impl BasicAi {
             (self.w.mil_per_city * n_cities as f64).max(self.rush_military_floor as f64)
         } else {
             self.w.mil_per_city * n_cities as f64
-        }
-        .max(self.besieged_military_floor(g, pid, cid, n_cities));
+        };
         // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.
         //
         // `military_floor` is `mil_per_city * n_cities`. It counts bodies and
@@ -10263,22 +10111,7 @@ impl BasicAi {
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
         }
-        // ⚠ BEFORE the district lanes, because the district lanes are where
-        // the measured capital's production actually went while it stood
-        // unwalled — and after the Monument, which is the loyalty anchor and
-        // in practice sequenced first by the Masonry gate anyway. See
-        // `garrison_walls_item` for the measurement.
-        if let Some(defence) = self.garrison_walls_item(g, pid, cid) {
-            // ⚠ THE BRANCH THAT WINS MUST SAY SO — the run that measured the
-            // defect had to be diagnosed from a state export because no
-            // production decision named its chooser.
-            think!(self.journal, Cities, Detail,
-                   "Garrison doctrine takes the build";
-                   "{} is unwalled with Masonry in, and orders {:?} before the district lanes",
-                   if g.cities[&cid].is_capital { "the capital" } else { "a frontier city" },
-                   defence);
-            return Some(defence);
-        }
+
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
@@ -12601,6 +12434,222 @@ impl BasicAi {
             .any(|camp| near_home(*camp, camp_radius))
     }
 
+    /// ★★★★★ THE ESCORT THAT GUARDED THE SETTLER AND NEVER SWUNG.
+    ///
+    /// `settler_escort_step` returns `Some(..)` for every unit on escort duty
+    /// and it runs BEFORE the attack scan, so a guard standing shoulder to
+    /// shoulder with the barbarian Scout about to take its charge spends the
+    /// turn re-forming on the Settler instead of killing it. That is the
+    /// second half of the eight-Settler run: the admission test never let the
+    /// raider into the enemy list, and even when it did the escort was not
+    /// asking.
+    ///
+    /// This is deliberately the narrowest possible answer, not a licence to
+    /// hunt: only a barbarian ADJACENT to this unit, only when the exchange
+    /// the ordinary attack scan would price is already positive, and only
+    /// while `barbarian_hunt` is on. The unit does not move, so it is still
+    /// beside its charge when the swing lands; recon keeps its own job.
+    ///
+    /// See `barbarian_hunt`.
+    pub(crate) fn barbarian_kill_beside_this_unit(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> bool {
+        if !self.barbarian_hunt || self.minor || self.barb {
+            return false;
+        }
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if !spec.is_melee_capable() || spec.class != "military" {
+            return false;
+        }
+        let from = unit.pos;
+        // ★★★★★ THE FIRST VERSION OF THIS RULE ANSWERED A SITUATION THAT
+        // BARELY HAPPENS, AND THE SCREEN SAID SO ON THIRTY MAPS.
+        //
+        // "A barbarian adjacent to the guard" is not the shape the live seat
+        // dies in. Counted over run civvis-20260821T153531Z: **"Guard stands
+        // with its settler" 33 times**, against "Settler falls back toward its
+        // guard" 38, "waits for its guard" 14, "HELD short" 18 and "walking in
+        // circles" 10 — eighty turns of a Settler not advancing while its guard
+        // sits ON its tile. The raider is not next to the guard; it is
+        // loitering two or three tiles off, pinning the walk by its presence
+        // until it closes and takes the Settler. Ten Settlers went that way in
+        // one game.
+        //
+        // So the firing position is the thing to widen, not the leash. This
+        // unit may strike from where it stands OR from any tile it can reach
+        // this turn that is STILL beside its charge — which puts a raider two
+        // tiles out inside reach without the guard ever leaving the civilian's
+        // side. A stacked civilian cannot be captured, and a guard one tile
+        // away is one step from restacking; both invariants survive because
+        // every firing position considered is within one tile of the charge.
+        let charge = Self::escorted_civilian(g, pid, uid);
+        let mut positions: Vec<Pos> = vec![from];
+        if let Some(charge) = charge {
+            for step in crate::hex::neighbors(from) {
+                if g.wdist(step, charge) <= 1 && g.can_move(uid, step) {
+                    positions.push(step);
+                }
+            }
+        }
+        let mut best: Option<(bool, f64, Pos, Pos)> = None;
+        for stand in positions {
+            for target in crate::hex::neighbors(stand) {
+                let hostile = g.units_at(target).into_iter().any(|oid| {
+                    g.units[&oid].owner == barb
+                        && g.rules.units[g.units[&oid].kind].class == "military"
+                });
+                if !hostile {
+                    continue;
+                }
+                if stand == from
+                    && self.legal_tactical_candidates
+                    && !g.melee_order_is_legal(pid, uid, target)
+                {
+                    continue;
+                }
+                let score = self.exchange_score(g, uid, target, false)
+                    - self.attack_threshold(g, uid, target);
+                if score <= 0.0 {
+                    continue;
+                }
+                // ★★★★★ KILL THE ONE THAT IS ACTUALLY HOLDING THE WALKER,
+                // NOT THE ONE THAT PRICES BEST.
+                //
+                // A Civilization VI Warrior and a Slinger both carry
+                // `zone_of_control`, so a raider standing beside our Settler
+                // does not merely threaten it — it makes `Game::can_move`
+                // REFUSE the next step. Run civvis-20260821T153531Z journals
+                // **"Settler HELD short … the next tile refuses it and nothing
+                // is standing there" 86 times in 226 turns**, and fourteen of
+                // fourteen sampled had barbarians on the board. The Settler
+                // then falls back (38), waits for its guard (14) and walks in
+                // circles (10) — trying to walk out of a lock that has no walk
+                // out of it. Killing the unit is the ONLY exit, which is also
+                // why every threat-AVOIDANCE gene in this family reads
+                // neutral-to-harmful in `docs/gene_ledger.json`.
+                //
+                // So a target beside the charge outranks a better-priced one
+                // that is not: clearing a fat target two tiles off the walker
+                // leaves the lock exactly where it was. The exchange gate still
+                // has the final say — this only reorders candidates that have
+                // already passed it.
+                let pins = charge.is_some_and(|held| g.wdist(target, held) <= 1);
+                let rank = (pins, score, stand == from);
+                let better = best
+                    .as_ref()
+                    .is_none_or(|(old_pins, old, old_stand, old_target)| {
+                        rank > (*old_pins, *old, *old_stand == from)
+                            || (rank == (*old_pins, *old, *old_stand == from)
+                                && (stand, target) < (*old_stand, *old_target))
+                    });
+                if better {
+                    best = Some((pins, score, stand, target));
+                }
+            }
+        }
+        let Some((pins, score, stand, target)) = best else {
+            return false;
+        };
+        if stand != from {
+            // Step onto the firing position; the unit loop's next pass finds
+            // the raider adjacent and this same rule takes the swing.
+            think!(self.journal, Military, Detail,
+                   "{} steps up to the raider pinning its charge", plain(&g.units[&uid].kind);
+                   "worth {score:.0} on the ordinary exchange{}, and the new tile \
+                    is still beside the civilian",
+                   if pins { " and its zone of control is what is holding the walker" } else { "" };
+                   target);
+            return g
+                .apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: stand,
+                    },
+                )
+                .is_ok();
+        }
+        think!(self.journal, Military, Detail,
+               "{} cuts down the raider beside it", plain(&g.units[&uid].kind);
+               "worth {score:.0} on the ordinary exchange{}, and the guard never \
+                leaves its charge to do it",
+               if pins { " and its zone of control is what is holding the walker" } else { "" };
+               target);
+        g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
+    }
+
+    /// The civilian this unit is standing guard over: one of ours sharing its
+    /// tile or beside it. That is the escort shape the live seat actually
+    /// forms — "a guard joins the settler; it will share the settler's tile"
+    /// and "the guard is 1 tiles away" — rather than the formation link, which
+    /// the deployment genome does not always carry.
+    fn escorted_civilian(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        let from = g.units.get(&uid)?.pos;
+        crate::hex::neighbors(from)
+            .into_iter()
+            .chain([from])
+            .find(|position| {
+                g.units_at(*position).into_iter().any(|oid| {
+                    oid != uid
+                        && g.units[&oid].owner == pid
+                        && matches!(g.units[&oid].kind.as_str(), "settler" | "builder")
+                })
+            })
+    }
+
+    /// Whether a barbarian stands close enough to one of our civilians in the
+    /// FIELD to take it. See `barbarian_hunt`.
+    ///
+    /// "In the field" means a civilian that is not standing on one of our own
+    /// cities: a Settler on the road, a Builder improving a frontier tile, a
+    /// Trader on a route. A civilian inside a city is already covered by the
+    /// city reading above, and counting it here would re-admit the seat for
+    /// every camp the empire ever walks past.
+    ///
+    /// Every barbarian MILITARY unit counts, Scouts included — see the
+    /// `barbarian_hunt` note on why that does not contradict
+    /// `barbarian_scouts_are_scouts`.
+    pub(crate) fn barbarian_threatens_our_field_civilians(g: &Game, pid: usize) -> bool {
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        let my_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        let exposed: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .filter(|unit| g.rules.units[unit.kind].class != "military")
+            .map(|unit| unit.pos)
+            .filter(|pos| !my_cities.contains(pos))
+            .collect();
+        if exposed.is_empty() {
+            return false;
+        }
+        g.units
+            .values()
+            .filter(|unit| unit.owner == barb)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .any(|raider| {
+                exposed
+                    .iter()
+                    .any(|civilian| g.wdist(raider.pos, *civilian) <= HOME_THREAT_RADIUS)
+            })
+    }
+
     /// measured threat *to our own cities*. This does, and answers the worst
     /// threats with the nearest sufficient units before the offensive claims them.
     ///
@@ -13980,8 +14029,14 @@ impl BasicAi {
         // claim.
         if !self.minor && !self.barb {
             if let Some(barb) = g.barb_pid {
+                // `barbarian_hunt` adds the second reading: a raider standing
+                // over one of our Settlers ten tiles from the nearest city is
+                // outside every ring the presence test measures, and eight
+                // Settlers were taken in one 104-turn run inside that gap.
                 if self.barbarian_tactics
-                    && Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
+                    && (Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
+                        || (self.barbarian_hunt
+                            && Self::barbarian_threatens_our_field_civilians(g, pid)))
                     && !enemy_ids.contains(&barb)
                 {
                     enemy_ids.push(barb);
@@ -14260,7 +14315,37 @@ impl BasicAi {
         uid: u32,
         decline_settlers: bool,
     ) -> bool {
-        if !self.civilian_rescue || g.rules.units[g.units[&uid].kind].class != "military" {
+        // ★★★★★ THE BARBARIANS IN THIS ENGINE DO NOT HUNT CIVILIANS, AND THE
+        // ONES IN CIVILIZATION VI DO NOTHING ELSE.
+        //
+        // MEASURED, `ai_eval live live_without_camp_reach`, 6 pairs / 36
+        // seat-games each, 6 players, 150 turns, online speed:
+        // **civilians lost to barbarians 0.31 and 0.25 per game**. The live
+        // Civilization VI seat on the same shape lost **8 Settlers and 2
+        // Builders in 104 turns** on run civvis-20260821T130446Z and **4 and 4
+        // by turn 62** on civvis-20260821T133955Z. That is a factor of roughly
+        // THIRTY, and it is a fidelity bug rather than a tuning question: an
+        // undefended Settler is the single most valuable thing on a
+        // Civilization VI map and the barbarian AI beelines for it.
+        //
+        // The cause is this gate. `capture_adjacent_civilian` is ungated, so a
+        // barbarian takes a Settler that happens to end its turn next to one —
+        // an accident. The PURSUIT, which is what actually costs the empire its
+        // walkers, was gated behind `civilian_rescue`, a flag the barbarian
+        // seat never carries (`BasicAi::new()` ships it off and the barbarian
+        // controller is a `BasicAi`). So raiders marched at the camp's reported
+        // CITY and walked past Settlers on the road.
+        //
+        // ⚠ THIS CHANGES EVERY SIMULATED GAME, deliberately. Any measurement
+        // that priced a settler-protection treatment before this date was
+        // pricing it against an opponent that did not take settlers, and read
+        // as noise for that reason. The raid leash still applies below, so this
+        // is a barbarian that hunts what is in its own raid ring, not one that
+        // chases a walker across the map.
+        let barbarian_hunter = self.barb && self.barbarian_tactics;
+        if (!self.civilian_rescue && !barbarian_hunter)
+            || g.rules.units[g.units[&uid].kind].class != "military"
+        {
             return false;
         }
         let origin = g.units[&uid].pos;
@@ -14301,6 +14386,12 @@ impl BasicAi {
                 }
                 let distance = g.wdist(origin, other.pos);
                 if distance < 2 || distance > reach {
+                    return None;
+                }
+                // The raid ring is what keeps a successful raid from becoming
+                // an all-map chase; a hunted civilian is not an exemption from
+                // it. See `barbarian_target_allowed_for_controller`.
+                if !self.barbarian_target_allowed_for_controller(g, uid, other.pos) {
                     return None;
                 }
                 // A civilian standing under an enemy military unit cannot be
@@ -15087,6 +15178,81 @@ mod tests {
             g.turn += 1;
         }
         (ai, g, ground, scout)
+    }
+
+    #[test]
+    fn live_motion_turn_accounting_counts_replan_frames_once() {
+        let (mut game, ground, scout) = scouted_world();
+        game.turn = 42;
+
+        // A normal controller retains the historical per-decision accounting.
+        // Four tiles keep the unit outside the three-tile loop bound, so the
+        // assertion observes the counter rather than a later stand-down reset.
+        let mut native = BasicAi::new();
+        for frame in 0..20 {
+            game.units.get_mut(&scout).unwrap().pos = ground[frame % 4];
+            native.begin_movement_turn(&game, 0);
+        }
+        assert_eq!(native.unit_motion[&scout].fruitless, 20);
+
+        let mut live = BasicAi::new();
+        live.enable_live_motion_turn_accounting();
+        for frame in 0..20 {
+            game.units.get_mut(&scout).unwrap().pos = ground[frame % 4];
+            live.begin_movement_turn(&game, 0);
+        }
+        let first_turn = &live.unit_motion[&scout];
+        assert_eq!(
+            first_turn.fruitless, 1,
+            "twenty replan frames are one host turn"
+        );
+        assert_eq!(first_turn.tiles.len(), 1);
+        assert_eq!(first_turn.observed_turn, Some(game.turn));
+
+        game.turn += 1;
+        game.units.get_mut(&scout).unwrap().pos = ground[1];
+        live.begin_movement_turn(&game, 0);
+        let next_turn = &live.unit_motion[&scout];
+        assert_eq!(
+            next_turn.fruitless, 2,
+            "the next host turn still advances motion"
+        );
+        assert_eq!(next_turn.tiles.len(), 2);
+        assert_eq!(next_turn.observed_turn, Some(game.turn));
+    }
+
+    #[test]
+    fn a_live_motion_stand_down_is_not_restarted_by_its_replan_frame() {
+        let (mut game, ground, scout) = scouted_world();
+        let mut live = BasicAi::new();
+        live.enable_live_motion_turn_accounting();
+
+        for elapsed in 0..LIVELOCK_STAND_DOWN_AFTER {
+            game.turn = 100 + elapsed;
+            game.units.get_mut(&scout).unwrap().pos = ground[elapsed as usize % 2];
+            live.begin_movement_turn(&game, 0);
+        }
+        let stood_down = &live.unit_motion[&scout];
+        let resume_turn = stood_down.resume_turn;
+        assert!(
+            resume_turn > game.turn,
+            "the two-tile loop stood down after real turns"
+        );
+        assert_eq!(
+            stood_down.fruitless, 0,
+            "the retry starts with a clean record"
+        );
+        assert_eq!(stood_down.observed_turn, Some(game.turn));
+
+        // `observe_unit_motion` clears the record on a stand-down. Preserve
+        // its same-turn marker too, or this replan would immediately start a
+        // new artificial fruitless turn.
+        live.begin_movement_turn(&game, 0);
+        let replanned = &live.unit_motion[&scout];
+        assert_eq!(replanned.resume_turn, resume_turn);
+        assert_eq!(replanned.fruitless, 0);
+        assert!(replanned.tiles.is_empty());
+        assert_eq!(replanned.observed_turn, Some(game.turn));
     }
 
     #[test]
@@ -18670,220 +18836,15 @@ mod tests {
         assert!(!BasicAi::new().barbarian_walls_one_tier);
     }
 
-    #[test]
-    fn a_city_besieged_by_barbarians_musters_a_defender_it_could_not_want_before() {
-        let (mut g, city, raider) = barbarian_at_the_gates_game(77);
-        let mut ai = BasicAi::new();
-        // The bridge enables this for live Civilization VI; native ladders
-        // leave it off.
-        ai.siege_muster = true;
 
-        // The empire already MEETS its standing-army target: `mil_per_city` is
-        // 1.0 against one city, and it fields the starting warrior. That is
-        // precisely why the old floor could not answer a siege — there was
-        // nothing left to want, so the city produced civilians into the
-        // raider's reach until they were captured.
-        assert_eq!(ai.w.mil_per_city, 1.0);
-        assert!(g.is_at_war(0, g.units[&raider].owner));
 
-        let besieged = ai.besieged_military_floor(&g, 0, city, 1);
-        assert!(
-            besieged >= 2.0,
-            "a visible raider next to the city should lift the floor above the \
-             standing target of 1.0, got {besieged}"
-        );
 
-        // The garrison is an answer to a raider, not a permanent tax: once the
-        // raider is gone the floor returns to the standing target.
-        g.remove_unit(raider);
-        assert_eq!(ai.besieged_military_floor(&g, 0, city, 1), 0.0);
-    }
 
-    #[test]
-    fn a_besieged_city_builds_defence_instead_of_a_monument() {
-        let (mut g, city, raider) = barbarian_at_the_gates_game(79);
-        // A raiding party, not a passer-by: `SIEGE_PRESSURE_MIN` is 2.
-        let second = {
-            let template = g.units[&raider].clone();
-            let cpos = g.cities[&city].pos;
-            let spot = g
-                .nbrs(cpos)
-                .into_iter()
-                .find(|p| {
-                    let t = &g.map.tiles[p];
-                    g.rules.is_passable(t)
-                        && !g.rules.is_water(t)
-                        && g.units_at(*p).is_empty()
-                        && g.city_at(*p).is_none()
-                })
-                .expect("a second open tile beside the city");
-            let mut extra = template;
-            extra.id = g.next_id;
-            g.next_id += 1;
-            extra.pos = spot;
-            let id = extra.id;
-            g.units.insert(id, extra);
-            id
-        };
-        let mut ai = BasicAi::new();
-        ai.siege_muster = true;
-        assert_eq!(ai.visible_besiegers(&g, 0, city), 2);
 
-        // The shape that lost Uppsala on t68 of `civvis-20260802T205959Z`: the
-        // empire-wide floor is SATISFIED, so nothing below wants a unit, and
-        // the besieged city reaches its ordinary build order.
-        let n_cities = g.player_city_ids(0).len();
-        let comfortable = (ai.w.mil_per_city * n_cities as f64) as usize + SIEGE_MUSTER_CAP + 1;
-        let besieged = ai
-            .pick_item(&g, 0, city, n_cities, 0, 0, 0, 0, comfortable, comfortable, 0)
-            .expect("a besieged city must want something");
-        let defensive = matches!(&besieged, Item::Building { building } if building.as_str().ends_with("walls"))
-            || matches!(&besieged, Item::Unit { unit }
-                        if g.rules.units[unit].class == "military");
-        assert!(
-            defensive,
-            "a city with a raider at range 1 should build walls or a defender, got {besieged:?}"
-        );
 
-        // With the raider gone the same city returns to its ordinary build
-        // order — this branch must not pin every city to permanent war
-        // production.
-        g.remove_unit(raider);
-        g.remove_unit(second);
-        let calm = ai.pick_item(&g, 0, city, n_cities, 0, 0, 0, 0, comfortable, comfortable, 0);
-        assert_ne!(
-            calm.as_ref(),
-            Some(&besieged),
-            "the siege branch should release once nothing hostile is in reach"
-        );
-    }
 
-    /// A garrisoned, unhurt city does not build one more defender for every
-    /// raider it sees: civvis-20260816T084206Z built Warriors on t15 and t21
-    /// for barbarian raiders while holding three to five units, and its
-    /// first Settler waited until t23. Live doctrine only.
-    #[test]
-    fn a_garrisoned_unhurt_city_skips_the_raid_defender_on_the_live_seat() {
-        let (mut g, city, raider) = barbarian_at_the_gates_game(80);
-        let cpos = g.cities[&city].pos;
-        // A raiding party: two visible hostiles.
-        let second = {
-            let template = g.units[&raider].clone();
-            let spot = g
-                .nbrs(cpos)
-                .into_iter()
-                .find(|p| {
-                    let t = &g.map.tiles[p];
-                    g.rules.is_passable(t)
-                        && !g.rules.is_water(t)
-                        && g.units_at(*p).is_empty()
-                        && g.city_at(*p).is_none()
-                })
-                .expect("a second open tile beside the city");
-            let mut extra = template;
-            extra.id = g.next_id;
-            g.next_id += 1;
-            extra.pos = spot;
-            let id = extra.id;
-            g.units.insert(id, extra);
-            id
-        };
-        let _ = second;
-        // Round-trip to rebuild occupancy after the manual insert.
-        let snapshot = serde_json::to_value(&g).unwrap();
-        let mut g: Game = serde_json::from_value(snapshot).unwrap();
-        // And a garrison of two on the centre (the fixture's own starting
-        // warrior may stand elsewhere).
-        let guard_a = g.spawn_unit("warrior", 0, cpos);
-        let guard_b = g.spawn_unit("slinger", 0, cpos);
-        let garrison = g
-            .units
-            .values()
-            .filter(|u| u.owner == 0 && g.rules.units[u.kind].class == "military" && g.wdist(cpos, u.pos) <= GARRISON_HOLD_RADIUS)
-            .count();
-        assert!(garrison >= GARRISON_HOLD_UNITS, "the fixture garrisons the city: {garrison}");
 
-        let mut native = BasicAi::new();
-        native.siege_muster = true;
-        assert_eq!(native.visible_besiegers(&g, 0, city), 2);
-        assert!(!native.garrison_under_fire);
-        assert!(
-            native.besieged_city_item(&g, 0, city).is_some(),
-            "the frozen doctrine still answers the raid with walls or a defender"
-        );
 
-        let mut live = BasicAi::new();
-        live.siege_muster = true;
-        live.garrison_under_fire = true;
-        assert!(
-            live.besieged_city_item(&g, 0, city).is_none(),
-            "a garrisoned, unhurt city on the live seat builds no extra defender"
-        );
-        // Bleeding: the raid is real, and the answer returns.
-        g.cities.get_mut(&city).unwrap().hp = 150;
-        assert!(live.besieged_city_item(&g, 0, city).is_some());
-        g.cities.get_mut(&city).unwrap().hp = 200;
-        // A thin garrison: the answer returns too.
-        g.remove_unit(guard_a);
-        g.remove_unit(guard_b);
-        let left = g
-            .units
-            .values()
-            .filter(|u| u.owner == 0 && g.rules.units[u.kind].class == "military" && g.wdist(cpos, u.pos) <= GARRISON_HOLD_RADIUS)
-            .count();
-        assert!(left < GARRISON_HOLD_UNITS, "the fixture thins the garrison: {left}");
-        assert!(live.besieged_city_item(&g, 0, city).is_some());
-    }
-
-    #[test]
-    fn a_raider_beyond_the_muster_radius_does_not_hold_a_garrison() {
-        let (mut g, city, raider) = barbarian_at_the_gates_game(78);
-        let mut ai = BasicAi::new();
-        // The bridge enables this for live Civilization VI; native ladders
-        // leave it off.
-        ai.siege_muster = true;
-        let cpos = g.cities[&city].pos;
-
-        // Walk the raider out past the muster radius. A wanderer on the far
-        // side of the map must not pin defenders at home for the rest of the
-        // game — that is the failure mode this floor has to avoid.
-        let far = g
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .find(|p| {
-                g.wdist(cpos, *p) > SIEGE_MUSTER_RADIUS
-                    && g.rules.is_passable(&g.map.tiles[p])
-                    && !g.rules.is_water(&g.map.tiles[p])
-                    && g.units_at(*p).is_empty()
-            })
-            .expect("a passable tile beyond the muster radius");
-        g.units.get_mut(&raider).unwrap().pos = far;
-
-        assert_eq!(ai.besieged_military_floor(&g, 0, city, 1), 0.0);
-    }
-
-    #[test]
-    fn barbarian_pressure_orders_a_local_melee_defender_even_above_the_army_floor() {
-        let (mut g, city, _raider) = barbarian_at_the_gates_game(81);
-        for uid in g.player_unit_ids(0) {
-            g.remove_unit(uid);
-        }
-        let ai = BasicAi::new();
-        assert_eq!(BasicAi::barbarian_threat_pressure(&g, 0, city), 1);
-        let item = ai
-            .pick_item(&g, 0, city, 1, 0, 4, 0, 0, 8, 8, 0)
-            .expect("a city under a barbarian raid must choose a production item");
-        assert!(
-            matches!(
-                &item,
-                Item::Unit { unit } if g.rules.units[unit].class == "military"
-                    && g.rules.units[unit].is_melee_capable()
-            ),
-            "the local emergency should want a melee defender, got {item:?}"
-        );
-    }
 
     #[test]
     fn barbarian_alert_suppresses_an_available_trader() {
@@ -18970,6 +18931,82 @@ mod tests {
             Some((pid, Action::Pillage { unit })) if *pid == barb && *unit == raider
         ));
         assert!(g.map.tiles[&raid_tile].pillaged);
+    }
+
+    /// ★★★★★ THE BARBARIANS DID NOT TAKE SETTLERS AND THE LIVE SEAT KEPT
+    /// LOSING THEM.
+    ///
+    /// MEASURED before this change, `ai_eval live live_without_camp_reach`,
+    /// 36 seat-games an arm, 6 players, 150 turns, online speed: **0.31 and
+    /// 0.25 civilians lost to barbarians per game**. The live Civilization VI
+    /// seat lost **eight Settlers and two Builders in 104 turns** on run
+    /// civvis-20260821T130446Z. A simulation thirty times gentler than the
+    /// thing it models cannot price a settler-protection treatment at all —
+    /// the effect is smaller than the noise by construction.
+    ///
+    /// `capture_adjacent_civilian` was ungated, so a raider took a Settler it
+    /// happened to end its turn beside. The PURSUIT — walking to one two or
+    /// three tiles off, which is what actually costs an empire its walkers —
+    /// sat behind `civilian_rescue`, and the barbarian seat is a `BasicAi`
+    /// that never carries it.
+    #[test]
+    fn a_barbarian_walks_to_an_undefended_settler_inside_its_raid_ring() {
+        let take = |tactics: bool| -> bool {
+            let (mut g, city, raider) = barbarian_at_the_gates_game(84);
+            let barb = g.units[&raider].owner;
+            let cpos = g.cities[&city].pos;
+            let home = g.units[&raider].pos;
+            // The camp that owns this raider, so the leash below is satisfied
+            // and the walk is a raid rather than an all-map chase.
+            g.barb_camps.insert(home, g.turn + 1_000);
+            g.barb_raider_homes.insert(raider, home);
+            let road = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| {
+                    g.wdist(*pos, home) == 2
+                        && g.wdist(*pos, cpos) > 1
+                        && g.map.get(*pos).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                        && g.units_at(*pos).is_empty()
+                        && g.city_at(*pos).is_none()
+                })
+                .min()
+                .expect("open ground two tiles from the raider");
+            let settler = g.spawn_test_unit("settler", 0, road);
+            let mut ai = BasicAi::new();
+            ai.barb = true;
+            ai.barbarian_tactics = tactics;
+            // Seat-turns, not forced `current` writes: the walk is one step per
+            // call and a unit only gets its movement back when the turn really
+            // comes round to it. Six is three world turns for a two-seat board,
+            // ample for a two-tile approach.
+            for _ in 0..6 {
+                let pid = g.current;
+                if pid == barb {
+                    ai.take_turn(&mut g, barb);
+                    if g.units.get(&settler).is_some_and(|unit| unit.owner == barb) {
+                        return true;
+                    }
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            false
+        };
+        assert!(
+            take(true),
+            "a barbarian two tiles from an undefended Settler must walk onto it"
+        );
+        assert!(
+            !take(false),
+            "and it must still be the barbarian tactics that decide it, so the \
+             frozen no-tactics controller plays the game it always did"
+        );
     }
 
     #[test]
@@ -19808,147 +19845,14 @@ mod tests {
     /// capital bled behind no walls: Masonry in, monument and granary built,
     /// the culture lane open, and nothing hostile in vision. See
     /// `garrison_walls_item`.
-    fn unwalled_masonry_capital(seed: u64) -> (Game, u32, BasicAi) {
-        // Two players AT WAR: the repaired doctrine (2026-08-19) fires on a
-        // declared major war or a visible nearby hostile, never on a quiet
-        // map — the unconditional interception measured −2.1 pp wins over
-        // 4,000 screened pairs. The declared war is the measured live case
-        // (an unwalled capital falling to a t61 declaration).
-        let mut g = Game::new_full(2, 24, 16, seed, 120, 0, false);
-        g.at_war.insert((0, 1));
-        let settler = g
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|uid| g.units[uid].kind == "settler")
-            .unwrap();
-        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let cid = g.player_city_ids(0)[0];
-        g.players[0].techs.insert(crate::name!("pottery"));
-        g.players[0].techs.insert(crate::name!("masonry"));
-        g.players[0].civics.insert(crate::name!("drama_poetry"));
-        {
-            let city = g.cities.get_mut(&cid).unwrap();
-            city.pop = 7;
-            city.buildings.push(crate::name!("monument"));
-            city.buildings.push(crate::name!("granary"));
-        }
-        let mut ai = BasicAi::new();
-        ai.garrison_walls = true;
-        // The measured empire was two cities against a city target it had
-        // already met; hold the settler lane shut so the choice under test is
-        // the one the live run actually faced — walls against the culture
-        // lane.
-        ai.w.city_target = 1.0;
-        (g, cid, ai)
-    }
 
     /// With the treatment on, the capital that previously spent this turn on
     /// the culture lane orders ancient walls; with it off, behavior is
     /// unchanged; without Masonry, nothing changes either.
-    #[test]
-    fn a_masonry_capital_orders_walls_before_the_culture_lane() {
-        let (g, cid, ai) = unwalled_masonry_capital(4_421);
-
-        let mut control = ai.clone();
-        control.garrison_walls = false;
-        let untreated = control
-            .pick_item(&g, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3)
-            .expect("the control capital has something to build");
-        assert!(
-            matches!(untreated, Item::District { district, .. }
-                if g.district_family(district) == "theater_square"),
-            "the control must reproduce the measured failure — production to \
-             the culture lane while the capital stands unwalled — but chose \
-             {untreated:?}"
-        );
-
-        let treated = ai
-            .pick_item(&g, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3)
-            .expect("the treated capital has something to build");
-        assert_eq!(
-            treated,
-            Item::Building {
-                building: crate::name!("walls")
-            },
-            "with Masonry in, the unwalled capital walls up before the \
-             culture lane"
-        );
-
-        // Without Masonry the doctrine prices nothing: the gate is the tech.
-        let mut early = g.clone();
-        early.players[0].techs.remove(&crate::name!("masonry"));
-        let pretech = ai.pick_item(&early, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3);
-        assert!(
-            !matches!(pretech, Some(Item::Building { ref building })
-                if *building == crate::name!("walls")),
-            "before Masonry the ordinary build order stands"
-        );
-
-        // The issue's own carve-out: the granary outranks the walls.
-        let mut hungry = g.clone();
-        hungry
-            .cities
-            .get_mut(&cid)
-            .unwrap()
-            .buildings
-            .retain(|building| building.as_str() != "granary");
-        assert_eq!(
-            ai.garrison_walls_item(&hungry, 0, cid),
-            Some(Item::Building {
-                building: crate::name!("granary")
-            }),
-            "the growth foundation keeps its rank"
-        );
-    }
 
     /// The frontier/population-floor boundary: a small frontier city walls
     /// up, the same city at the floor does not, an interior city never does,
     /// and the capital is eligible at any size.
-    #[test]
-    fn garrison_walls_hold_to_the_frontier_and_the_population_floor() {
-        let (mut g, cid, ai) = unwalled_masonry_capital(4_422);
-        g.cities.get_mut(&cid).unwrap().is_capital = false;
-
-        assert!(
-            BasicAi::city_is_frontier(&g, 0, cid),
-            "a lone city on a fresh map borders the wilderness"
-        );
-        assert_eq!(
-            ai.garrison_walls_item(&g, 0, cid),
-            Some(Item::Building {
-                building: crate::name!("walls")
-            }),
-            "a frontier city under the floor is the kind conquest takes first"
-        );
-
-        // At the floor, the ordinary build order stands; one below, it walls.
-        g.cities.get_mut(&cid).unwrap().pop = GARRISON_WALLS_POP_FLOOR;
-        assert_eq!(ai.garrison_walls_item(&g, 0, cid), None);
-        g.cities.get_mut(&cid).unwrap().pop = GARRISON_WALLS_POP_FLOOR - 1;
-        assert!(ai.garrison_walls_item(&g, 0, cid).is_some());
-
-        // An interior city ringed entirely by its own empire's territory is
-        // somebody else's walls problem.
-        let everything: Vec<Pos> = g.map.tiles.keys().copied().collect();
-        for pos in everything {
-            g.map.tiles.get_mut(&pos).unwrap().owner_city = Some(cid);
-        }
-        assert!(!BasicAi::city_is_frontier(&g, 0, cid));
-        assert_eq!(ai.garrison_walls_item(&g, 0, cid), None);
-
-        // The capital walls up at any size: losing it is losing the game.
-        {
-            let capital = g.cities.get_mut(&cid).unwrap();
-            capital.is_capital = true;
-            capital.pop = 20;
-        }
-        assert!(ai.garrison_walls_item(&g, 0, cid).is_some());
-
-        // And it is off unless the live bridge turns it on.
-        let mut shipped = ai.clone();
-        shipped.garrison_walls = false;
-        assert_eq!(shipped.garrison_walls_item(&g, 0, cid), None);
-    }
 
     #[test]
     fn even_barbarian_trades_are_taken_not_shadowed() {

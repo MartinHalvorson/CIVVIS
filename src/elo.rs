@@ -73,9 +73,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_home_defense",
     "live_without_joint_tactics",
     "live_without_joint_reach_lines",
-    "live_without_loyalty_policy_defence",
     "live_without_solvent_faith_army",
-    "live_without_siege_muster",
     "live_without_district_coverage",
     "live_without_slot_kind_tiebreak",
     "live_without_bounded_recovery",
@@ -92,8 +90,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_loyalty_rate_alarm",
     "live_without_housing_districts",
     "live_without_housing_buildings",
-    "live_without_campus_every_city",
-    "live_without_housing_cards",
     "live_without_housing_research",
     "live_without_war_economy",
     "live_without_war_reinforcement",
@@ -102,13 +98,13 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_stock_denial_lead_time",
     "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
-    "live_without_stacked_escort",
+    "live_without_live_formationless_settler_shadow",
+    "live_without_live_motion_turn_accounting",
     "live_without_counter_in_lane",
     "live_without_era_paced_expansion",
     "live_without_escort_unstick",
     "live_without_frontier_loyalty",
     "live_without_garrison_under_fire",
-    "live_without_garrison_walls",
     "live_without_naval_recon",
     "live_without_recon_flight",
     "live_without_recon_replacement",
@@ -132,8 +128,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_target_hysteresis",
     "live_without_tally_great_people",
     "live_without_barbarian_scouts_are_scouts",
+    "live_without_barbarian_hunt",
     "live_without_camp_reach",
-    "live_without_settler_stack_discipline",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
     "live_without_parallel_settlers",
@@ -351,10 +347,9 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "joint-reach-lines",
     "live-trader-route",
     "live-religious-purchase",
-    "siege-muster",
     "home-defense",
-    "loyalty-policy-defence",
     "recorded-tactical-step",
+    "live-motion-turn-accounting",
     "whole-turn-backtrack-guard",
     "step-and-reassess",
     "strike-opening",
@@ -375,8 +370,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "suzerain-cards",
     "muster-at-command-radius",
     "housing-districts",
-    "campus-every-city",
-    "housing-cards",
     "housing-research",
     "war-economy",
     "war-reinforcement",
@@ -385,13 +378,12 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "wide-map-capacity",
     "garrison-under-fire",
     "escort-unstick",
-    "stacked-escort",
+    "live-formationless-settler-shadow",
     "religion-sues-peace",
     "recon-replacement",
     "stranded-settler-discount",
     "siege-commitment",
     "wonder-ring-settle-value",
-    "garrison-walls",
     "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
@@ -413,8 +405,8 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-target-hysteresis",
     "tally-great-people",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "camp-reach",
-    "settler-stack-discipline",
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
@@ -534,6 +526,10 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
     "joint-reach-lines",
+    // The brain's half of the mid-turn replan frame: a walk cut at its first
+    // unrevealed hex because the host executes one coalesced walk per unit.
+    // No native meaning; its native stand-in measured harmful and is gone.
+    "step-and-reassess",
     "live-trader-route",
     "live-religious-purchase",
     "solvent-faith-army",
@@ -589,7 +585,13 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "parallel-settlers",
     "host-settler-pop",
     "explore-dead-targets",
+    // The host invokes the bridge again after some accepted orders. That is a
+    // replan frame, not a second game turn for persistent unit motion.
+    "live-motion-turn-accounting",
     "bank-envoys",
+    // Replaces the host's broken Settler formation channel with ordinary
+    // unit movement; native CIVVIS formations have no corresponding defect.
+    "live-formationless-settler-shadow",
     // Production Advanced already carries committed exploration. It remains
     // a live treatment so the deployment bundle and its ablation registry are
     // complete, not because `advanced_synergy` needs to turn it on again.
@@ -626,7 +628,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
-    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -634,7 +635,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
     "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
@@ -643,13 +643,13 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "civilian-rescue",
     "naval-recon",
     "camp-reach",
@@ -660,8 +660,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
 /// The economic half: settlement, growth, districts, and the policy deck.
 pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
@@ -674,12 +672,9 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
@@ -697,7 +692,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
-    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -705,7 +699,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
     "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
@@ -714,21 +707,19 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "barbarian-walls-one-tier",
     "strike-opening",
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
     "civilian-rescue",
     "naval-recon",
     "camp-reach",
     "camp-party",
     "religion-sues-peace",
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
@@ -741,12 +732,9 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
     "suzerain-cards",
     "score-horizon",
@@ -802,9 +790,7 @@ define_arm_kinds! {
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
     LiveWithoutJointReachLines => "live_without_joint_reach_lines",
-    LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
-    LiveWithoutSiegeMuster => "live_without_siege_muster",
     LiveWithoutDistrictCoverage => "live_without_district_coverage",
     LiveWithoutSlotKindTiebreak => "live_without_slot_kind_tiebreak",
     LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
@@ -821,8 +807,6 @@ define_arm_kinds! {
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     LiveWithoutHousingDistricts => "live_without_housing_districts",
     LiveWithoutHousingBuildings => "live_without_housing_buildings",
-    LiveWithoutCampusEveryCity => "live_without_campus_every_city",
-    LiveWithoutHousingCards => "live_without_housing_cards",
     LiveWithoutHousingResearch => "live_without_housing_research",
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
@@ -836,7 +820,6 @@ define_arm_kinds! {
     LiveWithoutEscortUnstick => "live_without_escort_unstick",
     LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
     LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
-    LiveWithoutGarrisonWalls => "live_without_garrison_walls",
     LiveWithoutNavalRecon => "live_without_naval_recon",
     LiveWithoutReconFlight => "live_without_recon_flight",
     LiveWithoutReconReplacement => "live_without_recon_replacement",
@@ -847,7 +830,8 @@ define_arm_kinds! {
     LiveWithoutTallyCulture => "live_without_tally_culture",
     LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
-    LiveWithoutStackedEscort => "live_without_stacked_escort",
+    LiveWithoutLiveFormationlessSettlerShadow => "live_without_live_formationless_settler_shadow",
+    LiveWithoutLiveMotionTurnAccounting => "live_without_live_motion_turn_accounting",
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
@@ -861,8 +845,8 @@ define_arm_kinds! {
     LiveWithoutSettlerTargetHysteresis => "live_without_settler_target_hysteresis",
     LiveWithoutTallyGreatPeople => "live_without_tally_great_people",
     LiveWithoutBarbarianScoutsAreScouts => "live_without_barbarian_scouts_are_scouts",
+    LiveWithoutBarbarianHunt => "live_without_barbarian_hunt",
     LiveWithoutCampReach => "live_without_camp_reach",
-    LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
     LiveWithoutParallelSettlers => "live_without_parallel_settlers",
@@ -1234,9 +1218,34 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// gate: the market every participant recruits from is the same one. The
 /// anchor moves again, to **17,482 decisions and `0x8162_c919_b83c_40df`**.
 ///
+/// **v18 (2026-08-21) — a Barbarian Scout reports the WALKERS it sees, not
+/// only cities.** v16 gave each reported outpost a finite raiding party, but
+/// the report itself still accepted a city alone — so a camp's whole raid
+/// throughput was one Scout's round trip to a settlement, and an empire's
+/// Settlers, which is what a Civilization VI barbarian actually takes, could
+/// not start a raid at all.
+///
+/// MEASURED, `ai_eval live live_without_camp_reach`, 12 pairs / 72 seat-games
+/// an arm at 6p/150t/online on identical seeds: **0.22 civilians lost to
+/// barbarians per game**, against the live Civilization VI seat losing **8 of
+/// the 12 Settlers that ever walked, in 104 turns** (run
+/// civvis-20260821T130446Z) at a matching city count. Not an exposure
+/// difference — the opponent. Every arm this project has priced on settler
+/// safety was measured against a barbarian that did not hunt settlers, which
+/// is why the whole family reads neutral-to-harmful in `docs/gene_ledger.json`
+/// at 13,446 pairs apiece and ships off.
+///
+/// With the sighting extended, and with the raider pursuit of #2227 that this
+/// version follows, the same measurement reads **0.61**.
+///
+/// Like v16 this is a shared native-world rule with no controller gate — the
+/// Scout phase runs in `Game::barbarian_phase` and every participant faces the
+/// same camps. The anchor therefore moves again, to **18,596 decisions and
+/// `0xf78a_2b10_c0e3_5945`**.
+///
 /// Each of these is a rules correction, not a compatibility re-pin: rows from
-/// v15, v16 and v17 are not comparable.
-pub const ELO_PROTOCOL_VERSION: u32 = 17;
+/// v15, v16, v17 and v18 are not comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 18;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -3447,9 +3456,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // measured +32/+34 on seeds 10800000/11000000 and +38 (CI +10..+66)
         // on the corrected-gate matrix at seed stream 18000000; this arm asks
         // the inverse question if anyone re-opens the axis.
+        // ⚠ `siege_muster` was removed from the code on 2026-08-21 (ranking
+        // row −36/10k, inside the noise band, removed by operator directive
+        // with the bottom of the table); this historical re-addition arm
+        // carries the surviving three of its four flags.
         "advanced_war_half" => {
             let mut ai = AdvancedAi::new();
-            ai.enable_siege_muster();
             ai.enable_home_defense();
             ai.enable_tactical_strategy();
             ai.enable_unit_objective_memory();
@@ -3618,7 +3630,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.adjacency_site_planning = false;
             ai.research_economy = false;
             ai.disable_amenity_districts();
-            ai.disable_siege_muster();
             ai.disable_home_defense();
             ai.disable_tactical_strategy();
             ai.disable_unit_objective_memory();
@@ -4488,12 +4499,16 @@ impl ArmKind {
             }
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
-            Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
+            Self::LiveWithoutLiveFormationlessSettlerShadow => {
+                live_without("live-formationless-settler-shadow")
+            }
+            Self::LiveWithoutLiveMotionTurnAccounting => {
+                live_without("live-motion-turn-accounting")
+            }
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
             Self::LiveWithoutSolventFaithArmy => live_without("solvent-faith-army"),
-            Self::LiveWithoutSiegeMuster => live_without("siege-muster"),
             Self::LiveWithoutDistrictCoverage => live_without("district-coverage"),
             Self::LiveWithoutLoyaltyRateAlarm => live_without("loyalty-rate-alarm"),
             Self::LiveWithoutBoundedRecovery => live_without("bounded-recovery"),
@@ -4508,12 +4523,9 @@ impl ArmKind {
             Self::LiveWithoutMusterAtCommandRadius => live_without("muster-at-command-radius"),
             Self::LiveWithoutSlotKindTiebreak => live_without("slot-kind-tiebreak"),
             Self::LiveWithoutHousingDistricts => live_without("housing-districts"),
-            Self::LiveWithoutCampusEveryCity => live_without("campus-every-city"),
-            Self::LiveWithoutHousingCards => live_without("housing-cards"),
             Self::LiveWithoutHousingResearch => live_without("housing-research"),
             Self::LiveWithoutHousingBuildings => live_without("housing-buildings"),
             Self::LiveWithoutPeacetimeDeterrence => live_without("peacetime-deterrence"),
-            Self::LiveWithoutLoyaltyPolicyDefence => live_without("loyalty-policy-defence"),
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
@@ -4526,7 +4538,6 @@ impl ArmKind {
             Self::LiveWithoutEscortUnstick => live_without("escort-unstick"),
             Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
             Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
-            Self::LiveWithoutGarrisonWalls => live_without("garrison-walls"),
             Self::LiveWithoutNavalRecon => live_without("naval-recon"),
             Self::LiveWithoutReconFlight => live_without("recon-flight"),
             Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
@@ -4549,9 +4560,11 @@ impl ArmKind {
             Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
             Self::LiveWithoutSettlerTargetHysteresis => live_without("settler-target-hysteresis"),
             Self::LiveWithoutTallyGreatPeople => live_without("tally-great-people"),
-            Self::LiveWithoutBarbarianScoutsAreScouts => live_without("barbarian-scouts-are-scouts"),
+            Self::LiveWithoutBarbarianScoutsAreScouts => {
+                live_without("barbarian-scouts-are-scouts")
+            }
+            Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutCampReach => live_without("camp-reach"),
-            Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
             Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),
@@ -7031,6 +7044,8 @@ mod tests {
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
         const EXCLUDED: &[&str] = &[
+            // The brain's half of the mid-turn replan frame (a bridge fact).
+            "step_and_reassess",
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -7082,6 +7097,12 @@ mod tests {
             "explore_dead_targets",
             "explore_commit",
             "bank_envoys",
+            // Replaces only the host formation channel with the ordinary
+            // movement shadow; native formations have no corresponding bug.
+            "live_formationless_settler_shadow",
+            // Firaxis can ask the bridge for same-turn replans after an order;
+            // native turns have no duplicate motion snapshots to coalesce.
+            "live_motion_turn_accounting",
             // The Settler seat's land, at the Settler seat's pace; the league
             // cadence stays bred.
             "land_grab",
