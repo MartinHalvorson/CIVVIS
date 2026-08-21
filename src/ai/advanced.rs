@@ -3641,6 +3641,17 @@ pub struct AdvancedAi {
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
 
+    /// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE
+    /// LOST FOR NOTHING. With this on, a class whose points are at (or within
+    /// fifteen turns of) the price while the claim is blocked reserves one
+    /// city for whatever lifts the block — the typed slot building for a
+    /// Writer, Artist or Musician, the district, wonder or soldier the other
+    /// classes wait on — and a due cultural person no city can house sells
+    /// duplicate works to make room and recruits the same turn. See
+    /// `great_person_housing.rs`. Off everywhere by default; opt-in gene
+    /// `great-person-housing`.
+    pub great_person_housing: bool,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -4049,6 +4060,7 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+mod great_person_housing;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -4664,6 +4676,7 @@ impl AdvancedAi {
             founder_temple: false,
             theology_for_founders: false,
             idle_faith_patronage: false,
+            great_person_housing: false,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -29870,6 +29883,11 @@ impl AdvancedAi {
         // see. Reserve the fastest idle city for their missing prerequisite
         // before strategic production fills every queue with another project.
         self.base.prioritize_live_great_person_activation(g, pid);
+        // Native boards have no host need list, but the same blockers: a
+        // Writer's points at the price with no open Writing slot pile up
+        // forever while a non-Culture lane vetoes every slot building. See
+        // `great_person_housing.rs`.
+        self.great_person_housing(g, pid, &plan);
 
         // A broad wartime Amenity loss must be inspected before either the
         // baseline opening or the Conquest production governor fills its one

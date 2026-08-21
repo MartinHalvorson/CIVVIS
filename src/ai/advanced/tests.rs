@@ -4291,7 +4291,7 @@ fn live_competitions_price_host_projects_and_worlds_fair_production() {
         project: crate::name!("send_aid"),
     };
     let granary = Item::Building {
-        building: crate::name!("granary"),
+        building: crate::name!("monument"),
     };
     assert!(game.can_produce(0, city, &granary));
     assert!(
@@ -28634,4 +28634,458 @@ fn religion_genes_fires_check() {
             game.turn, game.victory_type, census.inquisition_apostles
         );
     }
+}
+
+use super::great_person_housing::{GreatPersonRemedy, StuckGreatPerson};
+
+/// A two-seat world with contact made, player 0 holding a capital with a
+/// Theater Square and the civic that makes an Amphitheater buildable.
+fn great_person_housing_fixture(seed: u64) -> (Game, u32) {
+    let mut game = Game::new_full(2, 28, 18, seed, 300, 0, false);
+    game.record_contact(0, 1);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+        game.players[pid].civics.insert(crate::name!("drama_poetry"));
+        game.players[pid].techs.insert(crate::name!("writing"));
+        game.players[pid].gold = 1_000.0;
+    }
+    game.turn = 60;
+    game.current = 0;
+    let capital = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, capital, "theater_square");
+    (game, capital)
+}
+
+fn writing_works(game: &Game, pid: usize) -> i64 {
+    game.players[pid]
+        .counters
+        .get("great_work:writing")
+        .copied()
+        .unwrap_or(0)
+}
+
+fn great_person_housing_plan(game: &Game, strategy: GrandStrategy) -> StrategicPlan {
+    StrategicPlan {
+        strategy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    }
+}
+
+/// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE LOST
+/// FOR NOTHING. A Science seat's Theater Square has earned a full Writer and
+/// owns no Writing slot but the Palace's one: the claim is blocked, the
+/// shipped agent leaves the queue empty (its production chooser vetoes the
+/// Amphitheater at −10,000 off the Culture lane), and the points sit. With
+/// `great_person_housing` the square's city starts the Amphitheater.
+#[test]
+fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane() {
+    let (mut game, capital) = great_person_housing_fixture(71_301);
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    assert!(
+        !game.can_activate_current_great_person(0, "writer"),
+        "two Writing slots are needed and only the Palace's universal slot exists"
+    );
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    assert!(game.can_produce(0, capital, &amphitheater));
+
+    let stock = AdvancedAi::new();
+    assert_eq!(
+        stock.stuck_great_people(&game, 0),
+        vec![StuckGreatPerson {
+            kind: "writer".to_string(),
+            remedy: GreatPersonRemedy::Slots("writing", 2),
+            due: true,
+            turns_to_due: 0.0,
+        }],
+        "the Writer is the one stuck class"
+    );
+    let mut untouched = game.clone();
+    assert!(!stock.great_person_housing(&mut untouched, 0, &plan));
+    assert!(untouched.cities[&capital].queue.is_empty(), "off: nothing is reserved");
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let mut housed = game.clone();
+    assert!(ai.great_person_housing(&mut housed, 0, &plan));
+    assert_eq!(
+        housed.cities[&capital].queue.first(),
+        Some(&amphitheater),
+        "on: the square's city starts the slot building"
+    );
+    // One reservation per class: the next turn sees the Amphitheater queued
+    // and does not touch another city or re-issue the order.
+    assert!(!ai.great_person_housing(&mut housed, 0, &plan));
+}
+
+/// The building starts ahead of the person — within the lead — and not for
+/// points that are still forty turns out.
+#[test]
+fn the_slot_building_starts_within_the_lead_and_not_before() {
+    let (mut game, capital) = great_person_housing_fixture(71_302);
+    let rate = game.great_person_points_per_turn(0)["writer"];
+    assert!(rate > 0.0, "a Theater Square earns Writer points");
+    let cost = game.gp_cost(0, "writer");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Expansion);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 10.0);
+    let stuck = ai.stuck_great_people(&soon, 0);
+    assert_eq!(stuck.len(), 1);
+    assert!(!stuck[0].due);
+    assert!((stuck[0].turns_to_due - 10.0).abs() < 1e-6);
+    assert!(ai.great_person_housing(&mut soon, 0, &plan));
+    assert!(matches!(
+        soon.cities[&capital].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+
+    let mut far = game.clone();
+    far.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 40.0);
+    assert!(ai.stuck_great_people(&far, 0).is_empty());
+    assert!(!ai.great_person_housing(&mut far, 0, &plan));
+    assert!(far.cities[&capital].queue.is_empty());
+}
+
+/// A due person may pause an ordinary building (its progress is kept); a
+/// person still ten turns out may not, and a unit is never paused.
+#[test]
+fn a_due_person_pauses_a_building_but_never_a_unit() {
+    let (mut game, capital) = great_person_housing_fixture(71_303);
+    let cost = game.gp_cost(0, "writer");
+    let rate = game.great_person_points_per_turn(0)["writer"];
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    game.players[0].techs.insert(crate::name!("pottery"));
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    assert!(game.can_produce(0, capital, &granary));
+    assert!(game.can_produce(0, capital, &warrior));
+
+    let mut due = game.clone();
+    due.players[0].gpp.insert("writer".to_string(), cost);
+    due.cities.get_mut(&capital).unwrap().queue = vec![granary.clone()];
+    assert!(ai.great_person_housing(&mut due, 0, &plan));
+    assert!(matches!(
+        due.cities[&capital].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 10.0);
+    soon.cities.get_mut(&capital).unwrap().queue = vec![granary.clone()];
+    assert!(!ai.great_person_housing(&mut soon, 0, &plan));
+    assert_eq!(soon.cities[&capital].queue.first(), Some(&granary));
+
+    let mut armed = game.clone();
+    armed.players[0].gpp.insert("writer".to_string(), cost);
+    armed.cities.get_mut(&capital).unwrap().queue = vec![warrior.clone()];
+    assert!(!ai.great_person_housing(&mut armed, 0, &plan));
+    assert_eq!(armed.cities[&capital].queue.first(), Some(&warrior));
+}
+
+/// ★★★★ SELL TO MAKE ROOM. Both Writing slots of the only Amphitheater are
+/// full, the Writer is due, and nothing with a Writing slot can be started
+/// anywhere: the gene sells one duplicate work to a rival with an open slot,
+/// which frees the slot the Palace's universal one completes, and recruits
+/// the Writer the same turn — two new works for one sold, plus the Gold.
+/// Off, the works stay, the Writer stays on the market, and the points sit.
+/// The plan's target is never sold a work.
+#[test]
+fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
+    let (mut game, capital) = great_person_housing_fixture(71_304);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let rival = game.player_city_ids(1)[0];
+    install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    assert!(!game.can_house_great_works(0, "writing", 2));
+    assert!(!game.can_activate_current_great_person(0, "writer"));
+    assert!(
+        game.quick_deals(0).iter().any(|deal| deal.category == "great_work"
+            && deal.direction == "sell"
+            && deal.item == "writing"),
+        "the market quotes the duplicate"
+    );
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let claimed = |game: &Game| game.players[0].gp_claimed.get("writer").copied().unwrap_or(0);
+
+    let mut kept = game.clone();
+    assert!(!AdvancedAi::new().great_person_housing(&mut kept, 0, &plan));
+    assert_eq!(writing_works(&kept, 0), 2);
+    assert_eq!(claimed(&kept), 0);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let mut sold = game.clone();
+    assert!(ai.great_person_housing(&mut sold, 0, &plan));
+    assert_eq!(claimed(&sold), 1, "the Writer is recruited the same turn");
+    assert_eq!(
+        writing_works(&sold, 0),
+        3,
+        "one work sold, two written"
+    );
+    assert_eq!(writing_works(&sold, 1), 1);
+    assert!(sold.players[0].gold > 1_000.0, "the sale is paid");
+    assert!(sold.cities[&capital].queue.is_empty(), "no building was reserved");
+
+    let mut targeted = game.clone();
+    let mut hostile = great_person_housing_plan(&targeted, GrandStrategy::Conquest);
+    hostile.target_player = Some(1);
+    assert!(!ai.great_person_housing(&mut targeted, 0, &hostile));
+    assert_eq!(writing_works(&targeted, 0), 2);
+    assert_eq!(claimed(&targeted), 0, "the campaign target is never sold a work");
+}
+
+/// A slot building outranks a sale: with the Amphitheater full but a second
+/// city able to build one, the gene reserves that city and sells nothing.
+#[test]
+fn a_buildable_slot_outranks_a_sale() {
+    let (mut game, capital) = great_person_housing_fixture(71_305);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let home = game.cities[&capital].pos;
+    let second = found_nearby_test_city(&mut game, 0, home);
+    install_ai_test_district(&mut game, second, "theater_square");
+    let rival = game.player_city_ids(1)[0];
+    install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    assert!(ai.great_person_housing(&mut game, 0, &plan));
+    assert!(matches!(
+        game.cities[&second].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+    assert_eq!(writing_works(&game, 0), 2, "nothing sold");
+}
+
+/// The other classes: a due Scientist with no Campus reserves the Campus; a
+/// Scientist still on the way does not start a district on speculation; the
+/// Musician's chain walks museum before Broadcast Center.
+#[test]
+fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_prerequisites() {
+    let (mut game, capital) = great_person_housing_fixture(71_306);
+    // Room for a second district beside the Theater Square.
+    game.cities.get_mut(&capital).unwrap().pop = 7;
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let scientist = |due: bool| StuckGreatPerson {
+        kind: "scientist".to_string(),
+        remedy: GreatPersonRemedy::District("campus"),
+        due,
+        turns_to_due: if due { 0.0 } else { 8.0 },
+    };
+    assert!(
+        ai.great_person_housing_item(&game, 0, capital, &scientist(false)).is_none(),
+        "a district is a bet for points still eight turns out"
+    );
+    assert!(
+        matches!(
+            ai.great_person_housing_item(&game, 0, capital, &scientist(true)),
+            Some(Item::District { district, .. }) if game.district_family(district) == "campus"
+        ),
+        "a due Scientist reserves the Campus"
+    );
+
+    let musician = StuckGreatPerson {
+        kind: "musician".to_string(),
+        remedy: GreatPersonRemedy::Slots("music", 2),
+        due: false,
+        turns_to_due: 5.0,
+    };
+    assert!(
+        matches!(
+            ai.great_person_housing_item(&game, 0, capital, &musician),
+            Some(Item::Building { building }) if building == crate::name!("amphitheater")
+        ),
+        "no museum yet: the chain starts at the Amphitheater"
+    );
+}
+
+/// The gene is an opt-in: off in every bundle, flippable by name, in
+/// `PRODUCTION_OPT_INS`.
+#[test]
+fn great_person_housing_is_a_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.great_person_housing);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "great-person-housing")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.great_person_housing);
+    ai.disable_great_person_housing();
+    assert!(!ai.great_person_housing);
+}
+
+/// ★★★★ FIVE OF THIRTY-SIX SEATS ENDED THE PROBE GAMES WITH ENGINEER POINTS
+/// AT FOURTEEN TIMES THE PRICE. Every second Engineer (Imhotep, Eiffel,
+/// Tesla, Roebling, von Braun) spends charges on a wonder under construction
+/// — 2 × 175 production doubled for an ancient wonder, up to 1,400 — and is
+/// refused until one is queued; off the Culture lane the chooser never
+/// queues one, so the points pile up for the rest of the game (198 blocked
+/// seat-turns in six games, the most of any class). With the gene a due
+/// wonder Engineer starts the cheapest available wonder, which the charges
+/// then all but complete. An Engineer still ten turns out starts nothing.
+#[test]
+fn a_due_wonder_engineer_starts_the_cheapest_wonder_for_its_charges() {
+    let (mut game, capital) = great_person_housing_fixture(71_307);
+    game.players[0].techs.insert(crate::name!("irrigation"));
+    game.cities.get_mut(&capital).unwrap().pop = 7;
+    // A river edge on a flat owned tile: the Hanging Gardens become legal.
+    let center = game.cities[&capital].pos;
+    let bank = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != center
+                && game.map.tiles[position].district.is_none()
+                && game.map.tiles[position].improvement.is_none()
+                && game.rules.is_passable(&game.map.tiles[position])
+                && game.map.tiles[position].feature.is_none()
+                && game.map.tiles[position].terrain != crate::name!("coast")
+                && game.map.tiles[position].terrain != crate::name!("ocean")
+        })
+        .expect("a flat owned tile");
+    game.map.tiles.get_mut(&bank).unwrap().river_edges[0] = true;
+    let (_, imhotep) = game.current_great_person("engineer").unwrap();
+    assert!(
+        imhotep.effects.contains_key("wonder_production"),
+        "the first Engineer offered is the wonder builder"
+    );
+    let cheapest = BasicAi::cheapest_available_wonder(&game, 0, capital)
+        .expect("the capital can start some ancient wonder");
+    let cost = game.gp_cost(0, "engineer");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+
+    let mut due = game.clone();
+    due.players[0].gpp.insert("engineer".to_string(), cost);
+    assert!(!due.can_activate_current_great_person(0, "engineer"));
+    assert_eq!(
+        ai.stuck_great_people(&due, 0),
+        vec![StuckGreatPerson {
+            kind: "engineer".to_string(),
+            remedy: GreatPersonRemedy::Wonder,
+            due: true,
+            turns_to_due: 0.0,
+        }]
+    );
+    assert!(ai.great_person_housing(&mut due, 0, &plan));
+    assert_eq!(due.cities[&capital].queue.first(), Some(&cheapest));
+    assert!(
+        due.can_activate_current_great_person(0, "engineer"),
+        "the queued wonder lifts the block; the turn's end claims the Engineer"
+    );
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("engineer".to_string(), cost - 1.0);
+    // A Theater Square earns no Engineer points: the class is not on its way.
+    assert!(ai.stuck_great_people(&soon, 0).is_empty());
+    install_ai_test_district(&mut soon, capital, "industrial_zone");
+    let rate = soon.great_person_points_per_turn(0)["engineer"];
+    assert!(rate > 0.0);
+    soon.players[0]
+        .gpp
+        .insert("engineer".to_string(), cost - rate * 10.0);
+    let stuck = ai.stuck_great_people(&soon, 0);
+    assert_eq!(stuck.len(), 1, "ten turns out is inside the lead");
+    assert!(!stuck[0].due);
+    assert!(!ai.great_person_housing(&mut soon, 0, &plan));
+    assert!(soon.cities[&capital].queue.is_empty(), "a wonder is not started on speculation");
+}
+
+/// An Admiral who leads a formation waits on a military sea unit (75 blocked
+/// seat-turns in the probe), not on a Harbor: the remedy is read from the
+/// person's effects, and a coastal city builds the ship.
+#[test]
+fn a_due_formation_admiral_is_answered_with_a_ship_not_a_harbor() {
+    let effects: std::collections::BTreeMap<String, f64> =
+        [("naval_unit_formation".to_string(), 1.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("admiral", &effects),
+        Some(GreatPersonRemedy::SeaUnit)
+    );
+    let trade: std::collections::BTreeMap<String, f64> =
+        [("free_lighthouse".to_string(), 1.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("admiral", &trade),
+        Some(GreatPersonRemedy::District("harbor"))
+    );
+    let promotion: std::collections::BTreeMap<String, f64> =
+        [("land_unit_promotion_level".to_string(), 1.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("general", &promotion),
+        Some(GreatPersonRemedy::LandUnit)
+    );
+    let imhotep: std::collections::BTreeMap<String, f64> =
+        [("wonder_production".to_string(), 175.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("engineer", &imhotep),
+        Some(GreatPersonRemedy::Wonder)
+    );
+    let leonardo: std::collections::BTreeMap<String, f64> =
+        [("modern_tech_boosts".to_string(), 1.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("engineer", &leonardo),
+        Some(GreatPersonRemedy::District("industrial_zone"))
+    );
 }

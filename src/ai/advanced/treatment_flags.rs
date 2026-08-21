@@ -114,6 +114,19 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// A class earned and blocked reserves a city for the slot building,
+    /// district, wonder or soldier that lifts the block, and a due cultural
+    /// person sells duplicate works to make room. See
+    /// [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    pub fn enable_great_person_housing(&mut self) {
+        self.great_person_housing = true;
+    }
+
+    /// The twin of `enable_great_person_housing`.
+    pub fn disable_great_person_housing(&mut self) {
+        self.great_person_housing = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair

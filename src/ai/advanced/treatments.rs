@@ -193,4 +193,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // A Great Person earned and blocked is a race forfeited: build the slot
+    // space ahead of the person, sell duplicate works when nothing can be
+    // built; see `AdvancedAi::great_person_housing`.
+    ("great_person_housing", "great-person-housing", AdvancedAi::enable_great_person_housing),
 ];
