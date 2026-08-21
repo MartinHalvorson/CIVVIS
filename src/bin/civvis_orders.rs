@@ -1090,6 +1090,115 @@ fn cut_walks_at_first_unknown(
     cut
 }
 
+/// Whether the mod can still open a replan frame after the one this board
+/// belongs to — the only condition under which cutting a walk at the edge of
+/// the known is not throwing its remaining movement away. The opening board
+/// is frame 0; the mod opens at most `ReplanFrames` frames a turn, and the
+/// brain is asked once per frame. On the last frame it will be asked, nobody
+/// re-plans what the cut unit then sees, so its walk keeps its furthest hex.
+/// A seat that advertises `replan_frames` without the count keeps the old
+/// behaviour: cut on every frame.
+fn another_frame_can_open(state: &civvis::mirror::StateSnapshot) -> bool {
+    state.seat.replan_frames
+        && state
+            .seat
+            .replan_frames_max
+            .is_none_or(|cap| state.frame < cap)
+}
+
+/// Put the settler's SITE on every `FOUND_CITY` row: the hex the planned walk
+/// leaves it on, or where it stands when it founds without moving.
+///
+/// ★★★★★ `UNITOPERATION_FOUND_CITY` FOUNDS WHERE THE SETTLER STANDS, and the
+/// row carried no position at all. The mod runs every `FOUND_CITY` row
+/// before the settler's own `MOVE_TO` (so a settler already on its site
+/// founds without waiting) and then re-queues a refused found behind the
+/// walk. Both are right when the found is refused off-site — but Civilization
+/// VI refuses a found only where founding is ILLEGAL, and the hex one step
+/// short of a chosen site is legal far more often than not (`CITY_MIN_RANGE`
+/// is 3). Since the walk and the found ride the same turn (`order_queue`),
+/// a planned "step, then settle" founded on the hex BEFORE the step whenever
+/// that hex was legal, and a walk the host capped short of the site founded
+/// on the capped hex once the settler arrived there with movement to spare.
+/// With the site on the row the mod founds only when the settler stands on
+/// it, and names the miss (`found_off_site`) instead of settling it.
+///
+/// Stamped BEFORE the walk is folded, so the last `MOVE_TO` of the unit's
+/// contiguous walk is still in the list; a found with no preceding step this
+/// frame takes the unit's exported position. Returns how many rows were
+/// stamped.
+fn stamp_found_sites(orders: &mut [Order], state: &civvis::mirror::StateSnapshot) -> usize {
+    let mut standing: std::collections::BTreeMap<i64, (i32, i32)> = state
+        .units
+        .iter()
+        .map(|unit| (unit.id, (unit.x, unit.y)))
+        .collect();
+    let mut stamped = 0;
+    for order in orders.iter_mut() {
+        if order.kind != "unit" {
+            continue;
+        }
+        let Some(unit) = order.subject else {
+            continue;
+        };
+        match order.verb.as_deref() {
+            Some("MOVE_TO") => {
+                if let Some(pos) = order.pos {
+                    standing.insert(unit, pos);
+                }
+            }
+            Some("FOUND_CITY") if order.pos.is_none() => {
+                if let Some(&site) = standing.get(&unit) {
+                    order.pos = Some(site);
+                    stamped += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    stamped
+}
+
+/// Replay only: decide a recorded journal as a NEWER mod would present it.
+/// `--assume-seat order_queue,moves_at_turn_start,replan_frames=2,tile_delta`
+/// sets the named capabilities on every board read from the journal, so the
+/// orders a turn would get from today's bridge can be censused on a run that
+/// was played before those capabilities existed. Never used by the live
+/// brain, which reads the seat the mod actually advertised.
+fn assume_seat_capabilities(
+    seat: &mut civvis::mirror::Seat,
+    names: &[String],
+) -> Result<(), String> {
+    for name in names {
+        let (key, value) = match name.split_once('=') {
+            Some((key, value)) => (key.trim(), Some(value.trim())),
+            None => (name.trim(), None),
+        };
+        match key {
+            "order_queue" => seat.order_queue = true,
+            "moves_at_turn_start" => seat.moves_at_turn_start = true,
+            "tile_delta" => seat.tile_delta = true,
+            "replan_frames" => {
+                seat.replan_frames = true;
+                if let Some(value) = value {
+                    let cap: u32 = value
+                        .parse()
+                        .map_err(|_| format!("--assume-seat replan_frames={value}: not a count"))?;
+                    seat.replan_frames_max = Some(cap);
+                }
+            }
+            "" => {}
+            other => {
+                return Err(format!(
+                    "--assume-seat {other}: unknown capability (order_queue, \
+                     moves_at_turn_start, replan_frames[=N], tile_delta)"
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Unit orders that follow an earlier order for the same unit in this turn's
 /// list — the ones the mod's per-unit queue will hold until that earlier order
 /// has settled. Zero on an unsequenced turn by construction.
@@ -3335,6 +3444,12 @@ fn decide(
     // into one host operation. `HostMoveRefusals` uses it only if Firaxis then
     // leaves the unit exactly where it started.
     let first_unknown_steps = first_unknown_coalesced_steps(&orders, snapshot);
+    // The site rides on the found, so the mod founds only where the walk was
+    // meant to end. See `stamp_found_sites`.
+    let found_sites = stamp_found_sites(&mut orders, state);
+    if found_sites > 0 {
+        note_bits.push(format!("found_sites={found_sites}"));
+    }
     let sequenced = state.seat.order_queue;
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
         coalesce_unit_paths(orders, sequenced);
@@ -3374,12 +3489,20 @@ fn decide(
     // to the edge of what the seat knows, the mod re-exports what it saw
     // (`CivvisTiles.sweep` + a replan frame), and the frame's re-plan spends
     // the rest of the movement on the new ground. Only when the mod can open
-    // that frame; against an older mod the cut would strand the movement.
-    if ai.step_and_reassess && state.seat.replan_frames {
+    // that frame; against an older mod the cut would strand the movement —
+    // and so would a cut on the last frame the mod will open this turn, so
+    // the walk keeps its furthest hex there (`another_frame_can_open`).
+    if ai.step_and_reassess && another_frame_can_open(state) {
         let cut = cut_walks_at_first_unknown(&mut orders, &first_unknown_steps);
         if cut > 0 {
             note_bits.push(format!("frontier_cuts={cut}"));
         }
+    } else if ai.step_and_reassess && state.seat.replan_frames && !first_unknown_steps.is_empty() {
+        note_bits.push(format!(
+            "frontier_cuts_withheld_last_frame={} frame={}",
+            first_unknown_steps.len(),
+            state.frame
+        ));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -4540,12 +4663,22 @@ fn main() {
     };
 
     // Read the board fresh each time: the mod appends to this file every turn.
+    // Replay only — see `assume_seat_capabilities`. Validated here so a typo
+    // fails before any board is read.
+    let assumed_seat: Vec<String> = arg_text(&args, "--assume-seat")
+        .map(|list| list.split(',').map(str::to_string).collect())
+        .unwrap_or_default();
+    if let Err(why) = assume_seat_capabilities(&mut civvis::mirror::Seat::default(), &assumed_seat) {
+        eprintln!("civvis-orders: {why}");
+        std::process::exit(2);
+    }
     let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
         let snapshot = mirror::snapshot_from_events_at(&events, want).ok()?;
-        let state = mirror::state_from_events(&events, want)?;
+        let mut state = mirror::state_from_events(&events, want)?;
         if snapshot.revealed_count() == 0 {
             return None;
         }
+        let _ = assume_seat_capabilities(&mut state.seat, &assumed_seat);
         Some((snapshot, state))
     };
 
