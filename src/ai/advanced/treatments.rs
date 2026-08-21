@@ -189,4 +189,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // Two city-states met by turn 40 on a board that holds nine, because the
+    // production scorer prices a second Scout at -2000; see
+    // `AdvancedAi::city_state_recon`.
+    ("city_state_recon", "city-state-recon", AdvancedAi::enable_city_state_recon),
 ];

@@ -114,6 +114,18 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// Let the production scorer buy a second and third Scout while unmet
+    /// city-states remain: the first-contact Envoy is the whole Envoy economy
+    /// before Political Philosophy. See [`AdvancedAi::city_state_recon`].
+    pub fn enable_city_state_recon(&mut self) {
+        self.city_state_recon = true;
+    }
+
+    /// The twin of `enable_city_state_recon`.
+    pub fn disable_city_state_recon(&mut self) {
+        self.city_state_recon = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
