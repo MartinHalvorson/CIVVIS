@@ -17,6 +17,8 @@ Every boolean heuristic gene on the Advanced controller, ranked most beneficial 
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance, so out of 10,000 games the expected count is **1,667**; column 2 is how many wins above or below that a seat carrying the gene would collect at its measured on-rate. The screen resolves a win Δ of ±1.1 pp (≈ ±110 wins per 10,000) at 80% power; differences inside that band are noise, not nulls. Regenerate after each whole-genome screen: the numbers move as repairs land.
 
+**Direct follow-up.** This is a ranking screen, not a promotion queue. The subsequent [P9 direct confirmation](docs/eval/2026-08-21-current-genome-settler-guard-direct-confirmation.md) held every other deployment gene fixed and flipped only `settler-guard-holds` across 300 maps / 1,800 treated-seat pairs. It measured exactly **+0.0 pp** on wins and score share; the flag remains unresolved and off. Its +13 row below is retained as historical p7 screen output, not a current recommendation.
+
 | Rank | Wins ±10k (vs 1,667) | Gene | Description | Wins (on) | Games (on) | Win rate (on) | Wins (off) | Games (off) | Win rate (off) |
 |---:|---:|---|---|---:|---:|---:|---:|---:|---:|
 | 1 | +81 | `recon-replacement` | Rebuild the recon arm when it is gone and there is ground left to chart. | 2,622 | 15,000 | 17.48% | 2,378 | 15,000 | 15.85% |
