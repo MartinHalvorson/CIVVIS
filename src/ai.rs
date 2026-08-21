@@ -2628,6 +2628,34 @@ pub struct BasicAi {
     ///
     /// Entrant `live_without_barbarian_bargain`; treatment `barbarian-bargain`.
     pub(crate) barbarian_bargain: bool,
+    /// ★★★★★ WE ANSWER SLINGERS AND ARCHERS WITH SPEARMEN.
+    ///
+    /// `barbarian_defense_item` asks for a MELEE-capable land defender
+    /// (`best_military(.., Some(false))`) whatever the ring is made of. MEASURED
+    /// across every live run since the melee bridge was repaired:
+    ///
+    /// | | attacks | share |
+    /// |---|---:|---:|
+    /// | barbarian melee | 479 | 55 % |
+    /// | **barbarian ranged** | **388** | **45 %** |
+    /// | our melee | 225 | 78 % |
+    /// | **our ranged** | **65** | **22 %** |
+    ///
+    /// They field twice our proportion of ranged, and ranged is the safer half
+    /// of the board by a distance: our 65 ranged attacks killed 34 and lost the
+    /// attacker **zero** times, while 225 melee attacks killed 119 and lost 6.
+    /// A Spearman walking at an Archer eats the shot on the way in and the
+    /// counter when it arrives; an Archer of ours kills the same unit for
+    /// nothing.
+    ///
+    /// So when the ring around a city is mostly shooters, the defender that
+    /// city must produce is a shooter. Melee stays the answer to a melee ring —
+    /// this changes WHICH defender, never how many, and the wall tiers below
+    /// are untouched.
+    ///
+    /// Entrant `live_without_barbarian_ranged_answer`; treatment
+    /// `barbarian-ranged-answer`.
+    pub(crate) barbarian_ranged_answer: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
@@ -4295,6 +4323,7 @@ impl BasicAi {
             adjacent_camp_clear: true,
             barbarian_hunt: false,
             barbarian_bargain: false,
+            barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4407,6 +4436,15 @@ impl BasicAi {
 
     pub fn disable_camp_reach(&mut self) {
         self.camp_reach = false;
+    }
+
+    /// Answer a ring of shooters with a shooter. See `barbarian_ranged_answer`.
+    pub fn enable_barbarian_ranged_answer(&mut self) {
+        self.barbarian_ranged_answer = true;
+    }
+
+    pub fn disable_barbarian_ranged_answer(&mut self) {
+        self.barbarian_ranged_answer = false;
     }
 
     /// Price a raider's life below a major's. See `barbarian_bargain`.
@@ -4638,6 +4676,7 @@ impl BasicAi {
             adjacent_camp_clear: true,
             barbarian_hunt: false,
             barbarian_bargain: false,
+            barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -9426,6 +9465,28 @@ impl BasicAi {
             .count()
     }
 
+    /// Whether the barbarian ring pressing this city is made mostly of units
+    /// that shoot. Strictly more shooters than melee, so an even ring keeps the
+    /// historical melee answer and only a genuinely ranged siege changes it.
+    /// See `barbarian_ranged_answer`.
+    fn barbarian_ring_is_mostly_ranged(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let mut ranged = 0usize;
+        let mut melee = 0usize;
+        for unit in g.units.values().filter(|unit| {
+            Self::is_barbarian_raider(g, unit) && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+        }) {
+            if g.rules.units[unit.kind].has_ranged_attack() {
+                ranged += 1;
+            } else {
+                melee += 1;
+            }
+        }
+        ranged > melee
+    }
+
     /// The local body count a barbarian threat asks for. One defender covers a
     /// camp or lone raider; two hold a city against a small early raiding party
     /// while the field army closes the camp. This is deliberately bounded so a
@@ -9460,8 +9521,18 @@ impl BasicAi {
             return None;
         }
         if Self::barbarian_defense_gap(g, pid, cid) > 0 {
+            // A ring of shooters wants a shooter back. See
+            // `barbarian_ranged_answer`.
+            let want = if self.barbarian_ranged_answer
+                && Self::barbarian_ring_is_mostly_ranged(g, pid, cid)
+            {
+                Some(true)
+            } else {
+                Some(false)
+            };
             let unit = self
-                .best_military(g, pid, cid, Some(false))
+                .best_military(g, pid, cid, want)
+                .or_else(|| self.best_military(g, pid, cid, Some(false)))
                 .or_else(|| self.best_military(g, pid, cid, None))?;
             return Some(Item::Unit {
                 unit: Name::new(&unit),
