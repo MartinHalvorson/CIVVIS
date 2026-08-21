@@ -7905,22 +7905,37 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
   );
 }
 
-// A point survives only when it has the lowest seeded priority in its local
-// hex neighborhood. This is a deterministic blue-noise distribution: seats
-// cannot bunch together, yet they do not share rows, columns, phases, or a
-// visible coarse grid. Radius eight has 217 possible cells versus 37 at radius
-// three, making these seats 5.86 times rarer while retaining organic spacing.
-// The quick threshold skips almost every full neighbor walk without materially
-// changing which local minima survive.
-function hiddenMapMonsterSeat(q, r, seedA, seedB, radius = 8) {
+// First put a private, seeded keep-out distance on each candidate. A fixed
+// radius makes the empty paper look artificially regimented; this 10--15 hex
+// envelope makes the gaps vary while still stopping illustrations from
+// clustering.
+function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
+  return HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
+    Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
+    Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
+  ) * HIDDEN_MAP_TALE_SEPARATION_RANGE);
+}
+
+// Rare seeded candidates compete only with other candidates in the larger of
+// their two keep-out envelopes. The lower priority wins deterministically, so
+// a particular world seed always has the same sparse, irregular collection of
+// tales without a coarse lattice or a chance of adjacent scenes.
+function hiddenMapMonsterSeat(q, r, seedA, seedB) {
   const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
-  if (priority >= .04) return false;
-  for (let dq = -radius; dq <= radius; dq++) {
-    const from = Math.max(-radius, -dq - radius);
-    const to = Math.min(radius, -dq + radius);
+  if (priority >= HIDDEN_MAP_TALE_CANDIDATE_RATE) return false;
+  const radius = hiddenMapMonsterSeatRadius(q, r, seedA, seedB);
+  const maxRadius = HIDDEN_MAP_TALE_MIN_SEPARATION +
+                    HIDDEN_MAP_TALE_SEPARATION_RANGE - 1;
+  for (let dq = -maxRadius; dq <= maxRadius; dq++) {
+    const from = Math.max(-maxRadius, -dq - maxRadius);
+    const to = Math.min(maxRadius, -dq + maxRadius);
     for (let dr = from; dr <= to; dr++) {
       if (!dq && !dr) continue;
       const other = hiddenMapMonsterPriority(q + dq, r + dr, seedA, seedB);
+      if (other >= HIDDEN_MAP_TALE_CANDIDATE_RATE) continue;
+      const otherRadius = hiddenMapMonsterSeatRadius(q + dq, r + dr, seedA, seedB);
+      if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) >
+          Math.max(radius, otherRadius)) continue;
       if (other < priority ||
           (other === priority && (dq < 0 || (!dq && dr < 0)))) return false;
     }
@@ -8000,14 +8015,14 @@ function drawHiddenMapMonsters(layer) {
     // coordinate. Zoom changes neither the chosen tale nor its map position.
     const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
     drawHiddenMapMonster(
-      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 1.5,
-      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * .95,
+      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 2.3,
+      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * 1.6,
       S * (HIDDEN_MAP_TALE_SIZE_MIN + detail * HIDDEN_MAP_TALE_SIZE_RANGE),
       Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
                  HIDDEN_MAP_MONSTER_VARIANTS),
-      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
+      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .2,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
-      .26
+      .21
     );
   }
 }
@@ -19508,9 +19523,8 @@ function drawPlanetChartMarginalia() {
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
   // longer belongs to the unknown.
-  // The former chart carried five small scenes. One seeded candidate keeps the
-  // requested roughly one-sixth density and can be a proper three-times-larger
-  // marginal illustration without turning the sheet into a collage.
+  // One seeded candidate leaves the pre-globe sheet intentionally open; it is
+  // a single quiet note at a random point rather than a decorated grid.
   const candidates = Array.from({length:48}, (_, i) => ({
     x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
     y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
@@ -19520,13 +19534,13 @@ function drawPlanetChartMarginalia() {
   for (let i = 0; i < seats.length; i++) {
     const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = 3 * Math.max(104, Math.min(210,
-      Math.min(width, height) * (.19 + h * .055)));
+    const size = 1.85 * Math.max(88, Math.min(162,
+      Math.min(width, height) * (.15 + h * .035)));
     drawHiddenMapMonster(
       seat.x, seat.y, size,
       Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
-      hash2(seedB + i * 31, seedA + 29) > .5, .25
+      hash2(seedB + i * 31, seedA + 29) > .5, .21
     );
   }
 }

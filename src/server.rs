@@ -12997,7 +12997,7 @@ mod tests {
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 2_000_000);
         assert_eq!(
             u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
             1536
@@ -13035,15 +13035,17 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains(".26"));
+        assert!(monsters.contains(".21"));
 
         let seating = EMBEDDED_INDEX
-            .split("function hiddenMapMonsterSeat")
+            .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
             .nth(1)
             .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
             .expect("minimum-distance hidden-map monster seating");
-        assert!(seating.contains("radius = 8"));
-        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
+        assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13059,7 +13061,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 3 *"));
+        assert!(planet_tales.contains("const size = 1.85 *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));

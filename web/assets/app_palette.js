@@ -136,12 +136,15 @@ HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
 HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
 const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
       HIDDEN_MAP_MONSTER_VARIANTS = 30;
-// These are rare, full marginal scenes now, not tile-sized stamps. The seat
-// radius below makes them almost exactly one sixth as numerous as the former
-// radius-three distribution; this reach keeps a scene whose centre is just
-// outside the frame alive until its last visible pixels have left the canvas.
-const HIDDEN_MAP_TALE_SIZE_MIN = 13.5, HIDDEN_MAP_TALE_SIZE_RANGE = 2.7,
-      HIDDEN_MAP_TALE_REACH = S * 9;
+// These are quiet map notes rather than full marginal scenes. The seating
+// pass keeps them well apart, while this smaller scale leaves more parchment
+// around each engraving. The reach keeps a tale whose centre is just outside
+// the frame alive until its last visible pixels have left the canvas.
+const HIDDEN_MAP_TALE_SIZE_MIN = 10.6, HIDDEN_MAP_TALE_SIZE_RANGE = 2.1,
+      HIDDEN_MAP_TALE_REACH = S * 9,
+      HIDDEN_MAP_TALE_CANDIDATE_RATE = .01,
+      HIDDEN_MAP_TALE_MIN_SEPARATION = 10,
+      HIDDEN_MAP_TALE_SEPARATION_RANGE = 6;
 const PARCH = "#c7b58a", PARCH_LIGHT = "#dfcea2",
       PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEATURE_LABEL = {
