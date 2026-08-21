@@ -7103,6 +7103,9 @@ mod tests {
             // Replaces only the host formation channel with the ordinary
             // movement shadow; native formations have no corresponding bug.
             "live_formationless_settler_shadow",
+            // Firaxis can ask the bridge for same-turn replans after an order;
+            // native turns have no duplicate motion snapshots to coalesce.
+            "live_motion_turn_accounting",
             // The Settler seat's land, at the Settler seat's pace; the league
             // cadence stays bred.
             "land_grab",
