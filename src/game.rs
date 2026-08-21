@@ -5180,6 +5180,18 @@ pub struct Game {
     /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
     #[serde(default)]
     pub blocked_wonders: BTreeMap<u32, BTreeSet<Name>>,
+    /// World-unique wonders the live host has ruled out everywhere.
+    ///
+    /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
+    /// can mean this city lacks a river or floodplain. But the control bridge also
+    /// records the host's number of offered locations. An explicit `offered: 0` for
+    /// a model-legal wonder means Firaxis has no target anywhere, most commonly
+    /// because an unseen rival already completed that world unique. Carry that
+    /// stronger, permanent live-only fact separately so the next developed city
+    /// does not spend a production decision rediscovering it. Native games leave
+    /// the set empty.
+    #[serde(default)]
+    pub host_unavailable_wonders: BTreeSet<Name>,
     /// Production choices a HOST ruleset has refused in a particular city.
     ///
     /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
@@ -5778,6 +5790,7 @@ impl From<GameSer> for Game {
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -6384,6 +6397,7 @@ impl Game {
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
@@ -30169,6 +30183,9 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
+        if self.host_unavailable_wonders.contains(&Name::new(wname)) {
+            return Vec::new();
+        }
         // A positive host answer is stronger than our reconstructed placement
         // model. Keep only fresh mirrored tiles; an incomplete map must retain
         // the ordinary fallback rather than fabricate a wonder site.
@@ -30404,6 +30421,7 @@ impl Game {
         let spec = &self.rules.wonders[wname];
         if self.wonder_built(wname)
             || !self.unlocked(city.owner, &spec.tech, &spec.civic)
+            || self.host_unavailable_wonders.contains(&Name::new(wname))
             || self
                 .blocked_wonders
                 .get(&cid)
