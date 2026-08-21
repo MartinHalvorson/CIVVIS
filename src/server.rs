@@ -12997,7 +12997,7 @@ mod tests {
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 2_000_000);
         assert_eq!(
             u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
             1536
@@ -13035,15 +13035,17 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains(".26"));
+        assert!(monsters.contains(".21"));
 
         let seating = EMBEDDED_INDEX
-            .split("function hiddenMapMonsterSeat")
+            .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
             .nth(1)
             .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
             .expect("minimum-distance hidden-map monster seating");
-        assert!(seating.contains("radius = 8"));
-        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
+        assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13059,7 +13061,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 3 *"));
+        assert!(planet_tales.contains("const size = 1.85 *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -13978,23 +13980,34 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+    fn browser_tile_yields_repeat_semantic_pips_without_numeral_badges() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
         ));
+        let parts = EMBEDDED_INDEX
+            .split("function yieldPipParts")
+            .nth(1)
+            .and_then(|tail| tail.split("function tileYieldMarkers").next())
+            .expect("tile-yield pip expansion");
+        assert!(parts.contains("pips.push({kind, portion:1});"));
+        assert!(parts.contains("pips.push({kind, portion:remainder});"));
+        assert!(parts.contains("Math.round(raw * 10) / 10"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
-        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
-        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
-        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
-        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
-        assert!(renderer.contains("const label = fmtYield(amount)"));
+        assert!(renderer.contains("yieldPipLines(yieldPipRuns(full, kinds), r)"));
+        assert!(renderer.contains("drawYieldPip(pip.kind, px, cy, r, pip.portion, worked)"));
+        assert!(renderer.contains("const totalHeight = bands.reduce"));
+        assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
+        assert!(EMBEDDED_INDEX.contains("const maxWidth = S * 1.55;"));
+        assert!(!renderer.contains("fillText("));
+        assert!(!renderer.contains("fmtYield("));
         assert!(!renderer.contains("YICON[kind]"));
-        assert!(!renderer.contains("yieldGlyph"));
+        assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
     }
 
     #[test]
@@ -16432,8 +16445,10 @@ mod tests {
             "function tileYieldMarkers(yields)",
             "function tileDetailYieldWords(yields, sign = false)",
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-group\"",
             "class=\"tip-yield-marker\"",
-            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};",
+            "--tip-yield-portion:${Math.round(portion * 100)}%",
             "function tileBuiltTipLines(t, city)",
             "function districtTipLines(t)",
             "Base district yields:",

@@ -3787,9 +3787,21 @@ function playerJerseys() {
   jerseyCache = assigned;
   return assigned;
 }
+// All ownership drawing funnels through pcol/pcol2.  Civ VI's standard red
+// jersey is the visual language for hostile Barbarians: a red field with a
+// crisp white pictogram and trim. Free Cities share `is_barbarian` in the
+// simulation for diplomacy and victory rules, but are a distinct faction and
+// retain their existing neutral jersey.
+const BARBARIAN_JERSEY = ["#ca1415", "#f9f9f9"];
+const FREE_CITY_JERSEY = ["#30262a", "#8a3a34"];
+function nonMajorJersey(player) {
+  if (!player?.is_barbarian) return null;
+  return player.is_free_city ? FREE_CITY_JERSEY : BARBARIAN_JERSEY;
+}
 function pcol(id) {
   const p = state.players[id];
-  if (p && p.is_barbarian) return "#30262a";
+  const jersey = nonMajorJersey(p);
+  if (jersey) return jersey[0];
   if (p && p.is_minor) return CITY_STATE_TINT;
   return playerJerseys()[id]?.[0] || PCOLORS[id % PCOLORS.length];
 }
@@ -3801,7 +3813,8 @@ function ownerIsCityState(owner) {
 // exactly how Civ 6 dresses them, and their near-black primary needs the help.
 function pcol2(id) {
   const p = state.players[id];
-  if (p && p.is_barbarian) return "#8a3a34";
+  const jersey = nonMajorJersey(p);
+  if (jersey) return jersey[1];
   if (p && p.is_minor)
     return CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade;
   return playerJerseys()[id]?.[1] || PCOLORS2[id % PCOLORS2.length];
@@ -3815,9 +3828,9 @@ function lightness(hex) {
           + 0.0722 * (n & 255)) / 255;
 }
 // Command tokens are ownership colour plus type ink. Some real Civ VI primary
-// jerseys are near-black (as are barbarians and city-states), so fixed black
-// ink erases the very pictogram the token exists to carry. Prefer the jersey's
-// partner when it has useful contrast, then fall back to map-ink dark or cream.
+// jerseys and city-states are near-black, so fixed black ink erases the very
+// pictogram the token exists to carry. Prefer the jersey's partner when it has
+// useful contrast, then fall back to map-ink dark or cream.
 function unitTokenInk(owner) {
   const primaryLight = lightness(pcol(owner));
   const partner = pcol2(owner);
@@ -7905,22 +7918,37 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
   );
 }
 
-// A point survives only when it has the lowest seeded priority in its local
-// hex neighborhood. This is a deterministic blue-noise distribution: seats
-// cannot bunch together, yet they do not share rows, columns, phases, or a
-// visible coarse grid. Radius eight has 217 possible cells versus 37 at radius
-// three, making these seats 5.86 times rarer while retaining organic spacing.
-// The quick threshold skips almost every full neighbor walk without materially
-// changing which local minima survive.
-function hiddenMapMonsterSeat(q, r, seedA, seedB, radius = 8) {
+// First put a private, seeded keep-out distance on each candidate. A fixed
+// radius makes the empty paper look artificially regimented; this 10--15 hex
+// envelope makes the gaps vary while still stopping illustrations from
+// clustering.
+function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
+  return HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
+    Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
+    Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
+  ) * HIDDEN_MAP_TALE_SEPARATION_RANGE);
+}
+
+// Rare seeded candidates compete only with other candidates in the larger of
+// their two keep-out envelopes. The lower priority wins deterministically, so
+// a particular world seed always has the same sparse, irregular collection of
+// tales without a coarse lattice or a chance of adjacent scenes.
+function hiddenMapMonsterSeat(q, r, seedA, seedB) {
   const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
-  if (priority >= .04) return false;
-  for (let dq = -radius; dq <= radius; dq++) {
-    const from = Math.max(-radius, -dq - radius);
-    const to = Math.min(radius, -dq + radius);
+  if (priority >= HIDDEN_MAP_TALE_CANDIDATE_RATE) return false;
+  const radius = hiddenMapMonsterSeatRadius(q, r, seedA, seedB);
+  const maxRadius = HIDDEN_MAP_TALE_MIN_SEPARATION +
+                    HIDDEN_MAP_TALE_SEPARATION_RANGE - 1;
+  for (let dq = -maxRadius; dq <= maxRadius; dq++) {
+    const from = Math.max(-maxRadius, -dq - maxRadius);
+    const to = Math.min(maxRadius, -dq + maxRadius);
     for (let dr = from; dr <= to; dr++) {
       if (!dq && !dr) continue;
       const other = hiddenMapMonsterPriority(q + dq, r + dr, seedA, seedB);
+      if (other >= HIDDEN_MAP_TALE_CANDIDATE_RATE) continue;
+      const otherRadius = hiddenMapMonsterSeatRadius(q + dq, r + dr, seedA, seedB);
+      if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) >
+          Math.max(radius, otherRadius)) continue;
       if (other < priority ||
           (other === priority && (dq < 0 || (!dq && dr < 0)))) return false;
     }
@@ -8000,14 +8028,14 @@ function drawHiddenMapMonsters(layer) {
     // coordinate. Zoom changes neither the chosen tale nor its map position.
     const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
     drawHiddenMapMonster(
-      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 1.5,
-      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * .95,
+      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 2.3,
+      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * 1.6,
       S * (HIDDEN_MAP_TALE_SIZE_MIN + detail * HIDDEN_MAP_TALE_SIZE_RANGE),
       Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
                  HIDDEN_MAP_MONSTER_VARIANTS),
-      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
+      (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .2,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
-      .26
+      .21
     );
   }
 }
@@ -8819,6 +8847,24 @@ function drawStrategicMarsh(x, y) {
 // sides of this tile instead of floating as three generic waves in its centre.
 // The paired inset bands read as a broad overflow margin while leaving the
 // ground colour visible — especially important for the three floodplain biomes.
+// A fine navy keyline keeps both bands legible against grassland, plains and
+// desert without giving them the visual weight of the river itself.
+const FLOODPLAIN_KEYLINE_COLOR = "#123d58";
+const FLOODPLAIN_KEYLINE_GROWTH = 1.3;
+const FLOODPLAIN_BANDS = [
+  [.67, "#4b94b1", 1.9],
+  [.45, "#91cfdb", 1.25],
+];
+
+function strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale = 1) {
+  cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+  cx.strokeStyle = FLOODPLAIN_KEYLINE_COLOR;
+  cx.lineWidth = (width + FLOODPLAIN_KEYLINE_GROWTH) * scale;
+  cx.stroke();
+  cx.strokeStyle = color; cx.lineWidth = width * scale;
+  cx.stroke();
+}
+
 function drawStrategicFloodplains(t, x, y) {
   const riverSides = [];
   for (let side = 0; side < 6; side++) {
@@ -8834,17 +8880,13 @@ function drawStrategicFloodplains(t, x, y) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const side of riverSides) {
     const [first, second] = EDGE_CORNERS[side];
-    for (const [radius, color, width] of [
-      [S * .67, "#346f8c", 1.9],
-      [S * .45, "#72aec0", 1.25],
-    ]) {
-      const [ax, ay] = corner(x, y, radius, first);
-      const [bx, by] = corner(x, y, radius, second);
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const [ax, ay] = corner(x, y, S * radius, first);
+      const [bx, by] = corner(x, y, S * radius, second);
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      cx.strokeStyle = color; cx.lineWidth = width;
-      cx.beginPath(); cx.moveTo(ax, ay);
-      cx.quadraticCurveTo(mx + (mx - x) * .12, my + (my - y) * .12, bx, by);
-      cx.stroke();
+      strokeFloodplainBand(ax, ay,
+        mx + (mx - x) * .12, my + (my - y) * .12,
+        bx, by, color, width);
     }
   }
   cx.restore();
@@ -9125,11 +9167,12 @@ function drawNaturalWonderPerimeters(tiles) {
 
 // ---------------------------------------------------------------- tile yields
 //
-// A tile reports at most one numbered marker per non-zero yield type. The
-// stable rows make the marker's position meaningful before its value is read:
-// knowledge yields above material yields, in the requested left-to-right order.
-// Filtering each row before positioning it keeps that row centred when only one
-// or two of its yields are present.
+// Civ's strategic map reads a tile as a little bundle of yield signs: two
+// Food means two Food signs, not a Food sign carrying a "2".  That is quicker
+// to scan when choosing a settle or a worked plot, and the amount still holds
+// at a glance when a tile gets unusually rich.  Knowledge stays above material
+// in the same stable order as before, while small gaps between kinds make each
+// run legible without spending a label on it.
 const YPIP = { food:"#4f9c30", production:"#c8762b", gold:"#dcae2b",
                science:"#3f9ed4", culture:"#9a5ccb", faith:"#d6cfbb" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
@@ -9139,18 +9182,40 @@ const YIELD_ROWS = [
   ["food", "production", "gold"],
 ];
 // Hover details follow the reading order requested for the single, compact
-// yield row. The colours and circular numeral are exactly the map renderer's
-// YPIP/YINK vocabulary above, rather than a separate set of pictographs.
+// yield row. The colours and pips are exactly the map renderer's YPIP/YINK
+// vocabulary above, rather than a separate set of pictographs.
 const TILE_TIP_YIELD_ORDER = ["food", "production", "gold", "science", "culture", "faith"];
+
+// Tile totals are normally whole numbers, but a half-point adjacency or a mod
+// should not silently become a whole pip.  A partly filled final sign keeps the
+// map truthful without putting a decimal badge back on the tile.
+function yieldPipParts(kind, amount) {
+  const raw = Number(amount);
+  if (!Number.isFinite(raw) || raw < .05) return [];
+  const total = Math.round(raw * 10) / 10;
+  const whole = Math.floor(total + 1e-6);
+  const remainder = Math.max(0, total - whole);
+  const pips = [];
+  for (let unit = 0; unit < whole; unit++) pips.push({kind, portion:1});
+  if (remainder >= .05) pips.push({kind, portion:remainder});
+  return pips;
+}
 
 function tileYieldMarkers(yields) {
   return TILE_TIP_YIELD_ORDER
-    .map(kind => [kind, Number(yields?.[kind] || 0)])
-    .filter(([, amount]) => amount >= 1)
-    .map(([kind, amount]) => {
+    .map(kind => {
+      const amount = Number(yields?.[kind] || 0);
+      return {kind, amount, pips:yieldPipParts(kind, amount)};
+    })
+    .filter(({pips}) => pips.length)
+    .map(({kind, amount, pips}) => {
       const value = fmtYield(amount);
-      return `<span class="tip-yield-marker" style="--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}" ` +
-        `title="${value} ${kind}" aria-label="${value} ${kind}">${value}</span>`;
+      return `<span class="tip-yield-group" title="${value} ${kind}" aria-label="${value} ${kind}">` +
+        pips.map(({portion}) =>
+          `<span class="tip-yield-marker" aria-hidden="true" ` +
+          `style="--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};` +
+          `--tip-yield-portion:${Math.round(portion * 100)}%"></span>`
+        ).join("") + `</span>`;
     }).join("");
 }
 
@@ -9162,37 +9227,156 @@ function tileDetailYieldWords(yields, sign = false) {
     .join(" ");
 }
 
+function yieldPipRuns(yields, kinds) {
+  return kinds.map(kind => ({kind, pips:yieldPipParts(kind, yields?.[kind])}))
+    .filter(run => run.pips.length);
+}
+
+// Keep a rich tile compact enough to remain inside its hex, but never exchange
+// its additional yield for a numeral.  A six-Food tile simply gains another
+// short line of Food signs — an intentional visual signal that it is special.
+function yieldPipLines(runs, r) {
+  const diameter = r * 2;
+  const scale = r / 4.4;
+  const pipGap = 1.35 * scale, kindGap = 3 * scale;
+  const maxWidth = S * 1.55;
+  const lines = [];
+  let line = {pips:[], width:0};
+  for (const run of runs) {
+    for (const pip of run.pips) {
+      let gap = line.pips.length
+        ? (line.pips[line.pips.length - 1].kind === pip.kind ? pipGap : kindGap)
+        : 0;
+      if (line.pips.length && line.width + gap + diameter > maxWidth) {
+        lines.push(line);
+        line = {pips:[], width:0};
+        gap = 0;
+      }
+      line.pips.push({...pip, gap});
+      line.width += gap + diameter;
+    }
+  }
+  if (line.pips.length) lines.push(line);
+  return lines;
+}
+
+// The tiny signs borrow Civ's familiar six silhouettes rather than browser
+// emoji, whose colour-font rendering would turn a strategic layer into a row
+// of inconsistent stickers.  Colour remains the fast first cue; the white
+// wheat, gear, coin, flask, rosette, and star make the marks survive a quick
+// scan or a colour-imperfect display.
+function drawYieldPipGlyph(kind, x, y, r) {
+  const fill = YPIP[kind] || "#cccccc";
+  const ink = YINK[kind] || "#ffffff";
+  const thin = Math.max(.65, r * .16);
+  cx.save();
+  cx.translate(x, y);
+  cx.fillStyle = ink; cx.strokeStyle = ink;
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  if (kind === "food") {
+    cx.rotate(-.42);
+    cx.beginPath(); cx.ellipse(0, 0, r * .29, r * .54, 0, 0, 7); cx.fill();
+    cx.strokeStyle = fill; cx.lineWidth = thin;
+    cx.beginPath(); cx.moveTo(0, -r * .36); cx.lineTo(0, r * .36); cx.stroke();
+  } else if (kind === "production") {
+    cx.beginPath();
+    for (let point = 0; point < 16; point++) {
+      const a = -Math.PI / 2 + point * Math.PI / 8;
+      const rr = point % 2 ? r * .4 : r * .62;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      if (point) cx.lineTo(px, py); else cx.moveTo(px, py);
+    }
+    cx.closePath(); cx.fill();
+    cx.fillStyle = fill;
+    cx.beginPath(); cx.arc(0, 0, r * .19, 0, 7); cx.fill();
+  } else if (kind === "gold") {
+    cx.lineWidth = thin;
+    cx.beginPath(); cx.arc(0, 0, r * .48, 0, 7); cx.stroke();
+    cx.beginPath(); cx.arc(0, 0, r * .11, 0, 7); cx.fill();
+  } else if (kind === "science") {
+    cx.beginPath();
+    cx.moveTo(-r * .23, -r * .54); cx.lineTo(r * .23, -r * .54);
+    cx.lineTo(r * .23, -r * .14); cx.lineTo(r * .49, r * .42);
+    cx.quadraticCurveTo(0, r * .58, -r * .49, r * .42);
+    cx.lineTo(-r * .23, -r * .14); cx.closePath(); cx.fill();
+    cx.fillStyle = fill;
+    cx.fillRect(-r * .31, r * .18, r * .62, r * .14);
+  } else if (kind === "culture") {
+    cx.beginPath();
+    for (let point = 0; point < 10; point++) {
+      const a = -Math.PI / 2 + point * Math.PI / 5;
+      const rr = point % 2 ? r * .26 : r * .58;
+      const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+      if (point) cx.lineTo(px, py); else cx.moveTo(px, py);
+    }
+    cx.closePath(); cx.fill();
+  } else {
+    cx.beginPath();
+    cx.moveTo(0, -r * .64); cx.lineTo(r * .16, -r * .16);
+    cx.lineTo(r * .56, 0); cx.lineTo(r * .16, r * .16);
+    cx.lineTo(0, r * .64); cx.lineTo(-r * .16, r * .16);
+    cx.lineTo(-r * .56, 0); cx.lineTo(-r * .16, -r * .16);
+    cx.closePath(); cx.fill();
+  }
+  cx.restore();
+}
+
+function drawYieldPip(kind, x, y, r, portion, worked) {
+  const fill = YPIP[kind] || "#cccccc";
+  const fraction = Math.max(.05, Math.min(1, portion));
+  cx.save();
+  cx.shadowColor = "rgba(7,10,7,.5)";
+  cx.shadowBlur = 2.3; cx.shadowOffsetY = 1;
+  cx.fillStyle = "rgba(7,12,9,.94)";
+  cx.beginPath(); cx.arc(x, y, r + 1.05, 0, 7); cx.fill();
+  cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  cx.save();
+  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
+  cx.fillStyle = fill;
+  cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
+  cx.restore();
+  cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.82)";
+  cx.lineWidth = worked ? 1.15 : .85;
+  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
+  if (fraction >= .35) {
+    cx.globalAlpha *= .4 + fraction * .6;
+    drawYieldPipGlyph(kind, x, y, r);
+  }
+  cx.restore();
+}
+
 function drawTileYields(t, x, y, worked) {
   if (cam.scale < .5) return;
   const full = tileYieldFull(t);
-  const rows = YIELD_ROWS.map(kinds => kinds
-    .map(kind => [kind, Number(full[kind] || 0)])
-    .filter(([, amount]) => amount >= 1));
-  if (rows.every(entries => !entries.length)) return;
+  // At the far edge of the useful strategic range the pips yield just enough
+  // physical room to keep their silhouettes distinct rather than merging into
+  // a coloured barcode.  Close in, they remain small map signs, not badges.
+  const r = 4.4 * Math.pow(UI_K(), .24);
+  const bands = YIELD_ROWS.map(kinds => yieldPipLines(yieldPipRuns(full, kinds), r))
+    .filter(lines => lines.length);
+  if (!bands.length) return;
 
-  const r = 6.8, step = r * 2 + 1.5;
-  const top = y + 9 - step / 2;
+  const diameter = r * 2, scale = r / 4.4;
+  const lineGap = 1.8 * scale, bandGap = 3.4 * scale;
+  const totalHeight = bands.reduce((height, lines, index) => height +
+    lines.length * diameter + Math.max(0, lines.length - 1) * lineGap +
+    (index ? bandGap : 0), 0);
+  let cy = y + 9 - totalHeight / 2 + r;
   cx.save();
-  cx.textAlign = "center"; cx.textBaseline = "middle";
-  rows.forEach((entries, row) => {
-    const py = top + row * step;
-    entries.forEach(([kind, amount], i) => {
-      const px = x + (i - (entries.length - 1) / 2) * step;
-      cx.shadowColor = "rgba(7,10,7,.48)";
-      cx.shadowBlur = 2.5; cx.shadowOffsetY = 1;
-      cx.fillStyle = YPIP[kind] || "#cccccc";
-      cx.beginPath(); cx.arc(px, py, r, 0, 7); cx.fill();
-      cx.shadowBlur = 0; cx.shadowOffsetY = 0;
-      cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.76)";
-      cx.lineWidth = worked ? 1.25 : .95; cx.stroke();
-
-      const label = fmtYield(amount);
-      const fontSize = label.length > 3 ? 6.5 : label.length > 2 ? 7.5 : 9;
-      cx.fillStyle = YINK[kind] || "#ffffff";
-      cx.font = "700 " + fontSize + "px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-      cx.fillText(label, px, py + .5);
-    });
-  });
+  for (let band = 0; band < bands.length; band++) {
+    const lines = bands[band];
+    for (let row = 0; row < lines.length; row++) {
+      const line = lines[row];
+      let px = x - line.width / 2;
+      for (const pip of line.pips) {
+        px += pip.gap + r;
+        drawYieldPip(pip.kind, px, cy, r, pip.portion, worked);
+        px += r;
+      }
+      cy += diameter + (row + 1 < lines.length ? lineGap : 0);
+    }
+    if (band + 1 < bands.length) cy += bandGap;
+  }
   cx.restore();
 }
 
@@ -18124,12 +18308,12 @@ function drawPlanetStrategicFloodplains(entry, visible, spectator) {
   for (const side of riverSides) {
     const a = points[side], b = points[(side + 1) % points.length];
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    for (const [inset, color, width] of [[.33, "#346f8c", 1.9], [.55, "#72aec0", 1.25]]) {
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const inset = 1 - radius;
       const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
       const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
       const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
-      cx.strokeStyle = color; cx.lineWidth = width * scale;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by); cx.stroke();
+      strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale);
     }
   }
   cx.restore();
@@ -19494,9 +19678,8 @@ function drawPlanetChartMarginalia() {
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
   // longer belongs to the unknown.
-  // The former chart carried five small scenes. One seeded candidate keeps the
-  // requested roughly one-sixth density and can be a proper three-times-larger
-  // marginal illustration without turning the sheet into a collage.
+  // One seeded candidate leaves the pre-globe sheet intentionally open; it is
+  // a single quiet note at a random point rather than a decorated grid.
   const candidates = Array.from({length:48}, (_, i) => ({
     x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
     y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
@@ -19506,13 +19689,13 @@ function drawPlanetChartMarginalia() {
   for (let i = 0; i < seats.length; i++) {
     const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = 3 * Math.max(104, Math.min(210,
-      Math.min(width, height) * (.19 + h * .055)));
+    const size = 1.85 * Math.max(88, Math.min(162,
+      Math.min(width, height) * (.15 + h * .035)));
     drawHiddenMapMonster(
       seat.x, seat.y, size,
       Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
-      hash2(seedB + i * 31, seedA + 29) > .5, .25
+      hash2(seedB + i * 31, seedA + 29) > .5, .21
     );
   }
 }

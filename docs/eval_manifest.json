@@ -1,6 +1,6 @@
 {
   "coverage": {
-    "named": 44,
+    "named": 43,
     "never_named": 16,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
@@ -38,14 +38,14 @@
       "suzerain-cards",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 60
+    "withholdable": 59
   },
   "derived": {
     "eval_only_count": 242,
-    "firaxis_only_count": 32,
+    "firaxis_only_count": 33,
     "live_bridge_count": 92,
-    "native_engine_repair_count": 60,
-    "withholdable_live_count": 60
+    "native_engine_repair_count": 59,
+    "withholdable_live_count": 59
   },
   "ladder": {
     "ahead": 12,
@@ -143,14 +143,13 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 60,
+      "declared_count": 59,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
         "whole-turn-backtrack-guard",
-        "step-and-reassess",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -208,14 +207,13 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 34,
+      "declared_count": 33,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
         "come-ashore",
         "recorded-tactical-step",
         "whole-turn-backtrack-guard",
-        "step-and-reassess",
         "blind-objective-strength",
         "blind-objective-units",
         "relief-targets-the-siege",
@@ -494,10 +492,11 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 32,
+      "declared_count": 33,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
+        "step-and-reassess",
         "live-trader-route",
         "live-religious-purchase",
         "solvent-faith-army",

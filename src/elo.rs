@@ -538,6 +538,10 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
     "joint-reach-lines",
+    // The brain's half of the mid-turn replan frame: a walk cut at its first
+    // unrevealed hex because the host executes one coalesced walk per unit.
+    // No native meaning; its native stand-in measured harmful and is gone.
+    "step-and-reassess",
     "live-trader-route",
     "live-religious-purchase",
     "solvent-faith-army",
@@ -636,7 +640,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
-    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -707,7 +710,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "come-ashore",
     "recorded-tactical-step",
     "whole-turn-backtrack-guard",
-    "step-and-reassess",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -7049,6 +7051,8 @@ mod tests {
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
         const EXCLUDED: &[&str] = &[
+            // The brain's half of the mid-turn replan frame (a bridge fact).
+            "step_and_reassess",
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
