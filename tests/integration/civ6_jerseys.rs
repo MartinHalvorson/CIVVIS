@@ -290,38 +290,27 @@ fn the_generic_fallback_gives_every_player_id_its_own_primary() {
 }
 
 #[test]
-fn barbarians_use_the_base_game_red_jersey() {
+fn barbarians_use_the_base_game_red_and_black_jersey() {
     let extract: serde_json::Value =
         serde_json::from_str(COLORS_JSON).expect("data/civ6_player_colors.json parses");
-    let red = extract["generic"]
-        .as_array()
-        .expect("the extract carries generic jerseys")
-        .iter()
-        .find(|jersey| {
-            jersey
-                .as_array()
-                .and_then(|pair| pair.get(2))
-                .and_then(serde_json::Value::as_str)
-                == Some("PLAYERCOLOR_RED")
-        })
-        .expect("the Civ 6 extract carries PLAYERCOLOR_RED")
-        .as_array()
-        .expect("a generic jersey is [primary, secondary, name]");
+    let palette = extract["palette"]
+        .as_object()
+        .expect("the extract carries Civ 6's standard palette");
     let expected = vec![
-        red[0]
+        palette["RED_MD"]
             .as_str()
             .expect("red primary is a string")
             .to_string(),
-        red[1]
+        palette["WHITE_DK"]
             .as_str()
-            .expect("red secondary is a string")
+            .expect("black secondary is a string")
             .to_string(),
     ];
 
     assert_eq!(
         js_array(INDEX, "BARBARIAN_JERSEY"),
         expected,
-        "Barbarians should use Civ 6's standard red-and-white jersey"
+        "Barbarians should use Civ 6's standard red-and-black jersey"
     );
     assert!(
         INDEX.contains("return player.is_free_city ? FREE_CITY_JERSEY : BARBARIAN_JERSEY;"),
