@@ -188,5 +188,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the
     // deployment genome before either ships; see the fields' docs.
     ("inquisition_on_threat", "inquisition-on-threat", AdvancedAi::enable_inquisition_on_threat),
+    ("founder_temple", "founder-temple", AdvancedAi::enable_founder_temple),
+    ("theology_for_founders", "theology-for-founders", AdvancedAi::enable_theology_for_founders),
     ("holy_lane_parity", "holy-lane-parity", AdvancedAi::enable_holy_lane_parity),
 ];

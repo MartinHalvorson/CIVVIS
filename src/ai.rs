@@ -2090,12 +2090,6 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
-    /// The Advanced controller is saving the bank for the Apostle that
-    /// launches the Inquisition (`AdvancedAi::inquisition_on_threat`); the
-    /// baseline's own Faith spending — the 250-Faith Missionary and the Faith
-    /// Builder — stands aside. Set each turn by the Advanced controller,
-    /// false for every other.
-    pub(crate) saving_faith_for_inquisition: bool,
     /// Choose the pantheon from the land this empire actually holds, instead of
     /// from a fixed order.
     ///
@@ -4213,7 +4207,6 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
-            saving_faith_for_inquisition: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -4525,7 +4518,6 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
-            saving_faith_for_inquisition: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             bank_envoys: false,
@@ -7928,8 +7920,7 @@ impl BasicAi {
         // reached a decision 4,887 times and found no improvable tile anywhere
         // in the empire on 4,377 of them, flat across the whole game rather
         // than concentrated late. Blocked-by-terrain was 43.
-        if !self.saving_faith_for_inquisition
-            && g.players[pid].faith >= self.w.faith_builder
+        if g.players[pid].faith >= self.w.faith_builder
             && builders < n_cities
             && Self::has_builder_work(g, pid)
             && !city_ids.is_empty()
@@ -7947,7 +7938,6 @@ impl BasicAi {
             );
         }
         if self.pursue_religion
-            && !self.saving_faith_for_inquisition
             && g.players[pid].religion.is_some()
             && g.players[pid].faith >= 250.0
         {

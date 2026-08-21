@@ -16452,10 +16452,11 @@ fn religious_spending_stops_at_a_target_scaled_unit_ceiling() {
 /// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. A founder whose
 /// home city is under a rival's pressure, not in an offensive posture: the
 /// shipped caps buy Missionaries and never the Apostle that unlocks the
-/// Inquisitors. With `inquisition_on_threat` the first Faith buys that
-/// Apostle; once the Inquisition is launched the gene steps aside.
+/// Inquisitors. With `inquisition_on_threat` the Missionary corps still comes
+/// first; once it stands and the bank covers the Apostle, the Apostle is
+/// bought; once the Inquisition is launched the gene steps aside.
 #[test]
-fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_gene() {
+fn a_founder_under_pressure_buys_the_apostle_after_its_missionaries_only_with_the_gene() {
     let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
     for pid in 0..2 {
         let settler = game
@@ -16497,50 +16498,39 @@ fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_g
             .count()
     };
 
+    // Without the gene: Missionaries up to the defensive cap, never an Apostle.
     let mut control = game.clone();
     let mut off = AdvancedAi::new();
-    off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
-    assert_eq!(
-        apostles(&control),
-        0,
-        "the shipped caps buy no Apostle off the offensive"
-    );
-    assert_eq!(missionaries(&control), 1, "…a Missionary instead");
+    for _ in 0..3 {
+        off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
+    }
+    assert_eq!(apostles(&control), 0, "the shipped caps buy no Apostle off the offensive");
+    assert_eq!(missionaries(&control), 2, "…the defensive Missionary corps instead");
     assert_eq!(off.census.inquisition_apostles, 0);
 
+    // With the gene: the Missionary corps first, then the Apostle, then no second.
     let mut treated = game.clone();
     let mut on = AdvancedAi::new();
     on.enable_inquisition_on_threat();
     on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(apostles(&treated), 1, "the gene buys the Apostle first");
-    assert_eq!(missionaries(&treated), 0);
-    assert_eq!(on.census.inquisition_apostles, 1, "and counts it");
-    // One is enough: the next purchase is not a second Apostle.
     on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
-    assert_eq!(apostles(&treated), 1);
-    // And the baseline's 250-Faith Missionary stands aside while the bank is
-    // being saved — it was the drain that pinned every founder under 400.
-    let mut baseline = game.clone();
-    baseline.players[0].faith = 300.0;
-    let mut saver = AdvancedAi::new();
-    saver.enable_inquisition_on_threat();
-    assert!(saver.saving_faith_for_inquisition(&baseline, 0));
-    saver.base.saving_faith_for_inquisition = true;
-    saver.base.cities(&mut baseline, 0);
-    assert_eq!(
-        missionaries(&baseline),
-        0,
-        "the baseline does not spend the saved bank"
-    );
-    let mut spender = game.clone();
-    spender.players[0].faith = 300.0;
-    let mut plain = AdvancedAi::new();
-    plain.base.cities(&mut spender, 0);
-    assert_eq!(
-        missionaries(&spender),
-        1,
-        "without the gene the baseline buys its Missionary"
-    );
+    assert_eq!(missionaries(&treated), 2, "the Missionary corps still comes first");
+    assert_eq!(apostles(&treated), 0);
+    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
+    assert_eq!(apostles(&treated), 1, "then the Apostle");
+    assert_eq!(on.census.inquisition_apostles, 1, "and it is counted");
+    on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
+    assert_eq!(apostles(&treated), 1, "one is enough");
+    // A bank short of the Apostle's price buys nothing extra — no hoarding
+    // and no Missionary displaced.
+    let mut short = game.clone();
+    short.players[0].faith = 250.0;
+    let mut poor = AdvancedAi::new();
+    poor.enable_inquisition_on_threat();
+    poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
+    poor.religious_spending_with_reserve(&mut short, 0, false, 80.0);
+    assert_eq!(missionaries(&short), 1, "250 buys one Missionary and then waits");
+    assert_eq!(apostles(&short), 0);
     // Once the Inquisition is launched the gene has nothing left to do.
     let mut launched = game.clone();
     launched.players[0]
@@ -16548,35 +16538,93 @@ fn a_founder_under_pressure_buys_the_apostle_for_the_inquisition_only_with_the_g
         .insert("inquisition".to_string(), 1);
     let mut after = AdvancedAi::new();
     after.enable_inquisition_on_threat();
-    after.religious_spending_with_reserve(&mut launched, 0, false, 80.0);
+    for _ in 0..3 {
+        after.religious_spending_with_reserve(&mut launched, 0, false, 80.0);
+    }
     assert_eq!(apostles(&launched), 0, "no defensive Apostle once launched");
     assert_eq!(after.census.inquisition_apostles, 0);
 }
 
-/// Both religion genes are opt-ins: off in every bundle, flippable by name,
+/// `founder_temple`: a founder outside the Religion lane claims an idle Holy
+/// Site city for the Shrine, and under pressure preempts the queue.
+#[test]
+fn a_founder_outside_the_religion_lane_gets_its_shrine_and_temple_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_117, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, home, "holy_site");
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.cities.get_mut(&home).unwrap().queue.clear();
+
+    let mut control = game.clone();
+    AdvancedAi::new().founder_temple(&mut control, 0);
+    assert!(control.cities[&home].queue.is_empty(), "off: the idle city is left alone");
+
+    let mut treated = game.clone();
+    let mut on = AdvancedAi::new();
+    on.enable_founder_temple();
+    on.founder_temple(&mut treated, 0);
+    assert!(
+        matches!(treated.cities[&home].queue.first(), Some(Item::Building { building }) if building == "shrine"),
+        "on: the idle Holy Site city starts its Shrine, got {:?}",
+        treated.cities[&home].queue
+    );
+    // A city with a Temple anywhere: inert.
+    let mut done = game.clone();
+    done.cities.get_mut(&home).unwrap().buildings =
+        vec![crate::name!("shrine"), crate::name!("temple")];
+    on.founder_temple(&mut done, 0);
+    assert!(done.cities[&home].queue.is_empty(), "a Temple anywhere ends the gene's work");
+}
+
+/// The religion genes are opt-ins: off in every bundle, flippable by name,
 /// and discovered by the screen through `PRODUCTION_OPT_INS`.
 #[test]
 fn the_religion_genes_are_native_opt_ins() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.inquisition_on_threat && !ai.holy_lane_parity);
-    for (field, _, enable) in PRODUCTION_OPT_INS
-        .iter()
-        .filter(|(field, _, _)| *field == "inquisition_on_threat" || *field == "holy_lane_parity")
-    {
+    assert!(!ai.founder_temple && !ai.theology_for_founders);
+    for tag in [
+        "inquisition-on-threat",
+        "founder-temple",
+        "theology-for-founders",
+        "holy-lane-parity",
+    ] {
+        let (_, _, enable) = PRODUCTION_OPT_INS
+            .iter()
+            .find(|(_, row_tag, _)| *row_tag == tag)
+            .unwrap_or_else(|| panic!("{tag} is an opt-in row"));
         let mut seat = AdvancedAi::new();
         enable(&mut seat);
-        match *field {
-            "inquisition_on_threat" => assert!(seat.inquisition_on_threat),
-            "holy_lane_parity" => assert!(seat.holy_lane_parity),
+        let on = match tag {
+            "inquisition-on-threat" => seat.inquisition_on_threat,
+            "founder-temple" => seat.founder_temple,
+            "theology-for-founders" => seat.theology_for_founders,
+            "holy-lane-parity" => seat.holy_lane_parity,
             _ => unreachable!(),
-        }
+        };
+        assert!(on, "{tag} enables its flag");
     }
     let mut on = AdvancedAi::new();
     on.enable_holy_lane_parity();
-    assert!(on.holy_lane_parity);
     on.disable_holy_lane_parity();
     assert!(!on.holy_lane_parity);
+    on.enable_theology_for_founders();
+    on.disable_theology_for_founders();
+    assert!(!on.theology_for_founders);
 }
 
 #[test]
@@ -28767,6 +28815,8 @@ fn religion_genes_fires_check() {
         for ai in ais.iter_mut() {
             ai.enable_engine_repairs();
             ai.enable_inquisition_on_threat();
+            ai.enable_founder_temple();
+            ai.enable_theology_for_founders();
         }
         crate::ai::run_game(&mut game, &mut ais);
         let mut census = StrategyCensus::default();
