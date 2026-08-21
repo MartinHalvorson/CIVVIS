@@ -9355,7 +9355,11 @@ impl BasicAi {
         // city count while COSTING score: walls and defenders displace the
         // buildings and districts score is actually made of. A raiding party is
         // what takes a city, and a raiding party is more than one unit.
-        let bleed_floor = if self.garrison_bleed_tolerance { 170 } else { 200 };
+        let bleed_floor = if self.garrison_bleed_tolerance {
+            170
+        } else {
+            200
+        };
         let bleeding = self.garrison_under_fire
             && g.cities.get(&cid).is_some_and(|city| city.hp < bleed_floor);
         if !bleeding && self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
