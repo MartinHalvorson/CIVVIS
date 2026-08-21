@@ -924,12 +924,6 @@ struct ReproTranche {
     estimates: Vec<GeneEstimate>,
 }
 
-/// Group `game` rows into complete pairs and estimate every gene.
-///
-/// A pair is complete when both arms are present for one `(seed, seat, pair)`
-/// key; an unfinished run's odd row is dropped rather than counted as an
-/// unpaired game. Merged files may repeat a key only if they replayed the same
-/// pair, in which case the later row wins.
 /// The screened rows grouped into complete foldover pairs, in (arm 0, arm 1)
 /// order and annotated with their position in the input stream.
 ///
