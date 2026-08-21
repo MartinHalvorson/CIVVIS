@@ -11760,6 +11760,15 @@ pub struct Seat {
     /// (older mod) reads `false`.
     #[serde(default)]
     pub replan_frames: bool,
+    /// How many replan frames the mod will open per turn (`ReplanFrames`),
+    /// so the brain can tell the LAST frame it will be asked on from the
+    /// others: a walk cut at the edge of the known on a frame no further
+    /// frame follows would strand the rest of the unit's movement, so on
+    /// that frame the walk keeps its furthest hex. Absent (a mod that
+    /// advertises `replan_frames` without the count) reads `None`, and the
+    /// cut is made on every frame exactly as before.
+    #[serde(default)]
+    pub replan_frames_max: Option<u32>,
     /// Newly revealed plots cross every turn and frame as `tiles` deltas
     /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
     /// snapshot merges chunks cumulatively either way.
