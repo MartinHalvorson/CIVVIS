@@ -8602,6 +8602,42 @@ const STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET =
 const STRATEGIC_MOUNTAIN_SHADOW_Y = S * YS * .62;
 const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_X = S * SQ3 * .31;
 const STRATEGIC_MOUNTAIN_SHADOW_RADIUS_Y = S * YS * .075;
+// A volcano occupies the same lower two corners as a mountain, but its
+// caldera deliberately stops short of the upper point.  Ninety percent of the
+// half-height leaves a small, intentional breath of basalt above the glow.
+// Unlike the mountain, the cone's old local summit is a curved shoulder, so
+// its visual high point rather than an invisible control point defines the
+// vertical fit.
+const STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X = -19;
+const STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X = 19;
+const STRATEGIC_VOLCANO_GLYPH_FOOT_Y = 8;
+// The two symmetric summit curves reach their extrema at -73 / 9. Using that
+// visible apex rather than either curve's control point makes 90% a literal
+// screen-space boundary for the finished cone.
+const STRATEGIC_VOLCANO_GLYPH_TOP_Y = -73 / 9;
+const STRATEGIC_VOLCANO_FOOT_TARGET_X = S * SQ3 / 2;
+const STRATEGIC_VOLCANO_FOOT_TARGET_Y = S * YS / 2;
+const STRATEGIC_VOLCANO_TOP_TARGET_Y = -S * YS * .90;
+const STRATEGIC_VOLCANO_GLOW_RADIUS_Y = .62;
+const STRATEGIC_VOLCANO_CALDERA_Y =
+  STRATEGIC_VOLCANO_GLYPH_TOP_Y + STRATEGIC_VOLCANO_GLOW_RADIUS_Y;
+const STRATEGIC_VOLCANO_ICON_WIDTH_SCALE =
+  STRATEGIC_VOLCANO_FOOT_TARGET_X /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X);
+const STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE =
+  (STRATEGIC_VOLCANO_FOOT_TARGET_Y - STRATEGIC_VOLCANO_TOP_TARGET_Y) /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE *
+   (STRATEGIC_VOLCANO_GLYPH_FOOT_Y - STRATEGIC_VOLCANO_GLYPH_TOP_Y));
+const STRATEGIC_VOLCANO_GLYPH_Y_OFFSET =
+  STRATEGIC_VOLCANO_TOP_TARGET_Y /
+  (STRATEGIC_MOUNTAIN_ICON_SCALE * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE) -
+  STRATEGIC_VOLCANO_GLYPH_TOP_Y;
+// Draw the shadow in tile coordinates rather than scaling the old compact
+// shadow with the tall cone; otherwise it runs out through the tapering lower
+// face before the feet can reach the 4 and 8 o'clock corners.
+const STRATEGIC_VOLCANO_SHADOW_Y = S * YS * .56;
+const STRATEGIC_VOLCANO_SHADOW_RADIUS_X = S * SQ3 * .28;
+const STRATEGIC_VOLCANO_SHADOW_RADIUS_Y = S * YS * .06;
 function drawMinimalMountainGlyph(x, y, k) {
   cx.save();
   cx.translate(x, y);
@@ -8647,56 +8683,104 @@ function drawMinimalMountainGlyph(x, y, k) {
   cx.restore();
 }
 
-function drawMinimalVolcanoCaldera(x, y, k, ice = false, tint = null) {
+function drawMinimalVolcanoCaldera(x, y, k, ice = false, tint = null,
+                                   strategic = false) {
   cx.save();
-  cx.translate(x, y); cx.scale(k, k);
+  cx.translate(x, y);
+  if (strategic) {
+    const iconSize = k / STRATEGIC_MOUNTAIN_ICON_SCALE;
+    cx.fillStyle = "rgba(8,10,11,.24)";
+    cx.beginPath();
+    cx.ellipse(0, STRATEGIC_VOLCANO_SHADOW_Y * iconSize,
+               STRATEGIC_VOLCANO_SHADOW_RADIUS_X * iconSize,
+               STRATEGIC_VOLCANO_SHADOW_RADIUS_Y * iconSize,
+               0, 0, 7); cx.fill();
+    cx.scale(k * STRATEGIC_VOLCANO_ICON_WIDTH_SCALE,
+             k * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE);
+    cx.translate(0, STRATEGIC_VOLCANO_GLYPH_Y_OFFSET);
+  } else {
+    cx.scale(k, k);
+    cx.fillStyle = "rgba(8,10,11,.24)";
+    cx.beginPath(); cx.ellipse(1, 10.2, 18, 4.3, 0, 0, 7); cx.fill();
+  }
   cx.lineJoin = "round"; cx.lineCap = "round";
-  cx.fillStyle = "rgba(8,10,11,.24)";
-  cx.beginPath(); cx.ellipse(1, 10.2, 18, 4.3, 0, 0, 7); cx.fill();
 
   const silhouette = () => {
     cx.beginPath();
-    cx.moveTo(-19, 8); cx.lineTo(-13, -1); cx.lineTo(-7, -7);
+    cx.moveTo(STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+              STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.lineTo(-13, -1); cx.lineTo(-7, -7);
     cx.quadraticCurveTo(-4, -9, -1, -7.4);
     cx.quadraticCurveTo(2, -9, 5, -7); cx.lineTo(11, -2);
-    cx.lineTo(19, 8); cx.quadraticCurveTo(2, 12.5, -19, 8); cx.closePath();
+    cx.lineTo(STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X,
+              STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.quadraticCurveTo(2, 12.5,
+                        STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+                        STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+    cx.closePath();
   };
   silhouette(); cx.fillStyle = tint ? shade(tint, .82) : "#5a4439"; cx.fill();
   // Two faces make the cone legible before the tiny crater resolves.
   cx.beginPath();
-  cx.moveTo(-19, 8); cx.lineTo(-7, -7); cx.quadraticCurveTo(-4, -9, -1, -7.4);
-  cx.lineTo(-1, 8); cx.quadraticCurveTo(-10, 10, -19, 8); cx.closePath();
+  cx.moveTo(STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+            STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.lineTo(-7, -7); cx.quadraticCurveTo(-4, -9, -1, -7.4);
+  cx.lineTo(-1, STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.quadraticCurveTo(-10, 10,
+                      STRATEGIC_VOLCANO_GLYPH_LEFT_FOOT_X,
+                      STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.closePath();
   cx.fillStyle = tint ? shade(tint, 1.02) : "#78594a"; cx.fill();
   cx.beginPath();
   cx.moveTo(-1, -7.4); cx.quadraticCurveTo(2, -9, 5, -7);
-  cx.lineTo(19, 8); cx.quadraticCurveTo(10, 10.5, -1, 8); cx.closePath();
+  cx.lineTo(STRATEGIC_VOLCANO_GLYPH_RIGHT_FOOT_X,
+            STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.quadraticCurveTo(10, 10.5, -1, STRATEGIC_VOLCANO_GLYPH_FOOT_Y);
+  cx.closePath();
   cx.fillStyle = tint ? shade(tint, .57) : "#392d2a"; cx.fill();
   silhouette(); cx.strokeStyle = "#241d1b"; cx.lineWidth = 1.2; cx.stroke();
 
-  // The old wide oval read as a detached target. Seat a narrow crater in the
-  // summit instead, then let its hot seam run a short way down the cone.
+  // The wide oval that used to live in the middle of the cone read as a
+  // detached target. The strategic version seats an especially thin, glowing
+  // orange caldera on the summit; the unscaled Natural Wonder keeps its
+  // existing compact crater proportions.
+  const craterY = strategic ? STRATEGIC_VOLCANO_CALDERA_Y : -6.2;
+  const craterRadiusY = strategic ? .42 : 1.8;
   cx.fillStyle = ice ? "#73848a" : "#241817";
-  cx.beginPath(); cx.ellipse(0, -6.2, 5.3, 1.8, -.08, 0, 7); cx.fill();
-  cx.strokeStyle = tint ? shade(tint, 1.3) : "#a47761"; cx.lineWidth = 1;
+  cx.beginPath(); cx.ellipse(0, craterY, 5.3, craterRadiusY, -.08, 0, 7); cx.fill();
+  cx.strokeStyle = tint ? shade(tint, 1.3) : "#a47761";
+  cx.lineWidth = strategic ? .5 : 1;
   cx.stroke();
-  cx.fillStyle = ice ? "#d9e8e9" : "#ed6b35";
-  cx.beginPath(); cx.ellipse(0, -6.25, 2.7, .72, -.08, 0, 7); cx.fill();
+  if (strategic && !ice) {
+    // A translucent outer band makes the heat read as light while the small
+    // solid oval keeps it crisp at survey zoom.
+    cx.fillStyle = "rgba(255,101,36,.42)";
+    cx.beginPath(); cx.ellipse(0, craterY, 4.65,
+                               STRATEGIC_VOLCANO_GLOW_RADIUS_Y, -.08, 0, 7); cx.fill();
+  }
+  cx.fillStyle = ice ? "#d9e8e9" : strategic ? "#ff8a32" : "#ed6b35";
+  cx.beginPath(); cx.ellipse(0, strategic ? craterY - .02 : -6.25,
+                             strategic ? 3.7 : 2.7,
+                             strategic ? .16 : .72, -.08, 0, 7); cx.fill();
   if (!ice) {
     cx.fillStyle = "#ffc06a";
-    cx.beginPath(); cx.ellipse(-.65, -6.4, 1.05, .3, -.08, 0, 7); cx.fill();
+    cx.beginPath(); cx.ellipse(-.65, strategic ? craterY - .1 : -6.4,
+                               1.05, strategic ? .06 : .3, -.08, 0, 7); cx.fill();
     cx.strokeStyle = "#e75e31"; cx.lineWidth = 1.25;
-    cx.beginPath(); cx.moveTo(-.35, -5.35);
+    cx.beginPath(); cx.moveTo(-.35, strategic ? -7.15 : -5.35);
     cx.quadraticCurveTo(.8, -2.2, -.55, .5);
     cx.quadraticCurveTo(-1.25, 2.3, -.8, 4.7); cx.stroke();
     cx.strokeStyle = "#ffc06a"; cx.lineWidth = .48;
-    cx.beginPath(); cx.moveTo(-.35, -5.1);
+    cx.beginPath(); cx.moveTo(-.35, strategic ? -6.9 : -5.1);
     cx.quadraticCurveTo(.35, -2.25, -.35, -.15); cx.stroke();
   }
   cx.restore();
 }
 
 function drawStrategicMountainIcon(x, y, volcano, size = 1) {
-  if (volcano) drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size);
+  if (volcano)
+    drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size,
+                              false, null, true);
   else drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size);
 }
 
