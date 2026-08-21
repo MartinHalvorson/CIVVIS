@@ -461,6 +461,7 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
+pub mod border_forecast;
 pub mod quests;
 
 #[cfg(test)]

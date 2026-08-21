@@ -198,4 +198,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // step unsafe. This holds that corridor aside briefly and sends the
     // Settler to the best safe runner-up; see `settler_threat_detour`.
     ("settler_threat_detour", "settler-threat-detour", AdvancedAi::enable_settler_threat_detour),
+    // A settler prices a site by the districts the plan would build there,
+    // and a treasury buys a border plot only when it pays for itself. See
+    // `advanced/site_lookahead.rs`.
+    ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
+    ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
 ];
