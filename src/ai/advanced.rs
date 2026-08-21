@@ -27265,7 +27265,7 @@ impl AdvancedAi {
         // See `opportunistic_war`: during a raid, pillage under our feet or
         // walk to the nearest prize. The adjacent capture above already took
         // anything one step away.
-        if let Some(acted) = self.raid_prize_step(g, pid, uid, decline_settlers) {
+        if let Some(acted) = self.raid_prize_step(g, pid, uid, plan, decline_settlers) {
             return acted;
         }
         if self.base.tactical_strategy

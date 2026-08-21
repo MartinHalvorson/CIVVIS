@@ -211,7 +211,7 @@ fn live_bundle_and_registry_agree() {
 }
 use super::opportunistic_war::{
     PILLAGE_PRIZE_BASE, RAID_PEACE_EARLIEST, RAID_POWER_MARGIN, RAID_POWER_RATIO,
-    RAID_SETTLER_HOME_RADIUS, RAID_WAR_MIN_VALUE, SETTLER_PRIZE,
+    RAID_REPEAT_COOLDOWN, RAID_SETTLER_HOME_RADIUS, RAID_WAR_MIN_VALUE, SETTLER_PRIZE,
 };
 use super::*;
 use crate::ai::run_game;
@@ -28794,10 +28794,20 @@ fn an_unescorted_settler_in_reach_opens_a_surprise_war_and_is_taken_that_turn() 
 fn a_guarded_settler_is_no_raid_prize() {
     let (mut game, _, settler) = raid_settler_board();
     let settler_at = game.units[&settler].pos;
-    game.spawn_test_unit("warrior", 1, settler_at);
+    let guard = game.spawn_test_unit("warrior", 1, settler_at);
     let mut ai = AdvancedAi::new();
     ai.enable_opportunistic_war();
     assert!(ai.raid_opportunity(&game, 0).is_none());
+    // An escort standing beside the Settler is a guard too.
+    let beside = game
+        .nbrs(settler_at)
+        .into_iter()
+        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .unwrap();
+    game.relocate(guard, beside);
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+    game.remove_unit(guard);
+    assert!(ai.raid_opportunity(&game, 0).is_some());
 }
 
 /// The prize is taken by movement, but the answer to the declaration is an
@@ -28883,10 +28893,16 @@ fn a_raid_sues_for_peace_once_it_has_paid() {
     assert!(!ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
     assert!(peace_offered(&game), "the prize is taken and nothing is left in reach");
     assert!(ai.peace_offers.contains(&1));
-    // The rival accepting the offer closes the raid's bookkeeping.
+    // The rival accepting the offer closes the raid's bookkeeping and
+    // stands the empire down from fresh wars for a while.
     game.at_war.clear();
     ai.opportunistic_war_diplomacy(&mut game, 0, &plan);
     assert!(ai.raid_war.is_none());
+    assert_eq!(
+        ai.peace_until,
+        game.turn + game.standard_duration(RAID_REPEAT_COOLDOWN)
+    );
+    assert!(ai.raid_opportunity(&game, 0).is_none());
 }
 
 /// Unpillaged improvements beside our soldiers are a prize too — enough of
@@ -28945,9 +28961,71 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
     assert!(game.pillageable_at(0, mine));
     let acted = ai
-        .raid_prize_step(&mut game, 0, warrior, false)
+        .raid_prize_step(&mut game, 0, warrior, &plan, false)
         .expect("a soldier on a raid prize acts");
     assert!(acted);
     assert!(game.map.get(mine).unwrap().pillaged);
     assert_eq!(game.players[0].counters.get("pillages"), Some(&1));
+}
+
+/// The only soldier in one of our cities reaches a Settler, not a tile of
+/// pillage: the answer to a raid is a counter-raid, and an empty city is its
+/// prize.
+#[test]
+fn a_lone_garrison_counts_for_a_settler_but_not_for_pillage() {
+    let (mut game, ours, theirs) = raid_fixture();
+    let their_city = game.player_city_ids(1)[0];
+    let ring: Vec<Pos> = game.cities[&their_city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != theirs && g_is_open_land(&game, *position))
+        .collect();
+    for position in ring.iter().take(6) {
+        game.map.tiles.get_mut(position).unwrap().improvement = Some(crate::name!("mine"));
+    }
+    game.world_era = 2;
+    let post = raid_tile_at(&game, theirs, 2, theirs, 2);
+    let warrior = game.spawn_test_unit("warrior", 0, post);
+    let settler_at = raid_tile_at(&game, post, 2, ours, RAID_SETTLER_HOME_RADIUS);
+    game.spawn_test_unit("settler", 1, settler_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.enable_raid_pillage_prizes();
+    let striker = |lone_garrison: bool| opportunistic_war::RaidStriker {
+        uid: warrior,
+        pos: post,
+        reach: 4,
+        lone_garrison,
+    };
+    let roaming = ai.raid_prizes_against(&game, 0, 1, &[striker(false)]);
+    assert_eq!(
+        roaming
+            .iter()
+            .filter(|prize| matches!(prize, opportunistic_war::RaidPrize::Pillage { .. }))
+            .count(),
+        6
+    );
+    assert_eq!(
+        roaming
+            .iter()
+            .filter(|prize| matches!(prize, opportunistic_war::RaidPrize::Settler { .. }))
+            .count(),
+        1
+    );
+    let garrisoned = ai.raid_prizes_against(&game, 0, 1, &[striker(true)]);
+    assert!(
+        garrisoned
+            .iter()
+            .all(|prize| matches!(prize, opportunistic_war::RaidPrize::Settler { .. })),
+        "a lone garrison reaches the Settler and none of the tiles: {garrisoned:?}"
+    );
+    assert_eq!(garrisoned.len(), 1);
+    // And the flag is read off the board: alone in one of our cities.
+    let capital = game.player_city_ids(0)[0];
+    let home = game.cities[&capital].pos;
+    game.relocate(warrior, home);
+    assert!(AdvancedAi::lone_garrison(&game, 0, warrior));
+    game.spawn_test_unit("warrior", 0, home);
+    assert!(!AdvancedAi::lone_garrison(&game, 0, warrior));
 }

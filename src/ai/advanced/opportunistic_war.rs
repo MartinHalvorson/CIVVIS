@@ -78,6 +78,10 @@ pub(crate) const RAID_MAX_TURNS: u32 = 20;
 /// The engine's own minimum war length (`DIPLOMACY_WAR_MIN_TURNS`); peace
 /// cannot be concluded before it, so it is not proposed before it either.
 pub(crate) const RAID_PEACE_EARLIEST: u32 = 10;
+/// After a raid closes, no war is opened for this many standard turns: the
+/// grievances of two surprise wars in a row on one neighbour compound, and
+/// a neighbour raided every treaty is a neighbour that arms.
+pub(crate) const RAID_REPEAT_COOLDOWN: u32 = 20;
 
 /// The raid this controller opened and has not yet closed.
 #[derive(Clone, Debug, PartialEq)]
@@ -92,6 +96,17 @@ pub(crate) struct RaidWar {
     pub(crate) settlers: usize,
     pub(crate) builders: usize,
     pub(crate) pillage_tiles: usize,
+}
+
+/// One of our land soldiers as the raid sees it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct RaidStriker {
+    pub(crate) uid: u32,
+    pub(crate) pos: Pos,
+    /// Tiles it covers in `RAID_STRIKE_TURNS`.
+    pub(crate) reach: i32,
+    /// The only soldier in one of our cities: reaches civilians, not tiles.
+    pub(crate) lone_garrison: bool,
 }
 
 /// One thing worth a war, where it is, and what it is worth.
@@ -143,8 +158,9 @@ impl RaidOpportunity {
 
 impl AdvancedAi {
     /// Our land soldiers that could take part in a raid this turn, with the
-    /// distance each can cover in `RAID_STRIKE_TURNS`.
-    fn raid_strikers(&self, g: &Game, pid: usize) -> Vec<(u32, Pos, i32)> {
+    /// distance each can cover in `RAID_STRIKE_TURNS` and whether it is the
+    /// lone garrison of one of our cities.
+    fn raid_strikers(&self, g: &Game, pid: usize) -> Vec<RaidStriker> {
         g.player_unit_ids(pid)
             .into_iter()
             .filter_map(|uid| {
@@ -159,9 +175,30 @@ impl AdvancedAi {
                     return None;
                 }
                 let reach = (g.unit_max_moves(uid).floor() as i32).max(1) * RAID_STRIKE_TURNS;
-                Some((uid, unit.pos, reach))
+                Some(RaidStriker {
+                    uid,
+                    pos: unit.pos,
+                    reach,
+                    lone_garrison: Self::lone_garrison(g, pid, uid),
+                })
             })
             .collect()
+    }
+
+    /// Whether this soldier is the only military unit in one of our cities.
+    /// A lone garrison leaves for a Settler, not for a tile of pillage: the
+    /// answer to a raid is a counter-raid, and an empty city is its prize.
+    pub(crate) fn lone_garrison(g: &Game, pid: usize, uid: u32) -> bool {
+        let pos = g.units[&uid].pos;
+        let Some(cid) = g.city_at(pos) else {
+            return false;
+        };
+        g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+            && !g.units_at(pos).into_iter().any(|other| {
+                other != uid
+                    && g.units[&other].owner == pid
+                    && g.rules.units[g.units[&other].kind].class == "military"
+            })
     }
 
     /// What one tile of pillage is worth this era.
@@ -184,16 +221,16 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
         target: usize,
-        strikers: &[(u32, Pos, i32)],
+        strikers: &[RaidStriker],
     ) -> Vec<RaidPrize> {
         let mut prizes = Vec::new();
         if strikers.is_empty() {
             return prizes;
         }
-        let in_reach = |pos: Pos| {
-            strikers
-                .iter()
-                .any(|(_, from, reach)| g.wdist(*from, pos) <= *reach)
+        let in_reach = |pos: Pos, for_pillage: bool| {
+            strikers.iter().any(|striker| {
+                (!for_pillage || !striker.lone_garrison) && g.wdist(striker.pos, pos) <= striker.reach
+            })
         };
         let visible = self.battlefront_visibility(g, pid);
         let own_cities: Vec<Pos> = g
@@ -209,14 +246,22 @@ impl AdvancedAi {
             }
             if !g.sees(&visible, unit.pos)
                 || !self.battlefront_unit_visible(g, pid, unit.id)
-                || !in_reach(unit.pos)
+                || !in_reach(unit.pos, false)
             {
                 continue;
             }
-            let guarded = g.units_at(unit.pos).into_iter().any(|oid| {
-                let other = &g.units[&oid];
-                other.owner != pid && g.rules.units[other.kind].class == "military"
-            });
+            // Under a soldier the tile is combat, not capture; beside one it
+            // is an escorted civilian whose guard steps onto it or onto us.
+            let guarded = g
+                .wdisk(unit.pos, 1)
+                .into_iter()
+                .flat_map(|position| g.units_at(position))
+                .any(|oid| {
+                    let other = &g.units[&oid];
+                    other.owner != pid
+                        && !g.players[other.owner].is_barbarian
+                        && g.rules.units[other.kind].class == "military"
+                });
             if guarded || g.city_at(unit.pos).is_some() {
                 continue;
             }
@@ -249,8 +294,8 @@ impl AdvancedAi {
         let explored = &g.players[pid].explored;
         for cid in g.player_city_ids(target) {
             let city = &g.cities[&cid];
-            for pos in g.wdisk(city.pos, 3) {
-                if !explored.contains(&pos) || !in_reach(pos) {
+            for pos in city.owned_tiles.iter().copied() {
+                if !explored.contains(&pos) || !in_reach(pos, true) {
                     continue;
                 }
                 let Some(tile) = g.map.get(pos) else {
@@ -388,7 +433,13 @@ impl AdvancedAi {
         if let Some(raid) = self.raid_war.clone() {
             if !g.is_at_war(pid, raid.target) || !g.players[raid.target].alive {
                 // Peace was concluded (by either side) or the target is gone.
+                // The stand-down mirrors an accepted peace offer's: no fresh
+                // war for a while, this one's grievances still warm.
                 self.raid_war = None;
+                self.peace_until = self
+                    .peace_until
+                    .max(g.turn.saturating_add(g.standard_duration(RAID_REPEAT_COOLDOWN)));
+                self.major_war_since = None;
                 return false;
             }
             self.close_raid_when_paid(g, pid, plan, &raid);
@@ -514,10 +565,13 @@ impl AdvancedAi {
 
     /// Pillage tiles of the raid target within one turn of our soldiers.
     fn pillage_tiles_under_our_soldiers(&self, g: &Game, pid: usize, target: usize) -> usize {
-        let strikers: Vec<(u32, Pos, i32)> = self
+        let strikers: Vec<RaidStriker> = self
             .raid_strikers(g, pid)
             .into_iter()
-            .map(|(uid, pos, reach)| (uid, pos, reach / RAID_STRIKE_TURNS))
+            .map(|striker| RaidStriker {
+                reach: striker.reach / RAID_STRIKE_TURNS,
+                ..striker
+            })
             .collect();
         self.raid_prizes_against(g, pid, target, &strikers)
             .into_iter()
@@ -533,6 +587,7 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         uid: u32,
+        plan: &StrategicPlan,
         decline_settlers: bool,
     ) -> Option<bool> {
         let raid = self.raid_war.clone()?;
@@ -547,6 +602,15 @@ impl AdvancedAi {
             || g.is_embarked(&unit)
             || unit.moves_left <= 0.0
         {
+            return None;
+        }
+        // A soldier holding a threatened city holds it; the raid is not a
+        // reason to open the gate.
+        if plan.threatened_city.is_some_and(|cid| {
+            g.cities
+                .get(&cid)
+                .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
+        }) {
             return None;
         }
         // Standing on their improvement: pillage it.
@@ -572,7 +636,12 @@ impl AdvancedAi {
         if beside_own_settler {
             return None;
         }
-        let strikers = [(uid, unit.pos, RAID_PURSUIT_RADIUS)];
+        let strikers = [RaidStriker {
+            uid,
+            pos: unit.pos,
+            reach: RAID_PURSUIT_RADIUS,
+            lone_garrison: Self::lone_garrison(g, pid, uid),
+        }];
         let goal = self
             .raid_prizes_against(g, pid, raid.target, &strikers)
             .into_iter()
