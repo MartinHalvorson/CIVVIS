@@ -102,6 +102,32 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
+    /// A settler scores a site by the districts the plan would build there,
+    /// each on its own plot. See [`AdvancedAi::district_lookahead_settle`].
+    /// Opt-in gene `district-lookahead-settle`.
+    pub fn enable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = true;
+    }
+
+    /// The twin of `enable_district_lookahead_settle`.
+    pub fn disable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = false;
+    }
+
+    /// A border plot is bought only when its priced benefit clears its Gold
+    /// by a margin. See [`AdvancedAi::priced_tile_purchase`]. Opt-in gene
+    /// `priced-tile-purchase`.
+    pub fn enable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = true;
+        self.base.plot_purchase_delegated = true;
+    }
+
+    /// The twin of `enable_priced_tile_purchase`.
+    pub fn disable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = false;
+        self.base.plot_purchase_delegated = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.

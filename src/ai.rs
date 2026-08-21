@@ -2144,6 +2144,12 @@ pub struct BasicAi {
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
     /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
+    /// The advanced controller's `priced_tile_purchase` has taken over plot
+    /// purchases for this seat: its pass prices every border plot against
+    /// its Gold, so the baseline `buy_gold_plot` fallthrough must not buy
+    /// the same plots on a flat score behind it. Set only by
+    /// `AdvancedAi::enable_priced_tile_purchase`.
+    pub(crate) plot_purchase_delegated: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -4190,6 +4196,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -4522,6 +4529,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -9032,7 +9040,7 @@ impl BasicAi {
         // Plots are a surplus investment after concrete unit and building
         // gaps are filled. Keep another 200 Gold above the ordinary reserve
         // so border appetite cannot crowd out next turn's Builder or upgrade.
-        if self.buy_gold_plot(g, pid, reserve + 200.0) {
+        if !self.plot_purchase_delegated && self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 

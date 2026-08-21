@@ -141,12 +141,13 @@ mod tests {
         assert!(game.border_growth_turns(city).is_some());
         // A Border Control treaty in force: the engine skips growth and so
         // does the forecast.
-        game.active_congress_effects.push(crate::game::CongressEffect {
-            resolution: "border_control_treaty".to_string(),
-            outcome: "B".to_string(),
-            target: "0".to_string(),
-            expires: game.turn + 30,
-        });
+        game.active_congress_effects
+            .push(crate::game::CongressEffect {
+                resolution: "border_control_treaty".to_string(),
+                outcome: "B".to_string(),
+                target: "0".to_string(),
+                expires: game.turn + 30,
+            });
         assert_eq!(game.border_growth_turns(city), None);
     }
 }

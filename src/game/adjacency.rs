@@ -442,7 +442,7 @@ impl Game {
     /// `center` standing in for the city.  Aqueducts, Dams and Canals never
     /// reach this (no adjacency rules), so their branches answer `false`
     /// rather than approximating hydrology the settler cannot see anyway.
-    fn plot_fits_placement(&self, pid: usize, district: Name, pos: Pos, center: Pos) -> bool {
+    pub(crate) fn plot_fits_placement(&self, pid: usize, district: Name, pos: Pos, center: Pos) -> bool {
         let neighbors = self.nbrs(pos);
         self.plot_fits_placement_with_neighbors(pid, district, pos, center, &neighbors)
     }
@@ -630,6 +630,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The look-ahead hands each wanted district its own plot, first
+    /// district first: a Campus and a Holy Site both want the one plot
+    /// that touches three mountains, and only the family named first gets
+    /// it. The summary, by contrast, pays both for the same hex.
+    #[test]
+    fn lookahead_assigns_distinct_plots_first_district_first() {
+        let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let center = land
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+                    && game
+                        .wdisk(*pos, 3)
+                        .iter()
+                        .all(|ring| game.map.get(*ring).is_some())
+            })
+            .expect("an interior site");
+        for pos in game.wdisk(center, 3) {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = Name::new("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.river_edges = [false; 6];
+            tile.owner_city = None;
+        }
+        let anchor = game.nbrs(center).into_iter().next().unwrap();
+        let peaks: Vec<Pos> = game
+            .nbrs(anchor)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert_eq!(peaks.len(), 3);
+        for pos in &peaks {
+            game.map.tiles.get_mut(pos).unwrap().terrain = Name::new("mountain");
+        }
+        let positions = game.wdisk(center, 2);
+        let campus_first = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("campus"), Name::new("holy_site")],
+        );
+        let (campus_plot, campus_adjacency) = campus_first[0].expect("a Campus plot");
+        let (holy_plot, holy_adjacency) = campus_first[1].expect("a Holy Site plot");
+        assert_eq!(campus_plot, anchor, "the first family takes the three-peak plot");
+        assert_ne!(holy_plot, anchor, "the second family is handed a different plot");
+        assert!(campus_adjacency.science >= 3.0);
+        assert!(holy_adjacency.faith < 3.0);
+
+        let holy_first = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("holy_site"), Name::new("campus")],
+        );
+        assert_eq!(holy_first[0].unwrap().0, anchor, "order decides who gets the plot");
+        assert_ne!(holy_first[1].unwrap().0, anchor);
+
+        // A district no unclaimed plot can hold comes back as `None` rather
+        // than as a zero that looks like a placed district.
+        let harbor_inland = game.settlement_district_lookahead_from_positions(
+            0,
+            center,
+            &positions,
+            &[Name::new("harbor")],
+        );
+        assert!(harbor_inland[0].is_none(), "no coast, no Harbor plot");
     }
 
     /// A foundation under construction already pays neighbouring plans: the

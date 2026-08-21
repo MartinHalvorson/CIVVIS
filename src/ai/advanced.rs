@@ -3649,6 +3649,21 @@ pub struct AdvancedAi {
     /// the seats is exactly the kind of cost the Apostle cannot see.
     pub theology_for_founders: bool,
 
+    /// Score a settle site by the districts this city would actually build
+    /// — the lane's first families, each on its own plot, at the lane's
+    /// yield weights — instead of every family's best plot summed
+    /// (`adjacency_site_planning`, which this replaces while on). See
+    /// `advanced/site_lookahead.rs`. Off everywhere by default; opt-in gene
+    /// `district-lookahead-settle`.
+    pub district_lookahead_settle: bool,
+
+    /// Buy a border plot only when its priced benefit — the job it improves,
+    /// the resource it connects, the district plot it unlocks, over a payback
+    /// horizon cut short where culture would claim it anyway — clears the
+    /// Gold at the lane's price by a margin. See `advanced/site_lookahead.rs`.
+    /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
+    pub priced_tile_purchase: bool,
+
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
     /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
@@ -4049,6 +4064,11 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// The district look-ahead at settlement and the priced tile purchase: two
+/// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
+mod site_lookahead;
+use site_lookahead::PlotPurchaseCache;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -4663,6 +4683,8 @@ impl AdvancedAi {
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
+            district_lookahead_settle: false,
+            priced_tile_purchase: false,
             idle_faith_patronage: false,
             diplomatic_opening: false,
             envoy_priority: false,
@@ -14241,6 +14263,7 @@ impl AdvancedAi {
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
+            let mut plot_cache = PlotPurchaseCache::default();
             let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
             // here and once inside `production_value`. The guard borrows the
@@ -14248,13 +14271,31 @@ impl AdvancedAi {
             // dropped below.
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
-                if let Action::BuyPlot {
-                    city: _,
-                    pos,
-                    cost,
-                } = &action
-                {
+                if let Action::BuyPlot { city, pos, cost } = &action {
                     if bank + f64::EPSILON < reserve + 200.0 + cost {
+                        continue;
+                    }
+                    // See `priced_tile_purchase`: the plot is an investment
+                    // priced against its Gold, not a shortlist hint plus a
+                    // speculative clone. A `None` is a plot not worth its
+                    // price; it is not shortlisted.
+                    if self.priced_tile_purchase {
+                        if let Some(score) = self.priced_plot_purchase_score(
+                            g,
+                            pid,
+                            plan,
+                            *city,
+                            *pos,
+                            *cost,
+                            &mut plot_cache,
+                        ) {
+                            plot_options.push((
+                                score,
+                                score,
+                                std::cmp::Reverse(format!("{action:?}")),
+                                action,
+                            ));
+                        }
                         continue;
                     }
                     let tile = &g.map.tiles[pos];
@@ -14405,8 +14446,18 @@ impl AdvancedAi {
                         .total_cmp(&left.0)
                         .then_with(|| left.2.cmp(&right.2))
                 });
-                plot_options.truncate(4);
-                let plot_scores = self.gold_plot_scores(score_context, &plot_options);
+                // The priced path already holds a final score per plot and
+                // needs no clone, so it keeps every candidate; the shipped
+                // path clones the game per plot and keeps four.
+                let plot_scores = if self.priced_tile_purchase {
+                    plot_options
+                        .iter()
+                        .map(|(_, score, _, _)| Some(*score))
+                        .collect()
+                } else {
+                    plot_options.truncate(4);
+                    self.gold_plot_scores(score_context, &plot_options)
+                };
                 for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
                     if let Some(score) = score {
                         candidates.push((
@@ -20745,7 +20796,11 @@ impl AdvancedAi {
             + (housing - 2.0) * 4.0
             + growth_readiness
             + dependable_jobs * 0.75;
-        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += if self.district_lookahead_settle {
+            self.settlement_district_lookahead_value(g, pid, pos, &positions)
+        } else {
+            self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
+        };
         value += self.natural_wonder_ring_value(g, &positions);
 
         let enemy_distance = g
