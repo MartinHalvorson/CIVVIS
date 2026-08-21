@@ -1215,6 +1215,11 @@ impl AdvancedAi {
         // And a barbarian scout does not pin the opening. See
         // `barbarian_scouts_are_scouts`.
         self.enable_barbarian_scouts_are_scouts();
+        // And a raider standing over a Settler ten tiles out is somebody's
+        // job, which it was not while the admission test measured only the
+        // distance to our cities: eight Settlers taken in 104 turns on run
+        // civvis-20260821T130446Z. See `barbarian_hunt`.
+        self.enable_barbarian_hunt();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -1403,6 +1408,11 @@ impl AdvancedAi {
         self.enable_one_launch_pad();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
+        // And a raider standing over a Settler on the road is home ground
+        // too — the admission test that admits the barbarian seat at all
+        // measures distance from our CITIES, so the walk to a site ten tiles
+        // out is unguarded ground by construction. See `BasicAi::barbarian_hunt`.
+        self.enable_barbarian_hunt();
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
@@ -1621,6 +1631,16 @@ impl AdvancedAi {
 
     /// Deliberate camp clearing as a peacetime errand. See
     /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
+    /// See `BasicAi::barbarian_hunt`; withheld by the `barbarian-hunt`
+    /// treatment.
+    pub fn enable_barbarian_hunt(&mut self) {
+        self.base.enable_barbarian_hunt();
+    }
+
+    pub fn disable_barbarian_hunt(&mut self) {
+        self.base.disable_barbarian_hunt();
+    }
+
     pub fn enable_camp_bounty(&mut self) {
         self.base.camp_bounty = true;
     }

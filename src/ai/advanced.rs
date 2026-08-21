@@ -4944,6 +4944,11 @@ impl AdvancedAi {
         self.base.adjacent_camp_clear
     }
 
+    /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
+    pub fn barbarian_hunt(&self) -> bool {
+        self.base.barbarian_hunt
+    }
+
     /// Readable so the anchor assertion can check it, since the flag lives on
     /// the inner `BasicAi` and that field is private outside this module.
     pub fn fortify_idle_units(&self) -> bool {
@@ -27674,6 +27679,13 @@ impl AdvancedAi {
             let acted = g.apply(pid, &action).is_ok();
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
+        }
+        // ⚠ BEFORE escort duty, not after. `settler_escort_step` answers
+        // `Some(..)` for every guard it owns, so a unit standing beside the
+        // raider that is about to take its Settler never reaches the attack
+        // scan below. See `BasicAi::barbarian_kill_beside_this_unit`.
+        if self.base.barbarian_kill_beside_this_unit(g, pid, uid) {
+            return true;
         }
         if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
             return acted;

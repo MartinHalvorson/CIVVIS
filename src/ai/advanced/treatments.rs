@@ -117,6 +117,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("settler_target_hysteresis", "settler-target-hysteresis", AdvancedAi::disable_settler_target_hysteresis),
     ("tally_great_people", "tally-great-people", AdvancedAi::disable_tally_great_people),
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
+    ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
     ("settler_stack_discipline", "settler-stack-discipline", AdvancedAi::disable_settler_stack_discipline),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
