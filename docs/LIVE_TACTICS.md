@@ -425,7 +425,10 @@ eight hexes on a clone that reveals nothing and replays them blind.
   (`moves_at_turn_start`, step 2) on the new ground. A walk on known ground
   and a walk with a follow-up keep their furthest hex. `frontier_cuts=N` in
   the decide note. Without the capability the cut would strand the rest of
-  the movement, so it is never made.
+  the movement, so it is never made — and neither is it made on the LAST
+  frame the mod will open this turn (`seat.replan_frames_max`, the
+  `ReplanFrames` count; `frontier_cuts_withheld_last_frame=N frame=F` in the
+  note), because nobody re-plans what that cut would uncover. See §12.
 - **The gene is host-only** (`step_and_reassess`, on in the live bundle,
   `FIRAXIS_ONLY_TREATMENTS`): the cut exists because the host executes one
   coalesced walk per unit, a fact of the bridge with no native meaning — the
@@ -466,3 +469,90 @@ inertness), `a_tiles_delta_merges_new_ground_without_standing_for_a_sweep`,
 `a_blind_plan_stops_at_the_step_that_revealed_new_ground`,
 `step_and_reassess_is_a_live_treatment_and_a_native_repair`,
 `test_the_mid_turn_frames_reach_the_play_command`.
+
+## 12. Step 7 — a unit spends every action it has in the turn
+
+**The ask (2026-08-21).** Step-and-reassess "often seems to skip its second
+(or later) movement": a unit should be able to step and settle in the same
+turn, step and step again, step and shoot. Use every action to the full.
+
+**What the record could say.** No live run on this machine has played the
+frames (the ladder rows here predate #2198), so the chain was read end to
+end and then driven offline: the brain half by replaying the 241-turn
+journal of `live-head-rome-religious-actions-20260802T173404Z` through
+today's `civvis_orders` with the capabilities today's mod advertises
+(`--assume-seat order_queue,replan_frames=2,tile_delta`, new, replay-only),
+the host half by driving the shipped mod's `beginTurn`/`settleTurn`/
+`applyOrders` against a fake host that walks, spends and reveals
+(`step_turn_actions_test.lua`).
+
+- Replay, 239 turns, 2,048 unit-turns of orders: 1,690 pure walks,
+  95 `MOVE_TO > IMPROVE`, 42 `MOVE_TO > FORTIFY`, 12 `MOVE_TO > ATTACK`,
+  11 `MOVE_TO > RANGE_ATTACK`, 4 `FOUND_CITY` (the settler already on its
+  site — the engine's serial unit loop stops at zero movement, so a found
+  is planned only with movement to spare, which is Civilization VI's rule
+  too). **30 frontier cuts, every one a naval explorer** (galley,
+  quadrireme, caravel: 3–4 movement, sight 2) whose walk was cut at the
+  first unrevealed hex 1–2 hexes short of where the engine sent it. That is
+  the movement the frame has to give back.
+- Synthetic frame 1 for seven of those turns (cut unit standing on its cut
+  hex with the movement it kept, every other unit spent, the plots the NEXT
+  turn's sweep proves it revealed merged as a frame-1 delta): the brain
+  re-ordered the cut unit with its remaining movement on every board where
+  it had any (t105 galley at (26,41) with 1 left → `MOVE_TO (27,42)`; t143,
+  t205, t208, t213, t232 likewise; t144 caravel with 2 left stepped once
+  more and was cut again, correctly, for frame 2). The Rust half works.
+
+**What was wrong — four things, in the mod and on the bridge.**
+
+1. **The turn was released on the tick the opening orders went out.**
+   `settleTurn`'s apply tick returned true, and the tick handler requests
+   `ACTION_ENDTURN` the moment it does. On that tick every unit holds its
+   FIRST order only: the strike after the step, the found after the walk,
+   the second step — all still on the per-unit queue — and no frame has
+   been considered. Whenever the host took the request at once (nothing
+   blocking: every unit busy walking), the turn ended under the queue
+   (`queue_turn_over`) and the frame never opened: a unit stepped, stood,
+   and kept the rest of its movement. The apply tick now returns false;
+   the next tick drains the queue, opens a frame if one is wanted, and
+   only then releases — the branch written for exactly that, which never
+   got a tick. The same for a frame's answer and a stale answer.
+2. **`FOUND_CITY` founded where the settler stood.** The row carried no
+   site; the mod runs every found before the settler's walk (so a settler
+   already on its site founds at once) and re-queues a refused one behind
+   the walk. Civilization VI refuses a found only where founding is
+   illegal, and the hex one step short of a chosen site is legal far more
+   often than not (`CITY_MIN_RANGE` 3) — so a planned "step, then settle"
+   founded BEFORE the step, and a walk the host capped short founded on
+   the capped hex once the settler arrived with movement to spare. The
+   row now carries the site (`stamp_found_sites`: the walk's last hex, or
+   where the unit stands; `found_sites=N` in the note) and the mod founds
+   only with the settler on it, naming a miss `found_off_site` — not
+   `found_refused`, which feeds the brain's permanent `blocked_city_sites`.
+3. **The cut stranded movement on the last frame.** The cut was made on
+   every board of a turn, including the one no further frame follows (the
+   cap is `ReplanFrames`, default 2). The seat now advertises
+   `replan_frames_max`; `another_frame_can_open` withholds the cut when
+   `frame >= cap`, and the walk keeps its furthest hex.
+4. No way to replay an old journal as today's mod would present it —
+   hence `--assume-seat` (replay only; the live brain reads the seat the
+   mod advertised).
+
+**What to read on the first live run with this mod.** `orders_queue`:
+`queue_turn_over` should be ~0 (it was the signature of defect 1);
+`strikes_landed`/`strikes_planned` should converge. `replan_frame` /
+`combat_frame` per turn against `combat_frame_timeout`. `found` x/y against
+the preceding `FOUND_CITY` row's x/y in `orders.sqlite` (they must match
+now; before, a run where they differ by one hex is defect 2 caught in the
+act), and `found_off_site` in `orders`/`orders_queue` refusals (expected
+once per step-then-settle turn: the found that ran first). In the decide
+notes, `frontier_cuts` against `frontier_cuts_withheld_last_frame`.
+
+Tests: `step_turn_actions_test.lua` (the seat cap; step → frame → second
+step through `settleTurn`; step → shot from the queue before release;
+step → settle on the site, the first-run found refused by name without a
+`found_refused`; a capped walk does not settle short; a row without a site
+keeps the old behaviour),
+`the_frontier_cut_is_withheld_on_the_last_frame_the_mod_will_open`,
+`a_found_city_row_carries_the_site_the_walk_ends_on`,
+`assumed_seat_capabilities_are_named_and_checked`.

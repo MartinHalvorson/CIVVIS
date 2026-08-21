@@ -8156,6 +8156,102 @@ mod tests {
         );
     }
 
+    /// The cut is made only while the mod can still open a frame to spend
+    /// what the cut unit then sees: never on the last frame of the turn, and
+    /// never against a seat without frames. A seat that advertises frames
+    /// without the count keeps cutting on every frame.
+    #[test]
+    fn the_frontier_cut_is_withheld_on_the_last_frame_the_mod_will_open() {
+        let mut state = civvis::mirror::StateSnapshot::default();
+        assert!(!another_frame_can_open(&state), "no frames: no cut");
+        state.seat.replan_frames = true;
+        assert!(another_frame_can_open(&state), "frames without a count: cut");
+        state.frame = 7;
+        assert!(another_frame_can_open(&state), "…on every frame");
+        state.seat.replan_frames_max = Some(2);
+        state.frame = 0;
+        assert!(another_frame_can_open(&state), "opening board: frame 1 follows");
+        state.frame = 1;
+        assert!(another_frame_can_open(&state), "frame 1: frame 2 follows");
+        state.frame = 2;
+        assert!(
+            !another_frame_can_open(&state),
+            "frame 2 of 2: nobody re-plans what the cut would uncover"
+        );
+        state.seat.replan_frames_max = Some(0);
+        state.frame = 0;
+        assert!(!another_frame_can_open(&state), "a cap of zero never cuts");
+    }
+
+    /// The found carries the hex the planned walk leaves the settler on —
+    /// the last step of its contiguous walk — or, founding without moving,
+    /// where the host says it stands. A found that already has a site and a
+    /// unit the export does not know are left alone.
+    #[test]
+    fn a_found_city_row_carries_the_site_the_walk_ends_on() {
+        let state = civvis::mirror::StateSnapshot {
+            units: vec![
+                civvis::mirror::StateUnit {
+                    id: 7,
+                    x: 10,
+                    y: 10,
+                    ..Default::default()
+                },
+                civvis::mirror::StateUnit {
+                    id: 8,
+                    x: 30,
+                    y: 31,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let mut orders = vec![
+            unit_order(7, "MOVE_TO", Some((11, 10))),
+            unit_order(7, "MOVE_TO", Some((12, 11))),
+            unit_order(7, "FOUND_CITY", None),
+            unit_order(8, "FOUND_CITY", None),
+            unit_order(9, "FOUND_CITY", None),
+            unit_order(10, "FOUND_CITY", Some((1, 1))),
+        ];
+        assert_eq!(stamp_found_sites(&mut orders, &state), 2);
+        assert_eq!(orders[2].pos, Some((12, 11)), "the walk's last hex");
+        assert_eq!(orders[3].pos, Some((30, 31)), "founds where it stands");
+        assert_eq!(orders[4].pos, None, "a unit the export does not know");
+        assert_eq!(orders[5].pos, Some((1, 1)), "an existing site is kept");
+        // Stamped before the fold, the site survives coalescing and the
+        // walk-with-a-follow-up is never cut.
+        let (orders, _, coalesced) = coalesce_unit_paths(orders, true);
+        assert_eq!(coalesced, 1);
+        assert_eq!(orders[0].pos, Some((12, 11)));
+        assert_eq!(orders[1].verb.as_deref(), Some("FOUND_CITY"));
+        assert_eq!(orders[1].pos, Some((12, 11)));
+    }
+
+    /// `--assume-seat` names the capabilities a replay should pretend the
+    /// mod advertised, with the frame cap as a count; a typo is an error.
+    #[test]
+    fn assumed_seat_capabilities_are_named_and_checked() {
+        let mut seat = civvis::mirror::Seat::default();
+        let names: Vec<String> = ["order_queue", "replan_frames=2", " tile_delta "]
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        assume_seat_capabilities(&mut seat, &names).unwrap();
+        assert!(seat.order_queue);
+        assert!(seat.replan_frames);
+        assert_eq!(seat.replan_frames_max, Some(2));
+        assert!(seat.tile_delta);
+        assert!(!seat.moves_at_turn_start, "not named: not assumed");
+        let bare = vec!["replan_frames".to_string()];
+        let mut seat = civvis::mirror::Seat::default();
+        assume_seat_capabilities(&mut seat, &bare).unwrap();
+        assert!(seat.replan_frames);
+        assert_eq!(seat.replan_frames_max, None);
+        assert!(assume_seat_capabilities(&mut seat, &["order_que".to_string()]).is_err());
+        assert!(assume_seat_capabilities(&mut seat, &["replan_frames=x".to_string()]).is_err());
+    }
+
     /// A settler with two movement points logs two hex steps; the host must be
     /// asked for the WHOLE walk, or it spends every turn on the first hex.
     #[test]
