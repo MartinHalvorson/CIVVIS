@@ -2634,6 +2634,11 @@ mod tests {
             techs: 0,
             military: 0.0,
             civ: String::new(),
+            raid_wars: 0,
+            settlers_captured: 0,
+            builders_captured: 0,
+            pillages: 0,
+            raid_settler_prizes: 0,
         }
     }
 
