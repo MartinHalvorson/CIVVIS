@@ -7100,11 +7100,15 @@ mod tests {
             "era_paced_expansion",
             // The Settler seat's tally weights; the native lanes stay bred.
             "tally_culture",
-            // The Settler seat's tally price of that chain's buildings.
-            "culture_building_debt",
-            // The Settler seat's tally price of the coverage those weights
-            // never bought.
-            "culture_coverage",
+            // `culture_building_debt`, `culture_coverage` and
+            // `district_building_chain` left this list on 2026-08-21 (PR
+            // #2245). `tally_culture` above really is the host's score rule;
+            // those three are ordinary district-coverage and building-debt
+            // terms with no host semantics in them, and the native board
+            // shows the gap they were written for — Campus in 79-82% of
+            // cities against Theater Square in 33-37%. They are native
+            // repairs now, and the ledger withholds them until a screen
+            // prices them.
             // Reads the live mirror's fog around a settle site.
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
@@ -7138,10 +7142,6 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
-            // The Settler seat's tally for the buildings inside its
-            // districts, against Firaxis rivals who fill every one; the
-            // native lanes keep their bred building debts.
-            "district_building_chain",
             // The Settler seat's pantheon, and the Faith card that buys it,
             // against a host that grants a Settler for it; the native lanes
             // keep the shipped prefix and the bred policy weights.

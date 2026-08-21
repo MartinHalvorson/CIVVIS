@@ -12309,15 +12309,20 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
         building: crate::name!("amphitheater"),
     };
 
+    // ⚠ `_universe()`, not `enable_live_bridge()`: the tag became a screenable
+    // native repair on 2026-08-21 (PR #2245), so the ledger now withholds it
+    // from every bundle until a screen prices it. The mechanism is what this
+    // test pins, so it seats the gene explicitly — the same repair the eleven
+    // genes the first ledger withheld took.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.culture_building_debt,
-        "the live seat carries the treatment"
+        "the universe carries the treatment"
     );
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_culture_building_debt();
     withheld.refresh_research_weight(&game);
 
@@ -12439,15 +12444,17 @@ fn a_standing_district_owes_its_own_buildings_whatever_the_lane() {
 
     // The seat that plays the ladder: an explicit Diplomacy target with the
     // live bundle, and the same seat with only this treatment withheld.
+    // ⚠ `_universe()` — see the note in
+    // `a_theater_square_owes_its_buildings_the_way_a_campus_does`.
     let mut live = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.district_building_chain,
-        "the live seat carries the treatment"
+        "the universe carries the treatment"
     );
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_district_building_chain();
     withheld.refresh_research_weight(&game);
 
@@ -12797,8 +12804,12 @@ fn a_regional_amenity_building_counts_the_cities_it_reaches() {
     let counts = EmpireCounts::default();
     let ordinary = AdvancedAi::new();
     let stock = ordinary.production_value(&game, 0, capital, &zoo, &plan, &counts);
+    // ⚠ `_universe()`: `amenity_district_path` is a ledger-withheld gene and
+    // `district_building_chain` became one on 2026-08-21 (PR #2245), so the
+    // deployed bundle prices the Zoo exactly as stock does and the arms are
+    // equal. The reach term is the mechanism this test pins, so it seats it.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let priced = live.production_value(&game, 0, capital, &zoo, &plan, &counts);
     assert!(
         priced > stock,
