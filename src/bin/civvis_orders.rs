@@ -4668,19 +4668,21 @@ fn main() {
     let assumed_seat: Vec<String> = arg_text(&args, "--assume-seat")
         .map(|list| list.split(',').map(str::to_string).collect())
         .unwrap_or_default();
-    if let Err(why) = assume_seat_capabilities(&mut civvis::mirror::Seat::default(), &assumed_seat) {
+    if let Err(why) = assume_seat_capabilities(&mut civvis::mirror::Seat::default(), &assumed_seat)
+    {
         eprintln!("civvis-orders: {why}");
         std::process::exit(2);
     }
-    let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
-        let snapshot = mirror::snapshot_from_events_at(&events, want).ok()?;
-        let mut state = mirror::state_from_events(&events, want)?;
-        if snapshot.revealed_count() == 0 {
-            return None;
-        }
-        let _ = assume_seat_capabilities(&mut state.seat, &assumed_seat);
-        Some((snapshot, state))
-    };
+    let load =
+        |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
+            let snapshot = mirror::snapshot_from_events_at(&events, want).ok()?;
+            let mut state = mirror::state_from_events(&events, want)?;
+            if snapshot.revealed_count() == 0 {
+                return None;
+            }
+            let _ = assume_seat_capabilities(&mut state.seat, &assumed_seat);
+            Some((snapshot, state))
+        };
 
     // ★★★★★ PRINT THE BOARD CIVVIS IS ACTUALLY ANSWERING, so it can be diffed against
     // the one Civilization VI exported.
@@ -8165,12 +8167,18 @@ mod tests {
         let mut state = civvis::mirror::StateSnapshot::default();
         assert!(!another_frame_can_open(&state), "no frames: no cut");
         state.seat.replan_frames = true;
-        assert!(another_frame_can_open(&state), "frames without a count: cut");
+        assert!(
+            another_frame_can_open(&state),
+            "frames without a count: cut"
+        );
         state.frame = 7;
         assert!(another_frame_can_open(&state), "…on every frame");
         state.seat.replan_frames_max = Some(2);
         state.frame = 0;
-        assert!(another_frame_can_open(&state), "opening board: frame 1 follows");
+        assert!(
+            another_frame_can_open(&state),
+            "opening board: frame 1 follows"
+        );
         state.frame = 1;
         assert!(another_frame_can_open(&state), "frame 1: frame 2 follows");
         state.frame = 2;
