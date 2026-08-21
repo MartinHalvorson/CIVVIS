@@ -23938,6 +23938,95 @@ fn the_advanced_admission_carries_the_field_reading_too() {
     );
 }
 
+/// ★★★★★ THE RAIDER THAT PINS A SETTLER IS NEVER THE ONE STANDING NEXT TO
+/// THE GUARD.
+///
+/// The first version of `barbarian_hunt` only swung at a barbarian ALREADY
+/// adjacent to the escort, and a 30-map `ai_eval` with the arms genuinely
+/// differing reported "nothing differed … it did not fire on this profile".
+/// The live log says why: counted over run civvis-20260821T153531Z, **"Guard
+/// stands with its settler" 33 times** against "Settler falls back toward its
+/// guard" 38, "waits for its guard" 14, "HELD short" 18 and "walking in
+/// circles" 10. Eighty turns of a Settler not advancing while its guard sits
+/// on its tile and a raider loiters two tiles off. Ten Settlers were taken.
+///
+/// So the guard now strikes from any tile it can reach that is still beside
+/// its charge. This board is exactly that shape: guard stacked on the settler,
+/// raider two tiles away, and one open tile between them that keeps the guard
+/// adjacent to the civilian.
+#[test]
+fn the_guard_steps_up_to_the_raider_pinning_its_settler() {
+    let run = |hunt: bool| -> (bool, bool) {
+        let (mut game, home) = camp_bounty_board(90_079);
+        let barb = game.barb_pid.unwrap();
+        let road = open_ground_at(&game, home, 10);
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+        };
+        // A step tile beside the road, and a raider tile beside THAT but two
+        // from the road — the loiterer the old rule could never reach.
+        let (step, perch) = crate::hex::neighbors(road)
+            .into_iter()
+            .filter(|s| open(&game, *s) && game.units_at(*s).is_empty())
+            .find_map(|s| {
+                crate::hex::neighbors(s)
+                    .into_iter()
+                    .find(|p| {
+                        open(&game, *p) && game.units_at(*p).is_empty() && game.wdist(*p, road) == 2
+                    })
+                    .map(|p| (s, p))
+            })
+            .expect("the board has a step tile and a perch two out");
+        let settler = game.spawn_test_unit("settler", 0, road);
+        // Stacked, the shape the live seat forms: "it will share the settler's
+        // tile; a stacked civilian cannot be captured".
+        let guard = game.spawn_test_unit("warrior", 0, road);
+        let raider = game.spawn_test_unit("scout", barb, perch);
+        let mut ai = AdvancedAi::new();
+        ai.base.barbarian_hunt = hunt;
+        let mut fought = false;
+        for _ in 0..12 {
+            let pid = game.current;
+            if pid == 0 {
+                ai.take_turn(&mut game, 0);
+                if game.units.get(&raider).is_none_or(|u| u.hp < 100) {
+                    fought = true;
+                }
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let kept_station = game
+            .units
+            .get(&guard)
+            .zip(game.units.get(&settler))
+            .is_some_and(|(g0, s0)| game.wdist(g0.pos, s0.pos) <= 1);
+        let _ = step;
+        (fought, kept_station)
+    };
+    let (without, _) = run(false);
+    let (with, kept_station) = run(true);
+    assert!(
+        !without,
+        "without the gene the guard must leave the loiterer alone — if this \
+         fires, the plain attack scan already covers it and the rule is moot"
+    );
+    assert!(
+        with,
+        "barbarian_hunt must let the guard reach the raider that is pinning \
+         its Settler two tiles out"
+    );
+    assert!(
+        kept_station,
+        "and it must never be more than one tile from the civilian while it \
+         does — abandoning the charge is how the Settler is taken"
+    );
+}
+
 /// The gene widens WHO may be shot at, not how far the empire will march. A
 /// barbarian with no civilian of ours anywhere near it is still nobody's
 /// business, or every camp on the map becomes a reason to mobilise — the
