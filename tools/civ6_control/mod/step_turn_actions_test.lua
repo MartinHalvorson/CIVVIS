@@ -17,6 +17,9 @@
 --      unit arrives with movement left → `settleTurn` opens a replan frame
 --      (`revealed` + a mover) → the frame's answer moves the SAME unit again
 --      and the host takes it (no refusal, no explore hand-off, frame stamped);
+--      and with a host that walks asynchronously, the turn is HELD while the
+--      opening walk is in flight (`CivvisQueue.watch`) so the frame decision
+--      is taken on the landed board, not the one the walk left;
 --   3. step, then shoot: `[MOVE_TO, RANGE_ATTACK]` → the strike is issued
 --      from the queue once the step has landed, with movement left;
 --   4. step, then settle: `[MOVE_TO site, FOUND_CITY @site]` → the found
@@ -157,6 +160,24 @@ local function line(u, x, y)
 	end
 	return plots, turns
 end
+function host.walk(u, x, y)
+	local plots, turns = line(u, x, y)
+	for i = 2, #plots do
+		if turns[i] <= 1 then
+			u.x, u.y = plots[i] % W, math.floor(plots[i] / W)
+			u.moves = u.moves - 1
+			reveal(u.x, u.y)
+		end
+	end
+end
+function host.land(id)
+	local u = host.units[id]
+	if u.pendingX ~= nil then
+		local x, y = u.pendingX, u.pendingY
+		u.pendingX, u.pendingY = nil, nil
+		host.walk(u, x, y)
+	end
+end
 UnitManager = {
 	GetUnit = function(pid, id)
 		local u = host.units[id]
@@ -173,14 +194,13 @@ UnitManager = {
 		host.ops[#host.ops + 1] = { id = u.id, op = hash,
 			x = params and params.x or nil, y = params and params.y or nil }
 		if hash == "UNITOPERATION_MOVE_TO" then
-			local plots, turns = line(u, params.x, params.y)
-			for i = 2, #plots do
-				if turns[i] <= 1 then
-					u.x, u.y = plots[i] % W, math.floor(plots[i] / W)
-					u.moves = u.moves - 1
-					reveal(u.x, u.y)
-				end
+			if host.slow then
+				-- Asynchronous, like the host: the walk lands when the test
+				-- says so (`host.land`).
+				u.pendingX, u.pendingY = params.x, params.y
+				return
 			end
+			host.walk(u, params.x, params.y)
 		elseif hash == "UNITOPERATION_RANGE_ATTACK" then
 			u.moves = 0; u.attacks = 0
 		elseif hash == "UNITOPERATION_FOUND_CITY" then
@@ -336,6 +356,37 @@ check("no explore hand-off on the frame", ops(5, "UNITOPERATION_AUTOMATE_EXPLORE
 -- Nothing left to move on: the second frame is not wanted and the turn ends.
 check("the turn settles once nobody can move", settle(12, 5), true)
 check("no second frame for a board with no mover", frames.current, 1)
+
+-- 2b. The same, with a host that walks asynchronously: the turn must be
+-- HELD while the opening walk is in flight — no frame decision until the
+-- unit has landed and revealed — and then open the frame.
+-- A fresh map: the host never un-reveals a plot, so the mod's `known` is
+-- cleared with it or the ring this scout lands in would already have crossed.
+revealed = {}; tiles.known = {}; reveal(1, 1); reveal(2, 1)
+host.units = { [6] = { id = 6, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3 } }
+host.ops = {}; host.slow = true
+openTurn(17)
+answer(17, 0, { row(0, 6, "MOVE_TO", 3, 1, 0) })
+check("async: the apply tick holds the turn", settleTurn(player, PID, 17, function() end), false)
+check("async: the walk is watched", queue.pendingCount(), 1)
+for _ = 1, 5 do settleTurn(player, PID, 17, function() end) end
+check("async: still held while the unit is in flight", host.units[6].x, 1)
+check("async: no frame decision taken yet", frames.settled, false)
+check("async: no frame opened on an unsettled board", frames.current, 0)
+host.land(6)
+check("async: the unit has landed with movement left", host.units[6].moves, 1)
+
+check("async: the landed walk releases the watch and opens the frame",
+      settleTurn(player, PID, 17, function() end), false)
+check("async: frame 1 opened after the walk landed", frames.current, 1)
+check("async: …for what the walk revealed", has(lastEvent("replan_frame"), '"reason":"revealed"'), true)
+answer(17, 1, { row(10000, 6, "MOVE_TO", 4, 1, 1) })
+settleTurn(player, PID, 17, function() end)
+check("async: the frame's step is watched too", queue.pendingCount(), 1)
+host.land(6)
+check("async: the second step landed", host.units[6].x, 4)
+check("async: the turn settles", settle(17, 10), true)
+host.slow = false
 
 -- 3. Step, then shoot. `[MOVE_TO (2,2), RANGE_ATTACK (4,2)]` for an archer
 -- with 2 movement: the step lands with 1 left and the queue fires the shot

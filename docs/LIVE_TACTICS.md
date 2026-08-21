@@ -516,7 +516,14 @@ the host half by driving the shipped mod's `beginTurn`/`settleTurn`/
    and kept the rest of its movement. The apply tick now returns false;
    the next tick drains the queue, opens a frame if one is wanted, and
    only then releases — the branch written for exactly that, which never
-   got a tick. The same for a frame's answer and a stale answer.
+   got a tick. The same for a frame's answer and a stale answer. And that
+   branch decided on the frame the first time the queue was EMPTY — which,
+   for a unit whose whole order was one `MOVE_TO`, is while it is still
+   walking: nothing revealed yet, no frame, the turn latched settled. The
+   queue now **watches** every unit's opening walk (`CivvisQueue.watch`, a
+   rows-less entry that settles like any queued order — arrival, no
+   movement, the host's event, or the grace period — and is dropped), so
+   the frame decision is taken on the landed board.
 2. **`FOUND_CITY` founded where the settler stood.** The row carried no
    site; the mod runs every found before the settler's walk (so a settler
    already on its site founds at once) and re-queues a refused one behind
@@ -549,7 +556,9 @@ once per step-then-settle turn: the found that ran first). In the decide
 notes, `frontier_cuts` against `frontier_cuts_withheld_last_frame`.
 
 Tests: `step_turn_actions_test.lua` (the seat cap; step → frame → second
-step through `settleTurn`; step → shot from the queue before release;
+step through `settleTurn`, with a synchronous and an asynchronous host —
+the latter proves the turn is held until the walk lands; step → shot from
+the queue before release;
 step → settle on the site, the first-run found refused by name without a
 `found_refused`; a capped walk does not settle short; a row without a site
 keeps the old behaviour),
