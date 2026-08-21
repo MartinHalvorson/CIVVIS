@@ -28736,89 +28736,24 @@ fn a_blind_plan_stops_at_the_step_that_revealed_new_ground() {
     }
 }
 
-/// ★★★★ A STEP THAT BRINGS A HOSTILE INTO VIEW RE-FORMS THE FORCE GROUPS.
-/// The groups are otherwise dirtied only by an attack ("movement cannot
-/// change the opposing force"); a barbarian one hex past a scout's sight is
-/// exactly what movement changes. With the gene the step that sees it marks
-/// the groups dirty, so every unit still to move is assigned on the board
-/// with it on; without it the groups stand until somebody strikes.
+/// The gene is off in the shipped controller, on in the live bundle (the
+/// ledger leaves a host-only flag as the bundle sets it, whatever its
+/// retired native stand-in measured), and out of the native repair bundle
+/// and the screen's genome.
 #[test]
-fn a_step_that_sights_a_hostile_dirties_the_force_groups() {
-    let game = Game::new(2, 24, 16, 79, 80, 0);
-    let barb = game.barb_pid.expect("the fixture seats barbarians");
-    let [a, b, c, d] = land_chain(&game).expect("fixture offers a four-tile land chain");
-    for reassess in [false, true] {
-        let mut board = game.clone();
-        // Only our scout sees for us: the fixture's starting units are taken
-        // off the board so nothing else has eyes on the chain.
-        let ours: Vec<u32> = board
-            .units
-            .values()
-            .filter(|unit| unit.owner == 0)
-            .map(|unit| unit.id)
-            .collect();
-        for unit in ours {
-            board.remove_unit(unit);
-        }
-        // Our scout at A; the barbarian warrior at the far end of the chain,
-        // past its sight, so it is unseen from A and seen once it steps to B.
-        let uid = board.spawn_test_unit("scout", 0, a);
-        let lurker = [d, c, b]
-            .into_iter()
-            .find(|pos| !board.player_can_see(0, *pos))
-            .expect("the chain reaches past the scout's sight");
-        let _ = board.unit_sight(uid);
-        let baseline = AdvancedAi::visible_hostiles(&board, 0);
-        board.spawn_test_unit("warrior", barb, lurker);
-        assert!(
-            !board.player_can_see(0, lurker),
-            "fixture: the lurker is unseen from A"
-        );
-        assert_eq!(AdvancedAi::visible_hostiles(&board, 0), baseline);
-
-        let mut ai = AdvancedAi::new();
-        if reassess {
-            ai.enable_step_and_reassess();
-        }
-        ai.force_groups_dirty = false;
-        // The loop's own bookkeeping around one sighted step along the chain.
-        let hostiles_before = AdvancedAi::visible_hostiles(&board, 0);
-        assert!(ai.base.path_move(&mut board, 0, uid, b), "the step to B");
-        assert!(
-            board.player_can_see(0, lurker),
-            "fixture: the step brings the warrior into view"
-        );
-        assert!(AdvancedAi::visible_hostiles(&board, 0) > hostiles_before);
-        ai.note_sightings(&board, 0, hostiles_before);
-        assert_eq!(
-            ai.force_groups_dirty, reassess,
-            "dirtied only with the gene, reassess={reassess}"
-        );
-        assert_eq!(ai.census.reveal_regroups, u32::from(reassess));
-        // A step that sights nothing new leaves the groups alone either way.
-        ai.force_groups_dirty = false;
-        ai.note_sightings(&board, 0, AdvancedAi::visible_hostiles(&board, 0));
-        assert!(!ai.force_groups_dirty);
-    }
-}
-
-/// The gene is off in the shipped controller and on in both bundles that
-/// carry the bridge's engine repairs, so `gene_screen` prices it natively.
-#[test]
-fn step_and_reassess_is_a_live_treatment_and_a_native_repair() {
+fn step_and_reassess_is_a_host_only_live_treatment() {
     assert!(!AdvancedAi::new().step_and_reassess);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.step_and_reassess);
+    live.enable_live_bridge();
+    assert!(live.step_and_reassess, "on in the deployment genome");
     live.disable_step_and_reassess();
     assert!(!live.step_and_reassess);
     let mut repairs = AdvancedAi::new();
-    repairs.enable_engine_repairs_universe();
-    assert!(repairs.step_and_reassess);
-    assert!(
-        crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&"step-and-reassess"),
-        "a native repair is screened, never excluded as Firaxis-only"
-    );
+    repairs.enable_engine_repairs();
+    assert!(!repairs.step_and_reassess, "no native twin");
+    assert!(crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&"step-and-reassess"));
+    assert!(!crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&"step-and-reassess"));
+    assert!(!crate::ai::gene_ledger::screenable("step-and-reassess"));
 }
 
 /// The treatment is off in the shipped controller and on in the live bundle.
@@ -29149,8 +29084,8 @@ fn step_and_reassess_fires_check() {
             census.absorb(&ai.strategy_census());
         }
         eprintln!(
-            "FIRES seed={seed} t{} sightings={} blind_cuts={} engage={} hold={}",
-            game.turn, census.reveal_regroups, census.step_reassessed, census.engage, census.hold
+            "FIRES seed={seed} t{} blind_cuts={} engage={} hold={}",
+            game.turn, census.step_reassessed, census.engage, census.hold
         );
     }
 }

@@ -1353,8 +1353,6 @@ impl AdvancedAi {
         // And a three-hop loop back to the start is no better than a two-hop
         // one. See `whole_turn_backtrack_guard`.
         self.enable_whole_turn_backtrack_guard();
-        // And a plan made blind is finished sighted. See `step_and_reassess`.
-        self.enable_step_and_reassess();
         // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
         // 53.3% of force decisions, and two thirds of those are objectives
         // that are not cities.

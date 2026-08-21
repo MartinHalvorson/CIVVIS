@@ -113,11 +113,13 @@ pub fn screenable(tag: &str) -> bool {
 /// not proven either. `None` for a gene no native screen can price (the
 /// Firaxis-only flags), which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
-    match ledger_verdict(tag) {
-        Some(row) => Some(row.verdict == Verdict::Helps),
-        None if screenable(tag) => Some(false),
-        None => None,
+    // A host-only flag is never governed by a native row — even when one
+    // exists: such a row measured a native stand-in that no longer runs
+    // (`step-and-reassess`, 2026-08-21) and must not govern the bridge.
+    if !screenable(tag) {
+        return None;
     }
+    Some(ledger_verdict(tag).is_some_and(|row| row.verdict == Verdict::Helps))
 }
 
 /// Whether a live treatment is normally present in the universe but held out
@@ -262,6 +264,13 @@ mod tests {
             "Firaxis-only: untouched"
         );
         assert!(!screenable("live-trader-route"));
+        // A host-only flag with a row from its retired native stand-in.
+        assert!(ledger_verdict("step-and-reassess").is_some());
+        assert_eq!(
+            ledger_default_on("step-and-reassess"),
+            None,
+            "a host-only flag is never governed by a native row"
+        );
         for repair in crate::elo::ENGINE_REPAIR_TREATMENTS {
             assert!(screenable(repair));
             assert!(

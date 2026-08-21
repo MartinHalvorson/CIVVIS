@@ -768,11 +768,9 @@ pub struct StrategyCensus {
     pub arrival_wave_holds: u32,
     pub arrival_wave_releases: u32,
     pub arrival_wave_lone: u32,
-    /// `step_and_reassess`: steps that brought a hostile into view and
-    /// re-formed the force groups (serial path), and blind batch plans cut
-    /// at the step that revealed new ground (parallel path). Zero unless the
-    /// flag is on; zero under the flag says it never fired.
-    pub reveal_regroups: u32,
+    /// `step_and_reassess`: blind batch plans cut at the step that revealed
+    /// new ground (the parallel CLI path; no evaluator installs a pool, so
+    /// this is zero in every screen and the gene is priced on the bridge).
     pub step_reassessed: u32,
 }
 
@@ -836,7 +834,6 @@ impl StrategyCensus {
         self.arrival_wave_holds += other.arrival_wave_holds;
         self.arrival_wave_releases += other.arrival_wave_releases;
         self.arrival_wave_lone += other.arrival_wave_lone;
-        self.reveal_regroups += other.reveal_regroups;
         self.step_reassessed += other.step_reassessed;
     }
 }
@@ -3846,21 +3843,24 @@ pub struct AdvancedAi {
     /// now see). The rest of the batch keeps its plan: another unit's reveal
     /// is not this unit's new fact unless it also walks into it.
     ///
-    /// Serially (every evaluator and the live decider run without a pool, so
-    /// each step is already re-decided sighted) the gene's other leg acts: a
-    /// step that brings a hostile into view dirties the force groups, which
-    /// are otherwise re-formed only by an attack — the unit that saw the
-    /// barbarian horsemen, and every unit after it, move on the board with
-    /// them on it (`advance_unit_serial`, `reveal_regroups`).
+    /// ⚠ A serial leg — a step that brought a hostile into view re-formed the
+    /// force groups — stood in for the gene on the native board (every
+    /// evaluator runs without a pool, so each step is already re-decided
+    /// sighted). The 6p re-rank against the best genome (15,000 seat-pairs,
+    /// 2026-08-21) priced that leg at share −0.15 pp (z −2.3), win −0.5; it
+    /// is removed, and the gene is host-only (`FIRAXIS_ONLY_TREATMENTS`):
+    /// the cut exists because the host executes one coalesced walk per
+    /// unit, a fact of the bridge with no native meaning. The ladder prices
+    /// it; the native screen no longer prices a proxy.
     ///
     /// On the live bridge the same gene is the brain half of the mid-turn
     /// replan frame: `civvis_orders` cuts a unit's coalesced walk at its
     /// first unrevealed hex when the seat advertises `replan_frames`, so the
     /// host walks it to the edge of the known, the mod re-exports the board
     /// it uncovered, and the frame's re-plan spends the remaining movement
-    /// on the new ground. Off for native tournament games and the frozen
-    /// anchor; on for the live bridge and the repair bundle; priced by
-    /// `gene_screen` as `step-and-reassess`. See `docs/LIVE_TACTICS.md` §11.
+    /// on the new ground. On for the live bridge (host-only, so the ledger
+    /// leaves it as the bundle sets it); off natively. See
+    /// `docs/LIVE_TACTICS.md` §11.
     pub step_and_reassess: bool,
 
     /// Admit the friendly-volley extension without the rest of the closed
@@ -29011,20 +29011,6 @@ impl AdvancedAi {
             && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
     }
 
-    /// Hostile units this seat can see right now: barbarians and anyone it
-    /// is at war with, on a tile in its current sight.
-    fn visible_hostiles(g: &Game, pid: usize) -> usize {
-        let frame = g.player_vision_frame(pid);
-        g.units
-            .values()
-            .filter(|unit| {
-                unit.owner != pid
-                    && (g.barb_pid == Some(unit.owner) || g.at_war.contains(&(pid, unit.owner)))
-                    && g.sees(&frame, unit.pos)
-            })
-            .count()
-    }
-
     fn advance_unit_serial(
         &mut self,
         g: &mut Game,
@@ -29041,16 +29027,6 @@ impl AdvancedAi {
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
-            // `step_and_reassess`: a step that brings a hostile into view is
-            // new information for every unit still to move. The force groups
-            // are otherwise re-formed only when an ATTACK dirties them
-            // ("movement cannot change the opposing force") — but a step
-            // that reveals one does exactly that.
-            let hostiles_before = if self.step_and_reassess {
-                Self::visible_hostiles(g, pid)
-            } else {
-                0
-            };
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -29078,18 +29054,8 @@ impl AdvancedAi {
                 break;
             }
             took_a_turn = true;
-            self.note_sightings(g, pid, hostiles_before);
         }
         took_a_turn
-    }
-
-    /// After a sighted step: if more hostiles are in view than before it,
-    /// the force groups are re-formed before the next military step.
-    fn note_sightings(&mut self, g: &Game, pid: usize, hostiles_before: usize) {
-        if self.step_and_reassess && Self::visible_hostiles(g, pid) > hostiles_before {
-            self.force_groups_dirty = true;
-            self.census.reveal_regroups += 1;
-        }
     }
 
     fn plan_general_unit_turn(
