@@ -20791,10 +20791,8 @@ impl AdvancedAi {
             .take(SETTLEMENT_FORECAST_POPULATION)
             .filter(|tile| tile.yields.food >= 2.0 || tile.yields.production >= 2.0)
             .count() as f64;
-        let mut value = forecast.score
-            + (housing - 2.0) * 4.0
-            + growth_readiness
-            + dependable_jobs * 0.75;
+        let mut value =
+            forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += if self.district_lookahead_settle {
             self.settlement_district_lookahead_value(g, pid, pos, &positions)
         } else {

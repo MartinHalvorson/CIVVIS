@@ -442,7 +442,13 @@ impl Game {
     /// `center` standing in for the city.  Aqueducts, Dams and Canals never
     /// reach this (no adjacency rules), so their branches answer `false`
     /// rather than approximating hydrology the settler cannot see anyway.
-    pub(crate) fn plot_fits_placement(&self, pid: usize, district: Name, pos: Pos, center: Pos) -> bool {
+    pub(crate) fn plot_fits_placement(
+        &self,
+        pid: usize,
+        district: Name,
+        pos: Pos,
+        center: Pos,
+    ) -> bool {
         let neighbors = self.nbrs(pos);
         self.plot_fits_placement_with_neighbors(pid, district, pos, center, &neighbors)
     }
@@ -641,18 +647,17 @@ mod tests {
         let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
         let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
         land.sort();
-        let center = land
-            .into_iter()
-            .find(|pos| {
-                game.map
-                    .get(*pos)
-                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-                    && game
+        let center =
+            land.into_iter()
+                .find(|pos| {
+                    game.map.get(*pos).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && game
                         .wdisk(*pos, 3)
                         .iter()
                         .all(|ring| game.map.get(*ring).is_some())
-            })
-            .expect("an interior site");
+                })
+                .expect("an interior site");
         for pos in game.wdisk(center, 3) {
             let tile = game.map.tiles.get_mut(&pos).unwrap();
             tile.terrain = Name::new("plains");
@@ -684,8 +689,14 @@ mod tests {
         );
         let (campus_plot, campus_adjacency) = campus_first[0].expect("a Campus plot");
         let (holy_plot, holy_adjacency) = campus_first[1].expect("a Holy Site plot");
-        assert_eq!(campus_plot, anchor, "the first family takes the three-peak plot");
-        assert_ne!(holy_plot, anchor, "the second family is handed a different plot");
+        assert_eq!(
+            campus_plot, anchor,
+            "the first family takes the three-peak plot"
+        );
+        assert_ne!(
+            holy_plot, anchor,
+            "the second family is handed a different plot"
+        );
         assert!(campus_adjacency.science >= 3.0);
         assert!(holy_adjacency.faith < 3.0);
 
@@ -695,7 +706,11 @@ mod tests {
             &positions,
             &[Name::new("holy_site"), Name::new("campus")],
         );
-        assert_eq!(holy_first[0].unwrap().0, anchor, "order decides who gets the plot");
+        assert_eq!(
+            holy_first[0].unwrap().0,
+            anchor,
+            "order decides who gets the plot"
+        );
         assert_ne!(holy_first[1].unwrap().0, anchor);
 
         // A district no unclaimed plot can hold comes back as `None` rather
