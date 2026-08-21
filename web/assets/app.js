@@ -8819,6 +8819,24 @@ function drawStrategicMarsh(x, y) {
 // sides of this tile instead of floating as three generic waves in its centre.
 // The paired inset bands read as a broad overflow margin while leaving the
 // ground colour visible — especially important for the three floodplain biomes.
+// A fine navy keyline keeps both bands legible against grassland, plains and
+// desert without giving them the visual weight of the river itself.
+const FLOODPLAIN_KEYLINE_COLOR = "#123d58";
+const FLOODPLAIN_KEYLINE_GROWTH = 1.3;
+const FLOODPLAIN_BANDS = [
+  [.67, "#4b94b1", 1.9],
+  [.45, "#91cfdb", 1.25],
+];
+
+function strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale = 1) {
+  cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+  cx.strokeStyle = FLOODPLAIN_KEYLINE_COLOR;
+  cx.lineWidth = (width + FLOODPLAIN_KEYLINE_GROWTH) * scale;
+  cx.stroke();
+  cx.strokeStyle = color; cx.lineWidth = width * scale;
+  cx.stroke();
+}
+
 function drawStrategicFloodplains(t, x, y) {
   const riverSides = [];
   for (let side = 0; side < 6; side++) {
@@ -8834,17 +8852,13 @@ function drawStrategicFloodplains(t, x, y) {
   cx.lineCap = "round"; cx.lineJoin = "round";
   for (const side of riverSides) {
     const [first, second] = EDGE_CORNERS[side];
-    for (const [radius, color, width] of [
-      [S * .67, "#346f8c", 1.9],
-      [S * .45, "#72aec0", 1.25],
-    ]) {
-      const [ax, ay] = corner(x, y, radius, first);
-      const [bx, by] = corner(x, y, radius, second);
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const [ax, ay] = corner(x, y, S * radius, first);
+      const [bx, by] = corner(x, y, S * radius, second);
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      cx.strokeStyle = color; cx.lineWidth = width;
-      cx.beginPath(); cx.moveTo(ax, ay);
-      cx.quadraticCurveTo(mx + (mx - x) * .12, my + (my - y) * .12, bx, by);
-      cx.stroke();
+      strokeFloodplainBand(ax, ay,
+        mx + (mx - x) * .12, my + (my - y) * .12,
+        bx, by, color, width);
     }
   }
   cx.restore();
@@ -18124,12 +18138,12 @@ function drawPlanetStrategicFloodplains(entry, visible, spectator) {
   for (const side of riverSides) {
     const a = points[side], b = points[(side + 1) % points.length];
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    for (const [inset, color, width] of [[.33, "#346f8c", 1.9], [.55, "#72aec0", 1.25]]) {
+    for (const [radius, color, width] of FLOODPLAIN_BANDS) {
+      const inset = 1 - radius;
       const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
       const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
       const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
-      cx.strokeStyle = color; cx.lineWidth = width * scale;
-      cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by); cx.stroke();
+      strokeFloodplainBand(ax, ay, qx, qy, bx, by, color, width, scale);
     }
   }
   cx.restore();
