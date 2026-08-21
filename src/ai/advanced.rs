@@ -4060,6 +4060,10 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// Great People never pile up: the `great-person-housing` gene's ladder of
+/// remedies for a class earned and blocked. See
+/// `advanced/great_person_housing.rs`.
 mod great_person_housing;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
