@@ -43,6 +43,9 @@
 //!    Gold is banked, and the race is won rather than forfeited. Works are
 //!    never sold to the plan's target or to a rival already past 60% of a
 //!    victory: a Great Work is Tourism for whoever houses it.
+//! 3. **Open a new square.** A due cultural person with every slot full,
+//!    nothing with a slot buildable and no buyer starts a Theater Square in
+//!    a city that has none — the only remaining way the class ever clears.
 //!
 //! Both rungs are measured as one gene; the screen decides whether the
 //! bundle ships ON. Off everywhere by default until then.
@@ -247,6 +250,29 @@ impl AdvancedAi {
         }
     }
 
+    /// The slot building a work kind waits on, and whether its technology
+    /// and civic are known — the only state in which walking its
+    /// prerequisite chain buys the person anything. ★ The first probe with
+    /// the chain unconditional built museums in the Musician's name on seats
+    /// fifty turns short of Radio: a Broadcast Center no tech allows is not
+    /// nearer for having its museum, and the Musician piled up regardless
+    /// (199 blocked seat-turns against 83 with the gene off).
+    fn great_work_slot_building_unlocked(g: &Game, pid: usize, work: &str) -> bool {
+        let family = match work {
+            "art" => "art_museum",
+            "music" => "broadcast_center",
+            _ => return false,
+        };
+        let Some(spec) = g.rules.buildings.get_interned(Name::new(family)) else {
+            return false;
+        };
+        let player = &g.players[pid];
+        spec.tech.is_none_or(|tech| player.techs.contains(&tech))
+            && spec
+                .civic
+                .is_none_or(|civic| player.civics.contains(&civic))
+    }
+
     /// The district family whose absence blocks this class, if a district is
     /// the remedy at all.
     fn great_person_district_family(stuck: &StuckGreatPerson) -> Option<&'static str> {
@@ -268,6 +294,52 @@ impl AdvancedAi {
         cid: u32,
         stuck: &StuckGreatPerson,
     ) -> Option<Item> {
+        self.great_person_housing_item_with_square(g, pid, cid, stuck, false)
+    }
+
+    /// The last rung for a cultural person: a Theater Square in a city that
+    /// has none, when every existing slot is full, nothing with a slot can
+    /// be started, and nothing could be sold. ★ The first probe's longest
+    /// Writer streak (54 turns, seed 70000002) was a seven-city empire with
+    /// four full Amphitheaters, nine works, three wars and no buyer.
+    fn great_person_new_square_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        stuck: &StuckGreatPerson,
+    ) -> Option<Item> {
+        if !stuck.due || stuck.work().is_none() {
+            return None;
+        }
+        let family = "theater_square";
+        if g.city_has_district_family(&g.cities[&cid], Name::new(family)) {
+            return None;
+        }
+        let district = BasicAi::civ_district(g, pid, family);
+        g.district_sites(cid, district)
+            .into_iter()
+            .max_by(|left, right| {
+                g.district_yields(district, *left)
+                    .total()
+                    .partial_cmp(&g.district_yields(district, *right).total())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(left.cmp(right))
+            })
+            .map(|pos| Item::District { district, pos })
+            .filter(|item| g.can_produce(pid, cid, item))
+    }
+
+    fn great_person_housing_item_with_square(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        stuck: &StuckGreatPerson,
+        new_square: bool,
+    ) -> Option<Item> {
+        if new_square {
+            return Self::great_person_new_square_item(g, pid, cid, stuck);
+        }
         if let Some((work, _)) = stuck.work() {
             let mut best: Option<(i32, f64, String, Item)> = None;
             for item in g.producible_items(pid, cid) {
@@ -299,12 +371,15 @@ impl AdvancedAi {
                 return Some(item);
             }
             // The museum stands on an Amphitheater, the Broadcast Center on
-            // a museum: start the nearest missing step of the chain.
-            if let Some(item) = Self::great_work_slot_prerequisites(work)
-                .iter()
-                .find_map(|family| BasicAi::civ_building(g, pid, cid, family))
-            {
-                return Some(item);
+            // a museum: start the nearest missing step of the chain — once
+            // the slot building itself is unlocked, so the chain ends in it.
+            if Self::great_work_slot_building_unlocked(g, pid, work) {
+                if let Some(item) = Self::great_work_slot_prerequisites(work)
+                    .iter()
+                    .find_map(|family| BasicAi::civ_building(g, pid, cid, family))
+                {
+                    return Some(item);
+                }
             }
         }
         if !stuck.due {
@@ -442,103 +517,123 @@ impl AdvancedAi {
         if stuck.is_empty() {
             return false;
         }
-        let city_ids = g.player_city_ids(pid);
         let mut changed = false;
         let mut reserved = false;
         for person in &stuck {
             if Self::great_person_remedy_queued(g, pid, person) {
                 continue;
             }
-            let mut choice: Option<(f64, String, u32, Item)> = None;
-            if !reserved {
-                for &cid in &city_ids {
-                    let city = &g.cities[&cid];
-                    if plan.threatened_city == Some(cid)
-                        || (city.last_attacked > 0
-                            && g.turn.saturating_sub(city.last_attacked) <= 4)
-                    {
-                        continue;
-                    }
-                    let redirectable = match city.queue.first() {
-                        None => true,
-                        Some(Item::Project { project }) => g.rules.projects[project].repeatable,
-                        Some(Item::Building { building }) => {
-                            person.due && !g.rules.buildings[building].wonder
-                        }
-                        _ => false,
-                    };
-                    if !redirectable {
-                        continue;
-                    }
-                    let Some(item) = self.great_person_housing_item(g, pid, cid, person) else {
-                        continue;
-                    };
-                    // Progress saved for a paused item is keyed privately by
-                    // the engine; the estimate counts only an idle city's
-                    // carried overflow, as the live helper does.
-                    let carried = if city.queue.is_empty() {
-                        city.production
-                    } else {
-                        0.0
-                    };
-                    let remaining = (g.item_cost_for_city(pid, cid, &item) - carried).max(0.0);
-                    let turns = remaining / g.city_yields(cid).production.max(0.1);
-                    let key = format!("{item:?}");
-                    let better = choice
-                        .as_ref()
-                        .is_none_or(|(old_turns, old_key, old_city, _)| {
-                            turns + f64::EPSILON < *old_turns
-                                || ((turns - *old_turns).abs() <= f64::EPSILON
-                                    && (key.as_str(), cid) < (old_key.as_str(), *old_city))
-                        });
-                    if better {
-                        choice = Some((turns, key, cid, item));
-                    }
-                }
+            if !reserved && self.great_person_housing_reserve(g, pid, plan, person, false) {
+                changed = true;
+                reserved = true;
+                continue;
             }
-            if let Some((turns, _, cid, item)) = choice {
-                let prior = g.cities[&cid].queue.first().cloned();
-                let city_name = g.cities[&cid].name.clone();
-                if g.apply(
-                    pid,
-                    &Action::Produce {
-                        city: cid,
-                        item: item.clone(),
-                    },
-                )
-                .is_ok()
+            // No city can start a remedy: a due cultural person sells its way
+            // to a slot, and failing a buyer, opens a new Theater Square.
+            if person.due && person.work().is_some() {
+                if self.great_person_housing_sale(g, pid, plan, person) > 0 {
+                    changed = true;
+                } else if !reserved && self.great_person_housing_reserve(g, pid, plan, person, true)
                 {
                     changed = true;
                     reserved = true;
-                    let when = if person.due {
-                        "is earned and waiting".to_string()
-                    } else {
-                        format!("arrives in {:.0} turns", person.turns_to_due)
-                    };
-                    match prior {
-                        Some(prior) => think!(self.journal(), Economy, Decision,
-                            "{} pauses {} for {} to house the {}", city_name,
-                            Self::plain_item(&prior), Self::plain_item(&item), plain(&person.kind);
-                            "the {} {} and cannot be claimed; {:.0} turns to build",
-                            plain(&person.kind), when, turns),
-                        None => think!(self.journal(), Economy, Decision,
-                            "{} starts {} to house the {}", city_name, Self::plain_item(&item),
-                            plain(&person.kind);
-                            "the {} {} and cannot be claimed; {:.0} turns to build",
-                            plain(&person.kind), when, turns),
-                    }
-                    continue;
                 }
-            }
-            // No city can start a remedy: a due cultural person sells its way
-            // to a slot.
-            if person.due
-                && person.work().is_some()
-                && self.great_person_housing_sale(g, pid, plan, person) > 0
-            {
-                changed = true;
             }
         }
         changed
+    }
+
+    /// Reserve the city that finishes this class's remedy soonest: an idle
+    /// city or one on a repeatable project, or — once the person is due — one
+    /// on an ordinary building. Returns whether a queue changed.
+    fn great_person_housing_reserve(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        person: &StuckGreatPerson,
+        new_square: bool,
+    ) -> bool {
+        let city_ids = g.player_city_ids(pid);
+        let mut choice: Option<(f64, String, u32, Item)> = None;
+        for &cid in &city_ids {
+            let city = &g.cities[&cid];
+            if plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            {
+                continue;
+            }
+            let redirectable = match city.queue.first() {
+                None => true,
+                Some(Item::Project { project }) => g.rules.projects[project].repeatable,
+                Some(Item::Building { building }) => {
+                    person.due && !g.rules.buildings[building].wonder
+                }
+                _ => false,
+            };
+            if !redirectable {
+                continue;
+            }
+            let Some(item) =
+                self.great_person_housing_item_with_square(g, pid, cid, person, new_square)
+            else {
+                continue;
+            };
+            // Progress saved for a paused item is keyed privately by the
+            // engine; the estimate counts only an idle city's carried
+            // overflow, as the live helper does.
+            let carried = if city.queue.is_empty() {
+                city.production
+            } else {
+                0.0
+            };
+            let remaining = (g.item_cost_for_city(pid, cid, &item) - carried).max(0.0);
+            let turns = remaining / g.city_yields(cid).production.max(0.1);
+            let key = format!("{item:?}");
+            let better = choice
+                .as_ref()
+                .is_none_or(|(old_turns, old_key, old_city, _)| {
+                    turns + f64::EPSILON < *old_turns
+                        || ((turns - *old_turns).abs() <= f64::EPSILON
+                            && (key.as_str(), cid) < (old_key.as_str(), *old_city))
+                });
+            if better {
+                choice = Some((turns, key, cid, item));
+            }
+        }
+        let Some((turns, _, cid, item)) = choice else {
+            return false;
+        };
+        let prior = g.cities[&cid].queue.first().cloned();
+        let city_name = g.cities[&cid].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        let when = if person.due {
+            "is earned and waiting".to_string()
+        } else {
+            format!("arrives in {:.0} turns", person.turns_to_due)
+        };
+        match prior {
+            Some(prior) => think!(self.journal(), Economy, Decision,
+                "{} pauses {} for {} to house the {}", city_name,
+                Self::plain_item(&prior), Self::plain_item(&item), plain(&person.kind);
+                "the {} {} and cannot be claimed; {:.0} turns to build",
+                plain(&person.kind), when, turns),
+            None => think!(self.journal(), Economy, Decision,
+                "{} starts {} to house the {}", city_name, Self::plain_item(&item),
+                plain(&person.kind);
+                "the {} {} and cannot be claimed; {:.0} turns to build",
+                plain(&person.kind), when, turns),
+        }
+        true
     }
 }

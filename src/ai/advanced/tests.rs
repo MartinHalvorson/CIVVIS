@@ -28892,6 +28892,47 @@ fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
     );
 }
 
+/// ★★★★ THE LAST RUNG. Every slot full, nothing with a slot buildable, and
+/// the only other civilization at war (no market): a due Writer opens a
+/// Theater Square in the city that has none. With a buyer the sale comes
+/// first and no district is started.
+#[test]
+fn a_due_writer_with_no_buyer_opens_a_new_theater_square() {
+    let (mut game, capital) = great_person_housing_fixture(71_308);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let home = game.cities[&capital].pos;
+    let second = found_nearby_test_city(&mut game, 0, home);
+    game.cities.get_mut(&second).unwrap().pop = 4;
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(game.quick_deals(0).is_empty(), "a war closes the market");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    assert!(ai.great_person_housing(&mut game, 0, &plan));
+    assert!(
+        matches!(
+            game.cities[&second].queue.first(),
+            Some(Item::District { district, .. }) if game.district_family(*district) == "theater_square"
+        ),
+        "the city without a square starts one"
+    );
+    assert_eq!(writing_works(&game, 0), 2, "nothing to sell");
+    assert!(
+        !ai.great_person_housing(&mut game, 0, &plan),
+        "one square at a time"
+    );
+}
+
 /// A slot building outranks a sale: with the Amphitheater full but a second
 /// city able to build one, the gene reserves that city and sells nothing.
 #[test]
@@ -28964,11 +29005,17 @@ fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_pr
         turns_to_due: 5.0,
     };
     assert!(
+        ai.great_person_housing_item(&game, 0, capital, &musician)
+            .is_none(),
+        "without Radio no museum brings a Broadcast Center nearer"
+    );
+    game.players[0].techs.insert(crate::name!("radio"));
+    assert!(
         matches!(
             ai.great_person_housing_item(&game, 0, capital, &musician),
             Some(Item::Building { building }) if building == crate::name!("amphitheater")
         ),
-        "no museum yet: the chain starts at the Amphitheater"
+        "Radio known and no museum yet: the chain starts at the Amphitheater"
     );
 }
 
