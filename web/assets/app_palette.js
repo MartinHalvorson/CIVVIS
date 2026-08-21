@@ -137,9 +137,10 @@ HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
 const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
       HIDDEN_MAP_MONSTER_VARIANTS = 30;
 // These are quiet map notes rather than full marginal scenes. The enlarged
-// scale, reach, and variable keep-out envelope grow together, preserving open
-// parchment and irregular gaps around each engraving.
+// scale and reach keep the drawings legible, while the 20%-tighter, variable
+// keep-out envelope adds a few more tales without forming a grid or clusters.
 const HIDDEN_MAP_TALE_SCALE = 1.7,
+      HIDDEN_MAP_TALE_SPACING_SCALE = .8,
       HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE,
       HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE,
       HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE,

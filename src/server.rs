@@ -13037,9 +13037,20 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
         assert!(monsters.contains(".21"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SPACING_SCALE = .8"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
+
+        let seating_radius = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeatRadius(q, r, seedA, seedB)")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
+                    .next()
+            })
+            .expect("scaled hidden-map monster seating radius");
+        assert!(seating_radius.contains("HIDDEN_MAP_TALE_SPACING_SCALE *"));
 
         let seating = EMBEDDED_INDEX
             .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
@@ -13048,6 +13059,7 @@ mod tests {
             .expect("minimum-distance hidden-map monster seating");
         assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
         assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *"));
         assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
         assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
         assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
@@ -13986,7 +13998,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_use_base_game_formations_and_large_count_badges() {
+    fn browser_tile_yields_use_compact_base_game_formations_and_large_count_badges() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
@@ -14008,6 +14020,8 @@ mod tests {
         assert!(formations.contains("if (count === 3)"));
         assert!(formations.contains("Math.sqrt(3)"));
         assert!(formations.contains("if (count === 4) return ["));
+        assert!(formations.contains("const gap = .55 * r / 4.4;"));
+        assert!(formations.contains("const step = r * 2 + gap;"));
 
         let cluster = EMBEDDED_INDEX
             .split("function yieldPipCluster")
@@ -14017,6 +14031,7 @@ mod tests {
         assert!(cluster.contains("const summary = pips.length >= 5;"));
         assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
         assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+        assert!(cluster.contains("const edge = sign => sign.r + YIELD_PIP_RIM;"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
@@ -14036,6 +14051,9 @@ mod tests {
         assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
         assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
         assert!(pip.contains("label.length === 1 ? 1.25"));
+        assert!(pip.contains("cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7);"));
+        assert!(pip.contains("cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PIP_RIM = .58;"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
         assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));

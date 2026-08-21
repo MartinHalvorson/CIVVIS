@@ -24027,6 +24027,76 @@ fn the_guard_steps_up_to_the_raider_pinning_its_settler() {
     );
 }
 
+/// ★★★★★ THE RAIDER BESIDE THE WALKER IS THE ONE HOLDING IT, WHATEVER ELSE
+/// PRICES BETTER.
+///
+/// A Civilization VI Warrior and a Slinger both carry `zone_of_control`, so a
+/// raider standing next to our Settler makes `Game::can_move` REFUSE its next
+/// step. Run civvis-20260821T153531Z journals **"Settler HELD short … the next
+/// tile refuses it and nothing is standing there" 86 times in 226 turns**, and
+/// fourteen of fourteen sampled had barbarians on the board. Killing the unit
+/// is the only exit from a zone-of-control lock, which is why every
+/// threat-AVOIDANCE gene in this family reads neutral-to-harmful in the ledger.
+///
+/// This board offers the guard two legal, positively-priced targets: a fat one
+/// away from the Settler and the Slinger that is actually pinning it. The
+/// exchange gate would take the fat one. The pin has to win.
+#[test]
+fn the_guard_kills_the_raider_that_is_pinning_the_walker_not_the_richer_target() {
+    let (mut game, home) = camp_bounty_board(90_079);
+    let barb = game.barb_pid.unwrap();
+    let road = open_ground_at(&game, home, 10);
+    let open = |g: &Game, pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            && g.city_at(pos).is_none()
+            && g.units_at(pos).is_empty()
+    };
+    let ring: Vec<Pos> = crate::hex::neighbors(road)
+        .into_iter()
+        .filter(|pos| open(&game, *pos))
+        .collect();
+    assert!(ring.len() >= 3, "the road tile needs three open neighbours");
+    game.spawn_test_unit("settler", 0, road);
+    // Guard stacked on its charge, the shape the live seat forms.
+    game.spawn_test_unit("warrior", 0, road);
+    // The pin: beside the Settler, so its zone of control is the lock.
+    let pinner = game.spawn_test_unit("slinger", barb, ring[0]);
+    // A richer target the guard can also reach, but NOT beside the Settler.
+    let richer = crate::hex::neighbors(ring[1])
+        .into_iter()
+        .find(|pos| open(&game, *pos) && game.wdist(*pos, road) == 2)
+        .expect("open ground two tiles from the walker");
+    let bystander = game.spawn_test_unit("scout", barb, richer);
+
+    let mut ai = AdvancedAi::new();
+    ai.base.barbarian_hunt = true;
+    let mut hit_pinner = false;
+    for _ in 0..9 {
+        let pid = game.current;
+        if pid == 0 {
+            ai.take_turn(&mut game, 0);
+            if game.units.get(&pinner).is_none_or(|u| u.hp < 100) {
+                hit_pinner = true;
+                break;
+            }
+        }
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+    assert!(
+        hit_pinner,
+        "the guard must go for the raider whose zone of control is holding its \
+         Settler, not the one that prices better"
+    );
+    assert!(
+        game.units.contains_key(&bystander) && game.units[&bystander].hp == 100,
+        "and it must not have spent the swing on the bystander first"
+    );
+}
+
 /// The gene widens WHO may be shot at, not how far the empire will march. A
 /// barbarian with no civilian of ours anywhere near it is still nobody's
 /// business, or every camp on the map becomes a reason to mobilise — the

@@ -7919,14 +7919,16 @@ function hiddenMapMonsterPriority(q, r, seedA, seedB) {
 }
 
 // First put a private, seeded keep-out distance on each candidate. A fixed
-// radius makes the empty paper look artificially regimented; this 17--26 hex
-// envelope makes the gaps vary while still stopping illustrations from
-// clustering.
+// radius makes the empty paper look artificially regimented; this 20%-tighter,
+// roughly 14--21 hex envelope makes the gaps vary while still stopping
+// illustrations from clustering.
 function hiddenMapMonsterSeatRadius(q, r, seedA, seedB) {
-  return HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
-    Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
-    Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
-  ) * HIDDEN_MAP_TALE_SEPARATION_RANGE);
+  return HIDDEN_MAP_TALE_SPACING_SCALE * (
+    HIDDEN_MAP_TALE_MIN_SEPARATION + Math.floor(hash2(
+      Math.imul(q, 89) + Math.imul(seedA, 23) + Math.imul(seedB, 7),
+      Math.imul(r, 97) + Math.imul(seedB, 29) + Math.imul(seedA, 11)
+    ) * HIDDEN_MAP_TALE_SEPARATION_RANGE)
+  );
 }
 
 // Rare seeded candidates compete only with other candidates in the larger of
@@ -7937,8 +7939,8 @@ function hiddenMapMonsterSeat(q, r, seedA, seedB) {
   const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
   if (priority >= HIDDEN_MAP_TALE_CANDIDATE_RATE) return false;
   const radius = hiddenMapMonsterSeatRadius(q, r, seedA, seedB);
-  const maxRadius = HIDDEN_MAP_TALE_MIN_SEPARATION +
-                    HIDDEN_MAP_TALE_SEPARATION_RANGE - 1;
+  const maxRadius = Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *
+    (HIDDEN_MAP_TALE_MIN_SEPARATION + HIDDEN_MAP_TALE_SEPARATION_RANGE - 1));
   for (let dq = -maxRadius; dq <= maxRadius; dq++) {
     const from = Math.max(-maxRadius, -dq - maxRadius);
     const to = Math.min(maxRadius, -dq + maxRadius);
@@ -9183,6 +9185,9 @@ const YPIP = { food:"#4f9c30", production:"#c8762b", gold:"#dcae2b",
                science:"#3f9ed4", culture:"#9a5ccb", faith:"#d6cfbb" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
                science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
+// The charcoal rim ties a same-yield stack together without making it read
+// like a row of separate black tokens.
+const YIELD_PIP_RIM = .58;
 // The material row is the first row a player reads. Extra yield kinds make a
 // second row directly above it, preserving the requested Food → Faith order.
 const YIELD_ROWS = [
@@ -9236,13 +9241,11 @@ function tileDetailYieldWords(yields, sign = false) {
 }
 
 // One to four pips form the small, instantly-recognisable Civ-style stacks.
-// The distance includes a hairline of breathing room so adjacent marks remain
-// separately countable instead of touching into an opaque blob.
+// Base-game stacks are nearly nested: a narrow coloured gap keeps each sign
+// countable while the thin charcoal rim binds them into one compact mark.
 function yieldPipOffsets(count, r) {
-  const gap = 1.15 * r / 4.4;
-  // Measure from the dark rim, not just the coloured fill, so the visible
-  // circles retain a deliberate breathing gap at every zoom level.
-  const step = (r + 1.05) * 2 + gap;
+  const gap = .55 * r / 4.4;
+  const step = r * 2 + gap;
   if (count === 2) return [[0, -step / 2], [0, step / 2]];
   if (count === 3) {
     const top = -step / Math.sqrt(3), bottom = step / (2 * Math.sqrt(3));
@@ -9269,7 +9272,7 @@ function yieldPipCluster(kind, amount, r) {
       portion:summary ? 1 : pips[index].portion,
       label,
     }));
-  const edge = sign => sign.r + 1.05;
+  const edge = sign => sign.r + YIELD_PIP_RIM;
   const minX = Math.min(...signs.map(sign => sign.x - edge(sign)));
   const maxX = Math.max(...signs.map(sign => sign.x + edge(sign)));
   const minY = Math.min(...signs.map(sign => sign.y - edge(sign)));
@@ -9287,7 +9290,7 @@ function yieldPipRow(yields, kinds, r) {
   const clusters = kinds.map(kind => yieldPipCluster(kind, yields?.[kind], r))
     .filter(Boolean);
   if (!clusters.length) return null;
-  const gap = 3.1 * r / 4.4;
+  const gap = 2.35 * r / 4.4;
   return {
     clusters,
     gap,
@@ -9310,15 +9313,22 @@ function yieldPipLayout(yields, baseR) {
   // Rich-but-valid combinations can make three compact formations wider than
   // a hex. Tighten all signs together before sacrificing the stable two-row
   // order; the numbered five-plus sign still remains 70% larger than its row.
-  for (let pass = 0; pass < 2; pass++) {
+  // The fixed thin rim makes one scale correction slightly nonlinear, so let
+  // the fit settle before accepting a crowded three-cluster row.
+  for (let pass = 0; pass < 3; pass++) {
     rows = yieldPipRows(yields, r);
     const widest = Math.max(0, ...rows.map(row => row.width));
     if (widest <= maxWidth) break;
     const next = Math.max(baseR * .62, r * maxWidth / widest);
-    if (Math.abs(next - r) < .05) break;
+    if (Math.abs(next - r) < .05) {
+      r = next;
+      break;
+    }
     r = next;
   }
-  return rows;
+  // `r` may have moved in the final fitting pass; measure that final compact
+  // arrangement rather than returning the wider pre-adjustment row.
+  return yieldPipRows(yields, r);
 }
 
 // The tiny signs borrow Civ's familiar six silhouettes rather than browser
@@ -9387,10 +9397,10 @@ function drawYieldPip(kind, x, y, r, portion, worked, label = "") {
   const fraction = Math.max(.05, Math.min(1, portion));
   const isSummary = !!label;
   cx.save();
-  cx.shadowColor = "rgba(7,10,7,.5)";
-  cx.shadowBlur = 2.3; cx.shadowOffsetY = 1;
-  cx.fillStyle = "rgba(7,12,9,.94)";
-  cx.beginPath(); cx.arc(x, y, r + 1.05, 0, 7); cx.fill();
+  cx.shadowColor = "rgba(7,10,7,.42)";
+  cx.shadowBlur = 1.45; cx.shadowOffsetY = .65;
+  cx.fillStyle = "rgba(7,12,9,.82)";
+  cx.beginPath(); cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7); cx.fill();
   cx.shadowBlur = 0; cx.shadowOffsetY = 0;
   cx.save();
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
@@ -9398,7 +9408,7 @@ function drawYieldPip(kind, x, y, r, portion, worked, label = "") {
   cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
   cx.restore();
   cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.82)";
-  cx.lineWidth = worked ? 1.15 : (isSummary ? 1.05 : .85);
+  cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
   if (isSummary) {
     // The count is painted over the larger sign, with a dark keyline so it
@@ -9434,7 +9444,7 @@ function drawTileYields(t, x, y, worked) {
   // The first semantic row is Food/Production/Gold. Draw in reverse so the
   // optional science/culture/faith row sits immediately above that foundation.
   const visualRows = rows.slice().reverse();
-  const rowGap = 3.4 * r / 4.4;
+  const rowGap = 2.7 * r / 4.4;
   const totalHeight = visualRows.reduce((height, row, index) => height + row.height +
     (index ? rowGap : 0), 0);
   let top = y + 9 - totalHeight / 2;
