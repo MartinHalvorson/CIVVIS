@@ -4291,7 +4291,7 @@ fn live_competitions_price_host_projects_and_worlds_fair_production() {
         project: crate::name!("send_aid"),
     };
     let granary = Item::Building {
-        building: crate::name!("monument"),
+        building: crate::name!("granary"),
     };
     assert!(game.can_produce(0, city, &granary));
     assert!(
