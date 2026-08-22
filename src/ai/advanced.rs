@@ -1285,12 +1285,6 @@ const SETTLEMENT_ROUTE_CANDIDATE_LIMIT: usize = 160;
 /// below the direct-threat score of a healthy ancient military unit and above
 /// the one-turn approach warning used to order otherwise safe routes.
 const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
-/// The tile risk at which a recon unit steps out of reach before it explores:
-/// `settlement_tile_risk` prices any visible hostile that can reach the tile
-/// next turn at 12 plus a strength term, so this is "one unit can get here".
-/// See `recon_flight`.
-const RECON_FLIGHT_RISK: f64 = 12.0;
-
 /// At most this many already-built, unlinked ships may be assigned to chart
 /// the sea. The production arm still buys only the first hull; this cap makes
 /// a spare ship useful without turning an ordinary fleet into endless scouts.
@@ -1952,10 +1946,6 @@ pub struct AdvancedAi {
     /// `settle_sooner` can price how long it has already been out of a city
     /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
     settler_walk_started: BTreeMap<u32, u32>,
-    /// The turn each recon unit last stepped out of a hostile's reach, so the
-    /// same turn's explore step does not walk it straight back in. Same-turn
-    /// only; stale entries are inert. See `recon_flight`.
-    recon_fled: BTreeMap<u32, u32>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -2399,35 +2389,6 @@ pub struct AdvancedAi {
     /// Settler seat's measured record, and CIVVIS-vs-CIVVIS wars are the ones
     /// the branch was written for. Off for ordinary and frozen controllers.
     pub no_elective_war: bool,
-    /// A recon unit that a visible hostile can reach next turn steps out of
-    /// reach before it explores.
-    ///
-    /// ★★★★ SEVEN SCOUTS DIED IN 76 TURNS AND EXPLORATION STILL CRAWLED. Run
-    /// civvis-20260816T101521Z: scouts 196608 (t6–20), 589827 (t27–33),
-    /// 1048584 (t38–41), 1376266 (t50–64), 1441803 (t51–65), 1507340 (t51–55)
-    /// and 1572872 (t52–76) — seven units, 210 production, none older than 25
-    /// turns. Every death was walked into: 196608 stepped from two tiles off a
-    /// barbarian Spearman to the tile BESIDE it (t18→t19, 100→59 hp, gone on
-    /// t21); 1507340 stood next to a Warrior and an Archer for three turns
-    /// (49 hp) until it fell; 1572872 sat on (7,26) with an Archer two tiles
-    /// away for its last three turns (73→25→24 hp). `exploration_goal` and
-    /// `step_toward` carry no danger term at all, `healing_step` only routes
-    /// a unit already below the withdrawal line home across the map, and
-    /// `recon_replacement` then buys the next scout to die the same way.
-    /// Meanwhile revealed plots read 64 at t10, 119 at t30, 217 at t50 on a
-    /// 3,404-plot map — the ceiling on cities, sites and rivals met.
-    ///
-    /// With this on, `recon_flight_step` runs before the explore step for a
-    /// Recon-doctrine unit outside a city: when the tile it stands on prices
-    /// at `RECON_FLIGHT_RISK` or more (`settlement_tile_risk` — a visible
-    /// hostile within its attack-plus-move reach, no escort discount), it
-    /// takes the reachable neighbour that lowers the risk most, furthest from
-    /// the nearest hostile on ties, and journals "slips away". It repeats
-    /// while it has movement and an improving step, so a Scout outruns a
-    /// Warrior; when no neighbour improves it explores as before rather than
-    /// freezing. Off for ordinary and frozen controllers; on for the live
-    /// bridge and the native repair bundle (a CIVVIS scout dies the same way).
-    pub recon_flight: bool,
     /// Splice the +100% naval-production card family (Maritime Industries
     /// and its era successors) into the policy portfolio while a coastal
     /// empire wants hulls it does not have. The cards are invisible to the
@@ -3321,7 +3282,7 @@ pub struct AdvancedAi {
     /// and the settlement risk model priced one like a Warrior on approach.
     ///
     /// With this on, `settlement_tile_risk` — the one model behind the
-    /// settler's retreat, the guard wait, the site risk and `recon_flight` —
+    /// settler's retreat, the guard wait and the site risk —
     /// skips a unit that is barbarian-owned AND of the recon promotion class.
     /// Barbarian warriors, archers, horsemen and galleys count exactly as
     /// before, as does every unit of a rival at war. True in BOTH regimes:
@@ -3558,6 +3519,94 @@ pub struct AdvancedAi {
     /// Engineer or Merchant is worth something. Gold purchases keep their
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
+
+    /// ★★★ THE CORPS THAT CANNOT ANSWER MORE THAN TWO CITIES. Outside an
+    /// offensive posture `religious_spending_with_reserve` sizes the
+    /// Missionary corps `(1 + defensive_targets.div_ceil(2)).min(2)`, which
+    /// is the same answer to three cities slipping as to one — and the screen
+    /// `inquisition_on_threat` was built from measured 46% of founders ending
+    /// with three or more cities under a rival faith, winning 3.0% against a
+    /// founder that held its cities at 52.5%. With this on the defensive corps
+    /// is one spreader per city actually under pressure, bounded at four so it
+    /// cannot eat the bank the Apostle needs. Off everywhere by default;
+    /// opt-in gene `religious-defence-scales`. See `advanced/religion.rs`.
+    pub religious_defence_scales: bool,
+
+    /// ★★★ THE ONLY FIELD HEAL A CORPS HAS, AND ONLY THE ATTACKER MAY BUY IT.
+    /// `guru_cap` is `offensive && apostles > 0`, so a founder whose whole
+    /// religious effort is defending its own cities can never buy the one unit
+    /// that heals religious units (+40 hit points to every adjacent unit of
+    /// its faith). It matters because `Game::do_spread` scales the pressure a
+    /// charge adds by `hp/100`: a damaged corps is a proportionally weaker
+    /// one, and without a Guru its only recovery is standing in its own Holy
+    /// Site's ring. With this on a founder under conversion pressure that
+    /// already fields a damaged religious unit may hold one Guru. Off
+    /// everywhere by default; opt-in gene `guru-heals-the-corps`.
+    pub guru_heals_the_corps: bool,
+
+    /// ★★★ A WOUNDED SPREADER SPENDS A WHOLE CHARGE FOR A FRACTION OF ONE.
+    /// `do_spread` adds `spread × hp/100` pressure and `end_turn` heals a unit
+    /// only when `!acted`, while `do_move` sets `acted` on every step and
+    /// `do_fortify` refuses a civilian — so a religious unit recovers only on
+    /// a turn its controller gives it nothing to do, and
+    /// `advanced_religious_step`'s last leg always walks it somewhere. The
+    /// corps therefore decays from its first theological exchange to its last
+    /// charge. With this on a spreader below 70 hit points that is standing in
+    /// its own Holy Site's heal ring, and is not needed in a city it could
+    /// convert this turn, holds instead. Off everywhere by default; opt-in
+    /// gene `religious-units-heal-first`.
+    pub religious_units_heal_first: bool,
+
+    /// ★★ THE CONGRESS LICENCE NOTHING HAS EVER USED. `do_condemn_heretic`
+    /// accepts a military unit's blow against an enemy religious unit when
+    /// `is_at_war(pid, target.owner)` **or** the World Congress has condemned
+    /// the target's religion (`world_religion`, option B) — and `condemn_step`
+    /// asks only the first, so a resolution this seat may itself have voted
+    /// for removes nothing. Interdiction is the cheap half of the counter:
+    /// measured 08-17 over 39 live games we field 590 religious units against
+    /// rivals' 12,708, and 41% of rival sightings already have one of our
+    /// military units within two tiles. Off everywhere by default; opt-in gene
+    /// `condemn-under-congress`.
+    pub condemn_under_congress: bool,
+
+    /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE.
+    /// `religious_offensive_posture` asks `active_campaign || faith >=
+    /// 2_000×speed`, and `active_campaign` means holding a spreader with a
+    /// charge left *this instant* — while `do_spread` removes a Missionary on
+    /// its last charge. So the turn a wave finishes, the posture drops:
+    /// `missionary_cap` six to two, `apostle_cap` two to zero, and a campaign
+    /// that was converting cities stops until the bank climbs back to two
+    /// thousand. With this on a seat that has already converted a foreign city
+    /// stays on the offensive while an unconverted foreign target remains; the
+    /// caller's reserve still decides what it can afford. Off everywhere by
+    /// default; opt-in gene `spread-campaign-persists`.
+    pub spread_campaign_persists: bool,
+
+    /// ★★★ THE DEFENCE CANNOT BE BOUGHT WHERE IT IS NEEDED. A religious unit
+    /// is purchasable only in a city that itself holds a Holy Site, so a
+    /// founder whose only Holy Site is its Holy City answers a city flipping
+    /// across the empire by buying at home and walking — and the walk is also
+    /// the turns that unit neither heals nor spreads. `founder_temple` fills
+    /// in the Shrine and Temple, but only where the district already stands.
+    /// With this on, a city under conversion pressure with no Holy Site claims
+    /// one. Narrower than the `d_holy` re-ranking #1491 reverted: it changes
+    /// no standing rank, only what a slipping city does about it. Off
+    /// everywhere by default; opt-in gene `holy-site-where-the-threat-is`.
+    pub holy_site_where_the_threat_is: bool,
+
+    /// ★★★ THE BELIEFS THAT MULTIPLY A CHARGE ARE SCORED AS "ANYTHING ELSE".
+    /// `advanced_religious_step`'s `EvangelizeBelief` table scores by victory
+    /// lane and gives everything it does not name 100 — the same number for
+    /// `scripture` (+25% to the pressure every charge adds) as for a worship
+    /// building the empire has no use for, so the tie falls to the name. The
+    /// five enhancers that multiply a corps (`holy_order`, `scripture`,
+    /// `itinerant_preachers`, `missionary_zeal`, `defender_of_the_faith`) are
+    /// never chosen *as* corps multipliers. With this on they outrank the lane
+    /// pick while the corps has a job — a city under pressure, or a campaign
+    /// in the field — and are inert otherwise. Same shape as the shipped
+    /// `apostle_promotion_by_role`. Off everywhere by default; opt-in gene
+    /// `enhancer-for-the-corps`.
+    pub enhancer_for_the_corps: bool,
     /// Buy the second and third Scout while the world's borders are still
     /// open, because after that a city-state cannot be met by land at all.
     ///
@@ -4144,6 +4193,11 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
+
+/// The religious corps: the four opt-in genes for what a founder buys with
+/// Faith once its cities start slipping, and what it does with the units
+/// afterwards. See `advanced/religion.rs`.
+mod religion;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
@@ -4414,7 +4468,6 @@ impl AdvancedAi {
         // prices the withhold; `advanced_recon_fleet` is now a declared
         // alias of `advanced`.
         ai.enable_recon_replacement();
-        ai.enable_recon_flight();
         ai.enable_naval_recon();
         ai.enable_come_ashore();
         // A barbarian scout is a scout in both regimes: Firaxis' neither
@@ -4677,7 +4730,6 @@ impl AdvancedAi {
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
-            recon_fled: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -4702,7 +4754,6 @@ impl AdvancedAi {
             strategic_wonders: false,
             expansion_before_prophet: false,
             no_elective_war: false,
-            recon_flight: false,
             naval_production_policy: false,
             score_horizon: false,
             one_launch_pad: false,
@@ -4767,6 +4818,13 @@ impl AdvancedAi {
             district_lookahead_settle: false,
             priced_tile_purchase: false,
             idle_faith_patronage: false,
+            religious_defence_scales: false,
+            guru_heals_the_corps: false,
+            religious_units_heal_first: false,
+            condemn_under_congress: false,
+            spread_campaign_persists: false,
+            holy_site_where_the_threat_is: false,
+            enhancer_for_the_corps: false,
             early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
@@ -15037,7 +15095,11 @@ impl AdvancedAi {
                 && unit.charges > 0
                 && g.rules.units[unit.kind].religious_spread > 0.0
         });
-        active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
+        // `spread_campaign_persists`: a campaign that has already converted a
+        // foreign city is not over because this turn's last charge was spent.
+        active_campaign
+            || self.spread_campaign_persists(g, pid, religion)
+            || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
 
     fn religious_spending(&mut self, g: &mut Game, pid: usize, offensive: bool) {
@@ -15098,7 +15160,12 @@ impl AdvancedAi {
         } else if offensive {
             (2 + spread_targets.div_ceil(4)).min(6)
         } else {
-            (1 + defensive_targets.div_ceil(2)).min(2)
+            // `religious_defence_scales` reads the shipped constant and, when
+            // it is on, answers one spreader per threatened city instead.
+            self.defensive_missionary_cap(
+                defensive_targets,
+                (1 + defensive_targets.div_ceil(2)).min(2),
+            )
         };
         // See `inquisition_on_threat`: the one Apostle that unlocks the
         // Inquisitors, bought once the Missionary corps stands and the bank
@@ -15113,19 +15180,32 @@ impl AdvancedAi {
         } else {
             0
         };
-        let guru_cap = usize::from(offensive && apostles > 0);
+        // `guru_heals_the_corps`: the defence has damaged units and no heal.
+        let guru_defends = self.guru_defends_the_corps(g, pid, home_under_pressure);
+        let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
             2
         } else {
             0
         };
+        // A cap nothing asks for is not a cap. The two defensive orders never
+        // named the Guru, so `guru_cap` alone could not buy one; with the gene
+        // on they name it last, behind the spread and the Inquisition.
         let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if defend_with_inquisition && apostles == 0 {
-            &["missionary", "apostle", "inquisitor"]
+            if guru_defends {
+                &["missionary", "apostle", "inquisitor", "guru"]
+            } else {
+                &["missionary", "apostle", "inquisitor"]
+            }
         } else if !offensive {
-            &["missionary", "inquisitor"]
+            if guru_defends {
+                &["missionary", "inquisitor", "guru"]
+            } else {
+                &["missionary", "inquisitor"]
+            }
         } else if apostles < 2 {
             &["apostle", "missionary", "guru"]
         } else if gurus < 1 {
@@ -24492,6 +24572,13 @@ impl AdvancedAi {
         // adopted majority faith to repel a competing conversion. That unit
         // has no player-owned religion to read, so its own faith is the
         // authority for both its defensive target and its Spread action.
+        // `religious_units_heal_first`: a charge spent at 40 hit points buys
+        // 40% of a charge's pressure. Standing in an own Holy Site's ring is
+        // the only recovery a Missionary has, and taking no action is the only
+        // way to collect it.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
+        }
         let Some(religion) = g.units[&uid]
             .religion
             .clone()
@@ -24594,7 +24681,7 @@ impl AdvancedAi {
                 .iter()
                 .filter_map(|action| match action {
                     Action::EvangelizeBelief { unit, belief } if *unit == uid => {
-                        let score = match (objective, belief.as_str()) {
+                        let lane = match (objective, belief.as_str()) {
                             (GrandStrategy::Science, "wat")
                             | (GrandStrategy::Culture, "cathedral")
                             | (GrandStrategy::Diplomacy, "pagoda")
@@ -24607,6 +24694,11 @@ impl AdvancedAi {
                             (_, "holy_order" | "mosque" | "wat" | "pagoda") => 180,
                             _ => 100,
                         };
+                        // `enhancer_for_the_corps` answers first when the corps
+                        // has work; `None` leaves the lane table untouched.
+                        let score = self
+                            .corps_enhancer_score(g, pid, belief.as_str())
+                            .unwrap_or(lane);
                         Some((score, std::cmp::Reverse(*belief), action.clone()))
                     }
                     _ => None,
@@ -24660,6 +24752,13 @@ impl AdvancedAi {
             if unit.hp >= 55 || score >= 45 {
                 return g.apply(pid, &action).is_ok();
             }
+        }
+
+        // The same hold, after the fight rather than before it: a unit already
+        // in a theological exchange resolves it, and only the spread and the
+        // hunt below wait for the wound to close.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
         }
 
         if g.rules.units[unit.kind].religious_spread > 0.0 && unit.charges > 0 {
@@ -27250,14 +27349,10 @@ impl AdvancedAi {
     /// the counter was effectively dead. Now a military unit will step onto
     /// an adjacent one and condemn it.
     fn condemn_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let condemnable = |game: &Game, at: Pos| -> Option<u32> {
-            game.units_at(at).into_iter().find(|target| {
-                let target = &game.units[target];
-                target.owner != pid
-                    && game.is_at_war(pid, target.owner)
-                    && game.rules.units[target.kind].class == "religious"
-            })
-        };
+        // `condemn_under_congress` owns this predicate now: war alone with the
+        // gene off, war or a World Congress condemnation with it on.
+        let condemnable =
+            |game: &Game, at: Pos| -> Option<u32> { self.condemnable_heretic(game, pid, at) };
         let here = g.units[&uid].pos;
         if let Some(target_unit) = condemnable(g, here) {
             if g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok() {
@@ -29307,22 +29402,8 @@ impl AdvancedAi {
     /// branches have the unit. Shared by the wartime tactical path and the
     /// peacetime path so the two cannot drift apart again.
     fn explorer_turn(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
-        if self.recon_flight {
-            if let Some(acted) = self.recon_flight_step(g, pid, uid) {
-                if acted {
-                    self.recon_fled.insert(uid, g.turn);
-                }
-                return Some(acted);
-            }
-            // Out of reach now, having fled this turn: hold here rather
-            // than let the explore step walk back into the band.
-            if self.recon_fled.get(&uid) == Some(&g.turn) {
-                return Some(self.base.fortify_or_stop(g, pid, uid));
-            }
-        }
-        // Recon flight keeps its safety-first escape above, but once it
-        // stands its ground an empty camp beside it is a completed reward,
-        // not fog to scout past.
+        // An empty camp beside the explorer is a completed reward, not fog
+        // to scout past.
         if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
             return Some(true);
         }
@@ -29357,74 +29438,6 @@ impl AdvancedAi {
         ships.sort_unstable();
         ships.truncate(NAVAL_RECON_EXPLORER_MAX);
         ships
-    }
-
-    /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
-    /// the tile it stands on is threatened and a reachable neighbour lowers the
-    /// risk; `None` leaves the turn to the explore step. Once the live movement
-    /// recorder has proved the retreat is circling, a step back into that
-    /// footprint is not a retreat at all: let exploration's loop-aware scorer
-    /// select an outward route instead. See `recon_flight`.
-    fn recon_flight_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
-        let current = g.units[&uid].pos;
-        // A city defends the unit standing in it.
-        if g.city_at(current).is_some() {
-            return None;
-        }
-        let visible = self.battlefront_visibility(g, pid);
-        let here = self.settlement_tile_risk_with_support(g, pid, None, current, &visible, false);
-        if here < RECON_FLIGHT_RISK {
-            return None;
-        }
-        let hostiles: Vec<Pos> = g
-            .units
-            .values()
-            .filter(|unit| {
-                unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
-                    && g.rules.units[unit.kind].class == "military"
-                    && g.sees(&visible, unit.pos)
-            })
-            .map(|unit| unit.pos)
-            .collect();
-        let clearance = |pos: Pos| hostiles.iter().map(|h| g.wdist(pos, *h)).min().unwrap_or(i32::MAX);
-        let room_here = clearance(current);
-        let escaping_loop = self.base.live_livelock_route_escape(uid);
-        // An improving step lowers the risk, or keeps it while opening more
-        // ground between the unit and the nearest hostile — the whole approach
-        // band prices alike, and walking out of it takes more than one step.
-        let mut flight: Option<(f64, i32, Pos)> = None;
-        for step in g.nbrs(current) {
-            if !g.can_move(uid, step) {
-                continue;
-            }
-            // A tie-risk step can be correct while the Scout is actually
-            // retreating. After six fruitless turns in two or three tiles it
-            // is evidence of the opposite: repeating it buys no safety and
-            // prevents the committed explorer from finding the next frontier.
-            // This gate is live-bridge-only, preserving tournament and frozen
-            // controller movement exactly.
-            if escaping_loop && self.base.livelock_penalty(uid, step) < 0.0 {
-                continue;
-            }
-            let risk = self.settlement_tile_risk_with_support(g, pid, None, step, &visible, false);
-            let room = clearance(step);
-            if risk > here || (risk == here && room <= room_here) {
-                continue;
-            }
-            let better = flight.is_none_or(|(best_risk, best_room, _)| {
-                risk < best_risk || (risk == best_risk && room > best_room)
-            });
-            if better {
-                flight = Some((risk, room, step));
-            }
-        }
-        let (risk, room, step) = flight?;
-        think!(self.journal(), Military, Detail,
-               "{} {uid} slips away from {current:?}", g.units[&uid].kind;
-               "a visible hostile can reach this tile next turn (risk {here:.0}); stepping to \
-                {step:?} (risk {risk:.0}, {room} tiles clear) before it explores"; step);
-        Some(self.base.tactical_apply_move(g, pid, uid, step))
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -30408,6 +30421,10 @@ impl AdvancedAi {
                 // or its Apostles and Inquisitors exist only on paper. See
                 // `founder_temple` (exact no-op while that flag is off).
                 self.founder_temple(g, pid);
+                // …and the district those buildings need, in the city that is
+                // actually slipping rather than the one that founded. Also an
+                // exact no-op while its own flag is off.
+                self.holy_site_where_the_threat_is(g, pid);
             }
             if self.victory_planning
                 && g.victory_conditions.religious

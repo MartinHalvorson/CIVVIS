@@ -2971,7 +2971,6 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
             frozen.base.recon_replacement,
             production.base.recon_replacement,
         ),
-        ("recon_flight", frozen.recon_flight, production.recon_flight),
         (
             "naval_recon",
             frozen.base.naval_recon,
@@ -19864,261 +19863,6 @@ fn a_restarted_agent_skips_the_opening_book_and_a_new_one_plays_it() {
     );
 }
 
-/// On quiet ground with the guard one step behind, the settler marches;
-/// the guard re-stacks on its own move. civvis-20260816T084206Z spent ten
-/// turns on a four-tile walk holding for a guard one tile back.
-/// ★★★★ Seven scouts died in 76 turns of run civvis-20260816T101521Z and
-/// every death was walked into: the explore step carries no danger term.
-/// See `recon_flight`. A scout two tiles from a hostile Warrior on open
-/// ground steps to the neighbour that lowers its risk most (further from
-/// the Warrior) and journals it; the same scout with the flag withheld
-/// explores as before; and a scout inside a city is left to the city.
-#[test]
-fn a_scout_a_hostile_can_reach_next_turn_steps_out_of_reach_before_it_explores() {
-    let is_land = |game: &Game, p: Pos| {
-        game.map
-            .get(p)
-            .is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
-    };
-    let fresh = |seed: u64| {
-        let mut game = Game::new(2, 24, 16, seed, 80, 0);
-        for unit in game
-            .player_unit_ids(0)
-            .into_iter()
-            .chain(game.player_unit_ids(1))
-        {
-            game.remove_unit(unit);
-        }
-        game.at_war.insert((0, 1));
-        game.current = 0;
-        game
-    };
-    // Open ground with a hostile Warrior two tiles off that the scout can
-    // actually see, and dry land behind the scout to flee onto: search a
-    // few seeds for it, on the real board.
-    let probe = AdvancedAi::new();
-    let mut found = None;
-    'seeds: for seed in 91_482..91_560u64 {
-        let board = fresh(seed);
-        let mut lands: Vec<Pos> = board
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .filter(|p| is_land(&board, *p))
-            .collect();
-        lands.sort_unstable();
-        for p in lands.iter().copied() {
-            if board
-                .nbrs(p)
-                .into_iter()
-                .filter(|n| is_land(&board, *n))
-                .count()
-                < 6
-            {
-                continue;
-            }
-            let threats: Vec<Pos> = board
-                .map
-                .tiles
-                .keys()
-                .copied()
-                .filter(|q| board.wdist(p, *q) == 2 && is_land(&board, *q))
-                .collect();
-            for q in threats {
-                let mut game = fresh(seed);
-                game.spawn_test_unit("warrior", 1, q);
-                let scout = game.spawn_test_unit("scout", 0, p);
-                let visible = game.player_vision_now(0);
-                let here =
-                    probe.settlement_tile_risk_with_support(&game, 0, None, p, &visible, false);
-                if game.player_can_see(0, q)
-                    && here >= RECON_FLIGHT_RISK
-                    && game.units[&scout].moves_left > 0.0
-                {
-                    found = Some((seed, p, q));
-                    break 'seeds;
-                }
-            }
-        }
-    }
-    let (seed, post, threat) =
-        found.expect("some seed offers open ground with a visible hostile two tiles off");
-
-    let mut game = fresh(seed);
-    game.spawn_test_unit("warrior", 1, threat);
-    let scout = game.spawn_test_unit("scout", 0, post);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.recon_flight, "the live seat carries the treatment");
-    let plan = live.assess(&game, 0);
-    let journal = crate::reasoning::Journal::recording();
-    live.attach_journal(journal.handle());
-    let visible = game.player_vision_now(0);
-    let here = live.settlement_tile_risk_with_support(&game, 0, None, post, &visible, false);
-    assert!(
-        here >= RECON_FLIGHT_RISK,
-        "fixture precondition: the post is priced as reachable ({here})"
-    );
-
-    assert!(
-        live.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false),
-        "the scout acts"
-    );
-    let after = game.units[&scout].pos;
-    assert_ne!(after, post, "it does not hold on the threatened tile");
-    let risk_after = live.settlement_tile_risk_with_support(&game, 0, None, after, &visible, false);
-    assert!(
-        risk_after <= here,
-        "it never steps into more risk ({risk_after} vs {here})"
-    );
-    assert!(
-        game.wdist(after, threat) > 2,
-        "it moved away from the warrior, not toward it ({after:?} vs {threat:?})"
-    );
-    assert!(
-        journal
-            .since(0)
-            .thoughts
-            .iter()
-            .any(|thought| thought.headline.contains("slips away from")),
-        "the flight is journaled"
-    );
-
-    // The whole turn: it keeps stepping while a step opens ground, and the
-    // explore step of the same turn does not walk it back into the band.
-    let mut game = fresh(seed);
-    game.spawn_test_unit("warrior", 1, threat);
-    let scout = game.spawn_test_unit("scout", 0, post);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    let plan = live.assess(&game, 0);
-    live.advance_unit_serial(&mut game, 0, scout, &plan, false, false);
-    let rested = game.units[&scout].pos;
-    assert!(
-        game.wdist(rested, threat) >= 3,
-        "with its whole movement it ends at least three tiles from the warrior ({rested:?})"
-    );
-
-    // Withheld: the same scout explores as before and never journals a flight.
-    let mut game = fresh(seed);
-    game.spawn_test_unit("warrior", 1, threat);
-    let scout = game.spawn_test_unit("scout", 0, post);
-    let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge_universe();
-    withheld.disable_recon_flight();
-    let plan = withheld.assess(&game, 0);
-    let journal = crate::reasoning::Journal::recording();
-    withheld.attach_journal(journal.handle());
-    let _ = withheld.advanced_military_step_with_decline(&mut game, 0, scout, &plan, false);
-    assert!(
-        !journal
-            .since(0)
-            .thoughts
-            .iter()
-            .any(|thought| thought.headline.contains("slips away from")),
-        "the withheld arm keeps the historical explore step"
-    );
-
-    // Production flees since the 2026-08-17 promotion; the frozen
-    // controller stands its ground as it always did.
-    assert!(AdvancedAi::new().recon_flight);
-    assert!(!AdvancedAi::legacy().recon_flight);
-}
-
-/// In the live win, Scout 60 spent turns 204–251 issuing equal-risk flight
-/// moves between the same two tiles while six city-states remained unseen.
-/// The per-turn flight choice was locally safe, but after the motion window
-/// proves the loop it must yield to the explorer's outward route instead of
-/// retracing the safe-looking half of the circuit.
-#[test]
-fn a_looping_live_scout_does_not_repeat_an_equal_risk_flight_step() {
-    let mut game = Game::new_full(2, 20, 14, 91_483, 80, 0, false);
-    for unit in game.units.keys().copied().collect::<Vec<_>>() {
-        game.remove_unit(unit);
-    }
-    for tile in game.map.tiles.values_mut() {
-        tile.terrain = crate::name!("plains");
-        tile.feature = None;
-        tile.hills = false;
-    }
-    game.at_war.insert((0, 1));
-    game.current = 0;
-
-    let start = game
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .find(|pos| game.wdisk(*pos, 2).len() == 19 && game.city_at(*pos).is_none())
-        .expect("fixture needs an open land tile away from each city");
-    let toward_threat = game.nbrs(start)[0];
-    let threat = game
-        .nbrs(toward_threat)
-        .into_iter()
-        .find(|pos| *pos != start && game.wdist(start, *pos) == 2)
-        .expect("the open tile has a second-ring threat post");
-    let retreat = game
-        .nbrs(start)
-        .into_iter()
-        .find(|pos| game.wdist(*pos, threat) == 3)
-        .expect("the opposite neighbour increases clearance");
-    // The hostile-facing tile stays open so the threat is visible. The
-    // retreat is the only flight candidate that does not enter more risk.
-    for pos in game.nbrs(start) {
-        if pos != toward_threat && pos != retreat {
-            game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
-        }
-    }
-    game.spawn_test_unit("warrior", 1, threat);
-    let scout = game.spawn_test_unit("scout", 0, start);
-
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    // The escape depends on the step recorder; the ledger decides whether the
-    // gene deploys, this test pins the mechanism with the gene explicitly on.
-    live.enable_recorded_tactical_step();
-    for (offset, pos) in [start, retreat, start, retreat, start, retreat, start]
-        .into_iter()
-        .enumerate()
-    {
-        game.turn = 100 + offset as u32;
-        let unit = game.units.get_mut(&scout).unwrap();
-        unit.pos = pos;
-        unit.moves_left = 2.0;
-        unit.moved = false;
-        live.base.begin_movement_turn(&game, 0);
-    }
-    assert!(
-        live.base.live_livelock_route_escape(scout),
-        "the recorded two-tile circuit is a proven live loop"
-    );
-
-    let visible = live.battlefront_visibility(&game, 0);
-    assert!(game.sees(&visible, threat));
-    let here = live.settlement_tile_risk_with_support(&game, 0, None, start, &visible, false);
-    let retreat_risk =
-        live.settlement_tile_risk_with_support(&game, 0, None, retreat, &visible, false);
-    assert!(
-        here >= RECON_FLIGHT_RISK,
-        "the hostile threatens the Scout ({here})"
-    );
-    assert!(
-        retreat_risk <= here && game.wdist(retreat, threat) > game.wdist(start, threat),
-        "the looped retreat is exactly the equal-or-lower-risk flight the old chooser repeated"
-    );
-
-    assert_eq!(
-        live.recon_flight_step(&mut game, 0, scout),
-        None,
-        "a proven loop defers to exploration instead of issuing its exhausted flight step"
-    );
-    assert_eq!(
-        game.units[&scout].pos, start,
-        "the forbidden circuit was not replayed"
-    );
-}
-
 /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,
 /// settler 4849688: the journal alternated between (42,22) and (41,24)
 /// t138–t146 as a threat flickered at the edge of sight). See
@@ -31231,5 +30975,742 @@ fn a_second_front_closes_the_surge_window() {
     assert!(
         !ai.air_surge_open(&crowded, 0),
         "two fronts shut the window"
+    );
+}
+
+/// The four religious-corps genes are registered, discoverable by name, ship
+/// off, and go back off. See `advanced/religion.rs`.
+#[test]
+fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
+    let mut ai = AdvancedAi::new();
+    for (field, tag) in [
+        ("religious_defence_scales", "religious-defence-scales"),
+        ("guru_heals_the_corps", "guru-heals-the-corps"),
+        ("religious_units_heal_first", "religious-units-heal-first"),
+        ("condemn_under_congress", "condemn-under-congress"),
+        ("spread_campaign_persists", "spread-campaign-persists"),
+        (
+            "holy_site_where_the_threat_is",
+            "holy-site-where-the-threat-is",
+        ),
+        ("enhancer_for_the_corps", "enhancer-for-the-corps"),
+    ] {
+        assert!(
+            PRODUCTION_OPT_INS
+                .iter()
+                .any(|(row_field, row_tag, _)| *row_field == field && *row_tag == tag),
+            "{tag} must be a registered native opt-in"
+        );
+        assert!(
+            crate::ai::advanced::gene_ledger::screenable(tag),
+            "{tag} must be screenable, so the ledger can price it"
+        );
+        assert_eq!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+            Some(false),
+            "{tag} is unmeasured, so the deployment genome leaves it off"
+        );
+    }
+    assert!(!ai.religious_defence_scales, "production ships it off");
+    assert!(!ai.guru_heals_the_corps, "production ships it off");
+    assert!(!ai.religious_units_heal_first, "production ships it off");
+    assert!(!ai.condemn_under_congress, "production ships it off");
+    assert!(!ai.spread_campaign_persists, "production ships it off");
+    assert!(!ai.holy_site_where_the_threat_is, "production ships it off");
+    assert!(!ai.enhancer_for_the_corps, "production ships it off");
+    ai.enable_religious_defence_scales();
+    ai.enable_guru_heals_the_corps();
+    ai.enable_religious_units_heal_first();
+    ai.enable_condemn_under_congress();
+    ai.enable_spread_campaign_persists();
+    ai.enable_holy_site_where_the_threat_is();
+    ai.enable_enhancer_for_the_corps();
+    assert!(ai.religious_defence_scales);
+    assert!(ai.guru_heals_the_corps);
+    assert!(ai.religious_units_heal_first);
+    assert!(ai.condemn_under_congress);
+    assert!(ai.spread_campaign_persists);
+    assert!(ai.holy_site_where_the_threat_is);
+    assert!(ai.enhancer_for_the_corps);
+    ai.disable_religious_defence_scales();
+    ai.disable_guru_heals_the_corps();
+    ai.disable_religious_units_heal_first();
+    ai.disable_condemn_under_congress();
+    ai.disable_spread_campaign_persists();
+    ai.disable_holy_site_where_the_threat_is();
+    ai.disable_enhancer_for_the_corps();
+    assert!(!ai.religious_defence_scales);
+    assert!(!ai.guru_heals_the_corps);
+    assert!(!ai.religious_units_heal_first);
+    assert!(!ai.condemn_under_congress);
+    assert!(!ai.spread_campaign_persists);
+    assert!(!ai.holy_site_where_the_threat_is);
+    assert!(!ai.enhancer_for_the_corps);
+}
+
+/// `religious_defence_scales`: the shipped defensive corps is
+/// `(1 + targets.div_ceil(2)).min(2)`, which answers three slipping cities
+/// exactly as it answers one. The gene answers one spreader per threatened
+/// city, and never fewer than the shipped rule, up to its own ceiling of four.
+#[test]
+fn the_defensive_corps_answers_the_number_of_cities_only_with_the_gene() {
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_religious_defence_scales();
+    // (targets, shipped) pairs straight off the shipped expression.
+    for (targets, shipped) in [(0_usize, 0_usize), (1, 2), (2, 2), (3, 2), (5, 2), (9, 2)] {
+        assert_eq!(
+            off.defensive_missionary_cap(targets, shipped),
+            shipped,
+            "the gene off is the shipped constant, exactly"
+        );
+    }
+    assert_eq!(on.defensive_missionary_cap(1, 2), 2, "one city: unchanged");
+    assert_eq!(on.defensive_missionary_cap(2, 2), 3);
+    assert_eq!(on.defensive_missionary_cap(3, 2), 4, "three cities, three…");
+    assert_eq!(
+        on.defensive_missionary_cap(9, 2),
+        4,
+        "…and never past the ceiling, whatever the pressure"
+    );
+    assert_eq!(
+        on.defensive_missionary_cap(0, 0),
+        1,
+        "a caller that asked for none still gets the gene's floor of one"
+    );
+}
+
+/// `guru_heals_the_corps`: `guru_cap` is `offensive && apostles > 0`, so the
+/// founder defending its own cities can never buy the only unit that heals a
+/// religious corps. The gene answers yes only when there is a damaged unit to
+/// heal, and the defensive purchase orders name the Guru so the cap can bite.
+#[test]
+fn a_defending_founder_buys_a_guru_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_test_holy_site(&mut game, home);
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].civics.insert(crate::name!("theology"));
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 1_000.0);
+    pressure.insert("Rival Faith".to_string(), 700.0);
+    game.players[0].faith = game.game_speed.scale(4_000.0);
+    // A damaged spreader already in the field is the thing a Guru is for.
+    let wounded = game.spawn_test_unit("missionary", 0, game.cities[&home].pos);
+    game.units.get_mut(&wounded).unwrap().hp = 45;
+    game.units.get_mut(&wounded).unwrap().religion = Some("Our Faith".to_string());
+
+    let gurus = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind == "guru")
+            .count()
+    };
+
+    let mut control = game.clone();
+    let mut off = AdvancedAi::new();
+    for _ in 0..6 {
+        off.religious_spending_with_reserve(&mut control, 0, false, 80.0);
+    }
+    assert_eq!(
+        gurus(&control),
+        0,
+        "the shipped orders never name a Guru off the offensive"
+    );
+
+    let mut treated = game.clone();
+    let mut on = AdvancedAi::new();
+    on.enable_guru_heals_the_corps();
+    for _ in 0..6 {
+        on.religious_spending_with_reserve(&mut treated, 0, false, 80.0);
+    }
+    assert_eq!(gurus(&treated), 1, "the defence buys its one heal");
+
+    // Nothing damaged: the gene has no reason to spend, and does not.
+    let mut healthy = game.clone();
+    healthy.units.get_mut(&wounded).unwrap().hp = 100;
+    let mut spare = AdvancedAi::new();
+    spare.enable_guru_heals_the_corps();
+    for _ in 0..6 {
+        spare.religious_spending_with_reserve(&mut healthy, 0, false, 80.0);
+    }
+    assert_eq!(
+        gurus(&healthy),
+        0,
+        "a corps at full health is not a reason to buy a Guru"
+    );
+}
+
+/// `religious_units_heal_first`: a religious unit heals only on a turn it takes
+/// no action at all — `end_turn` heals when `!acted` and every move sets
+/// `acted` — while `do_spread` scales the pressure a charge adds by `hp/100`.
+/// The gene holds a wounded spreader that is standing in its own Holy Site's
+/// heal ring, and stands aside for a city that cannot wait.
+#[test]
+fn a_wounded_spreader_holds_to_heal_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    let holy_site = install_ai_test_district(&mut game, home, "holy_site");
+    game.cities.get_mut(&home).unwrap().buildings =
+        vec![crate::name!("shrine"), crate::name!("temple")];
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    // Our faith holds this city comfortably, so nothing here cannot wait.
+    let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 1_000.0);
+
+    let wounded = game.spawn_test_unit("missionary", 0, holy_site);
+    game.units.get_mut(&wounded).unwrap().hp = 45;
+    game.units.get_mut(&wounded).unwrap().religion = Some("Our Faith".to_string());
+    assert!(
+        game.unit_heal_rate(wounded) > 0,
+        "the fixture must actually stand in a heal ring, or the gene is inert"
+    );
+
+    let off = AdvancedAi::new();
+    assert!(
+        !off.religious_unit_holds_to_heal(&game, 0, wounded),
+        "the gene off never holds"
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_religious_units_heal_first();
+    assert!(
+        on.religious_unit_holds_to_heal(&game, 0, wounded),
+        "a wounded spreader in its own ring waits for the wound to close"
+    );
+    // And the hold is what the step actually does with it. Give the empire a
+    // second city that IS slipping, several tiles away: without the gene the
+    // wounded unit sets off for it at 45 hit points, which is the march this
+    // gene is there to postpone.
+    let mut sites: Vec<Pos> = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(tile.pos, holy_site) > 4
+        })
+        .map(|tile| tile.pos)
+        .collect();
+    sites.sort_by_key(|position| (game.wdist(*position, holy_site), *position));
+    game.current = 0;
+    let distant = sites
+        .into_iter()
+        .find(|position| {
+            let settler = game.spawn_test_unit("settler", 0, *position);
+            let founded = game.can_found_city(settler)
+                && game.apply(0, &Action::FoundCity { unit: settler }).is_ok();
+            if !founded {
+                game.remove_unit(settler);
+            }
+            founded
+        })
+        .expect("fixture needs a second settlement site");
+    let slipping = game.city_at(distant).expect("the second city stands");
+    let pressure = &mut game.cities.get_mut(&slipping).unwrap().pressure;
+    pressure.insert("Rival Faith".to_string(), 900.0);
+    assert!(
+        AdvancedAi::city_needs_religious_support(&game, 0, &game.cities[&slipping], "Our Faith"),
+        "the distant city must actually be slipping, or nothing marches"
+    );
+
+    let mut spent = game.clone();
+    assert!(
+        off.advanced_missionary_step(&mut spent, 0, wounded, false),
+        "without the gene the wounded unit marches on the distant city"
+    );
+    let mut held = game.clone();
+    assert!(
+        on.religious_unit_holds_to_heal(&held, 0, wounded),
+        "a city four tiles away is not one this turn's Spread could reach"
+    );
+    assert!(
+        !on.advanced_missionary_step(&mut held, 0, wounded, false),
+        "holding is reported as no action, which is how the unit heals"
+    );
+    assert_eq!(
+        held.units[&wounded].pos, holy_site,
+        "…and it is still standing in the ring that heals it"
+    );
+    assert_eq!(
+        held.units[&wounded].charges, game.units[&wounded].charges,
+        "…having spent no charge"
+    );
+
+    // A healthy unit is never held.
+    let mut whole = game.clone();
+    whole.units.get_mut(&wounded).unwrap().hp = 100;
+    assert!(!on.religious_unit_holds_to_heal(&whole, 0, wounded));
+
+    // Nor is a wounded one whose own city is losing its majority: the
+    // defensive conversion is the whole point of holding a corps.
+    let mut urgent = game.clone();
+    let pressure = &mut urgent.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Rival Faith".to_string(), 900.0);
+    assert!(
+        !on.religious_unit_holds_to_heal(&urgent, 0, wounded),
+        "a city under pressure cannot wait three turns"
+    );
+
+    // Nor is one standing where the engine would not heal it anyway.
+    let mut stranded = game.clone();
+    let far = stranded
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| stranded.wdist(*position, holy_site) > 3)
+        .expect("the test map is bigger than the heal ring");
+    stranded.units.get_mut(&wounded).unwrap().pos = far;
+    stranded.relocate(wounded, far);
+    assert_eq!(stranded.unit_heal_rate(wounded), 0);
+    assert!(
+        !on.religious_unit_holds_to_heal(&stranded, 0, wounded),
+        "the hold never strands a unit somewhere it would not recover"
+    );
+}
+
+/// `condemn_under_congress`: `do_condemn_heretic` licenses the blow at peace
+/// when the World Congress has condemned the target's religion, and
+/// `condemn_step` has only ever asked whether we are at war. War alone with the
+/// gene off; war or the Congress with it on.
+#[test]
+fn a_congress_condemnation_reaches_the_carrier_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    game.players[1].religion = Some("Rival Faith".to_string());
+    let at = game.cities[&game.player_city_ids(0)[0]].pos;
+    let heretic = game.spawn_test_unit("missionary", 1, at);
+    game.units.get_mut(&heretic).unwrap().religion = Some("Rival Faith".to_string());
+    assert!(!game.is_at_war(0, 1), "the fixture is a peacetime sighting");
+
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_condemn_under_congress();
+    assert_eq!(off.condemnable_heretic(&game, 0, at), None);
+    assert_eq!(
+        on.condemnable_heretic(&game, 0, at),
+        None,
+        "the gene alone licenses nothing — the Congress has said nothing yet"
+    );
+
+    let mut condemned = game.clone();
+    condemned
+        .active_congress_effects
+        .push(crate::game::CongressEffect {
+            resolution: "world_religion".to_string(),
+            outcome: "B".to_string(),
+            target: "Rival Faith".to_string(),
+            expires: condemned.turn + 20,
+        });
+    assert!(condemned.congress_effect_active("world_religion", "B", "Rival Faith"));
+    assert_eq!(
+        off.condemnable_heretic(&condemned, 0, at),
+        None,
+        "the shipped predicate asks only about war"
+    );
+    assert_eq!(
+        on.condemnable_heretic(&condemned, 0, at),
+        Some(heretic),
+        "the licence the engine already grants is finally used"
+    );
+    // A different religion's condemnation is not this unit's.
+    let mut other = condemned.clone();
+    other.active_congress_effects[0].target = "Some Other Faith".to_string();
+    assert_eq!(on.condemnable_heretic(&other, 0, at), None);
+    // And war still reaches it with the gene off, unchanged.
+    let mut war = game.clone();
+    war.current = 0;
+    war.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    assert!(war.is_at_war(0, 1));
+    assert_eq!(off.condemnable_heretic(&war, 0, at), Some(heretic));
+}
+
+/// `spread_campaign_persists`: the shipped offensive test is
+/// `active_campaign || faith >= 2_000×speed`, and `active_campaign` means
+/// holding a spreader with a charge left *this instant* — while `do_spread`
+/// removes a Missionary on its last charge. So a campaign that has been
+/// converting cities drops its posture the turn a wave finishes, and the caps
+/// fall with it. The gene keeps a campaign that has already converted a
+/// foreign city on the offensive while a target remains.
+#[test]
+fn a_finished_wave_ends_the_campaign_without_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    assert!(game.victory_conditions.religious);
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[1].religion = Some("Rival Faith".to_string());
+    // The rival's second city, so one of its cities can already be ours while
+    // another is still an unconverted target.
+    let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
+    let mut sites: Vec<Pos> = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(tile.pos, rival_home) > 4
+        })
+        .map(|tile| tile.pos)
+        .collect();
+    sites.sort_by_key(|position| (game.wdist(*position, rival_home), *position));
+    game.current = 1;
+    let second = sites
+        .into_iter()
+        .find(|position| {
+            let settler = game.spawn_test_unit("settler", 1, *position);
+            let founded = game.can_found_city(settler)
+                && game.apply(1, &Action::FoundCity { unit: settler }).is_ok();
+            if !founded {
+                game.remove_unit(settler);
+            }
+            founded
+        })
+        .expect("fixture needs a second rival site");
+    game.current = 0;
+    let converted = game
+        .city_at(second)
+        .expect("the rival's second city stands");
+    game.cities
+        .get_mut(&converted)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    assert_eq!(
+        game.city_religion(&game.cities[&converted]),
+        Some("Our Faith"),
+        "the campaign must already have taken a foreign city"
+    );
+    // …while the rival capital is still a target, and we hold no spreader and
+    // nothing like the 2,000 bank the shipped rule waits for.
+    let rival_capital = game.city_at(rival_home).unwrap();
+    assert_ne!(
+        game.city_religion(&game.cities[&rival_capital]),
+        Some("Our Faith")
+    );
+    game.players[0].faith = 300.0;
+    assert!(!game
+        .units
+        .values()
+        .any(|unit| unit.owner == 0 && game.rules.units[unit.kind].religious_spread > 0.0));
+
+    let off = AdvancedAi::new();
+    assert!(
+        !off.religious_offensive_posture(&game, 0, GrandStrategy::Science),
+        "the shipped rule drops the campaign the turn its last charge is spent"
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_spread_campaign_persists();
+    assert!(
+        on.religious_offensive_posture(&game, 0, GrandStrategy::Science),
+        "a campaign that has taken a city is not over between waves"
+    );
+
+    // Nothing converted yet: the gene has no campaign to keep alive, and both
+    // agree with the shipped rule.
+    let mut fresh = game.clone();
+    fresh.cities.get_mut(&converted).unwrap().pressure.clear();
+    assert_ne!(
+        fresh.city_religion(&fresh.cities[&converted]),
+        Some("Our Faith")
+    );
+    assert!(!off.religious_offensive_posture(&fresh, 0, GrandStrategy::Science));
+    assert!(
+        !on.religious_offensive_posture(&fresh, 0, GrandStrategy::Science),
+        "the gene opens a campaign's second wave, never its first"
+    );
+
+    // And the Religion lane is unchanged either way: it was always offensive.
+    assert!(off.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
+    assert!(on.religious_offensive_posture(&fresh, 0, GrandStrategy::Religion));
+}
+
+/// `holy_site_where_the_threat_is`: a religious unit is purchasable only in a
+/// city that itself holds a Holy Site, so a founder whose only Holy Site is
+/// its Holy City cannot buy a defender for the city that is actually slipping.
+/// The gene claims the district there; it never touches a city that is not.
+#[test]
+fn the_slipping_city_claims_a_holy_site_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_test_holy_site(&mut game, home);
+    // The district itself is gated on Astrology; without it the gene is
+    // correctly inert and the test would be measuring the tech, not the gene.
+    game.players[0].techs.insert(crate::name!("astrology"));
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+
+    // A second city of ours, with no Holy Site, losing its majority.
+    let home_pos = game.cities[&home].pos;
+    let mut sites: Vec<Pos> = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(tile.pos, home_pos) > 4
+        })
+        .map(|tile| tile.pos)
+        .collect();
+    sites.sort_by_key(|position| (game.wdist(*position, home_pos), *position));
+    let distant = sites
+        .into_iter()
+        .find(|position| {
+            let settler = game.spawn_test_unit("settler", 0, *position);
+            let founded = game.can_found_city(settler)
+                && game.apply(0, &Action::FoundCity { unit: settler }).is_ok();
+            if !founded {
+                game.remove_unit(settler);
+            }
+            founded
+        })
+        .expect("fixture needs a second settlement site");
+    let slipping = game.city_at(distant).expect("the second city stands");
+    game.cities
+        .get_mut(&slipping)
+        .unwrap()
+        .pressure
+        .insert("Rival Faith".to_string(), 900.0);
+    assert!(
+        !game.city_has_district_family(&game.cities[&slipping], crate::name!("holy_site")),
+        "the slipping city has nowhere to buy a defender"
+    );
+    // The queue leg, not the purchase leg.
+    game.players[0].gold = 0.0;
+    // Make the plot question unambiguous: a fresh pop-1 city's ring can be all
+    // forest and jungle, which the placement rules exclude until Mining and
+    // Bronze Working, and its specialty capacity is one. Clearing the ring and
+    // growing the city keeps this test about the gene rather than the terrain.
+    game.cities.get_mut(&slipping).unwrap().pop = 4;
+    let ring: Vec<Pos> = game.cities[&slipping]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != distant && game.wdist(*position, distant) <= 3)
+        .collect();
+    for position in ring {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+    }
+    let holy_site_district = crate::ai::BasicAi::civ_district(&game, 0, "holy_site");
+    let site = game
+        .district_sites(slipping, holy_site_district)
+        .into_iter()
+        .next()
+        .expect("the slipping city must have somewhere to put one");
+    assert!(
+        game.can_produce(
+            0,
+            slipping,
+            &Item::District {
+                district: holy_site_district,
+                pos: site
+            }
+        ),
+        "the fixture must be able to build the district, or the gene is untested"
+    );
+
+    let holy_sites = |game: &Game, cid: u32| {
+        game.city_has_district_family(&game.cities[&cid], crate::name!("holy_site"))
+    };
+    let queued_holy_site = |game: &Game, cid: u32| {
+        matches!(
+            game.cities[&cid].queue.first(),
+            Some(Item::District { district, .. }) if *district == holy_site_district
+        )
+    };
+
+    let mut control = game.clone();
+    AdvancedAi::new().holy_site_where_the_threat_is(&mut control, 0);
+    assert!(
+        !queued_holy_site(&control, slipping),
+        "the gene off is an exact no-op"
+    );
+
+    let mut treated = game.clone();
+    let mut on = AdvancedAi::new();
+    on.enable_holy_site_where_the_threat_is();
+    on.holy_site_where_the_threat_is(&mut treated, 0);
+    assert!(
+        queued_holy_site(&treated, slipping),
+        "the city that is losing its majority claims the district"
+    );
+    assert!(
+        holy_sites(&treated, home) && !holy_sites(&treated, slipping),
+        "…and the Holy City keeps the one it already had"
+    );
+
+    // A comfortable empire is untouched: nothing is slipping, nothing claimed.
+    let mut calm = game.clone();
+    calm.cities
+        .get_mut(&slipping)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 5_000.0);
+    let mut quiet = AdvancedAi::new();
+    quiet.enable_holy_site_where_the_threat_is();
+    quiet.holy_site_where_the_threat_is(&mut calm, 0);
+    assert!(
+        !queued_holy_site(&calm, slipping),
+        "a city holding its majority is not a threat to answer"
+    );
+}
+
+/// `enhancer_for_the_corps`: the `EvangelizeBelief` table scores by victory
+/// lane and gives every belief it does not name 100 — the same number for
+/// `scripture`, which multiplies the pressure of every charge, as for a
+/// worship building. The gene scores the five corps enhancers above the lane
+/// pick while the corps has a job, and is inert when it has none.
+#[test]
+fn the_corps_enhancers_outrank_the_lane_pick_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[1].religion = Some("Rival Faith".to_string());
+    // Home under conversion pressure: the corps has a job.
+    let pressure = &mut game.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 1_000.0);
+    pressure.insert("Rival Faith".to_string(), 700.0);
+
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_enhancer_for_the_corps();
+    for belief in [
+        "holy_order",
+        "scripture",
+        "itinerant_preachers",
+        "missionary_zeal",
+        "defender_of_the_faith",
+    ] {
+        assert_eq!(
+            off.corps_enhancer_score(&game, 0, belief),
+            None,
+            "the gene off scores nothing, so the lane table is untouched"
+        );
+        let score = on
+            .corps_enhancer_score(&game, 0, belief)
+            .unwrap_or_else(|| panic!("{belief} is a corps multiplier"));
+        assert!(
+            score >= 300,
+            "{belief} must reach the lane table's own maximum, or it can never win"
+        );
+    }
+    assert!(
+        on.corps_enhancer_score(&game, 0, "holy_order")
+            > on.corps_enhancer_score(&game, 0, "defender_of_the_faith"),
+        "cheaper units outrank a defensive combat bonus"
+    );
+    // A worship building is not a corps multiplier and keeps its lane score.
+    for belief in ["cathedral", "wat", "pagoda", "tithe"] {
+        assert_eq!(on.corps_enhancer_score(&game, 0, belief), None);
+    }
+
+    // A comfortable founder with nothing in the field keeps the lane pick.
+    let mut calm = game.clone();
+    calm.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .remove("Rival Faith");
+    assert!(!calm
+        .units
+        .values()
+        .any(|unit| unit.owner == 0 && calm.rules.units[unit.kind].religious_spread > 0.0));
+    assert_eq!(
+        on.corps_enhancer_score(&calm, 0, "scripture"),
+        None,
+        "no city slipping and no campaign in the field: the corps has no job"
+    );
+
+    // …but a campaign in the field is a job on its own.
+    let mut campaigning = calm.clone();
+    let spreader = campaigning.spawn_test_unit("missionary", 0, campaigning.cities[&home].pos);
+    campaigning.units.get_mut(&spreader).unwrap().religion = Some("Our Faith".to_string());
+    assert!(campaigning.units[&spreader].charges > 0);
+    assert_eq!(
+        on.corps_enhancer_score(&campaigning, 0, "scripture"),
+        Some(380)
     );
 }
