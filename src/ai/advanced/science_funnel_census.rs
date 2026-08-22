@@ -280,3 +280,136 @@ mod power_probe {
         );
     }
 }
+
+#[cfg(test)]
+mod science_gates_probe {
+    use super::*;
+
+    /// Where the science multipliers are LOST, counted at the end of a game.
+    ///
+    /// The two genes that work both price a Campus building better. What is
+    /// left is the multipliers on top of them, and every one is gated on
+    /// something the empire may or may not have reached. This counts the
+    /// gates rather than guessing at them — see the power probe above for why
+    /// that order matters.
+    #[test]
+    #[ignore = "probe"]
+    fn which_science_multiplier_gates_does_the_empire_actually_clear() {
+        let mut g = Game::new(6, 60, 38, 86_000_100, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        me.enable_research_tier_premium();
+        me.enable_science_multiplier_payoff();
+        let mut others = AdvancedAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        let campus = crate::name!("campus");
+        let cities = g.player_city_ids(0);
+        let (mut with_campus, mut pop15, mut adj4, mut both) = (0, 0, 0, 0);
+        let mut pops: Vec<i32> = Vec::new();
+        for cid in &cities {
+            let city = &g.cities[cid];
+            pops.push(city.pop);
+            if !g.city_has_district_family(city, campus) {
+                continue;
+            }
+            with_campus += 1;
+            // The two halves `Game::city_yields` gates the Campus card on.
+            let big = city.pop >= 15;
+            let adjacency = g
+                .city_district_family_position(city, campus)
+                .map(|position| {
+                    let placed = g.map.tiles[&position].district.unwrap_or(campus);
+                    let mut yields = Yields::default();
+                    for source in g.district_adjacency_sources(placed, position) {
+                        if source.source != "adjacency_bonus" {
+                            yields.add(source.yields);
+                        }
+                    }
+                    yields.science
+                })
+                .unwrap_or(0.0);
+            let sharp = adjacency >= 4.0;
+            if big {
+                pop15 += 1;
+            }
+            if sharp {
+                adj4 += 1;
+            }
+            if big && sharp {
+                both += 1;
+            }
+        }
+        // ⭐ AND THE CHECK THE POWER PROBE TAUGHT: does the choice even exist?
+        // A Campus that cannot reach adjacency 4 anywhere in its own work
+        // radius is not a siting mistake, it is a map. Count the best Campus
+        // plot each city actually had.
+        let mut could_reach_four = 0;
+        let mut best_available: Vec<f64> = Vec::new();
+        for cid in &cities {
+            let city = &g.cities[cid];
+            let mut best = 0.0_f64;
+            for position in city.owned_tiles.iter().copied() {
+                if g.map.tiles[&position].district.is_some() || position == city.pos {
+                    continue;
+                }
+                let mut yields = Yields::default();
+                for source in g.district_adjacency_sources(campus, position) {
+                    if source.source != "adjacency_bonus" {
+                        yields.add(source.yields);
+                    }
+                }
+                best = best.max(yields.science);
+            }
+            best_available.push(best);
+            if best >= 4.0 {
+                could_reach_four += 1;
+            }
+        }
+        best_available.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        println!(
+            "SITES cities_with_a_reachable_adj4_plot={could_reach_four}              best_free_campus_adjacency_per_city={:?}",
+            best_available
+                .iter()
+                .map(|v| (v * 10.0).round() / 10.0)
+                .collect::<Vec<_>>()
+        );
+
+        pops.sort_unstable();
+        let median = pops.get(pops.len() / 2).copied().unwrap_or(0);
+        let rationalism = g.players[0].policies.contains(&crate::name!("rationalism"));
+        let philosophy = g.players[0]
+            .policies
+            .contains(&crate::name!("natural_philosophy"));
+        let suzerainties = g
+            .players
+            .iter()
+            .filter(|p| p.is_minor && p.alive)
+            .filter(|p| g.suzerain_of(p.id) == Some(0))
+            .count();
+        println!(
+            "GATES cities={} campus={with_campus} pop>=15:{pop15} adj>=4:{adj4} both:{both} \
+             median_pop={median} max_pop={} rationalism={rationalism} \
+             natural_philosophy={philosophy} suzerainties={suzerainties} techs={} sci={:.1}",
+            cities.len(),
+            pops.last().copied().unwrap_or(0),
+            g.players[0].techs.len(),
+            cities
+                .iter()
+                .map(|c| g.city_yields(*c).science)
+                .sum::<f64>()
+        );
+    }
+}

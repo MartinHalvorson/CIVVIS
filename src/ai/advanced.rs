@@ -3966,6 +3966,38 @@ pub struct AdvancedAi {
     /// era. Off everywhere by default; opt-in gene `power-the-laboratory`.
     pub power_the_laboratory: bool,
 
+    /// Site the Campus where its adjacency clears the multiplier's threshold,
+    /// because crossing it doubles every Campus building in that city.
+    ///
+    /// ★★★★★ RATIONALISM IS SLOTTED AND PAYS ALMOST NOTHING. `city_yields`
+    /// pays `campus_building_science_pct` in **two halves**, and the second is
+    /// gated on the Campus earning **4 Science from its own adjacency**, read
+    /// BEFORE Natural Philosophy or any other card doubles it. A census probe
+    /// at the end of a conditioned game counts the empire's own gates:
+    ///
+    ///     10 cities · 9 Campuses · rationalism SLOTTED
+    ///     pop >= 15:  3 of 9      adjacency >= 4:  0 of 9      both:  0
+    ///
+    /// **Not one Campus in the empire clears the adjacency half**, so a policy
+    /// slot is spent on a card returning a fraction of its rating. And the
+    /// choice was there: the same probe finds **4 of the 10 cities still
+    /// holding a free plot worth exactly 4.0**.
+    ///
+    /// The cause is a threshold the pricing cannot see. `producible_items`
+    /// ranks a district's sites by `district_yields(...).total()` and offers
+    /// the best two, and `production_value` then prices a plot by the same
+    /// linear yield — so adjacency 3 and adjacency 4 differ by one beaker in
+    /// the price and by *half of Rationalism applied to every Campus building
+    /// in that city, for the rest of the game* in fact.
+    ///
+    /// With this on, a Campus plot whose RAW Science adjacency reaches the
+    /// threshold is credited the beakers the half would pay on the Campus
+    /// chain, over the payback horizon so a Campus sited at turn 240 is not
+    /// bought for a multiplier it will never collect. A plot below the
+    /// threshold is priced exactly as before, and so is every other district.
+    /// Off everywhere by default; opt-in gene `campus-adjacency-threshold`.
+    pub campus_adjacency_threshold: bool,
+
     /// The citizen half of the taper: an empire that has built the research
     /// economy should still be WORKING it in the half of the game the tech
     /// tree decides.
@@ -4222,6 +4254,12 @@ pub struct AdvancedAi {
     /// every Campus finished, so `campus_finishes_first` is a strict no-op in
     /// both. See that flag.
     research_chain_completion: f64,
+    /// Half the best `campus_building_science_pct` the RULESET offers, and the
+    /// printed Science of the whole Campus chain. Both are ruleset constants,
+    /// cached once per decision beside `research_weight` rather than rescanned
+    /// per candidate plot. See `campus_adjacency_threshold`.
+    campus_multiplier_half: f64,
+    campus_chain_science: f64,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -4297,6 +4335,11 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// however empty the standing Campuses are. A city with no Campus at all is a
 /// real research hole and the gene is a brake on spreading, not a ban on it.
 const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
+/// The Campus adjacency `city_yields` gates half of
+/// `campus_building_science_pct` on, matching Gathering Storm's
+/// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4 and pinned to the
+/// engine by a test. See `campus_adjacency_threshold`.
+const CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD: f64 = 4.0;
 const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
 /// The most any one rung may be owed against the first, so a modded or
 /// runaway yield cannot take over the queue. The shipped ceiling is the
@@ -5122,6 +5165,7 @@ impl AdvancedAi {
             research_tier_premium: false,
             campus_finishes_first: false,
             power_the_laboratory: false,
+            campus_adjacency_threshold: false,
             research_floor_holds: false,
             lane_congress_ballot: false,
             lane_congress_favor: false,
@@ -5165,6 +5209,8 @@ impl AdvancedAi {
             housing_research: false,
             research_weight: 0.0,
             research_chain_completion: 1.0,
+            campus_multiplier_half: 0.0,
+            campus_chain_science: 0.0,
         }
     }
 
@@ -9499,6 +9545,59 @@ impl AdvancedAi {
     /// work-bound. Deliberately NOT parameterised on the acting city: the
     /// question is whether the EMPIRE has unfinished research cities, and the
     /// city being priced is by construction one that has no Campus at all.
+    /// The two ruleset constants `campus_adjacency_threshold` prices with.
+    /// Cached because `production_value` runs per candidate per city per turn
+    /// and `docs/` measures that loop work-bound; neither depends on the board.
+    fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
+        if !self.campus_adjacency_threshold {
+            self.campus_multiplier_half = 0.0;
+            self.campus_chain_science = 0.0;
+            return;
+        }
+        let campus = crate::name!("campus");
+        self.campus_multiplier_half = g
+            .rules
+            .policies
+            .values()
+            .filter_map(|policy| policy.effects.get("campus_building_science_pct").copied())
+            .fold(0.0_f64, f64::max)
+            / 2.0;
+        self.campus_chain_science = g
+            .rules
+            .buildings
+            .values()
+            .filter(|spec| {
+                !spec.wonder && spec.district.map(|d| g.district_family(d)) == Some(campus)
+            })
+            .map(|spec| spec.yields.science)
+            .sum();
+    }
+
+    /// The extra beakers a Campus plot at or above the multiplier's adjacency
+    /// threshold will earn this city. See `campus_adjacency_threshold`.
+    fn campus_threshold_bonus(&self, g: &Game, family: Name, pos: Pos) -> f64 {
+        if !self.campus_adjacency_threshold
+            || family != crate::name!("campus")
+            || self.campus_multiplier_half <= 0.0
+        {
+            return 0.0;
+        }
+        // ⚠ RAW adjacency, exactly as `Game::city_yields` reads it for this
+        // clause: `adjacency_bonus` sources are the percentage cards, and the
+        // threshold is tested BEFORE they double anything. Reading the doubled
+        // number would credit a plot the host will not pay for.
+        let mut raw = Yields::default();
+        for source in g.district_adjacency_sources(crate::name!("campus"), pos) {
+            if source.source != "adjacency_bonus" {
+                raw.add(source.yields);
+            }
+        }
+        if raw.science < CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD {
+            return 0.0;
+        }
+        self.campus_chain_science * self.campus_multiplier_half / 100.0
+    }
+
     fn refresh_research_chain_completion(&mut self, g: &Game, pid: usize) {
         self.research_chain_completion = 1.0;
         if !self.campus_finishes_first || !self.research_economy {
@@ -20487,7 +20586,19 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                // See `campus_adjacency_threshold`: crossing 4 raw Science
+                // doubles every Campus building this city will ever hold, and
+                // the linear yield above cannot see a threshold.
+                let adjacency_threshold = self.yield_value(
+                    Yields {
+                        science: self.campus_threshold_bonus(g, family, *pos),
+                        ..Yields::default()
+                    },
+                    plan.strategy,
+                ) * 42.0
+                    * Self::campus_payback_horizon(g);
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
+                    + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + housing_gain * (32.0 + housing_need * 18.0)
@@ -30726,6 +30837,7 @@ impl AdvancedAi {
         // And how finished the research cities already standing are, on the
         // same once-per-decision footing. See `campus_finishes_first`.
         self.refresh_research_chain_completion(g, pid);
+        self.refresh_campus_multiplier_constants(g);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);

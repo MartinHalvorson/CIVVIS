@@ -291,6 +291,19 @@ impl AdvancedAi {
         self.power_the_laboratory = false;
     }
 
+    /// A Campus plot that clears the multiplier's adjacency threshold is
+    /// credited what crossing it unlocks. See
+    /// [`AdvancedAi::campus_adjacency_threshold`]. Opt-in gene
+    /// `campus-adjacency-threshold`.
+    pub fn enable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = true;
+    }
+
+    /// The twin of `enable_campus_adjacency_threshold`.
+    pub fn disable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.

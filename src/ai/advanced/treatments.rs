@@ -303,4 +303,8 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // power, and nothing in the controller buys the switch. See
     // `AdvancedAi::power_the_laboratory`.
     ("power_the_laboratory", "power-the-laboratory", AdvancedAi::enable_power_the_laboratory),
+    // Rationalism is slotted and NOT ONE Campus in the empire clears the
+    // adjacency half it pays. Appended at the end, for the reason above. See
+    // `AdvancedAi::campus_adjacency_threshold`.
+    ("campus_adjacency_threshold", "campus-adjacency-threshold", AdvancedAi::enable_campus_adjacency_threshold),
 ];

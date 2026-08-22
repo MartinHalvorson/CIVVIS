@@ -73,6 +73,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
 | `builder-barbarian-safety` | off (unmeasured) | Keep Builders from entering a visible Barbarian-capture envelope. |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `campus-adjacency-threshold` | off (unmeasured) | A Campus plot that clears the multiplier's adjacency threshold is credited what crossing it unlocks. |
 | `campus-finishes-first` | off (unmeasured) | The Campus coverage term is scaled by how finished the empire's standing Campuses are. |
 | `competition-victory-points` | off (unmeasured) | Price a scored competition's first place by the Diplomatic Victory Points it pays, at the rate `strategic_wonder_value` already pays a wonder's. |
 | `condemn-under-congress` | off (unmeasured) | Condemn a heretic the World Congress has condemned, not only one this seat is at war with. |

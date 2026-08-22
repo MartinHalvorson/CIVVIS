@@ -142,6 +142,9 @@ mod tests {
             ("power-the-laboratory", |ai: &AdvancedAi| {
                 ai.power_the_laboratory
             }),
+            ("campus-adjacency-threshold", |ai: &AdvancedAi| {
+                ai.campus_adjacency_threshold
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -160,18 +163,21 @@ mod tests {
         ai.enable_research_floor_holds();
         ai.enable_campus_finishes_first();
         ai.enable_power_the_laboratory();
+        ai.enable_campus_adjacency_threshold();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
         ai.disable_research_floor_holds();
         ai.disable_campus_finishes_first();
         ai.disable_power_the_laboratory();
+        ai.disable_campus_adjacency_threshold();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
         assert!(!ai.research_floor_holds);
         assert!(!ai.campus_finishes_first);
         assert!(!ai.power_the_laboratory);
+        assert!(!ai.campus_adjacency_threshold);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -442,6 +448,110 @@ mod tests {
         // what gates the term, and it ships off.
         let shipped = AdvancedAi::new();
         assert!(!shipped.power_the_laboratory);
+    }
+
+    /// The threshold, pinned to the engine that enforces it.
+    ///
+    /// A census probe found Rationalism SLOTTED and **not one Campus of nine**
+    /// clearing the adjacency half it pays, while four of the ten cities still
+    /// held a free plot worth exactly 4.0. The price could not see a threshold;
+    /// this is the number it now sees, and the test asserts the engine agrees
+    /// rather than asserting a 4 typed twice.
+    #[test]
+    fn the_campus_threshold_is_the_one_the_engine_actually_gates_on() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+
+        let raw = |game: &Game| {
+            let mut yields = Yields::default();
+            for source in game.district_adjacency_sources(crate::name!("campus"), site) {
+                if source.source != "adjacency_bonus" {
+                    yields.add(source.yields);
+                }
+            }
+            yields.science
+        };
+
+        // Below the threshold the model pays nothing for the adjacency half,
+        // and neither does the gene: a low-adjacency Campus is priced as it
+        // always was.
+        assert!(raw(&game) < super::super::CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD);
+        let before = game.city_yields(city).science;
+        let mut ai = AdvancedAi::new();
+        ai.enable_campus_adjacency_threshold();
+        ai.refresh_campus_multiplier_constants(&game);
+        assert_eq!(
+            ai.campus_threshold_bonus(&game, crate::name!("campus"), site),
+            0.0,
+            "adjacency {} is under the gate",
+            raw(&game)
+        );
+
+        // Two mountains beside the Campus lift its RAW adjacency to the gate.
+        let ring: Vec<Pos> = game
+            .nbrs(site)
+            .into_iter()
+            .filter(|position| {
+                *position != game.cities[&city].pos && game.map.get(*position).is_some()
+            })
+            .collect();
+        for position in ring.iter().take(4) {
+            let tile = game.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("mountain");
+            tile.feature = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+        }
+
+        // ⭐ THE ENGINE IS THE AUTHORITY, NOT THE CONSTANT. Whatever raw
+        // adjacency now stands, the model pays the half exactly when it is at
+        // or above the constant — so the two agree by construction, not by a
+        // number written down twice.
+        let now = raw(&game);
+        let paid_more = game.city_yields(city).science > before;
+        assert_eq!(
+            now >= super::super::CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD,
+            paid_more,
+            "raw adjacency {now}: the constant and the engine must agree on the gate"
+        );
+
+        if paid_more {
+            let bonus = ai.campus_threshold_bonus(&game, crate::name!("campus"), site);
+            assert!(bonus > 0.0, "a plot at the gate is worth what it unlocks");
+            // The credit is the chain's printed Science times half the card,
+            // which is what the second half will pay once the chain stands.
+            assert!(
+                (bonus - ai.campus_chain_science * ai.campus_multiplier_half / 100.0).abs() < 1e-9
+            );
+            // And no other district is ever credited it.
+            assert_eq!(
+                ai.campus_threshold_bonus(&game, crate::name!("theater_square"), site),
+                0.0
+            );
+            // With the gene off the constants are zeroed and the term is dead.
+            let mut shipped = AdvancedAi::new();
+            shipped.refresh_campus_multiplier_constants(&game);
+            assert_eq!(shipped.campus_multiplier_half, 0.0);
+            assert_eq!(
+                shipped.campus_threshold_bonus(&game, crate::name!("campus"), site),
+                0.0
+            );
+        }
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the
