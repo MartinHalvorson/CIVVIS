@@ -4242,6 +4242,12 @@ use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
 mod victory_lane;
 
+/// Victory lanes are target contracts: their beelines and campaign objectives
+/// stay attached to the condition that can actually end (or deny) the game.
+/// Keeping that routing out of the controller avoids growing another shared
+/// treatment/flag anchor. See `advanced/victory_heuristics.rs`.
+mod victory_heuristics;
+
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
 /// applying it; the table is generated. See `advanced/gene_ledger.rs`.
@@ -7519,10 +7525,8 @@ impl AdvancedAi {
     /// raw signal in [`Self::victory_denial`] for pressure reporting and
     /// non-military counters.
     fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        self.victory_denial(g, pid).filter(|(rival, counter)| {
-            self.conquest_denial_actionable(g, pid, *rival, *counter)
-                && self.culture_denial_actionable(g, pid, *rival, *counter)
-        })
+        let culture_pressures = self.rival_culture_pressures(g);
+        self.actionable_victory_denial_with_culture_pressures(g, pid, &culture_pressures)
     }
 
     fn victory_denial_with_culture_pressures(
@@ -7532,87 +7536,15 @@ impl AdvancedAi {
         culture_pressures: &BTreeMap<usize, i32>,
     ) -> Option<(usize, GrandStrategy)> {
         let own_progress = self.victory_focus(g, pid).progress;
-        let (rival, pressure) = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
-            })
-            .map(|player| {
-                (
-                    player.id,
-                    self.rival_victory_pressure_with_culture(
-                        g,
-                        player.id,
-                        culture_pressures.get(&player.id).copied(),
-                    ),
-                )
-            })
-            .max_by(|left, right| {
-                left.1
-                    .progress
-                    .cmp(&right.1.progress)
-                    .then_with(|| right.0.cmp(&left.0))
-            })?;
-        let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
-        // Religious progress advances in whole-civilization jumps, and a
-        // defender needs time to produce and route religious counters. Start
-        // reacting with two holdouts left when the rival also leads our own
-        // race, then treat one remaining holdout as an unconditional match
-        // point: a slower "close" victory must not suppress that interrupt.
-        if pressure.strategy == GrandStrategy::Religion {
-            let living = g
-                .players
-                .iter()
-                .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
-                .count()
-                .max(1) as i32;
-            let match_point = 100 * living.saturating_sub(1) / living;
-            let early_warning = (100 * living.saturating_sub(2) / living)
-                .max(50)
-                .min(match_point);
-            if pressure.progress < early_warning
-                || (pressure.progress < match_point
-                    && !urgent
-                    && pressure.progress < own_progress + 15)
-            {
-                return None;
-            }
-        } else if pressure.progress < 78 || (!urgent && pressure.progress < own_progress + 15) {
-            return None;
-        }
-        // Four of the seven races answer themselves — a culture threat is met
-        // with culture, a religious one with religion. The two that answer with
-        // an army are Science and Expansion, and those are the two the
-        // recorded large-profile census argues against: at 60x38 and 74x46 an
-        // empire fighting one or two rivals wins 4.4% and 10.7% of the time
-        // against a 16.7% base rate, and the shipped response already costs terminal
-        // score (44 maps to 65, p=0.055) without buying a win. Racing the
-        // leader in their own lane keeps the reaction and drops the war.
-        // The decomposition arm: react to the other four races unchanged and
-        // to these two not at all, so the effect of dropping the war can be
-        // read apart from the effect of adopting the lane.
-        if self.counter_stand_down
-            && matches!(
-                pressure.strategy,
-                GrandStrategy::Science | GrandStrategy::Expansion
-            )
-        {
-            return None;
-        }
-        let counter = match pressure.strategy {
-            GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
-            GrandStrategy::Science => GrandStrategy::Conquest,
-            GrandStrategy::Culture => GrandStrategy::Culture,
-            GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
-            GrandStrategy::Religion => GrandStrategy::Conquest,
-            GrandStrategy::Diplomacy => GrandStrategy::Diplomacy,
-            GrandStrategy::Conquest => GrandStrategy::Recovery,
-            GrandStrategy::Expansion if self.counter_in_lane => GrandStrategy::Expansion,
-            GrandStrategy::Expansion => GrandStrategy::Conquest,
-            GrandStrategy::Recovery => GrandStrategy::Recovery,
-        };
-        Some((rival, counter))
+        // Keep the raw report tied to the single greatest clock. Congress and
+        // in-lane counters need that public warning even when no army can act
+        // on it; the separate actionable pass falls through to lower threats.
+        let (rival, pressure) = self
+            .ranked_rival_victory_pressures(g, pid, culture_pressures)
+            .into_iter()
+            .next()?;
+        self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)
+            .map(|counter| (rival, counter))
     }
 
     /// Record each living rival's stock-lane pressure for this turn, so the
@@ -7949,22 +7881,10 @@ impl AdvancedAi {
         // Target selection needs the same public culture-race totals as
         // victory denial. Build them once for the assessment instead of
         // repeating a whole-world tourism scan for every sort comparison.
-        let active_victory_target = self.active_victory_target(g);
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let denial = if active_victory_target.is_some() && !self.deny_while_targeted {
-            None
-        } else {
-            self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
-                .filter(|(rival, _)| {
-                    // The same match-point bar as `victory_denial`: an
-                    // assigned lane yields only to a rival about to win.
-                    active_victory_target.is_none() || self.urgent_victory_threat(g, *rival)
-                })
-        };
-        let actionable_denial = denial.filter(|(rival, counter)| {
-            self.conquest_denial_actionable(g, pid, *rival, *counter)
-                && self.culture_denial_actionable(g, pid, *rival, *counter)
-        });
+        let active_victory_target = self.active_victory_target(g);
+        let actionable_denial =
+            self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -8153,6 +8073,7 @@ impl AdvancedAi {
             g.players.get(*target).map(|player| player.alive).unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
+        let domination_capital = self.domination_capital_target(g, pid);
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -8234,6 +8155,18 @@ impl AdvancedAi {
                 })
                 .map(|(rival, _)| rival)
         };
+        let suppression_target_city = actionable_denial
+            .filter(|(rival, counter)| {
+                *counter == GrandStrategy::Conquest && target_player == Some(*rival)
+            })
+            .and_then(|(rival, _)| {
+                let pressure = self.rival_victory_pressure_with_culture(
+                    g,
+                    rival,
+                    rival_culture_pressures.get(&rival).copied(),
+                );
+                self.victory_suppression_city(g, pid, rival, pressure)
+            });
         let ranked_target_city = emergency_objective
             .as_ref()
             .map(|emergency| emergency.city)
@@ -8245,6 +8178,12 @@ impl AdvancedAi {
             // whichever border town scored best.
             .or_else(|| {
                 rush_victim.filter(|(target, _)| target_player == Some(*target))
+                    .map(|(_, capital)| capital)
+            })
+            .or(suppression_target_city)
+            .or_else(|| {
+                domination_capital
+                    .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {
@@ -9786,10 +9725,10 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment = objective == GrandStrategy::Science
-                || self.diplomatic_science_backup(g, pid, plan);
-            let great_person_goal =
-                BasicAi::live_great_person_tech_goal(g, pid);
+            let science_commitment =
+                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
+            let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
+            let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -9831,6 +9770,7 @@ impl AdvancedAi {
                 _ if plan.rush && !g.players[pid].techs.contains(&crate::name!("horseback_riding")) => {
                     Some("horseback_riding")
                 }
+                _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
                     "rocketry",
