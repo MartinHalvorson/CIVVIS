@@ -7167,11 +7167,41 @@ mod tests {
                 "{card} must read title, description, actions, tags"
             );
         }
+        // Per row rather than as one chain across both: the old chain read
+        // `battle-picker` < `watch-civ-title`, which is not "a panel sits
+        // below its own cards" at all but "Tactics is the first row", and it
+        // failed the moment the rows swapped. Which row leads is a separate
+        // decision, asserted separately below.
+        for (watch, play, panel) in [
+            ("watch-civ", "play-civ", "game-picker"),
+            ("watch-tactics", "play-tactics", "battle-picker"),
+        ] {
+            assert!(
+                index(&format!("id=\"{watch}-title\"")) < index(&format!("id=\"{play}-title\""))
+                    && index(&format!("id=\"{play}-title\"")) < index(&format!("id=\"{panel}\"")),
+                "{panel} must sit directly below its own row of cards"
+            );
+        }
+        // Operator, 2026-08-22: CIVVIS leads the menu, Tactics follows. The
+        // whole CIVVIS row — its panel included — precedes the first Tactics
+        // card, and the row index above the menu is in that same page order.
         assert!(
-            index("id=\"watch-tactics-title\"") < index("id=\"battle-picker\"")
-                && index("id=\"battle-picker\"") < index("id=\"watch-civ-title\"")
-                && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
-            "each panel must sit directly below its own row of cards"
+            index("id=\"game-picker\"") < index("id=\"watch-tactics-title\""),
+            "the CIVVIS row must come before the Tactics row"
+        );
+        assert!(
+            index("href=\"#row-civ\"") < index("href=\"#row-tactics\""),
+            "the row index must list CIVVIS before Tactics"
+        );
+        // The LCP hint belongs to the first row's thumbnail, so it moves when
+        // the rows do; left behind it would preload a below-the-fold image.
+        assert!(
+            landing.contains(
+                "src=\"assets/watch-civ.jpg\" alt=\"Watch CIVVIS: a CIVVIS globe at mid-game, \
+AI empires sharing two continents, borders and cities drawn across the planet.\" \
+fetchpriority=\"high\""
+            ),
+            "the first row's thumbnail must carry the LCP hint"
         );
     }
 
