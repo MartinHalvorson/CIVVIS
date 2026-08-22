@@ -282,11 +282,11 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "holy-lane-parity",
         verdict: Verdict::Helps,
-        default_on: false,
-        wins_last_10k: Some(63),
-        wins_prior_10k: Some(-27),
+        default_on: true,
+        wins_last_10k: Some(99),
+        wins_prior_10k: Some(63),
         family_wise: true,
-        native: Some(Measure { pairs: 17574, win_delta_pp: 1.263, win_z: 3.48, share_delta_pp: -0.016, share_z: -0.245, source: "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json" }),
+        native: Some(Measure { pairs: 7200, win_delta_pp: 1.972, win_z: 4.052, share_delta_pp: 0.08, share_z: 1.23, source: "2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json" }),
         war: Some(Measure { pairs: 5844, win_delta_pp: 0.103, win_z: 0.143, share_delta_pp: -0.402, share_z: -2.257, source: "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json" }),
     },
     GeneVerdict {

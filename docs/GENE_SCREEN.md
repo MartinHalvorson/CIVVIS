@@ -488,6 +488,16 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   really −26 at p4. `tools/gene_ledger.py` filters unregistered tags, so the
   deployment ledger is byte-identical either way.
 
+- **`holy-lane-parity` defaults ON (2026-08-22).** The operator took the call
+  #2299 left open. Its direct screen enters the ledger as a native source, so
+  the columns are `[+63 prior, +99 last]`, both positive, and the rule defaults
+  it on: **34 genes, was 33**. Exactly one ledger row changed and exactly one
+  default moved. ⚠ This **moves the incumbent** every recorded Elo result is
+  filed against — the deployment genome now plays a gene it did not play, so
+  `--deployment-comparison` diverges from the previous head by design. It is
+  the first gene to be culled, restored and promoted; the round is
+  `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`.
+
 - **`holy-lane-parity` came back, and its direct arm confirms it (2026-08-22).**
   The first gene to return from a cull. #2266 removed it on **−27** from the
   four-gene `s6` screen — whose column band is **±64**, so that was a null and

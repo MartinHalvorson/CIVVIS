@@ -99,18 +99,34 @@ a quarter — in the lane that decides two games in five.
 
 ## What was decided
 
-The gene is back in the code and screenable again. **No default changed**: the
-ledger row is `helps`, family-wise, `default_on: false`, and the deployment
-genome is byte-identical — exactly one row added, no surviving row altered,
-`default_on` still 33.
+The gene is back in the code, and **it defaults on.** The operator took the
+call this page was written to leave open (2026-08-22): *"sure we can have this
+default on."*
 
-This direct screen is recorded here and in `docs/gene_ranking_notes.md` rather
-than entered as a ledger source, following the P9 precedent
-(`2026-08-21-current-genome-settler-guard-direct-confirmation.md`), which kept a
-direct confirmation as a note.
+Entering this screen as a native ledger source gives the gene columns
+`[+63 prior, +99 last]` — both positive — and the 2026-08-22 rule defaults it
+**on**. The ledger diff is exactly one row changed and exactly one default
+moved: `holy-lane-parity` `false` → `true`, `default_on` **33 → 34**. No other
+gene's verdict, columns or default moved.
 
-⚠ **That is a live decision, not a formality.** Entering this screen as a native
-source would give the gene columns `[+63 prior, +99 last]` — both positive — and
-the 2026-08-22 rule would default it **on**, taking the genome to 34. The
-evidence for that is on this page; the change belongs to whoever owns the
-deployment genome, not to the PR that restored the code.
+⚠ **This moves the incumbent.** Every recorded Elo result is filed against the
+deployment genome, and the genome now plays a gene it did not play before, so
+`ai_eval live advanced --deployment-comparison` diverges from `main` by
+design — the previous PR's byte-identical run was the evidence that *restoring*
+the code changed nothing, and that property is deliberately given up here.
+
+Its `helps` verdict is family-wise on the native win axis and carries
+`conflict: true`, because the war screen reads `share hurts` at z −2.26. The
+rule reads the win axis, and both of its win columns are positive.
+
+## What is still open
+
+- **850 is an upper bound, not a tuned value.** It is
+  `(Culture, theater_square)`'s own figure, taken so a null would retire the
+  axis rather than leave "maybe a smaller number would have worked". It is not
+  null, so the number is now the obvious thing to screen — `advanced_holy_lane_v0`
+  (the pre-shipment `d_holy`) is the second cell of that 2×2 and is registered.
+- **The war regime.** A screen restricted to `domination,score` is a game
+  religion cannot win; that is why this gene is priced natively. If a war-regime
+  screen re-runs against the current genome, its share reading is the one to
+  watch.
