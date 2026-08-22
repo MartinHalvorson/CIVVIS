@@ -16550,6 +16550,156 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    /// The played game wears Civilization VI's own arrangement, so that a
+    /// person who has played that game can drive this one without being told
+    /// where anything is. The geometry below is read off the installed game's
+    /// interface definitions (`Base/Assets/UI`), not remembered:
+    /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
+    /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
+    /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
+    /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
+    /// for the corner End Turn owns and the rail that climbs out of it.
+    #[test]
+    fn browser_seats_a_person_in_the_civ_six_arrangement() {
+        for piece in [
+            "id=\"civtop\"",
+            "id=\"worldtracker\"",
+            "id=\"actionpanel\"",
+            "id=\"rankingsbtn\"",
+            "function playingSolo() { return !!state && !SPEC; }",
+            "function drawSoloHud()",
+            "function drawCivTop()",
+            "function drawWorldTracker()",
+            "function launchTreeHook(kind)",
+            "document.body.classList.toggle(\"playing-solo\", solo);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the single-player arrangement is missing {piece}"
+            );
+        }
+        // The arrangement is settled before the panels that live in it are
+        // drawn; otherwise the first frame of a played game paints the
+        // spectator's masthead and then throws it away.
+        let solo = EMBEDDED_INDEX
+            .find("  drawSoloHud();")
+            .expect("the arrangement must be part of the render pass");
+        let frame = EMBEDDED_INDEX
+            .find("draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar();")
+            .expect("the complete frame");
+        assert!(solo < frame);
+
+        // TopPanel.lua's `RefreshYields` runs Science, Culture, Faith, Gold,
+        // Tourism, in that order, and only Faith and Gold carry a balance
+        // beside their rate (`YieldButton_DoubleLabel`).
+        let strip = EMBEDDED_INDEX
+            .split_once("  const yields =\n")
+            .expect("the yield strip")
+            .1
+            .split_once("  const meters =")
+            .expect("end of the yield strip")
+            .0;
+        let mut previous = 0;
+        for yield_key in ["key:\"science\"", "key:\"culture\"", "key:\"faith\"", "key:\"gold\"",
+                          "key:\"tourism\""] {
+            let at = strip
+                .find(yield_key)
+                .unwrap_or_else(|| panic!("the top panel is missing {yield_key}"));
+            assert!(
+                at > previous,
+                "the top panel must read in Civ 6's order; {yield_key} is out of place"
+            );
+            previous = at;
+        }
+        assert!(strip.contains("key:\"faith\", icon:\"☼\", stock:"));
+        assert!(strip.contains("key:\"gold\", icon:\"⛁\", stock:"));
+        assert!(!strip.contains("key:\"science\", icon:\"⌬\", stock:"));
+
+        // LaunchBar.xml opens with the tech tree and the civics tree, each
+        // ringed by the meter of what it is studying, and then runs
+        // Government, Religion, Great People.
+        assert!(EMBEDDED_INDEX.contains(
+            "launchTreeHook(\"science\") + launchTreeHook(\"culture\") +"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
+
+        // The corners. End Turn owns the lower right, the notification rail
+        // climbs out of it, the selected unit sits inboard of it, and the
+        // chart takes the lower left the standings masthead used to make
+        // unusable.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo #actionpanel {\n    position: absolute; z-index: 9; \
+             right: var(--panel-edge); bottom: var(--panel-edge);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-solo .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
+
+        // A played game does not carry the laboratory's Elo table across its
+        // sky; Civ 6 keeps the standings behind a report and so does this.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo:not(.solo-rankings) #playerhud,\n  \
+             body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function toggleSoloRankings(open)"));
+
+        // The button says what is blocking it in that game's own words —
+        // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
+        for (blocker, phrase) in [
+            ("research", "Choose research"),
+            ("civic", "Choose civic"),
+            ("produce", "Choose production"),
+            ("units", "Unit needs orders"),
+            ("capture", "Keep city?"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("button: \"{phrase}\"")),
+                "the {blocker} blocker must read as Civ 6's own button does: {phrase}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(": \"Next turn\";"));
+
+        // The custom properties the arrangement composes are declared where
+        // `--panel-edge` is, or every `calc()` naming both is invalid at
+        // computed-value time and the panel silently falls back to `auto`.
+        let vars = EMBEDDED_INDEX
+            .find("  body.playing-solo #maparea {")
+            .expect("the arrangement's own custom properties");
+        let edge = EMBEDDED_INDEX
+            .find("--panel-edge: clamp(")
+            .expect("the shared edge gutter");
+        assert!(
+            EMBEDDED_INDEX[vars..].contains("--solo-corner-clearance: calc(var(--panel-edge)"),
+            "the corner clearance must be composed on #maparea"
+        );
+        assert!(edge < vars);
+
+        // Civilization VI opens a city on what it can build. The plot market
+        // is a fold at the foot of that column, never ahead of it.
+        let build = EMBEDDED_INDEX
+            .split_once("  let build = \"\";")
+            .expect("the city build column")
+            .1
+            .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
+            .expect("end of the city build column")
+            .0;
+        let producing = build.find("city-group-head\">Producing").expect("the producing group");
+        let categories = build
+            .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
+            .or_else(|| build.find("for (const category of order) {"))
+            .expect("the production categories");
+        let plots = build.find("city-group-head\">Buy plots").expect("the plot market");
+        assert!(producing < categories, "a city opens on what it is producing");
+        assert!(categories < plots, "the plot market comes after the production list");
+        assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
     #[test]
     fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
         let start = EMBEDDED_INDEX
@@ -17614,11 +17764,13 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            6,
+            8,
             "a fitted map area follows the standings, the overlay switches, \
-             both HUD layout paths, and a HUD section fold — six call sites; \
-             a seventh means a new one belongs in this count, a fifth means \
-             one was dropped"
+             both HUD layout paths, a HUD section fold, and — the two the \
+             Civ 6 arrangement adds — taking that arrangement up or putting \
+             it down, and opening or closing the rankings report behind it: \
+             eight call sites; a ninth means a new one belongs in this count, \
+             a seventh means one was dropped"
         );
     }
 

@@ -7843,6 +7843,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // so clearing it here keeps the reload dedup and frees the replay.
     if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }
   }
+  drawSoloHud();
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
   drawLaunchBar(); drawEmpire();
@@ -24371,7 +24372,39 @@ const EMPIRE_TABS = [
   {id: "trade", icon: "⇄", name: "Trade"},
   {id: "spies", icon: "◐", name: "Espionage"},
 ];
+// The launch bar's order is Civilization VI's, so a hand that already knows
+// where Government is finds it in the same place. The Empire panel still
+// *opens* on Cities — that is a different question, and `docs/SINGLE_PLAYER.md`
+// says why: past three or four cities, clicking each one on the map to learn
+// what it is building stops being navigation and becomes a chore.
+const LAUNCH_BAR_ORDER = ["government", "religion", "people", "cities",
+                          "governors", "states", "trade", "spies"];
 let empireTab = "cities";
+
+// One of the two tree hooks: the launch button Civ 6 rings with a meter of
+// what is being studied. The ring is the fraction complete, so a glance at
+// the bar answers "how far into this tech am I" without opening anything.
+function launchTreeHook(kind) {
+  const science = kind === "science";
+  const me = state.me || {};
+  const name = science ? me.research : me.civic;
+  const label = science ? "Technology tree" : "Civics tree";
+  const icon = science ? "⌬" : "❦";
+  const tree = science ? "techs" : "civics";
+  if (!name) {
+    return `<button class="launch launch-tree ${science ? "" : "launch-culture"}" ` +
+      `onclick='openTree(${JSON.stringify(tree)})' style="--ring:0%" ` +
+      `title="${escapeAttr(`${label} — nothing is being studied`)}" ` +
+      `aria-label="${label}">${icon}<span class="launch-badge">!</span></button>`;
+  }
+  const total = science ? techCost(name) : civicCost(name);
+  const progress = Number(science ? me.research_progress : me.civic_progress) || 0;
+  const pct = Math.min(100, Math.round(100 * progress / Math.max(1, total)));
+  return `<button class="launch launch-tree ${science ? "" : "launch-culture"}" ` +
+    `onclick='openTree(${JSON.stringify(tree)})' style="--ring:${pct}%" ` +
+    `title="${escapeAttr(`${label} — ${titleCase(name)}, ${pct}% studied`)}" ` +
+    `aria-label="${label}">${icon}</button>`;
+}
 
 function policySpec(id) { return (RULES && RULES.policies && RULES.policies[id]) || {}; }
 function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
@@ -24427,7 +24460,15 @@ function drawLaunchBar() {
   if (!state || SPEC) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
   const tabs = document.getElementById("launchtabs");
-  if (tabs) tabs.innerHTML = EMPIRE_TABS.map(tab => {
+  // Civilization VI's launch bar leads with the two trees, each ringed by the
+  // meter of what it is studying, and only then reaches the empire's standing
+  // screens (`LaunchBar.xml`: Science, Culture, Government, Religion, Great
+  // People, Great Works). CIVVIS's own screens follow that order and keep the
+  // ones Civ 6 hangs elsewhere — Cities, Governors, City-States, Espionage —
+  // behind them rather than inventing a second bar for them.
+  if (tabs) tabs.innerHTML = launchTreeHook("science") + launchTreeHook("culture") +
+    LAUNCH_BAR_ORDER.map(id => EMPIRE_TABS.find(tab => tab.id === id))
+      .filter(Boolean).map(tab => {
     const badge = empireBadge(tab.id);
     const title = `${tab.name}${badge ? ` — ${badge} waiting` : ""}`;
     return `<button class="launch" onclick="openEmpire('${tab.id}')" ` +
@@ -24440,6 +24481,346 @@ function drawLaunchBar() {
     "Diplomacy — leaders, agendas, war and peace");
   setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
     "Quick Deals — every mutually acceptable offer");
+  const rankings = document.getElementById("rankingsbtn");
+  if (rankings) rankings.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  THE CIVILIZATION VI ARRANGEMENT
+//
+//  This client grew up around the spectator, so the person who sat down to
+//  play met a laboratory: an Elo table across the top, the arena's stats down
+//  the right, and the End Turn button third in a column of simulation
+//  settings on the left. Every decision was reachable and almost none of it
+//  was where a Civilization VI player's hand already goes.
+//
+//  These are the anchors Firaxis's own interface uses, read off the installed
+//  game under `Base/Assets/UI` rather than remembered:
+//
+//    TopPanel.xml       one strip: Science, Culture, Faith, Gold, Tourism,
+//                       trade routes, envoys and resources from the left;
+//                       turn, menu and Civilopedia from the right.
+//    LaunchBar.xml      horizontal, upper left: the tech tree and the civics
+//                       tree first — each ringed by its own progress meter —
+//                       then Government, Religion, Great People, Great Works.
+//    WorldTracker.xml   under the launch bar: the research panel, then the
+//                       civic panel.
+//    MinimapPanel.xml   `Anchor="L,B"` — the minimap is bottom left.
+//    UnitPanel.xml      `Anchor="R,B" Offset="172,0"` — the selected unit sits
+//                       bottom right, inboard of the corner.
+//    ActionPanel.xml    `Anchor="R,B"` — End Turn owns that corner.
+//    NotificationPanel  `Anchor="R,B"`, stack growth up — the rail climbs the
+//                       right edge out of the End Turn button.
+//
+//  Nothing here decides anything. Every control posts exactly the action it
+//  posted before; this layer only puts them where the hand expects them, so
+//  the rule in `docs/SINGLE_PLAYER.md` still holds — no screen constructs an
+//  action of its own, and none can disagree with the engine about what is
+//  legal.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A person is holding a seat in the world on screen. `spectate` is the
+// engine's own answer, so this cannot drift from what the server thinks.
+function playingSolo() { return !!state && !SPEC; }
+
+// The End Turn button and the auto-play controls are markup in the command
+// deck, because that is where they were born. Civilization VI puts them in
+// the bottom-right corner, so they move there once — a node move rather than
+// a second copy, so every handler already bound to them keeps working.
+let soloArranged = false;
+function arrangeSoloHud() {
+  if (soloArranged) return;
+  const panel = document.getElementById("actionpanel");
+  const footer = document.getElementById("humanfooter");
+  if (!panel || !footer) return;
+  panel.appendChild(footer);
+  buildAutoplayDisclosure(panel, footer);
+  watchSoloActionHeight(panel);
+  soloArranged = true;
+}
+// Civilization VI's corner holds one control. Auto-play is this project's own
+// addition to it — handing your seat to a named league strategy is the whole
+// reason a laboratory has a play mode — but it is not a thing a player reaches
+// for every turn, so it folds away behind one line and leaves End Turn the
+// largest thing on the screen. The choice is remembered.
+const SOLO_AUTOPLAY_OPEN_KEY = "civvis-solo-autoplay-open-v1";
+function buildAutoplayDisclosure(panel, footer) {
+  const bar = document.getElementById("autoplaybar");
+  if (!bar) return;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.id = "autoplaytoggle";
+  toggle.className = "autoplay-toggle";
+  const paint = () => {
+    const open = panel.classList.contains("autoplay-open");
+    toggle.textContent = `▶▶ Hand the seat to an agent`;
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.title = open
+      ? "Hide the auto-play controls"
+      : "Auto-play — let a league strategy play your seat for a number of turns";
+  };
+  toggle.onclick = () => {
+    const open = !panel.classList.contains("autoplay-open");
+    panel.classList.toggle("autoplay-open", open);
+    try { localStorage.setItem(SOLO_AUTOPLAY_OPEN_KEY, open ? "1" : "0"); } catch (_) {}
+    paint();
+  };
+  let open = false;
+  try { open = localStorage.getItem(SOLO_AUTOPLAY_OPEN_KEY) === "1"; } catch (_) {}
+  panel.classList.toggle("autoplay-open", open);
+  paint();
+  footer.insertBefore(toggle, bar);
+}
+// The notification rail climbs out of the corner the turn button owns, so it
+// has to know how tall that corner is — and that height moves: the button
+// grows a second line the moment a blocker names itself, and the auto-play
+// note appears and goes. Publish the live box rather than guessing at it.
+function watchSoloActionHeight(panel) {
+  const publish = () => {
+    const height = Math.round(panel.getBoundingClientRect().height);
+    if (!height) return;
+    document.getElementById("maparea").style
+      .setProperty("--solo-action-height", `${height}px`);
+  };
+  publish();
+  if (typeof ResizeObserver !== "function") return;
+  new ResizeObserver(publish).observe(panel);
+}
+
+// Civ 6's top panel writes a rate as `+12` / `-3`, and a stock as a plain
+// number beside it. Keep both here so every chip reads the same way.
+function soloRate(value) {
+  const rounded = Math.round(Number(value) || 0);
+  return rounded > 0 ? `+${rounded}` : `${rounded}`;
+}
+function soloStock(value) {
+  const number = Number(value) || 0;
+  return Math.abs(number) >= 1000
+    ? Math.round(number).toLocaleString() : String(Math.round(number));
+}
+
+// One chip on the strip. `stock` is the treasury-style running total that
+// Faith and Gold carry and Science and Culture do not, exactly as
+// `YieldButton_DoubleLabel` and `YieldButton_SingleLabel` divide them.
+function soloYieldChip({key, icon, stock, rate, title}) {
+  return `<div class="civtop-yield civtop-${key}" title="${escapeAttr(title)}">` +
+    `<span class="civtop-icon">${icon}</span>` +
+    (stock === undefined ? "" : `<span class="civtop-stock">${stock}</span>`) +
+    `<span class="civtop-rate"${String(rate).startsWith("-") ? " data-negative" : ""}>${rate}</span></div>`;
+}
+
+// The resources this empire is actually holding, in Civ 6's own grouping:
+// strategics with a stockpile first, then luxuries, each showing what is
+// available. A resource nobody controls is not on the strip at all — the
+// game shows what you have, not the periodic table.
+function soloResourceChips(me) {
+  const held = (me.resources || []).filter(r =>
+    (Number(r.available) || 0) > 0 || (Number(r.stockpile) || 0) > 0);
+  if (!held.length) return "";
+  const rank = r => (r.class === "strategic" ? 0 : r.class === "luxury" ? 1 : 2);
+  held.sort((a, b) => rank(a) - rank(b) || String(a.id).localeCompare(String(b.id)));
+  const chip = r => {
+    const stock = Number(r.stockpile) || 0;
+    const count = r.class === "strategic" && stock > 0 ? stock : (Number(r.available) || 0);
+    const detail = [`${titleCase(r.id)} · ${titleCase(r.class || "resource")}`,
+      `${Math.round(Number(r.available) || 0)} available`,
+      stock > 0 ? `${Math.round(stock)} stockpiled` : "",
+      Number(r.per_turn) ? `${soloRate(r.per_turn)} per turn` : ""]
+      .filter(Boolean).join(" · ");
+    return `<span class="civtop-res civtop-res-${r.class || "other"}" title="${escapeAttr(detail)}">` +
+      `${escapeAttr(titleCase(r.id))}<b>${Math.round(count)}</b></span>`;
+  };
+  return `<div class="civtop-resources" title="Resources this empire controls">` +
+    held.slice(0, 12).map(chip).join("") +
+    (held.length > 12 ? `<span class="civtop-res civtop-res-more">+${held.length - 12}</span>` : "") +
+    `</div>`;
+}
+
+// Civ 6 keeps the era and its score in the upper right, because the age you
+// are heading into is a fact about the whole empire rather than about any
+// one screen. `era_score` against the two thresholds is the same reading its
+// Era Score meter gives.
+function soloEraChip(me) {
+  const score = Math.round(Number(me.era_score) || 0);
+  const normal = Math.round(Number(me.normal_age_threshold) || 0);
+  const golden = Math.round(Number(me.golden_age_threshold) || 0);
+  const era = titleCase(ERA_NAMES[state.world_era] || "ancient");
+  if (!normal && !golden) return `<span class="civtop-era">${era} Era</span>`;
+  const age = score >= golden ? "Golden Age" : score >= normal ? "Normal Age" : "Dark Age";
+  const target = score >= golden ? golden : score >= normal ? golden : normal;
+  const pct = target > 0 ? Math.min(100, Math.round(100 * score / target)) : 0;
+  const detail = `${era} Era · ${score} era score · Dark below ${normal}, ` +
+    `Normal from ${normal}, Golden from ${golden} — heading for a ${age}`;
+  return `<span class="civtop-era" title="${escapeAttr(detail)}">${era} Era` +
+    `<span class="civtop-erascore"><i style="width:${pct}%"></i></span>` +
+    `<b>${score}</b></span>`;
+}
+
+// The strip itself, rebuilt only when its text changes: this runs on every
+// observation and the browser has no business re-laying-out a bar that reads
+// the same as it did.
+let civTopHtml = "";
+function drawCivTop() {
+  const bar = document.getElementById("civtop");
+  if (!bar) return;
+  if (!playingSolo()) { bar.innerHTML = ""; civTopHtml = ""; return; }
+  const me = state.me || {};
+  const y = me.yields || {};
+  const routes = (me.routes || []).length;
+  const capacity = Math.round(Number(me.trade_capacity) || 0);
+  const envoys = Math.round(Number(me.envoys_free) || 0);
+  // Civ 6's Tourism chip is a *rate* — `GetStats():GetTourism()` — and it is
+  // hidden until there is one. `me.tourism` is the accumulated pressure, so
+  // reading it here printed a lifetime total in the per-turn column.
+  const seat = (state.players || [])[state.player ?? 0] || {};
+  const tourism = Math.round(Number(seat.tourism_per_turn) || 0);
+  const favor = Math.round(Number(me.diplomatic_favor) || 0);
+  const yields =
+    soloYieldChip({key:"science", icon:"⌬", rate:soloRate(y.science),
+      title:`Science — ${soloRate(y.science)} per turn toward the current research`}) +
+    soloYieldChip({key:"culture", icon:"❦", rate:soloRate(y.culture),
+      title:`Culture — ${soloRate(y.culture)} per turn toward the current civic`}) +
+    soloYieldChip({key:"faith", icon:"☼", stock:soloStock(me.faith), rate:soloRate(y.faith),
+      title:`Faith — ${soloStock(me.faith)} saved, ${soloRate(y.faith)} per turn`}) +
+    soloYieldChip({key:"gold", icon:"⛁", stock:soloStock(me.gold), rate:soloRate(me.gold_per_turn),
+      title:`Gold — ${soloStock(me.gold)} in the treasury, ${soloRate(me.gold_per_turn)} per turn ` +
+        `after maintenance`}) +
+    (tourism > 0 ? soloYieldChip({key:"tourism", icon:"✈", rate:String(tourism),
+      title:`Tourism — ${tourism} per turn · ${soloStock(me.tourism)} accumulated`}) : "");
+  const meters =
+    `<div class="civtop-meter" title="Trade routes in use against the routes this empire can run">` +
+      `<span class="civtop-icon">⇄</span><b>${routes}</b><span>/${capacity}</span></div>` +
+    (envoys > 0
+      ? `<div class="civtop-meter" title="Envoys waiting to be sent to a city-state">` +
+        `<span class="civtop-icon">◈</span><b>${envoys}</b></div>` : "") +
+    (favor > 0
+      ? `<div class="civtop-meter" title="Diplomatic Favor — the currency of the World Congress">` +
+        `<span class="civtop-icon">⚖</span><b>${favor}</b></div>` : "");
+  const cap = Number(state.turn_limit ?? state.max_turns) || 0;
+  const turnTitle = `Turn ${state.turn}${cap ? ` of ${cap}` : ""} · ` +
+    `${titleCase(state.game_speed || "standard")} speed`;
+  const html =
+    `<div class="civtop-left">${yields}${meters}${soloResourceChips(me)}</div>` +
+    `<div class="civtop-right">` +
+      soloEraChip(me) +
+      `<span class="civtop-turn" title="${escapeAttr(turnTitle)}">` +
+        `<small>Turn</small><b>${state.turn}</b>${cap ? `<small>/${cap}</small>` : ""}</span>` +
+      `<button class="civtop-btn" type="button" onclick="openPedia()" ` +
+        `title="Civilopedia — P" aria-label="Civilopedia">?</button>` +
+      `<button class="civtop-btn" type="button" onclick="togglePanel()" ` +
+        `title="Game menu — setup, display settings, saves and logs" aria-label="Game menu">☰</button>` +
+    `</div>`;
+  if (html === civTopHtml) return;
+  civTopHtml = html;
+  bar.innerHTML = html;
+}
+
+// ---------------------------------------------------------- world tracker
+//
+// Civ 6's research and civic panels: what is being studied, how far in, how
+// many turns are left, and whether its boost has landed. Clicking either one
+// opens its tree, which is what the same panel does there — and what makes
+// an unchosen research a thing you can fix from where you noticed it.
+function soloTrackerCard(kind) {
+  const science = kind === "science";
+  const me = state.me || {};
+  const name = science ? me.research : me.civic;
+  const tree = science ? "techs" : "civics";
+  const label = science ? "Research" : "Civic";
+  const icon = science ? "⌬" : "❦";
+  const perTurn = Number((me.yields || {})[science ? "science" : "culture"]) || 0;
+  const open = `onclick='openTree(${JSON.stringify(tree)})'`;
+  if (!name) {
+    const waiting = legalFor(science ? "research" : "civic").length;
+    return `<button class="wt-card wt-empty ${science ? "" : "wt-culture"}" type="button" ${open} ` +
+      `title="${escapeAttr(`Nothing is being ${science ? "researched" : "studied"} — ` +
+        `open the ${science ? "technology" : "civics"} tree and choose`)}">` +
+      `<span class="wt-icon">${icon}</span>` +
+      `<span class="wt-body"><span class="wt-name">Choose ${science ? "research" : "a civic"}</span>` +
+      `<span class="wt-sub">${waiting} available · ${soloRate(perTurn)} per turn</span></span>` +
+      `<span class="wt-turns">▸</span></button>`;
+  }
+  const total = science ? techCost(name) : civicCost(name);
+  const progress = Number(science ? me.research_progress : me.civic_progress) || 0;
+  const boosted = (science ? me.boosted_techs : me.boosted_civics) || [];
+  const isBoosted = boosted.includes(name);
+  const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : null;
+  const pct = Math.min(100, 100 * progress / Math.max(1, total));
+  const detail = `${label}: ${titleCase(name)} — ${Math.round(progress)} of ${Math.round(total)}` +
+    (eta ? `, ${eta} turn${eta === 1 ? "" : "s"} left at ${soloRate(perTurn)} per turn` : "") +
+    (isBoosted ? ` · boosted` : "") + ` · click for the ${science ? "technology" : "civics"} tree`;
+  return `<button class="wt-card ${science ? "" : "wt-culture"}" type="button" ${open} ` +
+    `title="${escapeAttr(detail)}">` +
+    `<span class="wt-icon">${icon}</span>` +
+    `<span class="wt-body">` +
+      `<span class="wt-name">${escapeAttr(titleCase(name))}` +
+        (isBoosted ? `<i class="wt-boost" title="Boosted">⚡</i>` : "") + `</span>` +
+      `<span class="wt-bar"><i style="width:${pct}%"></i></span>` +
+      `<span class="wt-sub">${Math.round(progress)}/${Math.round(total)} · ${soloRate(perTurn)} per turn</span>` +
+    `</span>` +
+    `<span class="wt-turns">${eta ?? "∞"}<small>turn${eta === 1 ? "" : "s"}</small></span></button>`;
+}
+let worldTrackerHtml = "";
+function drawWorldTracker() {
+  const tracker = document.getElementById("worldtracker");
+  if (!tracker) return;
+  if (!playingSolo() || !RULES) { tracker.innerHTML = ""; worldTrackerHtml = ""; return; }
+  const html = soloTrackerCard("science") + soloTrackerCard("culture");
+  if (html === worldTrackerHtml) return;
+  worldTrackerHtml = html;
+  tracker.innerHTML = html;
+}
+
+// ------------------------------------------------------------- the rankings
+//
+// Civ 6 has no permanent table of rivals on the map; it has a Rankings report
+// you open. The standings masthead and the arena rail are exactly that report,
+// so in a played game they are behind a button rather than across the sky.
+// The toggle is a class of its own so the spectator's saved overlay
+// preferences are never written by somebody sitting down to play.
+let soloRankingsOpen = false;
+function toggleSoloRankings(open) {
+  soloRankingsOpen = open === undefined ? !soloRankingsOpen : !!open;
+  document.body.classList.toggle("solo-rankings", soloRankingsOpen);
+  // Written here as well as in `drawLaunchBar`: a button whose pressed state
+  // waits for the next observation reads as a button that did not work.
+  const button = document.getElementById("rankingsbtn");
+  if (button) button.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+  refitMapAreaToChrome();
+  if (state) drawPlayerHud();
+}
+
+// The deck is the laboratory, and a played game opens without it — the same
+// judgement Civ 6 makes when it puts every setting behind one menu button.
+// A person who opens it has said what they want, so that choice is kept and
+// never overridden on a later world.
+const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
+let soloDeckSettled = false;
+function settleSoloDeck() {
+  if (soloDeckSettled) return;
+  soloDeckSettled = true;
+  let chosen = null;
+  try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
+  if (chosen === "open") { togglePanel(false, false); return; }
+  togglePanel(true, false);
+}
+
+function drawSoloHud() {
+  const solo = playingSolo();
+  const changed = document.body.classList.contains("playing-solo") !== solo;
+  document.body.classList.toggle("playing-solo", solo);
+  // The arrangement hands the standings masthead's band and the arena rail's
+  // column back to the world. A fitted map area follows chrome that moves,
+  // and this is the largest move it ever makes.
+  if (changed) refitMapAreaToChrome();
+  if (!solo) {
+    if (soloRankingsOpen) toggleSoloRankings(false);
+    return;
+  }
+  arrangeSoloHud();
+  settleSoloDeck();
+  drawCivTop();
+  drawWorldTracker();
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -25265,24 +25646,6 @@ function drawCityScreen() {
   const order = ["Districts", "Buildings", "Units", "Wonders", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
-  if (plotBuys.length) {
-    build += `<div class="city-group"><div class="city-group-head">Buy plots` +
-      `<span>${plotBuys.length} affordable</span></div><div class="build-list">` +
-      plotBuys.map(action => {
-        const tile = TMAP.get(key(action.pos));
-        const name = tile
-          ? titleCase(tile.resource || tile.feature || tile.terrain || "plot")
-          : "Plot";
-        const yieldNote = tile ? yieldWords(tileYieldFull(tile)).join(" · ") : "";
-        return `<div class="build-item"><div class="build-row">` +
-          `<span class="build-name">${name} @ ${action.pos.join(",")}</span>` +
-          `<span class="build-cost">${Math.round(action.cost)} 💰</span></div>` +
-          (yieldNote ? `<div class="build-note">${yieldNote}</div>` : "") +
-          `<div class="build-actions">` + cityAct(action,
-            `Buy · ${Math.round(action.cost)} Gold`, "primary",
-            "Annex this adjacent plot immediately") + `</div></div>`;
-      }).join("") + `</div></div>`;
-  }
   if (current) {
     const cost = city.queue_cost || itemCost(current);
     const turns = turnsFor(cost, perTurn, banked);
@@ -25331,9 +25694,85 @@ function drawCityScreen() {
           sites + purchases + `</div>`;
       }).join("") + `</div></div>`;
   }
+  // Land last, and folded. Civilization VI does not open a city on its tile
+  // market: the panel opens on what the city can build, and buying a plot is
+  // a separate mode behind its own button. Seventeen plot cards ahead of the
+  // production list pushed Districts and Buildings off the bottom of the
+  // screen, so the one thing a person opens a city to do was the one thing
+  // they had to scroll for.
+  if (plotBuys.length) {
+    build += `<details class="city-group city-plots"${cityPlotsOpen ? " open" : ""}>` +
+      `<summary class="city-group-head">Buy plots` +
+      `<span>${plotBuys.length} affordable · from ${Math.round(plotBuys[0].cost)} Gold</span></summary>` +
+      `<div class="build-list">` +
+      plotBuys.map(action => {
+        const tile = TMAP.get(key(action.pos));
+        const name = tile
+          ? titleCase(tile.resource || tile.feature || tile.terrain || "plot")
+          : "Plot";
+        const yieldNote = tile ? yieldWords(tileYieldFull(tile)).join(" · ") : "";
+        return `<div class="build-item"><div class="build-row">` +
+          `<span class="build-name">${name} @ ${action.pos.join(",")}</span>` +
+          `<span class="build-cost">${Math.round(action.cost)} 💰</span></div>` +
+          (yieldNote ? `<div class="build-note">${yieldNote}</div>` : "") +
+          `<div class="build-actions">` + cityAct(action,
+            `Buy · ${Math.round(action.cost)} Gold`, "primary",
+            "Annex this adjacent plot immediately") + `</div></div>`;
+      }).join("") + `</div></details>`;
+  }
   document.getElementById("cityscreen-build").innerHTML = build;
+  // Whether the fold is open is the player's, and it has to outlive a repaint
+  // that happens on every observation.
+  const plots = document.querySelector("#cityscreen-build .city-plots");
+  if (plots) plots.addEventListener("toggle", () => { cityPlotsOpen = plots.open; });
 }
+// Shut on the first city screen of the session, and whatever the player last
+// chose after that.
+let cityPlotsOpen = false;
 
+// Civ 6's unit panel leads with the unit's name and the four numbers a player
+// actually decides on — health, combat strength, ranged strength and the
+// movement left of the movement it has — and only then offers the buttons.
+// The old header read `warrior hp 100 · mp 2`, which is the same facts in the
+// register of a debugger. Everything conditional below stays conditional: a
+// Settler has no strength to print and a Builder has charges instead.
+function unitPlaque(u, {linked, escortName}) {
+  const spec = (RULES && RULES.units && RULES.units[u.type]) || {};
+  const strength = Number(spec.strength) || 0;
+  const ranged = Number(spec.ranged_strength) || 0;
+  const moves = Number(spec.moves) || 0;
+  const chip = (icon, value, title) =>
+    `<span class="ubar-stat" title="${escapeAttr(title)}">${icon}<b>${value}</b></span>`;
+  const health = unitHasHealth(u)
+    ? `<span class="ubar-health" title="${escapeAttr(`${u.hp} of 100 health`)}">` +
+      `<i style="width:${Math.max(0, Math.min(100, u.hp))}%"></i></span>` +
+      `<span class="ubar-stat ubar-hp" title="${escapeAttr(`${u.hp} of 100 health`)}">♥<b>${u.hp}</b></span>`
+    : `<span class="ubar-stat ubar-warn" title="A civilian this side of a defender is taken, not killed">⚑<b>capturable</b></span>`;
+  const notes = [
+    u.fortified ? "⛨ Fortified" : "",
+    u.formation ? formationName(u.type, u.formation) : "",
+    linked ? `🔗 Escort with ${escortName || `#${u.linked_to}`}` : "",
+    u.religion ? titleCase(u.religion) : "",
+    u.charges ? `${u.charges} charge${u.charges === 1 ? "" : "s"}` : "",
+    u.obsolete ? `<span class="obsolete">Obsolete</span>` : "",
+  ].filter(Boolean);
+  return `<div class="ubar-head">` +
+    `<span class="ubar-name">${escapeAttr(titleCase(u.type))}` +
+      (u.level > 1 ? `<i class="ubar-level" title="${escapeAttr(`Promotion level ${u.level}`)}">★${u.level}</i>` : "") +
+    `</span>` +
+    `<span class="ubar-stats">` +
+      health +
+      (strength ? chip("⚔", Math.round(strength), `Combat strength ${Math.round(strength)}`) : "") +
+      (ranged ? chip("➹", Math.round(ranged), `Ranged strength ${Math.round(ranged)}` +
+        (spec.range ? `, range ${spec.range}` : "")) : "") +
+      chip("➤", `${Math.round(u.moves_left * 10) / 10}${moves ? `/${Math.round(moves)}` : ""}`,
+        `Movement left this turn${moves ? ` of ${Math.round(moves)}` : ""}`) +
+    `</span>` +
+    `<button class="ubar-next" type="button" title="Next unit needing orders — Tab" ` +
+      `aria-label="Next unit needing orders" onclick="advanceToNextActionUnit(true)">⇥</button>` +
+    `</div>` +
+    (notes.length ? `<div class="ubar-notes">${notes.join(" · ")}</div>` : "");
+}
 function drawUbar() {
   const bar = document.getElementById("ubar");
   if (!sel || SPEC) { bar.style.display = "none"; return; }
@@ -25341,14 +25780,7 @@ function drawUbar() {
   const linked = u.linked_to !== null && u.linked_to !== undefined;
   const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
   const escortName = escortPeer ? titleCase(escortPeer.type) : null;
-  const status = unitHasHealth(u) ? `hp ${u.hp}` : "capturable";
-  let h = `<b>${u.type}</b> <span class="small">${status} · mp ${u.moves_left}` +
-    (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
-    (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
-    (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
-    (u.religion ? ` · ${titleCase(u.religion)}` : "") +
-    (u.charges ? ` · ${u.charges} charges` : "") +
-    (u.obsolete ? ` · <span class="obsolete">obsolete</span>` : "") + `</span><br>`;
+  let h = unitPlaque(u, {linked, escortName});
   for (const a of state.legal_actions) {
     if (a.unit !== u.id && a.with !== u.id) continue;
     if (a.type === "found_city")
@@ -30233,36 +30665,53 @@ function nextAction() {
 
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
 // to the decision; it never makes it for them.
+// The End Turn button says what is blocking it, and it says it in the words
+// Civilization VI uses — `LOC_ACTION_PANEL_*` from that game's own
+// `Base/Assets/Text/en_US/InGameText.xml`, so a player who has read
+// CHOOSE RESEARCH a thousand times reads it here too. What CIVVIS knows and
+// Civ 6 does not — *which* city is idle, *how many* units are waiting — goes
+// on the button's second line rather than displacing the phrase.
+//
+// The notification chips keep the longer labels: a rail of chips is read
+// deliberately, and there the specific sentence is the better one.
 function turnBlockers() {
   if (!state || SPEC || gameFinished(state)) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
   if (legal("keep_city").length || legal("raze_city").length || legal("liberate_city").length)
     out.push({kind: "capture", icon: "🏛", tone: "action", label: "Decide a city's fate",
+      button: "Keep city?",
       detail: "A captured city is waiting on you.", act: () => {}});
   const replies = state.legal_actions.filter(a => a.type === "accept_deal" || a.type === "reject_deal");
   if (replies.length)
     out.push({kind: "deal", icon: "✉", tone: "action", label: "Answer a proposal",
+      button: "Answer proposal",
+      hint: `${new Set(replies.map(a => a.deal)).size} waiting`,
       detail: `${new Set(replies.map(a => a.deal)).size} rival proposal(s) await a reply.`,
       act: () => focusSection("govsec")});
   if (legal("congress_vote").length)
     out.push({kind: "congress", icon: "⚖", tone: "action", label: "Vote in the Congress",
+      button: "World Congress",
       detail: "The World Congress is in session.", act: () => focusSection("govsec")});
   if (legal("choose_dedication").length)
     out.push({kind: "dedication", icon: "✦", tone: "action", label: "Dedicate the age",
+      button: "Choose dedication", hint: `${titleCase(me.age || "new")} age`,
       detail: `A ${titleCase(me.age || "new")} age has begun and wants its dedication.`,
       act: () => focusSection("govsec")});
   if (!me.research && legal("research").length)
     out.push({kind: "research", icon: "⌬", tone: "action", label: "Choose research",
+      button: "Choose research",
       detail: "Your scientists have nothing to work on.", act: () => openTree("techs")});
   if (!me.civic && legal("civic").length)
     out.push({kind: "civic", icon: "❦", tone: "action", label: "Choose a civic",
+      button: "Choose civic",
       detail: "Your thinkers have nothing to work on.", act: () => openTree("civics")});
   for (const city of state.cities) {
     if (city.owner !== 0 || (city.queue && city.queue.length)) continue;
     if (!state.legal_actions.some(a => a.type === "produce" && a.city === city.id)) continue;
     out.push({kind: `produce:${city.id}`, icon: "⚙", tone: "action",
-      label: `${city.name} is idle`, detail: "Choose what this city builds.", pos: city.pos,
+      label: `${city.name} is idle`, button: "Choose production", hint: city.name,
+      detail: "Choose what this city builds.", pos: city.pos,
       act: () => {
         selCity = city; sel = null; centerOn(city.pos); draw(); drawSide();
         openCityScreen(city.id);
@@ -30272,6 +30721,8 @@ function turnBlockers() {
   if (waiting.length)
     out.push({kind: "units", icon: "⚑", tone: "action", count: waiting.length,
       label: waiting.length === 1 ? "A unit needs orders" : `${waiting.length} units need orders`,
+      button: "Unit needs orders",
+      hint: waiting.length === 1 ? "1 waiting" : `${waiting.length} waiting`,
       detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextActionUnit(true)});
   return out;
 }
@@ -30409,6 +30860,8 @@ function drawTurnLoop() {
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
   if (autoplaying && !over && !eliminated) {
+    // The controls that stop it cannot be the ones folded away.
+    document.getElementById("actionpanel")?.classList.add("autoplay-open");
     button.classList.remove("blocked");
     button.innerHTML = `An agent is playing<span class="endturn-hint">Stop auto-play to take the seat back</span>`;
     button.title = "Your seat is on loan until auto-play finishes or is stopped.";
@@ -30430,9 +30883,10 @@ function drawTurnLoop() {
   button.classList.toggle("blocked", !!next);
   if (captured) return;
   button.innerHTML = next
-    ? `${next.icon} ${next.label}`
-    : "End turn";
-  button.title = next ? next.detail : "Everything is settled. End the turn.";
+    ? `${next.icon} ${next.button || next.label}` +
+      (next.hint ? `<span class="endturn-hint">${escapeAttr(next.hint)}</span>` : "")
+    : "Next turn";
+  button.title = next ? next.detail : "Everything is settled. End your turn.";
 }
 function advanceTurn(force = false) {
   if (!state || SPEC) return;
@@ -30478,6 +30932,13 @@ function togglePanel(force, persist = true) {
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
+    // A played game opens without the deck, so the only way this runs while
+    // `playing-solo` is that the player asked for it one way or the other.
+    // Keep that answer: `settleSoloDeck` must not overrule it next world.
+    if (document.body.classList.contains("playing-solo")) {
+      try { localStorage.setItem(SOLO_DECK_CHOICE_KEY, hide ? "closed" : "open"); }
+      catch (_) {}
+    }
   }
   // The deck changes the map's layout width. Resize its backing canvas in the
   // same frame so the browser never stretches an old bitmap and then snaps it

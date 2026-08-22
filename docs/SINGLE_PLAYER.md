@@ -125,6 +125,90 @@ Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player. What is left is a production *queue*, which is an engine
 gap rather than a client one: `do_produce` sets `city.queue = vec![item]`.
 
+## The arrangement
+
+Everything above is about *what* a person can decide. This is about where the
+controls are, which turned out to matter just as much: the client grew up
+around the spectator, so a person who sat down to play met a laboratory. An
+Elo table ran across the top of the map, the arena's stats ran down the right,
+and End Turn was the third control in a column of simulation settings on the
+left. Every decision in the table above was reachable, and almost none of it
+was where a Civilization VI player's hand already goes.
+
+A world with somebody in seat 0 now wears that game's own arrangement. The
+anchors are not remembered; they are read off the installed game's interface
+definitions under `Base/Assets/UI`, and the code says which file each one
+comes from:
+
+| Civ 6 | Its anchor | Here |
+|-------|-----------|------|
+| `TopPanel.xml` | one 29px strip, yields left, turn and menu right | `#civtop` |
+| `LaunchBar.xml` | horizontal, upper left: tech tree, civics tree, Government, Religion, Great People, Great Works | `#launchbar` |
+| `WorldTracker.xml` | under the launch bar: research, then civics | `#worldtracker` |
+| `MinimapPanel.xml` | `Anchor="L,B"` | `.minimap-frame` |
+| `UnitPanel.xml` | `Anchor="R,B" Offset="172,0"` | `#ubar` |
+| `ActionPanel.xml` | `Anchor="R,B"` | `#actionpanel` |
+| `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up | `#notify` |
+
+The switch is one class, `body.playing-solo`, set from the engine's own
+`spectate` flag so it cannot drift from what the server thinks; everything
+else is stylesheet. Nothing in the layer decides anything — every control
+posts exactly the action it posted before, so the rule that no screen
+constructs an action of its own still holds.
+
+Four choices in it are worth their reasons.
+
+**The top strip is this empire's yields, not the standings.** Science and
+Culture carry a rate alone, Faith and Gold a balance with its rate beside it,
+and Tourism appears only once there is some — which is exactly how
+`TopPanel.lua`'s `RefreshYields` divides them, down to `YieldButton_SingleLabel`
+against `YieldButton_DoubleLabel`. Then trade routes against capacity, unspent
+envoys, Diplomatic Favor, and the resources this empire actually controls. The
+turn, the era and its score sit on the right with the Civilopedia and the
+menu, where Civ 6's `RightContents` stack puts them.
+
+**The two trees lead the launch bar, each ringed by its meter.** They are the
+first two hooks in `LaunchBar.xml` and they were the two screens this client
+had no hook for at all: research was a `<select>` in a settings drawer. The
+ring is the fraction of the current study that is done, so a glance at the bar
+answers "how far into this tech am I" without opening anything.
+
+**The rankings are a report, not scenery.** Civilization VI has no permanent
+table of rivals over the map, and neither does a played game here: the
+standings masthead and the arena rail answer the launch bar's ☗ instead. That
+is a class of its own rather than the shared overlay preferences, so a person
+sitting down to play never writes over what a spectator chose to keep on
+screen. The same judgement puts the command deck away on the first played
+world — one menu button brings it back, and once somebody has asked for it
+either way, that answer is kept.
+
+**End Turn says what is blocking it, in Civ 6's words.** The blocker priority
+table above has always been right; what the button said about it was this
+project's own phrasing. It now reads `CHOOSE RESEARCH`, `UNIT NEEDS ORDERS`,
+`CHOOSE PRODUCTION`, `KEEP CITY?` — the `LOC_ACTION_PANEL_*` strings from
+`Base/Assets/Text/en_US/InGameText.xml` — and `NEXT TURN` when nothing is
+waiting. What CIVVIS knows and Civ 6 does not, which city is idle and how many
+units are waiting, goes on a second line rather than displacing the phrase a
+player already recognises. The notification chips keep the longer sentences:
+a rail is read deliberately, and there the specific one is better.
+
+Two smaller corrections came out of the same reading. The selected unit leads
+with its name and the four numbers a player decides on — health, combat
+strength, ranged strength, and the movement left of the movement it has —
+where it used to read `warrior hp 100 · mp 2`, the same facts in the register
+of a debugger. And a city opens on what it can build: the plot market was the
+first group in that column, seventeen cards deep, and pushed Districts and
+Buildings off the bottom of the screen, so the one thing a person opens a city
+to do was the one thing they had to scroll for. It is a fold at the foot of
+the column now, which is where Civ 6 keeps buying land.
+
+Auto-play folds away under the button. It is this project's own addition to
+that corner and a real one — handing your seat to a *named* league strategy is
+most of why a laboratory has a play mode at all — but it is not a thing a
+player reaches for every turn, and Civ 6's corner holds one control. It opens
+by itself while an agent is playing, because the controls that take the seat
+back cannot be the ones folded away.
+
 ## The Empire panel
 
 Civ 6 keeps its standing decisions on a launch bar. So does this: a rail of
