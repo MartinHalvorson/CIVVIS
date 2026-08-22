@@ -9442,12 +9442,13 @@ function tileYieldMarkers(yields) {
       // `--tip-yield-cell` picks this kind's icon out of the same sheet the map
       // draws from; `--tip-yield-fill` stays behind it as the coloured disc the
       // signs used to be, so a tooltip that cannot fetch the sheet still counts.
+      // The ink that used to rim a marker went with the drawn pictograph it was
+      // rimming — the icon carries its own edge.
       const cell = CIV6_YIELD_ICON_INDEX.get(kind) ?? 0;
       return `<span class="tip-yield-group" title="${value} ${kind}" aria-label="${value} ${kind}">` +
         pips.map(({portion}) =>
           `<span class="tip-yield-marker" aria-hidden="true" ` +
-          `style="--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};` +
-          `--tip-yield-cell:${cell};` +
+          `style="--tip-yield-fill:${YPIP[kind]};--tip-yield-cell:${cell};` +
           `--tip-yield-portion:${Math.round(portion * 100)}%"></span>`
         ).join("") + `</span>`;
     }).join("");

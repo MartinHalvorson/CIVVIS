@@ -17073,7 +17073,7 @@ mod tests {
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
             "class=\"tip-yield-group\"",
             "class=\"tip-yield-marker\"",
-            "--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};",
+            "--tip-yield-fill:${YPIP[kind]};--tip-yield-cell:${cell};",
             "--tip-yield-portion:${Math.round(portion * 100)}%",
             "function tileBuiltTipLines(t, city)",
             "function districtTipLines(t)",
