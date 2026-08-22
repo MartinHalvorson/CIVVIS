@@ -170,7 +170,7 @@ So the scope now follows the kind of decider, and each kind is stated:
 3. **Pricing a currency** — `competition-victory-points` — needs no posture
    test at all. It asks only whether this empire is racing Diplomacy.
 
-### `competition-victory-points`, and why it is absence-class
+### `competition-victory-points`, and the regime it is live in
 
 Thirteen of the twenty points a diplomatic victory needs come from the World
 Congress and its scored competitions. `Game::NATIVE_COMPETITIONS` pays first
@@ -179,6 +179,22 @@ and **1** for the World Games, the World's Fair and the International Space
 Station. `host_competition_score_value` prices the competition's own *score*,
 its deadline and the lead swing — and prices the victory points **at zero**,
 at the same rate for a Conquest seat as for a Diplomacy one.
+
+⚠ **This gene is inert in a default native game, and that is a property of
+the rules rather than of the gene.** `Game::native_competitions` ships **off**
+— its own doc says why: turning it on changes what every participant faces and
+moves the frozen rating anchor, so it is an arm to be priced
+(`--native-competitions`, `docs/ELO_REPINS.md`), not a silent rules change.
+With it off, `open_native_competition` returns immediately and no competition
+is ever seated, so **`gene_screen` cannot price this gene** — it would read
+exactly +0.0, which is what an unreachable branch reads. Its two live regimes
+are the `--native-competitions` arm and the **live Civilization VI bridge**,
+whose mirror supplies real Gathering Storm competitions in
+`Game::host_competitions` — and the live ladder is where the diplomatic lane
+matters most (`docs/CIV6_LADDER.md`: index 6 is the commonest terminal event
+in 199 recorded games). `an_open_competition_pays_its_points_to_a_diplomacy_racer`
+seats one the way both regimes do, so the branch is proved rather than
+assumed.
 
 This is the same absence `strategic_wonder_value` closed for wonders in #2061,
 in the other half of the same lane, and it is closed the same way and with the

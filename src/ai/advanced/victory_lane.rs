@@ -130,8 +130,7 @@ use crate::game::Game;
 /// `STRATEGIC_WONDER_VICTORY_VALUE / DIPLOMATIC_VICTORY_POINTS` — because a
 /// point won in the Congress and a point built in a city are the same point.
 pub(super) fn victory_point_value() -> f64 {
-    super::STRATEGIC_WONDER_VICTORY_VALUE
-        / crate::game::DIPLOMATIC_VICTORY_POINTS.max(1) as f64
+    super::STRATEGIC_WONDER_VICTORY_VALUE / crate::game::DIPLOMATIC_VICTORY_POINTS.max(1) as f64
 }
 
 impl AdvancedAi {
@@ -202,12 +201,7 @@ impl AdvancedAi {
     }
 
     /// `lane-policy-deck`: the lane the policy cards are chosen for.
-    pub(super) fn policy_lane(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> GrandStrategy {
+    pub(super) fn policy_lane(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> GrandStrategy {
         self.lane_or_plan(self.lane_policy_deck, g, pid, plan)
     }
 
@@ -231,12 +225,7 @@ impl AdvancedAi {
     /// `Recovery` still refuses: an empire losing ground at home has better
     /// uses for its Faith than a Rock Band, and `military_faith_spending`
     /// runs after this.
-    pub(super) fn culture_lane_spends(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> bool {
+    pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         self.lane_culture_spending
             && plan.strategy != GrandStrategy::Recovery
             && self.victory_focus(g, pid).strategy == GrandStrategy::Culture
@@ -275,12 +264,7 @@ impl AdvancedAi {
 
     /// The dispatcher's half of `lane-space-race`: run the pass for a Science
     /// racer whose plan has not named the lane, short of a Recovery posture.
-    pub(super) fn space_race_lane_opens(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> bool {
+    pub(super) fn space_race_lane_opens(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         plan.strategy != GrandStrategy::Recovery && self.space_race_lane(g, pid)
     }
 
@@ -344,6 +328,7 @@ mod tests {
     use super::*;
     use crate::ai::advanced::VictoryTarget;
     use crate::game::{Game, GameOptions};
+    use std::collections::BTreeMap;
 
     fn game() -> Game {
         Game::new_with(GameOptions {
@@ -427,7 +412,10 @@ mod tests {
         armed.enable_lane_policy_deck();
         armed.enable_lane_culture_spending();
         assert_eq!(armed.congress_lane(&g, 0, &plan), GrandStrategy::Culture);
-        assert_eq!(armed.great_person_lane(&g, 0, &plan), GrandStrategy::Culture);
+        assert_eq!(
+            armed.great_person_lane(&g, 0, &plan),
+            GrandStrategy::Culture
+        );
         assert_eq!(armed.policy_lane(&g, 0, &plan), GrandStrategy::Culture);
         assert_eq!(
             armed.culture_faith_lane(&g, 0, &plan),
@@ -570,10 +558,83 @@ mod tests {
     /// cannot be told a competition pays points it does not pay.
     #[test]
     fn the_competition_points_come_from_the_engines_own_table() {
-        assert_eq!(Game::competition_victory_points("EMERGENCY_CLIMATE_ACCORDS"), 2);
+        assert_eq!(
+            Game::competition_victory_points("EMERGENCY_CLIMATE_ACCORDS"),
+            2
+        );
         assert_eq!(Game::competition_victory_points("EMERGENCY_WORLD_GAMES"), 1);
         assert_eq!(Game::competition_victory_points("EMERGENCY_SEND_AID"), 2);
         assert_eq!(Game::competition_victory_points("not_a_competition"), 0);
+    }
+
+    /// ★★★ THE GENE IS INERT IN A DEFAULT NATIVE GAME, AND THAT IS A
+    /// PROPERTY OF THE RULES, NOT OF THE GENE.
+    ///
+    /// `Game::native_competitions` ships **off** — its own doc says so and
+    /// why: turning it on changes what every participant faces and moves the
+    /// frozen rating anchor, so it is an arm to be priced (`--native-competitions`,
+    /// `docs/ELO_REPINS.md`), not a silent rules change. With it off,
+    /// `open_native_competition` returns immediately and no scored competition
+    /// is ever seated, so `gene_screen`'s native games cannot price this gene
+    /// — it reads exactly +0.0 there, which is what an unreachable branch
+    /// reads. The two regimes it IS live in are the `--native-competitions`
+    /// arm and the live Civilization VI bridge, whose mirror supplies real
+    /// Gathering Storm competitions in `Game::host_competitions`.
+    ///
+    /// This test seats one the way both of those do, so the branch is proved
+    /// rather than assumed.
+    #[test]
+    fn an_open_competition_pays_its_points_to_a_diplomacy_racer() {
+        let mut g = game();
+        g.native_competitions = true;
+        g.competition = Some(crate::game::Competition {
+            kind: "EMERGENCY_CLIMATE_ACCORDS".to_string(),
+            ends: g.turn + 30,
+            target: None,
+            scores: BTreeMap::new(),
+        });
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Diplomacy,
+            ..expansion_plan()
+        };
+        let mut off = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+        assert_eq!(
+            off.competition_victory_point_value(
+                &g,
+                0,
+                &plan,
+                "EMERGENCY_CLIMATE_ACCORDS",
+                100.0
+            ),
+            0.0,
+            "off by default"
+        );
+        off.enable_competition_victory_points();
+        assert_eq!(
+            off.competition_victory_point_value(
+                &g,
+                0,
+                &plan,
+                "EMERGENCY_CLIMATE_ACCORDS",
+                100.0
+            ),
+            2.0 * victory_point_value(),
+            "the Climate Accords pay two of the twenty"
+        );
+
+        // And not to a seat that could not take first place with it.
+        g.competition.as_mut().unwrap().scores.insert(1, 500.0);
+        assert_eq!(
+            off.competition_victory_point_value(
+                &g,
+                0,
+                &plan,
+                "EMERGENCY_CLIMATE_ACCORDS",
+                100.0
+            ),
+            0.0,
+            "a completion that still leaves the leader ahead claims no points"
+        );
     }
 
     /// No competition is open in a fresh game, so nothing is priced — the
@@ -585,13 +646,7 @@ mod tests {
         ai.enable_competition_victory_points();
         let plan = expansion_plan();
         assert_eq!(
-            ai.competition_victory_point_value(
-                &g,
-                0,
-                &plan,
-                "EMERGENCY_CLIMATE_ACCORDS",
-                100.0
-            ),
+            ai.competition_victory_point_value(&g, 0, &plan, "EMERGENCY_CLIMATE_ACCORDS", 100.0),
             0.0
         );
     }

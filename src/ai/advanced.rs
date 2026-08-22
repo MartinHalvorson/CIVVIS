@@ -16162,20 +16162,19 @@ impl AdvancedAi {
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports = if races_science
-            || self.victory_target == Some(VictoryTarget::Science)
-        {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
+        let desired_spaceports =
+            if races_science || self.victory_target == Some(VictoryTarget::Science) {
+                if completed.contains("launch_mars_colony") {
+                    3
+                } else if completed.contains("launch_moon_landing") {
+                    2
+                } else {
+                    1
+                }
             } else {
                 1
             }
-        } else {
-            1
-        }
-        .min(city_ids.len());
+            .min(city_ids.len());
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
