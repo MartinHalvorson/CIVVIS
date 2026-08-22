@@ -1006,10 +1006,11 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
-/// Runtime-only per-seat visibility frames.  A cloned game starts with no
-/// frames: a search branch is allowed to move its sources before its first
-/// read, and copying a parent's bitsets would retain work that belongs to the
-/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// Runtime-only per-seat visibility frames.  A cloned game inherits its
+/// parent's, because each frame carries the stamp of every input the
+/// derivation reads: a branch that moves its sight sources before its first
+/// read restamps and recomputes, and one that does not would have derived the
+/// same bitset.  The cache is deliberately separate from [`VisionCache`],
 /// whose entries are per-unit ray answers and are merged from worker worlds.
 #[derive(Default)]
 struct VisionFrameCache {
@@ -1022,8 +1023,28 @@ struct VisionFrameCache {
 }
 
 impl Clone for VisionFrameCache {
+    /// A branch inherits its parent's sight frames rather than starting cold.
+    ///
+    /// This is exact by construction, and the reason is the stamp: a frame is
+    /// reused only when `vision_input_stamp_with_suzerains` still matches, and
+    /// that stamp folds every input `player_vision` reads — map geometry, the
+    /// viewer set, and each viewer's units, cities, suzerained city-states and
+    /// spies. A branch that moves a sight source restamps and recomputes; one
+    /// that does not would have derived the bitset it inherited. The fields
+    /// `speculative_clone` changes — `track_fog_memory`, `track_war_ledger`,
+    /// `visibility_suppressed`, `visibility_batch` — are read by neither the
+    /// stamp nor the derivation.
+    ///
+    /// ⚠ Returning `Self::default()` here, as this did, made every speculative
+    /// clone pay a cold cache. The tactical picker scores a candidate by
+    /// cloning and applying, and `do_ranged`/`do_attack`/`do_city_strike` each
+    /// ask `combat_target_visible` — so one full ray-cast per candidate, on a
+    /// world discarded immediately afterwards.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+        }
     }
 }
 
