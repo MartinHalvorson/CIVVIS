@@ -27627,6 +27627,23 @@ function openTree(kind) {
   document.getElementById("treetitle").textContent =
     (kind === "techs" ? "Technology tree" : "Civics tree") +
     (current ? ` — researching: ${current.replaceAll("_"," ")}` : " — click a gold node");
+  // Civ 6 prices a tree node in turns, not in beakers: what a player is
+  // choosing between is how long each one takes at the rate this empire is
+  // actually running. The raw cost stays beside it, because a tree read at a
+  // pace that is about to change is worth reading in both units.
+  const perTurn = Number((state.me.yields || {})[kind === "techs" ? "science" : "culture"]) || 0;
+  const speed = gameSpeedPercent() / 100;
+  const nodeTurns = spec => {
+    if (perTurn <= 0) return null;
+    const banked = spec.name === current
+      ? Number(kind === "techs" ? state.me.research_progress : state.me.civic_progress) || 0 : 0;
+    return Math.max(1, Math.ceil((spec.cost * speed - banked) / perTurn));
+  };
+  // Switching study is not a client choice to offer: the engine enumerates a
+  // `research`/`civic` action only while nothing is being studied, so a node
+  // that cannot be clicked says why rather than going quietly dead under the
+  // hand of somebody used to Civ 6, where research can be changed at will.
+  const heldBy = current ? titleCase(current) : null;
   document.getElementById("treecols").innerHTML = cols.map((col, era) =>
     `<div class="tcol"><div class="tera">${ERA_NAMES[era]} era</div>` + col.map(n => {
       const s = specs[n];
@@ -27636,12 +27653,22 @@ function openTree(kind) {
       const canPick = avail && !current;
       const unlocks = (s.unlocks || []).map(u => `${titleCase(u.kind)}: ${titleCase(u.id)}`);
       const abilities = Object.keys(s.effects || {}).map(titleCase);
-      return `<div class="tnode ${cls}"` +
+      const turns = nodeTurns({cost: s.cost, name: n});
+      const why = completed
+        ? `Already ${kind === "techs" ? "researched" : "studied"}`
+        : n === current
+          ? `Being ${kind === "techs" ? "researched" : "studied"} now`
+          : canPick
+            ? `Start this${turns ? ` — ${turns} turn${turns === 1 ? "" : "s"} at the current rate` : ""}`
+            : avail
+              ? `Available, but ${heldBy} is under way — this game studies one at a time`
+              : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+      return `<div class="tnode ${cls}" title="${escapeAttr(why)}"` +
         (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
         `<b>${titleCase(n)}</b>` +
         (s.repeatable ? ` <span class="boost">↻</span>` : "") +
         (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "") +
-        ` <span class="req">${s.cost}</span>` +
+        ` <span class="req">${s.cost}${!completed && turns ? ` · ${turns}t` : ""}</span>` +
         (s.requires.length ? `<div class="req">← ${s.requires.map(x => x.replaceAll("_"," ")).join(", ")}</div>` : "") +
         (unlocks.length ? `<div class="req">Unlocks ${unlocks.join(" · ")}</div>` : "") +
         (abilities.length ? `<div class="req">Abilities ${abilities.join(" · ")}</div>` : "") +

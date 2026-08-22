@@ -13006,9 +13006,12 @@ mod tests {
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
-        ));
+        // The selected-unit plaque asks the same question the map does: a unit
+        // with health gets a bar and a number, and one that is taken rather
+        // than killed says so instead of reading as a unit on full health.
+        assert!(EMBEDDED_INDEX.contains("const health = unitHasHealth(u)"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"ubar-health\""));
+        assert!(EMBEDDED_INDEX.contains("⚑<b>capturable</b>"));
         assert!(EMBEDDED_INDEX.contains(
             "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
         ));

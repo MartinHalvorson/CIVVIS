@@ -4285,7 +4285,7 @@
   .wt-icon { color: var(--wt-color); font-size: 17px; line-height: 1; text-align: center; }
   .wt-body { display: grid; gap: 3px; min-width: 0; }
   .wt-name {
-    color: var(--text); font: 700 13px/1.2 Georgia, serif;
+    color: var(--text); font: 700 14px/1.2 Georgia, serif;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .wt-boost { color: var(--gold-bright); font-style: normal; }
@@ -4295,9 +4295,11 @@
     color: var(--muted); font-size: var(--type-label); font-weight: 750;
     letter-spacing: .04em; font-variant-numeric: tabular-nums;
   }
+  /* The name is what a player is choosing; the count is how long it takes.
+     Civ 6 sizes them that way round, so the tech never loses to its number. */
   .wt-turns {
     display: grid; justify-items: center; min-width: 30px;
-    color: var(--wt-color); font: 800 17px/1 Georgia, serif; font-variant-numeric: tabular-nums;
+    color: var(--wt-color); font: 800 15px/1 Georgia, serif; font-variant-numeric: tabular-nums;
   }
   .wt-turns small {
     color: var(--muted); font: 800 var(--type-label)/1.4 inherit;
