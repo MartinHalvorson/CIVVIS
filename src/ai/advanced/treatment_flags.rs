@@ -2218,9 +2218,12 @@ impl AdvancedAi {
         self.lane_congress_ballot = false;
     }
 
-    /// Rank Great Person classes by the victory the empire is actually racing
-    /// while its plan is still Expansion. See `advanced/victory_lane.rs`. Off everywhere by
-    /// default; opt-in gene `lane-great-people`.
+    /// Rank Great Person classes, and the Great Person points a project earns,
+    /// by the victory the empire is actually racing rather than by a war it is
+    /// fighting. See `advanced/victory_lane.rs` — this is the one gene there
+    /// that overrides a Conquest plan, and the fires-check that chose that
+    /// scope is in `docs/VICTORY_GENES.md` §7. `Recovery` still keeps its own
+    /// strategy. Off everywhere by default; opt-in gene `lane-great-people`.
     pub fn enable_lane_great_people(&mut self) {
         self.lane_great_people = true;
     }
@@ -2242,9 +2245,10 @@ impl AdvancedAi {
         self.lane_policy_deck = false;
     }
 
-    /// Run the Culture lane's Faith pass — the Naturalist, the touring Rock
-    /// Bands — and reserve for it, for an empire racing Culture that is still
-    /// settling. See `advanced/victory_lane.rs`. Off everywhere by
+    /// Run the Culture lane's Faith pass — the Naturalist that founds a
+    /// National Park, the touring Rock Bands — and size its reserve, for an
+    /// empire racing Culture whose plan has not named the lane. See
+    /// `advanced/victory_lane.rs`; `Recovery` still refuses. Off everywhere by
     /// default; opt-in gene `lane-culture-spending`.
     pub fn enable_lane_culture_spending(&mut self) {
         self.lane_culture_spending = true;
@@ -2255,10 +2259,12 @@ impl AdvancedAi {
         self.lane_culture_spending = false;
     }
 
-    /// Open the Spaceport and launch pass for an empire racing Science that is
-    /// still settling. `score_horizon` still refuses a race that cannot
-    /// finish. See `advanced/victory_lane.rs`. Off everywhere by
-    /// default; opt-in gene `lane-space-race`.
+    /// Treat an empire racing Science as a Science seat throughout the space
+    /// race: the pad count, the city a launch project may claim and the city a
+    /// pad may be sited in all read the race rather than an explicitly
+    /// assigned target, and the pass opens at all. `score_horizon` still
+    /// refuses a race that cannot finish. See `advanced/victory_lane.rs`. Off
+    /// everywhere by default; opt-in gene `lane-space-race`.
     pub fn enable_lane_space_race(&mut self) {
         self.lane_space_race = true;
     }
@@ -2281,21 +2287,22 @@ impl AdvancedAi {
         self.competition_victory_points = false;
     }
 
-    /// ★★★ THE THREE BELOW ARE NOT NEW BEHAVIOUR. They already existed, off
-    /// in production and reachable only as named `elo.rs` arms — which means
-    /// `gene_screen` could not see them and the genome instrument has never
-    /// priced any of them. `docs/VICTORY_GENES.md` §7 counts 42 such
-    /// behaviours; these are the three the Diplomacy lane needs, and the
-    /// toggle pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
-    /// screenable.
+    /// Answer a World Congress resolution that is already decided with the one
+    /// free vote on its settled winner, taking the Diplomatic Victory Point
+    /// for an exact prediction and staking nothing.
     ///
-    /// Answer a World Congress resolution that is already decided with the
-    /// one free vote on its settled winner: the Diplomatic Victory Point for
-    /// an exact prediction, staking nothing. Its own field doc records the
-    /// measurement — **26 of 192 ballot decisions already settled, ~1.4 free
-    /// points a seat a game against the twenty a diplomatic victory needs**.
-    /// Reachable as `advanced_congress_banks_decided`; now also as the gene
-    /// `congress-banks-decided`.
+    /// Its own field doc records the measurement and it has sat unused: **26
+    /// of 192 ballot decisions already settled, ~1.4 free points a seat a game
+    /// against the twenty a diplomatic victory needs**. Reachable as
+    /// `advanced_congress_banks_decided`; now also as a gene.
+    ///
+    /// ★★★ THIS AND THE TWO BELOW ARE NOT NEW BEHAVIOUR. They already existed,
+    /// off in production and reachable only as named `elo.rs` arms — which
+    /// means `gene_screen` could not see them and the genome instrument has
+    /// never priced any of them. `docs/VICTORY_GENES.md` §8 counts these
+    /// behaviours; these are the three the Diplomacy lane needs, and a toggle
+    /// pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
+    /// screenable.
     pub fn enable_congress_banks_a_decided_vote(&mut self) {
         self.congress_banks_a_decided_vote = true;
     }

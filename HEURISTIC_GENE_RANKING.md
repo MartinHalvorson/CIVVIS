@@ -70,7 +70,10 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
 | `builder-barbarian-safety` | off (unmeasured) | Keep Builders from entering a visible Barbarian-capture envelope. |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `competition-victory-points` | off (unmeasured) | Price a scored competition's first place by the Diplomatic Victory Points it pays, at the rate `strategic_wonder_value` already pays a wonder's. |
 | `condemn-under-congress` | off (unmeasured) | Condemn a heretic the World Congress has condemned, not only one this seat is at war with. |
+| `congress-banks-decided` | off (unmeasured) | Answer a World Congress resolution that is already decided with the one free vote on its settled winner, taking the Diplomatic Victory Point for an exact pre… |
+| `congress-counter-votes` | off (unmeasured) | Back a ballot aimed at the empire closest to a victory with everything the treasury can spare — a losing vote is refunded in full, so an opposition that fail… |
 | `contact-posture` | off (unmeasured) | A unit already inside a hostile's next-turn reach picks a posture: stand and heal where the melee exchange favours holding, close on a shooter it cannot answ… |
 | `culture-building-debt` | off (unmeasured) | Make the Theater Square owe its buildings. |
 | `culture-coverage` | off (unmeasured) | Pay for the Theater Square the empire has not got. |
@@ -78,11 +81,17 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
 | `early-contact-window` | off (unmeasured) | Buy the second and third Scout while the world's borders are still open — after Early Empire a city-state cannot be met by land at all. |
 | `enhancer-for-the-corps` | off (unmeasured) | Evangelize the beliefs that multiply a religious corps while the corps has a job, instead of the victory lane's worship building. |
+| `envoy-infrastructure` | off (unmeasured) | Value the infrastructure that produces city-state influence: the Consulate and Chancery's per-turn influence becomes the envoys it can produce before the tur… |
 | `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
 | `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
 | `guru-heals-the-corps` | off (unmeasured) | Let a founder that is defending its own cities hold one Guru, the only field heal a religious corps has. |
 | `holy-site-where-the-threat-is` | off (unmeasured) | Put a Holy Site in the city that is actually losing its majority, so its defender can be bought there instead of walking from the Holy City. |
+| `lane-congress-ballot` | off (unmeasured) | Score the World Congress ballot, and stake Favor behind it, for the victory the empire is actually racing rather than for an expansion posture that has no lane. |
+| `lane-culture-spending` | off (unmeasured) | Run the Culture lane's Faith pass — the Naturalist that founds a National Park, the touring Rock Bands — and size its reserve, for an empire racing Culture w… |
+| `lane-great-people` | off (unmeasured) | Rank Great Person classes, and the Great Person points a project earns, by the victory the empire is actually racing rather than by a war it is fighting. |
+| `lane-policy-deck` | off (unmeasured) | Choose the policy cards for the victory the empire is actually racing while its plan is still Expansion. |
+| `lane-space-race` | off (unmeasured) | Treat an empire racing Science as a Science seat throughout the space race: the pad count, the city a launch project may claim and the city a pad may be site… |
 | `one-shot-recovery` | off (unmeasured) | A unit one enemy blow from death withdraws to safe healing ground, and leaves that ground again the moment an enemy can strike it. |
 | `opportunistic-war` | off (unmeasured) | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
