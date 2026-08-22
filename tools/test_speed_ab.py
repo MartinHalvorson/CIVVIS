@@ -1,104 +1,124 @@
 #!/usr/bin/env python3
-"""The paired harness refuses the conclusions the prose kept having to warn about."""
+"""The speed gate's verdicts, and the wiring that makes them a check.
 
-from __future__ import annotations
+⚠⚠ THE DEFECT THIS SUITE EXISTS FOR IS AN ABSTENTION, NOT A WRONG ANSWER.
+`speed_ab.py` used to answer the disagreeing case — the reports differ, so the
+arms played different games — by withholding the percentage entirely and saying
+no claim could be made. That is correct about *overhead* and catastrophic as a
+gate, because a promoted feature changes play by construction. Run against
+#2059, which made every simulation six times slower, the old wording would have
+printed a refusal and not the six.
 
-import sys
+So the tests below are mostly about the case that returns "I cannot tell you":
+they check that it now tells you anyway, in the right vocabulary.
+"""
+
+import importlib.util
+import re
 import unittest
 from pathlib import Path
-from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import speed_ab  # noqa: E402
+REPO = Path(__file__).resolve().parent.parent
+WORKFLOWS = REPO / ".github" / "workflows"
 
 
-class TheReportIdentityCheck(unittest.TestCase):
-    def test_the_timing_line_is_stripped_not_compared(self):
-        """Two runs of the same game differ in elapsed time and nothing else."""
-        a = "[12.5s] done\nRome score=17\nChina score=17"
-        b = "[13.9s] done\nRome score=17\nChina score=17"
-        self.assertEqual(speed_ab.report_digest(a), speed_ab.report_digest(b))
-
-    def test_any_other_difference_is_a_different_game(self):
-        a = "[12.5s] done\nRome score=17"
-        b = "[12.5s] done\nRome score=18"
-        self.assertNotEqual(speed_ab.report_digest(a), speed_ab.report_digest(b))
+def load():
+    spec = importlib.util.spec_from_file_location(
+        "speed_ab", REPO / "tools" / "speed_ab.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-class TheArmsAlternate(unittest.TestCase):
-    """Never all of A and then all of B: host load has to fall on both."""
-
-    def _order(self, seeds):
-        order = []
-
-        def fake(binary, seed, opts):
-            order.append((seed, Path(binary).name))
-            return 1.0, "same"
-
-        with mock.patch.object(speed_ab, "run_once", fake):
-            speed_ab.compare(Path("/x/base"), Path("/x/cand"), seeds,
-                             speed_ab.DEFAULTS)
-        return order
-
-    def test_both_arms_run_on_every_seed(self):
-        order = self._order([10, 11, 12])
-        for seed in (10, 11, 12):
-            arms = {name for s, name in order if s == seed}
-            self.assertEqual(arms, {"base", "cand"}, f"seed {seed}: {order}")
-
-    def test_the_order_flips_between_seeds(self):
-        """A host drifting in one direction would otherwise always favour
-        whichever arm runs second."""
-        order = self._order([10, 11])
-        first_of = {seed: [name for s, name in order if s == seed][0]
-                    for seed in (10, 11)}
-        self.assertNotEqual(first_of[10], first_of[11], order)
+speed_ab = load()
 
 
-class TheVerdictIsNotOverstated(unittest.TestCase):
-    def _result(self, base, cand, mismatched=()):
-        return {"totals": {"baseline": base, "candidate": cand},
-                "change_pct": 100.0 * (cand - base) / base,
-                "mismatched": list(mismatched), "seeds": [1]}
-
-    def test_a_change_inside_the_floor_is_not_a_result(self):
-        self.assertIn("NOISE", speed_ab.verdict(self._result(100.0, 100.1)))
-        self.assertIn("NOISE", speed_ab.verdict(self._result(100.0, 99.9)))
-
-    def test_a_change_outside_the_floor_is_reported_as_one(self):
-        self.assertIn("-11.", speed_ab.verdict(self._result(100.0, 89.0)))
-
-    def test_disagreeing_arms_beat_any_timing_number(self):
-        """A change that alters behaviour has no overhead measurement at all,
-        however large or clean the timing difference looks."""
-        said = speed_ab.verdict(self._result(100.0, 50.0, mismatched=[7]))
-        self.assertIn("ARMS DISAGREE", said)
-        self.assertNotIn("-50", said)
-
-    def test_disagreeing_arms_exit_nonzero(self):
-        with mock.patch.object(speed_ab, "run_once",
-                               lambda b, s, o: (1.0, Path(b).name)), \
-             mock.patch.object(speed_ab, "civvis_processes", lambda: 0), \
-             mock.patch.object(Path, "is_file", lambda self: True):
-            code = speed_ab.main(["--baseline", "/x/a", "--candidate", "/x/b",
-                                  "--games", "2"])
-        self.assertEqual(code, 1)
+def result(change, mismatched=()):
+    return {"change_pct": change, "mismatched": list(mismatched),
+            "totals": {"baseline": 100.0, "candidate": 100.0 + change},
+            "seeds": [1, 2, 3]}
 
 
-class TheHostIsWatched(unittest.TestCase):
-    def test_other_civvis_games_are_counted(self):
-        lines = ("civvis simulate --seed 1\n"
-                 "/usr/bin/python3 something_else.py\n"
-                 "target/ci/ai_eval advanced advanced_v1\n")
-        with mock.patch.object(speed_ab.subprocess, "run",
-                               lambda *a, **k: mock.Mock(stdout=lines)):
-            self.assertEqual(speed_ab.civvis_processes(), 2)
+class TheDisagreeingCaseStillReportsItsNumber(unittest.TestCase):
+    """#2059 in miniature: play changed AND cost exploded."""
 
-    def test_an_unremarkable_process_table_is_quiet(self):
-        with mock.patch.object(speed_ab.subprocess, "run",
-                               lambda *a, **k: mock.Mock(stdout="zsh\nFinder\n")):
-            self.assertEqual(speed_ab.civvis_processes(), 0)
+    def test_a_behaviour_change_reports_the_percentage(self):
+        said = speed_ab.verdict(result(+515.0, mismatched=[900001]))
+        self.assertIn("+515.00%", said,
+                      "a promoted feature changes play by construction; if the "
+                      "gate withholds the number exactly then, it withholds it "
+                      "exactly when it matters")
+
+    def test_a_behaviour_change_still_refuses_the_overhead_claim(self):
+        said = speed_ab.verdict(result(+515.0, mismatched=[900001]))
+        self.assertIn("NOT a measure of overhead", said)
+        self.assertIn("FEATURE COST", said)
+
+    def test_a_behaviour_change_is_judged_against_the_budget(self):
+        self.assertTrue(speed_ab.over_budget(result(+515.0, [900001]), 50.0),
+                        "a regression that also changes play is still a "
+                        "regression, and is the kind this repository shipped")
+
+
+class TheBudget(unittest.TestCase):
+    def test_no_budget_never_fails(self):
+        self.assertFalse(speed_ab.over_budget(result(+900.0, [1]), None))
+
+    def test_inside_the_budget_passes(self):
+        self.assertFalse(speed_ab.over_budget(result(+49.9), 50.0))
+
+    def test_outside_the_budget_fails(self):
+        self.assertTrue(speed_ab.over_budget(result(+50.1), 50.0))
+
+    def test_getting_faster_is_never_over_budget(self):
+        """The boring case, which is also 99% of the runs: a PR that costs
+        nothing. A gate that fires here would be turned off within a day."""
+        self.assertFalse(speed_ab.over_budget(result(-48.7, [1, 2]), 50.0))
+        self.assertFalse(speed_ab.over_budget(result(0.0), 50.0))
+
+
+class TheAgreeingCaseIsUnchanged(unittest.TestCase):
+    def test_inside_the_floor_is_noise(self):
+        said = speed_ab.verdict(result(+0.1))
+        self.assertIn("NOISE", said)
+
+    def test_outside_the_floor_is_overhead(self):
+        said = speed_ab.verdict(result(+5.0))
+        self.assertIn("overhead", said)
+        self.assertIn("+5.00%", said)
+
+
+class TheGateIsActuallyWired(unittest.TestCase):
+    """AGENTS.md: "a guard you add runs in the same change that adds it".
+
+    `test_ci_wiring.py` checks that a tool claiming CI is *named* by some
+    workflow. That is not enough here: naming it without `--budget` would run
+    the harness and then ignore its verdict, which is the same shape of defect
+    one level down.
+    """
+
+    def test_a_workflow_runs_the_harness_with_a_budget(self):
+        text = "\n".join(
+            "\n".join(line.partition("#")[0] for line in
+                      path.read_text(encoding="utf-8").splitlines())
+            for path in sorted(WORKFLOWS.glob("*.yml")))
+        self.assertIn("tools/speed_ab.py", text,
+                      "no workflow runs the paired speed harness")
+        # ⚠ Anchored on `python3 …`, not on the bare path. The first draft
+        # matched `- 'tools/speed_ab.py'` in the workflow's own `paths:`
+        # filter and read the trailing quote as the argument list — a check
+        # that passed by finding the file's NAME while the step that runs it
+        # could have been deleted. Its own suite caught it; the anchor is why
+        # it stays caught.
+        invocation = re.search(
+            r"python3 tools/speed_ab\.py(?P<args>(?:[^\n]*\\\n)*[^\n]*)", text)
+        self.assertIsNotNone(
+            invocation,
+            "tools/speed_ab.py is named in a workflow but never executed")
+        self.assertIn("--budget", invocation.group("args"),
+                      "the harness runs but nothing reads its verdict: without "
+                      "--budget it exits non-zero only when the reports "
+                      "disagree, which is every AI pull request")
 
 
 if __name__ == "__main__":
