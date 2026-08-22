@@ -79,13 +79,18 @@ class TheTableIsDerived(unittest.TestCase):
             off_games = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
             off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
-            self.assertEqual(cells[8], f"{100 * (on - off):+.2f}pp", cells[1])
+            self.assertEqual(cells[8], ranking.diff_cell(on, off), cells[1])
+            self.assertRegex(cells[8], r"^-?\d+\.\d\d%$", cells[1])
             # Taken off the unrounded rates, so it can land a hundredth away
-            # from subtracting the two printed cells by eye — 0.01pp against a
+            # from subtracting the two printed cells by eye — 0.01% against a
             # band of half a point. Never further: that would be a real slip.
             shown = float(cells[6].split("%")[0]) - float(cells[7].split("%")[0])
             self.assertAlmostEqual(100 * (on - off), shown, delta=0.011, msg=cells[1])
         self.assertNotIn("Total Games (on+off)", ranking.RANKING_MD.read_text())
+
+    def test_diff_cell_is_a_percent_and_keeps_a_negative_sign(self):
+        self.assertEqual(ranking.diff_cell(0.17, 0.15), "2.00%")
+        self.assertEqual(ranking.diff_cell(0.15, 0.17), "-2.00%")
 
     def test_each_win_rate_cell_carries_its_own_sample_size(self):
         """`n` is per arm, not one pooled figure: the arms are equal only while
