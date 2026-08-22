@@ -461,7 +461,7 @@ on−off difference, twice the scale of a win column beside it, and it is now a
 veto: a gene whose record is negative defaults off however its two win columns
 read. The veto is one-way — a positive record promotes nothing on its own,
 because the columns still have to clear their bars — and it is the one clause
-that lets a screen older than the last two speak. **30 genes on, was 33**: it
+that lets a screen older than the last two speak. **31 genes on, was 34**: it
 turned off `war-economy` (+38/+8 over a 2026-08-20 reading of −3.84 pp),
 `siege-commitment` (+1/+3 over −0.80 pp) and `apostle-promotion-by-role`
 (+14/+12 over −0.83 pp). No measurement moved; each of the three carries
@@ -577,8 +577,8 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   should default every gene to off that has Diff < 0.* No screen was re-run and
   no measurement moved; every gene's pooled on−off difference — the ranking's
   *Diff*, already printed there — is now recorded as `win_diff_pp` beside its
-  win columns and vetoes the default when it is negative. **30 genes on, was
-  33**: off go `war-economy` (columns +38/+8, record −0.78 pp),
+  win columns and vetoes the default when it is negative. **31 genes on, was
+  34**: off go `war-economy` (columns +38/+8, record −0.78 pp),
   `siege-commitment` (+1/+3, −0.21 pp) and `apostle-promotion-by-role`
   (+14/+12, −0.06 pp). Nothing switched on: the veto is one-way. Each of the
   three is condemned by the same screen, `2026-08-20-p4`, where they read
@@ -587,7 +587,9 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   gene stays vetoed until its newer games outweigh its worst screen. That is a
   deliberate reversal of "an older bad screen is history, not a veto", which
   was the rule between 2026-08-22's two directives. **This moved the incumbent**
-  every Elo result recorded against the 33-gene genome is filed against.
+  every Elo result recorded against the 33- and 34-gene genomes is filed
+  against. `holy-lane-parity`, promoted by #2307 the same day, is untouched:
+  its record is +1.08 pp.
 
 - **One screen, and the war rows are gone (2026-08-22).** The operator's
   directive above collapsed the instrument to a single shape and this ledger to
@@ -651,6 +653,17 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   really −26 at p4. `tools/gene_ledger.py` filters unregistered tags, so the
   deployment ledger is byte-identical either way.
 
+- **`holy-lane-parity` defaults ON (2026-08-22).** The operator took the call
+  #2299 left open. Its direct screen enters the ledger as legacy history under
+  the one-screen schema, so
+  the columns are `[+63 prior, +99 last]`, both positive, and the rule defaults
+  it on: **34 genes, was 33**. Exactly one ledger row changed and exactly one
+  default moved. ⚠ This **moves the incumbent** every recorded Elo result is
+  filed against — the deployment genome now plays a gene it did not play, so
+  `--deployment-comparison` diverges from the previous head by design. It is
+  the first gene to be culled, restored and promoted; the round is
+  `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`.
+
 - **`holy-lane-parity` came back, and its direct arm confirms it (2026-08-22).**
   The first gene to return from a cull. #2266 removed it on **−27** from the
   four-gene `s6` screen — whose column band is **±64**, so that was a null and
@@ -664,9 +677,10 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   resolves ±68. Two independent instruments on two disjoint seed windows now
   agree. Score share is null (+0.08 pp, z +1.23) and cost is nil
   (+0.49% ± 0.31% per turn). ⚠ Following the P9 precedent the direct screen is
-  a note, not a ledger source, so the gene is back in the ranking at **rank 3**
-  and still **off** — entering it would make both columns positive and default
-  it on, taking the genome to 34. `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
+  a note, not a ledger source, so the gene came back into the ranking **off**.
+  That held for one PR: #2307 recorded the screen as legacy history, both
+  columns went positive, and the gene defaults on at **rank 1**.
+  `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
   holds the numbers and the two things it does not settle (850 is an upper
   bound, not a tuned value; the war regime reads `share hurts` at z −2.26).
 
