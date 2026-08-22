@@ -604,11 +604,13 @@ mod envoy_and_deck_probe {
     /// ★★★★ ANSWERED, AND THE ANSWER IS THAT NEITHER IS A GENE. Measured on
     /// the screen's own profile:
     ///
-    ///     DECK  running = cryptography, five_year_plan, gunboat_diplomacy,
-    ///                     levee_en_masse, new_deal, rationalism, wisselbanken
-    ///           slots   = military 1 · ECONOMIC 2 · diplomatic 3 · wildcard 1
-    ///     ENVOYS unspent 0 · peak unspent 1 · PLACED 16
-    ///     city-states alive 4 · met 4 · ours 0 (PEAK 2) · taken by rivals 2
+    /// ```text
+    /// DECK  running = cryptography, five_year_plan, gunboat_diplomacy,
+    ///                 levee_en_masse, new_deal, rationalism, wisselbanken
+    ///       slots   = military 1 · ECONOMIC 2 · diplomatic 3 · wildcard 1
+    /// ENVOYS unspent 0 · peak unspent 1 · PLACED 16
+    /// city-states alive 4 · met 4 · ours 0 (PEAK 2) · taken by rivals 2
+    /// ```
     ///
     /// **Natural Philosophy is not missing, it is homeless.** There are TWO
     /// economic slots and Rationalism is in one of them; the card that would

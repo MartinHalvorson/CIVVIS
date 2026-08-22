@@ -3975,8 +3975,10 @@ pub struct AdvancedAi {
     /// BEFORE Natural Philosophy or any other card doubles it. A census probe
     /// at the end of a conditioned game counts the empire's own gates:
     ///
-    ///     10 cities · 9 Campuses · rationalism SLOTTED
-    ///     pop >= 15:  3 of 9      adjacency >= 4:  0 of 9      both:  0
+    /// ```text
+    /// 10 cities · 9 Campuses · rationalism SLOTTED
+    /// pop >= 15:  3 of 9      adjacency >= 4:  0 of 9      both:  0
+    /// ```
     ///
     /// **Not one Campus in the empire clears the adjacency half**, so a policy
     /// slot is spent on a card returning a fraction of its rating.
