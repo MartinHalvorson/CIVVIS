@@ -31214,4 +31214,7 @@ mod tests;
 mod science_scaling;
 
 #[cfg(test)]
+mod science_funnel_census;
+
+#[cfg(test)]
 mod research_probe;
