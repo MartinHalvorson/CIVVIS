@@ -2185,6 +2185,19 @@ impl AdvancedAi {
         self.base.civilian_rescue = false;
     }
 
+    /// Take a visible Barbarian Settler or Scout in exact one-turn reach
+    /// before healing, retreat, or any ordinary tactical choice.  This native
+    /// opt-in is screened as `barbarian-capture-priority`; see
+    /// [`BasicAi::barbarian_capture_priority`](crate::ai::BasicAi::barbarian_capture_priority).
+    pub fn enable_barbarian_capture_priority(&mut self) {
+        self.base.barbarian_capture_priority = true;
+    }
+
+    /// The twin of `enable_barbarian_capture_priority`.
+    pub fn disable_barbarian_capture_priority(&mut self) {
+        self.base.barbarian_capture_priority = false;
+    }
+
     /// A unit one enemy blow from death withdraws to safe healing ground, and
     /// leaves that ground again the moment an enemy can strike it. See
     /// `BasicAi::one_shot_recovery`.
