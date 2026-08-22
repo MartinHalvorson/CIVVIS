@@ -2503,9 +2503,9 @@ pub struct BasicAi {
     /// four, ties to the nearest — so a goal two tiles into the fog is inside
     /// the scout's own sight, revealed by the walk toward it, and replaced by
     /// whatever fog is nearest from the new tile, which is as often behind as
-    /// ahead; and a scout that `recon_flight` has just stepped out of a
-    /// barbarian's reach is aimed straight back at the same fog behind it,
-    /// which is the other half of the box (11 flight steps in that run's t36–47).
+    /// ahead; and a scout that has just stepped out of a barbarian's reach is
+    /// aimed straight back at the same fog behind it, which is the other half
+    /// of the box (11 flight steps in that run's t36–47).
     /// With this on, a chosen goal is held (`explore_goal`) until it is
     /// reached, revealed, written off (`explore_dead_targets`), within
     /// `EXPLORE_COMMIT_THREAT_RADIUS` of a visible hostile, or twenty turns

@@ -5686,11 +5686,6 @@ mod tests {
             .expect("the fogged-capacity control arm is registered");
         assert!(!ai.fog_land_capacity, "the named fogged-capacity control must hold it off");
 
-        assert!(ai.recon_flight);
-        withhold_live_treatment(&mut ai, "recon-flight")
-            .expect("the recon-flight control arm is registered");
-        assert!(!ai.recon_flight, "the named recon-flight control must hold it off");
-
         assert!(ai.score_horizon);
         withhold_live_treatment(&mut ai, "score-horizon")
             .expect("the score-horizon control arm is registered");
@@ -5844,7 +5839,7 @@ mod tests {
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_patience,
+            !ai.war_economy,
             "a neighbouring held gene stays off until the experiment names it"
         );
 
