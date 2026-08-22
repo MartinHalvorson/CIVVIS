@@ -30162,3 +30162,309 @@ fn a_lone_garrison_counts_for_a_settler_but_not_for_pillage() {
     game.spawn_test_unit("warrior", 0, home);
     assert!(!AdvancedAi::lone_garrison(&game, 0, warrior));
 }
+
+/// A flat two-major board at war with every starting unit cleared, a
+/// fully-explored map, and no terrain anywhere — so a contact exchange is
+/// decided by fortification, healing and the counter alone, which is exactly
+/// the arithmetic `contact_posture` claims to read.
+fn contact_posture_board(seed: u64) -> (Game, Pos, StrategicPlan) {
+    let mut game = Game::new_full(2, 28, 18, seed, 1_000, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each fixture major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+    }
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+    }
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    game.at_war.insert((0, 1));
+    game.turn = 60;
+    game.current = 0;
+    // Neutral ground well away from either capital, so no garrison, home
+    // defense or threatened-city rule claims the unit before the posture does.
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    let rival = game.cities[&game.player_city_ids(1)[0]].pos;
+    let stand = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| {
+            game.wdist(*position, home) >= 8
+                && game.wdist(*position, rival) >= 8
+                && game.map.tiles[position].owner_city.is_none()
+                && game.wdisk(*position, 5).len() == game.wdisk(home, 5).len()
+        })
+        .min()
+        .expect("the fixture board has open neutral ground");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: game.player_city_ids(1).first().copied(),
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, stand, plan)
+}
+
+/// ★★★★ THE CONTROLLER HAD NO WAY TO SAY "DO NOT SWING".
+///
+/// A melee attacker that walks onto us takes `damage(def, att)` from the same
+/// pair of strengths that decides what we take, and standing still is the only
+/// action `Game::end_turn` heals. Off, the unit marches at the enemy and gives
+/// both up; on, it digs in and receives the attack — and the decision is a
+/// comparison, so an attack worth taking is still taken (second half).
+#[test]
+fn a_unit_stands_to_receive_melee_and_swings_only_when_swinging_pays() {
+    let (mut game, stand, _) = contact_posture_board(71_301);
+    let approach = game
+        .nbrs(stand)
+        .into_iter()
+        .find(|position| game.city_at(*position).is_none())
+        .expect("the stand has an open neighbour");
+    let warrior = game.spawn_test_unit("warrior", 0, stand);
+    let attacker = game.spawn_test_unit("warrior", 1, approach);
+    // ⚠ ADJACENT, and it has to be. `flow_past` zeroes a unit's movement the
+    // moment it enters an enemy zone of control, so a melee unit two tiles
+    // out cannot step in and swing on the same turn — it is not a threat to
+    // this tile next turn and the posture correctly ignores it. Only a body
+    // already in contact covers us.
+    assert!(
+        game.attack_reach(attacker).contains(&stand),
+        "the fixture must actually put the stand inside the attacker's reach"
+    );
+    assert!(
+        game.melee_order_is_legal(0, warrior, approach),
+        "and must leave a real blow for the stand to be compared against"
+    );
+
+    // The gene is the whole gate: the identical board decides nothing without
+    // it.
+    let mut stock = AdvancedAi::new();
+    assert_eq!(stock.contact_posture_step(&mut game, 0, warrior), None);
+
+    let mut holding = AdvancedAi::new();
+    holding.enable_contact_posture();
+    assert_eq!(
+        holding.contact_posture_step(&mut game, 0, warrior),
+        Some(false),
+        "an even melee exchange plus fortification plus the heal is worth standing for"
+    );
+    assert_eq!(game.units[&warrior].pos, stand, "the stand does not move");
+    assert!(
+        game.units[&warrior].fortified,
+        "standing means digging in, not merely declining"
+    );
+
+    // End to end through the military step, the two arms genuinely differ.
+    let (mut stock_game, stand, plan) = contact_posture_board(71_301);
+    let stock_unit = stock_game.spawn_test_unit("warrior", 0, stand);
+    stock_game.spawn_test_unit("warrior", 1, approach);
+    let mut stock = AdvancedAi::new();
+    let _ = stock.advanced_military_step(&mut stock_game, 0, stock_unit, &plan);
+
+    let (mut held_game, _, _) = contact_posture_board(71_301);
+    let held_unit = held_game.spawn_test_unit("warrior", 0, stand);
+    held_game.spawn_test_unit("warrior", 1, approach);
+    let mut held = AdvancedAi::new();
+    held.enable_contact_posture();
+    let _ = held.advanced_military_step(&mut held_game, 0, held_unit, &plan);
+    assert_eq!(held_game.units[&held_unit].pos, stand);
+    assert!(held_game.units[&held_unit].fortified);
+    assert_ne!(
+        (
+            stock_game.units[&stock_unit].pos,
+            stock_game.units[&stock_unit].fortified
+        ),
+        (
+            held_game.units[&held_unit].pos,
+            held_game.units[&held_unit].fortified
+        ),
+        "the untreated seat does something else with the same turn"
+    );
+
+    // ⚠ And the posture is a comparison, not a preference for standing. A
+    // wounded attacker already adjacent can be finished, and no arithmetic
+    // about future rounds beats taking a unit off the board now.
+    let (mut kill_game, stand, plan) = contact_posture_board(71_301);
+    let adjacent = kill_game
+        .nbrs(stand)
+        .into_iter()
+        .find(|position| kill_game.city_at(*position).is_none())
+        .expect("the stand has an open neighbour");
+    let killer = kill_game.spawn_test_unit("warrior", 0, stand);
+    let prey = kill_game.spawn_test_unit("warrior", 1, adjacent);
+    kill_game.units.get_mut(&prey).unwrap().hp = 12;
+    let mut finishing = AdvancedAi::new();
+    finishing.enable_contact_posture();
+    assert_eq!(
+        finishing.contact_posture_step(&mut kill_game, 0, killer),
+        None,
+        "a kill in reach is never declined for a stand"
+    );
+    assert!(finishing.advanced_military_step(&mut kill_game, 0, killer, &plan));
+    assert!(
+        kill_game.units.get(&prey).is_none_or(|enemy| enemy.hp < 12),
+        "the ordinary attack scan still owns the blow"
+    );
+}
+
+/// ⚠⚠ THE SAME ARGUMENT INVERTS AGAINST A SHOOTER. `do_ranged` has no second
+/// blow, so standing inside an archer's envelope with no reply of our own is a
+/// straight loss: the unit closes when it can arrive as something that still
+/// fights, and leaves the envelope when it cannot.
+#[test]
+fn a_unit_closes_on_an_unanswerable_shooter_or_leaves_its_envelope() {
+    let (mut game, stand, _) = contact_posture_board(71_302);
+    let nest = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.wdist(*position, stand) == 3 && game.city_at(*position).is_none())
+        .expect("the board offers a tile three steps from the stand");
+    let warrior = game.spawn_test_unit("warrior", 0, stand);
+    let archer = game.spawn_test_unit("archer", 1, nest);
+    assert!(
+        game.attack_reach(archer).contains(&stand),
+        "the fixture must actually put the stand inside the archer's reach"
+    );
+
+    let mut stock = AdvancedAi::new();
+    assert_eq!(stock.contact_posture_step(&mut game, 0, warrior), None);
+
+    let mut charging = AdvancedAi::new();
+    charging.enable_contact_posture();
+    assert_eq!(
+        charging.contact_posture_step(&mut game, 0, warrior),
+        Some(true)
+    );
+    assert!(
+        game.wdist(game.units[&warrior].pos, nest) < 3,
+        "a healthy unit closes on the shooter it cannot answer"
+    );
+
+    // The same board, the same shooter, a body that cannot survive the walk in.
+    let (mut hurt_game, stand, _) = contact_posture_board(71_302);
+    let wounded = hurt_game.spawn_test_unit("warrior", 0, stand);
+    let archer = hurt_game.spawn_test_unit("archer", 1, nest);
+    hurt_game.units.get_mut(&wounded).unwrap().hp = 55;
+    let mut leaving = AdvancedAi::new();
+    leaving.enable_contact_posture();
+    assert_eq!(
+        leaving.contact_posture_step(&mut hurt_game, 0, wounded),
+        Some(true)
+    );
+    let after = hurt_game.units[&wounded].pos;
+    assert_ne!(after, stand, "it does not stay to be shot at");
+    assert!(
+        !hurt_game.attack_reach(archer).contains(&after),
+        "and the tile it chose is outside the envelope, not merely a different tile inside it"
+    );
+}
+
+/// The two engine forecasts are the engine's own arithmetic, and this is what
+/// says so: the melee pair reproduces a blow `do_attack` actually resolves,
+/// within the roll's own `U(0.8, 1.2)` band, and the shot is one-directional.
+#[test]
+fn the_exchange_forecasts_are_the_blows_the_engine_resolves() {
+    let (mut game, stand, _) = contact_posture_board(71_303);
+    let adjacent = game
+        .nbrs(stand)
+        .into_iter()
+        .find(|position| game.city_at(*position).is_none())
+        .expect("the stand has an open neighbour");
+    let ours = game.spawn_test_unit("warrior", 0, stand);
+    let theirs = game.spawn_test_unit("warrior", 1, adjacent);
+
+    let (att, def) = game
+        .melee_exchange_strengths(ours, theirs)
+        .expect("both combatants are on the board");
+    let out = crate::game::expected_damage(att, def);
+    let back = crate::game::expected_damage(def, att);
+    let (their_hp, our_hp) = (game.units[&theirs].hp, game.units[&ours].hp);
+    game.apply(
+        0,
+        &Action::Attack {
+            unit: ours,
+            target: adjacent,
+        },
+    )
+    .expect("an adjacent enemy is a legal melee target");
+    let dealt = f64::from(their_hp - game.units[&theirs].hp);
+    let taken = f64::from(our_hp - game.units[&ours].hp);
+    assert!(
+        dealt >= (out * 0.8).round() - 1.0 && dealt <= (out * 1.2).round() + 1.0,
+        "forecast {out:.1} against a resolved {dealt}"
+    );
+    assert!(
+        taken >= (back * 0.8).round() - 1.0 && taken <= (back * 1.2).round() + 1.0,
+        "counter forecast {back:.1} against a resolved {taken}"
+    );
+
+    // A shot has no counter to forecast, which is the whole reason the ranged
+    // branch of the posture is the opposite instruction.
+    let (mut shot_game, stand, _) = contact_posture_board(71_303);
+    let target = shot_game
+        .nbrs(stand)
+        .into_iter()
+        .find(|position| shot_game.city_at(*position).is_none())
+        .expect("the stand has an open neighbour");
+    let victim = shot_game.spawn_test_unit("warrior", 0, stand);
+    let shooter = shot_game.spawn_test_unit("archer", 1, target);
+    let (shot_att, shot_def) = shot_game
+        .ranged_strike_strengths(shooter, victim, stand)
+        .expect("both combatants are on the board");
+    assert!(
+        shot_att > shot_def,
+        "an Archer outguns an unfortified Warrior it is shooting at"
+    );
+    shot_game.current = 1;
+    let shooter_hp = shot_game.units[&shooter].hp;
+    shot_game
+        .apply(
+            1,
+            &Action::Ranged {
+                unit: shooter,
+                target: stand,
+            },
+        )
+        .expect("a visible adjacent target is in range");
+    assert_eq!(
+        shot_game.units[&shooter].hp, shooter_hp,
+        "the shooter takes nothing for shooting"
+    );
+}
+
+/// The gene is registered, discoverable by name, and reversible.
+#[test]
+fn contact_posture_is_a_registered_reversible_opt_in() {
+    assert!(PRODUCTION_OPT_INS
+        .iter()
+        .any(|(field, tag, _)| *field == "contact_posture" && *tag == "contact-posture"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.contact_posture, "production ships it off");
+    ai.enable_contact_posture();
+    assert!(ai.contact_posture);
+    ai.disable_contact_posture();
+    assert!(!ai.contact_posture);
+}

@@ -216,6 +216,11 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // A settler prices a site by the districts the plan would build there,
     // and a treasury buys a border plot only when it pays for itself. See
     // `advanced/site_lookahead.rs`.
+    // A unit in contact prices the exchange it is standing in, not only the
+    // attacks it could make: stand and heal against melee that has to come to
+    // it, close on or leave an unanswerable shooter. See
+    // `advanced/contact_posture.rs`.
+    ("contact_posture", "contact-posture", AdvancedAi::enable_contact_posture),
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
     // `governor-every-lane` is a losing composite: the deployment screen's
