@@ -812,8 +812,11 @@ fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
     );
 
     let mut bridged = AdvancedAi::new();
-    bridged.enable_live_bridge();
-    assert!(bridged.base.garrison_under_fire);
+    bridged.enable_live_bridge_universe();
+    assert!(
+        bridged.base.garrison_under_fire,
+        "the screen universe carries the treatment even when the ledger withholds it"
+    );
     bridged.disable_garrison_under_fire();
     assert!(!bridged.base.garrison_under_fire);
 }
@@ -4005,14 +4008,14 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     assert!(game.can_produce(0, city, &project), "the race is open");
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.buildings_before_projects,
-        "the live seat carries the treatment"
+        "the screen universe carries the treatment"
     );
     live.refresh_research_weight(&game);
     let mut lax = AdvancedAi::new();
-    lax.enable_live_bridge();
+    lax.enable_live_bridge_universe();
     lax.disable_buildings_before_projects();
     lax.refresh_research_weight(&game);
     let counts = live.counts(&game, 0);
