@@ -19417,8 +19417,7 @@ mod host_fact_tests {
     /// non-zero count and concluded there was nothing to build, so no city
     /// ever started the Amphitheater or Museum that would have seated them.
     #[test]
-    fn a_person_whose_every_offered_plot_is_full_is_a_need_however_many_slots_the_empire_owns()
-    {
+    fn every_offered_plot_full_is_a_need_however_many_slots_the_empire_owns() {
         let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
         // As exported at turn 231: three of the Writer's plots, all closed.
         let closed = |x: i32, y: i32, distance: i32| StateActivationPlot {
@@ -19460,8 +19459,7 @@ mod host_fact_tests {
 
         // One reachable slot and the need is gone — the empire has somewhere
         // to seat them and should not spend production on another building.
-        state
-            .units[0]
+        state.units[0]
             .great_person
             .as_mut()
             .unwrap()
@@ -19469,7 +19467,9 @@ mod host_fact_tests {
             .slot_open = Some(true);
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(
-            game.players[0].live_great_person_activation_needs.is_empty(),
+            game.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
             "a reachable slot is not a reason to build capacity"
         );
 
@@ -19483,7 +19483,9 @@ mod host_fact_tests {
         state.units[0].great_person = Some(older);
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(
-            game.players[0].live_great_person_activation_needs.is_empty(),
+            game.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
             "an unknowing export must not manufacture a need"
         );
     }

@@ -7190,12 +7190,7 @@ mod tests {
         assert_eq!(orders[1].pos, Some((11, 12)));
     }
 
-    /// Seven cultural people stood on one Theater plot for thirty-plus turns
-    /// on run civvis-20260817T010950Z: `GetActivationHighlightPlots` lists the
-    /// district whether or not a compatible Great Work slot is free, so the
-    /// cooldown branch swallowed them forever and no one built the slots.
-    /// With the host's own empty-slot count, a slot-starved person stands
-     /// The nine Great People of live run `civvis-20260822T020434Z`, replayed.
+    /// The nine Great People of live run `civvis-20260822T020434Z`, replayed.
     ///
     /// Three Artists, three Writers, three Musicians and a Scientist stood in
     /// Rome at turn 231 and `orders.sqlite` holds NOT ONE ORDER for any of
@@ -7257,7 +7252,10 @@ mod tests {
 
         let mut one_open = writer.clone();
         one_open.activation_plots[1].slot_open = Some(true);
-        assert!(!one_open.slot_starved(), "one reachable slot is not starved");
+        assert!(
+            !one_open.slot_starved(),
+            "one reachable slot is not starved"
+        );
 
         // ⚠ An older control mod sends no `slot_open` at all. `None` is an
         // absence, never a claim — it kept the benefit of the doubt before
@@ -7309,7 +7307,12 @@ mod tests {
         assert_eq!(stall.no_activation_plot, 0);
     }
 
-   /// still under an explicit counter — and never marches to a full building.
+    /// Seven cultural people stood on one Theater plot for thirty-plus turns
+    /// on run civvis-20260817T010950Z: `GetActivationHighlightPlots` lists the
+    /// district whether or not a compatible Great Work slot is free, so the
+    /// cooldown branch swallowed them forever and no one built the slots.
+    /// With the host's own empty-slot count, a slot-starved person stands
+    /// still under an explicit counter — and never marches to a full building.
     #[test]
     fn a_person_with_no_empty_slot_anywhere_stalls_explicitly_not_as_cooldown() {
         let on_plot = StateActivationPlot {
