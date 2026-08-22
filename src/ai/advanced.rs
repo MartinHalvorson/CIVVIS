@@ -3920,30 +3920,39 @@ pub struct AdvancedAi {
     /// `science-multiplier-payoff`.
     pub science_multiplier_payoff: bool,
 
-    /// The research chain compounds, so its later tiers are not owed less
-    /// than its first.
+    /// The research chain's later tiers are worth more than its first, so
+    /// they are owed more — not the same, and certainly not less.
     ///
-    /// ★★★★ THE TIER DISCOUNT IS BACKWARDS ON THE ONE FAMILY THAT
-    /// COMPOUNDS. `DISTRICT_BUILDING_CHAIN_DEBT` decays by
-    /// `DISTRICT_BUILDING_CHAIN_TIER_DECAY` **0.7 for each building of the
-    /// family the city already holds**, so a city with a Library owes its
-    /// University 336 and a city with both owes its Research Lab 235 against
-    /// the Library's 480. Diminishing returns are the right shape for a
-    /// Granary and then a Sewer — both raise one ceiling, and the second
-    /// raises it less. They are the wrong shape for a Campus, where the
-    /// printed yields go **2, 4, 3-plus-5-when-powered**: the second tier of
-    /// the research chain is worth twice the first and the third is the only
-    /// one that compounds with a power plant. The empire is told to want the
-    /// later tiers least, and the measured funnel says it listened —
-    /// 39% Library, **20% University, 3% Research Lab**.
+    /// ★★★★ THE DEBT IS FLAT ACROSS TIERS WHOSE YIELDS ARE 2, 4 AND 3-PLUS-5.
+    /// `RESEARCH_BUILDING_DEBT` pays a Campus building **240** for standing in
+    /// a Campus that lacks it, and pays exactly the same 240 whether the
+    /// missing building is the Library (printed **2** Science), the University
+    /// (**4**) or the Research Lab (**3**, plus `powered_science` **5** in a
+    /// powered city — more than doubling it, and more than any other Campus
+    /// building earns). The empire is told the three rungs are worth the same,
+    /// and the funnel measured over 19 live runs is what that produces:
+    /// 50% Campus, 39% Library, **20% University, 3% Research Lab**. Coverage
+    /// collapses precisely as the yields grow.
     ///
-    /// With this on, the Campus family alone is exempt from the tier decay:
-    /// every building of the chain is owed the same debt while its district
-    /// stands without it. The decay is untouched for every other family, the
-    /// debt's size and payback horizon are untouched, and a city that has
-    /// finished its chain is owed nothing either way. Off everywhere by
-    /// default; opt-in gene `research-chain-compounds`.
-    pub research_chain_compounds: bool,
+    /// ⚠ THIS IS NOT `DISTRICT_BUILDING_CHAIN_TIER_DECAY`, and the difference
+    /// matters. A first draft of this gene exempted the Campus family from
+    /// that decay — and was a **strict no-op in every screened game**, because
+    /// `chain_family_held` requires `district_building_chain`, which is
+    /// `default:off`, so `--baseline best` never opens the branch. It read
+    /// exactly +0.0 pp on wins across two windows and 252 seat-pairs, which is
+    /// what an inert gene reads. `RESEARCH_BUILDING_DEBT` is the debt that is
+    /// actually live here: it is gated only on `research_economy`, which the
+    /// repairs universe, the economy bundle and the live bridge all turn on.
+    ///
+    /// With this on, that debt is scaled by the building's own Science against
+    /// the chain's first rung — the Library's printed 2, pinned to the ruleset
+    /// by a test — counting `powered_science` where the city is powered. The
+    /// Library is unchanged at 1.0, the University is owed twice it, and a
+    /// Research Lab in a powered city four times. Floored at the first rung so
+    /// no Campus building is ever owed less than a Library, and capped so a
+    /// modded yield cannot run away with the queue. Off everywhere by default;
+    /// opt-in gene `research-tier-premium`.
+    pub research_tier_premium: bool,
 
     /// The citizen half of the taper: an empire that has built the research
     /// economy should still be WORKING it in the half of the game the tech
@@ -4231,6 +4240,17 @@ const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
 /// which pays the same shape only while the empire is fighting.
 const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+/// The Science printed by the first rung of the Campus chain — the Library's
+/// **2** — which `research_tier_premium` prices the later rungs against. A
+/// constant rather than a scan of the ruleset because `production_value` runs
+/// per candidate per city per turn and `docs/` measures this loop work-bound;
+/// `research_tier_premium_is_priced_against_the_shipped_library` pins it to
+/// `Rules::embedded()` so a ruleset change cannot leave it stale.
+const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
+/// The most any one rung may be owed against the first, so a modded or
+/// runaway yield cannot take over the queue. The shipped ceiling is the
+/// powered Research Lab at exactly 4.0. See `research_tier_premium`.
+const RESEARCH_TIER_PREMIUM_CAP: f64 = 4.0;
 /// A Theater Square standing without the building that pays for it, on the same
 /// shape and one rung under the research debt — the same reasoning as
 /// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
@@ -5032,7 +5052,7 @@ impl AdvancedAi {
             priced_tile_purchase: false,
             science_payback_horizon: false,
             science_multiplier_payoff: false,
-            research_chain_compounds: false,
+            research_tier_premium: false,
             research_floor_holds: false,
             idle_faith_patronage: false,
             early_contact_window: false,
@@ -9335,8 +9355,7 @@ impl AdvancedAi {
                 // Non-stacking: a city a standing copy already reaches gains
                 // nothing from a second one.
                 !own.iter().any(|source| {
-                    source.buildings.contains(building)
-                        && g.wdist(source.pos, other.pos) <= range
+                    source.buildings.contains(building) && g.wdist(source.pos, other.pos) <= range
                 })
             })
             .map(|other| {
@@ -9407,6 +9426,27 @@ impl AdvancedAi {
     /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
     /// asks the question the investment actually poses — is there still time
     /// to repay — and is what the Culture twin and the chain debt already use.
+    /// How much more this Campus building is owed than the chain's first
+    /// rung. See `research_tier_premium`; 1.0 when the gene is off, so the
+    /// shipped flat debt is recovered exactly.
+    fn research_tier_weight(
+        &self,
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> f64 {
+        if !self.research_tier_premium {
+            return 1.0;
+        }
+        let powered = if g.city_is_powered(city) {
+            spec.effects.get("powered_science").copied().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        ((spec.yields.science + powered) / RESEARCH_CHAIN_FIRST_RUNG_SCIENCE)
+            .clamp(1.0, RESEARCH_TIER_PREMIUM_CAP)
+    }
+
     /// Which horizon the citizens and the beaker floor are priced on. See
     /// `research_floor_holds`; the twin of `research_payback`, kept separate
     /// because the two genes are separate claims.
@@ -19999,7 +20039,11 @@ impl AdvancedAi {
                             .keys()
                             .any(|built| g.district_family(*built) == crate::name!("campus"))
                     {
-                        RESEARCH_BUILDING_DEBT * self.research_payback(g)
+                        // See `research_tier_premium`: the rungs of this
+                        // chain are 2, 4 and 3-plus-5, and the debt is flat.
+                        RESEARCH_BUILDING_DEBT
+                            * self.research_tier_weight(g, city, spec)
+                            * self.research_payback(g)
                     } else {
                         0.0
                     };
@@ -20046,17 +20090,9 @@ impl AdvancedAi {
                                     == family
                             })
                             .count();
-                        // See `research_chain_compounds`: the decay is the
-                        // right shape for a chain of ceilings and the wrong
-                        // one for a chain that compounds.
-                        let compounds = self.research_chain_compounds
-                            && family == Some(crate::name!("campus"));
-                        let tier = if compounds {
-                            1.0
-                        } else {
-                            DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
-                        };
-                        DISTRICT_BUILDING_CHAIN_DEBT * tier * Self::campus_payback_horizon(g)
+                        DISTRICT_BUILDING_CHAIN_DEBT
+                            * DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
+                            * Self::campus_payback_horizon(g)
                     } else {
                         0.0
                     };

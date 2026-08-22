@@ -153,16 +153,16 @@ impl AdvancedAi {
         self.science_multiplier_payoff = false;
     }
 
-    /// The Campus family is exempt from the chain's tier decay. See
-    /// [`AdvancedAi::research_chain_compounds`]. Opt-in gene
-    /// `research-chain-compounds`.
-    pub fn enable_research_chain_compounds(&mut self) {
-        self.research_chain_compounds = true;
+    /// A Campus building's debt is scaled by its own Science against the
+    /// chain's first rung. See [`AdvancedAi::research_tier_premium`]. Opt-in
+    /// gene `research-tier-premium`.
+    pub fn enable_research_tier_premium(&mut self) {
+        self.research_tier_premium = true;
     }
 
-    /// The twin of `enable_research_chain_compounds`.
-    pub fn disable_research_chain_compounds(&mut self) {
-        self.research_chain_compounds = false;
+    /// The twin of `enable_research_tier_premium`.
+    pub fn disable_research_tier_premium(&mut self) {
+        self.research_tier_premium = false;
     }
 
     /// The citizen tilt and the beaker floor hold while the research can

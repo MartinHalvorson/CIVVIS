@@ -236,10 +236,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // it, and the price never noticed. See
     // `AdvancedAi::science_multiplier_payoff`.
     ("science_multiplier_payoff", "science-multiplier-payoff", AdvancedAi::enable_science_multiplier_payoff),
-    // Diminishing returns are the right shape for a chain of ceilings and
-    // the wrong one for 2, 4, 3-plus-5-when-powered. See
-    // `AdvancedAi::research_chain_compounds`.
-    ("research_chain_compounds", "research-chain-compounds", AdvancedAi::enable_research_chain_compounds),
+    // The chain's rungs are 2, 4 and 3-plus-5 and the debt that buys them is
+    // flat. See `AdvancedAi::research_tier_premium`.
+    ("research_tier_premium", "research-tier-premium", AdvancedAi::enable_research_tier_premium),
     // The empire builds the laboratory and then declines to staff it. See
     // `AdvancedAi::research_floor_holds`.
     ("research_floor_holds", "research-floor-holds", AdvancedAi::enable_research_floor_holds),

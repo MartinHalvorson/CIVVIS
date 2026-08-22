@@ -54,10 +54,42 @@
 //! 39% Library, **20% University, 3% Research Lab**, thinning hardest at the
 //! tiers whose multiplied yield is largest.
 //!
-//! The two are separate genes because they are separate claims. The first says
-//! the taper is the wrong shape; the second says the number being tapered was
-//! measured off the wrong yield. Either can be true without the other, and the
-//! foldover screen prices both from the same games.
+//! **`research-tier-premium`.** `RESEARCH_BUILDING_DEBT` pays a Campus building
+//! **240** for standing in a Campus that lacks it, and pays the same 240
+//! whichever rung is missing — the Library (printed **2** Science), the
+//! University (**4**), or the Research Lab (**3**, plus `powered_science`
+//! **5** in a powered city, more than any other Campus building earns). The
+//! empire is told the three rungs are worth the same, and coverage collapses
+//! exactly as the yields grow. This scales the debt by the rung's own Science
+//! against the chain's first, floored there so nothing is owed less than a
+//! Library and capped so a modded yield cannot take the queue.
+//!
+//! ⚠ A first draft of this gene aimed at `DISTRICT_BUILDING_CHAIN_TIER_DECAY`
+//! instead, exempting the Campus family from the chain's per-tier discount —
+//! and was a **strict no-op in every game screened**, because
+//! `chain_family_held` requires `district_building_chain`, which is
+//! `default:off`, so a `--baseline best` seat never opens that branch. It read
+//! exactly +0.0 pp on wins over two windows and 252 seat-pairs, which is what
+//! an inert gene reads and is why the flat +0.0 was worth chasing rather than
+//! filing as noise. **Check that a gene's branch is reachable under the
+//! baseline the screen runs before spending games on it.**
+//!
+//! **`research-floor-holds`.** The citizen half of the taper.
+//! `RESEARCH_CITIZEN_TILT` and `refresh_research_weight` — the standing tilt
+//! toward beakers in every lane's emphasis, and the floor under a beaker's
+//! price sliding `RESEARCH_FLOOR_EARLY` **3.0** to `RESEARCH_FLOOR_LATE`
+//! **1.0** — ride the same `research_horizon`, so at t150/250 a beaker is
+//! floored at **1.8** and the tilt is at 40%, and by t220 they are **1.24** and
+//! 12%. The empire builds the laboratory and then declines to staff it. Both
+//! move to the payback horizon. Separate from `science-payback-horizon`
+//! because that gene moves what the empire BUYS and this one moves what it
+//! then WORKS.
+//!
+//! The four are separate genes because they are separate claims: the taper is
+//! the wrong shape; the number being tapered was measured off the wrong yield;
+//! the debt is flat across rungs that are not; and the citizens who make the
+//! beakers are tapered too. Any can be right without the others, and the
+//! foldover screen prices all four from the same games at no extra cost.
 
 #[cfg(test)]
 mod tests {
@@ -98,10 +130,12 @@ mod tests {
             ("science-multiplier-payoff", |ai: &AdvancedAi| {
                 ai.science_multiplier_payoff
             }),
-            ("research-chain-compounds", |ai: &AdvancedAi| {
-                ai.research_chain_compounds
+            ("research-tier-premium", |ai: &AdvancedAi| {
+                ai.research_tier_premium
             }),
-            ("research-floor-holds", |ai: &AdvancedAi| ai.research_floor_holds),
+            ("research-floor-holds", |ai: &AdvancedAi| {
+                ai.research_floor_holds
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -116,15 +150,15 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_science_payback_horizon();
         ai.enable_science_multiplier_payoff();
-        ai.enable_research_chain_compounds();
+        ai.enable_research_tier_premium();
         ai.enable_research_floor_holds();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
-        ai.disable_research_chain_compounds();
+        ai.disable_research_tier_premium();
         ai.disable_research_floor_holds();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
-        assert!(!ai.research_chain_compounds);
+        assert!(!ai.research_tier_premium);
         assert!(!ai.research_floor_holds);
     }
 
@@ -171,82 +205,89 @@ mod tests {
         );
     }
 
-    /// The tier decay is the right shape for a chain of ceilings and the
-    /// wrong one for a chain that compounds — and the gene touches only the
-    /// family whose printed yields go 2, 4, 3-plus-5.
+    /// The rungs of the research chain are 2, 4 and 3-plus-5, and the debt
+    /// that buys them is flat. This is what the gene changes and what it
+    /// deliberately does not.
     #[test]
-    fn the_research_chain_stops_discounting_its_own_later_tiers() {
-        let tier = |ai: &AdvancedAi, campus: bool, held: i32| -> f64 {
-            if ai.research_chain_compounds && campus {
-                1.0
-            } else {
-                super::super::DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held)
-            }
-        };
+    fn the_research_debt_follows_the_rung_it_is_buying() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
         let shipped = AdvancedAi::new();
         let mut treated = AdvancedAi::new();
-        treated.enable_research_chain_compounds();
+        treated.enable_research_tier_premium();
+        let weight = |ai: &AdvancedAi, g: &Game, name: &str| {
+            ai.research_tier_weight(g, &g.cities[&city], &g.rules.buildings[name])
+        };
 
-        // The Library is the first tier in both arms: the gene is not a
-        // blanket raise, it removes a discount that only applies later.
-        assert_eq!(tier(&shipped, true, 0), tier(&treated, true, 0));
-
-        // The University and the Research Lab are where they differ, and by
-        // how much: 0.7 and 0.49 of the debt the Library was owed.
-        assert!((tier(&shipped, true, 1) - 0.7).abs() < 1e-9);
-        assert!((tier(&shipped, true, 2) - 0.49).abs() < 1e-9);
-        assert_eq!(tier(&treated, true, 1), 1.0);
-        assert_eq!(tier(&treated, true, 2), 1.0);
-
-        // Every other family keeps the decay in both arms — a Granary and
-        // then a Sewer really do each raise the ceiling less.
-        for held in 0..4 {
-            assert_eq!(
-                tier(&shipped, false, held),
-                tier(&treated, false, held),
-                "the decay is untouched off the Campus at tier {held}"
-            );
+        // Off, the debt is flat: every rung reads 1.0, which is the shipped
+        // `RESEARCH_BUILDING_DEBT * horizon` recovered exactly.
+        for rung in ["library", "university", "research_lab"] {
+            assert_eq!(weight(&shipped, &game, rung), 1.0, "{rung} off");
         }
+
+        // On, the first rung is still 1.0 — this is not a blanket raise — and
+        // the University is owed twice it, off its own printed 4 against 2.
+        assert_eq!(weight(&treated, &game, "library"), 1.0);
+        assert_eq!(weight(&treated, &game, "university"), 2.0);
+
+        // The Research Lab is the rung the whole gene is about: its printed 3
+        // is the SMALLER half of what it earns, because `powered_science` adds
+        // **5** more than any other Campus building earns at all. The debt has
+        // to see that or the 3%-coverage rung stays last forever.
+        let powered = game.rules.buildings["research_lab"]
+            .effects
+            .get("powered_science")
+            .copied()
+            .unwrap();
+        assert_eq!(powered, 5.0, "the Lab's power yield is what the gene reads");
+        // ⚠ `city_is_powered` is `demand <= 0 || supply >= demand`, so a city
+        // with nothing that CONSUMES power reads powered — and `city_yields`
+        // pays the Lab its 5 there on exactly that test. The gene reads the
+        // same predicate rather than a stricter one of its own, so the price
+        // and the payment agree; a first draft asserted the fixture was
+        // unpowered and was wrong about the model, not about the code.
+        assert!(game.city_is_powered(&game.cities[&city]));
+        assert_eq!(weight(&treated, &game, "research_lab"), 4.0);
+        // (3 + 5) / 2 lands exactly on the cap, which is how the cap was sized.
+        assert_eq!(
+            (game.rules.buildings["research_lab"].yields.science + powered) / 2.0,
+            super::super::RESEARCH_TIER_PREMIUM_CAP
+        );
+        // And the cap really binds rather than merely being met: a rung worth
+        // ten Library-equivalents is still only ever owed four.
+        let mut runaway = game.rules.buildings["research_lab"].clone();
+        runaway.yields.science = 100.0;
+        assert_eq!(
+            treated.research_tier_weight(&game, &game.cities[&city], &runaway),
+            super::super::RESEARCH_TIER_PREMIUM_CAP
+        );
     }
 
-    /// The gene's whole sentence: full value while the investment can still
-    /// repay, and the taper only inside the payback window.
+    /// A constant standing in for a ruleset value has to be pinned to the
+    /// ruleset, or a data change leaves the price quietly wrong.
     #[test]
-    fn the_payback_horizon_holds_where_the_game_fraction_has_already_halved() {
-        let mut g = Game::new_full(2, 28, 18, 91_779, 250, 0, false);
-        let off = AdvancedAi::new();
-        let mut on = AdvancedAi::new();
-        on.enable_science_payback_horizon();
-
-        // Turn 1: both arms pay essentially the whole price, so the gene
-        // cannot be a disguised early-game buff.
-        g.turn = 1;
-        assert!(off.research_payback(&g) > 0.99);
-        assert!(on.research_payback(&g) > 0.99);
-
-        // Turn 150 of 250 — a hundred turns of compounding left, and the
-        // shipped horizon has already written off 60% of the price.
-        g.turn = 150;
-        let shipped = off.research_payback(&g);
-        let treated = on.research_payback(&g);
-        assert!(
-            (shipped - 0.4).abs() < 1e-9,
-            "the game-fraction horizon at t150/250: {shipped}"
+    fn research_tier_premium_is_priced_against_the_shipped_library() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            rules.buildings["library"].yields.science,
+            super::super::RESEARCH_CHAIN_FIRST_RUNG_SCIENCE,
+            "the first rung of the Campus chain"
         );
-        assert!(
-            (treated - 1.0).abs() < 1e-9,
-            "a Campus that can still repay is worth its price: {treated}"
-        );
-
-        // And the reason the taper existed is preserved: a Campus begun with
-        // a handful of turns left still does not outbid a defender.
-        g.turn = 250;
-        assert_eq!(on.research_payback(&g), 0.0);
-        g.turn = 230;
-        assert!(
-            on.research_payback(&g) < 0.51,
-            "inside the payback window the ramp is live"
-        );
+        // And it really is the first rung: nothing in the family is cheaper.
+        let campus_cost = |name: &str| rules.buildings[name].cost;
+        for rung in ["university", "research_lab"] {
+            assert!(
+                campus_cost(rung) > campus_cost("library"),
+                "{rung} comes after the Library"
+            );
+        }
     }
 
     /// The helper is checked against `Game::city_yields` itself, not against a
@@ -325,9 +366,15 @@ mod tests {
             game.players[0].policies.clear();
             credited
         };
-        let (paid_one, paid_two) = (card_payment(&mut game, 100.0), card_payment(&mut game, 200.0));
+        let (paid_one, paid_two) = (
+            card_payment(&mut game, 100.0),
+            card_payment(&mut game, 200.0),
+        );
         let (credit_one, credit_two) = (credit(&mut game, 100.0), credit(&mut game, 200.0));
-        assert!(paid_one > 0.0 && credit_one > 0.0, "the Population half pays");
+        assert!(
+            paid_one > 0.0 && credit_one > 0.0,
+            "the Population half pays"
+        );
         assert!(
             (paid_two / paid_one - credit_two / credit_one).abs() < 1e-9,
             "credit {credit_one} -> {credit_two} against payment {paid_one} -> {paid_two}"
@@ -365,4 +412,3 @@ mod tests {
         );
     }
 }
-
