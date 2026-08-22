@@ -9514,8 +9514,8 @@ impl AdvancedAi {
         if buildable == 0 {
             return;
         }
-        self.research_chain_completion = (held as f64 / buildable as f64)
-            .clamp(RESEARCH_COVERAGE_UNFINISHED_FLOOR, 1.0);
+        self.research_chain_completion =
+            (held as f64 / buildable as f64).clamp(RESEARCH_COVERAGE_UNFINISHED_FLOOR, 1.0);
     }
 
     fn refresh_research_weight(&mut self, g: &Game) {
