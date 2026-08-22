@@ -81,6 +81,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
 | `builder-barbarian-safety` | off (unmeasured) | Keep Builders from entering a visible Barbarian-capture envelope. |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `contact-posture` | off (unmeasured) | A unit already inside a hostile's next-turn reach picks a posture: stand and heal where the melee exchange favours holding, close on a shooter it cannot answ… |
 | `culture-building-debt` | off (unmeasured) | Make the Theater Square owe its buildings. |
 | `culture-coverage` | off (unmeasured) | Pay for the Theater Square the empire has not got. |
 | `district-building-chain` | off (unmeasured) | Make every specialty district owe its own buildings, whatever the lane. |
