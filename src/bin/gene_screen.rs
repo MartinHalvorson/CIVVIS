@@ -905,6 +905,51 @@ struct GeneEstimate {
     adjusted: Option<(f64, f64)>,
 }
 
+/// One gene's causal simulation-cost estimate. Effects stay on the log scale
+/// internally: a coefficient of `ln(1.10)` means enabling the gene for one
+/// major seat makes the measured quantity 10% larger. Log ratios are the
+/// right unit here because a 100 ms delay means something very different in a
+/// two-second game and a two-minute game, and they keep a temporarily slow
+/// worker from dominating the estimate.
+#[derive(Clone, Copy, Debug)]
+struct CostEstimate {
+    /// Complete game-pair comparisons with usable seconds and turn counts.
+    pairs: usize,
+    /// Change in wall seconds per completed game turn (on versus off).
+    compute_log_delta: f64,
+    compute_log_se: f64,
+    /// Change in whole-game wall seconds (on versus off).
+    time_log_delta: f64,
+    time_log_se: f64,
+}
+
+impl CostEstimate {
+    fn percent(log_delta: f64) -> f64 {
+        100.0 * log_delta.exp_m1()
+    }
+
+    /// Delta-method standard error after changing from log units to percent.
+    fn percent_se(log_delta: f64, log_se: f64) -> f64 {
+        100.0 * log_delta.exp() * log_se
+    }
+
+    fn compute_pct(&self) -> f64 {
+        Self::percent(self.compute_log_delta)
+    }
+
+    fn compute_se_pct(&self) -> f64 {
+        Self::percent_se(self.compute_log_delta, self.compute_log_se)
+    }
+
+    fn time_pct(&self) -> f64 {
+        Self::percent(self.time_log_delta)
+    }
+
+    fn time_se_pct(&self) -> f64 {
+        Self::percent_se(self.time_log_delta, self.time_log_se)
+    }
+}
+
 impl GeneEstimate {
     fn win_z(&self) -> f64 {
         if self.win_se > 0.0 && self.win_se.is_finite() {
@@ -1101,6 +1146,177 @@ fn screened_mask(header: &Header) -> Vec<bool> {
         .collect()
 }
 
+/// OLS with HC1 heteroskedasticity-robust errors. Timing variance grows with a
+/// game's size and length even after taking logs, so the homoskedastic error
+/// used by the historical win table would be optimistic here. Rows are already
+/// one independent game pair each; no further clustering is required.
+fn robust_cost_regression(design: &[Vec<f64>], diffs: &[f64]) -> Option<Vec<(f64, f64)>> {
+    let n = diffs.len();
+    let k = design.first()?.len();
+    if k == 0 || n < 2 * k + 10 {
+        return None;
+    }
+    let mut xtx = vec![vec![0.0; k]; k];
+    let mut xty = vec![0.0; k];
+    for (row, &d) in design.iter().zip(diffs) {
+        for i in 0..k {
+            xty[i] += row[i] * d;
+            for j in 0..k {
+                xtx[i][j] += row[i] * row[j];
+            }
+        }
+    }
+    let inverse = invert(&xtx)?;
+    let beta: Vec<f64> = (0..k)
+        .map(|i| (0..k).map(|j| inverse[i][j] * xty[j]).sum())
+        .collect();
+    let mut meat = vec![vec![0.0; k]; k];
+    for (row, &d) in design.iter().zip(diffs) {
+        let fitted: f64 = row.iter().zip(&beta).map(|(x, b)| x * b).sum();
+        let residual2 = (d - fitted).powi(2);
+        for i in 0..k {
+            for j in 0..k {
+                meat[i][j] += row[i] * row[j] * residual2;
+            }
+        }
+    }
+    let hc1 = n as f64 / (n - k) as f64;
+    Some(
+        (0..k)
+            .map(|i| {
+                let variance: f64 = (0..k)
+                    .map(|a| {
+                        (0..k)
+                            .map(|b| inverse[i][a] * meat[a][b] * inverse[b][i])
+                            .sum::<f64>()
+                    })
+                    .sum::<f64>()
+                    * hc1;
+                (beta[i], variance.max(0.0).sqrt())
+            })
+            .collect(),
+    )
+}
+
+/// Fit the paired timing differences with an intercept and every screened
+/// gene at once. The intercept absorbs an arm-order or machine-load drift; the
+/// gene coefficients therefore cannot inherit a small chance imbalance in
+/// which genomes happened to run first. When a short pilot cannot support the
+/// full matrix, fit each gene with the same intercept rather than publishing
+/// no measurement at all.
+fn adjusted_cost_effects(signs: &[Vec<f64>], diffs: &[f64]) -> Vec<Option<(f64, f64)>> {
+    let Some(k) = signs.first().map(Vec::len) else {
+        return Vec::new();
+    };
+    let with_intercept: Vec<Vec<f64>> = signs
+        .iter()
+        .map(|row| std::iter::once(1.0).chain(row.iter().copied()).collect())
+        .collect();
+    if let Some(all) = robust_cost_regression(&with_intercept, diffs) {
+        return all.into_iter().skip(1).map(Some).collect();
+    }
+    (0..k)
+        .map(|column| {
+            let one: Vec<Vec<f64>> = signs.iter().map(|row| vec![1.0, row[column]]).collect();
+            robust_cost_regression(&one, diffs).and_then(|fit| fit.get(1).copied())
+        })
+        .collect()
+}
+
+/// Estimate the incremental runtime cost of enabling every screened gene from
+/// the screen rows that already exist. No heuristic is timed in its hot path
+/// and no profiling-only game is required.
+///
+/// Both arms share the map, seat and machine conditions. We regress their log
+/// ratio on `(x_on_arm0 - x_on_arm1) / 2`, so foldovers use the familiar ±1
+/// signs and prior-weighted screens use −1/0/+1 according to whether a gene
+/// actually differed. In all-seats mode we sum those signs across seats and
+/// keep the game's one timing once. The coefficient is consequently the cost
+/// of enabling the gene for one major seat, with one independent observation
+/// per game pair rather than `players` duplicate timings.
+///
+/// `compute` is seconds per completed turn: it answers whether the simulation
+/// does more wall-clock work at the same game length. `time` is whole-game
+/// seconds: it is the throughput impact operators actually pay, including a
+/// gene that reaches the same victory in more or fewer turns.
+fn estimate_costs(header: &Header, rows: &[Row]) -> BTreeMap<String, CostEstimate> {
+    let k = header.genes.len();
+    let screened = screened_mask(header);
+    // key -> (sum of per-seat gene differences, compute log ratio, time log
+    // ratio). A classic screen contributes one seat; all-seats contributes
+    // every independently drawn major to the sum but still one game timing.
+    let mut games: BTreeMap<(u64, usize), (Vec<f64>, f64, f64)> = BTreeMap::new();
+
+    for (a, b) in complete_pairs(rows) {
+        if !(a.secs.is_finite() && b.secs.is_finite() && a.secs > 0.0 && b.secs > 0.0)
+            || a.turn == 0
+            || b.turn == 0
+        {
+            continue;
+        }
+        let (Some(a_signs), Some(b_signs)) = (
+            pair_signs(&a.genome, &screened, k),
+            pair_signs(&b.genome, &screened, k),
+        ) else {
+            continue;
+        };
+        // Foldover: (x - -x) / 2 = x. Prior design: zero when both arms
+        // happened to agree, which correctly says that pair carries no direct
+        // information for that gene.
+        let time_diff = a.secs.ln() - b.secs.ln();
+        let compute_diff = (a.secs / f64::from(a.turn)).ln() - (b.secs / f64::from(b.turn)).ln();
+        let game = games
+            .entry((a.seed, a.pair))
+            .or_insert_with(|| (vec![0.0; a_signs.len()], compute_diff, time_diff));
+        for (total, (a, b)) in game.0.iter_mut().zip(a_signs.iter().zip(&b_signs)) {
+            *total += (a - b) / 2.0;
+        }
+    }
+    if games.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let signs: Vec<Vec<f64>> = games.values().map(|game| game.0.clone()).collect();
+    let compute_diffs: Vec<f64> = games.values().map(|game| game.1).collect();
+    let time_diffs: Vec<f64> = games.values().map(|game| game.2).collect();
+
+    let compute = adjusted_cost_effects(&signs, &compute_diffs);
+    let time = adjusted_cost_effects(&signs, &time_diffs);
+    let screened_tags: Vec<&String> = header
+        .genes
+        .iter()
+        .zip(&screened)
+        .filter_map(|(tag, &is_screened)| is_screened.then_some(tag))
+        .collect();
+    screened_tags
+        .into_iter()
+        .enumerate()
+        .filter_map(|(column, tag)| {
+            let ((compute_log_delta, compute_log_se), (time_log_delta, time_log_se)) = (
+                compute.get(column).copied().flatten()?,
+                time.get(column).copied().flatten()?,
+            );
+            let informative = signs.iter().filter(|row| row[column] != 0.0).count();
+            (compute_log_delta.is_finite()
+                && compute_log_se.is_finite()
+                && time_log_delta.is_finite()
+                && time_log_se.is_finite())
+            .then(|| {
+                (
+                    tag.clone(),
+                    CostEstimate {
+                        pairs: informative,
+                        compute_log_delta,
+                        compute_log_se,
+                        time_log_delta,
+                        time_log_se,
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
 fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
     if header.design == "prior" {
         return estimate_prior(header, rows);
@@ -1213,11 +1429,13 @@ fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f6
 /// deployment genome is derived from the screens rather than typed in.
 fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
     let (estimates, pairs, overall_win, overall_share) = estimate(header, rows);
+    let costs = estimate_costs(header, rows);
     let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_PAIRS, REPRO_WINDOW_COUNT);
     let family_z = family_wise_z(estimates.len());
     let genes: Vec<serde_json::Value> = estimates
         .iter()
         .map(|e| {
+            let cost = costs.get(&e.tag);
             let win_tranches: Vec<serde_json::Value> = tranches
                 .iter()
                 .enumerate()
@@ -1253,6 +1471,11 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
                 "win_tranches": win_tranches,
+                "cost_pairs": cost.map(|c| c.pairs),
+                "compute_cost_pct": cost.map(CostEstimate::compute_pct),
+                "compute_cost_se_pct": cost.map(CostEstimate::compute_se_pct),
+                "time_cost_pct": cost.map(CostEstimate::time_pct),
+                "time_cost_se_pct": cost.map(CostEstimate::time_se_pct),
             })
         })
         .collect();
@@ -1274,6 +1497,12 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
             "unit": "complete paired comparisons",
             "target_pairs_per_window": REPRO_WINDOW_PAIRS,
             "windows": "newest first; whole game-pair clusters only",
+        },
+        "cost_method": {
+            "unit": "percent change per enabled major seat; positive is slower",
+            "compute": "paired log ratio of wall seconds per completed turn",
+            "time": "paired log ratio of whole-game wall seconds",
+            "fit": "OLS adjusted for every screened gene and arm-order intercept; one observation per paired game with HC1 robust errors",
         },
         "genes": genes,
     });
@@ -1602,6 +1831,7 @@ fn print_interactions(
 
 fn print_table(header: &Header, rows: &[Row]) {
     let (mut estimates, pairs, overall_win, overall_share) = estimate(header, rows);
+    let costs = estimate_costs(header, rows);
     let anchors: Vec<&Row> = rows.iter().filter(|row| row.kind == "anchor").collect();
     let game_pairs = if header.all_seats {
         let mut keys: Vec<(u64, usize)> = rows
@@ -1867,7 +2097,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     estimates.sort_by(|a, b| b.win_z().total_cmp(&a.win_z()));
     let prior_design = header.design == "prior";
     println!(
-        "\n{:<28} {:>11} {:>6} {:>6} {:>16} {:>16} {:>16} {:>15} {:>6}  {:>8} {:>6}  {:>9}  read",
+        "\n{:<28} {:>11} {:>6} {:>6} {:>16} {:>16} {:>16} {:>15} {:>6}  {:>8} {:>6}  {:>9}  {:>16} {:>16}  read",
         "gene",
         if prior_design { "on n/off n" } else { "pairs" },
         "on%",
@@ -1879,7 +2109,9 @@ fn print_table(header: &Header, rows: &[Row]) {
         "z",
         "shareΔ",
         "z",
-        "adjΔpp"
+        "adjΔpp",
+        "compute cost",
+        "time cost"
     );
     for e in &estimates {
         let z = e.win_z();
@@ -1896,8 +2128,15 @@ fn print_table(header: &Header, rows: &[Row]) {
         let latest = tranche_cell(tranches.first(), &e.tag);
         let previous = tranche_cell(tranches.get(1), &e.tag);
         let earlier = tranche_cell(tranches.get(2), &e.tag);
+        let (compute_cost, time_cost) = match costs.get(&e.tag) {
+            Some(cost) => (
+                format!("{:+.2}±{:.2}%", cost.compute_pct(), cost.compute_se_pct()),
+                format!("{:+.2}±{:.2}%", cost.time_pct(), cost.time_se_pct()),
+            ),
+            None => ("-".to_string(), "-".to_string()),
+        };
         println!(
-            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>16} {:>16} {:>16} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {}",
+            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>16} {:>16} {:>16} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {:>16} {:>16}  {}",
             e.tag,
             count,
             100.0 * e.win_on,
@@ -1911,6 +2150,8 @@ fn print_table(header: &Header, rows: &[Row]) {
             100.0 * e.share_delta,
             e.share_z(),
             adjusted,
+            compute_cost,
+            time_cost,
             read
         );
     }
@@ -1919,7 +2160,7 @@ fn print_table(header: &Header, rows: &[Row]) {
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
          this size, NOT no effect. Each 10k cell is that window's win Δpp / paired z; on% minus \
          off% is the pooled win Δ. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ \
-         over the whole sign matrix."
+         over the whole sign matrix. Cost cells are percent on/off change ± one standard error: compute +         is wall seconds per completed turn, time is whole-game wall seconds, and positive is slower."
     );
 }
 
@@ -3195,6 +3436,74 @@ mod tests {
         let b = estimates.iter().find(|e| e.tag == "b").unwrap();
         assert!(b.win_delta.abs() < 0.2);
         assert!(b.win_se.is_finite() && b.win_se > 0.0);
+    }
+
+    #[test]
+    fn timing_cost_separates_per_turn_compute_from_whole_game_time() {
+        let header = test_header(&["a", "b"], false);
+        let screened = vec![true, true];
+        let mut rows = Vec::new();
+        for pair in 0..240 {
+            let drawn = draw_genome(17, pair, &screened);
+            let flipped = complement(&drawn, &screened);
+            for (arm, genome) in [(0, drawn), (1, flipped)] {
+                let a_on = genome[0];
+                let mut row = test_row(pair, pair % 4, arm, &genome_string(&genome), false);
+                // `a` makes each turn 10% dearer and the game 20% longer:
+                // total time therefore rises by 1.10 × 1.20 = 1.32.
+                row.turn = if a_on { 120 } else { 100 };
+                row.secs = f64::from(row.turn) * if a_on { 1.10 } else { 1.0 };
+                rows.push(row);
+            }
+        }
+        let costs = estimate_costs(&header, &rows);
+        let a = costs.get("a").expect("the timed gene is estimated");
+        assert!((a.compute_pct() - 10.0).abs() < 1e-8, "{a:?}");
+        assert!((a.time_pct() - 32.0).abs() < 1e-8, "{a:?}");
+        let b = costs.get("b").expect("the null gene is estimated");
+        assert!(b.compute_pct().abs() < 1e-8, "{b:?}");
+        assert!(b.time_pct().abs() < 1e-8, "{b:?}");
+    }
+
+    #[test]
+    fn all_seats_timing_reports_the_cost_of_enabling_one_major() {
+        let header = test_header(&["a", "b"], true);
+        let screened = vec![true, true];
+        let mut rows = Vec::new();
+        for pair in 0..300 {
+            for arm in 0..2u8 {
+                let genomes = all_seat_genomes(
+                    29,
+                    pair,
+                    header.players,
+                    &screened,
+                    arm,
+                    Design::Foldover,
+                    &[],
+                );
+                let enabled = genomes.iter().filter(|genome| genome[0]).count() as i32;
+                // Every enabled seat adds 5% multiplicatively. Each seat row
+                // repeats the game's one timing, as production rows do.
+                let secs = 100.0 * 1.05_f64.powi(enabled);
+                for (seat, genome) in genomes.iter().enumerate() {
+                    let mut row = test_row(pair, seat, arm, &genome_string(genome), false);
+                    row.turn = 100;
+                    row.secs = secs;
+                    rows.push(row);
+                }
+            }
+        }
+        let costs = estimate_costs(&header, &rows);
+        let a = costs.get("a").expect("the timed gene is estimated");
+        assert!((a.compute_pct() - 5.0).abs() < 1e-8, "{a:?}");
+        assert!((a.time_pct() - 5.0).abs() < 1e-8, "{a:?}");
+    }
+
+    #[test]
+    fn old_or_synthetic_rows_without_timings_publish_no_cost_guess() {
+        let header = test_header(&["a"], false);
+        let rows = vec![test_row(0, 0, 0, "1", false), test_row(0, 0, 1, "0", false)];
+        assert!(estimate_costs(&header, &rows).is_empty());
     }
 
     #[test]

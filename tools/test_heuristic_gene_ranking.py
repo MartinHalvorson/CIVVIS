@@ -12,6 +12,12 @@ import heuristic_gene_ranking as ranking  # noqa: E402
 
 
 class TheTableIsDerived(unittest.TestCase):
+    EXPECTED_COLUMNS = (
+        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | "
+        "Total (on) Win rate | Total (off) Win rate | Total Games (on+off) | "
+        "cost (compute) | cost (time) |"
+    )
+
     def test_the_checked_in_table_matches_the_ledgers_sources(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         self.assertEqual(
@@ -37,6 +43,28 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(len(desc), 50)
         self.assertTrue(desc["recon-replacement"].startswith("Rebuild the recon arm"))
         self.assertTrue(desc["loyalty-rate-alarm"].startswith("Rank loyalty emergencies"))
+
+    def test_operator_columns_are_in_the_requested_order(self):
+        header = next(
+            line for line in ranking.RANKING_MD.read_text().splitlines()
+            if line.startswith("| Rank |")
+        )
+        self.assertEqual(header, self.EXPECTED_COLUMNS)
+
+    def test_cost_uses_the_newest_real_measurement_and_never_invents_zero(self):
+        history = [
+            {"compute_cost_pct": 90.0, "compute_cost_se_pct": 4.0},
+            {"compute_cost_pct": None, "compute_cost_se_pct": None},
+            {"compute_cost_pct": 1.234, "compute_cost_se_pct": 0.456},
+        ]
+        self.assertEqual(
+            ranking.cost_cell(history, "compute_cost_pct", "compute_cost_se_pct"),
+            "+1.23% ±0.46%",
+        )
+        self.assertEqual(
+            ranking.cost_cell([{}], "compute_cost_pct", "compute_cost_se_pct"),
+            "–",
+        )
 
 
 if __name__ == "__main__":

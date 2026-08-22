@@ -40,6 +40,95 @@ use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// Size the defensive Missionary corps by the number of cities actually
+    /// under conversion pressure instead of the shipped constant 2. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::religious_defence_scales`].
+    pub fn enable_religious_defence_scales(&mut self) {
+        self.religious_defence_scales = true;
+    }
+
+    /// The twin of `enable_religious_defence_scales`.
+    pub fn disable_religious_defence_scales(&mut self) {
+        self.religious_defence_scales = false;
+    }
+
+    /// Let a founder that is defending its own cities hold one Guru, the only
+    /// field heal a religious corps has. Off in production; opted into by
+    /// name. See [`AdvancedAi::guru_heals_the_corps`].
+    pub fn enable_guru_heals_the_corps(&mut self) {
+        self.guru_heals_the_corps = true;
+    }
+
+    /// The twin of `enable_guru_heals_the_corps`.
+    pub fn disable_guru_heals_the_corps(&mut self) {
+        self.guru_heals_the_corps = false;
+    }
+
+    /// Let a wounded spreader standing in its own Holy Site's heal ring hold
+    /// instead of spending a charge at a fraction of its strength. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::religious_units_heal_first`].
+    pub fn enable_religious_units_heal_first(&mut self) {
+        self.religious_units_heal_first = true;
+    }
+
+    /// The twin of `enable_religious_units_heal_first`.
+    pub fn disable_religious_units_heal_first(&mut self) {
+        self.religious_units_heal_first = false;
+    }
+
+    /// Condemn a heretic the World Congress has condemned, not only one this
+    /// seat is at war with. Off in production; opted into by name. See
+    /// [`AdvancedAi::condemn_under_congress`].
+    pub fn enable_condemn_under_congress(&mut self) {
+        self.condemn_under_congress = true;
+    }
+
+    /// The twin of `enable_condemn_under_congress`.
+    pub fn disable_condemn_under_congress(&mut self) {
+        self.condemn_under_congress = false;
+    }
+
+    /// Keep a spread campaign that has already converted a foreign city on the
+    /// offensive between waves, instead of dropping the posture the turn its
+    /// last charge is spent. Off in production; opted into by name. See
+    /// [`AdvancedAi::spread_campaign_persists`].
+    pub fn enable_spread_campaign_persists(&mut self) {
+        self.spread_campaign_persists = true;
+    }
+
+    /// The twin of `enable_spread_campaign_persists`.
+    pub fn disable_spread_campaign_persists(&mut self) {
+        self.spread_campaign_persists = false;
+    }
+
+    /// Put a Holy Site in the city that is actually losing its majority, so
+    /// its defender can be bought there instead of walking from the Holy City.
+    /// Off in production; opted into by name. See
+    /// [`AdvancedAi::holy_site_where_the_threat_is`].
+    pub fn enable_holy_site_where_the_threat_is(&mut self) {
+        self.holy_site_where_the_threat_is = true;
+    }
+
+    /// The twin of `enable_holy_site_where_the_threat_is`.
+    pub fn disable_holy_site_where_the_threat_is(&mut self) {
+        self.holy_site_where_the_threat_is = false;
+    }
+
+    /// Evangelize the beliefs that multiply a religious corps while the corps
+    /// has a job, instead of the victory lane's worship building. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::enhancer_for_the_corps`].
+    pub fn enable_enhancer_for_the_corps(&mut self) {
+        self.enhancer_for_the_corps = true;
+    }
+
+    /// The twin of `enable_enhancer_for_the_corps`.
+    pub fn disable_enhancer_for_the_corps(&mut self) {
+        self.enhancer_for_the_corps = false;
+    }
+
     /// Promote an Apostle for the job the empire has rather than for the
     /// largest number on the card. Off in production; opted into by name
     /// (`victory_eval --with apostle-promotion-by-role`, `gene_screen`). See
@@ -139,6 +228,92 @@ impl AdvancedAi {
     pub fn disable_priced_tile_purchase(&mut self) {
         self.priced_tile_purchase = false;
         self.base.plot_purchase_delegated = false;
+    }
+
+    /// Price the science economy on whether it can still repay rather than on
+    /// how much of the game is left. See
+    /// [`AdvancedAi::science_payback_horizon`]. Opt-in gene
+    /// `science-payback-horizon`.
+    pub fn enable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = true;
+    }
+
+    /// The twin of `enable_science_payback_horizon`.
+    pub fn disable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = false;
+    }
+
+    /// Credit a Campus building the beakers its city's multipliers will
+    /// actually pay it. See [`AdvancedAi::science_multiplier_payoff`]. Opt-in
+    /// gene `science-multiplier-payoff`.
+    pub fn enable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = true;
+    }
+
+    /// The twin of `enable_science_multiplier_payoff`.
+    pub fn disable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = false;
+    }
+
+    /// A Campus building's debt is scaled by its own Science against the
+    /// chain's first rung. See [`AdvancedAi::research_tier_premium`]. Opt-in
+    /// gene `research-tier-premium`.
+    pub fn enable_research_tier_premium(&mut self) {
+        self.research_tier_premium = true;
+    }
+
+    /// The twin of `enable_research_tier_premium`.
+    pub fn disable_research_tier_premium(&mut self) {
+        self.research_tier_premium = false;
+    }
+
+    /// The Campus coverage term is scaled by how finished the empire's
+    /// standing Campuses are. See [`AdvancedAi::campus_finishes_first`].
+    /// Opt-in gene `campus-finishes-first`.
+    pub fn enable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = true;
+    }
+
+    /// The twin of `enable_campus_finishes_first`.
+    pub fn disable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = false;
+    }
+
+    /// A power plant is credited the yields it switches on in its city. See
+    /// [`AdvancedAi::power_the_laboratory`]. Opt-in gene
+    /// `power-the-laboratory`.
+    pub fn enable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = true;
+    }
+
+    /// The twin of `enable_power_the_laboratory`.
+    pub fn disable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = false;
+    }
+
+    /// A Campus plot that clears the multiplier's adjacency threshold is
+    /// credited what crossing it unlocks. See
+    /// [`AdvancedAi::campus_adjacency_threshold`]. Opt-in gene
+    /// `campus-adjacency-threshold`.
+    pub fn enable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = true;
+    }
+
+    /// The twin of `enable_campus_adjacency_threshold`.
+    pub fn disable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = false;
+    }
+
+    /// The citizen tilt and the beaker floor hold while the research can
+    /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
+    /// `research-floor-holds`.
+    pub fn enable_research_floor_holds(&mut self) {
+        self.research_floor_holds = true;
+    }
+
+    /// The twin of `enable_research_floor_holds`.
+    pub fn disable_research_floor_holds(&mut self) {
+        self.research_floor_holds = false;
     }
 
     /// A seat with no religion and 600+ Faith patronizes Great People with it
@@ -724,14 +899,16 @@ impl AdvancedAi {
     /// shape of `civvis-the-runner-tree-was-the-broken-link`.
     ///
     /// ★★★★ AND WHAT SHIPS IS THE UNIVERSE MINUS WHAT THE LEDGER HOLDS OFF.
-    /// Operator directive 2026-08-20: the defaults reflect the best genome —
-    /// only genes that provably help are on. `apply_gene_ledger`
-    /// (`advanced/gene_ledger.rs`) ends this helper: a treatment the screens
-    /// have measured and not found helpful is withheld, an opt-in they found
-    /// helpful is enabled, a flag no native screen can price (Firaxis-only)
-    /// stays as the universe set it. A new treatment therefore ships OFF
-    /// until a screen says otherwise; `gene_screen --list` shows each gene's
-    /// verdict and default.
+    /// Operator directive 2026-08-20: the defaults reflect the best genome.
+    /// Since the directive of 2026-08-22 the ledger reads that off the
+    /// ranking's two win columns — a gene is on when both its last and prior
+    /// native screens are positive, or when their average clears +15 with
+    /// neither below −10. `apply_gene_ledger` (`advanced/gene_ledger.rs`)
+    /// ends this helper: a treatment the ledger does not default on is
+    /// withheld, an opt-in it defaults on is enabled, a flag no native screen
+    /// can price (Firaxis-only) stays as the universe set it. A new treatment
+    /// therefore ships OFF until two screens agree; `gene_screen --list` shows
+    /// each gene's verdict and default.
     pub fn enable_live_bridge(&mut self) {
         self.enable_live_bridge_universe();
         self.apply_gene_ledger();
@@ -2112,6 +2289,172 @@ impl AdvancedAi {
     /// `BasicAi::pantheon_reads_the_board`.
     pub fn enable_pantheon_board(&mut self) {
         self.base.pantheon_reads_the_board = true;
+    }
+
+    /// Score the World Congress ballot — which outcome and target this seat
+    /// names — for the victory the empire is actually racing rather than for
+    /// an expansion posture that has no lane. See `advanced/victory_lane.rs`.
+    /// The Favor stake behind the ballot is `lane-congress-favor`, a separate
+    /// gene. Off everywhere by default; opt-in gene `lane-congress-ballot`.
+    pub fn enable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = true;
+    }
+
+    /// The twin of `enable_lane_congress_ballot`.
+    pub fn disable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = false;
+    }
+
+    /// Stake the Favor behind a World Congress ballot for the victory the
+    /// empire is actually racing. The other half of what
+    /// `lane-congress-ballot` used to be, split from it after the lane's own
+    /// regime flagged the composite at −0.61 pp of score share (z −2.33).
+    ///
+    /// ★★★ And priced apart it is the **better** half, not the worse one the
+    /// split predicted: +1.4 pp at 570 pairs against the naming half's
+    /// −1.8, positive in all four windows. See `advanced/victory_lane.rs` and
+    /// `docs/VICTORY_GENES.md` §8.5. Off everywhere by default; opt-in gene
+    /// `lane-congress-favor`.
+    pub fn enable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = true;
+    }
+
+    /// The twin of `enable_lane_congress_favor`.
+    pub fn disable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = false;
+    }
+
+    /// Rank Great Person classes, and the Great Person points a project earns,
+    /// by the victory the empire is actually racing rather than by a war it is
+    /// fighting. See `advanced/victory_lane.rs` — this is the one gene there
+    /// that overrides a Conquest plan, and the fires-check that chose that
+    /// scope is in `docs/VICTORY_GENES.md` §7. `Recovery` still keeps its own
+    /// strategy. Off everywhere by default; opt-in gene `lane-great-people`.
+    pub fn enable_lane_great_people(&mut self) {
+        self.lane_great_people = true;
+    }
+
+    /// The twin of `enable_lane_great_people`.
+    pub fn disable_lane_great_people(&mut self) {
+        self.lane_great_people = false;
+    }
+
+    /// Choose the policy cards for the victory the empire is actually racing
+    /// while its plan is still Expansion. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-policy-deck`.
+    pub fn enable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = true;
+    }
+
+    /// The twin of `enable_lane_policy_deck`.
+    pub fn disable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = false;
+    }
+
+    /// Run the Culture lane's Faith pass — the Naturalist that founds a
+    /// National Park, the touring Rock Bands — and size its reserve, for an
+    /// empire racing Culture whose plan has not named the lane. See
+    /// `advanced/victory_lane.rs`; `Recovery` still refuses. Off everywhere by
+    /// default; opt-in gene `lane-culture-spending`.
+    pub fn enable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = true;
+    }
+
+    /// The twin of `enable_lane_culture_spending`.
+    pub fn disable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = false;
+    }
+
+    /// Treat an empire racing Science as a Science seat throughout the space
+    /// race: the pad count, the city a launch project may claim and the city a
+    /// pad may be sited in all read the race rather than an explicitly
+    /// assigned target, and the pass opens at all. `score_horizon` still
+    /// refuses a race that cannot finish. See `advanced/victory_lane.rs`. Off
+    /// everywhere by default; opt-in gene `lane-space-race`.
+    pub fn enable_lane_space_race(&mut self) {
+        self.lane_space_race = true;
+    }
+
+    /// The twin of `enable_lane_space_race`.
+    pub fn disable_lane_space_race(&mut self) {
+        self.lane_space_race = false;
+    }
+
+    /// Price a scored competition's first place by the Diplomatic Victory
+    /// Points it pays, at the rate `strategic_wonder_value` already pays a
+    /// wonder's. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `competition-victory-points`.
+    pub fn enable_competition_victory_points(&mut self) {
+        self.competition_victory_points = true;
+    }
+
+    /// The twin of `enable_competition_victory_points`.
+    pub fn disable_competition_victory_points(&mut self) {
+        self.competition_victory_points = false;
+    }
+
+    /// Answer a World Congress resolution that is already decided with the one
+    /// free vote on its settled winner, taking the Diplomatic Victory Point
+    /// for an exact prediction and staking nothing.
+    ///
+    /// Its own field doc records the measurement and it has sat unused: **26
+    /// of 192 ballot decisions already settled, ~1.4 free points a seat a game
+    /// against the twenty a diplomatic victory needs**. Reachable as
+    /// `advanced_congress_banks_decided`; now also as a gene.
+    ///
+    /// ★★★ THIS AND THE TWO BELOW ARE NOT NEW BEHAVIOUR. They already existed,
+    /// off in production and reachable only as named `elo.rs` arms — which
+    /// means `gene_screen` could not see them and the genome instrument has
+    /// never priced any of them. `docs/VICTORY_GENES.md` §9 counts these
+    /// behaviours; these are the three the Diplomacy lane needs, and a toggle
+    /// pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
+    /// screenable.
+    pub fn enable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = true;
+    }
+
+    /// The twin of `enable_congress_banks_a_decided_vote`.
+    pub fn disable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = false;
+    }
+
+    /// Back a ballot aimed at the empire closest to a victory with everything
+    /// the treasury can spare — a losing vote is refunded in full, so an
+    /// opposition that fails costs no Favor. Gene `congress-counter-votes`.
+    pub fn enable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = true;
+    }
+
+    /// The twin of `enable_congress_counter_votes`.
+    pub fn disable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = false;
+    }
+
+    /// Value the infrastructure that produces city-state influence: the
+    /// Consulate and Chancery's per-turn influence becomes the envoys it can
+    /// produce before the turn limit, and a first Diplomatic Quarter sees
+    /// part of the Consulate stream it unlocks. Gene `envoy-infrastructure`.
+    pub fn enable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = true;
+    }
+
+    /// The twin of `enable_envoy_infrastructure`.
+    pub fn disable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = false;
+    }
+
+    /// Beeline Advanced Flight from three technologies out, raise an
+    /// Aerodrome and a bomber wing, and take the appointed city with the
+    /// cavalry behind it. See [`AdvancedAi::maintain_air_surge`] and
+    /// `advanced/air_surge.rs`. Off everywhere by default; opt-in gene
+    /// `air-surge`.
+    pub fn enable_air_surge(&mut self) {
+        self.air_surge = true;
+    }
+
+    /// The twin of `enable_air_surge`.
+    pub fn disable_air_surge(&mut self) {
+        self.air_surge = false;
     }
 }
 

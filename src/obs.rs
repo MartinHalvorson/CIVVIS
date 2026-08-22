@@ -2000,11 +2000,29 @@ mod tests {
                 "the lens toolbar is missing renderer {renderer}"
             );
         }
+        // Civilization VI puts the Settler lens on `4` and the whole set on
+        // `2` through `0`; this client's roster is that same set, so the keys
+        // are that game's too rather than a shorter list of its own.
         assert!(index.contains(
-            "{id: \"SettlerLens\", key: \"2\", spectator: true, run: () => setMapLens(\"settler\")},"
+            "{id: \"LensSettler\", key: \"4\", spectator: true, run: () => setMapLens(\"settler\")},"
         ));
-        assert!(!index.contains("id: \"LoyaltyLens\""));
-        assert!(!index.contains("id: \"PowerLens\""));
+        for (id, key, lens) in [
+            ("LensContinent", "2", "continent"),
+            ("LensAppeal", "3", "appeal"),
+            ("LensGovernment", "5", "government"),
+            ("LensPolitical", "6", "political"),
+            ("LensTourism", "7", "tourism"),
+            ("LensLoyalty", "8", "loyalty"),
+            ("LensEmpire", "9", "empire"),
+            ("LensPower", "0", "power"),
+        ] {
+            assert!(
+                index.contains(&format!(
+                    "{{id: \"{id}\", key: \"{key}\", spectator: true, run: () => setMapLens(\"{lens}\")}},"
+                )),
+                "the {lens} lens must answer Civ 6's own {key}"
+            );
+        }
         let start = index
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");

@@ -3519,6 +3519,94 @@ pub struct AdvancedAi {
     /// Engineer or Merchant is worth something. Gold purchases keep their
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
+
+    /// ★★★ THE CORPS THAT CANNOT ANSWER MORE THAN TWO CITIES. Outside an
+    /// offensive posture `religious_spending_with_reserve` sizes the
+    /// Missionary corps `(1 + defensive_targets.div_ceil(2)).min(2)`, which
+    /// is the same answer to three cities slipping as to one — and the screen
+    /// `inquisition_on_threat` was built from measured 46% of founders ending
+    /// with three or more cities under a rival faith, winning 3.0% against a
+    /// founder that held its cities at 52.5%. With this on the defensive corps
+    /// is one spreader per city actually under pressure, bounded at four so it
+    /// cannot eat the bank the Apostle needs. Off everywhere by default;
+    /// opt-in gene `religious-defence-scales`. See `advanced/religion.rs`.
+    pub religious_defence_scales: bool,
+
+    /// ★★★ THE ONLY FIELD HEAL A CORPS HAS, AND ONLY THE ATTACKER MAY BUY IT.
+    /// `guru_cap` is `offensive && apostles > 0`, so a founder whose whole
+    /// religious effort is defending its own cities can never buy the one unit
+    /// that heals religious units (+40 hit points to every adjacent unit of
+    /// its faith). It matters because `Game::do_spread` scales the pressure a
+    /// charge adds by `hp/100`: a damaged corps is a proportionally weaker
+    /// one, and without a Guru its only recovery is standing in its own Holy
+    /// Site's ring. With this on a founder under conversion pressure that
+    /// already fields a damaged religious unit may hold one Guru. Off
+    /// everywhere by default; opt-in gene `guru-heals-the-corps`.
+    pub guru_heals_the_corps: bool,
+
+    /// ★★★ A WOUNDED SPREADER SPENDS A WHOLE CHARGE FOR A FRACTION OF ONE.
+    /// `do_spread` adds `spread × hp/100` pressure and `end_turn` heals a unit
+    /// only when `!acted`, while `do_move` sets `acted` on every step and
+    /// `do_fortify` refuses a civilian — so a religious unit recovers only on
+    /// a turn its controller gives it nothing to do, and
+    /// `advanced_religious_step`'s last leg always walks it somewhere. The
+    /// corps therefore decays from its first theological exchange to its last
+    /// charge. With this on a spreader below 70 hit points that is standing in
+    /// its own Holy Site's heal ring, and is not needed in a city it could
+    /// convert this turn, holds instead. Off everywhere by default; opt-in
+    /// gene `religious-units-heal-first`.
+    pub religious_units_heal_first: bool,
+
+    /// ★★ THE CONGRESS LICENCE NOTHING HAS EVER USED. `do_condemn_heretic`
+    /// accepts a military unit's blow against an enemy religious unit when
+    /// `is_at_war(pid, target.owner)` **or** the World Congress has condemned
+    /// the target's religion (`world_religion`, option B) — and `condemn_step`
+    /// asks only the first, so a resolution this seat may itself have voted
+    /// for removes nothing. Interdiction is the cheap half of the counter:
+    /// measured 08-17 over 39 live games we field 590 religious units against
+    /// rivals' 12,708, and 41% of rival sightings already have one of our
+    /// military units within two tiles. Off everywhere by default; opt-in gene
+    /// `condemn-under-congress`.
+    pub condemn_under_congress: bool,
+
+    /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE.
+    /// `religious_offensive_posture` asks `active_campaign || faith >=
+    /// 2_000×speed`, and `active_campaign` means holding a spreader with a
+    /// charge left *this instant* — while `do_spread` removes a Missionary on
+    /// its last charge. So the turn a wave finishes, the posture drops:
+    /// `missionary_cap` six to two, `apostle_cap` two to zero, and a campaign
+    /// that was converting cities stops until the bank climbs back to two
+    /// thousand. With this on a seat that has already converted a foreign city
+    /// stays on the offensive while an unconverted foreign target remains; the
+    /// caller's reserve still decides what it can afford. Off everywhere by
+    /// default; opt-in gene `spread-campaign-persists`.
+    pub spread_campaign_persists: bool,
+
+    /// ★★★ THE DEFENCE CANNOT BE BOUGHT WHERE IT IS NEEDED. A religious unit
+    /// is purchasable only in a city that itself holds a Holy Site, so a
+    /// founder whose only Holy Site is its Holy City answers a city flipping
+    /// across the empire by buying at home and walking — and the walk is also
+    /// the turns that unit neither heals nor spreads. `founder_temple` fills
+    /// in the Shrine and Temple, but only where the district already stands.
+    /// With this on, a city under conversion pressure with no Holy Site claims
+    /// one. Narrower than the `d_holy` re-ranking #1491 reverted: it changes
+    /// no standing rank, only what a slipping city does about it. Off
+    /// everywhere by default; opt-in gene `holy-site-where-the-threat-is`.
+    pub holy_site_where_the_threat_is: bool,
+
+    /// ★★★ THE BELIEFS THAT MULTIPLY A CHARGE ARE SCORED AS "ANYTHING ELSE".
+    /// `advanced_religious_step`'s `EvangelizeBelief` table scores by victory
+    /// lane and gives everything it does not name 100 — the same number for
+    /// `scripture` (+25% to the pressure every charge adds) as for a worship
+    /// building the empire has no use for, so the tie falls to the name. The
+    /// five enhancers that multiply a corps (`holy_order`, `scripture`,
+    /// `itinerant_preachers`, `missionary_zeal`, `defender_of_the_faith`) are
+    /// never chosen *as* corps multipliers. With this on they outrank the lane
+    /// pick while the corps has a job — a city under pressure, or a campaign
+    /// in the field — and are inert otherwise. Same shape as the shipped
+    /// `apostle_promotion_by_role`. Off everywhere by default; opt-in gene
+    /// `enhancer-for-the-corps`.
+    pub enhancer_for_the_corps: bool,
     /// Buy the second and third Scout while the world's borders are still
     /// open, because after that a city-state cannot be met by land at all.
     ///
@@ -3631,6 +3719,25 @@ pub struct AdvancedAi {
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
 
+    /// Beeline Advanced Flight from three technologies out, raise an
+    /// Aerodrome and a bomber wing, and take the appointed city with the
+    /// cavalry behind it. The controller has no other route into the air
+    /// layer at all: `choose_war_plan` builds only melee packages and ranks
+    /// its unlocks by cheapest remaining research, so it can appoint the next
+    /// technology and never a chain. Off everywhere by default; opt-in gene
+    /// `air-surge`. See `advanced/air_surge.rs`.
+    pub air_surge: bool,
+    /// The one surge appointed and not yet finished.
+    air_surge_plan: Option<AirSurge>,
+    /// The package as of the last lifecycle pass, so production, diplomacy
+    /// and the journal all read one census rather than three.
+    air_surge_status: AirSurgeStatus,
+    /// What the surge did this game.
+    air_surge_census: AirSurgeCensus,
+    /// No surge is appointed before this turn. Set whenever one stands down;
+    /// see `AIR_SURGE_ABORT_COOLDOWN`.
+    air_surge_cooldown_until: u32,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -3653,6 +3760,331 @@ pub struct AdvancedAi {
     /// Gold at the lane's price by a margin. See `advanced/site_lookahead.rs`.
     /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
     pub priced_tile_purchase: bool,
+
+    /// Price the science economy on whether it can still REPAY, not on how
+    /// much of the game is left.
+    ///
+    /// ★★★★ EVERY SCIENCE TERM IN THIS CONTROLLER TAPERS TO ZERO, AND ITS
+    /// RIVALS DO NOT. `research_horizon` is `(max_turns - turn) / max_turns`,
+    /// so at turn 150 of 250 a Campus is priced at 0.40 and a missing Library
+    /// at 0.40 of its debt — with a hundred turns of compounding still to
+    /// come — while `(Culture, theater_square)` **850**, `government_plaza`
+    /// `first_copy` **420**, `(Diplomacy, diplomatic_quarter)` **360** and the
+    /// Monument's **+240** are flat constants that never decay at all. The
+    /// empire therefore cares about beakers exactly in the half of the game
+    /// where beakers matter least, and stops caring in the half where a tech
+    /// tier is the difference between Field Cannon and Spearmen.
+    ///
+    /// The shape the repair needs already exists and is already used by this
+    /// building's neighbours: `campus_payback_horizon` holds FULL value while
+    /// more than `RESEARCH_CAMPUS_PAYBACK` of the budget remains and ramps to
+    /// zero only inside that window, so a Campus begun at turn 245 still does
+    /// not outbid a defender. `DISTRICT_BUILDING_CHAIN_DEBT` and
+    /// `CULTURE_THEATER_COVERAGE` are both already scaled by it.
+    ///
+    /// ⚠ The Campus coverage term's own comment has said "**A PAYBACK
+    /// horizon, not a game-fraction one**" since #1095 — but the branch that
+    /// made it true was `campus_every_city`, and #2235 removed that gene with
+    /// the bottom of the ranking, which silently reverted the line under the
+    /// comment to `research_horizon`. `campus-every-city` was culled on a
+    /// **war-regime** screen (`--victories domination,score`, 4p, 299 of 300
+    /// games ending on the score tally at the clock), which is the one regime
+    /// a science treatment cannot be priced in. This gene is the repair
+    /// measured on its own, in the native six-player regime, under its own
+    /// name — not a resurrection of the culled composite, whose other half
+    /// (a Campus in *every* city regardless of coverage) is deliberately left
+    /// out.
+    ///
+    /// With this on, `RESEARCH_CAMPUS_COVERAGE` and `RESEARCH_BUILDING_DEBT`
+    /// use `campus_payback_horizon`. Nothing else moves: the citizen tilt, the
+    /// research-weight floor, the Culture twin and every rival term are
+    /// untouched, so the screen prices one sentence. Off everywhere by
+    /// default; opt-in gene `science-payback-horizon`.
+    pub science_payback_horizon: bool,
+
+    /// Price a Campus building at the science it will ACTUALLY earn, so the
+    /// research economy scales up as the multipliers arrive instead of down.
+    ///
+    /// ★★★★ THE ONE CARD THAT DOUBLES A LIBRARY IS INVISIBLE TO THE PRICE OF
+    /// A LIBRARY. `rationalism` is `campus_building_science_pct: 100` and
+    /// `natural_philosophy` doubles the Campus's adjacency; `strategic_policies`
+    /// already inserts both the moment the empire owns a Campus. But a
+    /// building's whole worth here is `yield_value(spec.yields) * 42` off the
+    /// **raw** spec — Library 2, University 4, Research Lab 3 — so the second
+    /// Library after Rationalism is bought at the same price as the first
+    /// before it, and the Research Lab's `powered_science` **5** (larger than
+    /// its own printed yield) is never counted at all.
+    ///
+    /// That is the whole late-game compounding loop, unpriced. And the model
+    /// pays the card in halves that arrive LATE and SEPARATELY: half where the
+    /// city has 15 Population, half where the Campus already earns 4 from its
+    /// own adjacency (`Game::city_yields`, matching Gathering Storm's
+    /// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4) — so the true
+    /// price of a Campus building RISES through the game exactly where
+    /// `research_horizon` sends it to zero. The measured funnel is the shape
+    /// this predicts: 50% Campus, 39% Library, **20% University, 3% Research
+    /// Lab**, thinning at precisely the tiers whose multiplied yield is
+    /// largest.
+    ///
+    /// With this on, a non-wonder Campus-family building is credited the extra
+    /// beakers it will earn in THIS city — the qualifying halves of
+    /// `campus_building_science_pct` applied to its own science, plus
+    /// `powered_science` where the city is powered — valued through
+    /// `yield_value` at the same 42 a point as its printed yield. A city that
+    /// qualifies for neither half and has no power is priced exactly as
+    /// before. Off everywhere by default; opt-in gene
+    /// `science-multiplier-payoff`.
+    pub science_multiplier_payoff: bool,
+
+    /// The research chain's later tiers are worth more than its first, so
+    /// they are owed more — not the same, and certainly not less.
+    ///
+    /// ★★★★ THE DEBT IS FLAT ACROSS TIERS WHOSE YIELDS ARE 2, 4 AND 3-PLUS-5.
+    /// `RESEARCH_BUILDING_DEBT` pays a Campus building **240** for standing in
+    /// a Campus that lacks it, and pays exactly the same 240 whether the
+    /// missing building is the Library (printed **2** Science), the University
+    /// (**4**) or the Research Lab (**3**, plus `powered_science` **5** in a
+    /// powered city — more than doubling it, and more than any other Campus
+    /// building earns). The empire is told the three rungs are worth the same,
+    /// and the funnel measured over 19 live runs is what that produces:
+    /// 50% Campus, 39% Library, **20% University, 3% Research Lab**. Coverage
+    /// collapses precisely as the yields grow.
+    ///
+    /// ⚠ THIS IS NOT `DISTRICT_BUILDING_CHAIN_TIER_DECAY`, and the difference
+    /// matters. A first draft of this gene exempted the Campus family from
+    /// that decay — and was a **strict no-op in every screened game**, because
+    /// `chain_family_held` requires `district_building_chain`, which is
+    /// `default:off`, so `--baseline best` never opens the branch. It read
+    /// exactly +0.0 pp on wins across two windows and 252 seat-pairs, which is
+    /// what an inert gene reads. `RESEARCH_BUILDING_DEBT` is the debt that is
+    /// actually live here: it is gated only on `research_economy`, which the
+    /// repairs universe, the economy bundle and the live bridge all turn on.
+    ///
+    /// With this on, that debt is scaled by the building's own Science against
+    /// the chain's first rung — the Library's printed 2, pinned to the ruleset
+    /// by a test — counting `powered_science` where the city is powered. The
+    /// Library is unchanged at 1.0, the University is owed twice it, and a
+    /// Research Lab in a powered city four times. Floored at the first rung so
+    /// no Campus building is ever owed less than a Library, and capped so a
+    /// modded yield cannot run away with the queue. Off everywhere by default;
+    /// opt-in gene `research-tier-premium`.
+    pub research_tier_premium: bool,
+
+    /// Finish the research cities the empire has before it buys another.
+    ///
+    /// ★★★★★ MEASURED, AND THE OPPOSITE OF WHAT THE COVERAGE TERM ASSUMES.
+    /// A six-arm census over the screen's own profile, conditioned to reach
+    /// the clock (`advanced/science_funnel_census.rs`), counted the whole
+    /// chain at the end of three games an arm. The control held **17 Campuses
+    /// and 14 Research Labs**. `science-payback-horizon`, which holds
+    /// `RESEARCH_CAMPUS_COVERAGE` at full price late instead of tapering it,
+    /// held **19 Campuses and 11 Labs**; all four science genes together held
+    /// **21 Campuses and 9 Labs**. Three points, one gradient — every extra
+    /// Campus district bought late came out of a Research Lab that then never
+    /// got built, and terminal Science ran 567.9, 429.6, 523.0 while the
+    /// district count climbed.
+    ///
+    /// The mechanism is production, not pricing. A Campus is a district whose
+    /// cost escalates with the era; a Research Lab is **440** and carries
+    /// `powered_science` **5**, the largest yield on the Campus. A city that
+    /// starts another Campus at turn 190 spends the turns that would have
+    /// finished the ones already standing, and a Campus with no Lab is the
+    /// expensive half of a research city bought over again.
+    ///
+    /// The coverage term cannot see this. It asks only whether THIS city has a
+    /// Campus, never whether the Campuses already standing are finished — so
+    /// the harder the empire is told to want research late, which is what
+    /// every other gene here does, the more unfinished research cities it
+    /// buys. That is why this gene exists beside them rather than instead of
+    /// them, and why the census will price the combinations and not only the
+    /// singles.
+    ///
+    /// ⚠ MEASURED AND UNRESOLVED, WITH THE FLOOR THE LIKELY REASON. Over four
+    /// conditioned census games this gene was **byte-identical to control** on
+    /// every column — cities, the whole chain, techs, Science to a decimal,
+    /// score — and so was the four-gene bundle with and without it. It is not
+    /// structurally inert: a probe that zeroes `RESEARCH_CAMPUS_COVERAGE`
+    /// outright moves the same seed from 4 Campuses to 3 and 30 techs to 29,
+    /// so the term this scales is read and does decide things. And the brake
+    /// itself bites: over 160 turns of one game it was under 1.0 on **70
+    /// turns** and reached the floor. What it does not do at
+    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` = 0.25 is flip a decision on those
+    /// four seeds. Either the floor is too high to matter or four seeds cannot
+    /// see it; both stay open, and the gene ships off until a screen says.
+    ///
+    /// With this on, `RESEARCH_CAMPUS_COVERAGE` is scaled by
+    /// `research_chain_completion` — the share of Campus buildings the
+    /// standing Campuses could produce now and do have. An empire with no
+    /// Campus, or with every Campus finished, is affected in no way at all;
+    /// one whose Campuses stand half-empty pays half, floored at
+    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` so a genuine research hole can
+    /// still be filled. Off everywhere by default; opt-in gene
+    /// `campus-finishes-first`.
+    pub campus_finishes_first: bool,
+
+    /// A power plant is worth the yields it switches on, and the largest of
+    /// them is the Research Lab's.
+    ///
+    /// ★★★★★ THE BIGGEST SINGLE SCIENCE YIELD ON THE CAMPUS IS OFF BY DEFAULT
+    /// AND NOTHING BUYS THE SWITCH. `research_lab` prints **3** Science and
+    /// carries `powered_science` **5** — more than any other Campus building
+    /// earns in total — and `Game::city_yields` pays that 5 only while
+    /// `city_is_powered`. Power comes from `power_generated` on
+    /// `coal_power_plant` (4), `oil_power_plant` (4) and
+    /// `nuclear_power_plant` (16), and **the controller prices none of them
+    /// for it**: the single power term in this file is a project's
+    /// `full_power_while_active`, and a plant's own `power_generated` appears
+    /// nowhere in any valuation. So the empire builds the 440-production
+    /// laboratory and leaves 5 of its 8 beakers switched off.
+    ///
+    /// The same switch runs the Stock Exchange's `powered_gold` **7**, the
+    /// Electronics Factory's `powered_production` **5** and the Broadcast
+    /// Centre's `powered_culture` **4**, so this is not a science-only lever —
+    /// but a Research Lab is the largest of them and the era it lands in is
+    /// the one this bundle is about.
+    ///
+    /// ⚠⚠ MEASURED AND NEARLY IRRELEVANT — THE PREMISE IS RIGHT AND THE
+    /// OPPORTUNITY IS NOT THERE. Over twelve conditioned census games this gene
+    /// was **byte-identical to control** on every column. The reason is not
+    /// the code: `science_funnel_census`'s power probe counts, in one game,
+    /// **10 cities, 4 with an Industrial Zone, 4 drawing power, 3 ALREADY
+    /// HOLDING A PLANT and exactly ONE left dark.** The empire builds its power
+    /// plants for reasons that have nothing to do with beakers — a Factory and
+    /// a plant are production — so the Lab's `powered_science` is switched on
+    /// nearly everywhere already and there is almost nothing left for this to
+    /// buy. Kept, off, because the reasoning is sound and a regime that
+    /// industrialises less would face the choice; **do not spend games on it
+    /// without checking the probe first.**
+    ///
+    /// With this on, a building that generates power is credited the
+    /// `powered_*` yields the buildings THIS CITY ALREADY HOLDS would begin to
+    /// pay, valued through `yield_value` at the same 42 a point as any other
+    /// yield. It is credited only where it actually flips the switch: a city
+    /// already powered is paid nothing (the yields are on), and neither is one
+    /// this plant leaves short of its demand (they stay off). A city holding
+    /// nothing powered is unaffected, which is every city before the Industrial
+    /// era. Off everywhere by default; opt-in gene `power-the-laboratory`.
+    pub power_the_laboratory: bool,
+
+    /// Site the Campus where its adjacency clears the multiplier's threshold,
+    /// because crossing it doubles every Campus building in that city.
+    ///
+    /// ★★★★★ RATIONALISM IS SLOTTED AND PAYS ALMOST NOTHING. `city_yields`
+    /// pays `campus_building_science_pct` in **two halves**, and the second is
+    /// gated on the Campus earning **4 Science from its own adjacency**, read
+    /// BEFORE Natural Philosophy or any other card doubles it. A census probe
+    /// at the end of a conditioned game counts the empire's own gates:
+    ///
+    ///     10 cities · 9 Campuses · rationalism SLOTTED
+    ///     pop >= 15:  3 of 9      adjacency >= 4:  0 of 9      both:  0
+    ///
+    /// **Not one Campus in the empire clears the adjacency half**, so a policy
+    /// slot is spent on a card returning a fraction of its rating.
+    ///
+    /// ⚠⚠⚠ AND THE GENE CANNOT FIX IT: THERE IS NO SUCH PLOT. Measured 0 of 9
+    /// with the gene and without, and the reason is not the chooser. Two
+    /// successive surveys of the "available" plots were both wrong, in
+    /// different ways, and the corrected one is flat:
+    ///
+    /// 1. Surveying free plots at TURN 250 said "4 of 10 cities hold a plot
+    ///    worth 4.0". District adjacency counts NEIGHBOURING DISTRICTS, so the
+    ///    empire's own later building had made those plots good. A survey of
+    ///    the end state is not a survey of the choice.
+    /// 2. Surveying at the moment each Campus was sited, but over every OWNED
+    ///    TILE, said "2 of 10". A Campus cannot stand on a mountain — and a
+    ///    tile ringed by mountains is exactly where the adjacency arithmetic
+    ///    peaks, so that survey was scoring the tiles no Campus can ever
+    ///    occupy.
+    ///
+    /// Surveying `district_sites` — the engine's own answer to where a Campus
+    /// could go — at the moment of siting gives the truth: the best LEGAL plot
+    /// was `[2.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, -, -]`, **never above 2**,
+    /// and `producible_items` offered exactly those. The chooser did not
+    /// decline a better plot; **no better plot existed.** The card's second
+    /// half is unreachable here, not mispriced.
+    ///
+    /// ⭐ So the lever for that half is not district pricing at all — it is
+    /// CITY SITING, where `district-lookahead-settle` already scores a
+    /// settlement by the districts its plan would build. A Campus reaches
+    /// adjacency 4 by founding beside mountains, and that decision is made
+    /// long before this term is consulted.
+    ///
+    /// Kept, off, because the term is correct where it is read and a map with
+    /// mountains in the work radius would exercise it — but on the screen's own
+    /// profile it has nothing to buy, and **it must not be promoted on this
+    /// regime's evidence.**
+    ///
+    /// With this on, a Campus plot whose RAW Science adjacency reaches the
+    /// threshold is credited the beakers the half would pay on the Campus
+    /// chain, over the payback horizon so a Campus sited at turn 240 is not
+    /// bought for a multiplier it will never collect. A plot below the
+    /// threshold is priced exactly as before, and so is every other district.
+    /// Off everywhere by default; opt-in gene `campus-adjacency-threshold`.
+    pub campus_adjacency_threshold: bool,
+
+    /// The citizen half of the taper: an empire that has built the research
+    /// economy should still be WORKING it in the half of the game the tech
+    /// tree decides.
+    ///
+    /// ★★★ THE OTHER TWO SCIENCE TERMS DECAY TOO, AND THEY DECIDE WHO WORKS
+    /// WHAT. `RESEARCH_CITIZEN_TILT` (the standing tilt toward beakers in
+    /// every lane's `lane_emphasis`) and `refresh_research_weight` (the floor
+    /// under a beaker's price, sliding `RESEARCH_FLOOR_EARLY` **3.0** to
+    /// `RESEARCH_FLOOR_LATE` **1.0**) are both multiplied by
+    /// `research_horizon`. So at turn 150 of 250 a beaker is floored at
+    /// **1.8** and the citizen tilt is at 40%, and by turn 220 they are 1.24
+    /// and 12% — in the era where a tech tier is the difference between a
+    /// Field Cannon and a Spearman, and where the Campus buildings the other
+    /// genes fought for are finally standing. The empire builds the
+    /// laboratory and then declines to staff it.
+    ///
+    /// This is a separate claim from `science_payback_horizon` and separately
+    /// screened: that gene moves what the empire BUYS, this one moves what it
+    /// then WORKS and what a beaker is worth to every other price. Either can
+    /// be right without the other.
+    ///
+    /// With this on, both use `campus_payback_horizon` — full value while the
+    /// research still has time to pay, ramping down only inside the payback
+    /// window, so the last few turns still do not bid citizens away from a
+    /// closing game. Off everywhere by default; opt-in gene
+    /// `research-floor-holds`.
+    pub research_floor_holds: bool,
+    /// The six victory-lane genes. Each substitutes the victory the empire is
+    /// actually racing (`victory_focus`) for the plan's own strategy at ONE
+    /// decider, and only while the plan is `Expansion` — a posture that
+    /// carries no victory content, and which a targeted seat holds for about
+    /// a fifth of the game and an adaptive one for 15%. All off everywhere by
+    /// default. See `advanced/victory_lane.rs` for the census that motivates
+    /// them and `docs/VICTORY_GENES.md` for the lane-by-lane coverage table.
+    ///
+    /// `lane-congress-ballot`: the World Congress ballot is **scored** for the
+    /// raced lane — which outcome and target this seat names.
+    pub lane_congress_ballot: bool,
+    /// `lane-congress-favor`: the **stake** behind that ballot is decided by
+    /// the raced lane. Split from the row above after the lane's own regime
+    /// flagged the composite at −0.61 pp of score share (z −2.33): naming the
+    /// right outcome is free, buying it empties a treasury that a winning
+    /// ballot does not refund. See `advanced/victory_lane.rs`.
+    pub lane_congress_favor: bool,
+    /// `lane-great-people`: Great Person patronage ranks classes by the
+    /// raced lane.
+    pub lane_great_people: bool,
+    /// `lane-policy-deck`: the policy cards are chosen for the raced lane.
+    pub lane_policy_deck: bool,
+    /// `lane-culture-spending`: the Culture Faith pass — the Naturalist that
+    /// founds a National Park, the touring Rock Bands — and the Faith reserve
+    /// that keeps them affordable read the raced lane.
+    pub lane_culture_spending: bool,
+    /// `lane-space-race`: the Spaceport and launch pass opens for an empire
+    /// racing Science that is still settling. `score_horizon` still refuses a
+    /// race that cannot finish.
+    pub lane_space_race: bool,
+    /// `competition-victory-points`: a scored competition's first place is
+    /// priced by the Diplomatic Victory Points it pays, at the same rate
+    /// `strategic_wonder_value` pays a wonder's. Thirteen of the twenty a
+    /// diplomatic victory needs come from the Congress and its competitions,
+    /// and none of them were priced.
+    pub competition_victory_points: bool,
 
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
@@ -3841,6 +4273,17 @@ pub struct AdvancedAi {
     /// nothing and reproduces the pre-`research_economy` ordering exactly, so a
     /// direct unit-test call to `yield_value` is unaffected.
     research_weight: f64,
+    /// How complete the empire's standing Campuses are, refreshed once per
+    /// decision beside `research_weight`. 1.0 with no Campus and 1.0 with
+    /// every Campus finished, so `campus_finishes_first` is a strict no-op in
+    /// both. See that flag.
+    research_chain_completion: f64,
+    /// Half the best `campus_building_science_pct` the RULESET offers, and the
+    /// printed Science of the whole Campus chain. Both are ruleset constants,
+    /// cached once per decision beside `research_weight` rather than rescanned
+    /// per candidate plot. See `campus_adjacency_threshold`.
+    campus_multiplier_half: f64,
+    campus_chain_science: f64,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -3906,6 +4349,26 @@ const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
 /// which pays the same shape only while the empire is fighting.
 const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+/// The Science printed by the first rung of the Campus chain — the Library's
+/// **2** — which `research_tier_premium` prices the later rungs against. A
+/// constant rather than a scan of the ruleset because `production_value` runs
+/// per candidate per city per turn and `docs/` measures this loop work-bound;
+/// `research_tier_premium_is_priced_against_the_shipped_library` pins it to
+/// `Rules::embedded()` so a ruleset change cannot leave it stale.
+/// The least `campus_finishes_first` will scale the Campus coverage term to,
+/// however empty the standing Campuses are. A city with no Campus at all is a
+/// real research hole and the gene is a brake on spreading, not a ban on it.
+const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
+/// The Campus adjacency `city_yields` gates half of
+/// `campus_building_science_pct` on, matching Gathering Storm's
+/// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4 and pinned to the
+/// engine by a test. See `campus_adjacency_threshold`.
+const CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD: f64 = 4.0;
+const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
+/// The most any one rung may be owed against the first, so a modded or
+/// runaway yield cannot take over the queue. The shipped ceiling is the
+/// powered Research Lab at exactly 4.0. See `research_tier_premium`.
+const RESEARCH_TIER_PREMIUM_CAP: f64 = 4.0;
 /// A Theater Square standing without the building that pays for it, on the same
 /// shape and one rung under the research debt — the same reasoning as
 /// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
@@ -4077,10 +4540,32 @@ mod opportunistic_war;
 /// on a shooter, or leaving its envelope. See `advanced/contact_posture.rs`.
 mod contact_posture;
 
+/// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
+/// bomber wing, and the cavalry that takes the city the wing empties. See
+/// `advanced/air_surge.rs`.
+mod air_surge;
+use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
+
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
+
+/// The religious corps: the four opt-in genes for what a founder buys with
+/// Faith once its cities start slipping, and what it does with the units
+/// afterwards. See `advanced/religion.rs`.
+mod religion;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
+
+/// Six opt-in genes for the victory lanes: the race the empire is actually
+/// in, reaching the deciders that read the expansion posture instead. See
+/// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
+mod victory_lane;
+
+/// Victory lanes are target contracts: their beelines and campaign objectives
+/// stay attached to the condition that can actually end (or deny) the game.
+/// Keeping that routing out of the controller avoids growing another shared
+/// treatment/flag anchor. See `advanced/victory_heuristics.rs`.
+mod victory_heuristics;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
@@ -4699,13 +5184,39 @@ impl AdvancedAi {
             theology_for_founders: false,
             district_lookahead_settle: false,
             priced_tile_purchase: false,
+            science_payback_horizon: false,
+            science_multiplier_payoff: false,
+            research_tier_premium: false,
+            campus_finishes_first: false,
+            power_the_laboratory: false,
+            campus_adjacency_threshold: false,
+            research_floor_holds: false,
+            lane_congress_ballot: false,
+            lane_congress_favor: false,
+            lane_great_people: false,
+            lane_policy_deck: false,
+            lane_culture_spending: false,
+            lane_space_race: false,
+            competition_victory_points: false,
             idle_faith_patronage: false,
+            religious_defence_scales: false,
+            guru_heals_the_corps: false,
+            religious_units_heal_first: false,
+            condemn_under_congress: false,
+            spread_campaign_persists: false,
+            holy_site_where_the_threat_is: false,
+            enhancer_for_the_corps: false,
             early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
             contact_posture: false,
             raid_pillage_prizes: false,
             raid_war: None,
+            air_surge: false,
+            air_surge_plan: None,
+            air_surge_status: AirSurgeStatus::default(),
+            air_surge_census: AirSurgeCensus::default(),
+            air_surge_cooldown_until: 0,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -4721,6 +5232,9 @@ impl AdvancedAi {
             research_economy: false,
             housing_research: false,
             research_weight: 0.0,
+            research_chain_completion: 1.0,
+            campus_multiplier_half: 0.0,
+            campus_chain_science: 0.0,
         }
     }
 
@@ -5929,6 +6443,11 @@ impl AdvancedAi {
     fn may_form_war_plan(&self, g: &Game, pid: usize) -> bool {
         if !self.timed_war
             || self.war_plan.is_some()
+            // Two appointed packages would bid for the same idle queues and
+            // the same declaration. Whichever was appointed first keeps the
+            // empire. `air_surge_active` is false whenever that gene is off,
+            // so the measured timed-war lane is untouched.
+            || self.air_surge_active()
             || (self.selective_timed_war
                 && self.selective_timed_war_target().is_none())
             || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
@@ -6594,7 +7113,8 @@ impl AdvancedAi {
         // marginally better yield mix does not.
         let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
         let research_tilt = if self.research_economy {
-            RESEARCH_CITIZEN_TILT * Self::research_horizon(g)
+            // See `research_floor_holds`: the citizen half of the same taper.
+            RESEARCH_CITIZEN_TILT * self.research_staffing_horizon(g)
         } else {
             0.0
         };
@@ -7335,10 +7855,8 @@ impl AdvancedAi {
     /// raw signal in [`Self::victory_denial`] for pressure reporting and
     /// non-military counters.
     fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        self.victory_denial(g, pid).filter(|(rival, counter)| {
-            self.conquest_denial_actionable(g, pid, *rival, *counter)
-                && self.culture_denial_actionable(g, pid, *rival, *counter)
-        })
+        let culture_pressures = self.rival_culture_pressures(g);
+        self.actionable_victory_denial_with_culture_pressures(g, pid, &culture_pressures)
     }
 
     fn victory_denial_with_culture_pressures(
@@ -7348,87 +7866,15 @@ impl AdvancedAi {
         culture_pressures: &BTreeMap<usize, i32>,
     ) -> Option<(usize, GrandStrategy)> {
         let own_progress = self.victory_focus(g, pid).progress;
-        let (rival, pressure) = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
-            })
-            .map(|player| {
-                (
-                    player.id,
-                    self.rival_victory_pressure_with_culture(
-                        g,
-                        player.id,
-                        culture_pressures.get(&player.id).copied(),
-                    ),
-                )
-            })
-            .max_by(|left, right| {
-                left.1
-                    .progress
-                    .cmp(&right.1.progress)
-                    .then_with(|| right.0.cmp(&left.0))
-            })?;
-        let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
-        // Religious progress advances in whole-civilization jumps, and a
-        // defender needs time to produce and route religious counters. Start
-        // reacting with two holdouts left when the rival also leads our own
-        // race, then treat one remaining holdout as an unconditional match
-        // point: a slower "close" victory must not suppress that interrupt.
-        if pressure.strategy == GrandStrategy::Religion {
-            let living = g
-                .players
-                .iter()
-                .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
-                .count()
-                .max(1) as i32;
-            let match_point = 100 * living.saturating_sub(1) / living;
-            let early_warning = (100 * living.saturating_sub(2) / living)
-                .max(50)
-                .min(match_point);
-            if pressure.progress < early_warning
-                || (pressure.progress < match_point
-                    && !urgent
-                    && pressure.progress < own_progress + 15)
-            {
-                return None;
-            }
-        } else if pressure.progress < 78 || (!urgent && pressure.progress < own_progress + 15) {
-            return None;
-        }
-        // Four of the seven races answer themselves — a culture threat is met
-        // with culture, a religious one with religion. The two that answer with
-        // an army are Science and Expansion, and those are the two the
-        // recorded large-profile census argues against: at 60x38 and 74x46 an
-        // empire fighting one or two rivals wins 4.4% and 10.7% of the time
-        // against a 16.7% base rate, and the shipped response already costs terminal
-        // score (44 maps to 65, p=0.055) without buying a win. Racing the
-        // leader in their own lane keeps the reaction and drops the war.
-        // The decomposition arm: react to the other four races unchanged and
-        // to these two not at all, so the effect of dropping the war can be
-        // read apart from the effect of adopting the lane.
-        if self.counter_stand_down
-            && matches!(
-                pressure.strategy,
-                GrandStrategy::Science | GrandStrategy::Expansion
-            )
-        {
-            return None;
-        }
-        let counter = match pressure.strategy {
-            GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
-            GrandStrategy::Science => GrandStrategy::Conquest,
-            GrandStrategy::Culture => GrandStrategy::Culture,
-            GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
-            GrandStrategy::Religion => GrandStrategy::Conquest,
-            GrandStrategy::Diplomacy => GrandStrategy::Diplomacy,
-            GrandStrategy::Conquest => GrandStrategy::Recovery,
-            GrandStrategy::Expansion if self.counter_in_lane => GrandStrategy::Expansion,
-            GrandStrategy::Expansion => GrandStrategy::Conquest,
-            GrandStrategy::Recovery => GrandStrategy::Recovery,
-        };
-        Some((rival, counter))
+        // Keep the raw report tied to the single greatest clock. Congress and
+        // in-lane counters need that public warning even when no army can act
+        // on it; the separate actionable pass falls through to lower threats.
+        let (rival, pressure) = self
+            .ranked_rival_victory_pressures(g, pid, culture_pressures)
+            .into_iter()
+            .next()?;
+        self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)
+            .map(|counter| (rival, counter))
     }
 
     /// Record each living rival's stock-lane pressure for this turn, so the
@@ -7765,22 +8211,10 @@ impl AdvancedAi {
         // Target selection needs the same public culture-race totals as
         // victory denial. Build them once for the assessment instead of
         // repeating a whole-world tourism scan for every sort comparison.
-        let active_victory_target = self.active_victory_target(g);
         let rival_culture_pressures = self.rival_culture_pressures(g);
-        let denial = if active_victory_target.is_some() && !self.deny_while_targeted {
-            None
-        } else {
-            self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
-                .filter(|(rival, _)| {
-                    // The same match-point bar as `victory_denial`: an
-                    // assigned lane yields only to a rival about to win.
-                    active_victory_target.is_none() || self.urgent_victory_threat(g, *rival)
-                })
-        };
-        let actionable_denial = denial.filter(|(rival, counter)| {
-            self.conquest_denial_actionable(g, pid, *rival, *counter)
-                && self.culture_denial_actionable(g, pid, *rival, *counter)
-        });
+        let active_victory_target = self.active_victory_target(g);
+        let actionable_denial =
+            self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -7969,6 +8403,7 @@ impl AdvancedAi {
             g.players.get(*target).map(|player| player.alive).unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
+        let domination_capital = self.domination_capital_target(g, pid);
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -8050,6 +8485,18 @@ impl AdvancedAi {
                 })
                 .map(|(rival, _)| rival)
         };
+        let suppression_target_city = actionable_denial
+            .filter(|(rival, counter)| {
+                *counter == GrandStrategy::Conquest && target_player == Some(*rival)
+            })
+            .and_then(|(rival, _)| {
+                let pressure = self.rival_victory_pressure_with_culture(
+                    g,
+                    rival,
+                    rival_culture_pressures.get(&rival).copied(),
+                );
+                self.victory_suppression_city(g, pid, rival, pressure)
+            });
         let ranked_target_city = emergency_objective
             .as_ref()
             .map(|emergency| emergency.city)
@@ -8061,6 +8508,12 @@ impl AdvancedAi {
             // whichever border town scored best.
             .or_else(|| {
                 rush_victim.filter(|(target, _)| target_player == Some(*target))
+                    .map(|(_, capital)| capital)
+            })
+            .or(suppression_target_city)
+            .or_else(|| {
+                domination_capital
+                    .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {
@@ -8897,16 +9350,18 @@ impl AdvancedAi {
             return 0.0;
         }
         let range = spec.regional_range;
-        let own: Vec<&crate::game::City> =
-            g.cities.values().filter(|other| other.owner == pid).collect();
+        let own: Vec<&crate::game::City> = g
+            .cities
+            .values()
+            .filter(|other| other.owner == pid)
+            .collect();
         own.iter()
             .filter(|other| other.id != city.id && g.wdist(city.pos, other.pos) <= range)
             .filter(|other| {
                 // Non-stacking: a city a standing copy already reaches gains
                 // nothing from a second one.
                 !own.iter().any(|source| {
-                    source.buildings.contains(building)
-                        && g.wdist(source.pos, other.pos) <= range
+                    source.buildings.contains(building) && g.wdist(source.pos, other.pos) <= range
                 })
             })
             .map(|other| {
@@ -8925,6 +9380,139 @@ impl AdvancedAi {
     /// `RESEARCH_CAMPUS_PAYBACK` of the budget remains, ramping to zero inside
     /// that window. See the constant for why a game-fraction horizon was the
     /// wrong shape for a district that repays in a few dozen turns.
+    /// The beakers a Campus-family building will earn in this city ON TOP of
+    /// its printed yield. See `science_multiplier_payoff`.
+    ///
+    /// Mirrors `Game::city_yields` rather than approximating it: the Campus
+    /// multiplier is paid in HALVES — half at 15 Population, half where the
+    /// Campus already earns 4 Science from its own adjacency, read before the
+    /// card doubles it — and `powered_science` is a flat addition a powered
+    /// city makes whatever the cards say. A city qualifying for neither half
+    /// with no power returns 0.0, which is the pre-gene price exactly.
+    fn campus_multiplier_science(
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> f64 {
+        let campus = crate::name!("campus");
+        if spec.district.map(|d| g.district_family(d)) != Some(campus) {
+            return 0.0;
+        }
+        let half = g.policy_effect(city.owner, "campus_building_science_pct") / 2.0;
+        let mut pct = 0.0;
+        if city.pop >= 15 {
+            pct += half;
+        }
+        let campus_adjacency_science = g
+            .city_district_family_position(city, campus)
+            .map(|position| {
+                let placed = g.map.tiles[&position].district.unwrap_or(campus);
+                let mut adjacency = Yields::default();
+                for source in g.district_adjacency_sources(placed, position) {
+                    if source.source != "adjacency_bonus" {
+                        adjacency.add(source.yields);
+                    }
+                }
+                adjacency.science
+            })
+            .unwrap_or(0.0);
+        if campus_adjacency_science >= 4.0 {
+            pct += half;
+        }
+        let powered = if g.city_is_powered(city) {
+            spec.effects.get("powered_science").copied().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        spec.yields.science * pct / 100.0 + powered
+    }
+
+    /// Which horizon the science economy is priced on. See
+    /// `science_payback_horizon`: `research_horizon` is a fraction of the
+    /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
+    /// asks the question the investment actually poses — is there still time
+    /// to repay — and is what the Culture twin and the chain debt already use.
+    /// The yields a power plant would switch on in this city. See
+    /// `power_the_laboratory`; 0.0 wherever the switch does not flip.
+    fn power_switched_on(
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> Yields {
+        let generated = spec.effects.get("power_generated").copied().unwrap_or(0.0);
+        if generated <= 0.0 {
+            return Yields::default();
+        }
+        let demand = g.city_power_demand(city);
+        let supply = g.city_power_supply(city);
+        // Already powered: the yields are on and this plant adds none of them.
+        // Still short after it: they stay off and it has bought nothing here.
+        // `city_is_powered` treats zero demand as powered, so a city with
+        // nothing to run also lands in the first case, correctly.
+        if supply + 1e-9 >= demand || supply + generated + 1e-9 < demand {
+            return Yields::default();
+        }
+        let mut switched = Yields::default();
+        for held in &city.buildings {
+            let Some(building) = g.rules.buildings.get_interned(*held) else {
+                continue;
+            };
+            // A regional building is powered by its own city, not this one —
+            // the same test `Game::city_yields` applies before paying them.
+            if building.regional_range > 0 {
+                continue;
+            }
+            let of = |key: &str| building.effects.get(key).copied().unwrap_or(0.0);
+            switched.food += of("powered_food");
+            switched.production += of("powered_production");
+            switched.gold += of("powered_gold");
+            switched.science += of("powered_science");
+            switched.culture += of("powered_culture");
+            switched.faith += of("powered_faith");
+        }
+        switched
+    }
+
+    /// How much more this Campus building is owed than the chain's first
+    /// rung. See `research_tier_premium`; 1.0 when the gene is off, so the
+    /// shipped flat debt is recovered exactly.
+    fn research_tier_weight(
+        &self,
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> f64 {
+        if !self.research_tier_premium {
+            return 1.0;
+        }
+        let powered = if g.city_is_powered(city) {
+            spec.effects.get("powered_science").copied().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        ((spec.yields.science + powered) / RESEARCH_CHAIN_FIRST_RUNG_SCIENCE)
+            .clamp(1.0, RESEARCH_TIER_PREMIUM_CAP)
+    }
+
+    /// Which horizon the citizens and the beaker floor are priced on. See
+    /// `research_floor_holds`; the twin of `research_payback`, kept separate
+    /// because the two genes are separate claims.
+    fn research_staffing_horizon(&self, g: &Game) -> f64 {
+        if self.research_floor_holds {
+            Self::campus_payback_horizon(g)
+        } else {
+            Self::research_horizon(g)
+        }
+    }
+
+    fn research_payback(&self, g: &Game) -> f64 {
+        if self.science_payback_horizon {
+            Self::campus_payback_horizon(g)
+        } else {
+            Self::research_horizon(g)
+        }
+    }
+
     fn campus_payback_horizon(g: &Game) -> f64 {
         let budget = g.max_turns.max(1) as f64;
         let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
@@ -8973,9 +9561,104 @@ impl AdvancedAi {
 
     /// Set this turn's science floor. Called once per decision, before any
     /// pricing runs.
+    /// The share of Campus buildings the empire's standing Campuses could
+    /// produce now and do have. See `campus_finishes_first`.
+    ///
+    /// Computed once per decision rather than inside `production_value`,
+    /// which runs per candidate per city per turn on a loop `docs/` measures
+    /// work-bound. Deliberately NOT parameterised on the acting city: the
+    /// question is whether the EMPIRE has unfinished research cities, and the
+    /// city being priced is by construction one that has no Campus at all.
+    /// The two ruleset constants `campus_adjacency_threshold` prices with.
+    /// Cached because `production_value` runs per candidate per city per turn
+    /// and `docs/` measures that loop work-bound; neither depends on the board.
+    fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
+        if !self.campus_adjacency_threshold {
+            self.campus_multiplier_half = 0.0;
+            self.campus_chain_science = 0.0;
+            return;
+        }
+        let campus = crate::name!("campus");
+        self.campus_multiplier_half = g
+            .rules
+            .policies
+            .values()
+            .filter_map(|policy| policy.effects.get("campus_building_science_pct").copied())
+            .fold(0.0_f64, f64::max)
+            / 2.0;
+        self.campus_chain_science = g
+            .rules
+            .buildings
+            .values()
+            .filter(|spec| {
+                !spec.wonder && spec.district.map(|d| g.district_family(d)) == Some(campus)
+            })
+            .map(|spec| spec.yields.science)
+            .sum();
+    }
+
+    /// The extra beakers a Campus plot at or above the multiplier's adjacency
+    /// threshold will earn this city. See `campus_adjacency_threshold`.
+    fn campus_threshold_bonus(&self, g: &Game, family: Name, pos: Pos) -> f64 {
+        if !self.campus_adjacency_threshold
+            || family != crate::name!("campus")
+            || self.campus_multiplier_half <= 0.0
+        {
+            return 0.0;
+        }
+        // ⚠ RAW adjacency, exactly as `Game::city_yields` reads it for this
+        // clause: `adjacency_bonus` sources are the percentage cards, and the
+        // threshold is tested BEFORE they double anything. Reading the doubled
+        // number would credit a plot the host will not pay for.
+        let mut raw = Yields::default();
+        for source in g.district_adjacency_sources(crate::name!("campus"), pos) {
+            if source.source != "adjacency_bonus" {
+                raw.add(source.yields);
+            }
+        }
+        if raw.science < CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD {
+            return 0.0;
+        }
+        self.campus_chain_science * self.campus_multiplier_half / 100.0
+    }
+
+    fn refresh_research_chain_completion(&mut self, g: &Game, pid: usize) {
+        self.research_chain_completion = 1.0;
+        if !self.campus_finishes_first || !self.research_economy {
+            return;
+        }
+        let campus = crate::name!("campus");
+        let (mut held, mut buildable) = (0usize, 0usize);
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if !g.city_has_district_family(city, campus) {
+                continue;
+            }
+            for (name, spec) in g.rules.buildings.iter() {
+                if spec.wonder || spec.district.map(|d| g.district_family(d)) != Some(campus) {
+                    continue;
+                }
+                let building = Name::new(name);
+                if city.buildings.contains(&building) {
+                    held += 1;
+                    buildable += 1;
+                } else if g.can_produce(pid, cid, &Item::Building { building }) {
+                    buildable += 1;
+                }
+            }
+        }
+        if buildable == 0 {
+            return;
+        }
+        self.research_chain_completion =
+            (held as f64 / buildable as f64).clamp(RESEARCH_COVERAGE_UNFINISHED_FLOOR, 1.0);
+    }
+
     fn refresh_research_weight(&mut self, g: &Game) {
         self.research_weight = if self.research_economy {
-            let horizon = Self::research_horizon(g);
+            // See `research_floor_holds`: what a beaker is worth to every
+            // other price, on the same horizon as the citizens who make it.
+            let horizon = self.research_staffing_horizon(g);
             RESEARCH_FLOOR_LATE + (RESEARCH_FLOOR_EARLY - RESEARCH_FLOOR_LATE) * horizon
         } else {
             0.0
@@ -9081,6 +9764,14 @@ impl AdvancedAi {
                 Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_PHYSICS"),
             ),
         ];
+        // See `lane_great_people`: which Great Person class this project's
+        // points are worth chasing is a question about the race, not about the
+        // settling posture, and this arm runs in every city every turn —
+        // unlike patronage, which needs a bank the opening rarely has. Hoisted
+        // out of the loop: `raced_lane` short-circuits on any plan that is not
+        // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
+        // and this is `production_value`'s hot path.
+        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -9097,7 +9788,7 @@ impl AdvancedAi {
             if g.live_great_person_offer_blocker(pid, &kind).is_some() {
                 continue;
             }
-            let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
+            let mut affinity: f64 = match (great_person_lane, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 2.8,
@@ -9594,10 +10285,10 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment = objective == GrandStrategy::Science
-                || self.diplomatic_science_backup(g, pid, plan);
-            let great_person_goal =
-                BasicAi::live_great_person_tech_goal(g, pid);
+            let science_commitment =
+                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
+            let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
+            let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -9610,6 +10301,16 @@ impl AdvancedAi {
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
                     Some("astrology")
+                }
+                // The air surge's beeline. Behind the appointed timed war's
+                // breakthrough (that package is already half-built when it
+                // holds the research slot) and behind the Taxis religion
+                // opening, ahead of everything else: three technologies is
+                // the whole appointment, and a lane goal that displaces one
+                // of them turns the surge into a research plan that never
+                // launches. See `advanced/air_surge.rs`.
+                _ if self.air_surge_research_goal(g, pid).is_some() => {
+                    self.air_surge_research_goal(g, pid)
                 }
                 // An ancient rush rides. `rush_census` measures **0% of
                 // empires holding `horseback_riding` at turn 50**, so the
@@ -9629,6 +10330,7 @@ impl AdvancedAi {
                 _ if plan.rush && !g.players[pid].techs.contains(&crate::name!("horseback_riding")) => {
                     Some("horseback_riding")
                 }
+                _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
                     "rocketry",
@@ -13170,6 +13872,13 @@ impl AdvancedAi {
             }
         }
         if let Some(session) = g.congress.clone() {
+            // See `lane_congress_ballot`: an empire still settling hands this
+            // ballot `Expansion`, so the lane branches — the Diplomacy seat's
+            // own `world_leader` nomination, the Culture seat's `world_fair` —
+            // cannot be reached in the opening, and the Favor behind a vote is
+            // never staked. One answer for the whole session.
+            let congress_lane = self.congress_lane(g, pid, plan);
+            let congress_favor_lane = self.congress_favor_lane(g, pid, plan);
             for resolution in session.resolutions {
                 if resolution.ballots.contains_key(&pid) {
                     continue;
@@ -13187,7 +13896,7 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
+                if let Some(choice) = self.congress_choice(g, pid, &resolution, congress_lane) {
                     // Nothing cast now can move a resolution that is already
                     // settled, so the only thing left on the table is the
                     // Diplomatic Victory Point the host pays for naming the
@@ -13217,7 +13926,8 @@ impl AdvancedAi {
                         );
                     let votes = if settled.is_some() {
                         1
-                    } else if plan.strategy == GrandStrategy::Diplomacy || counters_the_leader {
+                    } else if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader
+                    {
                         g.congress_affordable_votes(pid)
                     } else {
                         1
@@ -13225,7 +13935,7 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "Voting {} on {}", plain(&choice), plain(&resolution.id);
                            "{votes} vote{} behind it, on the {} plan",
-                           if votes == 1 { "" } else { "s" }, plan.strategy.as_str());
+                           if votes == 1 { "" } else { "s" }, congress_lane.as_str());
                     let _ = g.apply(
                         pid,
                         &Action::CongressVote {
@@ -13466,6 +14176,12 @@ impl AdvancedAi {
             return;
         };
         if self.timed_war_opening(g, pid, target) {
+            return;
+        }
+        // The air surge owns the declaration for its own objective. Like the
+        // timed war it consumes the turn's one war-opening decision even when
+        // it deliberately holds for the wing.
+        if self.air_surge_opening(g, pid, target) {
             return;
         }
         // Timed attacks already refuse an appointment that cannot finish
@@ -14944,7 +15660,11 @@ impl AdvancedAi {
                 && unit.charges > 0
                 && g.rules.units[unit.kind].religious_spread > 0.0
         });
-        active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
+        // `spread_campaign_persists`: a campaign that has already converted a
+        // foreign city is not over because this turn's last charge was spent.
+        active_campaign
+            || self.spread_campaign_persists(g, pid, religion)
+            || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
 
     fn religious_spending(&mut self, g: &mut Game, pid: usize, offensive: bool) {
@@ -15005,7 +15725,12 @@ impl AdvancedAi {
         } else if offensive {
             (2 + spread_targets.div_ceil(4)).min(6)
         } else {
-            (1 + defensive_targets.div_ceil(2)).min(2)
+            // `religious_defence_scales` reads the shipped constant and, when
+            // it is on, answers one spreader per threatened city instead.
+            self.defensive_missionary_cap(
+                defensive_targets,
+                (1 + defensive_targets.div_ceil(2)).min(2),
+            )
         };
         // See `inquisition_on_threat`: the one Apostle that unlocks the
         // Inquisitors, bought once the Missionary corps stands and the bank
@@ -15020,19 +15745,32 @@ impl AdvancedAi {
         } else {
             0
         };
-        let guru_cap = usize::from(offensive && apostles > 0);
+        // `guru_heals_the_corps`: the defence has damaged units and no heal.
+        let guru_defends = self.guru_defends_the_corps(g, pid, home_under_pressure);
+        let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
             2
         } else {
             0
         };
+        // A cap nothing asks for is not a cap. The two defensive orders never
+        // named the Guru, so `guru_cap` alone could not buy one; with the gene
+        // on they name it last, behind the spread and the Inquisition.
         let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if defend_with_inquisition && apostles == 0 {
-            &["missionary", "apostle", "inquisitor"]
+            if guru_defends {
+                &["missionary", "apostle", "inquisitor", "guru"]
+            } else {
+                &["missionary", "apostle", "inquisitor"]
+            }
         } else if !offensive {
-            &["missionary", "inquisitor"]
+            if guru_defends {
+                &["missionary", "inquisitor", "guru"]
+            } else {
+                &["missionary", "inquisitor"]
+            }
         } else if apostles < 2 {
             &["apostle", "missionary", "guru"]
         } else if gurus < 1 {
@@ -15986,6 +16724,12 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        // See `lane_space_race`: every gate below asks for an EXPLICITLY
+        // assigned Science target, so the adaptive agent production ships —
+        // which has no target at all — races the space race at one pad, and
+        // only in a city with nothing else queued. One answer per turn; the
+        // three tests below read it.
+        let races_science = self.space_race_lane(g, pid);
         let completed = g.players[pid].science_projects.clone();
         let project = if !completed.contains("launch_earth_satellite") {
             "launch_earth_satellite"
@@ -16024,7 +16768,8 @@ impl AdvancedAi {
                                 g.cities[cid].queue.first(),
                                 Some(Item::Project { project: queued }) if queued == project
                             )
-                            && (self.victory_target == Some(VictoryTarget::Science)
+                            && (races_science
+                                || self.victory_target == Some(VictoryTarget::Science)
                                 || g.cities[cid].queue.is_empty())
                     })
                     .max_by(|a, b| {
@@ -16065,24 +16810,27 @@ impl AdvancedAi {
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports = if self.victory_target == Some(VictoryTarget::Science) {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
+        let desired_spaceports =
+            if races_science || self.victory_target == Some(VictoryTarget::Science) {
+                if completed.contains("launch_mars_colony") {
+                    3
+                } else if completed.contains("launch_moon_landing") {
+                    2
+                } else {
+                    1
+                }
             } else {
                 1
             }
-        } else {
-            1
-        }
-        .min(city_ids.len());
+            .min(city_ids.len());
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid].districts.contains_key(crate::name!("spaceport"))
+            if g.cities[&cid]
+                .districts
+                .contains_key(crate::name!("spaceport"))
                 || matches!(
                     g.cities[&cid].queue.first(),
                     Some(Item::District { district, .. }) if district == "spaceport"
@@ -16090,7 +16838,8 @@ impl AdvancedAi {
             {
                 continue;
             }
-            if self.victory_target != Some(VictoryTarget::Science)
+            if !races_science
+                && self.victory_target != Some(VictoryTarget::Science)
                 && !g.cities[&cid].queue.is_empty()
             {
                 continue;
@@ -18780,6 +19529,15 @@ impl AdvancedAi {
                 }
             }
         }
+        // The air surge prices its own package the same way, and after the
+        // melee appointment so a live timed war keeps first claim on a shared
+        // queue. `air_surge_production_value` is `None` for every item that is
+        // not the airfield, a Bomber, or a capture body, and for every item
+        // the package already holds — so an inactive surge cannot change a
+        // single score. See `advanced/air_surge.rs`.
+        if let Some(value) = self.air_surge_production_value(g, pid, item, turns) {
+            return value;
+        }
         let raw = match item {
             Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
                 -10_000.0
@@ -18986,11 +19744,7 @@ impl AdvancedAi {
                         0.75
                     }
                     + if threatened { 240.0 } else { 0.0 }
-                    + if offensive_conquest {
-                        160.0
-                    } else {
-                        0.0
-                    }
+                    + if offensive_conquest { 160.0 } else { 0.0 }
             }
             Item::Unit { unit } => {
                 let spec = &g.rules.units[unit];
@@ -19386,7 +20140,11 @@ impl AdvancedAi {
                             .keys()
                             .any(|built| g.district_family(*built) == crate::name!("campus"))
                     {
-                        RESEARCH_BUILDING_DEBT * Self::research_horizon(g)
+                        // See `research_tier_premium`: the rungs of this
+                        // chain are 2, 4 and 3-plus-5, and the debt is flat.
+                        RESEARCH_BUILDING_DEBT
+                            * self.research_tier_weight(g, city, spec)
+                            * self.research_payback(g)
                     } else {
                         0.0
                     };
@@ -19399,11 +20157,9 @@ impl AdvancedAi {
                             .district
                             .map(|district| g.district_family(district))
                             .is_some_and(|family| family == crate::name!("theater_square"))
-                        && city
-                            .districts
-                            .keys()
-                            .any(|built| g.district_family(*built) == crate::name!("theater_square"))
-                    {
+                        && city.districts.keys().any(|built| {
+                            g.district_family(*built) == crate::name!("theater_square")
+                        }) {
                         CULTURE_BUILDING_DEBT * Self::research_horizon(g)
                     } else {
                         0.0
@@ -19467,7 +20223,33 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // See `science_multiplier_payoff`: the printed yield is
+                    // not what this building will earn. Valued at the same 42 a
+                    // point as `spec.yields` above, through the lane's own
+                    // price of a beaker.
+                    // See `power_the_laboratory`: the Research Lab's larger
+                    // half is switched off until something generates power.
+                    let power_unlock = if self.power_the_laboratory && !spec.wonder {
+                        self.yield_value(Self::power_switched_on(g, city, spec), plan.strategy)
+                            * 42.0
+                    } else {
+                        0.0
+                    };
+                    let multiplied_science = if self.science_multiplier_payoff && !spec.wonder {
+                        let extra = Self::campus_multiplier_science(g, city, spec);
+                        self.yield_value(
+                            Yields {
+                                science: extra,
+                                ..Yields::default()
+                            },
+                            plan.strategy,
+                        ) * 42.0
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + power_unlock
+                        + multiplied_science
                         + chain_debt
                         + culture_debt
                         + research_debt
@@ -19802,7 +20584,11 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                    // See `campus_finishes_first`: an unfinished research
+                    // city is a reason to build LESS of the expensive half.
+                    RESEARCH_CAMPUS_COVERAGE
+                        * self.research_chain_completion
+                        * self.research_payback(g)
                 } else {
                     0.0
                 };
@@ -19824,7 +20610,19 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                // See `campus_adjacency_threshold`: crossing 4 raw Science
+                // doubles every Campus building this city will ever hold, and
+                // the linear yield above cannot see a threshold.
+                let adjacency_threshold = self.yield_value(
+                    Yields {
+                        science: self.campus_threshold_bonus(g, family, *pos),
+                        ..Yields::default()
+                    },
+                    plan.strategy,
+                ) * 42.0
+                    * Self::campus_payback_horizon(g);
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
+                    + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + housing_gain * (32.0 + housing_need * 18.0)
@@ -20152,6 +20950,10 @@ impl AdvancedAi {
                             }
                         }
                         _ if spec.requires_host_competition() => {
+                            // See `competition_victory_points`: first place in
+                            // a scored competition pays one or two of the
+                            // twenty a diplomatic victory needs, and only the
+                            // competition's own score was ever priced.
                             let value = spec
                                 .host_competition_kinds()
                                 .map(|kind| {
@@ -20161,6 +20963,12 @@ impl AdvancedAi {
                                         kind,
                                         spec.competition_score,
                                         turns,
+                                    ) + self.competition_victory_point_value(
+                                        g,
+                                        pid,
+                                        plan,
+                                        kind,
+                                        spec.competition_score,
                                     )
                                 })
                                 .fold(0.0, f64::max);
@@ -24390,6 +25198,13 @@ impl AdvancedAi {
         // adopted majority faith to repel a competing conversion. That unit
         // has no player-owned religion to read, so its own faith is the
         // authority for both its defensive target and its Spread action.
+        // `religious_units_heal_first`: a charge spent at 40 hit points buys
+        // 40% of a charge's pressure. Standing in an own Holy Site's ring is
+        // the only recovery a Missionary has, and taking no action is the only
+        // way to collect it.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
+        }
         let Some(religion) = g.units[&uid]
             .religion
             .clone()
@@ -24492,7 +25307,7 @@ impl AdvancedAi {
                 .iter()
                 .filter_map(|action| match action {
                     Action::EvangelizeBelief { unit, belief } if *unit == uid => {
-                        let score = match (objective, belief.as_str()) {
+                        let lane = match (objective, belief.as_str()) {
                             (GrandStrategy::Science, "wat")
                             | (GrandStrategy::Culture, "cathedral")
                             | (GrandStrategy::Diplomacy, "pagoda")
@@ -24505,6 +25320,11 @@ impl AdvancedAi {
                             (_, "holy_order" | "mosque" | "wat" | "pagoda") => 180,
                             _ => 100,
                         };
+                        // `enhancer_for_the_corps` answers first when the corps
+                        // has work; `None` leaves the lane table untouched.
+                        let score = self
+                            .corps_enhancer_score(g, pid, belief.as_str())
+                            .unwrap_or(lane);
                         Some((score, std::cmp::Reverse(*belief), action.clone()))
                     }
                     _ => None,
@@ -24558,6 +25378,13 @@ impl AdvancedAi {
             if unit.hp >= 55 || score >= 45 {
                 return g.apply(pid, &action).is_ok();
             }
+        }
+
+        // The same hold, after the fight rather than before it: a unit already
+        // in a theological exchange resolves it, and only the spread and the
+        // hunt below wait for the wound to close.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
         }
 
         if g.rules.units[unit.kind].religious_spread > 0.0 && unit.charges > 0 {
@@ -27148,14 +27975,10 @@ impl AdvancedAi {
     /// the counter was effectively dead. Now a military unit will step onto
     /// an adjacent one and condemn it.
     fn condemn_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let condemnable = |game: &Game, at: Pos| -> Option<u32> {
-            game.units_at(at).into_iter().find(|target| {
-                let target = &game.units[target];
-                target.owner != pid
-                    && game.is_at_war(pid, target.owner)
-                    && game.rules.units[target.kind].class == "religious"
-            })
-        };
+        // `condemn_under_congress` owns this predicate now: war alone with the
+        // gene off, war or a World Congress condemnation with it on.
+        let condemnable =
+            |game: &Game, at: Pos| -> Option<u32> { self.condemnable_heretic(game, pid, at) };
         let here = g.units[&uid].pos;
         if let Some(target_unit) = condemnable(g, here) {
             if g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok() {
@@ -29955,9 +30778,7 @@ impl Ai for AdvancedAi {
                 ready_bodies: self.war_status.ready_bodies,
                 staged_bodies: self.war_status.staged_bodies,
                 breach_ready: self.war_status.breach_ready,
-                upgrade_gold_reserved: active
-                    .map(|_| self.war_status.upgrade_gold)
-                    .unwrap_or(0.0),
+                upgrade_gold_reserved: active.map(|_| self.war_status.upgrade_gold).unwrap_or(0.0),
                 appointed_turn: active.map(|plan| plan.appointed_turn),
                 appointments: self.war_census.appointments,
                 breakthroughs: self.war_census.breakthroughs,
@@ -30037,6 +30858,10 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
+        // And how finished the research cities already standing are, on the
+        // same once-per-decision footing. See `campus_finishes_first`.
+        self.refresh_research_chain_completion(g, pid);
+        self.refresh_campus_multiplier_constants(g);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
@@ -30069,12 +30894,19 @@ impl AdvancedAi {
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
         self.maintain_war_plan(g, pid);
+        // The air surge's own lifecycle, after the melee appointment so the
+        // two can never both own the grand strategy in the same turn: the
+        // surge overlay below runs second and only from its Strike phase.
+        // Exact no-op while `air_surge` is off. See `advanced/air_surge.rs`.
+        self.maintain_air_surge(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_air_surge_to_strategy(&mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_air_surge_to_strategy(&mut current);
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
@@ -30119,7 +30951,9 @@ impl AdvancedAi {
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
-        self.advanced_great_people(g, pid, plan.strategy);
+        // See `lane_great_people`: a Great Person is a finite global race,
+        // and an Expansion plan reads 0.85 for every class the lane needs.
+        self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
             let committed = plan.strategy == GrandStrategy::Religion;
             let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
@@ -30133,7 +30967,9 @@ impl AdvancedAi {
             };
             self.religious_spending_with_reserve(g, pid, offensive, reserve);
         }
-        self.faith_building_spending(g, pid, plan.strategy);
+        // See `lane_culture_spending`: the Culture reserve that keeps a
+        // Naturalist affordable is chosen by this same value.
+        self.faith_building_spending(g, pid, self.culture_faith_lane(g, pid, &plan));
         self.military_faith_spending(g, pid, &plan);
         // Live spectator majors choose an adaptive plan instead of carrying
         // an explicit `victory_target`. Give both modes the same strategic
@@ -30143,7 +30979,10 @@ impl AdvancedAi {
         if self.victory_planning && !emergency_city_defense {
             self.advanced_gold_spending(g, pid, &plan);
         }
-        self.strategic_policies(g, pid, plan.strategy);
+        // See `lane_policy_deck`: the cards a completed Culture game seats
+        // (`heritage_tourism`, `satellite_broadcasts`, `sports_media`) are
+        // not on an expansion deck.
+        self.strategic_policies(g, pid, self.policy_lane(g, pid, &plan));
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -30201,6 +31040,12 @@ impl AdvancedAi {
             // those queues so the envoy-infrastructure treatment can actually
             // reach play. The helper is an exact no-op while its flag is off.
             self.prioritize_envoy_infrastructure(g, pid, &plan);
+            // And the air surge's package, for the same reason: the adaptive
+            // controller hands empty cities to `BasicAi::cities`, which never
+            // consults `production_value`, so without this claim the surge
+            // would price an Aerodrome nobody ever asked it about. One idle,
+            // unthreatened queue per turn; exact no-op while the gene is off.
+            self.air_surge_production(g, pid);
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -30211,6 +31056,10 @@ impl AdvancedAi {
                 // or its Apostles and Inquisitors exist only on paper. See
                 // `founder_temple` (exact no-op while that flag is off).
                 self.founder_temple(g, pid);
+                // …and the district those buildings need, in the city that is
+                // actually slipping rather than the one that founded. Also an
+                // exact no-op while its own flag is off.
+                self.holy_site_where_the_threat_is(g, pid);
             }
             if self.victory_planning
                 && g.victory_conditions.religious
@@ -30225,13 +31074,23 @@ impl AdvancedAi {
                     self.religious_defense(g, pid, &threat);
                 }
             }
+            // See `lane_space_race`: the last disjunct opens the pass for an
+            // empire racing Science that has not finished settling. The
+            // `score_horizon` refusal inside it is unchanged.
             if self.victory_planning
                 && (plan.strategy == GrandStrategy::Science
-                    || self.diplomatic_science_backup(g, pid, &plan))
+                    || self.diplomatic_science_backup(g, pid, &plan)
+                    || self.space_race_lane_opens(g, pid, &plan))
             {
                 self.space_race_production(g, pid);
             }
-            if self.victory_planning && plan.strategy == GrandStrategy::Culture {
+            // See `lane_culture_spending`: the Naturalist and the touring
+            // Rock Bands are the Culture lane's only Faith purchases, and a
+            // Culture racer still settling never reaches them.
+            if self.victory_planning
+                && (plan.strategy == GrandStrategy::Culture
+                    || self.culture_lane_spends(g, pid, &plan))
+            {
                 self.culture_spending(g, pid);
             }
             let adaptive_expansion_dispatch =
@@ -30352,6 +31211,7 @@ impl AdvancedAi {
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
         self.maintain_war_plan(g, pid);
+        self.maintain_air_surge(g, pid);
         // A settler can found a city during the unit pass. Refresh the map so
         // the durable directive state covers that new city as well as the
         // cities that received production guidance earlier in the turn.
@@ -30399,6 +31259,11 @@ mod live_bundle_tests {
 
 #[cfg(test)]
 mod tests;
+
+mod science_scaling;
+
+#[cfg(test)]
+mod science_funnel_census;
 
 #[cfg(test)]
 mod research_probe;

@@ -24,20 +24,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(HERE))
+# The ledger tool owns the win column: it decides each gene's default from the
+# same two numbers this table prints, so both must be one arithmetic.
+from gene_ledger import wins_per_10k as wins_per  # noqa: E402
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 ELO_RS = ROOT / "src" / "elo.rs"
-CHANCE = 1.0 / 6.0
-PER = 10_000
 
 ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::(?:enable|disable)_([a-z0-9_]+)')
 
@@ -126,6 +129,10 @@ def load_sources(
                 "win_z": float(gene["win_z"]),
                 "share_z": float(gene["share_z"]),
                 "players": int(data.get("profile", {}).get("players", 0) or 0),
+                "compute_cost_pct": gene.get("compute_cost_pct"),
+                "compute_cost_se_pct": gene.get("compute_cost_se_pct"),
+                "time_cost_pct": gene.get("time_cost_pct"),
+                "time_cost_se_pct": gene.get("time_cost_se_pct"),
             }
             if src["regime"] == "native":
                 native.setdefault(gene["tag"], []).append(g)
@@ -136,13 +143,23 @@ def load_sources(
     return native, war, native_src, war_src
 
 
-def wins_per(rate: float, players: int) -> int:
-    chance = 1.0 / players if players else CHANCE
-    return round((rate - chance) * PER)
-
-
 def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
+
+
+def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
+    """The newest usable native cost reading, with one-standard-error
+    uncertainty. Old analysis JSON predates the timing estimator and therefore
+    carries no cost rather than a made-up zero."""
+    for measurement in reversed(history):
+        point = measurement.get(value)
+        se = measurement.get(uncertainty)
+        if point is None or se is None:
+            continue
+        point, se = float(point), float(se)
+        if math.isfinite(point) and math.isfinite(se):
+            return f"{point:+.2f}% ±{se:.2f}%"
+    return "–"
 
 
 def render(ledger: dict) -> str:
@@ -175,7 +192,11 @@ def render(ledger: dict) -> str:
         "gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the "
         "same figure from the screen before that (\u2013 when the gene has only one native "
         "reading); movement between the two columns is the gene's trend across cycles. "
-        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`). The *Total* "
+        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
+        "2026-08-22 that call is read off these two win columns: a gene defaults **on** "
+        "when both are positive, or when their average clears +15 with neither below "
+        "\u221210, and **off** otherwise \u2014 including every gene with only one native "
+        "reading, which has no prior column to agree with it. The *Total* "
         "columns pool every native screen that measured the gene, weighted by games. Every "
         "screen is a foldover against the best-genome baseline with shuffled civs and every "
         "major seat carrying its own genome (errors clustered by game pair), so a gene's "
@@ -192,12 +213,23 @@ def render(ledger: dict) -> str:
         "noise, not nulls. Screens differ in baseline as repairs land, so the *Prior* "
         "column reads as history, not a strict A/B against *Last*.",
         "",
+        "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
+        "on/off percent change in wall seconds per completed turn, while *cost (time)* "
+        "is the percent change in whole-game wall seconds and therefore includes games "
+        "that end earlier or later. Each cell is the newest native estimate ± one standard "
+        "error. The screen derives both from paired log-ratios on the same maps, fits every "
+        "randomized gene together with an arm-order intercept, and keeps one timing per game "
+        "pair; all-seats signs are summed so the answer is the incremental cost of enabling "
+        "one major's genome. This reuses the screen's existing `secs` and `turn` rows — no "
+        "hot-path timers and no extra profiling games. A dash means the source analysis "
+        "predates the estimator and is unknown, never zero.",
+        "",
         "Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every "
         "screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this "
         "file is older than the ledger's sources.",
         "",
-        "| Rank | ± Wins Last 10k | ± Wins 10k Prior | Gene | Description | Default | Total (on) Win rate | Total (off) Win rate | Total Games (on+off) |",
-        "|---:|---:|---:|---|---|---|---:|---:|---:|",
+        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Total Games (on+off) | cost (compute) | cost (time) |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -212,8 +244,10 @@ def render(ledger: dict) -> str:
         on_rate = sum(m["win_on"] * m["n_on"] for m in history) / on_games
         off_rate = sum(m["win_off"] * m["n_off"] for m in history) / off_games
         lines.append(
-            f"| {rank} | {wins:+d} | {prior} | `{tag}` | {desc.get(tag, '')} | {default} | "
-            f"{100 * on_rate:.2f}% | {100 * off_rate:.2f}% | {fmt_int(on_games + off_games)} |"
+            f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
+            f"{100 * on_rate:.2f}% | {100 * off_rate:.2f}% | {fmt_int(on_games + off_games)} | "
+            f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
+            f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
 
     if unmeasured:

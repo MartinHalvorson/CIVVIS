@@ -188,6 +188,17 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // The rest of the same chain: the founder's corps cannot answer more than
+    // two cities, cannot heal when it is defending, spends charges at a
+    // fraction of their strength, and never uses the World Congress licence to
+    // remove a carrier at peace. See `advanced/religion.rs`.
+    ("religious_defence_scales", "religious-defence-scales", AdvancedAi::enable_religious_defence_scales),
+    ("guru_heals_the_corps", "guru-heals-the-corps", AdvancedAi::enable_guru_heals_the_corps),
+    ("religious_units_heal_first", "religious-units-heal-first", AdvancedAi::enable_religious_units_heal_first),
+    ("condemn_under_congress", "condemn-under-congress", AdvancedAi::enable_condemn_under_congress),
+    ("spread_campaign_persists", "spread-campaign-persists", AdvancedAi::enable_spread_campaign_persists),
+    ("holy_site_where_the_threat_is", "holy-site-where-the-threat-is", AdvancedAi::enable_holy_site_where_the_threat_is),
+    ("enhancer_for_the_corps", "enhancer-for-the-corps", AdvancedAi::enable_enhancer_for_the_corps),
     // Every major adopts Early Empire on turns 23-30, and a Scout's sight of 2
     // cannot see a city-state's seat from outside its border. The land route
     // to first contact closes once and never reopens; see
@@ -222,6 +233,23 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("contact_posture", "contact-posture", AdvancedAi::enable_contact_posture),
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // Every science term in the controller tapers to zero while the flat
+    // constants it competes with never do; this asks whether the investment
+    // can still repay instead. See `AdvancedAi::science_payback_horizon`.
+    ("science_payback_horizon", "science-payback-horizon", AdvancedAi::enable_science_payback_horizon),
+    // A Library bought after Rationalism earns twice a Library bought before
+    // it, and the price never noticed. See
+    // `AdvancedAi::science_multiplier_payoff`.
+    ("science_multiplier_payoff", "science-multiplier-payoff", AdvancedAi::enable_science_multiplier_payoff),
+    // The chain's rungs are 2, 4 and 3-plus-5 and the debt that buys them is
+    // flat. See `AdvancedAi::research_tier_premium`.
+    ("research_tier_premium", "research-tier-premium", AdvancedAi::enable_research_tier_premium),
+    // Measured: every extra Campus bought late came out of a Research Lab
+    // that then never got built. See `AdvancedAi::campus_finishes_first`.
+    ("campus_finishes_first", "campus-finishes-first", AdvancedAi::enable_campus_finishes_first),
+    // The empire builds the laboratory and then declines to staff it. See
+    // `AdvancedAi::research_floor_holds`.
+    ("research_floor_holds", "research-floor-holds", AdvancedAi::enable_research_floor_holds),
     // `governor-every-lane` is a losing composite: the deployment screen's
     // score-share drag is large enough that the two pre-existing halves need
     // their own randomised comparisons before either can be retained. The
@@ -234,4 +262,49 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // hit points say, and healing ground that comes under a shooter's reach
     // is left. See `BasicAi::one_shot_recovery`.
     ("one_shot_recovery", "one-shot-recovery", AdvancedAi::enable_one_shot_recovery),
+    // The six victory-lane genes (`advanced/victory_lane.rs`,
+    // `docs/VICTORY_GENES.md`). A targeted seat spends about a fifth of the
+    // game — and an adaptive one 15% — with `Expansion` in its plan, and
+    // `take_turn_inner` hands that to every lane-shaped decider. Each of the
+    // first five substitutes the victory the empire is actually racing at ONE
+    // of them; the sixth prices the Diplomatic Victory Points a scored
+    // competition pays, which nothing priced.
+    ("lane_congress_ballot", "lane-congress-ballot", AdvancedAi::enable_lane_congress_ballot),
+    ("lane_congress_favor", "lane-congress-favor", AdvancedAi::enable_lane_congress_favor),
+    ("lane_great_people", "lane-great-people", AdvancedAi::enable_lane_great_people),
+    ("lane_policy_deck", "lane-policy-deck", AdvancedAi::enable_lane_policy_deck),
+    ("lane_culture_spending", "lane-culture-spending", AdvancedAi::enable_lane_culture_spending),
+    ("lane_space_race", "lane-space-race", AdvancedAi::enable_lane_space_race),
+    ("competition_victory_points", "competition-victory-points", AdvancedAi::enable_competition_victory_points),
+    // Three behaviours that already existed and could not be screened: off in
+    // production, reachable only as named `elo.rs` arms, so `gene_screen`
+    // never saw them. `docs/VICTORY_GENES.md` §9 counts these fields; these
+    // are the three the Diplomacy lane needs — and the first has a measured
+    // number sitting unused in its own field doc (26 of 192 ballot decisions
+    // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
+    ("congress_banks_a_decided_vote", "congress-banks-decided", AdvancedAi::enable_congress_banks_a_decided_vote),
+    ("congress_counter_votes", "congress-counter-votes", AdvancedAi::enable_congress_counter_votes),
+    ("envoy_infrastructure", "envoy-infrastructure", AdvancedAi::enable_envoy_infrastructure),
+    // Nothing in this controller reaches the air layer: the melee package
+    // skips `domain == "air"` and ranks its unlocks by cheapest remaining
+    // research, so it can appoint the next technology and never a chain.
+    // This beelines Advanced Flight from three technologies out, raises an
+    // Aerodrome and a bomber wing, and takes the appointed city with the
+    // cavalry behind it. See `advanced/air_surge.rs`.
+    ("air_surge", "air-surge", AdvancedAi::enable_air_surge),
+    // ⭐ APPENDED AT THE END ON PURPOSE. A gene inserted into the middle of
+    // this table renumbers every row after it, and `gene_screen` writes the
+    // genome as a POSITIONAL bit string — so a screen already running against
+    // an older binary cannot be pooled with one running against this. That
+    // cost the 83,000,000 run its analysis; see
+    // `tools/gene_quantity_contrast.py`.
+    //
+    // The Research Lab's larger half is switched off until something generates
+    // power, and nothing in the controller buys the switch. See
+    // `AdvancedAi::power_the_laboratory`.
+    ("power_the_laboratory", "power-the-laboratory", AdvancedAi::enable_power_the_laboratory),
+    // Rationalism is slotted and NOT ONE Campus in the empire clears the
+    // adjacency half it pays. Appended at the end, for the reason above. See
+    // `AdvancedAi::campus_adjacency_threshold`.
+    ("campus_adjacency_threshold", "campus-adjacency-threshold", AdvancedAi::enable_campus_adjacency_threshold),
 ];
