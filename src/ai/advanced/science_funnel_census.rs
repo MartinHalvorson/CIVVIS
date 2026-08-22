@@ -468,6 +468,38 @@ mod science_gates_probe {
 
         pops.sort_unstable();
         let median = pops.get(pops.len() / 2).copied().unwrap_or(0);
+        // ⭐ THE OTHER HALF, AND THE ONLY REACHABLE ONE. The adjacency gate is
+        // dead on this profile — under 1% of land can host a Campus that
+        // clears it (see `how_much_of_the_map_could_ever_host_a_high_adjacency
+        // _campus`). The POPULATION gate is a different story: the median
+        // Campus city sits at 12 against a threshold of 15. Whether that is a
+        // choice or a ceiling depends on whether those cities can still grow,
+        // so count the headroom rather than assuming it.
+        let mut short_of_fifteen = 0;
+        let mut short_but_growing = 0;
+        let mut short_and_capped = 0;
+        let mut pop_gap_total = 0;
+        for cid in &cities {
+            let city = &g.cities[cid];
+            if !g.city_has_district_family(city, campus) || city.pop >= 15 {
+                continue;
+            }
+            short_of_fifteen += 1;
+            pop_gap_total += 15 - city.pop;
+            let yields = g.city_yields(*cid);
+            let housing = g.city_housing(city);
+            if housing > city.pop as f64 && yields.food > 0.0 {
+                short_but_growing += 1;
+            } else {
+                short_and_capped += 1;
+            }
+        }
+        println!(
+            "POPGATE campus_cities_under_15={short_of_fifteen} \
+             still_growing={short_but_growing} capped={short_and_capped} \
+             total_pop_short={pop_gap_total}"
+        );
+
         let rationalism = g.players[0].policies.contains(&crate::name!("rationalism"));
         let philosophy = g.players[0]
             .policies
@@ -490,5 +522,65 @@ mod science_gates_probe {
                 .map(|c| g.city_yields(*c).science)
                 .sum::<f64>()
         );
+    }
+}
+
+#[cfg(test)]
+mod map_reach_probe {
+    use super::*;
+
+    /// Is the Campus multiplier's adjacency gate reachable ON THIS MAP AT ALL?
+    ///
+    /// The third survey correction established that no LEGAL Campus plot in
+    /// the empire ever reached 4 raw Science. That leaves two very different
+    /// worlds: the seat founds its cities in the wrong places, or the profile
+    /// the screen runs simply has nowhere to put such a Campus. Only the first
+    /// is worth a gene, and this counts which it is — over the whole map,
+    /// before anyone has built anything.
+    #[test]
+    #[ignore = "probe"]
+    fn how_much_of_the_map_could_ever_host_a_high_adjacency_campus() {
+        let campus = crate::name!("campus");
+        let mut totals = Vec::new();
+        for seed in 0..3u64 {
+            let g = Game::new(6, 60, 38, 87_000_000 + seed, 250, 6);
+            let mut buckets = [0usize; 6];
+            let mut land = 0usize;
+            for (position, tile) in g.map.tiles.iter() {
+                // Only ground a Campus could stand on; the mountains that make
+                // the arithmetic look good are exactly where it cannot go.
+                if tile.terrain == crate::name!("ocean")
+                    || tile.terrain == crate::name!("coast")
+                    || tile.terrain == crate::name!("mountain")
+                    || tile.terrain == crate::name!("lake")
+                {
+                    continue;
+                }
+                land += 1;
+                let mut yields = Yields::default();
+                for source in g.district_adjacency_sources(campus, *position) {
+                    if source.source != "adjacency_bonus" {
+                        yields.add(source.yields);
+                    }
+                }
+                let bucket = (yields.science.max(0.0) as usize).min(5);
+                buckets[bucket] += 1;
+            }
+            totals.push((seed, land, buckets));
+        }
+        for (seed, land, buckets) in &totals {
+            let four_plus = buckets[4] + buckets[5];
+            println!(
+                "MAP seed {} land_plots={land} adjacency 0:{} 1:{} 2:{} 3:{} 4+:{} \
+                 ({:.2}% of land could host a gate-clearing Campus)",
+                87_000_000 + seed,
+                buckets[0],
+                buckets[1],
+                buckets[2],
+                buckets[3],
+                four_plus,
+                100.0 * four_plus as f64 / (*land).max(1) as f64
+            );
+        }
     }
 }
