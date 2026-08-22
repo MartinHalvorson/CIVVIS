@@ -13,13 +13,14 @@
 //! ★★★★ THE DEFAULT IS READ OFF THE RANKING'S TWO WIN COLUMNS.
 //! Operator directive 2026-08-22: a gene may default on when **both** its
 //! last and prior native win columns are positive, or when their average
-//! clears +15 with neither column below −10; every other gene defaults off.
+//! clears +15 with neither column below −10. With exactly one populated
+//! column, it may provisionally default on when that reading is above +20;
+//! every other gene defaults off.
 //! A win column is wins added per 10,000 games at the gene's measured on-rate
 //! in one native screen — `(win_on − 1/players) × 10,000`, against the 1-in-
 //! `players` a seat wins by chance — and it is the same number
-//! `HEURISTIC_GENE_RANKING.md` prints. A gene the screens have read fewer
-//! than twice has no prior column to agree with it, so it is off: one screen
-//! is never a result. The war regime does not enter the default.
+//! `HEURISTIC_GENE_RANKING.md` prints. The war regime does not enter the
+//! default.
 //!
 //! What that replaced: the default used to be `verdict == helps`, one
 //! screen's significance test on the deciding regime. The verdicts are still
@@ -111,18 +112,22 @@ pub struct GeneVerdict {
     pub war: Option<Measure>,
 }
 
-/// A gene's win columns clear the deployment rule: both positive, or an
-/// average above `AVERAGE_BAR` with neither column below `COLUMN_FLOOR`.
-/// Fewer than two native readings is off — the mirror of
-/// `tools/gene_ledger.py`'s `default_from_win_columns`, so a hand-edited
-/// table cannot quietly ship a gene the rule does not.
+/// A gene's win columns clear the deployment rule: one populated column above
+/// `SINGLE_COLUMN_BAR`, both positive, or an average above `AVERAGE_BAR` with
+/// neither column below `COLUMN_FLOOR`. No populated columns means off — the
+/// mirror of `tools/gene_ledger.py`'s `default_from_win_columns`, so a
+/// hand-edited table cannot quietly ship a gene the rule does not.
 pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
+    /// A sole provisional reading must strictly clear this bar.
+    const SINGLE_COLUMN_BAR: i32 = 20;
     /// Wins per ten thousand games the two-column average must clear.
     const AVERAGE_BAR: f64 = 15.0;
     /// No column may sit below this, however good the other one is.
     const COLUMN_FLOOR: i32 = -10;
-    let (Some(last), Some(prior)) = (last, prior) else {
-        return false;
+    let (last, prior) = match (last, prior) {
+        (Some(value), None) | (None, Some(value)) => return value > SINGLE_COLUMN_BAR,
+        (Some(last), Some(prior)) => (last, prior),
+        (None, None) => return false,
     };
     if last > 0 && prior > 0 {
         return true;
@@ -156,7 +161,8 @@ pub fn screenable(tag: &str) -> bool {
 
 /// Whether a gene is on in the deployment genome: the ledger's own
 /// `default_on`, which is the win-column rule in the module header — so a
-/// screenable gene no screen has measured, or has measured only once, is off.
+/// screenable gene no screen has measured is off; one measured once follows
+/// the provisional single-column bar.
 /// `None` for a gene no native screen can price (the Firaxis-only flags),
 /// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
@@ -356,8 +362,16 @@ mod tests {
             "an average of exactly 15 does not clear +15, and 0 is not positive"
         );
         assert!(
-            !win_columns_default_on(Some(81), None),
-            "one native reading has nothing to agree with it"
+            win_columns_default_on(Some(21), None),
+            "one reading above +20"
+        );
+        assert!(
+            win_columns_default_on(None, Some(21)),
+            "either column may be populated"
+        );
+        assert!(
+            !win_columns_default_on(Some(20), None),
+            "one reading at +20 does not clear the strict bar"
         );
         assert!(!win_columns_default_on(None, None), "unmeasured is off");
     }

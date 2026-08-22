@@ -132,7 +132,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "builder-worked-tile-priority",
         verdict: Verdict::Unresolved,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(24),
         wins_prior_10k: None,
         family_wise: false,
@@ -262,7 +262,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "governor-victory-lanes",
         verdict: Verdict::Unresolved,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(46),
         wins_prior_10k: None,
         family_wise: false,
@@ -272,7 +272,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "great-person-housing",
         verdict: Verdict::Helps,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(78),
         wins_prior_10k: None,
         family_wise: true,
@@ -372,7 +372,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "opportunistic-war",
         verdict: Verdict::Helps,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(23),
         wins_prior_10k: None,
         family_wise: true,
@@ -402,7 +402,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "raid-pillage-prizes",
         verdict: Verdict::Helps,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(30),
         wins_prior_10k: None,
         family_wise: false,
@@ -462,7 +462,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "settle-sooner",
         verdict: Verdict::Helps,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(41),
         wins_prior_10k: None,
         family_wise: false,
@@ -502,7 +502,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
     GeneVerdict {
         tag: "settler-threat-detour",
         verdict: Verdict::Helps,
-        default_on: false,
+        default_on: true,
         wins_last_10k: Some(50),
         wins_prior_10k: None,
         family_wise: false,
