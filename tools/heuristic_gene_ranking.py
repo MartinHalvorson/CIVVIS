@@ -222,6 +222,15 @@ def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
 
 
+def diff_cell(on_rate: float, off_rate: float) -> str:
+    """Render the whole on−off win-rate difference as a percentage.
+
+    Positive values intentionally have no leading plus; negative values retain
+    their minus sign.
+    """
+    return f"{100 * (on_rate - off_rate):.2f}%"
+
+
 def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
     """The newest usable cost reading, with one-standard-error
     uncertainty. Old analysis JSON predates the timing estimator and therefore
@@ -273,7 +282,7 @@ def render(ledger: dict) -> str:
         "columns pool every screen that measured the gene, weighted by games, and "
         "each carries its own game count `n` — the two arms are only equal when every "
         "screen that measured the gene split them evenly. *Diff* is the on rate minus the "
-        "off rate in percentage points: the **whole** on−off difference, so it stands at "
+        "off rate, rendered as a percentage: the **whole** on−off difference, so it stands at "
         "roughly twice the scale of the win columns beside it and must be read against a "
         "screen’s difference band rather than the halved column band below. "
         "**There is one screen** (operator, 2026-08-22): six majors on 74x46 continents "
@@ -365,7 +374,7 @@ def render(ledger: dict) -> str:
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
             f"{100 * on_rate:.2f}% (n={fmt_int(on_games)}) | "
             f"{100 * off_rate:.2f}% (n={fmt_int(off_games)}) | "
-            f"{100 * (on_rate - off_rate):+.2f}pp | "
+            f"{diff_cell(on_rate, off_rate)} | "
             f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
