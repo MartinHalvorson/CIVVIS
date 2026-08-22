@@ -5,9 +5,9 @@ deployment genome that follows — from `gene_screen --analyze --json` outputs.
 Operator directive 2026-08-22: the defaults follow the ranking's two win
 columns. A gene may default on when **both** its last and prior native
 readings are positive, or when their average clears +15 with neither below
--10; every other gene — including one the screens have read only once, which
-has no prior column to agree with — defaults off. The verdicts below still
-record what the screens proved; they no longer decide what ships.
+-10. A gene with exactly one native reading may provisionally default on when
+that reading is above +20; every other gene defaults off. The verdicts below
+still record what the screens proved; they no longer decide what ships.
 This tool is the one place that decision is made, and it is made from data:
 
     python3 tools/gene_ledger.py --write \\
@@ -32,8 +32,8 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
   that priced the gene, `wins_prior_10k` the screen before that.
 - **on** when both columns are positive, or when their average is above +15
   and neither column is below -10.
-- **off** otherwise, and off whenever the gene has fewer than two native
-  readings: one screen has nothing to agree with it.
+- **on** with exactly one populated column when that reading is above +20.
+- **off** otherwise, including an unmeasured gene.
 - The war regime does not enter the default. It is recorded beside the native
   numbers, as before.
 
@@ -70,9 +70,11 @@ LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 LEDGER_RS = ROOT / "src" / "ai" / "advanced" / "gene_ledger_table.rs"
 REGIMES = ("native", "war")
 Z_BAR = 2.0
-# The win column's scale, then the deployment rule's two bars — an average a
-# gene must clear, and a floor no single column may sit below.
+# The win column's scale, then the deployment rule's bars: the threshold for
+# one provisional column, the average two columns must clear, and the floor
+# below which neither of two columns may sit.
 PER = 10_000
+SINGLE_COLUMN_BAR = 20
 AVERAGE_BAR = 15.0
 COLUMN_FLOOR = -10
 
@@ -105,10 +107,14 @@ def wins_per_10k(win_rate: float, players: int) -> int:
 def default_from_win_columns(last: int | None, prior: int | None) -> bool:
     """The deployment call (operator directive 2026-08-22): a gene may default
     on when both native win columns are positive, or when their average clears
-    +15 with neither column below -10. A gene the screens have read fewer than
-    twice has no second column to agree with it, so it stays off."""
-    if last is None or prior is None:
+    +15 with neither column below -10. With exactly one populated column, its
+    reading must be above +20; an unmeasured gene stays off."""
+    populated = [value for value in (last, prior) if value is not None]
+    if len(populated) == 1:
+        return populated[0] > SINGLE_COLUMN_BAR
+    if len(populated) == 0:
         return False
+    assert last is not None and prior is not None
     if last > 0 and prior > 0:
         return True
     return (last + prior) / 2 > AVERAGE_BAR and last >= COLUMN_FLOOR and prior >= COLUMN_FLOOR
@@ -274,8 +280,8 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
                           "native screen, (win_on - 1/players) * 10000; last and prior are the "
                           "two most recent native screens that priced the gene",
             "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
-                          f"with neither below {COLUMN_FLOOR}; off for a gene with fewer than "
-                          "two native readings",
+                          f"with neither below {COLUMN_FLOOR}; with exactly one populated "
+                          f"column, on when it is above +{SINGLE_COLUMN_BAR}; unmeasured is off",
         },
         "sources": recorded,
         "counts": counts,

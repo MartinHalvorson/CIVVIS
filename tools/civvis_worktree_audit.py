@@ -22,6 +22,15 @@ It had three specific holes, and this file is each of them closed:
      been on main for days (98 of 110 worktrees, measured).
   3. **It could only report.** A log line nobody reads on a machine running
      eleven agents is not a safeguard.
+  4. **It only ever looked at REGISTERED WORKTREES** — and so did this file, for
+     its first three weeks. On 2026-08-22 the worktree half found three dirty
+     trees, all three already byte-identical on their rescue refs, and reported
+     the fleet clean. It was clean. Meanwhile 2,253 lines of working
+     infrastructure sat in `~` and in the loose non-git `~/civvis-*` directories
+     on no git object at all: six operator scripts launchd runs every day, and
+     the whole rust/wasm build-parity loop that had found #1061, #1093 and
+     #1076. `git worktree list` cannot name one byte of that. `--scan-root`
+     (default: the repo's parent) is hole 4 closed; `--no-scan` reopens it.
 
 The question that actually matters is *is this content on GitHub*, and the check
 that answers it is reachability from a remote ref — including `refs/pull/N/head`,
@@ -50,6 +59,7 @@ from __future__ import annotations
 import argparse
 import os
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +69,67 @@ import time
 # Directories whose contents are build output or git internals. Walking a target/
 # tree costs more than the whole rest of the audit and can never hold source.
 SKIP_DIRS = {".git", "target", "node_modules", "__pycache__", ".venv"}
+
+# ── the loose scan: the half of this disk a worktree list cannot see ──────────
+#
+# ⚠⚠ ON 2026-08-22 EVERY BYTE ACTUALLY AT RISK WAS OUTSIDE A WORKTREE. The
+# worktree half of this audit reported three dirty trees and all three were
+# already byte-identical on their rescue refs — it was clean, and it was clean
+# because it had nothing to find. Meanwhile 2,253 lines of working
+# infrastructure sat in ~ and in the loose non-git ~/civvis-* directories on no
+# git object at all: six operator scripts launchd runs every day, and the whole
+# rust/wasm build-parity loop that found #1061, #1093 and #1076. `git worktree
+# list` cannot name any of it, so nothing ever asked.
+
+#: Suffixes whose content is data or a build artifact.
+#:
+#: ⚠⚠ THIS IS A DENYLIST AND IT MUST STAY ONE. The first pass of that sweep used
+#: an ALLOWLIST — .py .sh .rs .lua .js .html .md — and reported the build-parity
+#: harness clean while three of its seven code files (`sim.mjs`, `saveload.mjs`,
+#: `mapcheck.mjs`) and its `configs.json` were on no git object anywhere. An
+#: allowlist fails SILENT on the extension nobody thought of; a denylist fails
+#: loud, with one noisy finding you can then deny. Adding a suffix here is a
+#: deliberate act that should come with a measurement; guessing a new allowlist
+#: entry is not possible, which is the point.
+#:
+#: The real stranded set on this machine carried `.tgz`, `.store`, `.f32`,
+#: `.patch`, `.list` and `.bak-20260731` — six suffixes no one would have
+#: allowlisted in advance.
+SCAN_SKIP_SUFFIXES = frozenset({
+    # logs and run output
+    ".log", ".out", ".jsonl", ".ndjson", ".csv.gz", ".bak", ".tmp", ".swp", ".part",
+    # compiled or packaged
+    ".pyc", ".pyo", ".o", ".a", ".so", ".dylib", ".rlib", ".rmeta", ".wasm", ".d",
+    ".zip", ".gz", ".tgz", ".tar", ".bz2", ".xz", ".zst", ".dmg", ".pkg",
+    # media and binary blobs
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".svg.gz",
+    ".mp4", ".mov", ".webm", ".wav", ".mp3", ".pdf", ".dds", ".bin",
+    ".woff", ".woff2", ".ttf", ".otf",
+    # databases and game saves
+    ".db", ".sqlite", ".sqlite3", ".sqlite-shm", ".sqlite-wal", ".civ6save",
+})
+
+#: Names that are never work regardless of suffix.
+SCAN_SKIP_NAMES = frozenset({".DS_Store", ".stop", ".running", "state.env"})
+
+#: A file bigger than this is data. The largest source file in CIVVIS is
+#: `src/game.rs` at well under a megabyte; the loose directories hold 2 MB+
+#: JSON run dumps by the thousand.
+SCAN_MAX_BYTES = 2_000_000
+
+#: How far below each scanned entry to walk.
+#:
+#: 0 — the top of each loose `~/civvis-*` directory and no further — is where
+#: hand-written work actually sits on this machine, with machine output one
+#: level down in `runs/`. Measured on the real disk: depth 0 scans 180 files and
+#: reports 78 stranded across 14 directories, every one of them plausible work;
+#: depth 1 scans 5,463 and reports 5,313, of which 5,150 are one loop's
+#: per-iteration JSON and a Chrome profile's cache.
+#:
+#: This is a BOUND, not a claim that nothing lives deeper, which is why every
+#: run prints how many directories the limit declined to open. Raise it with
+#: `--scan-depth`; a deeper sweep by hand now and then is worth the noise.
+SCAN_DEPTH = 0
 
 
 def git(*args: str, repo: str | None = None, env: dict | None = None,
@@ -279,10 +350,203 @@ def preserve_head(tree_path: str, head: str, branch: str) -> str | None:
     return head if push_wip(tree_path, head, branch) else None
 
 
-def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
+def scan_candidates(scan_root: str, patterns: list[str], known: set[str],
+                    depth: int = SCAN_DEPTH) -> tuple[list[str], dict]:
+    """Files under `scan_root` that could hold work, plus what was left out.
+
+    Everything a registered worktree already covers is excluded — that half of
+    the audit asks a better question about it (reachability, not blob presence)
+    and would otherwise report every uncommitted file twice.
+
+    ⚠ A directory holding its own `.git` is excluded too, and NOT because it is
+    uninteresting: `~/civvis-fleet/src` is a second clone of CIVVIS, so its
+    files are on GitHub through that clone while being absent from THIS repo's
+    object database. Hashing them against this repo reports 2,890 files as
+    disk-only when every one of them is safe.
+
+    The returned `skipped` counts are printed, never swallowed: a bound nobody
+    is told about is how a scan reports "clean" for a directory it declined to
+    open.
+    """
+    import fnmatch
+
+    paths: list[str] = []
+    skipped = {"depth_pruned": 0, "oversize": 0, "denied_suffix": 0, "nested_repo": 0}
+
+    def collect(entry: str) -> None:
+        base = entry.count(os.sep)
+        for dirpath, dirs, files in os.walk(entry):
+            if dirpath.count(os.sep) - base >= depth:
+                skipped["depth_pruned"] += len(dirs)
+                dirs[:] = []
+            keep = []
+            for d in dirs:
+                full = os.path.join(dirpath, d)
+                if d in SKIP_DIRS:
+                    continue
+                if os.path.realpath(full) in known:
+                    continue
+                if os.path.exists(os.path.join(full, ".git")):
+                    skipped["nested_repo"] += 1
+                    continue
+                keep.append(d)
+            dirs[:] = keep
+            for name in files:
+                consider(os.path.join(dirpath, name))
+
+    def consider(full: str) -> None:
+        name = os.path.basename(full)
+        if name in SCAN_SKIP_NAMES:
+            return
+        suffix = os.path.splitext(name)[1].lower()
+        # `ledger.jsonl.bak2` through `.bak6` are one rotation, not five new
+        # suffixes to chase into the denylist by hand.
+        if suffix in SCAN_SKIP_SUFFIXES or re.fullmatch(r"\.bak\d+", suffix):
+            skipped["denied_suffix"] += 1
+            return
+        try:
+            if os.path.islink(full) or not os.path.isfile(full):
+                return
+            if os.stat(full).st_size > SCAN_MAX_BYTES:
+                skipped["oversize"] += 1
+                return
+        except OSError:
+            return
+        paths.append(os.path.abspath(full))
+
+    try:
+        entries = sorted(os.listdir(scan_root))
+    except OSError:
+        return [], skipped
+    for entry in entries:
+        if not any(fnmatch.fnmatch(entry, pat) for pat in patterns):
+            continue
+        full = os.path.join(scan_root, entry)
+        if os.path.isfile(full):
+            consider(full)
+        elif os.path.isdir(full) and not os.path.islink(full):
+            if os.path.realpath(full) in known:
+                continue
+            if os.path.exists(os.path.join(full, ".git")):
+                skipped["nested_repo"] += 1
+                continue
+            collect(full)
+    return paths, skipped
+
+
+def stranded_blobs(repo: str, paths: list[str], chunk: int = 400) -> list[str]:
+    """The subset of `paths` whose exact bytes are in no git object.
+
+    This is [[stranded-code-audit]]'s `git cat-file -e $(git hash-object FILE)`
+    made batch: one `hash-object` per `chunk` paths and ONE `cat-file
+    --batch-check` for the lot, because per-file subprocesses cost more than
+    every other part of this tool put together. Measured: 7,156 files in 3.1 s.
+
+    ⚠ `hash-object` WITHOUT `-w`. Detection must not write the very objects it
+    is about to ask about — that would make the second run of a rescue whose
+    push failed report the files as saved.
+    """
+    if not paths:
+        return []
+    hashes: list[str] = []
+    for i in range(0, len(paths), chunk):
+        out = git("hash-object", "--", *paths[i:i + chunk], repo=repo)
+        hashes.extend(out.split())
+    if len(hashes) != len(paths):
+        # Alignment is the whole contract: a short read would silently pair a
+        # hash with the wrong file and clear a stranded one.
+        raise RuntimeError(
+            f"hash-object returned {len(hashes)} hashes for {len(paths)} paths")
+    proc = subprocess.run(
+        ["git", "-C", repo, "-c", "gc.auto=0", "cat-file", "--batch-check"],
+        input="\n".join(hashes) + "\n", capture_output=True, text=True)
+    lines = proc.stdout.splitlines()
+    if len(lines) != len(paths):
+        raise RuntimeError(
+            f"batch-check returned {len(lines)} lines for {len(paths)} paths")
+    return [p for p, line in zip(paths, lines) if line.endswith(" missing")]
+
+
+def rescue_loose(repo: str, scan_root: str, paths: list[str], label: str) -> str | None:
+    """Push every loose stranded file to `refs/civvis/wip/stranded/<label>`.
+
+    One commit for the lot, chained onto the previous snapshot so a file that
+    later disappears from the disk stays reachable in the ref's history.
+
+    ⚠ This is the step that makes the loose scan converge. Without it the audit
+    would report the same thousands of files every fifteen minutes, and hole 3
+    of the original `civvis-sync.sh` — "it could only report" — would be back
+    for the half of the disk this commit was written to cover.
+    """
+    if not paths:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {
+            "GIT_INDEX_FILE": os.path.join(tmp, "index"),
+            "GIT_AUTHOR_NAME": "civvis-worktree-audit",
+            "GIT_AUTHOR_EMAIL": "civvis-worktree-audit@localhost",
+            "GIT_COMMITTER_NAME": "civvis-worktree-audit",
+            "GIT_COMMITTER_EMAIL": "civvis-worktree-audit@localhost",
+        }
+        entries = []
+        for i in range(0, len(paths), 400):
+            batch = paths[i:i + 400]
+            blobs = git("hash-object", "-w", "--", *batch, repo=repo).split()
+            if len(blobs) != len(batch):
+                return None
+            for blob, path in zip(blobs, batch):
+                rel = os.path.relpath(path, scan_root)
+                if rel.startswith(".."):
+                    continue
+                mode = "100755" if os.access(path, os.X_OK) else "100644"
+                entries.append(f"{mode} {blob}\t{rel}")
+        if not entries:
+            return None
+        proc = subprocess.run(
+            ["git", "-C", repo, "-c", "gc.auto=0", "update-index", "--add",
+             "--index-info"],
+            input="\n".join(entries) + "\n", capture_output=True, text=True,
+            env={**os.environ, **env})
+        if proc.returncode != 0:
+            return None
+        tree = git("write-tree", repo=repo, env=env)
+        if not tree:
+            return None
+        ref = f"refs/civvis/wip/stranded/{label}"
+        parent = git("rev-parse", "--verify", "--quiet", ref, repo=repo)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        msg = (f"stranded loose files on {label} at {stamp}\n\n"
+               f"{len(entries)} file(s) under {scan_root} whose content was in no\n"
+               "git object. Written by tools/civvis_worktree_audit.py --rescue so\n"
+               "that nothing outside a worktree exists only on one disk. NOT for\n"
+               "review or merge; the files on disk were not touched.\n")
+        args = ["commit-tree", tree, "-m", msg]
+        if parent:
+            args += ["-p", parent]
+        commit = git(*args, repo=repo, env=env)
+        if not commit:
+            return None
+    # Same namespace and the same plain --force as every other rescue here: see
+    # push_wip. A failed push must read as NOT RESCUED, never as saved, because
+    # `hash-object -w` above has already put the blobs in the LOCAL object
+    # database and the next run's detection would otherwise find them and go
+    # quiet.
+    return commit if push_wip(repo, commit, f"stranded/{label}") else None
+
+
+def machine_label(repo: str) -> str:
+    """The fleet-unique id for this machine, for the stranded ref's name."""
+    return (git("config", "--local", "civvis.machine", repo=repo)
+            or os.uname().nodename.split(".")[0] or "unknown")
+
+
+def audit(repo: str, idle_minutes: int, rescue: bool, scan_root: str | None = None,
+          scan_patterns: list[str] | None = None, scan_depth: int = SCAN_DEPTH,
+          ) -> list[dict]:
     findings = []
     now = time.time()
-    for path in worktrees(repo):
+    trees = worktrees(repo)
+    for path in trees:
         if not os.path.isdir(path):
             findings.append({"path": path, "kind": "MISSING",
                              "detail": "registered worktree directory is gone"})
@@ -321,6 +585,63 @@ def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
                              else "; NOT PRESERVED" if rescue else ""),
                 "saved": saved,
             })
+
+    if scan_root:
+        findings += loose_audit(repo, scan_root,
+                                scan_patterns or ["civvis-*"], scan_depth, rescue,
+                                {os.path.realpath(t) for t in trees})
+    return findings
+
+
+def loose_audit(repo: str, scan_root: str, patterns: list[str], depth: int,
+                rescue: bool, known: set[str]) -> list[dict]:
+    """Report — and with `--rescue`, save — work that is on no git object.
+
+    One finding per directory, not per file. The stranded set on this machine is
+    3,417 files and 3,253 of them are one loop's per-iteration JSON output; a
+    finding per file would bury the nine hand-written ones and make the sweep's
+    log the thing nobody reads. The per-suffix breakdown is what makes the nine
+    visible: `civvis-simloop-logs: 9 (.mjs 3, .py 2, .sh 2, .json 1, .env 1)`
+    names `.mjs` without any allowlist having had to guess it.
+    """
+    paths, skipped = scan_candidates(scan_root, patterns, known, depth)
+    # ⚠ NOT `if not paths: return []`. A scan that excluded everything it found
+    # has the most to explain, and returning early there suppressed the bounds
+    # line in exactly that case — a scan reporting nothing because it opened
+    # nothing, which is the failure this whole commit exists to remove.
+    missing = stranded_blobs(repo, paths) if paths else []
+    findings: list[dict] = []
+    if skipped["depth_pruned"] or skipped["oversize"] or skipped["nested_repo"]:
+        findings.append({
+            "path": scan_root, "kind": "SCAN-BOUNDS", "branch": "",
+            "detail": f"scanned {len(paths)} file(s) at depth {depth}; not "
+                      f"opened: {skipped['depth_pruned']} deeper director(ies), "
+                      f"{skipped['oversize']} file(s) over "
+                      f"{SCAN_MAX_BYTES // 1000}kB, "
+                      f"{skipped['nested_repo']} nested git repo(s)",
+            "bounds": True, "saved": None,
+        })
+    if not missing:
+        return findings
+    saved = rescue_loose(repo, scan_root, missing, machine_label(repo)) if rescue else None
+    by_dir: dict[str, list[str]] = {}
+    for m in missing:
+        by_dir.setdefault(os.path.dirname(m), []).append(m)
+    for directory, files in sorted(by_dir.items()):
+        counts: dict[str, int] = {}
+        for f in files:
+            counts[os.path.splitext(f)[1].lower() or "<none>"] = \
+                counts.get(os.path.splitext(f)[1].lower() or "<none>", 0) + 1
+        breakdown = ", ".join(f"{ext} {n}" for ext, n in
+                              sorted(counts.items(), key=lambda kv: -kv[1])[:6])
+        findings.append({
+            "path": directory, "branch": "", "kind": "STRANDED-ON-DISK",
+            "detail": f"{len(files)} file(s) on no git object ({breakdown})"
+                      + (f"; saved {saved[:8]} -> refs/civvis/wip/stranded/"
+                         f"{machine_label(repo)}" if saved
+                         else "; NOT RESCUED" if rescue else ""),
+            "saved": saved, "files": files,
+        })
     return findings
 
 
@@ -698,6 +1019,19 @@ def main() -> int:
                          "destructive default is how a tool like this ends up famous")
     ap.add_argument("--no-fetch", action="store_true",
                     help="skip the fetch; only for tests, a stale ref voids the run")
+    ap.add_argument("--scan-root", default=None,
+                    help="directory holding the loose CIVVIS files and non-git "
+                         "directories to check for content on no git object "
+                         "(default: the repo's parent)")
+    ap.add_argument("--scan-glob", action="append", default=None, metavar="GLOB",
+                    help="which entries of --scan-root to scan; repeatable "
+                         "(default: civvis-*)")
+    ap.add_argument("--scan-depth", type=int, default=SCAN_DEPTH,
+                    help="how far below each scanned entry to walk; the count of "
+                         "directories the limit pruned is always reported")
+    ap.add_argument("--no-scan", action="store_true",
+                    help="worktrees only. ⚠ That is the check that was blind on "
+                         "2026-08-22: every byte at risk was outside a worktree")
     ap.add_argument("--quiet", action="store_true", help="print only problems")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
@@ -709,17 +1043,31 @@ def main() -> int:
         print("FETCH FAILED — refusing to report on stale refs", file=sys.stderr)
         return 1
 
-    findings = audit(args.repo, args.idle_minutes, args.rescue)
+    scan_root = None if args.no_scan else (
+        args.scan_root or os.path.dirname(os.path.abspath(args.repo)))
+    findings = audit(args.repo, args.idle_minutes, args.rescue,
+                     scan_root=scan_root, scan_patterns=args.scan_glob,
+                     scan_depth=args.scan_depth)
     # Abandoned work first: that is the class that gets lost.
-    order = {"DIRTY-ABANDONED": 0, "COMMIT-NOT-ON-GITHUB": 1, "MISSING": 2,
-             "DIRTY-ACTIVE": 3}
+    order = {"DIRTY-ABANDONED": 0, "STRANDED-ON-DISK": 1, "COMMIT-NOT-ON-GITHUB": 2,
+             "MISSING": 3, "DIRTY-ACTIVE": 4, "SCAN-BOUNDS": 5}
     for f in sorted(findings, key=lambda f: order.get(f["kind"], 9)):
-        print(f"{f['kind']}: {os.path.basename(f['path'])} — {f['detail']}")
+        # A worktree is known by its directory name, but a scanned directory
+        # needs its path: basename alone prints "runs", "Default" and "martin",
+        # which name nothing a person can act on.
+        if f["kind"] in ("STRANDED-ON-DISK", "SCAN-BOUNDS") and scan_root:
+            label = os.path.relpath(f["path"], scan_root)
+            label = "." if label == "." else label
+        else:
+            label = os.path.basename(f["path"])
+        print(f"{f['kind']}: {label} — {f['detail']}")
 
     # An ACTIVE dirty tree that was snapshotted is not a problem: an agent is
     # working and its bytes are already on GitHub. Everything else needs a person.
     unresolved = [f for f in findings
-                  if not (f["kind"] == "DIRTY-ACTIVE" and f.get("saved"))]
+                  if not (f["kind"] == "DIRTY-ACTIVE" and f.get("saved"))
+                  and not (f["kind"] == "STRANDED-ON-DISK" and f.get("saved"))
+                  and f["kind"] != "SCAN-BOUNDS"]
     if args.reap:
         reaped = reap(args.repo, findings, args.idle_minutes, args.apply)
         verb = "removed" if args.apply else "would remove"
@@ -735,8 +1083,10 @@ def main() -> int:
 
     if not unresolved:
         if not args.quiet:
-            print(f"nothing exists only on this disk "
-                  f"({len(worktrees(args.repo))} worktree(s) checked)")
+            where = f"{len(worktrees(args.repo))} worktree(s)"
+            if scan_root:
+                where += f" and the loose files under {scan_root}"
+            print(f"nothing exists only on this disk ({where} checked)")
         return 0
     # Under --quiet every printed line is a finding: civvis_sync.sh step 4
     # echoes and counts them, so a summary here would be double-reported and
