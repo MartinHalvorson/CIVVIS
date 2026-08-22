@@ -752,10 +752,6 @@ class OvernightAuditRecovery(unittest.TestCase):
             self.assertEqual(result.returncode, expected, result.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
     """A restart is this keeper's only remedy, so a cause no restart can reach
     has to stop it acting.
@@ -785,6 +781,29 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
             self.assertEqual(code, 2)
             self.assertEqual(self.starts, [],
                              "started a loop that cannot take the game")
+
+    def test_a_held_game_is_not_started_against_on_a_fresh_ledger_either(self):
+        """The arm a halt actually lands on.
+
+        A halt arrives while the ledger is still FRESH, so for the first
+        `--stale-hours` after one it is the no-supervisor arm that runs, not
+        the stale arm that owned this guard. It asked nothing, so it opened a
+        Terminal host every cooldown that read the halt and exited having
+        played no turn — nine on 2026-08-19, two more on 2026-08-20.
+        """
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.2])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [],
+                             "opened a window that cannot take the game")
+            self.assertIn("HELD no supervisor is running",
+                          (tmp / "log").read_text())
 
     def test_a_held_game_does_not_get_the_live_supervisor_killed_either(self):
         """The other arm: alive, not playing. Stopping it is disruptive and
@@ -837,3 +856,7 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
                                lambda: {"pid": os.getpid(), "tag": "whatever",
                                         "since": "2026-08-02T20:03:01Z"}):
             self.assertIsNone(ladder_watchdog.gamelock.standing_hold())
+
+
+if __name__ == "__main__":
+    unittest.main()
