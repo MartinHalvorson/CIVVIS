@@ -252,4 +252,15 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // let a native seat turn on exactly one of its established predicates.
     ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
     ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
+    // ⭐ APPENDED AT THE END ON PURPOSE. A gene inserted into the middle of
+    // this table renumbers every row after it, and `gene_screen` writes the
+    // genome as a POSITIONAL bit string — so a screen already running against
+    // an older binary cannot be pooled with one running against this. That
+    // cost the 83,000,000 run its analysis; see
+    // `tools/gene_quantity_contrast.py`.
+    //
+    // The Research Lab's larger half is switched off until something generates
+    // power, and nothing in the controller buys the switch. See
+    // `AdvancedAi::power_the_laboratory`.
+    ("power_the_laboratory", "power-the-laboratory", AdvancedAi::enable_power_the_laboratory),
 ];

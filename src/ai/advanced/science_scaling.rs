@@ -139,6 +139,9 @@ mod tests {
             ("campus-finishes-first", |ai: &AdvancedAi| {
                 ai.campus_finishes_first
             }),
+            ("power-the-laboratory", |ai: &AdvancedAi| {
+                ai.power_the_laboratory
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -156,16 +159,19 @@ mod tests {
         ai.enable_research_tier_premium();
         ai.enable_research_floor_holds();
         ai.enable_campus_finishes_first();
+        ai.enable_power_the_laboratory();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
         ai.disable_research_floor_holds();
         ai.disable_campus_finishes_first();
+        ai.disable_power_the_laboratory();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
         assert!(!ai.research_floor_holds);
         assert!(!ai.campus_finishes_first);
+        assert!(!ai.power_the_laboratory);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -360,6 +366,82 @@ mod tests {
         game.cities.get_mut(&city).unwrap().buildings.clear();
         shipped.refresh_research_chain_completion(&game, 0);
         assert_eq!(shipped.research_chain_completion, 1.0);
+    }
+
+    /// The switch, and the three cities where flipping it buys nothing.
+    ///
+    /// A Research Lab prints 3 Science and carries `powered_science` 5 — more
+    /// than any other Campus building earns in total — and the model pays that
+    /// 5 only while the city is powered. Nothing in the controller bought the
+    /// switch.
+    #[test]
+    fn a_power_plant_is_worth_the_laboratory_it_switches_on() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        let plant = game.rules.buildings["coal_power_plant"].clone();
+        let generated = plant.effects["power_generated"];
+        assert_eq!(generated, 4.0, "the plant the fixture leans on");
+
+        // A city with nothing that CONSUMES power is already "powered" by
+        // `demand <= 0`, so the plant switches nothing on. Every city before
+        // the Industrial era is this city.
+        assert!(game.city_is_powered(&game.cities[&city]));
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &plant).science,
+            0.0,
+            "no demand, nothing to switch"
+        );
+
+        // Now stand the laboratory. It draws power, so the city goes dark and
+        // its 5 Science is off.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("research_lab"));
+        let demand = game.city_power_demand(&game.cities[&city]);
+        assert!(demand > 0.0, "a Research Lab draws power");
+        assert!(
+            !game.city_is_powered(&game.cities[&city]),
+            "and the city is dark"
+        );
+        let switched = AdvancedAi::power_switched_on(&game, &game.cities[&city], &plant);
+        assert_eq!(
+            switched.science, game.rules.buildings["research_lab"].effects["powered_science"],
+            "the plant is worth exactly the beakers it turns on"
+        );
+
+        // A plant too small to meet the demand buys nothing: the yields stay
+        // off and the production is spent for a switch that does not flip.
+        let mut token = plant.clone();
+        token
+            .effects
+            .insert("power_generated".to_string(), demand / 2.0);
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &token).science,
+            0.0,
+            "half the demand is not half the yield, it is none of it"
+        );
+
+        // A building that generates no power is never credited, whatever the
+        // city holds.
+        let library = game.rules.buildings["library"].clone();
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &library),
+            Yields::default()
+        );
+
+        // And with the gene off nothing above reaches a price: the flag is
+        // what gates the term, and it ships off.
+        let shipped = AdvancedAi::new();
+        assert!(!shipped.power_the_laboratory);
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the

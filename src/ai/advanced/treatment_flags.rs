@@ -177,6 +177,18 @@ impl AdvancedAi {
         self.campus_finishes_first = false;
     }
 
+    /// A power plant is credited the yields it switches on in its city. See
+    /// [`AdvancedAi::power_the_laboratory`]. Opt-in gene
+    /// `power-the-laboratory`.
+    pub fn enable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = true;
+    }
+
+    /// The twin of `enable_power_the_laboratory`.
+    pub fn disable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.

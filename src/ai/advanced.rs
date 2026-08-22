@@ -4006,6 +4006,37 @@ pub struct AdvancedAi {
     /// `campus-finishes-first`.
     pub campus_finishes_first: bool,
 
+    /// A power plant is worth the yields it switches on, and the largest of
+    /// them is the Research Lab's.
+    ///
+    /// ★★★★★ THE BIGGEST SINGLE SCIENCE YIELD ON THE CAMPUS IS OFF BY DEFAULT
+    /// AND NOTHING BUYS THE SWITCH. `research_lab` prints **3** Science and
+    /// carries `powered_science` **5** — more than any other Campus building
+    /// earns in total — and `Game::city_yields` pays that 5 only while
+    /// `city_is_powered`. Power comes from `power_generated` on
+    /// `coal_power_plant` (4), `oil_power_plant` (4) and
+    /// `nuclear_power_plant` (16), and **the controller prices none of them
+    /// for it**: the single power term in this file is a project's
+    /// `full_power_while_active`, and a plant's own `power_generated` appears
+    /// nowhere in any valuation. So the empire builds the 440-production
+    /// laboratory and leaves 5 of its 8 beakers switched off.
+    ///
+    /// The same switch runs the Stock Exchange's `powered_gold` **7**, the
+    /// Electronics Factory's `powered_production` **5** and the Broadcast
+    /// Centre's `powered_culture` **4**, so this is not a science-only lever —
+    /// but a Research Lab is the largest of them and the era it lands in is
+    /// the one this bundle is about.
+    ///
+    /// With this on, a building that generates power is credited the
+    /// `powered_*` yields the buildings THIS CITY ALREADY HOLDS would begin to
+    /// pay, valued through `yield_value` at the same 42 a point as any other
+    /// yield. It is credited only where it actually flips the switch: a city
+    /// already powered is paid nothing (the yields are on), and neither is one
+    /// this plant leaves short of its demand (they stay off). A city holding
+    /// nothing powered is unaffected, which is every city before the Industrial
+    /// era. Off everywhere by default; opt-in gene `power-the-laboratory`.
+    pub power_the_laboratory: bool,
+
     /// The citizen half of the taper: an empire that has built the research
     /// economy should still be WORKING it in the half of the game the tech
     /// tree decides.
@@ -5115,6 +5146,7 @@ impl AdvancedAi {
             science_multiplier_payoff: false,
             research_tier_premium: false,
             campus_finishes_first: false,
+            power_the_laboratory: false,
             research_floor_holds: false,
             idle_faith_patronage: false,
             early_contact_window: false,
@@ -9492,6 +9524,47 @@ impl AdvancedAi {
     /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
     /// asks the question the investment actually poses — is there still time
     /// to repay — and is what the Culture twin and the chain debt already use.
+    /// The yields a power plant would switch on in this city. See
+    /// `power_the_laboratory`; 0.0 wherever the switch does not flip.
+    fn power_switched_on(
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> Yields {
+        let generated = spec.effects.get("power_generated").copied().unwrap_or(0.0);
+        if generated <= 0.0 {
+            return Yields::default();
+        }
+        let demand = g.city_power_demand(city);
+        let supply = g.city_power_supply(city);
+        // Already powered: the yields are on and this plant adds none of them.
+        // Still short after it: they stay off and it has bought nothing here.
+        // `city_is_powered` treats zero demand as powered, so a city with
+        // nothing to run also lands in the first case, correctly.
+        if supply + 1e-9 >= demand || supply + generated + 1e-9 < demand {
+            return Yields::default();
+        }
+        let mut switched = Yields::default();
+        for held in &city.buildings {
+            let Some(building) = g.rules.buildings.get_interned(*held) else {
+                continue;
+            };
+            // A regional building is powered by its own city, not this one —
+            // the same test `Game::city_yields` applies before paying them.
+            if building.regional_range > 0 {
+                continue;
+            }
+            let of = |key: &str| building.effects.get(key).copied().unwrap_or(0.0);
+            switched.food += of("powered_food");
+            switched.production += of("powered_production");
+            switched.gold += of("powered_gold");
+            switched.science += of("powered_science");
+            switched.culture += of("powered_culture");
+            switched.faith += of("powered_faith");
+        }
+        switched
+    }
+
     /// How much more this Campus building is owed than the chain's first
     /// rung. See `research_tier_premium`; 1.0 when the gene is off, so the
     /// shipped flat debt is recovered exactly.
@@ -20162,11 +20235,9 @@ impl AdvancedAi {
                             .district
                             .map(|district| g.district_family(district))
                             .is_some_and(|family| family == crate::name!("theater_square"))
-                        && city
-                            .districts
-                            .keys()
-                            .any(|built| g.district_family(*built) == crate::name!("theater_square"))
-                    {
+                        && city.districts.keys().any(|built| {
+                            g.district_family(*built) == crate::name!("theater_square")
+                        }) {
                         CULTURE_BUILDING_DEBT * Self::research_horizon(g)
                     } else {
                         0.0
@@ -20234,6 +20305,14 @@ impl AdvancedAi {
                     // not what this building will earn. Valued at the same 42 a
                     // point as `spec.yields` above, through the lane's own
                     // price of a beaker.
+                    // See `power_the_laboratory`: the Research Lab's larger
+                    // half is switched off until something generates power.
+                    let power_unlock = if self.power_the_laboratory && !spec.wonder {
+                        self.yield_value(Self::power_switched_on(g, city, spec), plan.strategy)
+                            * 42.0
+                    } else {
+                        0.0
+                    };
                     let multiplied_science = if self.science_multiplier_payoff && !spec.wonder {
                         let extra = Self::campus_multiplier_science(g, city, spec);
                         self.yield_value(
@@ -20247,6 +20326,7 @@ impl AdvancedAi {
                         0.0
                     };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + power_unlock
                         + multiplied_science
                         + chain_debt
                         + culture_debt
@@ -30876,9 +30956,7 @@ impl Ai for AdvancedAi {
                 ready_bodies: self.war_status.ready_bodies,
                 staged_bodies: self.war_status.staged_bodies,
                 breach_ready: self.war_status.breach_ready,
-                upgrade_gold_reserved: active
-                    .map(|_| self.war_status.upgrade_gold)
-                    .unwrap_or(0.0),
+                upgrade_gold_reserved: active.map(|_| self.war_status.upgrade_gold).unwrap_or(0.0),
                 appointed_turn: active.map(|plan| plan.appointed_turn),
                 appointments: self.war_census.appointments,
                 breakthroughs: self.war_census.breakthroughs,
