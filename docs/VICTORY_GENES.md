@@ -323,6 +323,13 @@ a property of the rules rather than of the gene — see the section above.
 
 ## 8. First readings — under-powered, and recorded as such
 
+Three runs, three regimes, and the honest summary first: **one gene is flagged
+as helping, one as hurting, one as a measured null, and the rest are
+unresolved.** Every reading below is a screening flag at |z| ≥ 2, never a
+promotion; nothing here changes a default.
+
+### The regime production plays — all six victory conditions
+
 `docs/gene_screens/2026-08-22-v1-victory-lane-genes-native-6p-allseats-486-pairs.json`.
 Command, so it can be extended with `--append` and a disjoint `--start-seed`:
 
@@ -358,12 +365,56 @@ thing. That is a hypothesis at z −1.75, not a finding; it is also exactly the
 kind of interaction the all-lanes screen exists to catch, and the reason the
 `--victories culture,score` run is a separate question rather than the same one.
 
-Two other runs are in flight and are not reported here because they had not
-accumulated enough pairs: `--victories diplomatic,score` on the four Diplomacy
-genes (seed 64000000) and `--turns 600` on `lane-space-race` (seed 63000000).
-Their early readings — `congress-banks-decided` +8.3 pp (z +1.53, 48 pairs) and
-`lane-space-race` +8.3 pp (z +1.00, 24 pairs) — are recorded here as *where to
-point the next batch*, not as results.
+### The lane's own regime — `--victories diplomatic,score`
+
+`docs/gene_screens/2026-08-22-v2-victory-lane-diplomacy-regime-6p-allseats-120-pairs.json`,
+seed 64000000. **120 pairs, resolving ±8.6 pp at 80% power**, so both flags
+below are candidates for a dedicated arm and neither is a verdict; the
+family-wise bar for four genes is |z| ≥ 2.50 and neither clears it.
+
+| gene | on% | off% | win Δpp | z | share Δpp | z | read |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `congress-banks-decided` | 20.0% | 13.3% | **+6.7** | **+2.18** | +0.19 | +0.54 | **helps \*** |
+| `congress-counter-votes` | 16.7% | 16.7% | +0.0 | +0.00 | −0.21 | −0.89 | ~ |
+| `envoy-infrastructure` | 15.8% | 17.5% | −1.7 | −0.57 | −0.42 | −1.71 | ~ |
+| `lane-congress-ballot` | 15.0% | 18.3% | −3.3 | −1.00 | **−0.61** | **−2.33** | **share hurts \*** |
+
+Two readings, and they point opposite ways for the two genes that touch the
+same ballot:
+
+- **`congress-banks-decided` is the strongest thing in this whole file**, and
+  it is not a gene this work invented. It existed, off, reachable only as an
+  `elo.rs` arm, with the number that motivates it sitting unused in its own
+  doc comment (26 of 192 ballot decisions already settled, ~1.4 free points a
+  seat a game). Registering it as a gene is a toggle pair and a row; that is
+  the whole cost of finding this out. §9 is about the other thirty.
+- **`lane-congress-ballot` reads negative on score share.** The plausible
+  mechanism is the half of the gene that stakes Favor:
+  `congress_affordable_votes` empties the treasury behind a ballot, and a
+  *winning* ballot is not refunded. A seat still settling has better uses for
+  its Favor than a resolution it would have got right for free. If it is
+  re-run, the split worth screening is the scoring half against the staking
+  half, as two genes rather than one.
+
+⚠ **Even here the lane barely lands.** The regime census reads *score 94%
+(median t250), diplomatic 6% (median t233)* — restricting the game to two
+victory conditions does not make the Diplomacy lane reachable, which is the
+same finding §1 records at 1/8 and is the reason the near miss is worth
+chasing at all.
+
+### `lane-space-race` at 600 turns
+
+`docs/gene_screens/2026-08-22-v3-lane-space-race-600-turns-6p-allseats.json`,
+seed 63000000. **312 pairs, resolving ±1.8 pp — and the answer is +0.0 pp
+(z 0.00), score share −0.02 (z −0.26).**
+
+That is a **null**, not an inert gene, and the distinction is measurable here:
+the fires-check (§7) shows the gene moving 13 of 24 seat-pairs, so the games
+genuinely differ. They differ without the seat winning more. The gate it
+corrects is real — an adaptive Science racer is held to one launch pad and to
+spaceport cities with empty queues — and correcting it is worth nothing at
+this size. Read it as: *the space race's target-vs-race inconsistency is not
+where the science lane is lost.*
 
 ⚠ Nothing in this file promotes anything. Every gene remains `default:off`, and
 `docs/GENE_SCREEN.md`'s rule stands: the screen ranks and directs, `ai_eval` is
