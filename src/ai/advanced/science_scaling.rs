@@ -787,10 +787,14 @@ mod tests {
                 building: crate::name!("library"),
             },
         ));
-        assert_eq!(ai.research_grants_premium(&game, 0, city, &grants), 0.0);
+        assert_eq!(ai.research_grants_premium(&game, city, &grants), 0.0);
 
-        // Once nothing in the chain can still be produced here, the project is
-        // what this city does with its remaining turns.
+        // ⚠ A Library alone is NOT finished, even though the University
+        // cannot be produced without Education. `can_produce` is false while
+        // the tech is out, and a first draft read that as finished — the
+        // census then measured the empire swapping Research Labs for Grants,
+        // 40 against 55. A rung the empire cannot yet reach is a rung it WILL
+        // reach.
         game.cities
             .get_mut(&city)
             .unwrap()
@@ -804,14 +808,32 @@ mod tests {
             },
         ));
         assert_eq!(
-            ai.research_grants_premium(&game, 0, city, &grants),
+            ai.research_grants_premium(&game, city, &grants),
+            0.0,
+            "cannot-build-yet is not finished"
+        );
+
+        // ⚠ Nor is "every rung the ruleset defines" the test: the Campus
+        // family holds madrasa, navigation_school and alchemical_society as
+        // civ-unique replacements for the University, so no city can hold them
+        // all. What finishes the chain is the DEEPEST rung — the one no other
+        // Campus building is built on top of.
+        for rung in ["university", "research_lab"] {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push(Name::new(rung));
+        }
+        assert_eq!(
+            ai.research_grants_premium(&game, city, &grants),
             super::super::RESEARCH_GRANTS_COMPOUNDING_PREMIUM
         );
 
         // ⚠ And it is the CAMPUS project only. The other six district projects
         // are identical in the ruleset — cost 25, repeatable, 10 Great Person
         // points, an ongoing percent of Production — and none of them moves.
-        assert_eq!(ai.research_grants_premium(&game, 0, city, &festival), 0.0);
+        assert_eq!(ai.research_grants_premium(&game, city, &festival), 0.0);
         for other in [
             "commercial_hub_investment",
             "holy_site_prayers",
@@ -820,7 +842,7 @@ mod tests {
         ] {
             let spec = game.rules.projects[other].clone();
             assert_eq!(
-                ai.research_grants_premium(&game, 0, city, &spec),
+                ai.research_grants_premium(&game, city, &spec),
                 0.0,
                 "{other} is not the Campus project"
             );
@@ -828,10 +850,7 @@ mod tests {
 
         // With the gene off nothing is paid, in any state.
         let shipped = AdvancedAi::new();
-        assert_eq!(
-            shipped.research_grants_premium(&game, 0, city, &grants),
-            0.0
-        );
+        assert_eq!(shipped.research_grants_premium(&game, city, &grants), 0.0);
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the

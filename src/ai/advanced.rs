@@ -10172,41 +10172,56 @@ impl AdvancedAi {
         // a coin does not, and the shipped weights price them as if it were a
         // near-run thing. Only the Campus project, only where the chain is
         // finished, only as a fraction of what is already computed.
-        value * (1.0 + self.research_grants_premium(g, pid, cid, spec))
+        value * (1.0 + self.research_grants_premium(g, cid, spec))
     }
 
     /// The premium a finished research city pays for its own district's
     /// project, as a fraction. 0.0 everywhere else. See
     /// `research_grants_first`.
-    fn research_grants_premium(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        spec: &crate::rules::ProjectSpec,
-    ) -> f64 {
+    fn research_grants_premium(&self, g: &Game, cid: u32, spec: &crate::rules::ProjectSpec) -> f64 {
         let campus = crate::name!("campus");
         if !self.research_grants_first
             || spec.district.map(|d| g.district_family(d)) != Some(campus)
         {
             return 0.0;
         }
-        // A city with a rung still to build should build it; the project is
-        // what a FINISHED research city does with the turns after that.
+        // ⚠⚠ "FINISHED" MEANS HOLDING THE RUNGS, NOT MERELY BEING UNABLE TO
+        // BUILD ONE TODAY. A first draft asked `can_produce`, which is false
+        // while the TECH is still out — so a city with a Library and a
+        // University but no Chemistry read as finished, took the premium, and
+        // spent the turns before Chemistry on a project whose repeat cost
+        // climbs to 1500%. The census measured exactly that trade: Research
+        // Labs **40 against the control's 55**, technologies 699 against 731,
+        // Science −5.0%. The empire swapped Laboratories for Grants and the
+        // Laboratory is worth more.
+        //
+        // ⚠ AND "EVERY RUNG THE RULESET DEFINES" IS UNREACHABLE. The Campus
+        // family holds `madrasa`, `navigation_school` and `alchemical_society`
+        // as civ-unique replacements for the University; no city can ever hold
+        // them all, and a second draft that asked for it paid the premium
+        // nowhere.
+        //
+        // The rung that matters is the LAST one. `research_lab` requires
+        // `university`, which requires `library`, so a city holding the deepest
+        // Campus building — the one no other Campus building requires — holds
+        // the chain. That is one predicate, it is read off `requires` rather
+        // than off three names, and a unique replacement satisfies it exactly
+        // as its base does.
         let city = &g.cities[&cid];
-        let unfinished = g.rules.buildings.iter().any(|(name, building)| {
-            !building.wonder
-                && building.district.map(|d| g.district_family(d)) == Some(campus)
-                && !city.buildings.contains(&Name::new(name))
-                && g.can_produce(
-                    pid,
-                    cid,
-                    &Item::Building {
-                        building: Name::new(name),
-                    },
-                )
+        let campus_family = |spec: &crate::rules::BuildingSpec| {
+            !spec.wonder && spec.district.map(|d| g.district_family(d)) == Some(campus)
+        };
+        let deepest = g.rules.buildings.iter().any(|(name, building)| {
+            if !campus_family(building) || !city.buildings.contains(&Name::new(name)) {
+                return false;
+            }
+            // Nothing in the family is built on top of this one.
+            !g.rules
+                .buildings
+                .values()
+                .any(|other| campus_family(other) && other.requires.iter().any(|need| need == name))
         });
-        if unfinished {
+        if !deepest {
             return 0.0;
         }
         RESEARCH_GRANTS_COMPOUNDING_PREMIUM

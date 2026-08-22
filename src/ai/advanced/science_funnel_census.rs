@@ -1043,7 +1043,7 @@ mod finished_city_probe {
                             }
                             // "Finished" = every rung it can produce, it has.
                             let done = chain.iter().all(|rung| {
-                                let name = Name::new(*rung);
+                                let name = Name::new(rung);
                                 city.buildings.contains(&name)
                                     || !g.can_produce(
                                         0,
