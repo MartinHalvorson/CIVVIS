@@ -166,13 +166,14 @@ def settler_holds(run: Path) -> dict:
         return {"holds": 0, "sites": []}
     sites: dict[str, int] = {}
     holds = 0
-    for line in why.open(errors="ignore"):
-        if "HELD short of" not in line:
-            continue
-        holds += 1
-        found = re.search(r"\((\d+, \d+)\)", line)
-        if found:
-            sites[found.group(1)] = sites.get(found.group(1), 0) + 1
+    with why.open(errors="ignore") as handle:
+        for line in handle:
+            if "HELD short of" not in line:
+                continue
+            holds += 1
+            found = re.search(r"\((\d+, \d+)\)", line)
+            if found:
+                sites[found.group(1)] = sites.get(found.group(1), 0) + 1
     ranked = sorted(sites.items(), key=lambda kv: -kv[1])[:3]
     return {"holds": holds, "sites": [{"site": s, "holds": n} for s, n in ranked]}
 
