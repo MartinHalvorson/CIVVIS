@@ -248,4 +248,13 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("lane_culture_spending", "lane-culture-spending", AdvancedAi::enable_lane_culture_spending),
     ("lane_space_race", "lane-space-race", AdvancedAi::enable_lane_space_race),
     ("competition_victory_points", "competition-victory-points", AdvancedAi::enable_competition_victory_points),
+    // Three behaviours that already existed and could not be screened: off in
+    // production, reachable only as named `elo.rs` arms, so `gene_screen`
+    // never saw them. `docs/VICTORY_GENES.md` §7 counts 42 such fields; these
+    // are the three the Diplomacy lane needs — and the first has a measured
+    // number sitting unused in its own field doc (26 of 192 ballot decisions
+    // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
+    ("congress_banks_a_decided_vote", "congress-banks-decided", AdvancedAi::enable_congress_banks_a_decided_vote),
+    ("congress_counter_votes", "congress-counter-votes", AdvancedAi::enable_congress_counter_votes),
+    ("envoy_infrastructure", "envoy-infrastructure", AdvancedAi::enable_envoy_infrastructure),
 ];

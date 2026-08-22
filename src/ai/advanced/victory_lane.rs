@@ -599,25 +599,13 @@ mod tests {
         };
         let mut off = AdvancedAi::targeting(VictoryTarget::Diplomacy);
         assert_eq!(
-            off.competition_victory_point_value(
-                &g,
-                0,
-                &plan,
-                "EMERGENCY_CLIMATE_ACCORDS",
-                100.0
-            ),
+            off.competition_victory_point_value(&g, 0, &plan, "EMERGENCY_CLIMATE_ACCORDS", 100.0),
             0.0,
             "off by default"
         );
         off.enable_competition_victory_points();
         assert_eq!(
-            off.competition_victory_point_value(
-                &g,
-                0,
-                &plan,
-                "EMERGENCY_CLIMATE_ACCORDS",
-                100.0
-            ),
+            off.competition_victory_point_value(&g, 0, &plan, "EMERGENCY_CLIMATE_ACCORDS", 100.0),
             2.0 * victory_point_value(),
             "the Climate Accords pay two of the twenty"
         );
@@ -625,13 +613,7 @@ mod tests {
         // And not to a seat that could not take first place with it.
         g.competition.as_mut().unwrap().scores.insert(1, 500.0);
         assert_eq!(
-            off.competition_victory_point_value(
-                &g,
-                0,
-                &plan,
-                "EMERGENCY_CLIMATE_ACCORDS",
-                100.0
-            ),
+            off.competition_victory_point_value(&g, 0, &plan, "EMERGENCY_CLIMATE_ACCORDS", 100.0),
             0.0,
             "a completion that still leaves the leader ahead claims no points"
         );

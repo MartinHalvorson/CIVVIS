@@ -48,8 +48,9 @@ built next:
 
 ## 2. Which genes each lane already has
 
-Classification of the 107 rows in `LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS`
-and `PRODUCTION_OPT_INS` by the victory they serve. It is a judgement, not a
+Classification of the **101** rows that stood in `LIVE_TREATMENTS`,
+`PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS` before the six below, by the
+victory they serve. It is a judgement, not a
 field in the table — a gene that helps the empire generally helps every lane —
 so the useful column is the *specific* one: genes that only exist because of
 one victory condition.
@@ -126,6 +127,16 @@ for. Each is one sentence and one call site.
 | `lane-culture-spending` | culture | the Naturalist and the touring Rock Bands, and the Faith reserve that keeps them affordable, follow the race rather than the plan |
 | `lane-space-race` | science | a Science **racer** is treated as a Science **target** by the space race: three pads for the parallel laser race instead of one, a launch project may claim a city with something else queued, and the pass opens at all |
 | `competition-victory-points` | diplomacy | a scored competition's first place is priced by the Diplomatic Victory Points it pays |
+
+And three that are **not new behaviour** — they already existed, off in
+production and reachable only as named `elo.rs` arms, so `gene_screen` could
+not see them and the genome instrument has never priced any of them (§7):
+
+| gene | lane | what it already did |
+|---|---|---|
+| `congress-banks-decided` | diplomacy | answer an already-decided resolution with the one free vote on its settled winner. Its own field doc carries the measurement and it has sat unused: **26 of 192 ballot decisions already settled, ~1.4 free points a seat a game** against the twenty |
+| `congress-counter-votes` | diplomacy | back a ballot aimed at the empire closest to winning with everything the treasury can spare — a losing vote is refunded in full, so a failed opposition costs no Favor |
+| `envoy-infrastructure` | diplomacy | price the Consulate and Chancery by the envoys their influence stream will actually produce before the turn limit |
 
 ### Two scopes, and the fires-check that forced them apart
 
@@ -245,3 +256,45 @@ target/ci/victory_eval --target diplomatic --with lane-congress-ballot \
 The screen ranks and directs; `ai_eval` remains the ship decision for any
 promotion (`docs/GENE_SCREEN.md`). A `*` here is a candidate for a dedicated
 arm, never a promotion.
+
+## 7. What the genome instrument cannot see
+
+`gene_screen` discovers its genome from `LIVE_TREATMENTS`,
+`PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`. A behaviour with no row in
+any of the three is invisible to it however real it is — and a lot of
+behaviour has no row:
+
+```sh
+python3 - <<'EOF'
+import re
+adv = open('src/ai/advanced.rs').read()
+tre = open('src/ai/advanced/treatments.rs').read()
+off = set(re.findall(r'^\s+([a-z0-9_]+): false,\s*$', adv, re.M))
+rows = set(re.findall(r'\("([a-z0-9_]+)",', tre)) | set(
+    re.findall(r'AdvancedAi::(?:en|dis)able_([a-z0-9_]+)\)', tre))
+body = adv[adv.index('fn promoted_policy_envoy'):]
+body = body[:body.index('\n    pub fn ')]
+on = set(re.findall(r'ai\.([a-z0-9_]+) = true;', body)) | set(
+    re.findall(r'ai\.enable_([a-z0-9_]+)\(\)', body))
+print(sorted(off - rows - on))
+EOF
+```
+
+At the time of writing that prints **33** fields that are off in the shipped
+agent and named in no table — `coordinated_finish`, `coupled_expansion`,
+`early_rush`, `diplomatic_opening`, `city_strategy`, `fog_honest`,
+`great_work_veto_by_district`, `price_the_suzerainty`, `timed_war` and two
+dozen more. Each is reachable as an `elo.rs` arm and therefore priceable one
+batch at a time by `ai_eval`; none of them is priceable by the screen, which
+is the instrument `docs/GENE_SCREEN.md` says should run "after each batch of
+landed treatments".
+
+The count is a heuristic — it matches field names against table entries, and
+an arm whose published identity differs from its field spelling can slip
+through either way — so read it as "at least 33", not as a census.
+
+Three of the 33 are the Diplomacy rows added above, chosen because the lane
+was the thinnest and because the first of them has a measured number sitting
+unused in its own doc comment. The remaining thirty are a standing backlog,
+not a claim that any of them helps: **making a behaviour screenable is cheap
+(a toggle pair and a row) and says nothing about whether it should ship.**

@@ -2205,6 +2205,55 @@ impl AdvancedAi {
     pub fn disable_competition_victory_points(&mut self) {
         self.competition_victory_points = false;
     }
+
+    /// ★★★ THE THREE BELOW ARE NOT NEW BEHAVIOUR. They already existed, off
+    /// in production and reachable only as named `elo.rs` arms — which means
+    /// `gene_screen` could not see them and the genome instrument has never
+    /// priced any of them. `docs/VICTORY_GENES.md` §7 counts 42 such
+    /// behaviours; these are the three the Diplomacy lane needs, and the
+    /// toggle pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
+    /// screenable.
+    ///
+    /// Answer a World Congress resolution that is already decided with the
+    /// one free vote on its settled winner: the Diplomatic Victory Point for
+    /// an exact prediction, staking nothing. Its own field doc records the
+    /// measurement — **26 of 192 ballot decisions already settled, ~1.4 free
+    /// points a seat a game against the twenty a diplomatic victory needs**.
+    /// Reachable as `advanced_congress_banks_decided`; now also as the gene
+    /// `congress-banks-decided`.
+    pub fn enable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = true;
+    }
+
+    /// The twin of `enable_congress_banks_a_decided_vote`.
+    pub fn disable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = false;
+    }
+
+    /// Back a ballot aimed at the empire closest to a victory with everything
+    /// the treasury can spare — a losing vote is refunded in full, so an
+    /// opposition that fails costs no Favor. Gene `congress-counter-votes`.
+    pub fn enable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = true;
+    }
+
+    /// The twin of `enable_congress_counter_votes`.
+    pub fn disable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = false;
+    }
+
+    /// Value the infrastructure that produces city-state influence: the
+    /// Consulate and Chancery's per-turn influence becomes the envoys it can
+    /// produce before the turn limit, and a first Diplomatic Quarter sees
+    /// part of the Consulate stream it unlocks. Gene `envoy-infrastructure`.
+    pub fn enable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = true;
+    }
+
+    /// The twin of `enable_envoy_infrastructure`.
+    pub fn disable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = false;
+    }
 }
 
 #[cfg(test)]

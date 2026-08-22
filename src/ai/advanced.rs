@@ -9165,6 +9165,14 @@ impl AdvancedAi {
                 Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_PHYSICS"),
             ),
         ];
+        // See `lane_great_people`: which Great Person class this project's
+        // points are worth chasing is a question about the race, not about the
+        // settling posture, and this arm runs in every city every turn —
+        // unlike patronage, which needs a bank the opening rarely has. Hoisted
+        // out of the loop: `raced_lane` short-circuits on any plan that is not
+        // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
+        // and this is `production_value`'s hot path.
+        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -9181,7 +9189,7 @@ impl AdvancedAi {
             if g.live_great_person_offer_blocker(pid, &kind).is_some() {
                 continue;
             }
-            let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
+            let mut affinity: f64 = match (great_person_lane, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 2.8,
@@ -16180,7 +16188,9 @@ impl AdvancedAi {
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid].districts.contains_key(crate::name!("spaceport"))
+            if g.cities[&cid]
+                .districts
+                .contains_key(crate::name!("spaceport"))
                 || matches!(
                     g.cities[&cid].queue.first(),
                     Some(Item::District { district, .. }) if district == "spaceport"
