@@ -4,7 +4,10 @@ This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
 ⚠ **Read the last section first.** Each profile here superseded the one above
-it, and the most recent — 2026-08-21 — supersedes **two** of the tables below:
+it, and the most recent — 2026-08-22 — corrects the 2026-08-21 section directly
+above it, whose whole-game cost figures conflated the feature's cost with the
+game-length change it causes. The 2026-08-21 profile supersedes **two** of the
+tables below:
 the "the profile is now flat" conclusion from 2026-08-17, and the "Largest
 remaining opportunities" table under it, whose top row is now 1.1% of the run.
 (This line itself said "2026-08-18" while four 2026-08-19 sections sat under
@@ -1433,15 +1436,22 @@ flag gates the whole block that owns half the profile above.
 
 | shape | on (head) | off | |
 | --- | ---: | ---: | ---: |
-| 6p 74x46 150t online | 78.22 s | 46.19 s | **-41.0%** |
-| 6p 60x38 6CS 250t online (the `gene_screen` native shape) | 156.13 s | 80.03 s | **-48.7%** |
+| 6p 74x46 150t online | 78.22 s | 46.19 s | -41.0% |
+| 6p 60x38 6CS 250t online (the `gene_screen` native shape) | 156.13 s | 80.03 s | -48.7% |
 
-It costs *more* at 250 turns than at 150, because envelope work scales with
-unit count. The harness prints ARMS DISAGREE on every seed, which is correct
-and is the point: this is a behaviour flag, so the number is what the feature
-**costs**, not overhead. The profile agrees independently — `healing_step`
-41.0%, `retreat_step` 35.9% — which is the two-independent-computations check
-`docs/EVAL.md` and the measurement-discipline notes ask for.
+⚠⚠ **THOSE TWO NUMBERS ARE WHOLE-GAME WALL CLOCK AND THEY ARE NOT THE
+FEATURE'S COST. Corrected below, in the section this one is superseded by** —
+they are retained because the retraction is the useful part. The harness
+prints ARMS DISAGREE on every seed, correctly: this is a behaviour flag. What
+was missed is the consequence of that — a different game is a different
+*length*, and this feature changes length. The same change measured **-14.2%**
+on `20bce807` a day later at the identical shape and seeds. A number that
+moves by a factor of three across one day of merges was never measuring what
+the sentence around it claimed.
+
+The profile is unaffected and stands: `healing_step` 41.0% and `retreat_step`
+35.9% of main thread are shares of running time, which no change in game
+length can move.
 
 **What it was worth: nobody knew.** As shipped it had no `LIVE_TREATMENTS` row,
 no `elo.rs` arm, no row in `docs/gene_ledger.json`, and no mention in
@@ -1475,3 +1485,51 @@ the sentence: it is that no gate ran it. Prose in this file has now failed to
 prevent the same class of event twice, so the next reader should treat a
 change to this section as a change to `speed.yml` first and a paragraph
 second.
+
+
+## 2026-08-22 — the evacuation cost, per completed turn, and whose seats it is on
+
+Two independent measurements of the same feature disagreed, and the
+disagreement is what located the cost. `docs/EVAL.md`'s own rule — compute the
+headline fact twice and read both — earned itself again here.
+
+`gene_screen --genes precise-evacuation`, 9,000 seat pairs (3,000 games, seeds
+61000000.., the native regime's own shape) reports the compute column as
+**+2.90 ± 0.42% per completed turn, per enabled major seat**. That cannot sit
+beside the section above's "-48.7% when withheld". Measured directly instead,
+four seeds interleaved on one revision, dividing by turns so game length cannot
+confound it:
+
+| arm | CPU s | turns | s/turn | vs on |
+| --- | ---: | ---: | ---: | ---: |
+| on (`main`, `20bce807`) | 160.07 | 745 | 0.2149 | — |
+| off for minors and barbarians only | 110.98 | 729 | 0.1522 | **-29.1%** |
+| off everywhere | 136.28 | 951 | 0.1433 | **-33.3%** |
+
+### 87% of it is on seats no evaluation is measuring
+
+Minors and barbarians are 29.1 of the 33.3 points. The six major seats — the
+only ones any evaluation reads — are the remaining four. `BasicAi::new()` is
+city-states, barbarians and the `basic` entrant, and every one of them runs the
+same per-unit envelope pricing as a major.
+
+⚠ A gene screen structurally cannot see this. It varies major genomes; every
+city-state and barbarian carries the flag ON in both arms of every pair. The
+screen's +2.90% is per *major seat* and is correct; it is simply not the whole
+bill, and nothing in the instrument says so.
+
+### Why the whole-game numbers moved
+
+The turn column is the other half. Withholding the feature makes games run
+**longer** — 745 turns to 951 over the same four seeds, fewer early religious
+victories — so whole-game wall clock measures the length change and the cost
+change together, with opposite signs. That is how the identical change read
+-48.7% on `cefe73b8` and -14.2% on `20bce807`.
+
+**Per completed turn is the metric.** `tools/speed_ab.py` reports whole-game
+user CPU and is right to: for an *optimization*, where the arms play the same
+game by construction, length is held constant and wall clock is exactly the
+answer. The moment the reports disagree — which is every promoted feature —
+whole-game time stops being a cost and starts being a mixture. `gene_screen`
+already separates the two columns for this reason; the paired harness does not,
+and a reader who quotes its number for a behaviour change is quoting a mixture.
