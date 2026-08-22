@@ -340,6 +340,18 @@ impl AdvancedAi {
         self.research_grants_first = false;
     }
 
+    /// A Great Person's per-building effect is priced by the buildings the
+    /// empire holds. See [`AdvancedAi::great_person_effect_reach`]. Opt-in
+    /// gene `great-person-effect-reach`.
+    pub fn enable_great_person_effect_reach(&mut self) {
+        self.great_person_effect_reach = true;
+    }
+
+    /// The twin of `enable_great_person_effect_reach`.
+    pub fn disable_great_person_effect_reach(&mut self) {
+        self.great_person_effect_reach = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.

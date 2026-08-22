@@ -91,6 +91,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `fifteenth-citizen` | off (unmeasured) | A Campus city within reach of the Population gate credits growth with what crossing it unlocks. |
 | `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
 | `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
+| `great-person-effect-reach` | off (unmeasured) | A Great Person's per-building effect is priced by the buildings the empire holds. |
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
 | `guru-heals-the-corps` | off (unmeasured) | Let a founder that is defending its own cities hold one Guru, the only field heal a religious corps has. |
 | `holy-site-where-the-threat-is` | off (unmeasured) | Put a Holy Site in the city that is actually losing its majority, so its defender can be bought there instead of walking from the Holy City. |
