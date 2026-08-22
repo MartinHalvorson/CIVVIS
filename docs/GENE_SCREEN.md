@@ -14,8 +14,10 @@ The standing cadence this implies:
 
 1. **Screen** the full genome after each batch of landed treatments — a
    gene's price is not a constant of nature (`wide-map-capacity` measured
-   **−3.4 pp** wins in the all-six native regime and **+19.2 pp** in
-   `domination,score`, from the same code; seeds 40000000../41000000..).
+   **−3.4 pp** wins with all six lanes live and **+19.2 pp** with only
+   `domination,score`, from the same code; seeds 40000000../41000000..). That
+   spread is why there is now exactly ONE screen: a column only means something
+   against a fixed world.
 2. **Repair** what measurably hurts, giving the gate back the premise it
    claimed (see the 2026-08-19 round: six repairs, each doc-commented with
    the number that motivated it).
@@ -24,6 +26,90 @@ The standing cadence this implies:
 4. The matrix gate (`ai_eval`) remains the SHIP decision for promotions;
    the screen ranks and directs, at two orders of magnitude less cost per
    gene.
+
+## ⭐ ONE SCREEN (operator, 2026-08-22)
+
+*"lets drop all the native screen / war screen stuff. we should just have 1
+screen - 6p continents map for now. keep it simple. each civ gets a separate
+genome and we measure the win rates across for each gene across many games when
+gene is on and when gene is off."*
+
+| leg | value |
+|---|---|
+| majors | **6**, each carrying its own drawn genome (`--all-seats`, now the default) |
+| map | **continents**, **74×46**, **9 city-states** — Civilization VI's own six-player row (`CIV6_MAP_SIZES` "small": 580 tiles and 1.5 city-states per major, three continents) |
+| speed | **Online**, its own **250-turn** clock; a game that reaches it is a score victory, not a truncation |
+| lanes | **all six**; no restricted-lane regime |
+| design | foldover against the **best-genome** baseline, civs shuffled per map |
+
+`gene_screen --pairs N --out rows.jsonl` — no profile flags — *is* the screen.
+Every profile flag still exists, and every one of them turns a batch into a
+**probe**: `tools/gene_ledger.py` refuses a source whose header does not match
+this table, so the ledger cannot quietly hold two worlds in one column. The
+shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in `src/bin/gene_screen.rs` and
+in `SCREEN` in `tools/gene_ledger.py`, and a test fails if the two drift apart.
+
+**What this replaced.** Two regimes: `native` (all six lanes, six players) and
+`war` (`--victories domination,score`, four players), the second one added
+because the 31 war and siege genes were being asked what they contribute to a
+game that ended by conversion at turn 149. Their columns were never comparable
+— a four-player seat wins 1-in-4 by chance against 1-in-6 — and the war regime
+never entered a default, so its rows are gone rather than carried. The war
+question is answered by the map instead: see below.
+
+### Why continents
+
+Measured on the same seeds (140000000+, 60×38, six city-states, one screened
+gene so the census reads the baseline genome, on `d713b019`):
+
+| ending | pangaea 250 | continents 250 |
+|---|---:|---:|
+| religious | 48% (t174) | **28%** (t181) |
+| score (at the clock) | 38% | **52%** |
+| culture | 11% | **18%** |
+| science | 2% | 1% |
+| diplomatic | 1% | 0% |
+| domination | 0% | 0% |
+
+Pangaea was a religion race that decided half its games by conversion before
+anything else could pay. Continents halves that grip and doubles the games
+decided on score, for **+11.9% wall per game** (34.5 → 38.6 s at that size).
+That is a real de-biasing of the instrument at a price worth paying.
+
+⚠ Those numbers are from the 60×38 six-city-state probe, not from the screen's
+74×46 nine-city-state shape — the direction is what carries over, not the
+seconds. 74×46 is ~1.5× the tiles and three more city-states (each ≈ 2.7% per
+turn), so budget the batch from a measured probe at the screen's own shape.
+
+⚠⚠ Science and diplomatic victories land at median **t283 and t285** — past the
+standard clock — so at 250 turns they are 1–2% of endings. A science or congress
+gene therefore **cannot pay through the win axis**: the seat it would have
+carried to a science victory shows up as a score win or a score loss instead.
+Those genes pay through **score share**, and the deployment rule reads the win
+axis only. Read a lane gene's share column and its `share helps` verdict before
+calling it inert.
+
+### One gene is held out of the default screened set
+
+`HELD_UNLESS_ASKED` in `gene_screen.rs` is `["joint-tactics"]`, and it is a
+**cost** list, not a verdict. That gene costs **+27.3% ± 0.5% compute per
+enabled major seat** (P10, 17,574 seat pairs; a direct 162-pair screen at seeds
+120M read +22.5% ± 2.0%) where every other gene in P10 is inside ±1.6% and all
+74 together sum to +6.0%. End to end, on the same 20 seed pairs: the full genome
+runs **95.8 s/game**, and dropping this one gene runs **38.0 s/game** — a 10,000
+game screen goes from **22.2 hours to 8.8**.
+
+⚠ That is a cost argument and not a claim that the gene does nothing. Its win
+columns are +3 / −4 — inside any band this instrument has printed — but P10
+reads it `share HELPS **` at **share z +3.84**, past that screen's family-wise
+bar of 3.403, the strongest share reading among the default-off genes. The
+deployment rule reads the **win** axis only, so no number of screens can turn
+this gene on through that share reading; what it is owed is a deliberate arm
+(`--genes joint-tactics`), not a seat on every batch at 2.5× the bill. It is
+default-off today, so holding it out changes nothing the agent plays.
+⚠ Under `--design prior` a `helps` gene draws on for 90% of seats, and this one
+is `helps` on its share axis — check the `prior:` column in `--list` before
+running a prior-weighted screen that carries it.
 
 Today's genome is the boolean treatment flags below. The growth direction is
 "hundreds of genes": the remaining `enable_*`/`disable_*` toggle pairs in
@@ -40,6 +126,7 @@ with this on than off?*
 cargo build --profile ci --bin gene_screen
 target/ci/gene_screen --list                                # the genes, in bit order (64 on 2026-08-19)
 target/ci/gene_screen --pairs 300 --anchor-pairs 20 --jobs 8 --out screen.jsonl
+                                                            # ↑ THE screen: no profile flags
 target/ci/gene_screen --analyze screen.jsonl [more.jsonl ...]  # re-read, merge, re-table
 ```
 
@@ -134,7 +221,7 @@ is the extra evidence to use before dropping a gene or changing the ledger.
 
 The header lines carry the treated seat's overall win rate against chance
 (1/players), **how the games ended** (victory type, count, median turn — the
-regime the table was measured in), the anchors if any were played, and a
+world the table was measured in), the anchors if any were played, and a
 **resolution line**: how many genes, the smallest win Δ and share Δ this run
 resolves at 80% power, how many `*` rows |z| ≥ 2 flags by chance alone (≈ 2.6
 of 57), and the family-wise bar (≈ |z| ≥ 3.33 for 57 genes).
@@ -189,19 +276,22 @@ not a silent omission.
 | `--design` | `foldover` (default) / `prior` | how genomes are drawn: the balanced foldover above, or each arm independently from the ledger's prior (see *Prior-weighted screens* below) |
 | `--p-helps`, `--p-hurts`, `--p-unresolved` | 0.9 / 0.1 / 0.5 | the on-probability a gene draws under `--design prior`, by its ledger verdict |
 | `--field` | `advanced` (default) / `repairs` | the other majors: production `advanced`, or the native repair bundle |
-| `--victories a,b,…` | all six by default | restrict the victory lanes, because **the regime decides which genes can act at all**. `--victories domination,score` gives the 31 war and siege genes a game that does not end by conversion at turn 149. Same spelling and same parser as `civvis --victories` |
-| `--randomize-civs` | off by default | shuffle every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game unless this is on |
-| `--all-seats` | off by default | **every major seat is its own test**: each draws its own genome (seat `s` from the seed stream at `pair·players + s`), and arm 2 complements *every* seat — so each gene is still on in exactly one arm of every seat's pair, and one game yields `players` observations instead of one. Outcomes within a game share a single winner, so the analysis **clusters by game pair** (`clustered_mean_se`; sandwich errors on the adjusted column) — the gain is real but less than ×players on the win axis. The field is the other treated majors: effects are averaged over random opposing genomes rather than against a fixed production field, which is a different (and more ecological) estimand — `--field` shapes only the anchors, which keep the classic single treated seat (an all-on-vs-all-off contrast where every seat flips is symmetric and measures nothing). Files record `all_seats` in the header and refuse to merge across modes |
+| `--victories a,b,…` | **all six, and a batch that changes them is a probe** | restrict the victory lanes. **The lanes decide which genes can act at all**, which is why the screen leaves all six live and reads one world; `--victories domination,score` once gave the 31 war and siege genes a game that did not end by conversion at turn 149, and that second regime is what ONE SCREEN retired. Same spelling and same parser as `civvis --victories` |
+| `--stock-civs` | civs are shuffled by default | stop shuffling every seat's civilization per map. Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China, …), and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there. The foldover cancels that for every per-gene contrast (both arms share the seat); the *field* is the same three civs every game when this is on |
+| `--single-seat` | every seat is a test by default | leave the classic one-treated-seat design. With all seats — the screen — **every major seat is its own test**: each draws its own genome (seat `s` from the seed stream at `pair·players + s`), and arm 2 complements *every* seat — so each gene is still on in exactly one arm of every seat's pair, and one game yields `players` observations instead of one. Outcomes within a game share a single winner, so the analysis **clusters by game pair** (`clustered_mean_se`; sandwich errors on the adjusted column) — the gain is real but less than ×players on the win axis. The field is the other treated majors: effects are averaged over random opposing genomes rather than against a fixed production field, which is a different (and more ecological) estimand — `--field` shapes only the anchors, which keep the classic single treated seat (an all-on-vs-all-off contrast where every seat flips is symmetric and measures nothing). Files record `all_seats` in the header and refuse to merge across modes |
 
 ## Profile and cost
 
-Defaults: 4 majors, 60×38 Pangaea, 6 city-states, **Online** speed to its own
-250-turn clock (the same 567-tiles-per-player density as the deployment shape,
-which is `--players 6 --width 74 --height 46 --city-states 9`). Quote no number
-without its profile — `docs/EVAL.md` records why.
+Defaults: **the screen** — 6 majors, 74×46 continents, 9 city-states, **Online**
+speed to its own 250-turn clock. That is Civilization VI's own six-player row
+and the deployment shape `docs/EVAL.md` quotes, so the ledger is read from the
+games the agent actually plays. Quote no number without its profile — and a
+number from a probe is a number about that probe.
 
-A game at the default profile costs about **two CPU-minutes**, so a 300-pair
-screen is ~20 CPU-hours: hours on one machine, not minutes. `--jobs` spreads it;
+The screen's shape is dearer than the 60×38 Pangaea one every recorded source
+was played at: ~1.5× the tiles, three more city-states at ≈2.7% per turn each,
+and continents at +11.9% per game. Measure a probe at the screen's own shape
+before budgeting a batch rather than scaling the old figures. `--jobs` spreads it;
 rows are flushed as games finish, so `--analyze` on the file reads a run in
 progress, and `--append` with a disjoint `--start-seed` grows a run across
 sessions. Genomes are drawn from `(start seed, pair)`, so a run reproduces
@@ -298,8 +388,8 @@ terms), so interactions are far noisier than main effects from the same run.
 Every row also carries `founded_religion`, `foreign_faith_cities` (our own
 cities flying somebody else's faith at the end), `faith` still banked,
 `inquisition` (whether the Inquisitor gate was ever unlocked), `techs` and
-`military`. The table prints a **religion census** from them, because two
-thirds of native games end by conversion and the rows previously could not say
+`military`. The table prints a **religion census** from them, because conversion decided two thirds of games
+on the Pangaea instrument (28% at the screen's shape) and the rows could not say
 one thing about how the losing seat stood in that race — including the
 diagnostic split over the games actually lost to a rival's religion.
 
@@ -309,10 +399,12 @@ Recorded in full in
 `docs/eval/2026-08-19-gene-screen-random-genome-factorial-screen.md`. The parts
 that change how the tool is read:
 
-- **Native 4p games are a religion race.** 65% ended by conversion, median
+- **4p Pangaea games are a religion race.** 65% ended by conversion, median
   t148, a third before t150. The 31 war/siege genes sit at ~0 win Δ because the
-  game is over before a siege matters — a fact about the regime, not a
-  measurement of the repairs. Use `--victories` to give them a game.
+  game is over before a siege matters — a fact about the map and the lanes, not
+  a measurement of the repairs. This is what the `--victories domination,score`
+  regime existed to answer; ONE SCREEN answers it with continents instead, where
+  conversion takes 28% of endings and score takes 52%.
 - **Score share carries the signal; win rate barely moves.** ±1.50 pp against
   ±7.0 pp from identical games. All three results past the family-wise bar were
   on the share axis and two were invisible on the win axis
@@ -341,48 +433,48 @@ filled, the gene can default on when that reading is >20; otherwise it defaults
 off.*
 Those are the two columns `HEURISTIC_GENE_RANKING.md` prints — wins added per
 10,000 games at the gene's measured on-rate, `(win_on − 1/players) × 10,000` —
-from the latest two native screens that priced the gene. The verdicts below
-still record what the screens *proved*, and the screen still prints them; they
+from the latest two screens that priced the gene. The verdicts below
+still record what the screen *proved*, and the screen still prints them; they
 no longer decide what ships, so a gene can be `helps` and off (its readings do
-not clear the rule) or `hurts` and on (its win columns do). The war regime never
-enters the default — the verification games are the all-six regime.
+not clear the rule) or `hurts` and on (its win columns do).
 
 Until then "on by default" meant somebody had written `self.enable_x()` into
 the bundle, and the phase-1 anchors had measured that all-on bundle at **7.5%
 wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 
-- **`docs/gene_ledger.json`** records, per gene, what the screens measured in
-  each regime (`native` = all six lanes, `war` = `domination,score`), the
-  verdict that follows, the two native win columns (`wins_last_10k`,
-  `wins_prior_10k`) and the `default_on` they decide;
+- **`docs/gene_ledger.json`** records the screen's own profile, then per gene
+  what the newest screen measured, the verdict that follows, the two win
+  columns (`wins_last_10k`, `wins_prior_10k`) and the `default_on` they decide;
   **`src/ai/advanced/gene_ledger_table.rs`** is the same
   table generated into Rust. `tools/gene_ledger.py --write --source <analysis>
-  --regime <native|war> …` builds both from `gene_screen --analyze --json`
-  outputs (the analyses themselves are tracked under `docs/gene_screens/`);
+  …` builds both from `gene_screen --analyze --json` outputs (the analyses
+  themselves are tracked under `docs/gene_screens/`);
   `tools/test_gene_ledger.py` fails if either file has drifted from the
-  recorded sources. Later sources override earlier ones per gene and regime,
-  so a repaired gene's re-screen replaces its pre-repair number while the rest
-  of the old screen stands.
+  recorded sources. Later sources override earlier ones per gene, so a repaired
+  gene's re-screen replaces its pre-repair number while the rest of the old
+  screen stands. Each source carries the `shape` it was played at: `standard`
+  is the screen, `legacy` is a reading kept as history (every source today —
+  the Pangaea screens the current defaults stand on). A new source that is not
+  `standard` is refused unless `--legacy-shape` says otherwise.
 - **Verdict rules** (`tools/gene_ledger.py`, repeated in
   `src/ai/advanced/gene_ledger.rs`): `helps` = win z ≥ 2 with share z > −2, or
   share z ≥ 2 with win z > −2 — the screen's own `*` flag; `hurts` the mirror;
   `unresolved` otherwise, including a gene whose axes disagree past |z| ≥ 2
   (`conflict`) and a gene no screen has measured. Past the family-wise bar is
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
-  leave three on. The **native** regime governs when it resolves; a gene
-  unresolved natively takes the **war** verdict when that resolves.
+  leave three on. The newest screen that priced the gene supplies the verdict.
 - **The deployment rule** (`default_from_win_columns` in
   `tools/gene_ledger.py`, mirrored as `win_columns_default_on` in
   `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
-  `the_default_follows_the_win_columns`): **on** when both native win columns
+  `the_default_follows_the_win_columns`): **on** when both win columns
   are positive, or when their average is above +15 with neither below −10;
   with exactly one populated column, **on** when it is above +20; **off**
-  otherwise. Only native screens supply a column, and only the latest two count
-  — an older bad screen is history, not a veto.
+  otherwise. Only the latest two readings count — an older bad screen is
+  history, not a veto.
 - **The deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` now end with `apply_gene_ledger`: every live or
   production treatment the ledger does not default on is withheld, every
-  opt-in it defaults on is enabled, and a flag no native screen can price
+  opt-in it defaults on is enabled, and a flag the screen cannot price
   (the Firaxis-only flags) is left as the bundle set it. A **screenable gene
   nobody has screened yet ships off; one screened once ships on only above
   +20.** The
@@ -442,6 +534,23 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   `raid-pillage-prizes` (+30/–), `builder-worked-tile-priority` (+24/–) and
   `opportunistic-war` (+23/–). The boundary is strict: +20/– remains off, and
   a second reading replaces this provisional clause with the two-column rule.
+
+- **One screen, and the war rows are gone (2026-08-22).** The operator's
+  directive above collapsed the instrument to a single shape and this ledger to
+  a single measurement per gene. `docs/gene_ledger.json` lost its `war` block,
+  its `deciding_regime` and its per-source `regime`; it gained the screen's own
+  profile and a `shape` on every source. **No win column and no default moved**
+  — the war regime never supplied a column — so the deployment genome is the
+  same 33 genes. What changed is seven verdicts that had been decided at war and
+  now read `unresolved` (`barbarian-scouts-are-scouts`, `blind-objective-strength`,
+  `peacetime-deterrence`, `housing-districts`, `housing-research`,
+  `inquisition-on-threat`, `settler-site-agreement`) and `holy-lane-parity`,
+  whose `conflict` flag was the war screen's `share hurts` disagreeing with the
+  native win reading. Verdicts do not decide defaults, so nothing shipped moved
+  with them. The four war sources — `p2`, `p3b`, `s3`, `s8` — are dropped from
+  the ledger; their analysis files stay under `docs/gene_screens/` as history.
+  ⚠ Every remaining source is `legacy`: 60×38 Pangaea. The current defaults
+  stand on that instrument until the first standard screen re-prices them.
 
 - **Ten more genes left the code (2026-08-21).** A second application of the
   directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
