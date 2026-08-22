@@ -511,9 +511,9 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   resolves ±68. Two independent instruments on two disjoint seed windows now
   agree. Score share is null (+0.08 pp, z +1.23) and cost is nil
   (+0.49% ± 0.31% per turn). ⚠ Following the P9 precedent the direct screen is
-  a note, not a ledger source, so the gene is back in the ranking at **rank 3**
-  and still **off** — entering it would make both columns positive and default
-  it on, taking the genome to 34. `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
+  a note, not a ledger source, so the gene came back into the ranking **off**.
+  That held for one PR: #2307 entered the screen as a source, both columns went
+  positive, and the gene defaults on at **rank 1**. `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
   holds the numbers and the two things it does not settle (850 is an upper
   bound, not a tuned value; the war regime reads `share hurts` at z −2.26).
 
