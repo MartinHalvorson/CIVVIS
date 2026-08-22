@@ -188,7 +188,10 @@ class OneShape(unittest.TestCase):
 class TheDefaultRule(unittest.TestCase):
     """Operator directive 2026-08-22: the default is read off the ranking's two
     win columns — both positive, or an average above +15 with neither below
-    -10 — and nothing else, the verdict included."""
+    -10 — vetoed by a negative pooled on-off difference, and nothing else, the
+    verdict included. The fixture's screens are equal-sized and its off arm is
+    exactly chance, so a gene's pooled difference is the mean of its columns in
+    hundredths of a point: every case here clears the veto unless it is named."""
 
     def on(self, *wins: int) -> bool:
         """Build a gene screened once per given win column, oldest first."""
@@ -231,9 +234,22 @@ class TheDefaultRule(unittest.TestCase):
         # answers for it, and `ledger_default_on` gives the same `false`.
         self.assertFalse(gene_ledger.default_from_win_columns(None, None))
 
-    def test_only_the_last_two_readings_decide(self):
-        self.assertTrue(self.on(-500, 20, 21), "an old bad screen is history, not a veto")
+    def test_only_the_last_two_readings_supply_the_columns(self):
+        self.assertTrue(
+            gene_ledger.default_from_win_columns(21, 20),
+            "the column clause never sees a third screen",
+        )
+        self.assertFalse(gene_ledger.default_from_win_columns(-500, 21))
         self.assertFalse(self.on(20, 21, -500))
+
+    def test_an_old_bad_screen_is_a_veto_through_the_difference(self):
+        """The one clause that lets a screen older than the last two speak.
+
+        Until 2026-08-22 this case shipped: the columns read the newest two
+        readings and an old collapse was history. `war-economy` is the live
+        example — +38/+8 over a -3.84 pp screen it has not made back."""
+        self.assertFalse(self.on(-500, 20, 21), "the record is -1.53 pp")
+        self.assertTrue(self.on(-40, 20, 21), "a record of +0.003 pp is not negative")
 
     def test_a_legacy_shape_still_supplies_a_column(self):
         """The Pangaea history is what the deployment genome stands on: it is
@@ -248,6 +264,83 @@ class TheDefaultRule(unittest.TestCase):
         gene = ledger["genes"][0]
         self.assertEqual((gene["wins_prior_10k"], gene["wins_last_10k"]), (30, 25))
         self.assertTrue(gene["default_on"], "two positive columns, whatever shape they came from")
+
+
+class TheDifferenceVeto(unittest.TestCase):
+    """Operator directive 2026-08-22: a gene whose pooled on-off difference is
+    negative defaults off whatever its win columns say.
+
+    The figure is `HEURISTIC_GENE_RANKING.md`'s *Diff* — the pooled on rate
+    minus the pooled off rate over EVERY screen that priced the gene, each
+    weighted by its games, in percentage points."""
+
+    def gene(self, screens: list[tuple[float, float, int]]) -> dict:
+        """One gene measured across `(win_on, win_off, pairs)` screens."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = []
+            for i, (on, off, pairs) in enumerate(screens):
+                data = analysis([{"tag": "g"}], pairs=pairs)
+                data["genes"][0].update(win_on=on, win_off=off)
+                path = Path(tmp) / f"s{i}.json"
+                path.write_text(json.dumps(data))
+                sources.append(path)
+            return gene_ledger.build_ledger(sources, filter_known=False)["genes"][0]
+
+    def test_the_difference_is_weighted_by_each_screens_games(self):
+        gene = self.gene([(0.10, 0.20, 3000), (0.20, 0.19, 1000)])
+        # (-10 * 3000 + 1 * 1000) / 4000 pp.
+        self.assertAlmostEqual(gene["win_diff_pp"], -7.25)
+        self.assertFalse(gene["default_on"])
+
+    def test_the_veto_beats_every_column_clause(self):
+        for columns in ((78, None), (38, 8), (48, -10)):
+            self.assertTrue(gene_ledger.default_from_win_columns(*columns), columns)
+            self.assertFalse(
+                gene_ledger.default_from_columns(*columns, -0.01),
+                f"{columns} must not survive a negative record",
+            )
+
+    def test_the_veto_is_one_way(self):
+        """A positive record promotes nothing: the columns still have to clear
+        their bars, so this cannot turn a gene on behind the operator's rule."""
+        self.assertFalse(gene_ledger.default_from_columns(-5, -11, 1.20))
+        self.assertFalse(gene_ledger.default_from_columns(-26, 39, 0.65))
+
+    def test_a_record_of_exactly_zero_is_not_negative(self):
+        gene = self.gene([(0.20, 0.19, 1000), (0.18, 0.19, 1000)])
+        self.assertEqual(gene["win_diff_pp"], 0.0)
+        self.assertTrue(gene_ledger.default_from_columns(38, 8, gene["win_diff_pp"]))
+
+    def test_the_decision_is_taken_on_the_figure_the_ledger_publishes(self):
+        """Rounded first, then decided — so the generated Rust table re-derives
+        the same answer from the same number and the two cannot drift at a
+        boundary."""
+        tiny = 1.0 / PLAYERS - 1e-12
+        gene = self.gene([(tiny, 1.0 / PLAYERS, 1000)])
+        self.assertEqual(gene["win_diff_pp"], 0.0)
+        self.assertEqual(
+            gene["default_on"],
+            gene_ledger.default_from_columns(
+                gene["wins_last_10k"], gene["wins_prior_10k"], gene["win_diff_pp"]
+            ),
+        )
+
+    def test_an_unmeasured_gene_has_no_record_to_read(self):
+        self.assertFalse(gene_ledger.default_from_columns(None, None, None))
+        self.assertTrue(gene_ledger.default_from_columns(21, None, None))
+
+    def test_the_ledger_records_the_difference_beside_the_columns(self):
+        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        self.assertIn("win_diff", ledger["rules"])
+        for gene in ledger["genes"]:
+            self.assertIsInstance(gene["win_diff_pp"], float, gene["tag"])
+            self.assertEqual(
+                gene["default_on"],
+                gene_ledger.default_from_columns(
+                    gene["wins_last_10k"], gene["wins_prior_10k"], gene["win_diff_pp"]
+                ),
+                gene["tag"],
+            )
 
 
 class KnownTags(unittest.TestCase):

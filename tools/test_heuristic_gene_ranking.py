@@ -79,7 +79,7 @@ class TheTableIsDerived(unittest.TestCase):
             off_games = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
             off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
-            self.assertEqual(cells[8], ranking.diff_cell(on, off), cells[1])
+            self.assertEqual(cells[8], ranking.diff_cell(history), cells[1])
             self.assertRegex(cells[8], r"^-?\d+\.\d\d%$", cells[1])
             # Taken off the unrounded rates, so it can land a hundredth away
             # from subtracting the two printed cells by eye — 0.01% against a
@@ -89,8 +89,24 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertNotIn("Total Games (on+off)", ranking.RANKING_MD.read_text())
 
     def test_diff_cell_is_a_percent_and_keeps_a_negative_sign(self):
-        self.assertEqual(ranking.diff_cell(0.17, 0.15), "2.00%")
-        self.assertEqual(ranking.diff_cell(0.15, 0.17), "-2.00%")
+        def arms(on, off):
+            return [{"win_on": on, "win_off": off, "n_on": 1000, "n_off": 1000}]
+
+        self.assertEqual(ranking.diff_cell(arms(0.17, 0.15)), "2.00%")
+        self.assertEqual(ranking.diff_cell(arms(0.15, 0.17)), "-2.00%")
+
+    def test_the_printed_diff_is_the_figure_the_ledger_vetoes_on(self):
+        """One arithmetic, not two: the *Diff* cell and `win_diff_pp` are the
+        same call, so a gene cannot read positive in the table while the
+        deployment rule sees a negative record."""
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        measured, _ = ranking.load_sources(ledger)
+        recorded = {g["tag"]: g["win_diff_pp"] for g in ledger["genes"]}
+        self.assertGreater(len(recorded), 50)
+        for cells in self._ranked_rows():
+            tag = cells[1].strip("`")
+            self.assertEqual(cells[8], f"{recorded[tag]:.2f}%", tag)
+            self.assertEqual(recorded[tag], ranking.pooled_win_diff_pp(measured[tag]), tag)
 
     def test_each_win_rate_cell_carries_its_own_sample_size(self):
         """`n` is per arm, not one pooled figure: the arms are equal only while

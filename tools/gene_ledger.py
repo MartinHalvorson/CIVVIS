@@ -9,13 +9,14 @@ baseline. There is no second regime to reconcile: a batch played at another
 shape is a probe, and this tool refuses it as a source rather than pooling two
 worlds into one column.
 
-The defaults follow the ranking's two win columns. A gene may default on when
-**both** its last and prior readings are positive, or when their average clears
-+15 with neither below -10. A gene with exactly one reading may provisionally
-default on when that reading is above +20; every other gene defaults off. The
-verdicts below still record what the screen proved; they no longer decide what
-ships. This tool is the one place that decision is made, and it is made from
-data:
+The defaults follow the ranking's two win columns, and a gene whose pooled
+on-off difference is negative is vetoed whatever they say. A gene may default on
+when **both** its last and prior readings are positive, or when their average
+clears +15 with neither below -10. A gene with exactly one reading may
+provisionally default on when that reading is above +20; every other gene
+defaults off. The verdicts below still record what the screen proved; they no
+longer decide what ships. This tool is the one place that decision is made, and
+it is made from data:
 
     python3 tools/gene_ledger.py --write \\
         --source docs/gene_screens/<screen>.json \\
@@ -40,6 +41,16 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
   and neither column is below -10.
 - **on** with exactly one populated column when that reading is above +20.
 - **off** otherwise, including an unmeasured gene.
+- **off** whatever the columns say when `win_diff_pp` is negative (operator
+  directive 2026-08-22). That is the ranking's *Diff*: the pooled on rate minus
+  the pooled off rate in percentage points, over **every** screen that priced
+  the gene, each weighted by its games. The win columns read the latest two
+  screens only, so this veto is the one clause that lets an older screen speak:
+  a gene whose two newest readings are positive but whose whole record is not
+  ships off. Both arms of a screen carry the same games, so the 1-in-`players`
+  chance base cancels inside each screen and the pooled figure is a
+  games-weighted average of per-screen differences, comparable across shapes
+  and player counts in a way a raw win rate is not.
 
 ⚠ The columns recorded before 2026-08-22 were read on 60x38 Pangaea, under a
 four-player `domination,score` regime for some genes. The Pangaea readings are
@@ -107,6 +118,14 @@ PER = 10_000
 SINGLE_COLUMN_BAR = 20
 AVERAGE_BAR = 15.0
 COLUMN_FLOOR = -10
+# The pooled on-off difference, in percentage points, below which no column
+# reading can put a gene in the genome. Zero: a gene that has not won more than
+# it lost over its whole record does not ship.
+DIFF_FLOOR = 0.0
+# The recorded precision of that difference. The decision is taken on the
+# rounded figure the ledger publishes, never on a wider one, so the generated
+# Rust table re-derives the same answer from the same number.
+DIFF_PLACES = 6
 
 
 def axis_verdict(win_z: float, share_z: float) -> str:
@@ -134,11 +153,34 @@ def wins_per_10k(win_rate: float, players: int) -> int:
     return round((win_rate - chance) * PER)
 
 
+def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
+    """The games-weighted on and off win rates across every screen that priced
+    the gene — `HEURISTIC_GENE_RANKING.md`'s two *Total* columns. Each entry
+    carries `win_on`/`win_off` and the games behind each arm.
+    `tools/heuristic_gene_ranking.py` imports this, so the printed totals and
+    the ledger's veto are one arithmetic."""
+    on_games = sum(m["n_on"] for m in history)
+    off_games = sum(m["n_off"] for m in history)
+    on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
+    off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+    return on, off
+
+
+def pooled_win_diff_pp(history: list[dict]) -> float:
+    """The ranking's *Diff*: the pooled on rate minus the pooled off rate, in
+    percentage points, rounded to what the ledger records. This is the **whole**
+    on-off difference, twice the scale of a win column beside it."""
+    on, off = pooled_win_rates(history)
+    return round(100 * (on - off), DIFF_PLACES)
+
+
 def default_from_win_columns(last: int | None, prior: int | None) -> bool:
-    """The deployment call (operator directive 2026-08-22): a gene may default
+    """The win-column clause (operator directive 2026-08-22): a gene may default
     on when both native win columns are positive, or when their average clears
     +15 with neither column below -10. With exactly one populated column, its
-    reading must be above +20; an unmeasured gene stays off."""
+    reading must be above +20; an unmeasured gene stays off.
+
+    This is the clause alone. `default_from_columns` is the deployment call."""
     populated = [value for value in (last, prior) if value is not None]
     if len(populated) == 1:
         return populated[0] > SINGLE_COLUMN_BAR
@@ -148,6 +190,20 @@ def default_from_win_columns(last: int | None, prior: int | None) -> bool:
     if last > 0 and prior > 0:
         return True
     return (last + prior) / 2 > AVERAGE_BAR and last >= COLUMN_FLOOR and prior >= COLUMN_FLOOR
+
+
+def default_from_columns(last: int | None, prior: int | None,
+                         diff_pp: float | None) -> bool:
+    """The deployment call: the win-column clause, vetoed by a negative pooled
+    on-off difference (operator directive 2026-08-22).
+
+    The veto is one-way. A gene whose whole record is negative ships off however
+    its latest two screens read; a positive record promotes nothing on its own,
+    because the columns still have to clear their bars. A gene no screen has
+    priced has no difference to read, and stays off on the columns."""
+    if diff_pp is not None and diff_pp < DIFF_FLOOR:
+        return False
+    return default_from_win_columns(last, prior)
 
 
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
@@ -252,6 +308,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
     # `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment default is
     # read off them.
     columns: dict[str, list[int]] = {}
+    # Every screen's two arms, for the pooled on-off difference that vetoes a
+    # default. Unlike the columns this keeps the whole record, not the tail.
+    arms: dict[str, list[dict]] = {}
     family: dict[str, float] = {}
     recorded = []
     known = known_tags() if filter_known else set()
@@ -282,6 +341,12 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
             columns.setdefault(gene["tag"], []).append(
                 wins_per_10k(float(gene["win_on"]), players)
             )
+            arms.setdefault(gene["tag"], []).append({
+                "win_on": float(gene["win_on"]),
+                "win_off": float(gene["win_off"]),
+                "n_on": int(gene.get("n_on", gene["pairs"])),
+                "n_off": int(gene.get("n_off", gene["pairs"])),
+            })
     if dropped:
         print("gene ledger: dropped rows for genes the repository no longer registers: "
               + ", ".join(sorted(dropped)), file=sys.stderr)
@@ -300,12 +365,15 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
         history = columns.get(tag, [])
         last = history[-1] if history else None
         prior = history[-2] if len(history) > 1 else None
+        record = arms.get(tag, [])
+        diff_pp = pooled_win_diff_pp(record) if record else None
         genes.append({
             "tag": tag,
             "verdict": verdict,
-            "default_on": default_from_win_columns(last, prior),
+            "default_on": default_from_columns(last, prior, diff_pp),
             "wins_last_10k": last,
             "wins_prior_10k": prior,
+            "win_diff_pp": diff_pp,
             "family_wise": family_wise,
             "conflict": conflict,
             "screen": measure,
@@ -328,9 +396,14 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
             "win_column": "wins added per 10,000 games at the gene's measured on-rate in one "
                           "screen, (win_on - 1/players) * 10000; last and prior are the "
                           "two most recent screens that priced the gene",
+            "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
+                        "over every screen that priced the gene, each weighted by its games "
+                        "- the ranking's `Diff`, the whole on-off difference",
             "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
                           f"with neither below {COLUMN_FLOOR}; with exactly one populated "
-                          f"column, on when it is above +{SINGLE_COLUMN_BAR}; unmeasured is off",
+                          f"column, on when it is above +{SINGLE_COLUMN_BAR}; unmeasured is off; "
+                          f"and off whatever the columns say when win_diff_pp is below "
+                          f"{DIFF_FLOOR:.0f}",
         },
         "sources": recorded,
         "counts": counts,
@@ -349,6 +422,10 @@ def rust_f(value: float) -> str:
 
 def rust_opt_i32(value: int | None) -> str:
     return "None" if value is None else f"Some({value})"
+
+
+def rust_opt_f(value: float | None) -> str:
+    return "None" if value is None else f"Some({rust_f(value)})"
 
 
 def rust_measure(m: dict | None) -> str:
@@ -387,6 +464,7 @@ def render_rust(ledger: dict) -> str:
         lines.append(f"        default_on: {'true' if gene['default_on'] else 'false'},")
         lines.append(f"        wins_last_10k: {rust_opt_i32(gene['wins_last_10k'])},")
         lines.append(f"        wins_prior_10k: {rust_opt_i32(gene['wins_prior_10k'])},")
+        lines.append(f"        win_diff_pp: {rust_opt_f(gene['win_diff_pp'])},")
         lines.append(f"        family_wise: {'true' if gene['family_wise'] else 'false'},")
         lines.append(f"        screen: {rust_measure(gene['screen'])},")
         lines.append("    },")
@@ -408,7 +486,7 @@ def print_table(ledger: dict) -> None:
         print(f"  source {src['shape']:<8} {src['path']}  ({src['complete_pairs']} pairs, "
               f"family-wise |z|≥{src['family_wise_z']})")
     print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
-          f"{'win/share z':<20} source")
+          f"{'diff':>7} {'win/share z':<20} source")
     # Best default first, then the deciding column, so the rule reads down the page.
     for gene in sorted(ledger["genes"],
                        key=lambda g: (not g["default_on"],
@@ -418,10 +496,13 @@ def print_table(ledger: dict) -> None:
             return "-" if m is None else f"{m['win_z']:+.2f}/{m['share_z']:+.2f}"
         def col(v):
             return "–" if v is None else f"{v:+d}"
+        def diff(v):
+            return "–" if v is None else f"{v:+.2f}"
         flag = "**" if gene["family_wise"] else ("!" if gene["conflict"] else "")
         source = gene["screen"]["source"] if gene["screen"] else "-"
         print(f"{gene['tag']:<30} {gene['verdict']:<10} {'on' if gene['default_on'] else 'off':<7} "
               f"{col(gene['wins_last_10k']):>6} {col(gene['wins_prior_10k']):>6} "
+              f"{diff(gene['win_diff_pp']):>7} "
               f"{z(gene['screen']):<20} {source} {flag}")
 
 
