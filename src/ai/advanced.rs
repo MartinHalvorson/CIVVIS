@@ -3719,6 +3719,25 @@ pub struct AdvancedAi {
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
 
+    /// Beeline Advanced Flight from three technologies out, raise an
+    /// Aerodrome and a bomber wing, and take the appointed city with the
+    /// cavalry behind it. The controller has no other route into the air
+    /// layer at all: `choose_war_plan` builds only melee packages and ranks
+    /// its unlocks by cheapest remaining research, so it can appoint the next
+    /// technology and never a chain. Off everywhere by default; opt-in gene
+    /// `air-surge`. See `advanced/air_surge.rs`.
+    pub air_surge: bool,
+    /// The one surge appointed and not yet finished.
+    air_surge_plan: Option<AirSurge>,
+    /// The package as of the last lifecycle pass, so production, diplomacy
+    /// and the journal all read one census rather than three.
+    air_surge_status: AirSurgeStatus,
+    /// What the surge did this game.
+    air_surge_census: AirSurgeCensus,
+    /// No surge is appointed before this turn. Set whenever one stands down;
+    /// see `AIR_SURGE_ABORT_COOLDOWN`.
+    air_surge_cooldown_until: u32,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -4195,6 +4214,12 @@ mod opportunistic_war;
 /// The contact posture: standing to receive a melee attack and heal, closing
 /// on a shooter, or leaving its envelope. See `advanced/contact_posture.rs`.
 mod contact_posture;
+
+/// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
+/// bomber wing, and the cavalry that takes the city the wing empties. See
+/// `advanced/air_surge.rs`.
+mod air_surge;
+use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
@@ -4848,6 +4873,11 @@ impl AdvancedAi {
             contact_posture: false,
             raid_pillage_prizes: false,
             raid_war: None,
+            air_surge: false,
+            air_surge_plan: None,
+            air_surge_status: AirSurgeStatus::default(),
+            air_surge_census: AirSurgeCensus::default(),
+            air_surge_cooldown_until: 0,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -6071,6 +6101,11 @@ impl AdvancedAi {
     fn may_form_war_plan(&self, g: &Game, pid: usize) -> bool {
         if !self.timed_war
             || self.war_plan.is_some()
+            // Two appointed packages would bid for the same idle queues and
+            // the same declaration. Whichever was appointed first keeps the
+            // empire. `air_surge_active` is false whenever that gene is off,
+            // so the measured timed-war lane is untouched.
+            || self.air_surge_active()
             || (self.selective_timed_war
                 && self.selective_timed_war_target().is_none())
             || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
@@ -9760,6 +9795,16 @@ impl AdvancedAi {
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
                     Some("astrology")
+                }
+                // The air surge's beeline. Behind the appointed timed war's
+                // breakthrough (that package is already half-built when it
+                // holds the research slot) and behind the Taxis religion
+                // opening, ahead of everything else: three technologies is
+                // the whole appointment, and a lane goal that displaces one
+                // of them turns the surge into a research plan that never
+                // launches. See `advanced/air_surge.rs`.
+                _ if self.air_surge_research_goal(g, pid).is_some() => {
+                    self.air_surge_research_goal(g, pid)
                 }
                 // An ancient rush rides. `rush_census` measures **0% of
                 // empires holding `horseback_riding` at turn 50**, so the
@@ -13622,6 +13667,12 @@ impl AdvancedAi {
             return;
         };
         if self.timed_war_opening(g, pid, target) {
+            return;
+        }
+        // The air surge owns the declaration for its own objective. Like the
+        // timed war it consumes the turn's one war-opening decision even when
+        // it deliberately holds for the wing.
+        if self.air_surge_opening(g, pid, target) {
             return;
         }
         // Timed attacks already refuse an appointment that cannot finish
@@ -18968,6 +19019,15 @@ impl AdvancedAi {
                         - turns * 8.0;
                 }
             }
+        }
+        // The air surge prices its own package the same way, and after the
+        // melee appointment so a live timed war keeps first claim on a shared
+        // queue. `air_surge_production_value` is `None` for every item that is
+        // not the airfield, a Bomber, or a capture body, and for every item
+        // the package already holds — so an inactive surge cannot change a
+        // single score. See `advanced/air_surge.rs`.
+        if let Some(value) = self.air_surge_production_value(g, pid, item, turns) {
+            return value;
         }
         let raw = match item {
             Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
@@ -30283,12 +30343,19 @@ impl AdvancedAi {
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
         self.maintain_war_plan(g, pid);
+        // The air surge's own lifecycle, after the melee appointment so the
+        // two can never both own the grand strategy in the same turn: the
+        // surge overlay below runs second and only from its Strike phase.
+        // Exact no-op while `air_surge` is off. See `advanced/air_surge.rs`.
+        self.maintain_air_surge(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_air_surge_to_strategy(&mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_air_surge_to_strategy(&mut current);
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
@@ -30422,6 +30489,12 @@ impl AdvancedAi {
             // those queues so the envoy-infrastructure treatment can actually
             // reach play. The helper is an exact no-op while its flag is off.
             self.prioritize_envoy_infrastructure(g, pid, &plan);
+            // And the air surge's package, for the same reason: the adaptive
+            // controller hands empty cities to `BasicAi::cities`, which never
+            // consults `production_value`, so without this claim the surge
+            // would price an Aerodrome nobody ever asked it about. One idle,
+            // unthreatened queue per turn; exact no-op while the gene is off.
+            self.air_surge_production(g, pid);
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -30587,6 +30660,7 @@ impl AdvancedAi {
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
         self.maintain_war_plan(g, pid);
+        self.maintain_air_surge(g, pid);
         // A settler can found a city during the unit pass. Refresh the map so
         // the durable directive state covers that new city as well as the
         // cities that received production guidance earlier in the turn.
