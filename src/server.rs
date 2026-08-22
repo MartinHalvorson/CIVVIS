@@ -12817,13 +12817,52 @@ mod tests {
     #[test]
     fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            ("NextAction", "1"),
-            ("SettlerLens", "2"),
-            ("PlaceTack", "3"),
+            // Civilization VI's own defaults, read out of that game's
+            // `InputSettings.json`. The names on the left are Civ 6's action
+            // names, so a row that drifts is a row that stopped matching the
+            // game this client exists to be playable by.
+            ("EndTurn", "1"),
+            ("FoundCity", "b"),
             ("Fortify", "f"),
-            ("Alert", "a"),
+            ("FortifyUntilHeal", "h"),
+            ("SkipTurn", " "),
+            ("Sleep", "z"),
+            ("Alert", "v"),
+            ("AutoExplore", "e"),
+            ("NextUnit", "."),
+            ("PrevUnit", ","),
+            ("NextCity", "]"),
+            ("PrevCity", "["),
+            ("ToggleTechTree", "t"),
+            ("ToggleCivicsTree", "c"),
+            ("ToggleReligion", "l"),
+            ("ToggleGreatPeople", "o"),
+            ("OpenQDPopup", "d"),
+            ("ToggleGovernment", "F7"),
+            ("ToggleGovernors", "F10"),
+            ("ToggleCityStates", "F2"),
+            ("ToggleEspionage", "F3"),
+            ("ToggleTradeRoutes", "F4"),
+            ("ToggleReports", "F8"),
+            ("ToggleRankings", "F1"),
+            ("OpenCivilopedia", "F9"),
+            ("ToggleYield", "y"),
+            ("ToggleGrid", "g"),
+            ("ToggleResources", "q"),
+            ("ToggleFSMap", "End"),
+            ("LensContinent", "2"),
+            ("LensAppeal", "3"),
+            ("LensSettler", "4"),
+            ("LensGovernment", "5"),
+            ("LensPolitical", "6"),
+            ("LensTourism", "7"),
+            ("LensLoyalty", "8"),
+            ("LensEmpire", "9"),
+            ("LensPower", "0"),
+            // This client's own, where Civ 6 has nothing to copy.
+            ("NextAction", "n"),
             ("PreviousCity", "ArrowLeft"),
-            ("NextCity", "ArrowRight"),
+            ("NextCityArrow", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
@@ -12831,23 +12870,70 @@ mod tests {
                 "required {action} is missing from the {key} shortcut"
             );
         }
+        // The two chords that game puts Shift on, and nothing else may.
+        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
+        // `A` is Attack in Civ 6 and this client attacks by pointing, so it
+        // carries no order of its own — it was Alert here until this table
+        // was reconciled with the game's, and must not quietly become one
+        // again.
+        assert!(!EMBEDDED_INDEX.contains("{id: \"Alert\", key: \"a\""));
+        // Tab is how somebody navigating by keyboard reaches every control on
+        // the page. The board does not take it.
+        assert!(!EMBEDDED_INDEX.contains("key: \"Tab\""));
+        // Neither do the four the browser owns.
+        for taken in ["\"F5\"", "\"F6\"", "\"F11\"", "\"F12\""] {
+            assert!(
+                !EMBEDDED_INDEX.contains(&format!("key: {taken}")),
+                "the browser owns {taken}"
+            );
+        }
         let shortcuts = EMBEDDED_INDEX
             .split_once("const CIVVIS_SHORTCUTS = [")
             .and_then(|(_, tail)| {
-                tail.split_once("];\n// One lookup per key.")
+                tail.split_once("];\n// One lookup per key")
                     .map(|(rows, _)| rows)
             })
             .expect("the closed shortcut table");
-        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert_eq!(shortcuts.matches("{id: \"").count(), 44);
         assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
         assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        // Everything that needs a seat is withheld from a spectator, and
+        // everything that only describes the picture is not.
+        for (action, spectator) in [
+            ("EndTurn", false),
+            ("Fortify", false),
+            ("SkipTurn", false),
+            ("ToggleTechTree", false),
+            ("ToggleGovernment", false),
+            ("ToggleYield", true),
+            ("LensSettler", true),
+            ("ToggleFSMap", true),
+            ("ToggleRankings", true),
+            ("OpenCivilopedia", true),
+        ] {
+            let row = shortcuts
+                .split_once(&format!("{{id: \"{action}\","))
+                .expect("the row")
+                .1
+                .split_once("},")
+                .expect("the row's end")
+                .0;
+            assert_eq!(
+                row.contains("spectator: true"),
+                spectator,
+                "{action} is on the wrong side of the seat"
+            );
+        }
+        // The legend in the deck is the same map, one row per binding.
         let legend = EMBEDDED_INDEX
             .split_once("<summary>Keyboard shortcuts</summary>")
             .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
             .expect("the keyboard shortcut legend");
-        assert_eq!(legend.matches("<kbd>").count(), 7);
-        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
-        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
+        assert_eq!(legend.matches("<kbd>").count(), 47);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+        assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
+        assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
@@ -12885,11 +12971,21 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // macOS Control-click is a platform secondary click; Command belongs to
         // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
+        // Command, Control and Option belong to the browser and never become
+        // map bindings. Shift does, for the two chords Civ 6 puts it on, so
+        // it is matched from its own table rather than refused outright.
+        assert!(
+            EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;")
+        );
+        assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+        // Space and Enter belong to whichever control has focus, so a person
+        // navigating by keyboard never skips a unit by pressing a button.
         assert!(EMBEDDED_INDEX.contains(
-            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+            "if ((ev.key === \" \" || ev.key === \"Enter\") && (tag === \"BUTTON\" || tag === \"A\" ||"
         ));
     }
 
@@ -13006,9 +13102,12 @@ mod tests {
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
-        ));
+        // The selected-unit plaque asks the same question the map does: a unit
+        // with health gets a bar and a number, and one that is taken rather
+        // than killed says so instead of reading as a unit on full health.
+        assert!(EMBEDDED_INDEX.contains("const health = unitHasHealth(u)"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"ubar-health\""));
+        assert!(EMBEDDED_INDEX.contains("⚑<b>capturable</b>"));
         assert!(EMBEDDED_INDEX.contains(
             "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
         ));
@@ -16550,6 +16649,181 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    /// The played game wears Civilization VI's own arrangement, so that a
+    /// person who has played that game can drive this one without being told
+    /// where anything is. The geometry below is read off the installed game's
+    /// interface definitions (`Base/Assets/UI`), not remembered:
+    /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
+    /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
+    /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
+    /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
+    /// for the corner End Turn owns and the rail that climbs out of it.
+    #[test]
+    fn browser_seats_a_person_in_the_civ_six_arrangement() {
+        for piece in [
+            "id=\"civtop\"",
+            "id=\"worldtracker\"",
+            "id=\"actionpanel\"",
+            "id=\"rankingsbtn\"",
+            "function playingSolo() { return !!state && !SPEC; }",
+            "function drawSoloHud()",
+            "function drawCivTop()",
+            "function drawWorldTracker()",
+            "function launchTreeHook(kind)",
+            "document.body.classList.toggle(\"playing-solo\", solo);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the single-player arrangement is missing {piece}"
+            );
+        }
+        // The arrangement is settled before the panels that live in it are
+        // drawn; otherwise the first frame of a played game paints the
+        // spectator's masthead and then throws it away.
+        let solo = EMBEDDED_INDEX
+            .find("  drawSoloHud();")
+            .expect("the arrangement must be part of the render pass");
+        let frame = EMBEDDED_INDEX
+            .find("draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar();")
+            .expect("the complete frame");
+        assert!(solo < frame);
+
+        // TopPanel.lua's `RefreshYields` runs Science, Culture, Faith, Gold,
+        // Tourism, in that order, and only Faith and Gold carry a balance
+        // beside their rate (`YieldButton_DoubleLabel`).
+        let strip = EMBEDDED_INDEX
+            .split_once("  const yields = !empire ? \"\" :\n")
+            .expect("the yield strip")
+            .1
+            .split_once("  const meters = !empire")
+            .expect("end of the yield strip")
+            .0;
+        let mut previous = 0;
+        for yield_key in [
+            "key:\"science\"",
+            "key:\"culture\"",
+            "key:\"faith\"",
+            "key:\"gold\"",
+            "key:\"tourism\"",
+        ] {
+            let at = strip
+                .find(yield_key)
+                .unwrap_or_else(|| panic!("the top panel is missing {yield_key}"));
+            assert!(
+                at > previous,
+                "the top panel must read in Civ 6's order; {yield_key} is out of place"
+            );
+            previous = at;
+        }
+        assert!(strip.contains("key:\"faith\", icon:\"☼\", stock:"));
+        assert!(strip.contains("key:\"gold\", icon:\"⛁\", stock:"));
+        assert!(!strip.contains("key:\"science\", icon:\"⌬\", stock:"));
+
+        // LaunchBar.xml opens with the tech tree and the civics tree, each
+        // ringed by the meter of what it is studying, and then runs
+        // Government, Religion, Great People.
+        assert!(EMBEDDED_INDEX.contains(
+            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
+
+        // The corners. End Turn owns the lower right, the notification rail
+        // climbs out of it, the selected unit sits inboard of it, and the
+        // chart takes the lower left the standings masthead used to make
+        // unusable.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo #actionpanel {\n    position: absolute; z-index: 9; \
+             right: var(--panel-edge); bottom: var(--panel-edge);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-solo .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
+
+        // A played game does not carry the laboratory's Elo table across its
+        // sky; Civ 6 keeps the standings behind a report and so does this.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo:not(.solo-rankings) #playerhud,\n  \
+             body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function toggleSoloRankings(open)"));
+
+        // The button says what is blocking it in that game's own words —
+        // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
+        for (blocker, phrase) in [
+            ("research", "Choose research"),
+            ("civic", "Choose civic"),
+            ("produce", "Choose production"),
+            ("units", "Unit needs orders"),
+            ("capture", "Keep city?"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("button: \"{phrase}\"")),
+                "the {blocker} blocker must read as Civ 6's own button does: {phrase}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(": \"Next turn\";"));
+
+        // The custom properties the arrangement composes are declared where
+        // `--panel-edge` is, or every `calc()` naming both is invalid at
+        // computed-value time and the panel silently falls back to `auto`.
+        let vars = EMBEDDED_INDEX
+            .find("  body.playing-solo #maparea {")
+            .expect("the arrangement's own custom properties");
+        let edge = EMBEDDED_INDEX
+            .find("--panel-edge: clamp(")
+            .expect("the shared edge gutter");
+        assert!(
+            EMBEDDED_INDEX[vars..].contains("--solo-corner-clearance: calc(var(--panel-edge)"),
+            "the corner clearance must be composed on #maparea"
+        );
+        assert!(edge < vars);
+
+        // A battlefield has no empire behind it, so the strip keeps the turn
+        // and the era and drops the rest, and neither the world tracker nor
+        // the two tree hooks are painted at all.
+        assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
+        assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
+        assert!(
+            EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
+        );
+
+        // Civilization VI opens a city on what it can build. The plot market
+        // is a fold at the foot of that column, never ahead of it.
+        let build = EMBEDDED_INDEX
+            .split_once("  let build = \"\";")
+            .expect("the city build column")
+            .1
+            .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
+            .expect("end of the city build column")
+            .0;
+        let producing = build
+            .find("city-group-head\">Producing")
+            .expect("the producing group");
+        let categories = build
+            .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
+            .or_else(|| build.find("for (const category of order) {"))
+            .expect("the production categories");
+        let plots = build
+            .find("city-group-head\">Buy plots")
+            .expect("the plot market");
+        assert!(
+            producing < categories,
+            "a city opens on what it is producing"
+        );
+        assert!(
+            categories < plots,
+            "the plot market comes after the production list"
+        );
+        assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
     #[test]
     fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
         let start = EMBEDDED_INDEX
@@ -16591,12 +16865,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // The requested fixed action map invokes the new selector from key 1;
-        // unit roster cycling is no longer a global keyboard shortcut.
+        // Two different passes, two different keys. `.` and `,` are Civ 6's
+        // NextUnit and PrevUnit — a reversible walk of the roster — and `N` is
+        // the nearby-action pass this client has and that game does not. `1`
+        // is EndTurn there, so it can no longer be either of them.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
-        assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"NextAction\", key: \"n\", run: () => nextAction()},")
+        );
+        assert!(EMBEDDED_INDEX.contains("{id: \"NextUnit\", key: \".\", run: () => cycleUnit(1)},"));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},")
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
         assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
@@ -17614,11 +17896,13 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            6,
+            8,
             "a fitted map area follows the standings, the overlay switches, \
-             both HUD layout paths, and a HUD section fold — six call sites; \
-             a seventh means a new one belongs in this count, a fifth means \
-             one was dropped"
+             both HUD layout paths, a HUD section fold, and — the two the \
+             Civ 6 arrangement adds — taking that arrangement up or putting \
+             it down, and opening or closing the rankings report behind it: \
+             eight call sites; a ninth means a new one belongs in this count, \
+             a seventh means one was dropped"
         );
     }
 
