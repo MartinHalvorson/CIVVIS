@@ -14269,9 +14269,12 @@ mod tests {
         ));
         assert!(renderer.contains("const totalHeight = visualRows.reduce"));
         assert!(renderer.contains("const centerY = strategicYieldCenterY(y);"));
-        assert!(renderer.contains("const widestRow = Math.max(...visualRows.map(row => row.width));"));
+        assert!(
+            renderer.contains("const widestRow = Math.max(...visualRows.map(row => row.width));")
+        );
         assert!(renderer.contains("let top = centerY - totalHeight / 2;"));
-        assert!(renderer.contains("if (worked) drawWorkedYieldRing(x, centerY, widestRow, totalHeight, r);"));
+        assert!(renderer
+            .contains("if (worked) drawWorkedYieldRing(x, centerY, widestRow, totalHeight, r);"));
         assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
         let placement = EMBEDDED_INDEX
             .split("function strategicYieldCenterY")
@@ -14384,9 +14387,7 @@ mod tests {
         // cluster. Its high-contrast ring stays visible over bright terrain.
         assert!(!plate.contains("YIELD_PLATE_WORKED_EDGE"));
         assert!(EMBEDDED_INDEX.contains("const WORKED_YIELD_RING = \"rgba(255,255,255,.98)\";"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const WORKED_YIELD_RING_OUTLINE = \"rgba(5,8,7,.94)\";"
-        ));
+        assert!(EMBEDDED_INDEX.contains("const WORKED_YIELD_RING_OUTLINE = \"rgba(5,8,7,.94)\";"));
         let ring = EMBEDDED_INDEX
             .split("function drawWorkedYieldRing")
             .nth(1)
