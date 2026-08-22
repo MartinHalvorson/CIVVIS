@@ -613,7 +613,8 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   deployment ledger is byte-identical either way.
 
 - **`holy-lane-parity` defaults ON (2026-08-22).** The operator took the call
-  #2299 left open. Its direct screen enters the ledger as a native source, so
+  #2299 left open. Its direct screen enters the ledger as legacy history under
+  the one-screen schema, so
   the columns are `[+63 prior, +99 last]`, both positive, and the rule defaults
   it on: **34 genes, was 33**. Exactly one ledger row changed and exactly one
   default moved. ⚠ This **moves the incumbent** every recorded Elo result is
@@ -636,8 +637,9 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   agree. Score share is null (+0.08 pp, z +1.23) and cost is nil
   (+0.49% ± 0.31% per turn). ⚠ Following the P9 precedent the direct screen is
   a note, not a ledger source, so the gene came back into the ranking **off**.
-  That held for one PR: #2307 entered the screen as a source, both columns went
-  positive, and the gene defaults on at **rank 1**. `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
+  That held for one PR: #2307 recorded the screen as legacy history, both
+  columns went positive, and the gene defaults on at **rank 1**.
+  `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
   holds the numbers and the two things it does not settle (850 is an upper
   bound, not a tuned value; the war regime reads `share hurts` at z −2.26).
 

@@ -103,7 +103,7 @@ The gene is back in the code, and **it defaults on.** The operator took the
 call this page was written to leave open (2026-08-22): *"sure we can have this
 default on."*
 
-Entering this screen as a native ledger source gives the gene columns
+Recording this pre-one-screen direct screen as legacy history gives the gene columns
 `[+63 prior, +99 last]` — both positive — and the 2026-08-22 rule defaults it
 **on**. The ledger diff is exactly one row changed and exactly one default
 moved: `holy-lane-parity` `false` → `true`, `default_on` **33 → 34**. No other
@@ -115,7 +115,7 @@ deployment genome, and the genome now plays a gene it did not play before, so
 design — the previous PR's byte-identical run was the evidence that *restoring*
 the code changed nothing, and that property is deliberately given up here.
 
-Its `helps` verdict is family-wise on the native win axis and carries
+Its `helps` verdict is family-wise on its direct six-player win axis and carries
 `conflict: true`, because the war screen reads `share hurts` at z −2.26. The
 rule reads the win axis, and both of its win columns are positive.
 
@@ -127,6 +127,6 @@ rule reads the win axis, and both of its win columns are positive.
   null, so the number is now the obvious thing to screen — `advanced_holy_lane_v0`
   (the pre-shipment `d_holy`) is the second cell of that 2×2 and is registered.
 - **The war regime.** A screen restricted to `domination,score` is a game
-  religion cannot win; that is why this gene is priced natively. If a war-regime
+religion cannot win; that is why this gene is priced directly. If a war-regime
   screen re-runs against the current genome, its share reading is the one to
   watch.
