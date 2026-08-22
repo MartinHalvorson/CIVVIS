@@ -36,7 +36,12 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 # The ledger tool owns the win column: it decides each gene's default from the
 # same two numbers this table prints, so both must be one arithmetic.
-from gene_ledger import PER, wins_per_10k as wins_per  # noqa: E402
+from gene_ledger import (  # noqa: E402
+    PER,
+    pooled_win_diff_pp,
+    pooled_win_rates,
+    wins_per_10k as wins_per,
+)
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
@@ -222,13 +227,15 @@ def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
 
 
-def diff_cell(on_rate: float, off_rate: float) -> str:
+def diff_cell(history: list[dict]) -> str:
     """Render the whole on−off win-rate difference as a percentage.
 
-    Positive values intentionally have no leading plus; negative values retain
-    their minus sign.
+    The figure is `gene_ledger.pooled_win_diff_pp` — the same number the ledger
+    vetoes a default on, so the printed column and the deployment call cannot
+    drift. Positive values intentionally have no leading plus; negative values
+    retain their minus sign.
     """
-    return f"{100 * (on_rate - off_rate):.2f}%"
+    return f"{pooled_win_diff_pp(history):.2f}%"
 
 
 def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
@@ -266,9 +273,11 @@ def render(ledger: dict) -> str:
     removed = sorted(tag for tag in measured if tag not in reg)
     latest = {tag: history[-1] for tag, history in measured.items()}
 
-    lines = [
-        "# The heuristic gene ranking",
-        "",
+    # Everything that explains the table, kept but moved out from in front of it:
+    # the operator reads the ranking, and twenty-two lines of preamble stood
+    # between the file and its first row. Carried under the table instead, so
+    # nothing derived is lost and nothing derived is in the way.
+    reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
         "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
         "gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the "
@@ -285,6 +294,13 @@ def render(ledger: dict) -> str:
         "off rate, rendered as a percentage: the **whole** on−off difference, so it stands at "
         "roughly twice the scale of the win columns beside it and must be read against a "
         "screen’s difference band rather than the halved column band below. "
+        "**A negative *Diff* vetoes the default** (operator, 2026-08-22): a gene that has "
+        "not won more than it lost across its whole record ships off however its two win "
+        "columns read. That is the one clause that lets a screen older than the last two "
+        "speak, and it is one-way — a positive *Diff* promotes nothing on its own, the "
+        "columns still have to clear their bars. Three genes ship off on it alone: "
+        "`war-economy`, `apostle-promotion-by-role` and `siege-commitment`, each carrying "
+        "positive recent columns over a 2026-08-20 screen they have not made back. "
         "**There is one screen** (operator, 2026-08-22): six majors on 74x46 continents "
         "with nine city-states, Online speed to its own 250-turn clock, all six victory "
         "lanes, a foldover against the best-genome baseline with shuffled civs and every "
@@ -352,6 +368,10 @@ def render(ledger: dict) -> str:
         "Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every "
         "screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this "
         "file is older than the ledger's sources.",
+    ]
+
+    lines = [
+        "# The heuristic gene ranking",
         "",
         "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -366,13 +386,12 @@ def render(ledger: dict) -> str:
         )
         on_games = sum(m["n_on"] for m in history)
         off_games = sum(m["n_off"] for m in history)
-        on_rate = sum(m["win_on"] * m["n_on"] for m in history) / on_games
-        off_rate = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+        on_rate, off_rate = pooled_win_rates(history)
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
             f"{100 * on_rate:.2f}% (n={fmt_int(on_games)}) | "
             f"{100 * off_rate:.2f}% (n={fmt_int(off_games)}) | "
-            f"{diff_cell(on_rate, off_rate)} | "
+            f"{diff_cell(history)} | "
             f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
@@ -414,6 +433,8 @@ def render(ledger: dict) -> str:
                 f"| `{tag}` | {wins_per(m['win_on'], m['players']):+d} | {100 * m['win_on']:.2f}% | "
                 f"{100 * m['win_off']:.2f}% | `{src}` |"
             )
+
+    lines += ["", "## How to read this", ""] + reference
 
     # Hand-written follow-ups live in `docs/gene_ranking_notes.md` and are
     # carried under the table, so a reading written against one screen is

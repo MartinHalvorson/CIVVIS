@@ -453,6 +453,20 @@ still record what the screen *proved*, and the screen still prints them; they
 no longer decide what ships, so a gene can be `helps` and off (its readings do
 not clear the rule) or `hurts` and on (its win columns do).
 
+Operator directive 2026-08-22, later the same day: *we should default every gene
+to off that has Diff < 0.* *Diff* is the ranking's own column — the pooled on
+win rate minus the pooled off win rate in percentage points, over **every**
+screen that priced the gene, each weighted by its games. It is the **whole**
+on−off difference, twice the scale of a win column beside it, and it is now a
+veto: a gene whose record is negative defaults off however its two win columns
+read. The veto is one-way — a positive record promotes nothing on its own,
+because the columns still have to clear their bars — and it is the one clause
+that lets a screen older than the last two speak. **31 genes on, was 34**: it
+turned off `war-economy` (+38/+8 over a 2026-08-20 reading of −3.84 pp),
+`siege-commitment` (+1/+3 over −0.80 pp) and `apostle-promotion-by-role`
+(+14/+12 over −0.83 pp). No measurement moved; each of the three carries
+positive recent columns over one old screen it has not made back.
+
 Until then "on by default" meant somebody had written `self.enable_x()` into
 the bundle, and the phase-1 anchors had measured that all-on bundle at **7.5%
 wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
@@ -478,14 +492,23 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   (`conflict`) and a gene no screen has measured. Past the family-wise bar is
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The newest screen that priced the gene supplies the verdict.
-- **The deployment rule** (`default_from_win_columns` in
-  `tools/gene_ledger.py`, mirrored as `win_columns_default_on` in
+- **The deployment rule** (`default_from_columns` in
+  `tools/gene_ledger.py`, mirrored as `columns_default_on` in
   `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
   `the_default_follows_the_win_columns`): **on** when both win columns
   are positive, or when their average is above +15 with neither below −10;
   with exactly one populated column, **on** when it is above +20; **off**
-  otherwise. Only the latest two readings count — an older bad screen is
-  history, not a veto.
+  otherwise. That clause is `default_from_win_columns` /
+  `win_columns_default_on`, and only the latest two readings reach it. Then
+  **off whatever it says when `win_diff_pp` is negative** — the pooled on−off
+  difference over the whole record, recorded beside the columns in
+  `docs/gene_ledger.json` and in the generated Rust table so the re-derivation
+  reads the same number the decision was taken on. Both arms of a screen carry
+  the same games, so the 1-in-`players` chance base cancels inside each screen
+  and the pooled figure is a games-weighted average of per-screen differences —
+  comparable across shapes and player counts in a way a raw win rate is not.
+  ⚠ It has no recency discount: a gene repaired since its worst screen stays
+  vetoed until its newer games outweigh that screen's.
 - **The deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` now end with `apply_gene_ledger`: every live or
   production treatment the ledger does not default on is withheld, every
@@ -549,6 +572,24 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   `raid-pillage-prizes` (+30/–), `builder-worked-tile-priority` (+24/–) and
   `opportunistic-war` (+23/–). The boundary is strict: +20/– remains off, and
   a second reading replaces this provisional clause with the two-column rule.
+
+- **A negative record vetoes the columns (2026-08-22).** The operator: *we
+  should default every gene to off that has Diff < 0.* No screen was re-run and
+  no measurement moved; every gene's pooled on−off difference — the ranking's
+  *Diff*, already printed there — is now recorded as `win_diff_pp` beside its
+  win columns and vetoes the default when it is negative. **31 genes on, was
+  34**: off go `war-economy` (columns +38/+8, record −0.78 pp),
+  `siege-commitment` (+1/+3, −0.21 pp) and `apostle-promotion-by-role`
+  (+14/+12, −0.06 pp). Nothing switched on: the veto is one-way. Each of the
+  three is condemned by the same screen, `2026-08-20-p4`, where they read
+  −3.84, −0.80 and −0.83 pp; their two newer screens are positive but smaller,
+  and the pooled figure weights by games rather than by recency, so a repaired
+  gene stays vetoed until its newer games outweigh its worst screen. That is a
+  deliberate reversal of "an older bad screen is history, not a veto", which
+  was the rule between 2026-08-22's two directives. **This moved the incumbent**
+  every Elo result recorded against the 33- and 34-gene genomes is filed
+  against. `holy-lane-parity`, promoted by #2307 the same day, is untouched:
+  its record is +1.08 pp.
 
 - **One screen, and the war rows are gone (2026-08-22).** The operator's
   directive above collapsed the instrument to a single shape and this ledger to

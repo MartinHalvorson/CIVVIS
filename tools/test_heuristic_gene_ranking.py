@@ -79,7 +79,7 @@ class TheTableIsDerived(unittest.TestCase):
             off_games = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
             off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
-            self.assertEqual(cells[8], ranking.diff_cell(on, off), cells[1])
+            self.assertEqual(cells[8], ranking.diff_cell(history), cells[1])
             self.assertRegex(cells[8], r"^-?\d+\.\d\d%$", cells[1])
             # Taken off the unrounded rates, so it can land a hundredth away
             # from subtracting the two printed cells by eye — 0.01% against a
@@ -89,8 +89,24 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertNotIn("Total Games (on+off)", ranking.RANKING_MD.read_text())
 
     def test_diff_cell_is_a_percent_and_keeps_a_negative_sign(self):
-        self.assertEqual(ranking.diff_cell(0.17, 0.15), "2.00%")
-        self.assertEqual(ranking.diff_cell(0.15, 0.17), "-2.00%")
+        def arms(on, off):
+            return [{"win_on": on, "win_off": off, "n_on": 1000, "n_off": 1000}]
+
+        self.assertEqual(ranking.diff_cell(arms(0.17, 0.15)), "2.00%")
+        self.assertEqual(ranking.diff_cell(arms(0.15, 0.17)), "-2.00%")
+
+    def test_the_printed_diff_is_the_figure_the_ledger_vetoes_on(self):
+        """One arithmetic, not two: the *Diff* cell and `win_diff_pp` are the
+        same call, so a gene cannot read positive in the table while the
+        deployment rule sees a negative record."""
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        measured, _ = ranking.load_sources(ledger)
+        recorded = {g["tag"]: g["win_diff_pp"] for g in ledger["genes"]}
+        self.assertGreater(len(recorded), 50)
+        for cells in self._ranked_rows():
+            tag = cells[1].strip("`")
+            self.assertEqual(cells[8], f"{recorded[tag]:.2f}%", tag)
+            self.assertEqual(recorded[tag], ranking.pooled_win_diff_pp(measured[tag]), tag)
 
     def test_each_win_rate_cell_carries_its_own_sample_size(self):
         """`n` is per arm, not one pooled figure: the arms are equal only while
@@ -185,6 +201,49 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(h1[2], s6[2], "yet h1 must resolve WIDER — the whole point")
         self.assertLess(h1[3], s6[3], "and at a lower pairing gain")
         self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
+
+
+    def test_the_table_is_the_first_thing_in_the_file(self):
+        """Operator, 2026-08-22: "i want the table on top."
+
+        Twenty-two lines of preamble used to stand between the title and the
+        first row. The reference did not go away — it is carried under the
+        tables — but nothing may get back in front of them.
+        """
+        lines = ranking.RANKING_MD.read_text().splitlines()
+        self.assertEqual(lines[0], "# The heuristic gene ranking")
+        self.assertEqual(lines[1], "")
+        self.assertTrue(lines[2].startswith("| Rank | Gene |"), lines[2])
+        self.assertTrue(lines[3].startswith("|---:|"), lines[3])
+        self.assertTrue(lines[4].startswith("| 1 | `"), lines[4])
+
+    def test_the_reference_is_carried_under_the_tables_not_deleted(self):
+        """Moving the preamble must not become dropping it.
+
+        Every derived paragraph the header used to open with is load-bearing —
+        the band correction in particular is why a culled gene came back — so
+        each is asserted present, and after the last table rather than before
+        the first.
+        """
+        text = ranking.RANKING_MD.read_text()
+        self.assertIn("## How to read this", text)
+        for phrase in (
+            "Reading the table",
+            "What each screen resolves",
+            "Pairing gain",
+            "twice too wide",
+            "**Cost.**",
+            "Regenerate with",
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertLess(
+            text.index("| Rank | Gene |"),
+            text.index("## How to read this"),
+            "the reference must sit under the table, not over it",
+        )
+        for heading in ("## Awaiting measurement", "## Removed from the code"):
+            if heading in text:
+                self.assertLess(text.index(heading), text.index("## How to read this"), heading)
 
 
 if __name__ == "__main__":

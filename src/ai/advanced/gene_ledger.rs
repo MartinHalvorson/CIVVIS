@@ -102,7 +102,7 @@ pub struct GeneVerdict {
     pub verdict: Verdict,
     /// Whether the gene is on in the deployment genome — the win-column rule
     /// in the module header, decided by `tools/gene_ledger.py` and checked
-    /// here against the two columns below by `the_default_follows_the_win_columns`.
+    /// here against the columns below by `the_default_follows_the_win_columns`.
     pub default_on: bool,
     /// ± wins per 10,000 games at the gene's measured on-rate in the latest
     /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
@@ -111,17 +111,42 @@ pub struct GeneVerdict {
     /// The same figure from the screen before that — *± Wins 10k Prior*.
     /// `None` when the gene has only one reading.
     pub wins_prior_10k: Option<i32>,
+    /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
+    /// pooled off win rate in percentage points, over **every** screen that
+    /// priced the gene, each weighted by its games. Negative vetoes the
+    /// default. `None` when no screen has priced it.
+    pub win_diff_pp: Option<f64>,
     /// Past the family-wise bar of the screen that supplied the verdict.
     pub family_wise: bool,
     /// The newest screen's paired contrast for this gene.
     pub screen: Option<Measure>,
 }
 
-/// A gene's win columns clear the deployment rule: one populated column above
-/// `SINGLE_COLUMN_BAR`, both positive, or an average above `AVERAGE_BAR` with
-/// neither column below `COLUMN_FLOOR`. No populated columns means off — the
-/// mirror of `tools/gene_ledger.py`'s `default_from_win_columns`, so a
-/// hand-edited table cannot quietly ship a gene the rule does not.
+/// A gene's columns clear the deployment rule: the win-column clause below,
+/// vetoed by a negative pooled on-off difference. The mirror of
+/// `tools/gene_ledger.py`'s `default_from_columns`, so a hand-edited table
+/// cannot quietly ship a gene the rule does not.
+///
+/// The veto is one-way, and it is the one clause that lets a screen older than
+/// the last two speak: a gene whose whole record is negative ships off however
+/// its two newest columns read, while a positive record promotes nothing on its
+/// own. An unpriced gene has no difference and is decided on the columns.
+pub fn columns_default_on(last: Option<i32>, prior: Option<i32>, diff_pp: Option<f64>) -> bool {
+    /// No column reading ships a gene that has not won more than it lost over
+    /// its whole record.
+    const DIFF_FLOOR: f64 = 0.0;
+    if diff_pp.is_some_and(|diff| diff < DIFF_FLOOR) {
+        return false;
+    }
+    win_columns_default_on(last, prior)
+}
+
+/// A gene's win columns clear the deployment rule's column clause: one
+/// populated column above `SINGLE_COLUMN_BAR`, both positive, or an average
+/// above `AVERAGE_BAR` with neither column below `COLUMN_FLOOR`. No populated
+/// columns means off — the mirror of `tools/gene_ledger.py`'s
+/// `default_from_win_columns`. This is the clause alone; `columns_default_on`
+/// is the deployment call.
 pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
     /// A sole provisional reading must strictly clear this bar.
     const SINGLE_COLUMN_BAR: i32 = 20;
@@ -319,30 +344,66 @@ mod tests {
                     "{tag}: {column} differs between the table and the JSON"
                 );
             }
+            assert_eq!(
+                row.win_diff_pp,
+                entry["win_diff_pp"].as_f64(),
+                "{tag}: win_diff_pp differs between the table and the JSON"
+            );
         }
     }
 
-    /// The rule itself: every default in the generated table is the one the
-    /// two win columns beside it produce. The tool decides; this re-derives.
+    /// The rule itself: every default in the generated table is the one its two
+    /// win columns and its pooled difference produce. The tool decides; this
+    /// re-derives.
     #[test]
     fn the_default_follows_the_win_columns() {
         let mut on = 0;
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
-                win_columns_default_on(row.wins_last_10k, row.wins_prior_10k),
-                "{}: default {} does not follow its win columns {:?}/{:?}",
+                columns_default_on(row.wins_last_10k, row.wins_prior_10k, row.win_diff_pp),
+                "{}: default {} does not follow its columns {:?}/{:?} and difference {:?}",
                 row.tag,
                 row.default_on,
                 row.wins_last_10k,
-                row.wins_prior_10k
+                row.wins_prior_10k,
+                row.win_diff_pp
             );
             on += usize::from(row.default_on);
         }
         assert!(on > 0, "a genome with no gene on is a broken regeneration");
     }
 
-    /// The rule's three clauses, at their boundaries.
+    /// The veto, at its boundary and in its one direction.
+    #[test]
+    fn a_negative_pooled_difference_vetoes_the_columns() {
+        assert!(
+            columns_default_on(Some(78), None, Some(1.56)),
+            "columns that clear the bar, on a positive record"
+        );
+        assert!(
+            !columns_default_on(Some(78), None, Some(-0.01)),
+            "the strongest single column does not survive a negative record"
+        );
+        assert!(
+            !columns_default_on(Some(38), Some(8), Some(-0.78)),
+            "two positive columns do not survive a negative record"
+        );
+        assert!(
+            columns_default_on(Some(38), Some(8), Some(0.0)),
+            "a record of exactly zero is not negative"
+        );
+        assert!(
+            !columns_default_on(Some(-5), Some(-11), Some(1.20)),
+            "a positive record promotes nothing: the columns still decide"
+        );
+        assert!(
+            !columns_default_on(None, None, None),
+            "unmeasured has no record and no columns"
+        );
+    }
+
+    /// The column clause's three branches, at their boundaries.
     #[test]
     fn the_win_column_rule_reads_both_columns() {
         assert!(win_columns_default_on(Some(1), Some(1)), "both positive");
