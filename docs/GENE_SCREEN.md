@@ -207,6 +207,29 @@ progress, and `--append` with a disjoint `--start-seed` grows a run across
 sessions. Genomes are drawn from `(start seed, pair)`, so a run reproduces
 exactly and two seed windows draw disjoint genomes.
 
+The same run now prices the runtime cost of every gene without adding a timer
+to any heuristic and without replaying a game:
+
+- **compute cost** is the on/off percent change in wall seconds per completed
+  turn. It removes a gene's effect on how many turns the game lasts and asks
+  whether each simulated turn itself became dearer.
+- **time cost** is the on/off percent change in whole-game wall seconds. This is
+  the throughput cost an operator pays, including a gene that makes games end
+  earlier or later.
+
+Positive costs are slower and negative costs are faster. The analysis takes the
+log ratio inside each same-map game pair, regresses it on every randomized gene
+at once, and includes an arm-order intercept so machine-load drift cannot ride a
+small chance genome imbalance. An all-seats game has one timing, not six: its
+per-seat gene signs are summed and that timing enters the fit once, making the
+coefficient the incremental cost of enabling the gene for one major. Reported
+uncertainty is one HC1 heteroskedasticity-robust standard error, so long and
+short games need not have the same timing variance. This paired, scale-free fit
+is both more stable than averaging raw seconds and effectively free: `secs`,
+`turn`, and the genomes were already in every JSONL row. Old rows with
+absent/zero timing remain readable and produce an unknown cost rather than a
+false zero.
+
 ## The rows file
 
 The first line is a header (`kind: header`, the gene order, the screened set,
@@ -219,9 +242,10 @@ the profile); every other line is one game:
 ```
 
 Interactions (epistasis), subgroup tables (by seat, victory type, map), and a
-fitted logistic are all re-analyses of these rows and never need a game
-replayed. `--analyze` refuses to merge files written at different profiles or
-gene orders — a merged table would mix two experiments.
+fitted logistic — plus the compute/time cost estimates above — are all
+re-analyses of these rows and never need a game replayed. `--analyze` refuses to
+merge files written at different profiles or gene orders — a merged table would
+mix two experiments.
 
 ## Per-civilization effects — `--by-civ <tag>`
 
