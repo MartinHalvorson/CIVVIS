@@ -14039,11 +14039,18 @@ impl BasicAi {
     /// where it stands, at the top of the engine's damage roll. Zero when the
     /// gene is off, so a caller can compare against it unconditionally.
     ///
-    /// ⚠ COSTS NOTHING EXTRA WHERE IT IS CALLED. `healing_step` has already
-    /// run `retreat_step`, which computes this board's attack envelopes, so
-    /// the fetch below is a hit on that cache under the same key. A garrison
-    /// is answered before it: an attack on a City Center or an Encampment
-    /// damages the district, not the formation standing in it.
+    /// ⚠ COSTS NOTHING EXTRA WHERE IT IS CALLED, AND THE FILTER IS WHY. The
+    /// envelope table is the most expensive thing this controller computes —
+    /// one movement flow field per visible enemy, and #2059 turned a per-unit
+    /// recompute of it into a six-fold slowdown of every simulation on the
+    /// fleet. The set of units answered below is exactly `retreat_step`'s,
+    /// which `healing_step` has already run on this board, so the fetch is a
+    /// hit on that cache under the same key rather than a fresh table. The
+    /// price of that discipline is that a support unit — a Battering Ram, a
+    /// Siege Tower — keeps the constant withdrawal floor it has always had.
+    ///
+    /// A garrison is answered before the fetch: an attack on a City Center or
+    /// an Encampment damages the district, not the formation standing in it.
     /// See `one_shot_recovery`.
     fn one_shot_killing_blow(&self, g: &Game, pid: usize, uid: u32) -> f64 {
         if !self.one_shot_recovery {
@@ -14054,7 +14061,12 @@ impl BasicAi {
         };
         let spec = &g.rules.units[unit.kind];
         // Air units are not on the board between missions; they rebase.
-        if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || (!spec.is_melee_capable() && !spec.has_ranged_attack())
+        {
             return 0.0;
         }
         let here = unit.pos;
