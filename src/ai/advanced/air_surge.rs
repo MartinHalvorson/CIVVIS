@@ -334,33 +334,25 @@ impl AdvancedAi {
             return true;
         };
         g.connected_resource_count(pid, resource.as_str()) > 0
-            || g.strategic_stockpile(pid, resource)
-                + f64::EPSILON
+            || g.strategic_stockpile(pid, resource) + f64::EPSILON
                 >= spec.resource_cost * AIR_SURGE_BOMBERS as f64
     }
 
     /// The package as the board holds it. Queues count, so the first city that
     /// commits a Bomber removes that vacancy for the next city rather than
     /// every city starting the same wish list.
-    pub(crate) fn air_surge_status(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &AirSurge,
-    ) -> AirSurgeStatus {
+    pub(crate) fn air_surge_status(&self, g: &Game, pid: usize, plan: &AirSurge) -> AirSurgeStatus {
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
         let objective = g.cities.get(&plan.objective_city).map(|city| city.pos);
         let mut status = AirSurgeStatus {
-            wing_in_range: objective
-                .is_some_and(|pos| Self::air_surge_in_range(g, pid, pos)),
+            wing_in_range: objective.is_some_and(|pos| Self::air_surge_in_range(g, pid, pos)),
             metal_ready: Self::air_surge_metal_ready(g, pid),
             ..AirSurgeStatus::default()
         };
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
-            let built = field
-                .is_some_and(|family| g.city_has_district_family(city, family));
+            let built = field.is_some_and(|family| g.city_has_district_family(city, family));
             let queued = field.is_some_and(|family| {
                 city.queue.iter().any(|item| {
                     matches!(item, Item::District { district, .. }
@@ -459,11 +451,8 @@ impl AdvancedAi {
     /// lanes agree about what "in time" means. The wing does not march, so
     /// there is no third term.
     pub(crate) fn air_surge_launch_estimate(&self, g: &Game, pid: usize) -> (u32, u32) {
-        let research = (Self::war_remaining_research_cost(
-            g,
-            pid,
-            Name::new(AIR_SURGE_GOAL_TECH),
-        ) / Self::war_science_per_turn(g, pid))
+        let research = (Self::war_remaining_research_cost(g, pid, Name::new(AIR_SURGE_GOAL_TECH))
+            / Self::war_science_per_turn(g, pid))
         .ceil() as u32;
         let field_cost = Self::air_surge_field(g, pid)
             .map(|field| g.rules.districts[field].cost)
@@ -527,12 +516,7 @@ impl AdvancedAi {
                 .collect();
             objectives.sort_by(|left, right| {
                 self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
-                    .total_cmp(&self.campaign_city_value(
-                        g,
-                        pid,
-                        right,
-                        GrandStrategy::Conquest,
-                    ))
+                    .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
                     .then(left.id.cmp(&right.id))
             });
             for city in objectives {
@@ -545,8 +529,7 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                let score =
-                    self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+                let score = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
                 let plan = AirSurge {
                     target_player: target.id,
                     objective_city: city.id,
@@ -567,12 +550,9 @@ impl AdvancedAi {
                     last_reviewed_turn: g.turn,
                     recovery_assessments: 0,
                 };
-                if best
-                    .as_ref()
-                    .is_none_or(|(old, ot, oc, _)| {
-                        score < *old || (score == *old && (target.id, city.id) < (*ot, *oc))
-                    })
-                {
+                if best.as_ref().is_none_or(|(old, ot, oc, _)| {
+                    score < *old || (score == *old && (target.id, city.id) < (*ot, *oc))
+                }) {
                     best = Some((score, target.id, city.id, plan));
                 }
                 // The objective list is already campaign-ranked; the first
@@ -670,14 +650,16 @@ impl AdvancedAi {
                     if g.turn.saturating_sub(plan.last_reviewed_turn) >= cadence {
                         plan.last_reviewed_turn = g.turn;
                         if self.threatened_city(g, pid).is_some() {
-                            plan.recovery_assessments =
-                                plan.recovery_assessments.saturating_add(1);
+                            plan.recovery_assessments = plan.recovery_assessments.saturating_add(1);
                         } else {
                             plan.recovery_assessments = 0;
                         }
                     }
                     if !fighting && plan.recovery_assessments >= AIR_SURGE_RECOVERY_LIMIT {
-                        self.record_air_surge_abort(g, "home Recovery persisted for two assessments");
+                        self.record_air_surge_abort(
+                            g,
+                            "home Recovery persisted for two assessments",
+                        );
                         ended = true;
                     } else if at_war {
                         plan.phase = AirSurgePhase::Exploit;
@@ -783,21 +765,21 @@ impl AdvancedAi {
                 // in the city that holds it and rebases from there at twice
                 // its movement.
                 (status.aerodromes_committed == 0)
-                    .then(|| AIR_SURGE_AERODROME_VALUE - turns * 8.0)
+                    .then_some(AIR_SURGE_AERODROME_VALUE - turns * 8.0)
             }
             Item::Unit { unit } | Item::Formation { unit, .. } => {
                 if Self::air_surge_bomber(g, pid) == Some(*unit) {
                     let missing = AIR_SURGE_BOMBERS.saturating_sub(status.bombers_committed);
-                    (missing > 0).then(|| {
+                    (missing > 0).then_some(
                         AIR_SURGE_BOMBER_VALUE + AIR_SURGE_SCARCITY_STEP * missing as f64
-                            - turns * 8.0
-                    })
+                            - turns * 8.0,
+                    )
                 } else if Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) {
                     let missing = AIR_SURGE_BODIES.saturating_sub(status.bodies_committed);
-                    (missing > 0).then(|| {
+                    (missing > 0).then_some(
                         AIR_SURGE_BODY_VALUE + AIR_SURGE_SCARCITY_STEP * missing as f64
-                            - turns * 8.0
-                    })
+                            - turns * 8.0,
+                    )
                 } else {
                     None
                 }
@@ -841,9 +823,8 @@ impl AdvancedAi {
                 let rank = match &item {
                     Item::District { district, .. }
                         if wants_field
-                            && field.is_some_and(|family| {
-                                g.district_family(*district) == family
-                            }) =>
+                            && field
+                                .is_some_and(|family| g.district_family(*district) == family) =>
                     {
                         0
                     }
@@ -862,13 +843,10 @@ impl AdvancedAi {
                 }
                 let key = format!("{item:?}");
                 let candidate = (rank, build_turns, cid, key, item);
-                if best
-                    .as_ref()
-                    .is_none_or(|old| {
-                        (candidate.0, candidate.1, candidate.2, &candidate.3)
-                            < (old.0, old.1, old.2, &old.3)
-                    })
-                {
+                if best.as_ref().is_none_or(|old| {
+                    (candidate.0, candidate.1, candidate.2, &candidate.3)
+                        < (old.0, old.1, old.2, &old.3)
+                }) {
                     best = Some(candidate);
                 }
             }
@@ -941,8 +919,7 @@ impl AdvancedAi {
         // Phase is recomputed at turn start; a deal or a loss earlier this
         // turn can have changed the board, so the gate is repeated here.
         let status = self.air_surge_status(g, pid, &plan);
-        if !(status.wing_ready() && status.escort_ready())
-            || self.threatened_city(g, pid).is_some()
+        if !(status.wing_ready() && status.escort_ready()) || self.threatened_city(g, pid).is_some()
         {
             return true;
         }

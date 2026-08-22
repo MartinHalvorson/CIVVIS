@@ -30469,7 +30469,6 @@ fn contact_posture_is_a_registered_reversible_opt_in() {
     assert!(!ai.contact_posture);
 }
 
-
 // ---------------------------------------------------------------------------
 // The air surge. See `advanced/air_surge.rs`.
 // ---------------------------------------------------------------------------
@@ -30589,9 +30588,7 @@ fn the_surge_window_is_bounded_by_the_horizon_and_the_clock() {
     {
         distant.players[0].techs.remove(&tech);
     }
-    assert!(
-        AdvancedAi::air_surge_missing_techs(&distant, 0) > air_surge::AIR_SURGE_TECH_HORIZON
-    );
+    assert!(AdvancedAi::air_surge_missing_techs(&distant, 0) > air_surge::AIR_SURGE_TECH_HORIZON);
     assert!(!ai.air_surge_open(&distant, 0));
 
     // And with the Bomber already in hand there is nothing left to beeline,
@@ -30802,7 +30799,9 @@ fn the_wing_follows_the_airfield_and_outbids_the_ordinary_ranking() {
     let bomber = Item::Unit {
         unit: crate::name!("bomber"),
     };
-    let body = Item::Unit { unit: plan.body_unit };
+    let body = Item::Unit {
+        unit: plan.body_unit,
+    };
     let bystander = Item::Unit {
         unit: crate::name!("builder"),
     };
@@ -30854,7 +30853,10 @@ fn the_surge_stands_down_when_no_aluminium_arrives() {
     game.players[0].techs.insert(crate::name!("radio"));
     let mut ai = air_surge_ai();
     ai.maintain_air_surge(&game, 0);
-    assert!(ai.air_surge_active(), "the surge appoints without the metal");
+    assert!(
+        ai.air_surge_active(),
+        "the surge appoints without the metal"
+    );
 
     // Inside the grace period it holds: a Builder is still walking to the
     // deposit `radio` revealed.
@@ -30866,7 +30868,10 @@ fn the_surge_stands_down_when_no_aluminium_arrives() {
 
     game.turn = breakthrough + game.standard_duration(air_surge::AIR_SURGE_ALUMINUM_GRACE);
     ai.maintain_air_surge(&game, 0);
-    assert!(!ai.air_surge_active(), "a wing with no metal is not a surge");
+    assert!(
+        !ai.air_surge_active(),
+        "a wing with no metal is not a surge"
+    );
     assert_eq!(
         ai.air_surge_census.aborts.get("no Aluminum for the wing"),
         Some(&1)
@@ -30919,7 +30924,10 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
         Some(air_surge::AirSurgePhase::Arm)
     );
     assert!(ai.air_surge_opening(&mut game, 0, 1));
-    assert!(!game.is_at_war(0, 1), "an incomplete package must not declare");
+    assert!(
+        !game.is_at_war(0, 1),
+        "an incomplete package must not declare"
+    );
 
     for _ in 1..air_surge::AIR_SURGE_BOMBERS {
         game.spawn_test_unit("bomber", 0, home);
@@ -30942,7 +30950,9 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
         Some(air_surge::AirSurgePhase::Exploit)
     );
     assert_eq!(
-        ai.air_surge_plan.as_ref().and_then(|plan| plan.declared_turn),
+        ai.air_surge_plan
+            .as_ref()
+            .and_then(|plan| plan.declared_turn),
         Some(game.turn)
     );
 }
@@ -31063,6 +31073,7 @@ fn air_surge_census_at_deployment_scale() {
         let mut closest = usize::MAX;
         let mut closest_turn = 0;
         let mut first_affordable = None;
+        let (mut peak_bombers, mut peak_fields, mut peak_metal) = (0usize, 0usize, 0i32);
         while game.winner.is_none() && game.turn <= game.max_turns {
             let pid = game.current;
             if pid == 0 {
@@ -31076,6 +31087,24 @@ fn air_surge_census_at_deployment_scale() {
                     first_affordable = Some((game.turn, missing, research, production));
                 }
                 me.take_turn(&mut game, pid);
+                peak_bombers = peak_bombers.max(
+                    game.player_unit_ids(0)
+                        .into_iter()
+                        .filter(|uid| game.units[uid].kind == "bomber")
+                        .count(),
+                );
+                peak_fields = peak_fields.max(
+                    game.player_city_ids(0)
+                        .into_iter()
+                        .filter(|cid| {
+                            game.city_has_district_family(
+                                &game.cities[cid],
+                                crate::name!("aerodrome"),
+                            )
+                        })
+                        .count(),
+                );
+                peak_metal = peak_metal.max(game.connected_resource_count(0, "aluminum"));
             } else {
                 others[pid].take_turn(&mut game, pid);
             }
@@ -31099,7 +31128,8 @@ fn air_surge_census_at_deployment_scale() {
         );
         println!(
             "  closest {closest} at turn {closest_turn} | first affordable \
-             {first_affordable:?} | techs {} bombers {bombers} cities {} score {}",
+             {first_affordable:?} | peak: fields {peak_fields} aluminium {peak_metal} \
+             bombers {peak_bombers} | techs {} bombers {bombers} cities {} score {}",
             game.players[0].techs.len(),
             game.player_city_ids(0).len(),
             game.score(0),
@@ -31124,7 +31154,10 @@ fn a_surge_appointed_into_a_running_war_arms_without_declaring() {
         .clone()
         .expect("a running war is a counter, not a refusal");
     assert!(plan.opened_at_war);
-    assert_eq!(plan.target_player, 1, "the counter arms against the invader");
+    assert_eq!(
+        plan.target_player, 1,
+        "the counter arms against the invader"
+    );
     assert_eq!(plan.objective_city, objective);
     assert_eq!(
         plan.phase,
@@ -31149,7 +31182,10 @@ fn a_surge_appointed_into_a_running_war_arms_without_declaring() {
     game.at_war.remove(&(1, 0));
     ai.maintain_air_surge(&game, 0);
     assert!(!ai.air_surge_active());
-    assert_eq!(ai.air_surge_census.aborts.get("peace closed the war"), Some(&1));
+    assert_eq!(
+        ai.air_surge_census.aborts.get("peace closed the war"),
+        Some(&1)
+    );
 }
 
 /// Two fronts is a war the empire is losing, and a three-technology beeline is
@@ -31158,7 +31194,10 @@ fn a_surge_appointed_into_a_running_war_arms_without_declaring() {
 fn a_second_front_closes_the_surge_window() {
     let (mut game, _, _) = air_surge_fixture(941_112);
     let ai = air_surge_ai();
-    assert!(ai.air_surge_open(&game, 0), "peace appoints the elective attack");
+    assert!(
+        ai.air_surge_open(&game, 0),
+        "peace appoints the elective attack"
+    );
 
     game.at_war.insert((0, 1));
     game.at_war.insert((1, 0));
@@ -31194,4 +31233,3 @@ fn a_second_front_closes_the_surge_window() {
         "two fronts shut the window"
     );
 }
-
