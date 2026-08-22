@@ -1552,6 +1552,18 @@ impl AdvancedAi {
         self.builder_worked_tile_priority = false;
     }
 
+    /// Keep Builders from entering a visible Barbarian-capture envelope.
+    /// Native opt-in gene `builder-barbarian-safety`; off in production until
+    /// its targeted barbarian screen has priced the safety/tempo trade.
+    pub fn enable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = true;
+    }
+
+    /// The twin of `enable_builder_barbarian_safety`.
+    pub fn disable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = false;
+    }
+
     /// Credit a wonder's missing prerequisite buildings/districts with a
     /// share of the wonder's own production score. Evaluator arm
     /// `advanced_wonder_reach`; off in production.
