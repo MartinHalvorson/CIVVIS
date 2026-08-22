@@ -31132,4 +31132,3 @@ fn contact_posture_is_a_registered_reversible_opt_in() {
     ai.disable_contact_posture();
     assert!(!ai.contact_posture);
 }
-

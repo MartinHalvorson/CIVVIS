@@ -153,7 +153,6 @@ impl AdvancedAi {
         {
             return None;
         }
-        let here = unit.pos;
         let hp = f64::from(unit.hp);
         let covering = self.covering_hostiles(g, pid, uid);
         if covering.is_empty() {
@@ -188,7 +187,7 @@ impl AdvancedAi {
             return None;
         }
 
-        self.stand_and_heal(g, pid, uid, &covering, heal, hp, here)
+        self.stand_and_heal(g, pid, uid, &covering)
     }
 
     /// Every visible hostile whose next-turn attack envelope covers this
@@ -341,14 +340,22 @@ impl AdvancedAi {
             .into_keys()
             .filter(|pos| *pos != here)
             .map(|pos| {
-                let covered = guns.iter().filter(|(_, reach)| reach.contains(&pos)).count();
+                let covered = guns
+                    .iter()
+                    .filter(|(_, reach)| reach.contains(&pos))
+                    .count();
                 let healing = g.healing_location(pid, pos).rate();
                 let spacing = guns
                     .iter()
                     .map(|(gun, _)| g.wdist(pos, *gun))
                     .min()
                     .unwrap_or(0);
-                (covered, std::cmp::Reverse(healing), std::cmp::Reverse(spacing), pos)
+                (
+                    covered,
+                    std::cmp::Reverse(healing),
+                    std::cmp::Reverse(spacing),
+                    pos,
+                )
             })
             .min()
             .map(|(covered, _, _, pos)| (covered, pos))?;
@@ -378,21 +385,18 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
         covering: &[Covering],
-        heal: f64,
-        hp: f64,
-        here: Pos,
     ) -> Option<bool> {
         let unit = g.units.get(&uid)?;
+        let here = unit.pos;
+        let hp = f64::from(unit.hp);
+        let heal = f64::from(g.unit_heal_rate(uid));
         // `unit_strength(u, true)` carries `3 × fortify_turns.clamp(0, 2)`,
         // and `do_fortify` raises a standing unit's count to at least one
         // immediately — so the stand is priced with the bonus the stand will
         // actually have when the blow lands, not the one it has now.
         let fortifying = g.unit_can_fortify(unit) && unit.fortify_turns < 1;
         let fortify_gain = if fortifying { 3.0 } else { 0.0 };
-        let melee: Vec<&Covering> = covering
-            .iter()
-            .filter(|threat| threat.melee)
-            .collect();
+        let melee: Vec<&Covering> = covering.iter().filter(|threat| threat.melee).collect();
         if melee.is_empty() {
             return None;
         }
