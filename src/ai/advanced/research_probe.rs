@@ -868,8 +868,8 @@ fn live_stalled_settler_refuses_a_loyalty_doomed_fallback() {
                 })
         })
         .expect("fixture needs a frontier eight tiles from its friendly city");
-    for position in positions.iter().copied() {
-        let tile = game.map.tiles.get_mut(&position).unwrap();
+    for position in positions.iter() {
+        let tile = game.map.tiles.get_mut(position).unwrap();
         tile.terrain = crate::name!("grassland");
         tile.feature = None;
         tile.hills = false;
