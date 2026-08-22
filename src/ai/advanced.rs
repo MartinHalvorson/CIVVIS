@@ -8036,7 +8036,6 @@ impl AdvancedAi {
                 actionable_denial
                     .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                     .map(|(rival, _)| rival)
-                    .or_else(|| domination_capital.map(|(target, _)| target))
                     .or_else(|| {
                         let mut candidates: Vec<_> = major_rivals
                             .iter()

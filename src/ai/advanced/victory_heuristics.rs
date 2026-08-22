@@ -171,9 +171,9 @@ impl AdvancedAi {
         None
     }
 
-    /// A Domination contract is fulfilled by foreign *original* capitals.  A
-    /// cheap border outpost can still be useful after a campaign starts, but
-    /// it must not replace the only city whose capture advances the victory.
+    /// A Domination contract is fulfilled by foreign *original* capitals. An
+    /// exposed city-state can still be a useful staging target, but once the
+    /// campaign names a major rival, its first city must advance the victory.
     pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
