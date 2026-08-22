@@ -16,6 +16,12 @@
 //! same seeds and the same map shape the screen runs.
 //!
 //! ⚠ A census, not an assertion. It plays whole games and is `#[ignore]`d.
+//!
+//! ⚠ Adding a gene makes `HEURISTIC_GENE_RANKING.md` stale — it is generated
+//! and lists every screenable gene, so `tools/test_heuristic_gene_ranking.py`
+//! fails by name until `tools/heuristic_gene_ranking.py --write` has run. The
+//! regenerated file then has to be added to the PR's `Claimed paths:` line, or
+//! `collaboration-policy` refuses it as unclaimed.
 
 use super::*;
 use crate::ai::Ai;
