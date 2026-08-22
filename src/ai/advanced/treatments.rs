@@ -167,6 +167,10 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 /// targeted regime it exists for before any promotion question is asked.
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+    // A Builder does not walk into a visible Barbarian-capture envelope; its
+    // target and retreat both use the same fog-honest risk model as Settlers.
+    // `gene_screen` discovers this native opt-in directly from this row.
+    ("builder_barbarian_safety", "builder-barbarian-safety", AdvancedAi::enable_builder_barbarian_safety),
     // A Builder's finite charges first pay today's worked yields, except for
     // luxury and strategic connections that pay empire-wide either way.
     // `gene_screen` discovers this native opt-in directly from this row.
@@ -195,6 +199,13 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // A surprise war priced on what the board exposes — an unescorted
+    // Settler or Builder, a cluster of unpillaged tiles — taken by movement
+    // and closed by peace; see `AdvancedAi::opportunistic_war`.
+    ("opportunistic_war", "opportunistic-war", AdvancedAi::enable_opportunistic_war),
+    // The pillage half of the raid, priced apart: inert unless the row
+    // above is on. See `AdvancedAi::raid_pillage_prizes`.
+    ("raid_pillage_prizes", "raid-pillage-prizes", AdvancedAi::enable_raid_pillage_prizes),
     // A target can be excellent while a visible hostile makes its next route
     // step unsafe. This holds that corridor aside briefly and sends the
     // Settler to the best safe runner-up; see `settler_threat_detour`.

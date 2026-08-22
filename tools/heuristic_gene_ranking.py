@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene
+"""Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
 with a native measurement, ranked by wins added per 10,000 six-player games,
 plus the screenable genes still awaiting that measurement.
 
@@ -7,10 +7,10 @@ plus the screenable genes still awaiting that measurement.
     python3 tools/heuristic_gene_ranking.py --check     # fail if it is stale
 
 The table used to be written once, by hand, from one screen's rows. Now it is
-derived: for each measured gene the **latest native source** in
-`docs/gene_ledger.json` supplies the on/off wins and games (so a gene added
-after the whole-genome screen still appears, from its own screen), the **latest
-war source** supplies the war column, and the deployment verdict comes from the
+derived: for each gene the **latest native source** in `docs/gene_ledger.json`
+that measured it supplies the on/off wins and games (so a gene added after the
+whole-genome screen still appears, from its own screen), the **latest war
+source** supplies the war column, and the deployment verdict comes from the
 ledger. Screenable genes without a native result are listed separately without
 a rank. Genes whose code has been removed this cycle are listed from their last
 measurement, as before. Descriptions are the first sentence of each toggle's
@@ -104,10 +104,13 @@ def descriptions() -> dict[str, str]:
     return out
 
 
-def load_sources(ledger: dict) -> tuple[dict[str, dict], dict[str, dict], dict[str, str], dict[str, str]]:
-    """Latest per-gene measurement per regime (later sources win), and the
-    source file each came from."""
-    native: dict[str, dict] = {}
+def load_sources(
+    ledger: dict,
+) -> tuple[dict[str, list[dict]], dict[str, dict], dict[str, str], dict[str, str]]:
+    """Per-gene native measurement history in source order (the ledger records
+    sources oldest-first, so a gene's last entry is its newest reading), the
+    latest war measurement, and the source file each came from."""
+    native: dict[str, list[dict]] = {}
     war: dict[str, dict] = {}
     native_src: dict[str, str] = {}
     war_src: dict[str, str] = {}
@@ -125,7 +128,7 @@ def load_sources(ledger: dict) -> tuple[dict[str, dict], dict[str, dict], dict[s
                 "players": int(data.get("profile", {}).get("players", 0) or 0),
             }
             if src["regime"] == "native":
-                native[gene["tag"]] = g
+                native.setdefault(gene["tag"], []).append(g)
                 native_src[gene["tag"]] = name
             else:
                 war[gene["tag"]] = g
@@ -152,59 +155,65 @@ def render(ledger: dict) -> str:
     rows = []
     unmeasured = []
     for tag in tags:
-        m = native.get(tag)
-        if m is None:
+        history = native.get(tag)
+        if not history:
             unmeasured.append(tag)
             continue
-        rows.append((wins_per(m["win_on"], m["players"]), tag, m))
+        rows.append((wins_per(history[-1]["win_on"], history[-1]["players"]), tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
 
     removed = sorted(
         (tag for tag in set(native) | set(war) if tag not in reg),
     )
+    latest = {tag: history[-1] for tag, history in native.items()}
 
     lines = [
         "# The heuristic gene ranking",
         "",
-        "Every screenable heuristic gene with a native measurement on the Advanced controller, "
-        "ranked most beneficial to least by **wins added per 10,000 six-player games** at its "
-        "measured on-rate. Screenable genes awaiting their first native measurement are listed "
-        "separately below without a rank. "
-        "Each gene's row comes from the **latest native screen that measured it** (the "
-        "column *Source*), so a gene added after the whole-genome screen appears from its "
-        "own screen; the *War* column is the same figure from the latest `domination,score` "
-        "screen; *Default* is the deployment ledger's verdict (`docs/gene_ledger.json`, "
-        "native regime governing, war filling in). Every screen is a foldover against the "
-        "best-genome baseline with shuffled civs and every major seat carrying its own "
-        "genome (errors clustered by game pair), so a gene's on/off columns cover the same "
-        "maps. `docs/GENE_SCREEN.md` documents the instrument.",
+        "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
+        "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
+        "gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the "
+        "same figure from the screen before that (\u2013 when the gene has only one native "
+        "reading); movement between the two columns is the gene's trend across cycles. "
+        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`). The *Total* "
+        "columns pool every native screen that measured the gene, weighted by games. Every "
+        "screen is a foldover against the best-genome baseline with shuffled civs and every "
+        "major seat carrying its own genome (errors clustered by game pair), so a gene's "
+        "on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the "
+        "instrument; the paired contrasts, intervals and family-wise verdicts stay in "
+        "`docs/gene_ledger.json`. Screenable genes awaiting their first native "
+        "measurement are listed separately below without a rank.",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a "
-        "four-player war screen), so *Wins ±10k* is how many wins above or below chance a "
-        "seat carrying the gene collects per 10,000 games; the whole-genome screen resolves "
-        "±1.1 pp (≈ ±110 wins per 10,000) at 80% power and a single-gene 6,000-seat-pair "
-        "screen ±1.3 pp — differences inside that band are noise, not nulls. "
-        "`z` is the paired on−off win contrast; `share z` the score-share contrast, which "
-        "resolves an edge at a fraction of the games a win count needs.",
+        "four-player screen), so the expected count is 1,667 wins per 10,000 games and the "
+        "win columns say how far above or below that a seat carrying the gene lands; the "
+        "whole-genome screen resolves about ±110 wins per 10,000 at 80% power and a "
+        "single-gene 6,000-seat-pair screen about ±130 — differences inside that band are "
+        "noise, not nulls. Screens differ in baseline as repairs land, so the *Prior* "
+        "column reads as history, not a strict A/B against *Last*.",
         "",
         "Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every "
         "screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this "
         "file is older than the ledger's sources.",
         "",
-        "| Rank | Wins ±10k | Gene | Default | Description | Win rate (on) | Win rate (off) | Games (on/off) | z | share z | War ±10k | Source |",
-        "|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+        "| Rank | ± Wins Last 10k | ± Wins 10k Prior | Gene | Description | Default | Total (on) Win rate | Total (off) Win rate | Total Games (on+off) |",
+        "|---:|---:|---:|---|---|---|---:|---:|---:|",
     ]
-    for rank, (wins, tag, m) in enumerate(rows, 1):
+    for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
-        verdict_word = v.get("verdict", "unmeasured")
-        w = war.get(tag)
-        war_cell = f"{wins_per(w['win_on'], w['players']):+d}" if w else "–"
+        prior = (
+            f"{wins_per(history[-2]['win_on'], history[-2]['players']):+d}"
+            if len(history) > 1
+            else "\u2013"
+        )
+        on_games = sum(m["n_on"] for m in history)
+        off_games = sum(m["n_off"] for m in history)
+        on_rate = sum(m["win_on"] * m["n_on"] for m in history) / on_games
+        off_rate = sum(m["win_off"] * m["n_off"] for m in history) / off_games
         lines.append(
-            f"| {rank} | {wins:+d} | `{tag}` | {default} ({verdict_word}) | {desc.get(tag, '')} | "
-            f"{100 * m['win_on']:.2f}% | {100 * m['win_off']:.2f}% | "
-            f"{fmt_int(m['n_on'])}/{fmt_int(m['n_off'])} | {m['win_z']:+.2f} | {m['share_z']:+.2f} | "
-            f"{war_cell} | `{native_src[tag]}` |"
+            f"| {rank} | {wins:+d} | {prior} | `{tag}` | {desc.get(tag, '')} | {default} | "
+            f"{100 * on_rate:.2f}% | {100 * off_rate:.2f}% | {fmt_int(on_games + off_games)} |"
         )
 
     if unmeasured:
@@ -239,8 +248,8 @@ def render(ledger: dict) -> str:
             "|---|---:|---|---:|---:|---|",
         ]
         def last(tag):
-            if tag in native:
-                return native[tag], "native", native_src[tag]
+            if tag in latest:
+                return latest[tag], "native", native_src[tag]
             return war[tag], "war", war_src[tag]
         for tag in sorted(removed, key=lambda t: wins_per(last(t)[0]["win_on"], last(t)[0]["players"]), reverse=True):
             m, regime, src = last(tag)

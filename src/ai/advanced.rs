@@ -596,6 +596,12 @@ pub const LAND_GRAB_PIPELINE_BASE: usize = 2;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// A direct Barbarian-capture envelope starts at the same price the Settler
+/// route guard treats as unsafe. A Builder has no reason to spend a finite
+/// charge where a visible raider can take it next turn, even when a nearby
+/// friendly unit would make the generic settlement scorer discount that
+/// danger.
+const BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT: f64 = SETTLER_STEP_RISK_LIMIT;
 /// What crossing into a suzerainty is worth to the envoy scorer, before it is
 /// amortised over the envoys still needed to reach it.
 ///
@@ -1362,6 +1368,19 @@ struct TurnStartHostile {
     sea: bool,
 }
 
+/// A visible Barbarian's one-turn civilian-capture envelope. Builder safety
+/// snapshots these once per Builder decision, rather than rebuilding them for
+/// each route and retreat safety query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BarbarianCaptureThreat {
+    /// Exact fresh-turn movement tiles, read through movable unit blockers.
+    /// `Game::threat_reach` keeps terrain, cliffs, borders and zone of control
+    /// authoritative, so a geometric movement radius cannot falsely embargo a
+    /// Builder behind impassable ground.
+    capture_tiles: Vec<Pos>,
+    sea: bool,
+}
+
 /// One production menu's wonder-prerequisite credits: for each missing
 /// building/district family, a share of the best wonder score it would
 /// unblock in this city. See `AdvancedAi::wonder_reach_credit`.
@@ -1888,6 +1907,25 @@ pub struct AdvancedAi {
     ///
     /// Off by default; native opt-in gene `builder-worked-tile-priority`.
     pub builder_worked_tile_priority: bool,
+
+    /// Keep a Builder out of a visible Barbarian-capture envelope.
+    ///
+    /// A Builder used the ordinary movement path while Settlers used the
+    /// capture-aware route guard.  In the live run
+    /// `civvis-20260821T204930Z`, a Barbarian killed the Warrior sharing the
+    /// Builder's tile on t18 and took the Builder in the same hostile phase;
+    /// a fresh Builder was then taken on t22 before it could improve a tile.
+    /// This opt-in makes an exposed Builder retreat before it spends a charge
+    /// and refuses the next route step if it enters Barbarian capture reach.
+    /// It retains the job while waiting, so a responder clearing the raider
+    /// resumes productive work rather than sending the Builder elsewhere. It
+    /// does *not*
+    /// turn ordinary major-war movement into a Builder embargo: the failure
+    /// was the Barbarian capture mechanism, and the gene only fires when a
+    /// visible Barbarian can take that tile next turn.
+    ///
+    /// Off by default; native opt-in gene `builder-barbarian-safety`.
+    pub builder_barbarian_safety: bool,
 
     /// Credit strength-per-production and a civ's own unique unit when
     /// pricing military production.
@@ -3656,6 +3694,35 @@ pub struct AdvancedAi {
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
 
+    /// Open a surprise war when the board offers a prize — an unescorted
+    /// enemy Settler or Builder, or a cluster of unpillaged tiles — within a
+    /// short march of our soldiers, take it, and sue for peace.
+    ///
+    /// ★★★★ NO ROAD TO WAR IN THIS CONTROLLER READS THE BOARD. The elective
+    /// branch, the timed appointment, the ancient rush and victory denial all
+    /// price the empires (`military_power` ratios, a staged army at a city, a
+    /// rival's clock); none asks what is lying around unguarded, which is the
+    /// one thing a human checks before a surprise war. A captured Settler is a
+    /// free city. With this on, `opportunistic_war_diplomacy` prices every
+    /// admissible neighbour's exposed Settlers, Builders and pillage tiles
+    /// within `RAID_STRIKE_TURNS` of a land soldier, declares (by surprise;
+    /// the formal route's five-turn clock cannot reach a moving Settler) when
+    /// the total clears `RAID_WAR_MIN_VALUE` against a neighbour no stronger
+    /// than `RAID_POWER_RATIO` of us, walks the soldiers onto the prizes
+    /// (`raid_prize_step`), keeps the grand strategy on its economic plan
+    /// while the raid is the only war (`raid_only_war`), and proposes peace
+    /// once nothing is left in reach. Off everywhere by default; opt-in gene
+    /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
+    pub opportunistic_war: bool,
+    /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
+    /// improvements and districts within reach as prizes, and walk raiding
+    /// soldiers to them. Off, a raid is priced on civilians alone. Its own
+    /// opt-in gene, `raid-pillage-prizes`, so the screen prices the tiles
+    /// apart from the Settlers; inert unless `opportunistic_war` is on.
+    pub raid_pillage_prizes: bool,
+    /// The raid `opportunistic_war` opened and has not yet closed.
+    raid_war: Option<opportunistic_war::RaidWar>,
+
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
     /// 100–130. With this on a founder researches it next (after its first
@@ -4079,6 +4146,11 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// corrupted a merge here. See `advanced/treatment_flags.rs`, which also
 /// guards that they stay out of this file.
 mod treatment_flags;
+
+/// The opportunistic war: a surprise war priced on what the board exposes —
+/// unescorted Settlers and Builders, unpillaged tiles — taken by movement
+/// and closed by peace. See `advanced/opportunistic_war.rs`.
+mod opportunistic_war;
 
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
@@ -4598,6 +4670,7 @@ impl AdvancedAi {
             production_settler_deadline: true,
             builder_reward_survey: false,
             builder_worked_tile_priority: false,
+            builder_barbarian_safety: false,
             unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
@@ -4704,6 +4777,9 @@ impl AdvancedAi {
             district_lookahead_settle: false,
             priced_tile_purchase: false,
             idle_faith_patronage: false,
+            opportunistic_war: false,
+            raid_pillage_prizes: false,
+            raid_war: None,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -7601,6 +7677,12 @@ impl AdvancedAi {
             .filter(|rival| !g.players[*rival].is_minor)
             .collect();
         let at_war = !wartime_rivals.is_empty();
+        // See `opportunistic_war`: a raid is a bounded war the empire chose
+        // for a prize, priced against that one neighbour. While it is the
+        // only major war it neither pins the plan on Conquest nor drops it
+        // into the power-gap Recovery a strong third party would trigger;
+        // a threatened city still does.
+        let raid_only_war = self.raid_only_war(g, pid);
         let strongest_rival = major_rivals
             .iter()
             .map(|o| g.military_power(*o))
@@ -7832,7 +7914,8 @@ impl AdvancedAi {
                     && my_power * 2.0 < g.military_power(rival)
             });
         let (strategy, because) = if at_war
-            && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
+            && (threatened_city.is_some()
+                || (my_power * 1.25 < strongest_rival && !recovery_is_stale && !raid_only_war))
         {
             (
                 GrandStrategy::Recovery,
@@ -7873,21 +7956,12 @@ impl AdvancedAi {
                     "the assigned lane can still afford to expand first",
                 )
             } else {
-                (
-                    target.strategy(),
-                    "following the assigned victory lane",
-                )
+                (target.strategy(), "following the assigned victory lane")
             }
         } else if let Some((_, counter)) = actionable_denial {
-            (
-                counter,
-                "countering a rival close to winning",
-            )
-        } else if at_war && !stalemate {
-            (
-                GrandStrategy::Conquest,
-                "already at war",
-            )
+            (counter, "countering a rival close to winning")
+        } else if at_war && !stalemate && !raid_only_war {
+            (GrandStrategy::Conquest, "already at war")
         } else if !stalemate
             // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
             // no city ever taken, sixteen lost.
@@ -13551,6 +13625,12 @@ impl AdvancedAi {
             )
         {
             self.base.levy_city_state_military(g, pid, true);
+        }
+        // See `opportunistic_war`: close a raid that has paid, or open one on
+        // a prize the board exposes this turn. A declaration here is the
+        // turn's one declaration.
+        if self.opportunistic_war_diplomacy(g, pid, plan) {
+            return;
         }
         let Some(target) = plan.target_player else {
             return;
@@ -21077,22 +21157,26 @@ impl AdvancedAi {
         visible: &TileBits,
         discount_support: bool,
     ) -> f64 {
-        let escorted = discount_support && uid
-            .and_then(|unit| g.units.get(&unit))
-            .and_then(|unit| unit.linked_to)
-            .and_then(|escort| g.units.get(&escort))
-            .is_some_and(|escort| {
-                escort.owner == pid
-                    && g.rules.units[escort.kind].class == "military"
-                    && g.rules.units[escort.kind].domain.as_deref() != Some("air")
-            });
-        // See `settler_stack_discipline`: a civilian mover — a Settler, not the
-        // military leader of a formation — is captured by any hostile that can
-        // enter its tile, and is protected only by a unit standing ON it.
-        let civilian_mover = self.live_formationless_settler_shadow
+        let escorted = discount_support
             && uid
                 .and_then(|unit| g.units.get(&unit))
-                .is_some_and(|unit| g.rules.units[unit.kind].class != "military");
+                .and_then(|unit| unit.linked_to)
+                .and_then(|escort| g.units.get(&escort))
+                .is_some_and(|escort| {
+                    escort.owner == pid
+                        && g.rules.units[escort.kind].class == "military"
+                        && g.rules.units[escort.kind].domain.as_deref() != Some("air")
+                });
+        // See `settler_stack_discipline`: a civilian mover — a Settler, or an
+        // opted-in Builder rather than the military leader of a formation — is
+        // captured by any hostile that can enter its tile, and is protected
+        // only by a unit standing ON it.
+        let civilian_mover = uid.and_then(|unit| g.units.get(&unit)).is_some_and(|unit| {
+            let civilian = g.rules.units[unit.kind].class != "military";
+            civilian
+                && (self.live_formationless_settler_shadow
+                    || (self.builder_barbarian_safety && unit.kind == "builder"))
+        });
         let escort_reach = if civilian_mover { 0 } else { 1 };
         // A stacked guard mirrors the settler's step (`stacked_guard_step`
         // runs after the settler and walks onto its tile), so a settler that
@@ -23914,6 +23998,229 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Snapshot visible Barbarian capture envelopes once for a Builder
+    /// decision. The direct test below is deliberately narrower than the
+    /// Settler route scorer: the live failure was a Barbarian raider capture,
+    /// while applying every major-war route cost to a Builder made the first
+    /// cut withhold productive work for threats outside this gene's premise.
+    fn visible_barbarian_capture_threats(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &TileBits,
+    ) -> Vec<BarbarianCaptureThreat> {
+        let Some(barbarian) = g.barb_pid else {
+            return Vec::new();
+        };
+        if !g.is_at_war(pid, barbarian) {
+            return Vec::new();
+        }
+        g.units
+            .values()
+            .filter_map(|unit| {
+                if unit.owner != barbarian
+                    || !g.sees(visible, unit.pos)
+                    || !g.unit_visible_to(unit.id, pid)
+                {
+                    return None;
+                }
+                let spec = &g.rules.units[unit.kind];
+                let domain = spec.domain.as_deref();
+                if spec.class != "military"
+                    || domain == Some("air")
+                    // Barbarian recon units are engine-managed scouts, not
+                    // raiders; see `barbarian_scouts_are_scouts`.
+                    || spec.promotion_class == "recon"
+                {
+                    return None;
+                }
+                let sea = domain == Some("sea");
+                let mut capture_tiles = g.threat_reach(unit.id);
+                // `threat_reach` reports destinations rather than the tile
+                // already occupied. A ship beside a coast is still a live
+                // capture threat to that coast without taking a step first.
+                capture_tiles.push(unit.pos);
+                Some(BarbarianCaptureThreat { capture_tiles, sea })
+            })
+            .collect()
+    }
+
+    /// Does any threat in a just-snapshotted Barbarian envelope take a Builder
+    /// standing at `pos`? Land uses the engine's exact fresh-turn movement
+    /// flood; a sea raider can only capture a coastal land tile from a water
+    /// tile in that same flood.
+    fn barbarian_capture_reaches(g: &Game, pos: Pos, threats: &[BarbarianCaptureThreat]) -> bool {
+        threats.iter().any(|threat| {
+            if !threat.sea {
+                return threat.capture_tiles.contains(&pos);
+            }
+            g.nbrs(pos).into_iter().any(|neighbour| {
+                g.map
+                    .get(neighbour)
+                    .is_some_and(|tile| g.rules.is_water(tile))
+                    && threat.capture_tiles.contains(&neighbour)
+            })
+        })
+    }
+
+    /// The direct-Barbarian capture risk for this Builder. The Settler scorer
+    /// normally credits a guard sharing or beside the civilian. An unbound
+    /// Builder guard can act after the Builder and leave the tile, so it earns
+    /// no such credit: a nearby or breakable guard reproduces the live t18
+    /// loss. Keep the capture envelope and its fog rules shared with the
+    /// Settler model.
+    #[cfg(test)]
+    fn builder_barbarian_capture_risk(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> f64 {
+        let threats = self.visible_barbarian_capture_threats(g, pid, visible);
+        self.builder_barbarian_capture_risk_with_threats(g, pid, uid, pos, visible, &threats)
+    }
+
+    /// The same risk query over a Builder decision's frozen Barbarian
+    /// envelopes. This keeps route and retreat checks linear in visible
+    /// raiders rather than repeatedly scanning the entire unit list.
+    fn builder_barbarian_capture_risk_with_threats(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+        visible: &TileBits,
+        threats: &[BarbarianCaptureThreat],
+    ) -> f64 {
+        if !Self::barbarian_capture_reaches(g, pos, threats) {
+            0.0
+        } else {
+            self.settlement_tile_risk_with_support(g, pid, Some(uid), pos, visible, false)
+        }
+    }
+
+    /// If a Builder is already in a visible Barbarian capture envelope, use
+    /// its turn to reach the safest legal neighbouring tile before considering
+    /// an improvement. A friendly city is an absolute refuge and breaks ties;
+    /// otherwise return toward the nearest own city. `Some(false)` is
+    /// intentional: when every neighbour is still capturable, the Builder
+    /// must not fall through and spend a charge on the doomed tile.
+    fn builder_retreat_from_barbarian_capture(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.builder_barbarian_safety {
+            return None;
+        }
+        let current = g.units[&uid].pos;
+        let visible = self.battlefront_visibility(g, pid);
+        let threats = self.visible_barbarian_capture_threats(g, pid, &visible);
+        let current_risk = self
+            .builder_barbarian_capture_risk_with_threats(g, pid, uid, current, &visible, &threats);
+        if current_risk <= BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT {
+            return None;
+        }
+        self.builder_targets.remove(&uid);
+        let retreat = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|position| g.can_move(uid, *position))
+            .filter_map(|position| {
+                let risk = self.builder_barbarian_capture_risk_with_threats(
+                    g, pid, uid, position, &visible, &threats,
+                );
+                (risk <= BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT).then(|| {
+                    let in_city = g
+                        .city_at(position)
+                        .is_some_and(|city| g.cities[&city].owner == pid);
+                    let city_distance = g
+                        .player_city_ids(pid)
+                        .into_iter()
+                        .map(|city| g.wdist(position, g.cities[&city].pos))
+                        .min()
+                        .unwrap_or(i32::MAX);
+                    (risk, in_city, city_distance, position)
+                })
+            })
+            .min_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+                    .then(left.2.cmp(&right.2))
+                    .then(left.3.cmp(&right.3))
+            });
+        let Some((risk, _in_city, _city_distance, position)) = retreat else {
+            think!(self.journal(), Expansion, Detail, "Builder holds in Barbarian capture reach";
+                   "risk {current_risk:.0}; every legal neighbour remains above the \
+                    safety limit of {BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT:.0}"; current);
+            return Some(false);
+        };
+        think!(self.journal(), Expansion, Detail, "Builder retreats from Barbarian capture reach";
+               "risk {current_risk:.0} here, {risk:.0} at the safe step; a Builder \
+                cannot improve a tile after the Barbarian takes it"; position);
+        Some(self.base.path_move(g, pid, uid, position))
+    }
+
+    /// Take a Builder's next route step only if it is outside a direct
+    /// Barbarian capture envelope. If the preferred route enters danger, a
+    /// safe sidestep that still improves the route is allowed; otherwise the
+    /// Builder holds on its already-safe tile until the visible raider moves.
+    fn builder_step_toward_barbarian_safe(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        if !self.builder_barbarian_safety {
+            return self.base.step_toward(g, pid, uid, target);
+        }
+        let Some(next) = g
+            .route_step(uid, target, 0)
+            .filter(|position| g.can_move(uid, *position))
+        else {
+            return self.base.step_toward(g, pid, uid, target);
+        };
+        let visible = self.battlefront_visibility(g, pid);
+        let threats = self.visible_barbarian_capture_threats(g, pid, &visible);
+        if self.builder_barbarian_capture_risk_with_threats(g, pid, uid, next, &visible, &threats)
+            <= BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT
+        {
+            return self.base.step_toward(g, pid, uid, target);
+        }
+        let current = g.units[&uid].pos;
+        let current_distance = g.wdist(current, target);
+        let sidestep = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|position| *position != next && g.can_move(uid, *position))
+            .filter_map(|position| {
+                let risk = self.builder_barbarian_capture_risk_with_threats(
+                    g, pid, uid, position, &visible, &threats,
+                );
+                (risk <= BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT).then(|| {
+                    let progress = current_distance - g.wdist(position, target);
+                    (risk, progress, position)
+                })
+            })
+            // A lateral detour that is no closer to the job just makes a
+            // Builder wander while the responder clears the raider. Keep the
+            // assignment and wait instead; next turn can take the ordinary
+            // route immediately if the threat has gone.
+            .filter(|(_, progress, _)| *progress > 0)
+            .min_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+                    .then(left.2.cmp(&right.2))
+            });
+        sidestep.is_some_and(|(_, _, position)| self.base.path_move(g, pid, uid, position))
+    }
+
     fn advanced_builder_step(
         &mut self,
         g: &mut Game,
@@ -23922,6 +24229,9 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> bool {
         let current = g.units[&uid].pos;
+        if let Some(retreated) = self.builder_retreat_from_barbarian_capture(g, pid, uid) {
+            return retreated;
+        }
         let project = g
             .player_city_ids(pid)
             .into_iter()
@@ -23937,7 +24247,7 @@ impl AdvancedAi {
                     .apply(pid, &Action::ContributeProject { unit: uid, city })
                     .is_ok();
             }
-            if self.base.step_toward(g, pid, uid, position) {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, position) {
                 return true;
             }
         }
@@ -24047,7 +24357,7 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, *pos);
             }),
         };
-        target.is_some_and(|pos| self.base.step_toward(g, pid, uid, pos))
+        target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
     }
 
     fn advanced_trader_step(
@@ -27453,6 +27763,12 @@ impl AdvancedAi {
             .capture_adjacent_civilian(g, pid, uid, decline_settlers)
         {
             return true;
+        }
+        // See `opportunistic_war`: during a raid, pillage under our feet or
+        // walk to the nearest prize. The adjacent capture above already took
+        // anything one step away.
+        if let Some(acted) = self.raid_prize_step(g, pid, uid, plan, decline_settlers) {
+            return acted;
         }
         if self.base.tactical_strategy
             && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
