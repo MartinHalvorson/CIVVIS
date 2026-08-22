@@ -488,6 +488,25 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   really −26 at p4. `tools/gene_ledger.py` filters unregistered tags, so the
   deployment ledger is byte-identical either way.
 
+- **`holy-lane-parity` came back, and its direct arm confirms it (2026-08-22).**
+  The first gene to return from a cull. #2266 removed it on **−27** from the
+  four-gene `s6` screen — whose column band is **±64**, so that was a null and
+  not a reading. P10's binary predates the cull by 1h43m, so P10 priced the gene
+  after its code was gone: **+63 at z +3.48**, past P10's family-wise bar of
+  3.403 and the only such reading among the nineteen genes in the removal
+  ledger. #2299 restored the code and ran the arm the cull never got to —
+  1,200 map pairs on seeds 110M, every other treatment held at the deployment
+  genome, all 2,400 games complete, 7,200 treated-seat pairs:
+  **+99 wins/10k, z +4.05, 95% CI [+51, +147]**, `HELPS **`, against a run that
+  resolves ±68. Two independent instruments on two disjoint seed windows now
+  agree. Score share is null (+0.08 pp, z +1.23) and cost is nil
+  (+0.49% ± 0.31% per turn). ⚠ Following the P9 precedent the direct screen is
+  a note, not a ledger source, so the gene is back in the ranking at **rank 3**
+  and still **off** — entering it would make both columns positive and default
+  it on, taking the genome to 34. `docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md`
+  holds the numbers and the two things it does not settle (850 is an upper
+  bound, not a tuned value; the war regime reads `share hurts` at z −2.26).
+
 - **`recon-flight` leaves production too (2026-08-21).** It was held out of
   the cull above because `promoted_policy_envoy` turns it on, as one leg of
   the recon quartet promoted at +35 Elo (#1923). The operator's reading is the
