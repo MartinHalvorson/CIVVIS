@@ -209,6 +209,10 @@ fn live_bundle_and_registry_agree() {
     names.dedup();
     assert_eq!(before, names.len(), "two registry rows share a name");
 }
+use super::opportunistic_war::{
+    PILLAGE_PRIZE_BASE, RAID_PEACE_EARLIEST, RAID_POWER_MARGIN, RAID_POWER_RATIO,
+    RAID_REPEAT_COOLDOWN, RAID_SETTLER_HOME_RADIUS, RAID_WAR_MIN_VALUE, SETTLER_PRIZE,
+};
 use super::*;
 use crate::ai::run_game;
 use crate::game::{GameOptions, GovernorState};
@@ -11502,6 +11506,227 @@ fn builder_worked_tile_priority_prices_idle_tiles_by_marginal_worker_swap() {
     assert!(!treated.builder_worked_tile_priority);
 }
 
+/// `civvis-20260821T204930Z` lost a Builder stacked with its Warrior on t18:
+/// the Barbarian killed the Warrior, then captured the Builder in the same
+/// hostile phase.  The next Builder stepped out on t22 and was captured before
+/// it completed a job.  A guard is useful, but it is not a reason to send a
+/// civilian into a tile a visible raider can enter next turn.
+#[test]
+fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
+    let setup = || {
+        let (mut game, city, home) = empire_with_a_capital(71_013);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner != 0 {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.barb_naval_camps.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = Some(crate::name!("farm"));
+            tile.pillaged = false;
+        }
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        let target = game
+            .nbrs(home)
+            .into_iter()
+            .find(|position| {
+                game.cities[&city].owned_tiles.contains(position)
+                    && game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("the capital owns a passable neighbouring tile");
+        game.map.tiles.get_mut(&target).unwrap().improvement = None;
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        // `empire_with_a_capital` is deliberately a compact two-major board.
+        // Recast the cleared opponent as the Barbarian seat, just as the
+        // capture-risk fixtures above do, so the raider follows the real
+        // barbarian branch rather than a generic rival branch.
+        let barb = 1;
+        game.players[barb].is_barbarian = true;
+        game.barb_pid = Some(barb);
+        let raider_at = game
+            .wdisk(target, 1)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, target) == 1
+                    && game.wdist(*position, home) > 1
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.rules.is_passable(&game.map.tiles[position])
+                    && !game.rules.is_water(&game.map.tiles[position])
+            })
+            .expect("an open raider tile one step from the Builder job");
+        let raider = game.spawn_test_unit("warrior", barb, raider_at);
+        assert!(
+            game.valid_improvements(0, target)
+                .iter()
+                .any(|improvement| improvement == "farm"),
+            "the exposed tile must be a real Builder job"
+        );
+        (game, home, target, raider)
+    };
+
+    // The untreated controller pursues the only job, even though the target
+    // is inside a Barbarian Warrior's immediate capture reach.
+    let (mut stock_game, home, target, raider) = setup();
+    let builder = stock_game.spawn_test_unit("builder", 0, home);
+    let mut stock = AdvancedAi::new();
+    assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(stock.builder_targets.get(&builder), Some(&target));
+    assert_ne!(
+        stock_game.units[&builder].pos, home,
+        "the untreated Builder starts toward the exposed job"
+    );
+    stock_game.current = 1;
+    assert!(stock_game.can_move(raider, target));
+    stock_game
+        .apply(
+            1,
+            &Action::Move {
+                unit: raider,
+                to: target,
+            },
+        )
+        .expect("the Barbarian can take the exposed Builder in its hostile phase");
+    assert_eq!(
+        stock_game.units[&builder].owner, 1,
+        "the untreated route turns the live-shaped threat into a captured Builder"
+    );
+
+    // With the gene, the same job remains assigned but its unsafe first step
+    // is refused.  Keeping the assignment lets the Builder resume immediately
+    // when the raider moves or a responder clears it, instead of permanently
+    // replacing a productive job with a worse distant one. This is deliberately
+    // the raw civilian risk: a friendly unit beside the target would not make a
+    // Builder safe if that unit can die first.
+    let (mut cautious_game, home, target, raider) = setup();
+    let builder = cautious_game.spawn_test_unit("builder", 0, home);
+    let mut cautious = AdvancedAi::new();
+    cautious.enable_builder_barbarian_safety();
+    let visible = cautious.battlefront_visibility(&cautious_game, 0);
+    assert!(
+        cautious.builder_barbarian_capture_risk(&cautious_game, 0, builder, target, &visible)
+            > BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT,
+        "the fixture must put the only job inside direct capture reach"
+    );
+    assert!(
+        !cautious.advanced_builder_step(&mut cautious_game, 0, builder, GrandStrategy::Expansion),
+        "the safety gene refuses an exposed target instead of donating the Builder"
+    );
+    assert_eq!(cautious_game.units[&builder].pos, home);
+    assert!(
+        cautious.builder_targets.get(&builder) == Some(&target),
+        "the safe hold must retain the productive job for a later clear turn"
+    );
+    cautious_game.current = 1;
+    assert!(cautious_game.can_move(raider, target));
+    cautious_game
+        .apply(
+            1,
+            &Action::Move {
+                unit: raider,
+                to: target,
+            },
+        )
+        .expect("the same Barbarian can enter the exposed job after the safe hold");
+    assert_eq!(
+        cautious_game.units[&builder].owner, 0,
+        "the gene's positive outcome is one preserved Builder rather than one capture"
+    );
+    assert_eq!(
+        cautious_game.units[&builder].charges, 3,
+        "the preserved Builder keeps all of its improvement capacity"
+    );
+
+    // An ordinary major-war threat is not this gene's premise. The first
+    // broader cut suppressed Builder work around every hostile army and its
+    // matched screen trended negative; the live failure was a Barbarian
+    // capture. Recasting the same raider as a major must leave the Builder's
+    // productive route alone.
+    let (mut major_game, home, target, _raider) = setup();
+    major_game.players[1].is_barbarian = false;
+    major_game.barb_pid = None;
+    let builder = major_game.spawn_test_unit("builder", 0, home);
+    let mut barbarian_only = AdvancedAi::new();
+    barbarian_only.enable_builder_barbarian_safety();
+    let visible = barbarian_only.battlefront_visibility(&major_game, 0);
+    assert_eq!(
+        barbarian_only.builder_barbarian_capture_risk(&major_game, 0, builder, target, &visible),
+        0.0,
+        "a major-war unit must not trigger the Barbarian-only safety gene"
+    );
+    assert!(barbarian_only.advanced_builder_step(
+        &mut major_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(barbarian_only.builder_targets.get(&builder), Some(&target));
+
+    // A military unit already standing on a *future* Builder tile does not
+    // erase a direct Barbarian capture threat: it can walk away before the
+    // Builder reaches it. The live t18 guard died first and the Builder was
+    // taken in that same hostile phase, so the gene does not grant an unbound
+    // nearby-escort credit.
+    let (mut guarded_game, home, target, _raider) = setup();
+    let builder = guarded_game.spawn_test_unit("builder", 0, home);
+    guarded_game.spawn_test_unit("warrior", 0, target);
+    let mut guarded = AdvancedAi::new();
+    guarded.enable_builder_barbarian_safety();
+    let visible = guarded.battlefront_visibility(&guarded_game, 0);
+    assert!(
+        guarded.builder_barbarian_capture_risk(&guarded_game, 0, builder, target, &visible)
+            > BUILDER_BARBARIAN_CAPTURE_RISK_LIMIT,
+        "a merely adjacent guard is not a reason to donate a Builder to the raider"
+    );
+
+    // An already exposed Builder retreats to the city before it improves the
+    // tile.  The stock path would spend its charge on the same doomed tile.
+    let (mut retreat_game, home, target, _raider) = setup();
+    let builder = retreat_game.spawn_test_unit("builder", 0, target);
+    let mut retreating = AdvancedAi::new();
+    retreating.enable_builder_barbarian_safety();
+    assert!(retreating.advanced_builder_step(
+        &mut retreat_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(retreat_game.units[&builder].pos, home);
+    assert_eq!(
+        retreat_game.units[&builder].charges, 3,
+        "the retreat takes precedence over spending a charge in capture reach"
+    );
+
+    let (mut unsafe_game, _home, target, _raider) = setup();
+    let builder = unsafe_game.spawn_test_unit("builder", 0, target);
+    let mut unsafe_ai = AdvancedAi::new();
+    assert!(unsafe_ai.advanced_builder_step(
+        &mut unsafe_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
+    assert_eq!(unsafe_game.units[&builder].charges, 2);
+
+    assert!(PRODUCTION_OPT_INS.iter().any(|(field, tag, _)| {
+        *field == "builder_barbarian_safety" && *tag == "builder-barbarian-safety"
+    }));
+    cautious.disable_builder_barbarian_safety();
+    assert!(!cautious.builder_barbarian_safety);
+}
+
 #[test]
 fn the_civs_own_unique_unit_earns_its_window() {
     let mut game = Game::new_full(1, 20, 14, 71_012, 200, 0, false);
@@ -20247,6 +20472,187 @@ fn settler_threat_detour_is_an_off_by_default_native_gene() {
     assert!(!ai.settler_threat_detour);
 }
 
+/// `settle_sooner` is a native, off-by-default gene: off in both default
+/// controllers and in the deployment genome (it ships unmeasured, so the
+/// ledger holds it off), flippable by name through `PRODUCTION_OPT_INS`.
+#[test]
+fn settle_sooner_is_an_off_by_default_native_gene() {
+    assert!(!AdvancedAi::new().settle_sooner);
+    assert!(!AdvancedAi::legacy().settle_sooner);
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_engine_repairs();
+    assert!(!deployed.settle_sooner, "an unmeasured gene ships off");
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "settle-sooner")
+        .expect("the gene is published for gene_screen and evaluator arms");
+    let mut ai = AdvancedAi::new();
+    enable(&mut ai);
+    assert!(ai.settle_sooner);
+    ai.disable_settle_sooner();
+    assert!(!ai.settle_sooner);
+}
+
+/// The walk price: nothing when the gene is off; `SETTLE_SOONER_TURN_PRICE`
+/// a turn for a Settler that has just started; doubled once it has been
+/// walking `SETTLE_SOONER_PATIENCE` standard turns; and a route is charged
+/// by the turns it takes at the Settler's own pace, rounded up.
+#[test]
+fn settle_sooner_prices_each_turn_of_the_walk_dearer_the_longer_it_has_lasted() {
+    let (mut game, home) = camp_bounty_board(93_101);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let moves = game.unit_max_moves(settler);
+    assert!(moves >= 2.0, "a Settler moves two a turn");
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.settle_sooner_walk_price(&game, settler), None);
+    assert_eq!(AdvancedAi::settle_sooner_walk_cost(None, 7.0), 0.0);
+    ai.enable_settle_sooner();
+    let fresh = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert_eq!(fresh, (SETTLE_SOONER_TURN_PRICE, moves));
+    // Three movement points at two a turn is two turns, not one and a half.
+    assert_eq!(
+        AdvancedAi::settle_sooner_walk_cost(Some(fresh), 3.0),
+        2.0 * SETTLE_SOONER_TURN_PRICE
+    );
+    assert_eq!(AdvancedAi::settle_sooner_walk_cost(Some(fresh), 0.0), 0.0);
+    // The first stepped turn stamps the clock; the price then climbs.
+    ai.advanced_settler_step(&mut game, 0, settler);
+    assert_eq!(ai.settler_walk_started.get(&settler), Some(&game.turn));
+    let started = game.turn;
+    game.turn = started + game.standard_duration(SETTLE_SOONER_PATIENCE);
+    let patient = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert!(
+        (patient.0 - 2.0 * SETTLE_SOONER_TURN_PRICE).abs() < 1e-9,
+        "one patience window doubles the price: {patient:?}"
+    );
+    game.turn = started + 2 * game.standard_duration(SETTLE_SOONER_PATIENCE);
+    let impatient = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert!(
+        (impatient.0 - 3.0 * SETTLE_SOONER_TURN_PRICE).abs() < 1e-9,
+        "two windows triple it: {impatient:?}"
+    );
+    // The clock is settler memory: it follows the unit through a live-bridge
+    // id remap and is forgotten with the unit.
+    let mut map = BTreeMap::new();
+    map.insert(settler, settler + 1000);
+    ai.remap_unit_memory(&map);
+    assert_eq!(
+        ai.settler_walk_started.get(&(settler + 1000)),
+        Some(&started)
+    );
+    assert!(!ai.settler_walk_started.contains_key(&settler));
+    ai.forget_unit_memory();
+    assert!(ai.settler_walk_started.is_empty());
+}
+
+/// The property the gene is built on: adding a cost that rises with the
+/// walk can only move the pick NEARER. On every board the treated Settler's
+/// site is no longer a walk (movement points by the gene's own cost map)
+/// than the baseline's, and on at least one of these boards it is a
+/// strictly shorter one — the gene changes a real decision, it is not
+/// inert. A longer wait leans the same way: the pick after a patience
+/// window is no farther than the fresh pick.
+///
+/// ⚠ The property is exact for the multi-turn fallback the picks almost
+/// always take; the one-turn routed branch adds a risk term the walk price
+/// does not touch, so a pick within one turn is compared on the same cost
+/// map and still cannot move farther (the gene's term is monotone in it).
+/// The gene's cost map is a real multi-turn walk: it reaches ground
+/// `path_to` (a one-turn flood) cannot, charges hills and forest what the
+/// engine charges, and stops at the radius.
+#[test]
+fn settle_sooner_walk_costs_read_terrain_beyond_the_first_turn() {
+    let (mut game, home) = camp_bounty_board(93_301);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let costs = AdvancedAi::settle_sooner_walk_costs(&game, settler, 8);
+    assert_eq!(costs.get(&home), Some(&0.0));
+    let far: Vec<(Pos, f64)> = costs
+        .iter()
+        .filter(|(pos, _)| game.wdist(home, **pos) >= 5)
+        .map(|(pos, cost)| (*pos, *cost))
+        .collect();
+    assert!(!far.is_empty(), "open ground five tiles out is priced");
+    for (pos, cost) in &far {
+        assert!(
+            game.path_to(settler, *pos).is_none(),
+            "{pos:?} is beyond one turn, which path_to cannot route"
+        );
+        assert!(
+            *cost >= game.wdist(home, *pos) as f64,
+            "{pos:?}: every hex step costs at least one movement point ({cost})"
+        );
+    }
+    assert!(
+        costs.keys().all(|pos| game.wdist(home, *pos) <= 8),
+        "the map stops at the radius"
+    );
+    // Hills on the way cost what the engine charges for them.
+    let neighbour = game
+        .nbrs(home)
+        .into_iter()
+        .find(|pos| costs.contains_key(pos))
+        .expect("a walkable neighbour");
+    let expected = game.step_cost(home, neighbour);
+    assert_eq!(costs[&neighbour], expected);
+}
+
+#[test]
+fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
+    let mut nearer = 0;
+    let mut boards = 0;
+    for seed in [
+        93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208,
+    ] {
+        let (mut game, home) = camp_bounty_board(seed);
+        game.set_fog_memory(false);
+        let settler = game.spawn_test_unit("settler", 0, home);
+        let walk_to = |g: &Game, site: Pos| -> f64 {
+            AdvancedAi::settle_sooner_walk_costs(g, settler, 8)
+                .get(&site)
+                .copied()
+                .unwrap_or_else(|| g.wdist(g.units[&settler].pos, site) as f64)
+        };
+        let plain = AdvancedAi::new();
+        let Some((base_site, _)) =
+            plain.best_reachable_settle_site_except(&game, 0, settler, 8, None)
+        else {
+            continue;
+        };
+        let mut treated = AdvancedAi::new();
+        treated.enable_settle_sooner();
+        let (gene_site, _) = treated
+            .best_reachable_settle_site_except(&game, 0, settler, 8, None)
+            .expect("the same candidates exist under the gene");
+        let base_walk = walk_to(&game, base_site);
+        let gene_walk = walk_to(&game, gene_site);
+        assert!(
+            gene_walk <= base_walk + 1e-9,
+            "seed {seed}: the gene picked a farther site ({gene_site:?} at {gene_walk} MP) \
+             than the baseline ({base_site:?} at {base_walk} MP)"
+        );
+        if gene_walk < base_walk - 1e-9 {
+            nearer += 1;
+        }
+        // A Settler that has already walked a patience window leans nearer
+        // still, never farther.
+        treated.settler_walk_started.insert(settler, game.turn);
+        game.turn += game.standard_duration(SETTLE_SOONER_PATIENCE);
+        let (late_site, _) = treated
+            .best_reachable_settle_site_except(&game, 0, settler, 8, None)
+            .expect("the same candidates exist later");
+        assert!(
+            walk_to(&game, late_site) <= gene_walk + 1e-9,
+            "seed {seed}: waiting moved the pick farther ({late_site:?} after {gene_site:?})"
+        );
+        boards += 1;
+    }
+    assert!(boards >= 6, "the fixture boards offer sites: {boards}");
+    assert!(
+        nearer >= 1,
+        "the gene changed no decision on {boards} boards — it would screen as inert"
+    );
+}
+
 #[test]
 fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
     let (mut game, source, target) = stacked_escort_fixture();
@@ -23698,6 +24104,79 @@ fn a_raider_is_cheaper_to_attack_than_a_major_and_only_for_a_soldier() {
         "a Scout must still be priced out of attacking a raider"
     );
     let _ = raider_again;
+}
+
+/// ★★★★★ WE ANSWER SLINGERS AND ARCHERS WITH SPEARMEN.
+///
+/// `barbarian_defense_item` asks for a melee-capable land defender whatever the
+/// ring is made of. MEASURED across every live run since the melee bridge was
+/// repaired: the barbarians take **45 % of their 867 attacks ranged** while we
+/// take **22 % of our 290** that way — and ranged is the safe half of the
+/// board. Our 65 ranged attacks killed 34 and lost the attacker **zero** times;
+/// our 225 melee attacks killed 119 and lost 6. A Spearman walking at an Archer
+/// eats the shot going in and the counter on arrival.
+#[test]
+fn a_ring_of_shooters_is_answered_by_a_shooter_and_a_melee_ring_is_not() {
+    let ranged_answer = |shooters: usize, brawlers: usize, gene: bool| -> Option<String> {
+        let (mut game, home) = camp_bounty_board(90_079);
+        let barb = game.barb_pid.unwrap();
+        let cid = game.player_city_ids(0)[0];
+        let mut ring: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.wdist(*pos, home) == 2
+                    && game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .collect();
+        ring.sort_unstable();
+        for (placed, kind) in std::iter::repeat_n("archer", shooters)
+            .chain(std::iter::repeat_n("warrior", brawlers))
+            .enumerate()
+        {
+            let pos = ring[placed];
+            game.spawn_test_unit(kind, barb, pos);
+        }
+        let mut ai = AdvancedAi::new();
+        ai.base.barbarian_ranged_answer = gene;
+        match ai.base.barbarian_defense_item(&game, 0, cid) {
+            Some(Item::Unit { unit }) => Some(unit.to_string()),
+            _ => None,
+        }
+    };
+    let (probe, _) = camp_bounty_board(90_079);
+    let shoots = |name: &str| {
+        probe
+            .rules
+            .units
+            .iter()
+            .find(|(key, _)| key.as_str() == name)
+            .map(|(_, spec)| spec.has_ranged_attack())
+            .unwrap_or(false)
+    };
+    let shooter_ring = ranged_answer(2, 0, true).expect("a ring of archers asks for a defender");
+    assert!(
+        shoots(&shooter_ring),
+        "a ring of shooters must be answered by a shooter, got {shooter_ring}"
+    );
+    let same_ring_without = ranged_answer(2, 0, false).expect("still asks for a defender");
+    assert!(
+        !shoots(&same_ring_without),
+        "without the gene the historical melee answer stands, got {same_ring_without}"
+    );
+    // A melee ring keeps the melee answer with the gene ON: this changes WHICH
+    // defender, never how many, and only when the ring is genuinely shooters.
+    let brawler_ring = ranged_answer(0, 2, true).expect("a melee ring asks for a defender");
+    assert!(
+        !shoots(&brawler_ring),
+        "a melee ring must keep its melee answer, got {brawler_ring}"
+    );
 }
 
 /// The gene widens WHO may be shot at, not how far the empire will march. A
@@ -29482,4 +29961,737 @@ fn a_due_formation_admiral_is_answered_with_a_ship_not_a_harbor() {
         AdvancedAi::great_person_remedy("engineer", &leonardo),
         Some(GreatPersonRemedy::District("industrial_zone"))
     );
+}
+
+/// Census, not an assertion: how long does a Settler walk before it founds?
+///
+/// `settle_siting_census` shows the chosen site is almost always the best
+/// one on offer under the agent's own objective, `settle_value - 0.9/tile`.
+/// That objective prices the WALK in tiles, not in turns, and a city founded
+/// ten turns later is ten turns of yields the empire never sees. Nothing
+/// measured the walk itself: turns from the Settler standing in its home
+/// city to the city standing, how far it went, how often it changed its
+/// mind, and what the extra walk bought against the nearest site it could
+/// have taken. This does.
+///
+/// The seats play the deployment genome (`enable_engine_repairs`, which
+/// ends in the gene ledger), on the gene screen's 6-player 60×38 Online
+/// profile, so the turns reported are the turns the screen plays.
+/// `CIVVIS_CENSUS_OPT_INS=tag,tag` switches the named `PRODUCTION_OPT_INS`
+/// genes on for every major seat, so a settling gene can be read against
+/// the same maps; `CIVVIS_CENSUS_MAPS` sets the map count (default 8).
+///
+/// First reading (2026-08-21, deployment genome): 249 foundings and 60
+/// Settlers lost over 8 maps; mean 7.3 turns from build to founding,
+/// median 5, p90 16, max 93; 18% walked more than ten turns; Settlers
+/// walked 1.57× their straight-line distance and one in five changed
+/// target at least once. That is what `settle_sooner` exists to move.
+///
+/// Run with `cargo test --release settler_walk_census -- --ignored --nocapture`.
+#[test]
+#[ignore = "census, not an assertion; run explicitly with --nocapture"]
+fn settler_walk_census() {
+    struct Walk {
+        owner: usize,
+        born: u32,
+        origin: Pos,
+        last: Pos,
+        tiles: i32,
+        targets: BTreeSet<Pos>,
+        /// Raw `settle_value` of the best LEGAL site (four tiles from every
+        /// city) within six tiles of the origin, read the turn the Settler
+        /// appeared — the near site it could have taken instead.
+        near_value: f64,
+        near_site: Option<Pos>,
+    }
+    let opt_ins: Vec<String> = std::env::var("CIVVIS_CENSUS_OPT_INS")
+        .ok()
+        .map(|text| {
+            text.split(',')
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let maps = std::env::var("CIVVIS_CENSUS_MAPS")
+        .ok()
+        .and_then(|text| text.parse::<u64>().ok())
+        .unwrap_or(8);
+    let mut walks: BTreeMap<(u64, u32), Walk> = BTreeMap::new();
+    // (turns, straight-line tiles, tiles walked, targets, chosen value,
+    //  near value, born turn)
+    let mut founded: Vec<(u32, i32, i32, usize, f64, f64, u32)> = Vec::new();
+    let mut lost: Vec<(u32, i32)> = Vec::new();
+    for map in 0..maps {
+        let seed = 97_000_000 + map;
+        let mut game = Game::new_with(GameOptions {
+            speed: "online".to_string(),
+            randomize_civs: true,
+            ..GameOptions::new(6, 60, 38, seed, 250, 6)
+        });
+        game.set_fog_memory(false);
+        game.set_war_ledger(false);
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+            .map(|pid| {
+                let mut ai = AdvancedAi::new();
+                if !game.players[pid].is_minor && !game.players[pid].is_barbarian {
+                    ai.enable_engine_repairs();
+                    for tag in &opt_ins {
+                        let (_, _, enable) = PRODUCTION_OPT_INS
+                            .iter()
+                            .find(|(_, t, _)| t == tag)
+                            .unwrap_or_else(|| panic!("{tag} is not a PRODUCTION_OPT_INS tag"));
+                        enable(&mut ai);
+                    }
+                }
+                ai
+            })
+            .collect();
+        let mut known_cities: BTreeSet<u32> = game.cities.keys().copied().collect();
+        while game.winner.is_none() && game.turn <= game.max_turns {
+            let pid = game.current;
+            let major = !game.players[pid].is_minor && !game.players[pid].is_barbarian;
+            let mut pre: BTreeMap<u32, f64> = BTreeMap::new();
+            if major {
+                for uid in game.player_unit_ids(pid) {
+                    let unit = &game.units[&uid];
+                    if unit.kind != "settler" {
+                        continue;
+                    }
+                    pre.insert(uid, ais[pid].settle_value(&game, pid, unit.pos));
+                    if walks.contains_key(&(seed, uid)) {
+                        continue;
+                    }
+                    let origin = unit.pos;
+                    let mut near_value = f64::NEG_INFINITY;
+                    let mut near_site = None;
+                    for pos in game.wdisk(origin, 6) {
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
+                        if game.rules.is_water(tile)
+                            || !game.rules.is_passable(tile)
+                            || game.tile_is_natural_wonder(tile)
+                            || game
+                                .cities
+                                .values()
+                                .any(|city| game.wdist(city.pos, pos) < 4)
+                            || tile
+                                .owner_city
+                                .is_some_and(|cid| game.cities[&cid].owner != pid)
+                        {
+                            continue;
+                        }
+                        let value = ais[pid].settle_value(&game, pid, pos);
+                        if value > near_value {
+                            near_value = value;
+                            near_site = Some(pos);
+                        }
+                    }
+                    walks.insert(
+                        (seed, uid),
+                        Walk {
+                            owner: pid,
+                            born: game.turn,
+                            origin,
+                            last: origin,
+                            tiles: 0,
+                            targets: BTreeSet::new(),
+                            near_value,
+                            near_site,
+                        },
+                    );
+                }
+            }
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            if !major {
+                continue;
+            }
+            let new_cities: Vec<(u32, Pos)> = game
+                .cities
+                .iter()
+                .filter(|(cid, city)| {
+                    city.owner == pid && city.captured_from.is_none() && !known_cities.contains(cid)
+                })
+                .map(|(cid, city)| (*cid, city.pos))
+                .collect();
+            for (cid, _) in &new_cities {
+                known_cities.insert(*cid);
+            }
+            let tracked: Vec<(u64, u32)> =
+                walks.keys().filter(|(s, _)| *s == seed).copied().collect();
+            for key in tracked {
+                let uid = key.1;
+                let Some(walk) = walks.get_mut(&key) else {
+                    continue;
+                };
+                if walk.owner != pid {
+                    continue;
+                }
+                match game.units.get(&uid) {
+                    Some(unit) if unit.owner == pid => {
+                        walk.tiles += game.wdist(walk.last, unit.pos);
+                        walk.last = unit.pos;
+                        if let Some(target) = ais[pid].settler_targets.get(&uid) {
+                            walk.targets.insert(*target);
+                        }
+                    }
+                    _ => {
+                        let walk = walks.remove(&key).expect("just read");
+                        let turns = game.turn.saturating_sub(walk.born);
+                        let city = new_cities
+                            .iter()
+                            .find(|(_, pos)| game.wdist(*pos, walk.last) <= 1)
+                            .map(|(_, pos)| *pos);
+                        match city {
+                            Some(pos) => {
+                                let chosen = pre.get(&uid).copied().unwrap_or(f64::NAN);
+                                founded.push((
+                                    turns,
+                                    game.wdist(walk.origin, pos),
+                                    walk.tiles,
+                                    walk.targets.len(),
+                                    chosen,
+                                    if walk.near_site.is_some() {
+                                        walk.near_value
+                                    } else {
+                                        f64::NAN
+                                    },
+                                    walk.born,
+                                ));
+                            }
+                            None => lost.push((turns, walk.tiles)),
+                        }
+                    }
+                }
+            }
+        }
+        // Settlers still walking when the game ended never founded.
+        let stranded: Vec<(u64, u32)> = walks.keys().filter(|(s, _)| *s == seed).copied().collect();
+        for key in stranded {
+            let walk = walks.remove(&key).expect("just read");
+            lost.push((game.turn.saturating_sub(walk.born), walk.tiles));
+        }
+    }
+
+    let percentile = |sorted: &[u32], p: f64| -> u32 {
+        if sorted.is_empty() {
+            return 0;
+        }
+        sorted[((sorted.len() - 1) as f64 * p).round() as usize]
+    };
+    let mut turns: Vec<u32> = founded.iter().map(|row| row.0).collect();
+    turns.sort_unstable();
+    let mean =
+        |values: &[u32]| values.iter().map(|&v| v as f64).sum::<f64>() / values.len().max(1) as f64;
+    println!(
+        "\n=== settler walk census: {} settlers founded, {} lost, over {maps} maps (6p 60x38 online, deployment genome{}) ===",
+        founded.len(),
+        lost.len(),
+        if opt_ins.is_empty() { String::new() } else { format!(" + {}", opt_ins.join(",")) }
+    );
+    println!(
+        "  turns from build to founding: mean {:.1}   p10 {}   median {}   p90 {}   max {}",
+        mean(&turns),
+        percentile(&turns, 0.1),
+        percentile(&turns, 0.5),
+        percentile(&turns, 0.9),
+        turns.last().copied().unwrap_or(0)
+    );
+    for bound in [3u32, 6, 10, 15, 20] {
+        let over = turns.iter().filter(|&&t| t > bound).count();
+        println!(
+            "    walked more than {bound:>2} turns: {over:>4} ({:.1}%)",
+            over as f64 / turns.len().max(1) as f64 * 100.0
+        );
+    }
+    let straight: Vec<u32> = founded.iter().map(|row| row.1.max(0) as u32).collect();
+    let walked: Vec<u32> = founded.iter().map(|row| row.2.max(0) as u32).collect();
+    let mut straight_sorted = straight.clone();
+    straight_sorted.sort_unstable();
+    println!(
+        "  tiles from the home city, straight line: mean {:.1}   median {}   p90 {}",
+        mean(&straight),
+        percentile(&straight_sorted, 0.5),
+        percentile(&straight_sorted, 0.9)
+    );
+    println!(
+        "  tiles actually walked: mean {:.1}   (walked/straight {:.2})",
+        mean(&walked),
+        mean(&walked) / mean(&straight).max(1e-9)
+    );
+    let retargeted = founded.iter().filter(|row| row.3 > 1).count();
+    let many = founded.iter().filter(|row| row.3 > 2).count();
+    println!(
+        "  settlers that changed target at least once: {retargeted} ({:.1}%); twice or more: {many} ({:.1}%)",
+        retargeted as f64 / founded.len().max(1) as f64 * 100.0,
+        many as f64 / founded.len().max(1) as f64 * 100.0
+    );
+    // What did the walk buy? For every expansion Settler (the opening
+    // Settlers found where they stand or a step away), compare the chosen
+    // site's raw value with the best legal site within six tiles of where
+    // it was built, read on the day it was built.
+    let mut bought: Vec<(u32, f64, f64)> = founded
+        .iter()
+        .filter(|row| row.6 > 1 && row.4.is_finite() && row.5.is_finite())
+        .map(|row| (row.0, row.4 - row.5, row.4))
+        .collect();
+    bought.sort_by_key(|a| a.0);
+    if !bought.is_empty() {
+        let mean_value = bought.iter().map(|row| row.2).sum::<f64>() / bought.len() as f64;
+        println!(
+            "  expansion foundings with a legal site within six tiles of home at birth: {} (mean chosen raw value {mean_value:.1})",
+            bought.len()
+        );
+        for (lo, hi) in [(0u32, 3u32), (4, 6), (7, 10), (11, 15), (16, 1000)] {
+            let rows: Vec<f64> = bought
+                .iter()
+                .filter(|(t, _, _)| *t >= lo && *t <= hi)
+                .map(|(_, delta, _)| *delta)
+                .collect();
+            if rows.is_empty() {
+                continue;
+            }
+            let m = rows.iter().sum::<f64>() / rows.len() as f64;
+            let worse = rows.iter().filter(|d| **d < 0.0).count();
+            println!(
+                "    walks of {lo:>2}-{hi:<4} turns: {:>4} foundings, chosen minus best-legal-within-6-of-home = {m:+.1} raw value ({worse} founded a WORSE site than one within six tiles of home)",
+                rows.len()
+            );
+        }
+    }
+    let mut by_era = [(0u32, 0.0f64); 4];
+    for row in &founded {
+        let slot = match row.6 {
+            0..=49 => 0,
+            50..=99 => 1,
+            100..=149 => 2,
+            _ => 3,
+        };
+        by_era[slot].0 += 1;
+        by_era[slot].1 += row.0 as f64;
+    }
+    for (slot, label) in ["t0-49", "t50-99", "t100-149", "t150+"].iter().enumerate() {
+        if by_era[slot].0 > 0 {
+            println!(
+                "    settlers built {label:>8}: {:>4}, mean walk {:.1} turns",
+                by_era[slot].0,
+                by_era[slot].1 / by_era[slot].0 as f64
+            );
+        }
+    }
+    if !lost.is_empty() {
+        let mut lost_turns: Vec<u32> = lost.iter().map(|row| row.0).collect();
+        lost_turns.sort_unstable();
+        println!(
+            "  lost without founding: {} — they had walked a median {} turns (p90 {})",
+            lost.len(),
+            percentile(&lost_turns, 0.5),
+            percentile(&lost_turns, 0.9)
+        );
+    }
+    println!();
+}
+
+// ---------------------------------------------------------------- opportunistic war
+
+/// Two majors at peace with their capitals founded, a second city for us,
+/// every unit removed, and the ground between flattened so that reach is
+/// `wdist`. Returns the game, our capital's position and theirs.
+fn raid_fixture() -> (Game, Pos, Pos) {
+    let mut game = Game::new_full(2, 28, 18, 8_131, 250, 0, false);
+    let mut capitals = Vec::new();
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each fixture major starts with a settler");
+        let position = game.units[&settler].pos;
+        capitals.push(game.found_city_for(pid, position, None));
+        game.remove_unit(settler);
+    }
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let ours = game.cities[&capitals[0]].pos;
+    let theirs = game.cities[&capitals[1]].pos;
+    found_nearby_test_city(&mut game, 0, ours);
+    for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        if game.rules.is_water(tile) {
+            continue;
+        }
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.wonder = None;
+        game.players[0].explored.insert(position);
+    }
+    game.record_contact(0, 1);
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    game.turn = 30;
+    game.current = 0;
+    (game, ours, theirs)
+}
+
+/// An open land tile at exactly `distance` from `anchor`, and no further than
+/// `home_limit` from `home`.
+fn raid_tile_at(game: &Game, anchor: Pos, distance: i32, home: Pos, home_limit: i32) -> Pos {
+    game.map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| {
+            g_is_open_land(game, *position)
+                && game.units_at(*position).is_empty()
+                && game.wdist(anchor, *position) == distance
+                && game.wdist(home, *position) <= home_limit
+        })
+        .min()
+        .expect("fixture has an open tile at that distance")
+}
+
+/// Our warrior three tiles out from the capital, their Settler two tiles
+/// beyond it — inside the warrior's two-turn reach and its sight.
+fn raid_settler_board() -> (Game, u32, u32) {
+    let (mut game, ours, _) = raid_fixture();
+    let warrior_at = raid_tile_at(&game, ours, 3, ours, 3);
+    let warrior = game.spawn_test_unit("warrior", 0, warrior_at);
+    let settler_at = raid_tile_at(&game, warrior_at, 2, ours, RAID_SETTLER_HOME_RADIUS);
+    let settler = game.spawn_test_unit("settler", 1, settler_at);
+    assert!(
+        game.player_can_see(0, settler_at),
+        "the fixture Settler must stand in the warrior's sight"
+    );
+    (game, warrior, settler)
+}
+
+/// The gene is an opt-in: off in every bundle, flippable by name, in
+/// `PRODUCTION_OPT_INS`, and switching it off forgets any open raid.
+#[test]
+fn opportunistic_war_is_a_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.opportunistic_war);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "opportunistic-war")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.opportunistic_war);
+    ai.raid_war = Some(opportunistic_war::RaidWar {
+        target: 1,
+        declared: 30,
+        value: SETTLER_PRIZE,
+        settlers: 1,
+        builders: 0,
+        pillage_tiles: 0,
+    });
+    ai.disable_opportunistic_war();
+    assert!(!ai.opportunistic_war);
+    assert!(ai.raid_war.is_none());
+    assert!(!ai.raid_pillage_prizes);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "raid-pillage-prizes")
+        .expect("the pillage half has its own row");
+    enable(&mut ai);
+    assert!(ai.raid_pillage_prizes);
+    ai.disable_raid_pillage_prizes();
+    assert!(!ai.raid_pillage_prizes);
+}
+
+/// An unescorted enemy Settler two tiles from our warrior is a prize worth a
+/// war: the gene declares by surprise, the warrior walks onto the Settler the
+/// same turn, and the Settler is ours.
+#[test]
+fn an_unescorted_settler_in_reach_opens_a_surprise_war_and_is_taken_that_turn() {
+    let (mut game, warrior, settler) = raid_settler_board();
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    let opportunity = ai
+        .raid_opportunity(&game, 0)
+        .expect("an unescorted Settler in reach is an opportunity");
+    assert_eq!(opportunity.target, 1);
+    assert!(opportunity.value >= RAID_WAR_MIN_VALUE);
+    assert!(matches!(
+        opportunity.prizes.as_slice(),
+        [opportunistic_war::RaidPrize::Settler { .. }]
+    ));
+    // Without the gene the same board is not an opportunity at all.
+    let mut stock = AdvancedAi::new();
+    stock.disable_opportunistic_war();
+    assert!(stock.raid_opportunity(&game, 0).is_none());
+
+    assert!(!game.is_at_war(0, 1));
+    ai.take_turn(&mut game, 0);
+    assert!(game.is_at_war(0, 1), "the raid declares war");
+    let raid = ai.raid_war.clone().expect("the raid is recorded");
+    assert_eq!((raid.target, raid.declared, raid.settlers), (1, 30, 1));
+    assert_eq!(game.players[0].counters.get("raid_wars"), Some(&1));
+    assert_eq!(
+        game.units[&settler].owner, 0,
+        "the warrior walked onto the Settler this turn"
+    );
+    assert_eq!(game.units[&warrior].pos, game.units[&settler].pos);
+    assert_eq!(game.players[0].counters.get("captured:settler"), Some(&1));
+}
+
+/// A Settler under an enemy soldier is an attack problem, not a capture, and
+/// is not priced as a prize.
+#[test]
+fn a_guarded_settler_is_no_raid_prize() {
+    let (mut game, _, settler) = raid_settler_board();
+    let settler_at = game.units[&settler].pos;
+    let guard = game.spawn_test_unit("warrior", 1, settler_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+    // An escort standing beside the Settler is a guard too.
+    let beside = game
+        .nbrs(settler_at)
+        .into_iter()
+        .find(|position| g_is_open_land(&game, *position) && game.units_at(*position).is_empty())
+        .unwrap();
+    game.relocate(guard, beside);
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+    game.remove_unit(guard);
+    assert!(ai.raid_opportunity(&game, 0).is_some());
+}
+
+/// The prize is taken by movement, but the answer to the declaration is an
+/// army: a neighbour past `RAID_POWER_RATIO` of our strength is not raided.
+#[test]
+fn a_stronger_neighbour_is_not_raided_for_a_settler() {
+    let (mut game, _, _) = raid_settler_board();
+    let (_, _, theirs) = raid_fixture();
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    assert!(ai.raid_opportunity(&game, 0).is_some());
+    for _ in 0..3 {
+        let post = raid_tile_at(&game, theirs, 1, theirs, 1);
+        game.spawn_test_unit("swordsman", 1, post);
+    }
+    assert!(game.military_power(1) > game.military_power(0) * RAID_POWER_RATIO + RAID_POWER_MARGIN);
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+}
+
+/// A Settler we could not use — one of our own already walking, or no site
+/// left to found — is not a prize; the capture guard would refuse the tile.
+#[test]
+fn a_settler_we_could_not_use_is_no_raid_prize() {
+    let (mut game, _, _) = raid_settler_board();
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    assert!(ai.raid_opportunity(&game, 0).is_some());
+    let capital = game.player_city_ids(0)[0];
+    let home = game.cities[&capital].pos;
+    game.spawn_test_unit("settler", 0, home);
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+}
+
+/// While the raid is the only major war, the grand strategy keeps its
+/// economic plan: no "already at war" Conquest, and no power-gap Recovery.
+#[test]
+fn a_raid_is_not_a_reason_to_plan_a_conquest() {
+    let (mut game, _, _) = raid_settler_board();
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.take_turn(&mut game, 0);
+    assert!(game.is_at_war(0, 1));
+    assert!(ai.raid_only_war(&game, 0));
+    game.turn += 1;
+    let plan = ai.assess(&game, 0);
+    assert_ne!(
+        plan.strategy,
+        GrandStrategy::Conquest,
+        "a raid-only war does not pin the plan on Conquest"
+    );
+    assert_ne!(plan.strategy, GrandStrategy::Recovery);
+    // The same war without the gene's bookkeeping reads "already at war".
+    let stock = AdvancedAi::new();
+    let stock_plan = stock.assess(&game, 0);
+    assert_eq!(stock_plan.strategy, GrandStrategy::Conquest);
+}
+
+/// Once the engine's minimum war length has passed and nothing is left in
+/// reach, the raid proposes peace; before that it does not.
+#[test]
+fn a_raid_sues_for_peace_once_it_has_paid() {
+    let (mut game, _, _) = raid_settler_board();
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.take_turn(&mut game, 0);
+    let raid = ai.raid_war.clone().expect("raid opened");
+    let plan = ai.assess(&game, 0);
+    let peace_offered = |game: &Game| {
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.peace && deal.from == 0 && deal.to == 1)
+    };
+    // `take_turn` hands the turn on; the diplomacy pass acts as seat 0.
+    game.current = 0;
+    game.turn = raid.declared + game.standard_duration(RAID_PEACE_EARLIEST) - 1;
+    ai.peace_offers.clear();
+    assert!(!ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
+    assert!(
+        !peace_offered(&game),
+        "no peace before the war can legally end"
+    );
+    game.turn = raid.declared + game.standard_duration(RAID_PEACE_EARLIEST);
+    ai.peace_offers.clear();
+    assert!(!ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
+    assert!(
+        peace_offered(&game),
+        "the prize is taken and nothing is left in reach"
+    );
+    assert!(ai.peace_offers.contains(&1));
+    // The rival accepting the offer closes the raid's bookkeeping and
+    // stands the empire down from fresh wars for a while.
+    game.at_war.clear();
+    ai.opportunistic_war_diplomacy(&mut game, 0, &plan);
+    assert!(ai.raid_war.is_none());
+    assert_eq!(
+        ai.peace_until,
+        game.turn + game.standard_duration(RAID_REPEAT_COOLDOWN)
+    );
+    assert!(ai.raid_opportunity(&game, 0).is_none());
+}
+
+/// Unpillaged improvements beside our soldiers are a prize too — enough of
+/// them in a later era clear the bar with no civilian in sight — and a
+/// soldier standing on one pillages it once the war is open.
+#[test]
+fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
+    let (mut game, ours, theirs) = raid_fixture();
+    let their_city = game.player_city_ids(1)[0];
+    let ring: Vec<Pos> = game.cities[&their_city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != theirs && g_is_open_land(&game, *position))
+        .collect();
+    assert!(
+        ring.len() >= 6,
+        "the fixture capital owns at least six open tiles"
+    );
+    for position in ring.iter().take(6) {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.improvement = Some(crate::name!("mine"));
+        tile.pillaged = false;
+    }
+    let post = raid_tile_at(&game, theirs, 2, theirs, 2);
+    let warrior = game.spawn_test_unit("warrior", 0, post);
+    let _ = ours;
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    game.world_era = 2;
+    assert!(
+        ai.raid_opportunity(&game, 0).is_none(),
+        "without `raid-pillage-prizes` tiles are not prizes"
+    );
+    ai.enable_raid_pillage_prizes();
+    game.world_era = 0;
+    assert!(
+        ai.raid_opportunity(&game, 0).is_none(),
+        "six ancient mines at {} each do not clear {}",
+        PILLAGE_PRIZE_BASE,
+        RAID_WAR_MIN_VALUE
+    );
+    game.world_era = 2;
+    let opportunity = ai
+        .raid_opportunity(&game, 0)
+        .expect("six medieval mines in reach are a raid");
+    assert!(opportunity
+        .prizes
+        .iter()
+        .all(|prize| matches!(prize, opportunistic_war::RaidPrize::Pillage { .. })));
+    assert_eq!(opportunity.prizes.len(), 6);
+    let plan = ai.assess(&game, 0);
+    assert!(ai.opportunistic_war_diplomacy(&mut game, 0, &plan));
+    assert!(game.is_at_war(0, 1));
+    // Walk the warrior onto a mine and let the raid step pillage it.
+    let mine = *ring
+        .iter()
+        .take(6)
+        .find(|position| game.units_at(**position).is_empty())
+        .unwrap();
+    game.relocate(warrior, mine);
+    game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+    assert!(game.pillageable_at(0, mine));
+    let acted = ai
+        .raid_prize_step(&mut game, 0, warrior, &plan, false)
+        .expect("a soldier on a raid prize acts");
+    assert!(acted);
+    assert!(game.map.get(mine).unwrap().pillaged);
+    assert_eq!(game.players[0].counters.get("pillages"), Some(&1));
+}
+
+/// The only soldier in one of our cities reaches a Settler, not a tile of
+/// pillage: the answer to a raid is a counter-raid, and an empty city is its
+/// prize.
+#[test]
+fn a_lone_garrison_counts_for_a_settler_but_not_for_pillage() {
+    let (mut game, ours, theirs) = raid_fixture();
+    let their_city = game.player_city_ids(1)[0];
+    let ring: Vec<Pos> = game.cities[&their_city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != theirs && g_is_open_land(&game, *position))
+        .collect();
+    for position in ring.iter().take(6) {
+        game.map.tiles.get_mut(position).unwrap().improvement = Some(crate::name!("mine"));
+    }
+    game.world_era = 2;
+    let post = raid_tile_at(&game, theirs, 2, theirs, 2);
+    let warrior = game.spawn_test_unit("warrior", 0, post);
+    let settler_at = raid_tile_at(&game, post, 2, ours, RAID_SETTLER_HOME_RADIUS);
+    game.spawn_test_unit("settler", 1, settler_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.enable_raid_pillage_prizes();
+    let striker = |lone_garrison: bool| opportunistic_war::RaidStriker {
+        uid: warrior,
+        pos: post,
+        reach: 4,
+        lone_garrison,
+    };
+    let roaming = ai.raid_prizes_against(&game, 0, 1, &[striker(false)]);
+    assert_eq!(
+        roaming
+            .iter()
+            .filter(|prize| matches!(prize, opportunistic_war::RaidPrize::Pillage { .. }))
+            .count(),
+        6
+    );
+    assert_eq!(
+        roaming
+            .iter()
+            .filter(|prize| matches!(prize, opportunistic_war::RaidPrize::Settler { .. }))
+            .count(),
+        1
+    );
+    let garrisoned = ai.raid_prizes_against(&game, 0, 1, &[striker(true)]);
+    assert!(
+        garrisoned
+            .iter()
+            .all(|prize| matches!(prize, opportunistic_war::RaidPrize::Settler { .. })),
+        "a lone garrison reaches the Settler and none of the tiles: {garrisoned:?}"
+    );
+    assert_eq!(garrisoned.len(), 1);
+    // And the flag is read off the board: alone in one of our cities.
+    let capital = game.player_city_ids(0)[0];
+    let home = game.cities[&capital].pos;
+    game.relocate(warrior, home);
+    assert!(AdvancedAi::lone_garrison(&game, 0, warrior));
+    game.spawn_test_unit("warrior", 0, home);
+    assert!(!AdvancedAi::lone_garrison(&game, 0, warrior));
 }

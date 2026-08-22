@@ -153,6 +153,32 @@ impl AdvancedAi {
         self.great_person_housing = false;
     }
 
+    /// Open a surprise war on a neighbour whose unescorted Settlers, Builders
+    /// or unpillaged tiles lie within a short march of our soldiers, take
+    /// them, and sue for peace. See [`AdvancedAi::opportunistic_war`].
+    /// Opt-in gene.
+    pub fn enable_opportunistic_war(&mut self) {
+        self.opportunistic_war = true;
+    }
+
+    /// The twin of `enable_opportunistic_war`.
+    pub fn disable_opportunistic_war(&mut self) {
+        self.opportunistic_war = false;
+        self.raid_war = None;
+    }
+
+    /// Count a neighbour's unpillaged tiles within reach as raid prizes and
+    /// send raiding soldiers to them. See [`AdvancedAi::raid_pillage_prizes`].
+    /// Opt-in gene; inert unless `opportunistic_war` is on.
+    pub fn enable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = true;
+    }
+
+    /// The twin of `enable_raid_pillage_prizes`.
+    pub fn disable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
@@ -1182,6 +1208,10 @@ impl AdvancedAi {
         // the barbarians attacked us 867 times to our 290. See
         // `BasicAi::barbarian_bargain`.
         self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -1376,6 +1406,10 @@ impl AdvancedAi {
         // barbarians attacked us 867 times to our 290. See
         // `BasicAi::barbarian_bargain`.
         self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
@@ -1531,6 +1565,18 @@ impl AdvancedAi {
         self.builder_worked_tile_priority = false;
     }
 
+    /// Keep Builders from entering a visible Barbarian-capture envelope.
+    /// Native opt-in gene `builder-barbarian-safety`; off in production until
+    /// its targeted barbarian screen has priced the safety/tempo trade.
+    pub fn enable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = true;
+    }
+
+    /// The twin of `enable_builder_barbarian_safety`.
+    pub fn disable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = false;
+    }
+
     /// Credit a wonder's missing prerequisite buildings/districts with a
     /// share of the wonder's own production score. Evaluator arm
     /// `advanced_wonder_reach`; off in production.
@@ -1594,9 +1640,18 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
-    /// Deliberate camp clearing as a peacetime errand. See
-    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
-    /// See `BasicAi::barbarian_bargain`; withheld by `barbarian-bargain`.
+    /// Answer a ring of shooters with a shooter. See
+    /// `BasicAi::barbarian_ranged_answer`; withheld by `barbarian-ranged-answer`.
+    pub fn enable_barbarian_ranged_answer(&mut self) {
+        self.base.enable_barbarian_ranged_answer();
+    }
+
+    pub fn disable_barbarian_ranged_answer(&mut self) {
+        self.base.disable_barbarian_ranged_answer();
+    }
+
+    /// Price a raider's life below a major's. See `BasicAi::barbarian_bargain`;
+    /// withheld by `barbarian-bargain`.
     pub fn enable_barbarian_bargain(&mut self) {
         self.base.enable_barbarian_bargain();
     }
@@ -1615,6 +1670,8 @@ impl AdvancedAi {
         self.base.disable_barbarian_hunt();
     }
 
+    /// Deliberate camp clearing as a peacetime errand. See
+    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
     pub fn enable_camp_bounty(&mut self) {
         self.base.camp_bounty = true;
     }
@@ -1991,6 +2048,17 @@ impl AdvancedAi {
 
     pub fn disable_settler_threat_detour(&mut self) {
         self.settler_threat_detour = false;
+    }
+
+    /// Price a Settler's walk in turns, each turn dearer the longer the
+    /// Settler has already been walking, so expansion founds sooner without
+    /// giving up a site good enough to pay for its walk. See `settle_sooner`.
+    pub fn enable_settle_sooner(&mut self) {
+        self.settle_sooner = true;
+    }
+
+    pub fn disable_settle_sooner(&mut self) {
+        self.settle_sooner = false;
     }
 
     /// Let banked Faith or gold patronize any Great Person it can pay for on

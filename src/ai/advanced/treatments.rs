@@ -113,6 +113,7 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("barbarian_scouts_are_scouts", "barbarian-scouts-are-scouts", AdvancedAi::disable_barbarian_scouts_are_scouts),
     ("barbarian_hunt", "barbarian-hunt", AdvancedAi::disable_barbarian_hunt),
     ("barbarian_bargain", "barbarian-bargain", AdvancedAi::disable_barbarian_bargain),
+    ("barbarian_ranged_answer", "barbarian-ranged-answer", AdvancedAi::disable_barbarian_ranged_answer),
     ("camp_reach", "camp-reach", AdvancedAi::disable_camp_reach),
     ("camp_party", "camp-party", AdvancedAi::disable_camp_party),
     ("buildings_before_projects", "buildings-before-projects", AdvancedAi::disable_buildings_before_projects),
@@ -166,6 +167,10 @@ pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
 /// targeted regime it exists for before any promotion question is asked.
 #[rustfmt::skip]
 pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+    // A Builder does not walk into a visible Barbarian-capture envelope; its
+    // target and retreat both use the same fog-honest risk model as Settlers.
+    // `gene_screen` discovers this native opt-in directly from this row.
+    ("builder_barbarian_safety", "builder-barbarian-safety", AdvancedAi::enable_builder_barbarian_safety),
     // A Builder's finite charges first pay today's worked yields, except for
     // luxury and strategic connections that pay empire-wide either way.
     // `gene_screen` discovers this native opt-in directly from this row.
@@ -198,13 +203,31 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // space ahead of the person, sell duplicate works when nothing can be
     // built; see `AdvancedAi::great_person_housing`.
     ("great_person_housing", "great-person-housing", AdvancedAi::enable_great_person_housing),
+    // A surprise war priced on what the board exposes — an unescorted
+    // Settler or Builder, a cluster of unpillaged tiles — taken by movement
+    // and closed by peace; see `AdvancedAi::opportunistic_war`.
+    ("opportunistic_war", "opportunistic-war", AdvancedAi::enable_opportunistic_war),
+    // The pillage half of the raid, priced apart: inert unless the row
+    // above is on. See `AdvancedAi::raid_pillage_prizes`.
+    ("raid_pillage_prizes", "raid-pillage-prizes", AdvancedAi::enable_raid_pillage_prizes),
     // A target can be excellent while a visible hostile makes its next route
     // step unsafe. This holds that corridor aside briefly and sends the
     // Settler to the best safe runner-up; see `settler_threat_detour`.
     ("settler_threat_detour", "settler-threat-detour", AdvancedAi::enable_settler_threat_detour),
+    // The site ranking is indifferent between founding now and founding the
+    // same value later; this prices every turn of the walk, dearer the longer
+    // the Settler has been out. See `settle_sooner`.
+    ("settle_sooner", "settle-sooner", AdvancedAi::enable_settle_sooner),
     // A settler prices a site by the districts the plan would build there,
     // and a treasury buys a border plot only when it pays for itself. See
     // `advanced/site_lookahead.rs`.
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // `governor-every-lane` is a losing composite: the deployment screen's
+    // score-share drag is large enough that the two pre-existing halves need
+    // their own randomised comparisons before either can be retained. The
+    // composite remains the live-bridge compatibility switch; these opt-ins
+    // let a native seat turn on exactly one of its established predicates.
+    ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
+    ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
 ];
