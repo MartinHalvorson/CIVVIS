@@ -9364,16 +9364,16 @@ CIV6_YIELD_ICON_ATLAS.onload = () => {
   if (state) { draw(); drawMini(); }
 };
 CIV6_YIELD_ICON_ATLAS.src = "/assets/civ6-yield-icons.png";
+function civ6YieldIconReady(kind) {
+  return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);
+}
 // Firaxis authors every sign at one size, so one radius covers the sheet: the
 // generator cuts each disc at the widest of the six and centres it in the cell.
 function drawCiv6YieldIcon(kind, x, y, r) {
-  const index = CIV6_YIELD_ICON_INDEX.get(kind);
-  if (!CIV6_YIELD_ICON_ATLAS_READY || index === undefined) return false;
   cx.drawImage(CIV6_YIELD_ICON_ATLAS,
-               index * CIV6_YIELD_ICON_CELL, 0,
+               CIV6_YIELD_ICON_INDEX.get(kind) * CIV6_YIELD_ICON_CELL, 0,
                CIV6_YIELD_ICON_CELL, CIV6_YIELD_ICON_CELL,
                x - r, y - r, r * 2, r * 2);
-  return true;
 }
 // The drawn signs below stand in for the first frame, and for an atlas the
 // browser could not fetch: a coloured disc under a white pictograph, which is
@@ -9706,7 +9706,7 @@ function drawYieldSign(kind, x, y, r, fraction) {
   // icon twice — a dimmed ghost of all of it, then the earned part painted
   // over the top — so half a point reads as one sign half-earned rather than
   // as half a mark on the plate.
-  if (CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind)) {
+  if (civ6YieldIconReady(kind)) {
     if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }
     cx.save();
     cx.globalAlpha *= .26;

@@ -14321,9 +14321,9 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawYieldPip").next())
             .expect("tile-yield sign renderer");
-        assert!(
-            sign.contains("if (CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind)) {")
-        );
+        assert!(sign.contains("if (civ6YieldIconReady(kind)) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);"));
         assert!(sign.contains("if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }"));
         // A fractional sign is that same icon twice: a dimmed ghost of all of
         // it, then the earned part over the top. Never a second kind of mark.
