@@ -841,6 +841,106 @@ fn live_stalled_settler_refuses_an_unsupported_hostile_frontier() {
     assert_eq!(control_board.player_city_ids(0).len(), cities_before + 1);
 }
 
+/// Cumae showed that the stalled-settler fallback could bypass the ordinary
+/// Loyalty forecast: t63 rejected this fogged tile as beyond Rome's support,
+/// yet t72 founded there after the walk stalled; it revolted at t82. A city
+/// that cannot hold is not the wide expansion the fallback is meant to save.
+#[test]
+fn live_stalled_settler_refuses_a_loyalty_doomed_fallback() {
+    let mut game = Game::new_full(2, 40, 24, 91_779, 250, 0, false);
+    game.current = 0;
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    let (here, friendly, fogged) = positions
+        .iter()
+        .copied()
+        .find_map(|here| {
+            game.wring(here, 8)
+                .into_iter()
+                .filter(|friendly| game.map.tiles.contains_key(friendly))
+                .find_map(|friendly| {
+                    game.wdisk(here, 9)
+                        .into_iter()
+                        .find(|fogged| *fogged != here && game.map.tiles.contains_key(fogged))
+                        .map(|fogged| (here, friendly, fogged))
+                })
+        })
+        .expect("fixture needs a frontier eight tiles from its friendly city");
+    for position in positions.iter() {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+    }
+    game.found_city_for(0, friendly, None);
+    assert_eq!(game.wdist(here, friendly), 8);
+    let settler = game.spawn_test_unit("settler", 0, here);
+    // Founding refreshes ordinary city vision, so set the single fogged
+    // pressure tile after every fixture unit has refreshed its vision rather
+    // than accidentally testing a revealed frontier.
+    game.players[0].explored.clear();
+    game.players[0]
+        .explored
+        .extend(positions.into_iter().filter(|position| *position != fogged));
+    assert!(
+        game.can_found_city(settler),
+        "the fallback tile remains legal"
+    );
+    let own_city_distances: Vec<i32> = game
+        .cities
+        .values()
+        .filter(|city| city.owner == 0)
+        .map(|city| game.wdist(city.pos, here))
+        .collect();
+    let nearby_fog = game
+        .wdisk(here, 9)
+        .into_iter()
+        .filter(|position| {
+            game.map.tiles.contains_key(position) && !game.players[0].explored.contains(position)
+        })
+        .count();
+    assert!(
+        AdvancedAi::beyond_loyalty_reach(&game, 0, here),
+        "the fixture needs no friendly city inside the seven-tile reach and nearby fog; \
+         distances={own_city_distances:?}, fogged={fogged:?}, nearby_fog={nearby_fog}"
+    );
+    let mut control_board = game.clone();
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.base.loyalty_rate_alarm);
+    assert!(live.frontier_loyalty);
+    assert!(
+        live.settle_site_loyalty_verdict(&game, 0, here).is_some(),
+        "the live forecast must identify the unsupported fogged frontier"
+    );
+    let cities_before = game.player_city_ids(0).len();
+    assert!(
+        !live.founds_where_it_stands(&mut game, 0, settler, here),
+        "the live fallback must not found a city that the same forecast rejects"
+    );
+    assert_eq!(game.player_city_ids(0).len(), cities_before);
+    assert!(
+        live.settler_site_is_dead(settler, here),
+        "the doomed fallback is retired so the Settler can make a genuinely safe plan"
+    );
+
+    let mut control = AdvancedAi::new();
+    control.enable_settler_founds_when_stalled();
+    assert!(!control.base.loyalty_rate_alarm);
+    assert!(
+        control.founds_where_it_stands(&mut control_board, 0, settler, here),
+        "the evaluator-only fallback retains its historical behavior"
+    );
+    assert_eq!(control_board.player_city_ids(0).len(), cities_before + 1);
+}
+
 /// Off by default, set only by the live bridge, holdable off on its own —
 /// the wonder race follows the same contract as every other bridge
 /// repair, so the frozen `advanced_v1` anchor keeps its ladder.

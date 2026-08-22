@@ -24448,8 +24448,9 @@ impl AdvancedAi {
     /// Only ever reached from the two stall-expiry branches, so it cannot make
     /// a settler settle early — the counter has already run its full length
     /// against a target the unit could not approach. The safety check is the
-    /// same one the ordinary found path applies, plus a live-only guard against
-    /// the unsupported hostile frontier the failed route may have reached.
+    /// same one the ordinary found path applies, plus live-only guards against
+    /// the loyalty-doomed or unsupported hostile frontier the failed route may
+    /// have reached.
     fn founds_where_it_stands(&mut self, g: &mut Game, pid: usize, uid: u32, here: Pos) -> bool {
         if !self.settler_founds_when_stalled || !g.can_found_city(uid) {
             return false;
@@ -24460,6 +24461,23 @@ impl AdvancedAi {
                 > SETTLER_STEP_RISK_LIMIT
         {
             return false;
+        }
+        // A stalled route may reach a tile that the ordinary target loop had
+        // already rejected. Keep the fallback behind that same live-only
+        // Loyalty forecast: finishing a Settler is useful only when the city
+        // will remain ours. The alarm is the boundary used by both target
+        // selection and arrival, preserving tournament/evaluator behavior.
+        if self.base.loyalty_rate_alarm {
+            if let Some(why) = self.settle_site_loyalty_verdict(g, pid, here) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler declines a loyalty-doomed fallback at {here:?}";
+                       "{why}; the fallback site is retired rather than founded"; here);
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    here,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                return false;
+            }
         }
         if let Some((enemy_distance, friendly_distance)) =
             self.live_stalled_settlement_is_unsupported_frontline(g, pid, here)
