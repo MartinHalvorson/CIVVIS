@@ -95,12 +95,37 @@ class TheTableIsDerived(unittest.TestCase):
         text = ranking.RANKING_MD.read_text()
         for row in rows:
             self.assertIn(f"`{row['name']}` | {row['genes']} |", text, row["name"])
-        # Screens are not interchangeable: a one-gene screen resolves tighter
-        # than a whole-genome screen with more pairs, so no single number serves
-        # — and none of them is the retired ±110.
+        # Screens are not interchangeable, so no single number serves — and
+        # none of them is the retired ±110.
         self.assertGreater(len({round(r["band"]) for r in rows}), 1)
         self.assertTrue(all(round(r["band"]) != 110 for r in rows))
         self.assertIn("twice too wide", text)
+
+    def test_the_band_is_not_explained_by_gene_count(self):
+        """The table's own rows make gene count look causal; this holds the
+        falsifier the prose cites, so neither can rot silently.
+
+        `h1` carries ONE gene over 7,200 pairs and still resolves wider, at a
+        lower pairing gain, than four-gene `s6` over 6,000 — because its gene
+        changes nearly every game and `s7`'s rarely fires. A foldover cancels
+        only what the arms play in common.
+        """
+        def read(name):
+            data = json.loads((ranking.ROOT / "docs" / "gene_screens" / name).read_text())
+            errors = sorted(ranking.column_se(float(g["win_se_pp"])) for g in data["genes"])
+            median = errors[len(errors) // 2]
+            pairs = int(data["complete_pairs"])
+            players = int(data["profile"]["players"])
+            gain = ranking.unpaired_constant(players) / (median * (pairs ** 0.5))
+            return len(errors), pairs, ranking.POWER_80 * median, gain
+
+        h1 = read("2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json")
+        s6 = read("2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json")
+        self.assertLess(h1[0], s6[0], "h1 must carry fewer genes")
+        self.assertGreater(h1[1], s6[1], "h1 must carry more pairs")
+        self.assertGreater(h1[2], s6[2], "yet h1 must resolve WIDER — the whole point")
+        self.assertLess(h1[3], s6[3], "and at a lower pairing gain")
+        self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
 
 
 if __name__ == "__main__":
