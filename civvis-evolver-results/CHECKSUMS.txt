@@ -1,8 +1,0 @@
-# artifact checksums, 2026-07-31 (claude-evolver)
-
-478e36edacd21c77db4f90361ea92ef4  champion/evolved/best.json
-bcf9be9d311bc4c815fa4cde875a1b61  r3-champion-rest/evolved/best.json
-645bf025318134590b51eebabb361480  r0-stock-artifact/evolved/best.json
-2bb6cf81df457f4b502edf8035b5f68e  r2-champion-yield/evolved/best.json
-0f4ac0fdc2e9df6aac7731d7b3f1cbd5  g44-41/evolved/best.json
-892bb145b4fc1ab67b6a7c84aa22dbff  r3-shippable-best.json

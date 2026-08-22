@@ -1,6 +1,0 @@
-batch started 2026-08-02 03:10Z
-harness tree : /Users/martin/civvis-climb-starts-the-mirror-stager-e1a5 @ 9928a90  (PR #827: helper autostart, popup chase, upper-right quadrant)
-decider bin  : /Users/martin/civvis-mirror-double-pays-the-palace-a565/target/release/civvis_orders
-decider tree : 2f79a37  (PR #830: palace double-pay fix)
-⚠ The climb's own pin stamps the HARNESS rev only. These rows are NOT comparable
-  with earlier batches: the decider is a different program from the pinned tree.

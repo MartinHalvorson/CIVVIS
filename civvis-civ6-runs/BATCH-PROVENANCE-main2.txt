@@ -1,5 +1,0 @@
-batch started 2026-08-02T05:31Z from /Users/martin/CIVVIS @ f992d08
-Single tree, single binary. Carries, among 10 commits since the previous batch:
-  #845 city production export (production/progress/cost/turns)
-  #848 settler dodge livelock fix (another agent)
-  #852 mirror check HOSTILES axis

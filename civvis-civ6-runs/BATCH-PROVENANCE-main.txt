@@ -1,5 +1,0 @@
-batch started 2026-08-02T04:15Z from /Users/martin/CIVVIS @ f70c2f3
-This batch runs ORIGIN/MAIN with all five fixes merged:
-  #835 treasury check   #827 helpers+popup chase+quadrant
-  #830 palace double-pay  #836 self-tile moves  #839 per-civ narrowing
-Single tree, single binary — provenance is clean, unlike the 03:10Z batch.
