@@ -4,16 +4,18 @@ Every screenable heuristic gene on the Advanced controller, ranked most benefici
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a four-player screen), so the expected count is 1,667 wins per 10,000 games and the win columns say how far above or below that a seat carrying the gene lands. **A column is half its screen’s on−off difference** — a foldover puts the two arms either side of chance — so the band that says whether a column is real is half the band on that difference. The two are not interchangeable: the ±110/10k figure this paragraph used to quote, and #2266 used to call eight removals noise, is the *difference*’s band and is twice too wide for the column beside it. Each screen’s own band is below, derived from its errors rather than quoted. Screens differ in baseline as repairs land, so the *Prior* column reads as history, not a strict A/B against *Last*.
 
-**What each native screen resolves.** The median gene’s column standard error times 2.8 — a two-sided 5% test at 80% power. A screen that randomizes one gene resolves far tighter than a whole-genome screen of the same size, because the other genes’ draws are not in its residual — so judge a column against the band of the screen named beside it, not against a single number for the instrument.
+**What each native screen resolves.** The median gene’s column standard error times 2.8 — a two-sided 5% test at 80% power. Judge a column against the band of the screen named beside it, never against a single number for the instrument: these differ by more than three to one.
 
-| Native screen | Genes | Seat pairs | 1 SE | ±80% power |
-|---|---:|---:|---:|---:|
-| `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` | 75 | 17,574 | 18.3 | ±51 |
-| `2026-08-21-p7-native-6p-allseats-15000-pairs.json` | 57 | 15,000 | 19.9 | ±56 |
-| `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` | 1 | 6,000 | 10.3 | ±29 |
-| `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` | 4 | 6,000 | 22.9 | ±64 |
-| `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` | 1 | 1,000 | 36.1 | ±101 |
-| `2026-08-20-p4-native-6p-allseats-13446-pairs.json` | 64 | 13,446 | 21.5 | ±60 |
+*Pairing gain* is how far a screen’s error per pair sits below the unpaired baseline, and it is what separates them. A foldover cancels only to the extent its two arms play a similar game, so the gain reads on the **genes**, not the design — a gene that rarely fires leaves most pairs identical and cancels almost everything, while a whole-genome screen flips every gene between arms and cancels almost nothing. ⚠ Gene count is not the driver, though the rows below make it look like one. The falsifier is a screen that is not a ledger source and so is not in this table — `docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json`, **one** gene over **7,200** pairs, resolves ±68 at a 1.28× gain: wider than the four-gene `s6` at 6,000 pairs. Its gene changes nearly every game; `s7`'s rarely fires. That, not the count, is the difference.
+
+| Native screen | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |
+|---|---:|---:|---:|---:|---:|
+| `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` | 75 | 17,574 | 18.3 | ±51 | 1.09× |
+| `2026-08-21-p7-native-6p-allseats-15000-pairs.json` | 57 | 15,000 | 19.9 | ±56 | 1.08× |
+| `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` | 1 | 6,000 | 10.3 | ±29 | 3.32× |
+| `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` | 4 | 6,000 | 22.9 | ±64 | 1.49× |
+| `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` | 1 | 1,000 | 36.1 | ±101 | 2.68× |
+| `2026-08-20-p4-native-6p-allseats-13446-pairs.json` | 64 | 13,446 | 21.5 | ±60 | 1.06× |
 
 **Cost.** Positive is slower; negative is faster. *cost (compute)* is the on/off percent change in wall seconds per completed turn, while *cost (time)* is the percent change in whole-game wall seconds and therefore includes games that end earlier or later. Each cell is the newest native estimate ± one standard error. The screen derives both from paired log-ratios on the same maps, fits every randomized gene together with an arm-order intercept, and keeps one timing per game pair; all-seats signs are summed so the answer is the incremental cost of enabling one major's genome. This reuses the screen's existing `secs` and `turn` rows — no hot-path timers and no extra profiling games. A dash means the source analysis predates the estimator and is unknown, never zero.
 

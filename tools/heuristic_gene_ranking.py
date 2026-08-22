@@ -59,13 +59,35 @@ def column_se(win_se_pp: float) -> float:
     return win_se_pp * PER / 200.0
 
 
+#: A seat wins 1-in-`players` by chance, so an unpaired estimate of the column
+#: would carry this much error per pair. Every screen beats it, by however much
+#: its foldover actually cancels; the ratio is the only honest account of why
+#: two screens of the same size resolve differently.
+def unpaired_constant(players: int) -> float:
+    """`column_se × sqrt(pairs)` for independent Bernoulli arms — the no-pairing
+    baseline a screen's own constant is measured against."""
+    chance = 1.0 / players if players else 1.0 / 6.0
+    return math.sqrt(2 * chance * (1 - chance)) * 100 * (PER / 200.0)
+
+
 def resolutions(ledger: dict) -> list[dict]:
     """What each native screen can actually resolve, from its own errors.
 
-    The median gene's column standard error times `POWER_80`. Screens are not
-    interchangeable here: a screen that randomizes one gene resolves far
-    tighter than a whole-genome screen of the same size, because the other
-    genes' draws are not in its residual. Newest first.
+    The median gene's column standard error times `POWER_80`, plus the *pairing
+    gain* — how far the screen's own error per pair sits below the unpaired
+    baseline. A foldover only cancels to the extent its two arms play a similar
+    game, so the gain is a reading about the genes, not about the design:
+    a gene that rarely fires leaves most pairs identical and cancels almost
+    everything, while a whole-genome screen flips every gene between arms and
+    cancels almost nothing.
+
+    ⚠ Gene count is NOT the driver, though it looks like one and this docstring
+    used to say it was. The repository's own screens refute it: the one-gene
+    `h1` at 7,200 pairs reads a WIDER band than the four-gene `s6` at 6,000.
+    What separates them is the 3.3x gain on `s7`'s rarely-firing
+    `idle-faith-patronage` against 1.28x on `h1`'s `holy-lane-parity`, which
+    changes nearly every game. Read the screen's own row; do not reason from
+    how many genes it carried. Newest first.
     """
     out = []
     for src in ledger["sources"]:
@@ -80,12 +102,16 @@ def resolutions(ledger: dict) -> list[dict]:
         if not errors:
             continue
         median = errors[len(errors) // 2]
+        pairs = int(data.get("complete_pairs", 0))
+        players = int(data.get("profile", {}).get("players", 0) or 0)
+        unpaired = unpaired_constant(players)
         out.append({
             "name": Path(src["path"]).name,
             "genes": len(errors),
-            "pairs": int(data.get("complete_pairs", 0)),
+            "pairs": pairs,
             "se": median,
             "band": POWER_80 * median,
+            "gain": unpaired / (median * math.sqrt(pairs)) if pairs else 0.0,
         })
     return list(reversed(out))
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
@@ -268,17 +294,28 @@ def render(ledger: dict) -> str:
         "against *Last*.",
         "",
         "**What each native screen resolves.** The median gene’s column standard error "
-        f"times {POWER_80} — a two-sided 5% test at 80% power. A screen that randomizes "
-        "one gene resolves far tighter than a whole-genome screen of the same size, "
-        "because the other genes’ draws are not in its residual — so judge a column "
-        "against the band of the screen named beside it, not against a single number "
-        "for the instrument.",
+        f"times {POWER_80} — a two-sided 5% test at 80% power. Judge a column against "
+        "the band of the screen named beside it, never against a single number for the "
+        "instrument: these differ by more than three to one.",
         "",
-        "| Native screen | Genes | Seat pairs | 1 SE | ±80% power |",
-        "|---|---:|---:|---:|---:|",
+        "*Pairing gain* is how far a screen’s error per pair sits below the unpaired "
+        "baseline, and it is what separates them. A foldover cancels only to the extent "
+        "its two arms play a similar game, so the gain reads on the **genes**, not the "
+        "design — a gene that rarely fires leaves most pairs identical and cancels "
+        "almost everything, while a whole-genome screen flips every gene between arms "
+        "and cancels almost nothing. ⚠ Gene count is not the driver, though the rows "
+        "below make it look like one. The falsifier is a screen that is not a ledger "
+        "source and so is not in this table — "
+        "`docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json`, "
+        "**one** gene over **7,200** pairs, resolves ±68 at a 1.28× gain: wider than the "
+        "four-gene `s6` at 6,000 pairs. Its gene changes nearly every game; `s7`'s "
+        "rarely fires. That, not the count, is the difference.",
+        "",
+        "| Native screen | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |",
+        "|---|---:|---:|---:|---:|---:|",
         *(
             f"| `{r['name']}` | {r['genes']} | {fmt_int(r['pairs'])} | "
-            f"{r['se']:.1f} | ±{r['band']:.0f} |"
+            f"{r['se']:.1f} | ±{r['band']:.0f} | {r['gain']:.2f}× |"
             for r in resolutions(ledger)
         ),
         "",
