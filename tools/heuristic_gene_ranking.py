@@ -325,12 +325,10 @@ def render(ledger: dict) -> str:
         "design — a gene that rarely fires leaves most pairs identical and cancels "
         "almost everything, while a whole-genome screen flips every gene between arms "
         "and cancels almost nothing. ⚠ Gene count is not the driver, though the rows "
-        "below make it look like one. The falsifier is a screen that is not a ledger "
-        "source and so is not in this table — "
-        "`docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json`, "
-        "**one** gene over **7,200** pairs, resolves ±68 at a 1.28× gain: wider than the "
-        "four-gene `s6` at 6,000 pairs. Its gene changes nearly every game; `s7`'s "
-        "rarely fires. That, not the count, is the difference.",
+        "below invite that reading — the falsifier is in them. `h1` carries **one** gene "
+        "over **7,200** pairs and resolves ±68 at a 1.28× gain, *wider* than four-gene "
+        "`s6` over 6,000. Its gene changes nearly every game; `s7`'s rarely fires. That, "
+        "not the count, is the difference.",
         "",
         "| Screen | Shape | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |",
         "|---|---|---:|---:|---:|---:|---:|",
