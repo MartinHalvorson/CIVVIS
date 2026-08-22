@@ -3920,6 +3920,59 @@ pub struct AdvancedAi {
     /// `science-multiplier-payoff`.
     pub science_multiplier_payoff: bool,
 
+    /// The research chain compounds, so its later tiers are not owed less
+    /// than its first.
+    ///
+    /// ★★★★ THE TIER DISCOUNT IS BACKWARDS ON THE ONE FAMILY THAT
+    /// COMPOUNDS. `DISTRICT_BUILDING_CHAIN_DEBT` decays by
+    /// `DISTRICT_BUILDING_CHAIN_TIER_DECAY` **0.7 for each building of the
+    /// family the city already holds**, so a city with a Library owes its
+    /// University 336 and a city with both owes its Research Lab 235 against
+    /// the Library's 480. Diminishing returns are the right shape for a
+    /// Granary and then a Sewer — both raise one ceiling, and the second
+    /// raises it less. They are the wrong shape for a Campus, where the
+    /// printed yields go **2, 4, 3-plus-5-when-powered**: the second tier of
+    /// the research chain is worth twice the first and the third is the only
+    /// one that compounds with a power plant. The empire is told to want the
+    /// later tiers least, and the measured funnel says it listened —
+    /// 39% Library, **20% University, 3% Research Lab**.
+    ///
+    /// With this on, the Campus family alone is exempt from the tier decay:
+    /// every building of the chain is owed the same debt while its district
+    /// stands without it. The decay is untouched for every other family, the
+    /// debt's size and payback horizon are untouched, and a city that has
+    /// finished its chain is owed nothing either way. Off everywhere by
+    /// default; opt-in gene `research-chain-compounds`.
+    pub research_chain_compounds: bool,
+
+    /// The citizen half of the taper: an empire that has built the research
+    /// economy should still be WORKING it in the half of the game the tech
+    /// tree decides.
+    ///
+    /// ★★★ THE OTHER TWO SCIENCE TERMS DECAY TOO, AND THEY DECIDE WHO WORKS
+    /// WHAT. `RESEARCH_CITIZEN_TILT` (the standing tilt toward beakers in
+    /// every lane's `lane_emphasis`) and `refresh_research_weight` (the floor
+    /// under a beaker's price, sliding `RESEARCH_FLOOR_EARLY` **3.0** to
+    /// `RESEARCH_FLOOR_LATE` **1.0**) are both multiplied by
+    /// `research_horizon`. So at turn 150 of 250 a beaker is floored at
+    /// **1.8** and the citizen tilt is at 40%, and by turn 220 they are 1.24
+    /// and 12% — in the era where a tech tier is the difference between a
+    /// Field Cannon and a Spearman, and where the Campus buildings the other
+    /// genes fought for are finally standing. The empire builds the
+    /// laboratory and then declines to staff it.
+    ///
+    /// This is a separate claim from `science_payback_horizon` and separately
+    /// screened: that gene moves what the empire BUYS, this one moves what it
+    /// then WORKS and what a beaker is worth to every other price. Either can
+    /// be right without the other.
+    ///
+    /// With this on, both use `campus_payback_horizon` — full value while the
+    /// research still has time to pay, ramping down only inside the payback
+    /// window, so the last few turns still do not bid citizens away from a
+    /// closing game. Off everywhere by default; opt-in gene
+    /// `research-floor-holds`.
+    pub research_floor_holds: bool,
+
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
     /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
@@ -4979,6 +5032,8 @@ impl AdvancedAi {
             priced_tile_purchase: false,
             science_payback_horizon: false,
             science_multiplier_payoff: false,
+            research_chain_compounds: false,
+            research_floor_holds: false,
             idle_faith_patronage: false,
             early_contact_window: false,
             great_person_housing: false,
@@ -6878,7 +6933,8 @@ impl AdvancedAi {
         // marginally better yield mix does not.
         let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
         let research_tilt = if self.research_economy {
-            RESEARCH_CITIZEN_TILT * Self::research_horizon(g)
+            // See `research_floor_holds`: the citizen half of the same taper.
+            RESEARCH_CITIZEN_TILT * self.research_staffing_horizon(g)
         } else {
             0.0
         };
@@ -9351,6 +9407,17 @@ impl AdvancedAi {
     /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
     /// asks the question the investment actually poses — is there still time
     /// to repay — and is what the Culture twin and the chain debt already use.
+    /// Which horizon the citizens and the beaker floor are priced on. See
+    /// `research_floor_holds`; the twin of `research_payback`, kept separate
+    /// because the two genes are separate claims.
+    fn research_staffing_horizon(&self, g: &Game) -> f64 {
+        if self.research_floor_holds {
+            Self::campus_payback_horizon(g)
+        } else {
+            Self::research_horizon(g)
+        }
+    }
+
     fn research_payback(&self, g: &Game) -> f64 {
         if self.science_payback_horizon {
             Self::campus_payback_horizon(g)
@@ -9409,7 +9476,9 @@ impl AdvancedAi {
     /// pricing runs.
     fn refresh_research_weight(&mut self, g: &Game) {
         self.research_weight = if self.research_economy {
-            let horizon = Self::research_horizon(g);
+            // See `research_floor_holds`: what a beaker is worth to every
+            // other price, on the same horizon as the citizens who make it.
+            let horizon = self.research_staffing_horizon(g);
             RESEARCH_FLOOR_LATE + (RESEARCH_FLOOR_EARLY - RESEARCH_FLOOR_LATE) * horizon
         } else {
             0.0
@@ -19534,11 +19603,7 @@ impl AdvancedAi {
                         0.75
                     }
                     + if threatened { 240.0 } else { 0.0 }
-                    + if offensive_conquest {
-                        160.0
-                    } else {
-                        0.0
-                    }
+                    + if offensive_conquest { 160.0 } else { 0.0 }
             }
             Item::Unit { unit } => {
                 let spec = &g.rules.units[unit];
@@ -19981,9 +20046,17 @@ impl AdvancedAi {
                                     == family
                             })
                             .count();
-                        DISTRICT_BUILDING_CHAIN_DEBT
-                            * DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
-                            * Self::campus_payback_horizon(g)
+                        // See `research_chain_compounds`: the decay is the
+                        // right shape for a chain of ceilings and the wrong
+                        // one for a chain that compounds.
+                        let compounds = self.research_chain_compounds
+                            && family == Some(crate::name!("campus"));
+                        let tier = if compounds {
+                            1.0
+                        } else {
+                            DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
+                        };
+                        DISTRICT_BUILDING_CHAIN_DEBT * tier * Self::campus_payback_horizon(g)
                     } else {
                         0.0
                     };

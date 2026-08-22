@@ -98,6 +98,10 @@ mod tests {
             ("science-multiplier-payoff", |ai: &AdvancedAi| {
                 ai.science_multiplier_payoff
             }),
+            ("research-chain-compounds", |ai: &AdvancedAi| {
+                ai.research_chain_compounds
+            }),
+            ("research-floor-holds", |ai: &AdvancedAi| ai.research_floor_holds),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -112,10 +116,97 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_science_payback_horizon();
         ai.enable_science_multiplier_payoff();
+        ai.enable_research_chain_compounds();
+        ai.enable_research_floor_holds();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
+        ai.disable_research_chain_compounds();
+        ai.disable_research_floor_holds();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
+        assert!(!ai.research_chain_compounds);
+        assert!(!ai.research_floor_holds);
+    }
+
+    /// The citizen half of the taper, and the proof it is a separate gene:
+    /// `science-payback-horizon` does not move it and this does not move
+    /// what `science-payback-horizon` moves.
+    #[test]
+    fn the_staffing_horizon_is_a_second_and_separate_taper() {
+        let mut g = Game::new_full(2, 28, 18, 91_779, 250, 0, false);
+        g.turn = 150;
+        let shipped = AdvancedAi::new();
+        let mut production_only = AdvancedAi::new();
+        production_only.enable_science_payback_horizon();
+        let mut staffing_only = AdvancedAi::new();
+        staffing_only.enable_research_floor_holds();
+
+        // At t150/250 the shipped taper has written off 60% of both halves.
+        assert!((shipped.research_payback(&g) - 0.4).abs() < 1e-9);
+        assert!((shipped.research_staffing_horizon(&g) - 0.4).abs() < 1e-9);
+
+        // Each gene moves its own half and only its own half.
+        assert!((production_only.research_payback(&g) - 1.0).abs() < 1e-9);
+        assert!((production_only.research_staffing_horizon(&g) - 0.4).abs() < 1e-9);
+        assert!((staffing_only.research_staffing_horizon(&g) - 1.0).abs() < 1e-9);
+        assert!((staffing_only.research_payback(&g) - 0.4).abs() < 1e-9);
+
+        // And what the staffing half actually sets: the floor under a beaker
+        // in every lane, which the shipped slide has already halved.
+        let floor = |ai: &mut AdvancedAi| {
+            ai.research_economy = true;
+            ai.refresh_research_weight(&g);
+            ai.research_weight
+        };
+        let mut shipped = shipped;
+        let shipped_floor = floor(&mut shipped);
+        let held_floor = floor(&mut staffing_only);
+        assert!(
+            (shipped_floor - 1.8).abs() < 1e-9,
+            "the shipped floor at t150/250: {shipped_floor}"
+        );
+        assert!(
+            (held_floor - 3.0).abs() < 1e-9,
+            "a beaker is still worth its early price while it can pay: {held_floor}"
+        );
+    }
+
+    /// The tier decay is the right shape for a chain of ceilings and the
+    /// wrong one for a chain that compounds — and the gene touches only the
+    /// family whose printed yields go 2, 4, 3-plus-5.
+    #[test]
+    fn the_research_chain_stops_discounting_its_own_later_tiers() {
+        let tier = |ai: &AdvancedAi, campus: bool, held: i32| -> f64 {
+            if ai.research_chain_compounds && campus {
+                1.0
+            } else {
+                super::super::DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held)
+            }
+        };
+        let shipped = AdvancedAi::new();
+        let mut treated = AdvancedAi::new();
+        treated.enable_research_chain_compounds();
+
+        // The Library is the first tier in both arms: the gene is not a
+        // blanket raise, it removes a discount that only applies later.
+        assert_eq!(tier(&shipped, true, 0), tier(&treated, true, 0));
+
+        // The University and the Research Lab are where they differ, and by
+        // how much: 0.7 and 0.49 of the debt the Library was owed.
+        assert!((tier(&shipped, true, 1) - 0.7).abs() < 1e-9);
+        assert!((tier(&shipped, true, 2) - 0.49).abs() < 1e-9);
+        assert_eq!(tier(&treated, true, 1), 1.0);
+        assert_eq!(tier(&treated, true, 2), 1.0);
+
+        // Every other family keeps the decay in both arms — a Granary and
+        // then a Sewer really do each raise the ceiling less.
+        for held in 0..4 {
+            assert_eq!(
+                tier(&shipped, false, held),
+                tier(&treated, false, held),
+                "the decay is untouched off the Campus at tier {held}"
+            );
+        }
     }
 
     /// The gene's whole sentence: full value while the investment can still

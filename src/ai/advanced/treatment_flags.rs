@@ -153,6 +153,30 @@ impl AdvancedAi {
         self.science_multiplier_payoff = false;
     }
 
+    /// The Campus family is exempt from the chain's tier decay. See
+    /// [`AdvancedAi::research_chain_compounds`]. Opt-in gene
+    /// `research-chain-compounds`.
+    pub fn enable_research_chain_compounds(&mut self) {
+        self.research_chain_compounds = true;
+    }
+
+    /// The twin of `enable_research_chain_compounds`.
+    pub fn disable_research_chain_compounds(&mut self) {
+        self.research_chain_compounds = false;
+    }
+
+    /// The citizen tilt and the beaker floor hold while the research can
+    /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
+    /// `research-floor-holds`.
+    pub fn enable_research_floor_holds(&mut self) {
+        self.research_floor_holds = true;
+    }
+
+    /// The twin of `enable_research_floor_holds`.
+    pub fn disable_research_floor_holds(&mut self) {
+        self.research_floor_holds = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.
