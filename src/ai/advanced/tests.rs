@@ -16487,12 +16487,13 @@ fn a_founder_outside_the_religion_lane_gets_its_shrine_and_temple_only_with_the_
 fn the_religion_genes_are_native_opt_ins() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
-    assert!(!ai.inquisition_on_threat);
+    assert!(!ai.inquisition_on_threat && !ai.holy_lane_parity);
     assert!(!ai.founder_temple && !ai.theology_for_founders);
     for tag in [
         "inquisition-on-threat",
         "founder-temple",
         "theology-for-founders",
+        "holy-lane-parity",
     ] {
         let (_, _, enable) = PRODUCTION_OPT_INS
             .iter()
@@ -16504,11 +16505,15 @@ fn the_religion_genes_are_native_opt_ins() {
             "inquisition-on-threat" => seat.inquisition_on_threat,
             "founder-temple" => seat.founder_temple,
             "theology-for-founders" => seat.theology_for_founders,
+            "holy-lane-parity" => seat.holy_lane_parity,
             _ => unreachable!(),
         };
         assert!(on, "{tag} enables its flag");
     }
     let mut on = AdvancedAi::new();
+    on.enable_holy_lane_parity();
+    on.disable_holy_lane_parity();
+    assert!(!on.holy_lane_parity);
     on.enable_theology_for_founders();
     on.disable_theology_for_founders();
     assert!(!on.theology_for_founders);

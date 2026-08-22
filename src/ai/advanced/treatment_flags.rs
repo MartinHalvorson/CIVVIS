@@ -415,6 +415,18 @@ impl AdvancedAi {
         self.raid_pillage_prizes = false;
     }
 
+    /// The Religion lane pays for its Holy Site what the Culture lane pays
+    /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
+    /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
+    /// makes it a native opt-in gene (`PRODUCTION_OPT_INS`).
+    pub fn enable_holy_lane_parity(&mut self) {
+        self.holy_lane_parity = true;
+    }
+
+    /// The twin of `enable_holy_lane_parity`.
+    pub fn disable_holy_lane_parity(&mut self) {
+        self.holy_lane_parity = false;
+    }
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {

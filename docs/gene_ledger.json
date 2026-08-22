@@ -191,7 +191,7 @@
     }
   ],
   "counts": {
-    "helps": 20,
+    "helps": 21,
     "hurts": 8,
     "unresolved": 37,
     "default_on": 33
@@ -1402,6 +1402,54 @@
         ]
       },
       "war": null
+    },
+    {
+      "tag": "holy-lane-parity",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": 63,
+      "wins_prior_10k": -27,
+      "deciding_regime": "native",
+      "family_wise": true,
+      "conflict": true,
+      "native": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 1.263,
+        "win_z": 3.48,
+        "share_delta_pp": -0.016,
+        "share_z": -0.245,
+        "read": "HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.62,
+            "win_z": 3.456,
+            "win_se_pp": 0.469
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.792,
+            "win_z": 1.387,
+            "win_se_pp": 0.571
+          }
+        ]
+      },
+      "war": {
+        "pairs": 5844,
+        "n_on": 5844,
+        "n_off": 5844,
+        "win_delta_pp": 0.103,
+        "win_z": 0.143,
+        "share_delta_pp": -0.402,
+        "share_z": -2.257,
+        "read": "share hurts *",
+        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
+      }
     },
     {
       "tag": "home-defense",
