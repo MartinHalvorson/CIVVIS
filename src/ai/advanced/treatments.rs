@@ -189,6 +189,17 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Half the seats never found a religion and bank ~1,000 Faith they
     // cannot spend; see `AdvancedAi::idle_faith_patronage`.
     ("idle_faith_patronage", "idle-faith-patronage", AdvancedAi::enable_idle_faith_patronage),
+    // The rest of the same chain: the founder's corps cannot answer more than
+    // two cities, cannot heal when it is defending, spends charges at a
+    // fraction of their strength, and never uses the World Congress licence to
+    // remove a carrier at peace. See `advanced/religion.rs`.
+    ("religious_defence_scales", "religious-defence-scales", AdvancedAi::enable_religious_defence_scales),
+    ("guru_heals_the_corps", "guru-heals-the-corps", AdvancedAi::enable_guru_heals_the_corps),
+    ("religious_units_heal_first", "religious-units-heal-first", AdvancedAi::enable_religious_units_heal_first),
+    ("condemn_under_congress", "condemn-under-congress", AdvancedAi::enable_condemn_under_congress),
+    ("spread_campaign_persists", "spread-campaign-persists", AdvancedAi::enable_spread_campaign_persists),
+    ("holy_site_where_the_threat_is", "holy-site-where-the-threat-is", AdvancedAi::enable_holy_site_where_the_threat_is),
+    ("enhancer_for_the_corps", "enhancer-for-the-corps", AdvancedAi::enable_enhancer_for_the_corps),
     // Every major adopts Early Empire on turns 23-30, and a Scout's sight of 2
     // cannot see a city-state's seat from outside its border. The land route
     // to first contact closes once and never reopens; see

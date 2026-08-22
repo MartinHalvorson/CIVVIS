@@ -40,6 +40,95 @@ use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
+    /// Size the defensive Missionary corps by the number of cities actually
+    /// under conversion pressure instead of the shipped constant 2. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::religious_defence_scales`].
+    pub fn enable_religious_defence_scales(&mut self) {
+        self.religious_defence_scales = true;
+    }
+
+    /// The twin of `enable_religious_defence_scales`.
+    pub fn disable_religious_defence_scales(&mut self) {
+        self.religious_defence_scales = false;
+    }
+
+    /// Let a founder that is defending its own cities hold one Guru, the only
+    /// field heal a religious corps has. Off in production; opted into by
+    /// name. See [`AdvancedAi::guru_heals_the_corps`].
+    pub fn enable_guru_heals_the_corps(&mut self) {
+        self.guru_heals_the_corps = true;
+    }
+
+    /// The twin of `enable_guru_heals_the_corps`.
+    pub fn disable_guru_heals_the_corps(&mut self) {
+        self.guru_heals_the_corps = false;
+    }
+
+    /// Let a wounded spreader standing in its own Holy Site's heal ring hold
+    /// instead of spending a charge at a fraction of its strength. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::religious_units_heal_first`].
+    pub fn enable_religious_units_heal_first(&mut self) {
+        self.religious_units_heal_first = true;
+    }
+
+    /// The twin of `enable_religious_units_heal_first`.
+    pub fn disable_religious_units_heal_first(&mut self) {
+        self.religious_units_heal_first = false;
+    }
+
+    /// Condemn a heretic the World Congress has condemned, not only one this
+    /// seat is at war with. Off in production; opted into by name. See
+    /// [`AdvancedAi::condemn_under_congress`].
+    pub fn enable_condemn_under_congress(&mut self) {
+        self.condemn_under_congress = true;
+    }
+
+    /// The twin of `enable_condemn_under_congress`.
+    pub fn disable_condemn_under_congress(&mut self) {
+        self.condemn_under_congress = false;
+    }
+
+    /// Keep a spread campaign that has already converted a foreign city on the
+    /// offensive between waves, instead of dropping the posture the turn its
+    /// last charge is spent. Off in production; opted into by name. See
+    /// [`AdvancedAi::spread_campaign_persists`].
+    pub fn enable_spread_campaign_persists(&mut self) {
+        self.spread_campaign_persists = true;
+    }
+
+    /// The twin of `enable_spread_campaign_persists`.
+    pub fn disable_spread_campaign_persists(&mut self) {
+        self.spread_campaign_persists = false;
+    }
+
+    /// Put a Holy Site in the city that is actually losing its majority, so
+    /// its defender can be bought there instead of walking from the Holy City.
+    /// Off in production; opted into by name. See
+    /// [`AdvancedAi::holy_site_where_the_threat_is`].
+    pub fn enable_holy_site_where_the_threat_is(&mut self) {
+        self.holy_site_where_the_threat_is = true;
+    }
+
+    /// The twin of `enable_holy_site_where_the_threat_is`.
+    pub fn disable_holy_site_where_the_threat_is(&mut self) {
+        self.holy_site_where_the_threat_is = false;
+    }
+
+    /// Evangelize the beliefs that multiply a religious corps while the corps
+    /// has a job, instead of the victory lane's worship building. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::enhancer_for_the_corps`].
+    pub fn enable_enhancer_for_the_corps(&mut self) {
+        self.enhancer_for_the_corps = true;
+    }
+
+    /// The twin of `enable_enhancer_for_the_corps`.
+    pub fn disable_enhancer_for_the_corps(&mut self) {
+        self.enhancer_for_the_corps = false;
+    }
+
     /// Promote an Apostle for the job the empire has rather than for the
     /// largest number on the card. Off in production; opted into by name
     /// (`victory_eval --with apostle-promotion-by-role`, `gene_screen`). See
