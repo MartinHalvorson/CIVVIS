@@ -1,6 +1,6 @@
 {
   "coverage": {
-    "named": 40,
+    "named": 39,
     "never_named": 10,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
@@ -26,14 +26,14 @@
       "stranded-settler-discount",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 50
+    "withholdable": 49
   },
   "derived": {
-    "eval_only_count": 227,
+    "eval_only_count": 226,
     "firaxis_only_count": 30,
-    "live_bridge_count": 80,
-    "native_engine_repair_count": 50,
-    "withholdable_live_count": 50
+    "live_bridge_count": 79,
+    "native_engine_repair_count": 49,
+    "withholdable_live_count": 49
   },
   "ladder": {
     "ahead": 12,
@@ -126,7 +126,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 50,
+      "declared_count": 49,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -148,7 +148,6 @@
         "garrison-under-fire",
         "strike-opening",
         "recon-replacement",
-        "recon-flight",
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
         "barbarian-bargain",
@@ -181,7 +180,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 29,
+      "declared_count": 28,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -203,7 +202,6 @@
         "garrison-under-fire",
         "strike-opening",
         "recon-replacement",
-        "recon-flight",
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
         "barbarian-bargain",
@@ -215,7 +213,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 227,
+      "declared_count": 226,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -268,7 +266,6 @@
         "live_without_frontier_loyalty",
         "live_without_garrison_under_fire",
         "live_without_naval_recon",
-        "live_without_recon_flight",
         "live_without_recon_replacement",
         "live_without_religion_sues_peace",
         "live_without_score_horizon",
@@ -482,7 +479,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 80,
+      "declared_count": 79,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -528,7 +525,6 @@
         "expansion-before-prophet",
         "no-elective-war",
         "fog-land-capacity",
-        "recon-flight",
         "score-horizon",
         "one-launch-pad",
         "naval-recon",

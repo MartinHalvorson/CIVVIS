@@ -11,19 +11,19 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Evaluator-only agents | 227 |
-| Live-bridge treatments | 80 |
+| Evaluator-only agents | 226 |
+| Live-bridge treatments | 79 |
 | Firaxis-only treatments | 30 |
-| Native engine-repair treatments | 50 |
-| Withholdable live treatments | 50 |
+| Native engine-repair treatments | 49 |
+| Withholdable live treatments | 49 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **50**
-- Named somewhere in the evidence: **40**
+- Withholdable live treatments: **49**
+- Named somewhere in the evidence: **39**
 - **Never named in any round: 10**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
