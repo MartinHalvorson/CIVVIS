@@ -207,6 +207,85 @@ class SettlerHoldTest(unittest.TestCase):
             self.assertEqual(rr.report(run, 25)["settler"]["holds"], 0)
 
 
+class AggregateTest(unittest.TestCase):
+    """The counterweight to reading three games and believing a story.
+
+    Reading three runs by hand produced "we win the opening and get
+    out-developed from turn 100"; the distribution over sixty-one completed
+    losses put the median crossover at turn 77 with the mode at t25-49. These
+    pin the arithmetic that corrected it.
+    """
+
+    def _ladder(self, root: Path):
+        # two wins in band, one loss in band, one loss below band, one unfinished
+        specs = [
+            ("a", 5, True, 6, None),
+            ("b", 6, True, 0, None),
+            ("c", 4, False, 6, 120),      # led to t120 then lost it
+            ("d", 2, False, 0, None),     # never led
+            ("e", 4, None, None, None),   # no terminal event
+        ]
+        for name, cities, won, victory, led_to in specs:
+            run = root / f"civvis-2026010{name}T000000Z"
+            run.mkdir()
+            rows = [state(60, 100, rival=(50 if led_to or won else 400),
+                          cities=cities)]
+            if led_to:
+                rows.append(state(led_to, 300, rival=200, cities=cities))
+                rows.append(state(led_to + 20, 310, rival=500, cities=cities))
+            lines = [json.dumps({"kind": "state", **r}) for r in rows]
+            if won is not None:
+                lines.append(json.dumps({"kind": "victory", "victory": victory,
+                                         "won": won}))
+            (run / "events.jsonl").write_text("\n".join(lines) + "\n")
+
+    def test_denominators_are_stated_rather_than_silently_dropped(self) -> None:
+        """A rate whose denominator is unstated is the other way to be wrong."""
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            self._ladder(root)
+            data = rr.aggregate(root, 25)
+        self.assertEqual(data["runs_seen"], 5)
+        self.assertEqual(data["completed"], 4)
+        self.assertEqual(data["skipped_unfinished"], 1)
+        self.assertIn("without a terminal event", rr.render_aggregate(data))
+
+    def test_wins_are_grouped_by_the_opening_they_came_from(self) -> None:
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            self._ladder(root)
+            data = rr.aggregate(root, 25)
+        table = data["by_cities_at_60"]
+        self.assertEqual(table[5], {"games": 1, "wins": 1})
+        self.assertEqual(table[6], {"games": 1, "wins": 1})
+        self.assertEqual(table[4], {"games": 1, "wins": 0})
+        self.assertEqual(table[2], {"games": 1, "wins": 0})
+
+    def test_a_loss_that_never_led_is_not_given_a_crossover_turn(self) -> None:
+        """Otherwise a third of losses would invent a crossover at first contact."""
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            self._ladder(root)
+            data = rr.aggregate(root, 25)
+        self.assertEqual(data["never_led"], 1)
+        self.assertEqual(data["crossovers"], [120])
+        self.assertEqual(data["crossover_median"], 120)
+
+    def test_a_win_contributes_no_crossover(self) -> None:
+        """A won game did not lose its lead, and counting it would drag the median."""
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            self._ladder(root)
+            data = rr.aggregate(root, 25)
+        self.assertEqual(len(data["crossovers"]) + data["never_led"],
+                         data["completed"] - data["wins"])
+
+    def test_an_empty_directory_is_named_not_a_table_of_zeroes(self) -> None:
+        with TemporaryDirectory() as raw:
+            with self.assertRaises(rr.ReportError):
+                rr.aggregate(Path(raw), 25)
+
+
 class RefusalTest(unittest.TestCase):
     def test_a_missing_run_is_named_not_an_empty_table(self) -> None:
         with TemporaryDirectory() as raw:

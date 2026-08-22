@@ -3,6 +3,66 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-08-22: the movement flood stopped rescanning the world (−10.0%)
+
+Two whole-board facts were being recomputed inside the innermost movement
+loop. `flow_past` calls `can_enter_past` once per neighbour of every tile it
+expands, and each call:
+
+1. **walked every unit in the world** looking for an enemy air patrol over the
+   tile being stepped onto — the code said so in a comment and it was still
+   there; and
+2. reached `class_can_traverse`, which asked
+   `improvements[name].effects["passage"]` — a `BTreeMap<String, f64>` descent,
+   `memcmp` per level — for every tile.
+
+Neither answer can change inside a `&self` query, so both moved into the
+existing `QueryMemo` scope: `air_patrols` (almost always empty — a patrol needs
+a fighter) and `passage_improvements` (a `Vec<bool>` indexed by `Name::id`, one
+array read). No invalidation question arises, because the memo is created and
+dropped around the query and the board is immutable inside it.
+
+**Measured with `tools/speed_ab.py`, which refuses a speed claim unless both
+arms played the same game:**
+
+| seed window | baseline | candidate | |
+|---|---:|---:|---|
+| 7311001..7311008 | 269.78s | 245.01s | **−9.18%** (air patrols only) |
+| 7311001..7311008 | 263.85s | 237.16s | −10.11% (both) |
+| 7311020..7311027 | 332.28s | 298.98s | −10.02% (both, quiet host) |
+| 7311040..7311047 | 255.64s | 224.53s | −12.17% (both, against merged `main`) |
+| **7311060..7311067** | **326.39s** | **285.51s** | **−12.52%** (both arms rebuilt at `5f2699fd`, after #2308) |
+
+*same game on every seed* in all five. The air-patrol hoist is ~9 points of
+the 10; the passage table is the last one.
+
+⚠ This is an optimization, not a feature, so whole-game wall clock is the right
+measure here — both arms play the identical game, which is exactly the
+condition the 2026-08-21 retraction below says makes it valid.
+
+### The profile that found it, and what is left
+
+`/usr/bin/sample` at 1 ms over `civvis simulate --seed 7311001 --jobs 1
+--players 6 --turns 250 --width 60 --height 38 --city-states 6 --speed online
+--map continents`, self time:
+
+| | before | after |
+|---|---:|---:|
+| `BTreeMap<(i64,i64), SetVal>` — the `BTreeSet<Pos>` envelopes | 7.6% | **9.0%** |
+| `memcmp` | 5.0% | 6.0% |
+| `free` / `malloc` | 7.3% | ~7% |
+| `memmove` | 5.4% | 5.7% |
+| `tile_has_visibility_line` | 5.1% | 5.5% |
+| `BTreeMap<String, f64>::get` | 3.6% | 4.2% |
+| `can_enter_past` | 3.9% | **gone from the top 16** |
+
+**The next target is `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`.** Its
+`BTreeSet<Pos>` is queried with `contains` and iterated in sorted order; a
+sorted `Vec<Pos>` with `binary_search` gives the identical iteration order and
+identical answers with no node allocation and contiguous memory, which should
+take a large share of the BTree, malloc and memmove rows at once. Not attempted
+here — it touches ~40 sites and deserves its own change.
+
 ⚠ **Read the last section first.** Each profile here superseded the one above
 it, and the most recent — 2026-08-22 — corrects the 2026-08-21 section directly
 above it, whose whole-game cost figures conflated the feature's cost with the
