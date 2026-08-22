@@ -71,13 +71,6 @@ const PROMOTE_HEAL_HP_CEILING: i32 = 75;
 /// -15.0, so contact becomes worth considering without becoming automatic —
 /// the shipped caution is reduced, not removed.
 const STRIKE_OPENING_SCALE: f64 = 0.6;
-/// Charged to a tile that would leave a ranged unit in range of a target and
-/// unable to see it, by [`AdvancedAi::ranged_tile_is_blind`]. Sized to beat the
-/// depth preference decisively — `role_spacing` is 2.0 and a Ranged unit scales
-/// it by 1.5, so one hex of depth error costs 3.0 — while staying under
-/// `mv_threat`'s 15.0 at parity, so a blind tile loses to a sighted one a hex
-/// out of position without the unit fleeing contact altogether.
-const BLIND_RANGED_TILE: f64 = 12.0;
 /// A normal tactical candidate already spends two cloned worlds on its exact
 /// exchange and its forcing reply.  The friendly-volley extension below is a
 /// deliberately smaller joint search: inspect only the three best immediate
@@ -269,19 +262,6 @@ const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
 /// `AdvancedAi::live_wonder_race_scale`.
 const LIVE_WONDER_RACE_LATE_SCALE: f64 = 2.0;
-
-/// Share of a blocked wonder's own production score credited to the missing
-/// prerequisite that unblocks it, split across the prerequisites still
-/// missing. Half, not all: the prerequisite is an option on the wonder, not
-/// the wonder, and it must not outbid the wonder itself once both are
-/// producible. See `AdvancedAi::wonder_reach_credit`.
-const WONDER_REACH_SHARE: f64 = 0.5;
-
-/// A wonder more than this many construction steps away earns its
-/// prerequisites nothing: a two-step chain (Library, then an adjacent
-/// Campus) is a plan, a longer one is a fantasy the queue should not fund.
-/// See `AdvancedAi::wonder_reach_credit`.
-const WONDER_REACH_MAX_MISSING: usize = 2;
 
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
@@ -1399,18 +1379,6 @@ struct BarbarianCaptureThreat {
     sea: bool,
 }
 
-/// One production menu's wonder-prerequisite credits: for each missing
-/// building/district family, a share of the best wonder score it would
-/// unblock in this city. See `AdvancedAi::wonder_reach_credit`.
-#[derive(Clone, Default)]
-struct WonderReachLedger {
-    pid: usize,
-    cid: u32,
-    turn: u32,
-    valid: bool,
-    credits: BTreeMap<Name, f64>,
-}
-
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -1431,11 +1399,6 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
-    /// Wonder-prerequisite credits for the city whose production menu is
-    /// being scored, rebuilt when the (player, city, turn) key moves on. The
-    /// menu scores every candidate consecutively, so one entry is enough;
-    /// `RefCell` for the same reason as `settlement_atlas`.
-    wonder_reach: RefCell<WonderReachLedger>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -1516,12 +1479,6 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::strike_opening_value`] for the arithmetic and the
     /// 7-melee-attacks-in-188-turns measurement behind it.
     pub strike_opening: bool,
-    /// Stop a ranged unit choosing a tile from which it is in range of a target
-    /// and cannot see it.
-    ///
-    /// **Off by default, live-bridge only.** See
-    /// [`AdvancedAi::ranged_tile_is_blind`] for the refusal census behind it.
-    pub ranged_needs_line_of_sight: bool,
     /// Read the Faith price from the engine instead of the Standard-speed
     /// literal. Off in production pending its screen; see
     /// `advanced_engine_faith_price`.
@@ -1542,10 +1499,6 @@ pub struct AdvancedAi {
     /// the collapse this answers: both army targets were blind until the war
     /// started, and the leader declared at nearly two to one.
     pub peacetime_deterrence: bool,
-    /// Skip policy cards that multiply a suzerainty count of zero. Off here so
-    /// every configured, legacy and Elo agent keeps the deck order it has always
-    /// had; `strategic_policies` reorders nothing on this flag.
-    pub suzerain_cards_need_a_suzerainty: bool,
     /// Size the siege train against the wall standing at the target city,
     /// instead of asking for exactly one siege unit for any target at all.
     ///
@@ -1561,64 +1514,6 @@ pub struct AdvancedAi {
     /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
     /// the mechanism and the 294-of-426 measurement behind it.
     pub blind_objective_strength: bool,
-    /// Judge a force's readiness at the radius it was ASSEMBLED at, not at half
-    /// of it.
-    ///
-    /// ★★★★★ TWO RADII THAT MUST AGREE, AND DO NOT. `rebuild_force_groups`
-    /// builds a group as a CLIQUE in which every pair is within
-    /// `command_radius` (6.0). It then computes readiness as the fraction of
-    /// members within `muster_radius` (3.0) of the anchor — and the anchor is
-    /// `force_anchor`, which is the group's MEDOID, i.e. one of the members. A
-    /// perfectly legal diameter-6 clique can therefore have half its units four
-    /// to six hexes from that member and be permanently un-ready. The group is
-    /// admitted at one radius and judged at half of it, so
-    /// `readiness < muster_readiness` holds forever and the posture never leaves
-    /// `Muster` — whose target is the anchor, i.e. wherever the army already is.
-    ///
-    /// ⚠⚠⚠ Measured across SIX live runs, ~2000 land force decisions. Median
-    /// readiness, by force size:
-    ///
-    /// | run | size ≤3 | size ≥8 |
-    /// |---|---|---|
-    /// | `…191900Z` | 100% | 50% |
-    /// | `…200117Z` | 100% | 56% |
-    /// | `…220954Z` | 100% | 56% |
-    /// | `…231038Z` | 100% | 62% |
-    /// | `…235619Z` | 100% | 48% |
-    /// | `…011632Z` | 100% | 60% |
-    ///
-    /// Six runs out of six: a force of one is always ready, and every real army
-    /// sits below the 0.67 gate. The failure is purely positional — decomposing
-    /// 1594 unit-checks over 85 turns with a field force of 8+, **781 failed on
-    /// distance alone and 1 on health alone**.
-    ///
-    /// What it costs: in `…011632Z`, at war with Sumeria at three-to-one with
-    /// seven trebuchets and the objective naming an enemy city on 98% of
-    /// decisions, **816 of 968 combat unit-turns (84%) were closer to OUR city
-    /// than to theirs** — median 3 hexes from home against 8 from the target.
-    /// Across three such wars the siege reached bombard range of a city ONCE in
-    /// 763 unit-turns, and no enemy city has taken a point of damage.
-    ///
-    /// ⭐ The repair is the radius, not the anchor — that was measured too.
-    /// Recomputing readiness over the same 85 turns:
-    ///
-    /// | anchor / radius | mean readiness | turns clearing the gate |
-    /// |---|---|---|
-    /// | medoid r3 (shipped) | 50.9% | 5/85 (6%) |
-    /// | geometric minimax centre r3 | 36.4% | 3/85 — *worse* |
-    /// | centre r4 | 51.2% | 18/85 |
-    /// | **medoid r6 = `command_radius`** | **82.4%** | **81/85 (95%)** |
-    ///
-    /// A geometric centre drifts off the mass and is worse than the medoid. Only
-    /// the radius matters.
-    ///
-    /// ⚠ The known risk, stated because it is not free: a column that advances
-    /// while spread over six hexes can be defeated in detail. The behaviour it
-    /// replaces is one that never advances at all.
-    ///
-    /// **Off by default, live-bridge only**, and it takes the MAXIMUM of the two
-    /// so an evolved genome that deliberately raises `muster_radius` keeps it.
-    pub muster_at_command_radius: bool,
     /// Give an adaptive Conquest plan the war production path. The routing in
     /// `take_turn` sends Recovery, targeted lanes, and appointed war plans
     /// through `advanced_production` — but an adaptive plan that `assess`
@@ -2441,17 +2336,6 @@ pub struct AdvancedAi {
     /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
     /// written for.
     pub live_wonder_race: bool,
-    /// Price a wonder's missing prerequisites with a share of the wonder's
-    /// own production score, so a valued wonder the city cannot yet start
-    /// pulls its Library, Temple or Campus up the build order instead of
-    /// waiting for them to arrive by accident. The census behind #2061 found
-    /// the binding constraint on most lanes' wonders is the prerequisite
-    /// chain, not the valuation: `can_produce` never offers what the city
-    /// never qualified for. Scored through the `Item::Wonder` arm itself, so
-    /// a wonder the arm refuses earns its prerequisites nothing. Off by
-    /// default; evaluator arm `advanced_wonder_reach`.
-    /// See `wonder_reach_credit`.
-    pub wonder_prereq_reach: bool,
     /// Build the wonders the chosen victory actually needs.
     ///
     /// The wonder arm of `production_value` prices no `spec.effects` at all
@@ -3032,43 +2916,6 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
-    /// An idle walker closes the settler pipeline, and a site the walker
-    /// cannot reach stays retired.
-    ///
-    /// ★★★★ NINETEEN SETTLERS FOR NINE CITIES. Run civvis-20260819T000800Z
-    /// spent 1,620 production — 17% of everything it made — on Settlers;
-    /// three were captured, and five were alive at t195, fourteen to forty
-    /// turns old, parked inside a rival's border, one re-issuing the same
-    /// refused step onto a foreign Holy Site for 27 turns straight ("HELD
-    /// short … the next tile refuses it and nothing is standing there"),
-    /// while the loyalty veto refused every remaining target 130 times
-    /// ("beyond the empire's Loyalty reach on ground the seat has not
-    /// explored"). Cohort of the 13 post-land-grab games: 277 idle
-    /// settler-turns median, 1.4 Settlers built per city founded (wins 1.1).
-    ///
-    /// Three defects, one flag:
-    /// - the `land_grab` pipeline (`LAND_GRAB_PIPELINE_BASE + cities/3`
-    ///   walkers) never asked whether the walkers already out had anywhere
-    ///   to go, so it kept paying for new ones while old ones stood; the
-    ///   older `stalled_expansion` branch even OPENS a replacement seat for a
-    ///   blocked walker — right for the one-settler-at-a-time era it was
-    ///   written in, wrong once the pipeline is two or more. Under this flag
-    ///   any own walker idle for `SETTLER_REPLACEMENT_BLOCKED_TURNS` closes
-    ///   the pipeline until it moves, founds, or dies;
-    /// - a walker whose forecast refused every site returned without
-    ///   counting the turn, so it never read as idle at all. Now it does;
-    /// - `SETTLER_STALL_LIMIT` stalls retired the target into the ONE-slot
-    ///   `settler_avoid` for eight standard turns, and the walker re-picked
-    ///   the same site the moment it expired (the same single-slot weakness
-    ///   #1689 replaced on the loyalty path with `settler_dead_sites`). Now
-    ///   the stall path retires the site into the dead-site set for
-    ///   `SETTLER_DEAD_SITE_AVOID_TURNS` as well, and a walker idle for twice
-    ///   the replacement threshold with no target left tries to found where it
-    ///   stands before holding another turn.
-    ///
-    /// Live bundle and native repair (economy half): the pipeline and the
-    /// stall path are the engine's. Off for ordinary and frozen controllers.
-    pub idle_walkers_close_the_pipeline: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -3651,27 +3498,6 @@ pub struct AdvancedAi {
     /// cannot be misattributed to production.
     pub envoy_infrastructure: bool,
 
-    /// Price the Religion lane's own district on the same scale the Culture
-    /// lane prices its own.
-    ///
-    /// `strategic_family` pays `(Culture, theater_square)` **850** and
-    /// `(Religion, holy_site)` **210** — a quarter — even though religious
-    /// victory is the route this engine actually converts: in the 2026-08-10
-    /// district-priority batch the winning arm took 267 of its 323 wins by
-    /// religion and 15 by culture. Neither number has ever been measured.
-    /// `grep strategic_family docs/EVAL.md` is empty, and `210.0` entered in
-    /// `0f6bd85e`, a bulk progression-and-command commit, not an evaluation.
-    ///
-    /// This is an **upper bound, not a proposal**, in the same sense as
-    /// `settler_price` under `advanced_settler_first`: it takes the largest
-    /// own-lane figure in the table rather than a tuned one, so a null result
-    /// retires the axis instead of leaving "maybe a smaller number would have
-    /// worked". Everything else about the lane is untouched, so a gain here is
-    /// the Religion empire building its own district sooner and nothing else.
-    ///
-    /// Off by default; evaluator arm `advanced_holy_lane`, and the native
-    /// gene `holy-lane-parity` (`PRODUCTION_OPT_INS`) since 2026-08-21.
-    pub holy_lane_parity: bool,
 
     /// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. The 6p 60k
     /// screen (13,446 seat-pairs, 2026-08-20): a seat that founded a religion
@@ -4045,12 +3871,6 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
-/// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
-///
-/// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
-/// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
-const HOLY_LANE_PARITY: f64 = 850.0;
-
 /// What an open Diplomacy lane is worth before it has produced anything.
 ///
 /// Religion's own opening figure, copied rather than chosen: see
@@ -4757,7 +4577,6 @@ impl AdvancedAi {
             force_groups: Vec::new(),
             force_groups_dirty: false,
             settlement_atlas: RefCell::new(SettlementAtlas::default()),
-            wonder_reach: RefCell::new(WonderReachLedger::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -4767,14 +4586,11 @@ impl AdvancedAi {
             battlefront_frame: None,
             promote_when_wounded: false,
             strike_opening: false,
-            ranged_needs_line_of_sight: false,
             engine_faith_price: false,
             army_target_weighs_the_enemy: false,
             peacetime_deterrence: false,
-            suzerain_cards_need_a_suzerainty: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
-            muster_at_command_radius: false,
             war_economy: false,
             war_reinforcement: false,
             war_patience: false,
@@ -4832,7 +4648,6 @@ impl AdvancedAi {
             governor_in_recovery: true,
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
-            wonder_prereq_reach: false,
             strategic_wonders: false,
             expansion_before_prophet: false,
             no_elective_war: false,
@@ -4871,7 +4686,6 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
-            idle_walkers_close_the_pipeline: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -4896,7 +4710,6 @@ impl AdvancedAi {
             congress_counter_votes: false,
             congress_banks_a_decided_vote: false,
             envoy_infrastructure: false,
-            holy_lane_parity: false,
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
@@ -5016,11 +4829,6 @@ impl AdvancedAi {
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
     pub fn naval_recon(&self) -> bool {
         self.base.naval_recon
-    }
-
-    /// Whether the wider camp reach is on. See `BasicAi::camp_reach`.
-    pub fn camp_reach(&self) -> bool {
-        self.base.camp_reach
     }
 
     /// Whether the adjacent camp clear is on. See
@@ -8797,96 +8605,6 @@ impl AdvancedAi {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
     }
 
-    /// What producing `item` is worth purely as a step toward wonders this
-    /// city cannot start yet: the `wonder_prereq_reach` treatment. Zero for
-    /// anything but a Building or District, and zero whenever the
-    /// `Item::Wonder` arm itself would refuse the wonder — the credit is a
-    /// share of that arm's own score, so every lane gate, era gate and
-    /// completion gate the arm applies keeps applying here. Returned in the
-    /// same normalized units as `production_value`'s result and added after
-    /// its normalizer: the credit is the wonder's discounted score, not a
-    /// property of the carrier's own cost.
-    fn wonder_reach_credit(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        item: &Item,
-        plan: &StrategicPlan,
-        counts: &EmpireCounts,
-    ) -> f64 {
-        if !matches!(item, Item::Building { .. } | Item::District { .. }) {
-            return 0.0;
-        }
-        let credit_for = |credits: &BTreeMap<Name, f64>| {
-            credits
-                .iter()
-                .filter(|(family, _)| g.item_satisfies_wonder_prerequisite(item, **family))
-                .map(|(_, credit)| *credit)
-                .fold(0.0, f64::max)
-        };
-        {
-            let ledger = self.wonder_reach.borrow();
-            if ledger.valid && ledger.pid == pid && ledger.cid == cid && ledger.turn == g.turn {
-                return credit_for(&ledger.credits);
-            }
-        }
-        let credits = self.wonder_reach_credits(g, pid, cid, plan, counts);
-        let credit = credit_for(&credits);
-        *self.wonder_reach.borrow_mut() = WonderReachLedger {
-            pid,
-            cid,
-            turn: g.turn,
-            valid: true,
-            credits,
-        };
-        credit
-    }
-
-    /// Build one city's ledger: for every wonder blocked here only by
-    /// missing buildings/districts, score the wonder through the ordinary
-    /// `Item::Wonder` arm as if it had ground, and credit each missing
-    /// prerequisite family with `WONDER_REACH_SHARE` of that score split
-    /// across the missing steps. Families keep the best wonder they unblock,
-    /// not a sum — finishing a Library does not finish two wonders.
-    fn wonder_reach_credits(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-        counts: &EmpireCounts,
-    ) -> BTreeMap<Name, f64> {
-        let mut credits = BTreeMap::new();
-        let city_pos = g.cities[&cid].pos;
-        for wonder in g.rules.wonders.keys() {
-            let Some(missing) = g.wonder_missing_prerequisites(cid, wonder.as_str()) else {
-                continue;
-            };
-            if missing.is_empty() || missing.len() > WONDER_REACH_MAX_MISSING {
-                continue;
-            }
-            let hypothetical = Item::Wonder {
-                wonder: *wonder,
-                pos: city_pos,
-            };
-            let score = self.production_value(g, pid, cid, &hypothetical, plan, counts);
-            if score <= 0.0 {
-                continue;
-            }
-            let share = score * WONDER_REACH_SHARE / missing.len() as f64;
-            for group in missing {
-                for family in group {
-                    let entry = credits.entry(family).or_insert(0.0);
-                    if share > *entry {
-                        *entry = share;
-                    }
-                }
-            }
-        }
-        credits
-    }
-
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
     ///
     /// Worked backwards from the win condition rather than forwards from the
@@ -10746,47 +10464,6 @@ impl AdvancedAi {
                 let at = desired.len().min(RESEARCH_DECK_INSERT);
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
             }
-        }
-
-        // ⚠⚠ A CARD THAT MULTIPLIES SOMETHING WE DO NOT HAVE IS WORTH ZERO, and
-        // the deck lists above are static, so nothing noticed. Every one of these
-        // scales off SUZERAIN city-states:
-        //
-        //   raj                         suzerain_all_yields          2
-        //   wisselbanken                allied_suzerain_trade_*      2
-        //   collective_activism         culture_pct_per_suzerain     5
-        //   international_space_agency  science_pct_per_suzerain     5
-        //
-        // At zero suzerainties each pays exactly nothing, and they sit in the
-        // Religion, Diplomacy and Recovery lists unconditionally. Live run
-        // `civvis-20260803T191900Z` finished holding **0 suzerainties with 56
-        // unspent envoys** and had slotted BOTH `raj` and `wisselbanken` — two of
-        // six slots returning zero for the whole game.
-        //
-        // Demoted, not dropped: they are the right cards the moment a suzerainty
-        // exists, and the empire that takes one mid-game should pick them up
-        // without a second mechanism. Sending them to the tail lets the slot go
-        // to a card that pays now, and self-corrects when the board changes.
-        //
-        // Same shape as the Campus gate directly above — "the empire must own a
-        // Campus for them to mean anything" — applied to the other precondition
-        // the deck ignores.
-        const SUZERAIN_CONDITIONAL: [&str; 4] = [
-            "raj",
-            "wisselbanken",
-            "collective_activism",
-            "international_space_agency",
-        ];
-        let suzerainties = g
-            .players
-            .iter()
-            .filter(|p| p.is_minor && p.alive)
-            .map(|p| p.id)
-            .filter(|minor| g.suzerain_of(*minor) == Some(pid))
-            .count();
-        if self.suzerain_cards_need_a_suzerainty && suzerainties == 0 {
-            desired.retain(|card| !SUZERAIN_CONDITIONAL.contains(card));
-            desired.extend(SUZERAIN_CONDITIONAL);
         }
 
         // A host-observed Amenity deficit is an immediate yield loss, but a
@@ -18323,74 +18000,6 @@ impl AdvancedAi {
     /// sighted on none of them — a tile out of range entirely is not blind, it
     /// is just far, and [`AdvancedAi::strike_opening_value`] and the depth
     /// term already speak to that.
-    /// How many candidate tiles the blind-ranged penalty has charged this
-    /// process. Diagnostic only: a treatment that measures null is only
-    /// informative once it is known to have fired at all.
-    fn blind_tile_tally() -> &'static std::sync::atomic::AtomicUsize {
-        static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        &SEEN
-    }
-
-    fn note_blind_tile() {
-        Self::blind_tile_tally().fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Candidate tiles rejected so far for having no line of sight.
-    pub fn blind_tiles_charged() -> usize {
-        Self::blind_tile_tally().load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn ranged_tile_is_blind(
-        &self,
-        g: &Game,
-        pid: usize,
-        uid: u32,
-        tile: Pos,
-        enemies: &[usize],
-        visible: Option<&crate::world::TileBits>,
-    ) -> bool {
-        if !self.ranged_needs_line_of_sight {
-            return false;
-        }
-        let unit = &g.units[&uid];
-        let spec = &g.rules.units[unit.kind];
-        if spec.class != "military" || !spec.has_ranged_attack() {
-            return false;
-        }
-        let reach = g.unit_attack_range(uid).max(1);
-        let mut in_range = false;
-        for enemy in g.units.values() {
-            if !enemies.contains(&enemy.owner)
-                || g.rules.units[enemy.kind].class != "military"
-                || g.wdist(tile, enemy.pos) > reach
-            {
-                continue;
-            }
-            if visible.is_some_and(|visible| {
-                !(g.sees(visible, enemy.pos) && self.battlefront_unit_visible(g, pid, enemy.id))
-            }) {
-                continue;
-            }
-            in_range = true;
-            if g.line_of_sight_from(tile, enemy.pos) {
-                return false;
-            }
-        }
-        for city in g.cities.values() {
-            if !enemies.contains(&city.owner) || g.wdist(tile, city.pos) > reach {
-                continue;
-            }
-            if visible.is_some_and(|visible| !g.sees(visible, city.pos)) {
-                continue;
-            }
-            in_range = true;
-            if g.line_of_sight_from(tile, city.pos) {
-                return false;
-            }
-        }
-        in_range
-    }
-
     /// What a tile is worth for the attack it opens.
     ///
     /// Movement otherwise prices only progress, support, and incoming threat;
@@ -18962,11 +18571,6 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
-        // See `idle_walkers_close_the_pipeline`: a walker with nowhere to go
-        // is the pipeline's whole allowance until it moves, founds or dies.
-        if self.idle_walkers_close_the_pipeline && stalled_expansion && settlers > 0 {
-            return 0;
-        }
         if self.land_grab && city_count + settlers < desired_cities {
             // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
             // `land_grab`: two walkers from the first city, one more for
@@ -20143,13 +19747,7 @@ impl AdvancedAi {
                     // See `tally_culture`: the civic tree pays three a rung.
                     (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
-                    (GrandStrategy::Religion, "holy_site") => {
-                        if self.holy_lane_parity {
-                            HOLY_LANE_PARITY
-                        } else {
-                            210.0
-                        }
-                    }
+                    (GrandStrategy::Religion, "holy_site") => 210.0,
                     (GrandStrategy::Culture, "theater_square") => 850.0,
                     (GrandStrategy::Culture, "preserve") => 210.0,
                     (GrandStrategy::Diplomacy, "diplomatic_quarter") => 360.0,
@@ -20652,17 +20250,7 @@ impl AdvancedAi {
         } else {
             1.0
         };
-        let normalized = completion_discount * raw / (7.0 + turns.max(1.0));
-        if !self.wonder_prereq_reach {
-            return normalized;
-        }
-        // Added after the normalizer, in its units: the credit is a share of
-        // a wonder's already-normalized score, not a yield of the carrier —
-        // dividing it again by the carrier's build time would make a cheap
-        // Monument a better step toward the Great Library than the Library
-        // it requires. Refusals returned above and never reach this line, so
-        // a vetoed carrier cannot be resurrected by the wonder behind it.
-        normalized + self.wonder_reach_credit(g, pid, cid, item, plan, counts)
+        completion_discount * raw / (7.0 + turns.max(1.0))
     }
 
     fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
@@ -23222,15 +22810,6 @@ impl AdvancedAi {
                         }
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
-                        // See `idle_walkers_close_the_pipeline`: a site the
-                        // walker could not reach three turns running stays
-                        // retired for as long as a doomed one does.
-                        if self.idle_walkers_close_the_pipeline {
-                            self.settler_dead_sites.entry(uid).or_default().insert(
-                                target,
-                                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-                            );
-                        }
                         self.settler_targets.remove(&uid);
                         self.settler_stalls.remove(&uid);
                     }
@@ -23379,21 +22958,6 @@ impl AdvancedAi {
             }
         });
         let Some(mut target) = target else {
-            // See `idle_walkers_close_the_pipeline`: a walker that found no
-            // site this turn is idle, and the pipeline reads that; one idle
-            // for twice the replacement threshold founds where it stands if
-            // the engine and the safety guard allow it, rather than holding
-            // for the rest of the game.
-            if self.idle_walkers_close_the_pipeline {
-                let idle = self.settler_blocked_turns.entry(uid).or_insert(0);
-                *idle += 1;
-                let idle = *idle;
-                if idle >= 2 * SETTLER_REPLACEMENT_BLOCKED_TURNS
-                    && self.founds_where_it_stands(g, pid, uid, current)
-                {
-                    return true;
-                }
-            }
             // Do not let a safe exhaustion fall through to `BasicAi`, which
             // cannot see `settler_dead_sites` and may select the very plot the
             // live forecast just retired. A later board can reveal a safe site
@@ -23655,13 +23219,6 @@ impl AdvancedAi {
                 }
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
-                // See `idle_walkers_close_the_pipeline`.
-                if self.idle_walkers_close_the_pipeline {
-                    self.settler_dead_sites.entry(uid).or_default().insert(
-                        target,
-                        g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-                    );
-                }
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_closest.remove(&uid);
@@ -25679,21 +25236,7 @@ impl AdvancedAi {
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
             let focus_target = self.force_focus_target(g, pid, &units, &enemies, plan);
-            // See [`AdvancedAi::muster_at_command_radius`]: the group was built
-            // as a clique at `command_radius`, so judging it inside half that
-            // of its own medoid makes the gate unreachable for any real army.
-            // MAX, not replace, so an evolved genome that raises `muster_radius`
-            // above the command radius keeps its own value.
-            let muster_radius = if self.muster_at_command_radius {
-                self.base
-                    .w
-                    .muster_radius
-                    .max(self.base.w.command_radius)
-                    .round()
-                    .max(1.0) as i32
-            } else {
-                self.base.w.muster_radius.round().max(1.0) as i32
-            };
+            let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
                 .iter()
                 .filter(|uid| {
@@ -26080,10 +25623,6 @@ impl AdvancedAi {
                 value -= crate::ai::WATER_MARCH_PENALTY;
             }
             value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
-            if self.ranged_tile_is_blind(g, pid, uid, tile, &enemies, visible.as_ref()) {
-                value -= BLIND_RANGED_TILE;
-                Self::note_blind_tile();
-            }
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing

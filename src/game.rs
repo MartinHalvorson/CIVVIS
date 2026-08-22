@@ -21276,7 +21276,7 @@ impl Game {
     /// asked of a tile the unit is only *considering*. Movement scoring needs
     /// it because line of sight binds at exactly range 2 — adjacent fire is
     /// unconditional and range 3+ lobs — which is precisely where a Field
-    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    /// Cannon parks.
     pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
         if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
             return false;
@@ -30436,73 +30436,6 @@ impl Game {
         }
         out.sort();
         out
-    }
-
-    /// The construction still standing between this city and a wonder: the
-    /// same building/district checks `wonder_sites` applies before it ever
-    /// looks at ground, reported as what is missing rather than as an empty
-    /// site list. Each inner group is a set of alternatives of which one
-    /// suffices (`requires_any_buildings`); `requires_buildings` and
-    /// `adjacent_district` contribute singleton groups. `None` means no
-    /// amount of construction here can open the wonder — already built
-    /// anywhere, tech/civic locked, host-refused in this city, or waiting on
-    /// a religion. An empty list means construction is not the blocker.
-    pub(crate) fn wonder_missing_prerequisites(
-        &self,
-        cid: u32,
-        wname: &str,
-    ) -> Option<Vec<Vec<Name>>> {
-        let city = &self.cities[&cid];
-        let spec = &self.rules.wonders[wname];
-        if self.wonder_built(wname)
-            || !self.unlocked(city.owner, &spec.tech, &spec.civic)
-            || self.host_unavailable_wonders.contains(&Name::new(wname))
-            || self
-                .blocked_wonders
-                .get(&cid)
-                .is_some_and(|blocked| blocked.contains(&Name::new(wname)))
-            || (spec.founded_religion && self.players[city.owner].religion.is_none())
-            || (spec
-                .effects
-                .get("free_warrior_monks")
-                .copied()
-                .unwrap_or(0.0)
-                > 0.0
-                && self.players[city.owner].religion.is_none()
-                && self.city_religion(city).is_none())
-        {
-            return None;
-        }
-        let mut missing = Vec::new();
-        for required in &spec.requires_buildings {
-            if !self.city_has_building_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        if !spec.requires_any_buildings.is_empty()
-            && !spec
-                .requires_any_buildings
-                .iter()
-                .any(|required| self.city_has_building_family(city, *required))
-        {
-            missing.push(spec.requires_any_buildings.clone());
-        }
-        if let Some(required) = &spec.adjacent_district {
-            if required != "city_center" && !self.city_has_district_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        Some(missing)
-    }
-
-    /// Whether producing this item is one of the ways to satisfy a wonder
-    /// prerequisite family reported by `wonder_missing_prerequisites`.
-    pub(crate) fn item_satisfies_wonder_prerequisite(&self, item: &Item, family: Name) -> bool {
-        match item {
-            Item::Building { building } => self.building_is_family(*building, family),
-            Item::District { district, .. } => self.district_is_family(*district, family),
-            _ => false,
-        }
     }
 
     pub fn item_cost(&self, item: &Item) -> f64 {
