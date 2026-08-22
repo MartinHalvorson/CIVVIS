@@ -87,6 +87,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `early-contact-window` | off (unmeasured) | Buy the second and third Scout while the world's borders are still open — after Early Empire a city-state cannot be met by land at all. |
 | `enhancer-for-the-corps` | off (unmeasured) | Evangelize the beliefs that multiply a religious corps while the corps has a job, instead of the victory lane's worship building. |
 | `envoy-infrastructure` | off (unmeasured) | Value the infrastructure that produces city-state influence: the Consulate and Chancery's per-turn influence becomes the envoys it can produce before the tur… |
+| `fifteenth-citizen` | off (unmeasured) | A Campus city within reach of the Population gate credits growth with what crossing it unlocks. |
 | `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
 | `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |

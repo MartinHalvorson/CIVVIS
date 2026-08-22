@@ -307,4 +307,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // adjacency half it pays. Appended at the end, for the reason above. See
     // `AdvancedAi::campus_adjacency_threshold`.
     ("campus_adjacency_threshold", "campus-adjacency-threshold", AdvancedAi::enable_campus_adjacency_threshold),
+    // The one multiplier gate this empire can actually reach: five Campus
+    // cities growing, five citizens short each. Appended at the END so a
+    // running screen keeps its positional genome. See
+    // `AdvancedAi::fifteenth_citizen`.
+    ("fifteenth_citizen", "fifteenth-citizen", AdvancedAi::enable_fifteenth_citizen),
 ];

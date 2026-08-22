@@ -304,6 +304,18 @@ impl AdvancedAi {
         self.campus_adjacency_threshold = false;
     }
 
+    /// A Campus city within reach of the Population gate credits growth with
+    /// what crossing it unlocks. See [`AdvancedAi::fifteenth_citizen`].
+    /// Opt-in gene `fifteenth-citizen`.
+    pub fn enable_fifteenth_citizen(&mut self) {
+        self.fifteenth_citizen = true;
+    }
+
+    /// The twin of `enable_fifteenth_citizen`.
+    pub fn disable_fifteenth_citizen(&mut self) {
+        self.fifteenth_citizen = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.

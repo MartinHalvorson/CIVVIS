@@ -126,24 +126,25 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 87_000_000 + i).collect();
-    // ⚠ ROUND FOUR: the gate, not the price. The two building-half genes are
-    // settled (+25%/+20% Labs, +12–13.5% Science) and `power-the-laboratory`
-    // is a measured null. What is open is the multiplier half NO Campus in the
-    // empire clears — 0 of 9, with four cities holding a free adjacency-4 plot.
+    let seeds: Vec<u64> = (0..12).map(|i| 88_000_000 + i).collect();
+    // ⚠ ROUND FIVE: the one gate this empire can reach. Rounds three and four
+    // settled the building-half genes (+25%/+20%/+21.7% Research Labs across
+    // disjoint seeds, now merged) and killed two nulls. The gate census then
+    // found Rationalism slotted with BOTH halves unearned, and the map probe
+    // showed the adjacency half is unreachable — under 1% of land. This prices
+    // the population half, where five Campus cities were still growing and
+    // five citizens short.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("campus-adjacency-threshold", |ai| {
-            ai.enable_campus_adjacency_threshold()
-        }),
+        ("fifteenth-citizen", |ai| ai.enable_fifteenth_citizen()),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + threshold", |ai| {
+        ("premium + payoff + fifteenth", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_campus_adjacency_threshold();
+            ai.enable_fifteenth_citizen();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
@@ -468,6 +469,38 @@ mod science_gates_probe {
 
         pops.sort_unstable();
         let median = pops.get(pops.len() / 2).copied().unwrap_or(0);
+        // ⭐ THE OTHER HALF, AND THE ONLY REACHABLE ONE. The adjacency gate is
+        // dead on this profile — under 1% of land can host a Campus that
+        // clears it (see `how_much_of_the_map_could_ever_host_a_high_adjacency
+        // _campus`). The POPULATION gate is a different story: the median
+        // Campus city sits at 12 against a threshold of 15. Whether that is a
+        // choice or a ceiling depends on whether those cities can still grow,
+        // so count the headroom rather than assuming it.
+        let mut short_of_fifteen = 0;
+        let mut short_but_growing = 0;
+        let mut short_and_capped = 0;
+        let mut pop_gap_total = 0;
+        for cid in &cities {
+            let city = &g.cities[cid];
+            if !g.city_has_district_family(city, campus) || city.pop >= 15 {
+                continue;
+            }
+            short_of_fifteen += 1;
+            pop_gap_total += 15 - city.pop;
+            let yields = g.city_yields(*cid);
+            let housing = g.city_housing(city);
+            if housing > city.pop as f64 && yields.food > 0.0 {
+                short_but_growing += 1;
+            } else {
+                short_and_capped += 1;
+            }
+        }
+        println!(
+            "POPGATE campus_cities_under_15={short_of_fifteen} \
+             still_growing={short_but_growing} capped={short_and_capped} \
+             total_pop_short={pop_gap_total}"
+        );
+
         let rationalism = g.players[0].policies.contains(&crate::name!("rationalism"));
         let philosophy = g.players[0]
             .policies
@@ -489,6 +522,184 @@ mod science_gates_probe {
                 .iter()
                 .map(|c| g.city_yields(*c).science)
                 .sum::<f64>()
+        );
+    }
+}
+
+#[cfg(test)]
+mod map_reach_probe {
+    use super::*;
+
+    /// Is the Campus multiplier's adjacency gate reachable ON THIS MAP AT ALL?
+    ///
+    /// The third survey correction established that no LEGAL Campus plot in
+    /// the empire ever reached 4 raw Science. That leaves two very different
+    /// worlds: the seat founds its cities in the wrong places, or the profile
+    /// the screen runs simply has nowhere to put such a Campus. Only the first
+    /// is worth a gene, and this counts which it is — over the whole map,
+    /// before anyone has built anything.
+    #[test]
+    #[ignore = "probe"]
+    fn how_much_of_the_map_could_ever_host_a_high_adjacency_campus() {
+        let campus = crate::name!("campus");
+        let mut totals = Vec::new();
+        for seed in 0..3u64 {
+            let g = Game::new(6, 60, 38, 87_000_000 + seed, 250, 6);
+            let mut buckets = [0usize; 6];
+            let mut land = 0usize;
+            for (position, tile) in g.map.tiles.iter() {
+                // Only ground a Campus could stand on; the mountains that make
+                // the arithmetic look good are exactly where it cannot go.
+                if tile.terrain == crate::name!("ocean")
+                    || tile.terrain == crate::name!("coast")
+                    || tile.terrain == crate::name!("mountain")
+                    || tile.terrain == crate::name!("lake")
+                {
+                    continue;
+                }
+                land += 1;
+                let mut yields = Yields::default();
+                for source in g.district_adjacency_sources(campus, *position) {
+                    if source.source != "adjacency_bonus" {
+                        yields.add(source.yields);
+                    }
+                }
+                let bucket = (yields.science.max(0.0) as usize).min(5);
+                buckets[bucket] += 1;
+            }
+            totals.push((seed, land, buckets));
+        }
+        for (seed, land, buckets) in &totals {
+            let four_plus = buckets[4] + buckets[5];
+            println!(
+                "MAP seed {} land_plots={land} adjacency 0:{} 1:{} 2:{} 3:{} 4+:{} \
+                 ({:.2}% of land could host a gate-clearing Campus)",
+                87_000_000 + seed,
+                buckets[0],
+                buckets[1],
+                buckets[2],
+                buckets[3],
+                four_plus,
+                100.0 * four_plus as f64 / (*land).max(1) as f64
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod envoy_and_deck_probe {
+    use super::*;
+
+    /// The two science multipliers the gate census left unexplained: a
+    /// suzerainty count of ZERO, and Natural Philosophy never slotted.
+    ///
+    /// `international_space_agency` is `science_pct_per_suzerain: 5`, so four
+    /// suzerainties would be +20% empire science — and the seat ends with
+    /// none. `natural_philosophy` doubles a Campus's adjacency yield (it
+    /// cannot open the Population/adjacency GATE, which `city_yields` reads
+    /// raw, but it doubles what the district earns), and
+    /// `strategic_policies` inserts it beside Rationalism the moment the
+    /// empire owns a Campus.
+    ///
+    /// ★★★★ ANSWERED, AND THE ANSWER IS THAT NEITHER IS A GENE. Measured on
+    /// the screen's own profile:
+    ///
+    /// ```text
+    /// DECK  running = cryptography, five_year_plan, gunboat_diplomacy,
+    ///                 levee_en_masse, new_deal, rationalism, wisselbanken
+    ///       slots   = military 1 · ECONOMIC 2 · diplomatic 3 · wildcard 1
+    /// ENVOYS unspent 0 · peak unspent 1 · PLACED 16
+    /// city-states alive 4 · met 4 · ours 0 (PEAK 2) · taken by rivals 2
+    /// ```
+    ///
+    /// **Natural Philosophy is not missing, it is homeless.** There are TWO
+    /// economic slots and Rationalism is in one of them; the card that would
+    /// double a Campus's adjacency has nowhere to go, and Rationalism is the
+    /// better of the two anyway. No pricing term creates a slot.
+    ///
+    /// **The envoys are not banked either** — 16 placed, 0 unspent, so the
+    /// native seat does not have the live seat's 56-envoy hole. What it has is
+    /// a LOSS: suzerainty peaked at 2 and ended at 0, with 2 of the four
+    /// living city-states held by rivals. That is an influence race, not a
+    /// valuation gap, and `international_space_agency` would need a slot the
+    /// deck has not got either.
+    ///
+    /// ⇒ The science-multiplier lane is exhausted for pricing genes. What is
+    /// left of it is slot scarcity (a government question) and an influence
+    /// race (a diplomatic one). The lever that works stays the one already
+    /// merged: buy more Campus BUILDINGS.
+    #[test]
+    #[ignore = "probe"]
+    fn where_do_the_envoys_and_the_science_cards_go() {
+        let mut g = Game::new(6, 60, 38, 88_000_000, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        let mut others = AdvancedAi::fleet(&g);
+        let mut peak_envoys = 0i64;
+        let mut peak_suzerain = 0usize;
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+                peak_envoys = peak_envoys.max(g.players[0].envoys_free);
+                peak_suzerain = peak_suzerain.max(
+                    g.players
+                        .iter()
+                        .filter(|p| p.is_minor && p.alive)
+                        .filter(|p| g.suzerain_of(p.id) == Some(0))
+                        .count(),
+                );
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        let minors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|p| p.is_minor && p.alive)
+            .map(|p| p.id)
+            .collect();
+        let met = minors.iter().filter(|m| g.has_met(0, **m)).count();
+        let ours = minors
+            .iter()
+            .filter(|m| g.suzerain_of(**m) == Some(0))
+            .count();
+        let taken = minors
+            .iter()
+            .filter(|m| g.suzerain_of(**m).is_some_and(|s| s != 0))
+            .count();
+        // The deck: what the seat is actually running at the end.
+        let slotted: Vec<&str> = [
+            "rationalism",
+            "natural_philosophy",
+            "international_space_agency",
+        ]
+        .into_iter()
+        .filter(|card| g.players[0].policies.contains(&Name::new(card)))
+        .collect();
+        // What is actually running, and whether anything could have joined it.
+        let running: Vec<String> = g.players[0]
+            .policies
+            .iter()
+            .map(|card| card.to_string())
+            .collect();
+        let slots = g.gov_slots(0);
+        println!("DECK running={running:?} slots={slots:?}");
+        println!(
+            "ENVOYS unspent_at_end={} peak_unspent={peak_envoys} placed={} · \
+             city_states alive={} met={met} OURS={ours} (peak {peak_suzerain}) \
+             taken_by_rivals={taken} · science_cards_slotted={slotted:?} · \
+             cards_running={}",
+            g.players[0].envoys_free,
+            g.players[0].envoys.iter().map(|(_, n)| n).sum::<i64>(),
+            minors.len(),
+            g.players[0].policies.len()
         );
     }
 }
