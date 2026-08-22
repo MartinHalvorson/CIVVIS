@@ -34,10 +34,60 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 # The ledger tool owns the win column: it decides each gene's default from the
 # same two numbers this table prints, so both must be one arithmetic.
-from gene_ledger import wins_per_10k as wins_per  # noqa: E402
+from gene_ledger import PER, wins_per_10k as wins_per  # noqa: E402
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
+
+#: A two-sided 5% test reaches 80% power at 1.96 + 0.84 standard errors.
+POWER_80 = 2.8
+
+
+def column_se(win_se_pp: float) -> float:
+    """One `wins_per` column's standard error, in the column's own units.
+
+    A screen reports `win_se_pp`: the error on the on−off **difference**, in
+    percentage points. The column is `(win_on - chance) * PER`, and a foldover
+    holds the two arms symmetric about chance, so the column is **half** that
+    difference and carries half its error. The two are not interchangeable,
+    and quoting one against the other is not a rounding error: the ±110/10k
+    band #2266 called eight removals "inside" is the difference's band, twice
+    the width of the column it was read against. Derived here so the printed
+    band and the printed column stay one arithmetic, the way `wins_per` and
+    the ledger's default already are.
+    """
+    return win_se_pp * PER / 200.0
+
+
+def resolutions(ledger: dict) -> list[dict]:
+    """What each native screen can actually resolve, from its own errors.
+
+    The median gene's column standard error times `POWER_80`. Screens are not
+    interchangeable here: a screen that randomizes one gene resolves far
+    tighter than a whole-genome screen of the same size, because the other
+    genes' draws are not in its residual. Newest first.
+    """
+    out = []
+    for src in ledger["sources"]:
+        if src["regime"] != "native":
+            continue
+        data = json.loads((ROOT / src["path"]).read_text())
+        errors = sorted(
+            column_se(float(gene["win_se_pp"]))
+            for gene in data.get("genes", [])
+            if gene.get("win_se_pp") is not None
+        )
+        if not errors:
+            continue
+        median = errors[len(errors) // 2]
+        out.append({
+            "name": Path(src["path"]).name,
+            "genes": len(errors),
+            "pairs": int(data.get("complete_pairs", 0)),
+            "se": median,
+            "band": POWER_80 * median,
+        })
+    return list(reversed(out))
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 ELO_RS = ROOT / "src" / "elo.rs"
@@ -207,11 +257,30 @@ def render(ledger: dict) -> str:
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a "
         "four-player screen), so the expected count is 1,667 wins per 10,000 games and the "
-        "win columns say how far above or below that a seat carrying the gene lands; the "
-        "whole-genome screen resolves about ±110 wins per 10,000 at 80% power and a "
-        "single-gene 6,000-seat-pair screen about ±130 — differences inside that band are "
-        "noise, not nulls. Screens differ in baseline as repairs land, so the *Prior* "
-        "column reads as history, not a strict A/B against *Last*.",
+        "win columns say how far above or below that a seat carrying the gene lands. "
+        "**A column is half its screen’s on−off difference** — a foldover puts the two arms "
+        "either side of chance — so the band that says whether a column is real is half the "
+        "band on that difference. The two are not interchangeable: the ±110/10k figure this "
+        "paragraph used to quote, and #2266 used to call eight removals noise, is the "
+        "*difference*’s band and is twice too wide for the column beside it. Each screen’s "
+        "own band is below, derived from its errors rather than quoted. Screens differ in "
+        "baseline as repairs land, so the *Prior* column reads as history, not a strict A/B "
+        "against *Last*.",
+        "",
+        "**What each native screen resolves.** The median gene’s column standard error "
+        f"times {POWER_80} — a two-sided 5% test at 80% power. A screen that randomizes "
+        "one gene resolves far tighter than a whole-genome screen of the same size, "
+        "because the other genes’ draws are not in its residual — so judge a column "
+        "against the band of the screen named beside it, not against a single number "
+        "for the instrument.",
+        "",
+        "| Native screen | Genes | Seat pairs | 1 SE | ±80% power |",
+        "|---|---:|---:|---:|---:|",
+        *(
+            f"| `{r['name']}` | {r['genes']} | {fmt_int(r['pairs'])} | "
+            f"{r['se']:.1f} | ±{r['band']:.0f} |"
+            for r in resolutions(ledger)
+        ),
         "",
         "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
         "on/off percent change in wall seconds per completed turn, while *cost (time)* "
