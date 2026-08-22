@@ -102,7 +102,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_frontier_loyalty",
     "live_without_garrison_under_fire",
     "live_without_naval_recon",
-    "live_without_recon_flight",
     "live_without_recon_replacement",
     "live_without_religion_sues_peace",
     "live_without_score_horizon",
@@ -374,7 +373,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "expansion-before-prophet",
     "no-elective-war",
     "fog-land-capacity",
-    "recon-flight",
     "score-horizon",
     "one-launch-pad",
     "naval-recon",
@@ -614,7 +612,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "garrison-under-fire",
     "strike-opening",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
     "barbarian-hunt",
     "barbarian-bargain",
@@ -698,7 +695,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "garrison-under-fire",
     "strike-opening",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
     "barbarian-hunt",
     "barbarian-bargain",
@@ -807,7 +803,6 @@ define_arm_kinds! {
     LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
     LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
     LiveWithoutNavalRecon => "live_without_naval_recon",
-    LiveWithoutReconFlight => "live_without_recon_flight",
     LiveWithoutReconReplacement => "live_without_recon_replacement",
     LiveWithoutReligionSuesPeace => "live_without_religion_sues_peace",
     LiveWithoutScoreHorizon => "live_without_score_horizon",
@@ -3573,7 +3568,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_recon_fleet" => {
             let mut ai = AdvancedAi::new();
             ai.disable_recon_replacement();
-            ai.disable_recon_flight();
             ai.disable_naval_recon();
             ai.disable_come_ashore();
             Box::new(ai)
@@ -4488,7 +4482,6 @@ impl ArmKind {
             Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
             Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
             Self::LiveWithoutNavalRecon => live_without("naval-recon"),
-            Self::LiveWithoutReconFlight => live_without("recon-flight"),
             Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
             Self::LiveWithoutReligionSuesPeace => live_without("religion-sues-peace"),
             Self::LiveWithoutScoreHorizon => live_without("score-horizon"),
@@ -4658,12 +4651,7 @@ impl ArmKind {
             Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
-            Self::AdvancedReconFleet => &[
-                "recon-replacement",
-                "recon-flight",
-                "naval-recon",
-                "come-ashore",
-            ],
+            Self::AdvancedReconFleet => &["recon-replacement", "naval-recon", "come-ashore"],
             Self::AdvancedWithoutReconFleet => &["recon-fleet-withheld"],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
