@@ -3,18 +3,35 @@
 //!
 //! ★★★★ THE DEFAULTS ARE THE BEST GENOME, AND THE BEST GENOME IS DATA.
 //! Operator directive 2026-08-20: the defaults for the genes reflect our best
-//! genome — only genes that provably help are on; unhelpful genes default
-//! off — so every verification game (the live seat, the `live` and
+//! genome — so every verification game (the live seat, the `live` and
 //! `advanced_synergy` arms, the ladder) plays the genome the measurements
-//! support, while the screens keep testing and trying to improve the less
-//! helpful genes. Until this module, "on by default" meant "somebody wrote
-//! `self.enable_x()` into the bundle", and the phase-1 anchors measured the
-//! all-on bundle at 7.5% wins against 27% for all-off.
+//! support, while the screens keep testing and trying to improve the rest.
+//! Until this module, "on by default" meant "somebody wrote `self.enable_x()`
+//! into the bundle", and the phase-1 anchors measured the all-on bundle at
+//! 7.5% wins against 27% for all-off.
+//!
+//! ★★★★ THE DEFAULT IS READ OFF THE RANKING'S TWO WIN COLUMNS.
+//! Operator directive 2026-08-22: a gene may default on when **both** its
+//! last and prior native win columns are positive, or when their average
+//! clears +15 with neither column below −10; every other gene defaults off.
+//! A win column is wins added per 10,000 games at the gene's measured on-rate
+//! in one native screen — `(win_on − 1/players) × 10,000`, against the 1-in-
+//! `players` a seat wins by chance — and it is the same number
+//! `HEURISTIC_GENE_RANKING.md` prints. A gene the screens have read fewer
+//! than twice has no prior column to agree with it, so it is off: one screen
+//! is never a result. The war regime does not enter the default.
+//!
+//! What that replaced: the default used to be `verdict == helps`, one
+//! screen's significance test on the deciding regime. The verdicts are still
+//! recorded and still say what the screens proved; they no longer decide what
+//! ships. A gene can now be `helps` and off (its prior reading was against
+//! it) or `hurts` and on (two positive win columns since).
 //!
 //! The table in `gene_ledger_table.rs` is **generated** by
 //! `tools/gene_ledger.py` from `gene_screen --analyze --json` outputs and
 //! mirrored in `docs/gene_ledger.json`; a test holds the generated file and
-//! the JSON together. The verdict rules live in the tool and are repeated
+//! the JSON together, and another re-derives every `default_on` from the two
+//! columns beside it. The verdict rules live in the tool and are repeated
 //! here so the reader of either side finds them:
 //!
 //! - `helps`: in a regime of record, win z ≥ 2 with share z > −2, or share
@@ -25,17 +42,16 @@
 //! - `unresolved`: everything else, including a gene whose two axes
 //!   disagree past |z| ≥ 2 and a gene the screens have not measured.
 //!
-//! The **native** (all six lanes) regime governs the default; the **war**
-//! regime (`domination,score`) is recorded beside it, and a gene that helps
-//! at war and is unresolved natively is on (it has a regime where it provably
-//! helps and none where it provably hurts). A gene that hurts natively is
-//! off whatever the war regime says, because the verification games are the
-//! all-six regime.
+//! The **native** (all six lanes) regime governs the verdict; the **war**
+//! regime (`domination,score`) is recorded beside it, and a gene unresolved
+//! natively takes the war regime's verdict when that resolves. Neither the
+//! war regime nor the verdict reaches the default, which is native-only by
+//! construction: the verification games are the all-six regime.
 //!
 //! `apply_gene_ledger` is what `enable_live_bridge` and
 //! `enable_engine_repairs` end with: every live treatment and production
-//! treatment whose verdict is not `helps` is withheld, every opt-in whose
-//! verdict is `helps` is enabled, and a gene with no ledger row (the
+//! treatment the ledger does not default on is withheld, every opt-in it
+//! defaults on is enabled, and a gene with no ledger row (the
 //! Firaxis-only flags, which no native screen can price) is left exactly as
 //! the bundle set it. The `_universe` twins of those two helpers set every
 //! flag and skip the ledger: they are the genome's universe, for
@@ -78,10 +94,40 @@ pub struct Measure {
 pub struct GeneVerdict {
     pub tag: &'static str,
     pub verdict: Verdict,
+    /// Whether the gene is on in the deployment genome — the win-column rule
+    /// in the module header, decided by `tools/gene_ledger.py` and checked
+    /// here against the two columns below by `the_default_follows_the_win_columns`.
+    pub default_on: bool,
+    /// ± wins per 10,000 games at the gene's measured on-rate in the latest
+    /// native screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
+    /// *± Wins Last 10k*. `None` when no native screen has priced it.
+    pub wins_last_10k: Option<i32>,
+    /// The same figure from the native screen before that — *± Wins 10k
+    /// Prior*. `None` when the gene has only one native reading.
+    pub wins_prior_10k: Option<i32>,
     /// Past the family-wise bar in the regime that decided the verdict.
     pub family_wise: bool,
     pub native: Option<Measure>,
     pub war: Option<Measure>,
+}
+
+/// A gene's win columns clear the deployment rule: both positive, or an
+/// average above `AVERAGE_BAR` with neither column below `COLUMN_FLOOR`.
+/// Fewer than two native readings is off — the mirror of
+/// `tools/gene_ledger.py`'s `default_from_win_columns`, so a hand-edited
+/// table cannot quietly ship a gene the rule does not.
+pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
+    /// Wins per ten thousand games the two-column average must clear.
+    const AVERAGE_BAR: f64 = 15.0;
+    /// No column may sit below this, however good the other one is.
+    const COLUMN_FLOOR: i32 = -10;
+    let (Some(last), Some(prior)) = (last, prior) else {
+        return false;
+    };
+    if last > 0 && prior > 0 {
+        return true;
+    }
+    f64::from(last + prior) / 2.0 > AVERAGE_BAR && last >= COLUMN_FLOOR && prior >= COLUMN_FLOOR
 }
 
 #[path = "gene_ledger_table.rs"]
@@ -108,10 +154,11 @@ pub fn screenable(tag: &str) -> bool {
             .any(|(_, row_tag, _)| *row_tag == tag)
 }
 
-/// Whether a gene is on in the deployment genome: `helps` on, anything else
-/// off — including a screenable gene no screen has measured yet, which is
-/// not proven either. `None` for a gene no native screen can price (the
-/// Firaxis-only flags), which the bundle leaves as it set it.
+/// Whether a gene is on in the deployment genome: the ledger's own
+/// `default_on`, which is the win-column rule in the module header — so a
+/// screenable gene no screen has measured, or has measured only once, is off.
+/// `None` for a gene no native screen can price (the Firaxis-only flags),
+/// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
     // A host-only flag is never governed by a native row — even when one
     // exists: such a row measured a native stand-in that no longer runs
@@ -119,7 +166,7 @@ pub fn ledger_default_on(tag: &str) -> Option<bool> {
     if !screenable(tag) {
         return None;
     }
-    Some(ledger_verdict(tag).is_some_and(|row| row.verdict == Verdict::Helps))
+    Some(ledger_verdict(tag).is_some_and(|row| row.default_on))
 }
 
 /// Whether a live treatment is normally present in the universe but held out
@@ -247,11 +294,72 @@ mod tests {
                 "{tag}: verdict differs between the table and the JSON"
             );
             assert_eq!(
-                row.verdict == Verdict::Helps,
+                row.default_on,
                 entry["default_on"].as_bool().expect("default_on"),
                 "{tag}: default differs between the table and the JSON"
             );
+            for (column, recorded) in [
+                ("wins_last_10k", row.wins_last_10k),
+                ("wins_prior_10k", row.wins_prior_10k),
+            ] {
+                assert_eq!(
+                    recorded.map(i64::from),
+                    entry[column].as_i64(),
+                    "{tag}: {column} differs between the table and the JSON"
+                );
+            }
         }
+    }
+
+    /// The rule itself: every default in the generated table is the one the
+    /// two win columns beside it produce. The tool decides; this re-derives.
+    #[test]
+    fn the_default_follows_the_win_columns() {
+        let mut on = 0;
+        for row in gene_ledger() {
+            assert_eq!(
+                row.default_on,
+                win_columns_default_on(row.wins_last_10k, row.wins_prior_10k),
+                "{}: default {} does not follow its win columns {:?}/{:?}",
+                row.tag,
+                row.default_on,
+                row.wins_last_10k,
+                row.wins_prior_10k
+            );
+            on += usize::from(row.default_on);
+        }
+        assert!(on > 0, "a genome with no gene on is a broken regeneration");
+    }
+
+    /// The rule's three clauses, at their boundaries.
+    #[test]
+    fn the_win_column_rule_reads_both_columns() {
+        assert!(win_columns_default_on(Some(1), Some(1)), "both positive");
+        assert!(
+            !win_columns_default_on(Some(1), Some(0)),
+            "zero is not positive"
+        );
+        assert!(
+            !win_columns_default_on(Some(39), Some(-26)),
+            "one strong reading does not carry an average of 6.5"
+        );
+        assert!(
+            win_columns_default_on(Some(48), Some(-10)),
+            "an average of 19 with the floor exactly met"
+        );
+        assert!(
+            !win_columns_default_on(Some(50), Some(-11)),
+            "a column below the floor is off however good the average"
+        );
+        assert!(
+            !win_columns_default_on(Some(30), Some(0)),
+            "an average of exactly 15 does not clear +15, and 0 is not positive"
+        );
+        assert!(
+            !win_columns_default_on(Some(81), None),
+            "one native reading has nothing to agree with it"
+        );
+        assert!(!win_columns_default_on(None, None), "unmeasured is off");
     }
 
     /// A screenable gene the screens have not measured is not proven, so it
@@ -357,8 +465,8 @@ mod tests {
             "host-only treatments already follow their live-universe default"
         );
         assert!(
-            !ledger_held_live_treatment("strategic-wonders"),
-            "a production treatment is not a live-universe override"
+            !ledger_held_live_treatment("founder-temple"),
+            "a withheld production opt-in is not a live-universe override"
         );
         assert!(ledger_held_live_treatments().contains(&"governor-every-lane"));
 
@@ -383,7 +491,7 @@ mod tests {
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
         assert!(ai.governor_victory_lanes, "the named live treatment stands");
         assert!(
-            !ai.war_patience,
+            !ai.war_economy,
             "neighbouring ledger-held treatments stay off unless named too"
         );
         assert_eq!(applied.forced, vec!["governor-every-lane"]);
