@@ -3761,6 +3761,43 @@ pub struct AdvancedAi {
     /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
     pub priced_tile_purchase: bool,
 
+    /// The six victory-lane genes. Each substitutes the victory the empire is
+    /// actually racing (`victory_focus`) for the plan's own strategy at ONE
+    /// decider, and only while the plan is `Expansion` — a posture that
+    /// carries no victory content, and which a targeted seat holds for about
+    /// a fifth of the game and an adaptive one for 15%. All off everywhere by
+    /// default. See `advanced/victory_lane.rs` for the census that motivates
+    /// them and `docs/VICTORY_GENES.md` for the lane-by-lane coverage table.
+    ///
+    /// `lane-congress-ballot`: the World Congress ballot is **scored** for the
+    /// raced lane — which outcome and target this seat names.
+    pub lane_congress_ballot: bool,
+    /// `lane-congress-favor`: the **stake** behind that ballot is decided by
+    /// the raced lane. Split from the row above after the lane's own regime
+    /// flagged the composite at −0.61 pp of score share (z −2.33): naming the
+    /// right outcome is free, buying it empties a treasury that a winning
+    /// ballot does not refund. See `advanced/victory_lane.rs`.
+    pub lane_congress_favor: bool,
+    /// `lane-great-people`: Great Person patronage ranks classes by the
+    /// raced lane.
+    pub lane_great_people: bool,
+    /// `lane-policy-deck`: the policy cards are chosen for the raced lane.
+    pub lane_policy_deck: bool,
+    /// `lane-culture-spending`: the Culture Faith pass — the Naturalist that
+    /// founds a National Park, the touring Rock Bands — and the Faith reserve
+    /// that keeps them affordable read the raced lane.
+    pub lane_culture_spending: bool,
+    /// `lane-space-race`: the Spaceport and launch pass opens for an empire
+    /// racing Science that is still settling. `score_horizon` still refuses a
+    /// race that cannot finish.
+    pub lane_space_race: bool,
+    /// `competition-victory-points`: a scored competition's first place is
+    /// priced by the Diplomatic Victory Points it pays, at the same rate
+    /// `strategic_wonder_value` pays a wonder's. Thirteen of the twenty a
+    /// diplomatic victory needs come from the Congress and its competitions,
+    /// and none of them were priced.
+    pub competition_victory_points: bool,
+
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
     /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
@@ -4199,6 +4236,11 @@ mod site_lookahead;
 /// afterwards. See `advanced/religion.rs`.
 mod religion;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
+
+/// Six opt-in genes for the victory lanes: the race the empire is actually
+/// in, reaching the deciders that read the expansion posture instead. See
+/// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
+mod victory_lane;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -4823,6 +4865,13 @@ impl AdvancedAi {
             theology_for_founders: false,
             district_lookahead_settle: false,
             priced_tile_purchase: false,
+            lane_congress_ballot: false,
+            lane_congress_favor: false,
+            lane_great_people: false,
+            lane_policy_deck: false,
+            lane_culture_spending: false,
+            lane_space_race: false,
+            competition_victory_points: false,
             idle_faith_patronage: false,
             religious_defence_scales: false,
             guru_heals_the_corps: false,
@@ -9155,6 +9204,14 @@ impl AdvancedAi {
                 Self::host_competition_gpp_score(&gpp_awards, "EMERGENCY_NOBEL_PRIZE_PHYSICS"),
             ),
         ];
+        // See `lane_great_people`: which Great Person class this project's
+        // points are worth chasing is a question about the race, not about the
+        // settling posture, and this arm runs in every city every turn —
+        // unlike patronage, which needs a bank the opening rarely has. Hoisted
+        // out of the loop: `raced_lane` short-circuits on any plan that is not
+        // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
+        // and this is `production_value`'s hot path.
+        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -9171,7 +9228,7 @@ impl AdvancedAi {
             if g.live_great_person_offer_blocker(pid, &kind).is_some() {
                 continue;
             }
-            let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
+            let mut affinity: f64 = match (great_person_lane, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 2.8,
@@ -13255,6 +13312,13 @@ impl AdvancedAi {
             }
         }
         if let Some(session) = g.congress.clone() {
+            // See `lane_congress_ballot`: an empire still settling hands this
+            // ballot `Expansion`, so the lane branches — the Diplomacy seat's
+            // own `world_leader` nomination, the Culture seat's `world_fair` —
+            // cannot be reached in the opening, and the Favor behind a vote is
+            // never staked. One answer for the whole session.
+            let congress_lane = self.congress_lane(g, pid, plan);
+            let congress_favor_lane = self.congress_favor_lane(g, pid, plan);
             for resolution in session.resolutions {
                 if resolution.ballots.contains_key(&pid) {
                     continue;
@@ -13272,7 +13336,7 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                if let Some(choice) = self.congress_choice(g, pid, &resolution, plan.strategy) {
+                if let Some(choice) = self.congress_choice(g, pid, &resolution, congress_lane) {
                     // Nothing cast now can move a resolution that is already
                     // settled, so the only thing left on the table is the
                     // Diplomatic Victory Point the host pays for naming the
@@ -13302,7 +13366,8 @@ impl AdvancedAi {
                         );
                     let votes = if settled.is_some() {
                         1
-                    } else if plan.strategy == GrandStrategy::Diplomacy || counters_the_leader {
+                    } else if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader
+                    {
                         g.congress_affordable_votes(pid)
                     } else {
                         1
@@ -13310,7 +13375,7 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "Voting {} on {}", plain(&choice), plain(&resolution.id);
                            "{votes} vote{} behind it, on the {} plan",
-                           if votes == 1 { "" } else { "s" }, plan.strategy.as_str());
+                           if votes == 1 { "" } else { "s" }, congress_lane.as_str());
                     let _ = g.apply(
                         pid,
                         &Action::CongressVote {
@@ -16099,6 +16164,12 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        // See `lane_space_race`: every gate below asks for an EXPLICITLY
+        // assigned Science target, so the adaptive agent production ships —
+        // which has no target at all — races the space race at one pad, and
+        // only in a city with nothing else queued. One answer per turn; the
+        // three tests below read it.
+        let races_science = self.space_race_lane(g, pid);
         let completed = g.players[pid].science_projects.clone();
         let project = if !completed.contains("launch_earth_satellite") {
             "launch_earth_satellite"
@@ -16137,7 +16208,8 @@ impl AdvancedAi {
                                 g.cities[cid].queue.first(),
                                 Some(Item::Project { project: queued }) if queued == project
                             )
-                            && (self.victory_target == Some(VictoryTarget::Science)
+                            && (races_science
+                                || self.victory_target == Some(VictoryTarget::Science)
                                 || g.cities[cid].queue.is_empty())
                     })
                     .max_by(|a, b| {
@@ -16178,24 +16250,27 @@ impl AdvancedAi {
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports = if self.victory_target == Some(VictoryTarget::Science) {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
+        let desired_spaceports =
+            if races_science || self.victory_target == Some(VictoryTarget::Science) {
+                if completed.contains("launch_mars_colony") {
+                    3
+                } else if completed.contains("launch_moon_landing") {
+                    2
+                } else {
+                    1
+                }
             } else {
                 1
             }
-        } else {
-            1
-        }
-        .min(city_ids.len());
+            .min(city_ids.len());
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid].districts.contains_key(crate::name!("spaceport"))
+            if g.cities[&cid]
+                .districts
+                .contains_key(crate::name!("spaceport"))
                 || matches!(
                     g.cities[&cid].queue.first(),
                     Some(Item::District { district, .. }) if district == "spaceport"
@@ -16203,7 +16278,8 @@ impl AdvancedAi {
             {
                 continue;
             }
-            if self.victory_target != Some(VictoryTarget::Science)
+            if !races_science
+                && self.victory_target != Some(VictoryTarget::Science)
                 && !g.cities[&cid].queue.is_empty()
             {
                 continue;
@@ -20274,6 +20350,10 @@ impl AdvancedAi {
                             }
                         }
                         _ if spec.requires_host_competition() => {
+                            // See `competition_victory_points`: first place in
+                            // a scored competition pays one or two of the
+                            // twenty a diplomatic victory needs, and only the
+                            // competition's own score was ever priced.
                             let value = spec
                                 .host_competition_kinds()
                                 .map(|kind| {
@@ -20283,6 +20363,12 @@ impl AdvancedAi {
                                         kind,
                                         spec.competition_score,
                                         turns,
+                                    ) + self.competition_victory_point_value(
+                                        g,
+                                        pid,
+                                        plan,
+                                        kind,
+                                        spec.competition_score,
                                     )
                                 })
                                 .fold(0.0, f64::max);
@@ -30263,7 +30349,9 @@ impl AdvancedAi {
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
-        self.advanced_great_people(g, pid, plan.strategy);
+        // See `lane_great_people`: a Great Person is a finite global race,
+        // and an Expansion plan reads 0.85 for every class the lane needs.
+        self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
             let committed = plan.strategy == GrandStrategy::Religion;
             let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
@@ -30277,7 +30365,9 @@ impl AdvancedAi {
             };
             self.religious_spending_with_reserve(g, pid, offensive, reserve);
         }
-        self.faith_building_spending(g, pid, plan.strategy);
+        // See `lane_culture_spending`: the Culture reserve that keeps a
+        // Naturalist affordable is chosen by this same value.
+        self.faith_building_spending(g, pid, self.culture_faith_lane(g, pid, &plan));
         self.military_faith_spending(g, pid, &plan);
         // Live spectator majors choose an adaptive plan instead of carrying
         // an explicit `victory_target`. Give both modes the same strategic
@@ -30287,7 +30377,10 @@ impl AdvancedAi {
         if self.victory_planning && !emergency_city_defense {
             self.advanced_gold_spending(g, pid, &plan);
         }
-        self.strategic_policies(g, pid, plan.strategy);
+        // See `lane_policy_deck`: the cards a completed Culture game seats
+        // (`heritage_tourism`, `satellite_broadcasts`, `sports_media`) are
+        // not on an expansion deck.
+        self.strategic_policies(g, pid, self.policy_lane(g, pid, &plan));
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -30379,13 +30472,23 @@ impl AdvancedAi {
                     self.religious_defense(g, pid, &threat);
                 }
             }
+            // See `lane_space_race`: the last disjunct opens the pass for an
+            // empire racing Science that has not finished settling. The
+            // `score_horizon` refusal inside it is unchanged.
             if self.victory_planning
                 && (plan.strategy == GrandStrategy::Science
-                    || self.diplomatic_science_backup(g, pid, &plan))
+                    || self.diplomatic_science_backup(g, pid, &plan)
+                    || self.space_race_lane_opens(g, pid, &plan))
             {
                 self.space_race_production(g, pid);
             }
-            if self.victory_planning && plan.strategy == GrandStrategy::Culture {
+            // See `lane_culture_spending`: the Naturalist and the touring
+            // Rock Bands are the Culture lane's only Faith purchases, and a
+            // Culture racer still settling never reaches them.
+            if self.victory_planning
+                && (plan.strategy == GrandStrategy::Culture
+                    || self.culture_lane_spends(g, pid, &plan))
+            {
                 self.culture_spending(g, pid);
             }
             let adaptive_expansion_dispatch =

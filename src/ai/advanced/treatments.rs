@@ -245,6 +245,29 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // hit points say, and healing ground that comes under a shooter's reach
     // is left. See `BasicAi::one_shot_recovery`.
     ("one_shot_recovery", "one-shot-recovery", AdvancedAi::enable_one_shot_recovery),
+    // The six victory-lane genes (`advanced/victory_lane.rs`,
+    // `docs/VICTORY_GENES.md`). A targeted seat spends about a fifth of the
+    // game — and an adaptive one 15% — with `Expansion` in its plan, and
+    // `take_turn_inner` hands that to every lane-shaped decider. Each of the
+    // first five substitutes the victory the empire is actually racing at ONE
+    // of them; the sixth prices the Diplomatic Victory Points a scored
+    // competition pays, which nothing priced.
+    ("lane_congress_ballot", "lane-congress-ballot", AdvancedAi::enable_lane_congress_ballot),
+    ("lane_congress_favor", "lane-congress-favor", AdvancedAi::enable_lane_congress_favor),
+    ("lane_great_people", "lane-great-people", AdvancedAi::enable_lane_great_people),
+    ("lane_policy_deck", "lane-policy-deck", AdvancedAi::enable_lane_policy_deck),
+    ("lane_culture_spending", "lane-culture-spending", AdvancedAi::enable_lane_culture_spending),
+    ("lane_space_race", "lane-space-race", AdvancedAi::enable_lane_space_race),
+    ("competition_victory_points", "competition-victory-points", AdvancedAi::enable_competition_victory_points),
+    // Three behaviours that already existed and could not be screened: off in
+    // production, reachable only as named `elo.rs` arms, so `gene_screen`
+    // never saw them. `docs/VICTORY_GENES.md` §9 counts these fields; these
+    // are the three the Diplomacy lane needs — and the first has a measured
+    // number sitting unused in its own field doc (26 of 192 ballot decisions
+    // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
+    ("congress_banks_a_decided_vote", "congress-banks-decided", AdvancedAi::enable_congress_banks_a_decided_vote),
+    ("congress_counter_votes", "congress-counter-votes", AdvancedAi::enable_congress_counter_votes),
+    ("envoy_infrastructure", "envoy-infrastructure", AdvancedAi::enable_envoy_infrastructure),
     // Nothing in this controller reaches the air layer: the melee package
     // skips `domain == "air"` and ranks its unlocks by cheapest remaining
     // research, so it can appoint the next technology and never a chain.
