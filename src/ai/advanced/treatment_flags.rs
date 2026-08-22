@@ -2284,7 +2284,7 @@ impl AdvancedAi {
     /// ★★★ THE THREE BELOW ARE NOT NEW BEHAVIOUR. They already existed, off
     /// in production and reachable only as named `elo.rs` arms — which means
     /// `gene_screen` could not see them and the genome instrument has never
-    /// priced any of them. `docs/VICTORY_GENES.md` §7 counts 42 such
+    /// priced any of them. `docs/VICTORY_GENES.md` §8 counts these
     /// behaviours; these are the three the Diplomacy lane needs, and the
     /// toggle pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
     /// screenable.
