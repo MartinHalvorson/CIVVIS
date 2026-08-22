@@ -42,6 +42,12 @@ NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 #: A two-sided 5% test reaches 80% power at 1.96 + 0.84 standard errors.
 POWER_80 = 2.8
 
+#: How much of a gene's sentence the Description column carries. Widened
+#: 160 → 480 on 2026-08-22 (operator: "three times as wide"): the longest
+#: first sentence in the registry is 249 characters, so every description
+#: now prints whole and the "…" that clipped 16 of them is gone.
+DESCRIPTION_CHARS = 480
+
 
 def column_se(win_se_pp: float) -> float:
     """One `wins_per` column's standard error, in the column's own units.
@@ -157,8 +163,8 @@ def _first_sentence(doc_lines: str) -> str:
     doc = re.sub(r"^[★⚠\s]+", "", doc)
     sentence = re.split(r"(?<=[.!?])\s", doc, maxsplit=1)[0]
     sentence = re.sub(r"\[`([^`]+)`\]", r"`\1`", sentence)
-    if len(sentence) > 160:
-        sentence = sentence[:157].rstrip() + "…"
+    if len(sentence) > DESCRIPTION_CHARS:
+        sentence = sentence[: DESCRIPTION_CHARS - 3].rstrip() + "…"
     return sentence
 
 
@@ -272,8 +278,13 @@ def render(ledger: dict) -> str:
         "2026-08-22 that call is read off these two win columns: a gene defaults **on** "
         "when both are positive, or when their average clears +15 with neither below "
         "\u221210; with exactly one populated column it defaults **on** when that reading "
-        "is above +20. It defaults **off** otherwise. The *Total* "
-        "columns pool every native screen that measured the gene, weighted by games. Every "
+        "is above +20. It defaults **off** otherwise. The *Total* win-rate "
+        "columns pool every native screen that measured the gene, weighted by games, and "
+        "each carries its own game count `n` — the two arms are only equal when every "
+        "screen that measured the gene split them evenly. *Diff* is the on rate minus the "
+        "off rate in percentage points: the **whole** on−off difference, so it stands at "
+        "roughly twice the scale of the win columns beside it and must be read against a "
+        "screen’s difference band rather than the halved column band below. Every "
         "screen is a foldover against the best-genome baseline with shuffled civs and every "
         "major seat carrying its own genome (errors clustered by game pair), so a gene's "
         "on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the "
@@ -332,7 +343,7 @@ def render(ledger: dict) -> str:
         "screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this "
         "file is older than the ledger's sources.",
         "",
-        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Total Games (on+off) | cost (compute) | cost (time) |",
+        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
@@ -349,7 +360,9 @@ def render(ledger: dict) -> str:
         off_rate = sum(m["win_off"] * m["n_off"] for m in history) / off_games
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
-            f"{100 * on_rate:.2f}% | {100 * off_rate:.2f}% | {fmt_int(on_games + off_games)} | "
+            f"{100 * on_rate:.2f}% (n={fmt_int(on_games)}) | "
+            f"{100 * off_rate:.2f}% (n={fmt_int(off_games)}) | "
+            f"{100 * (on_rate - off_rate):+.2f}pp | "
             f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
