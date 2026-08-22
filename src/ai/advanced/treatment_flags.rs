@@ -2122,6 +2122,17 @@ impl AdvancedAi {
         self.base.civilian_rescue = false;
     }
 
+    /// A unit one enemy blow from death withdraws to safe healing ground, and
+    /// leaves that ground again the moment an enemy can strike it. See
+    /// `BasicAi::one_shot_recovery`.
+    pub fn enable_one_shot_recovery(&mut self) {
+        self.base.one_shot_recovery = true;
+    }
+
+    pub fn disable_one_shot_recovery(&mut self) {
+        self.base.one_shot_recovery = false;
+    }
+
     /// Keep the hostile-envelope table across this seat's own unit moves —
     /// evaluator arm `advanced_envelope_own_moves`. See
     /// `BasicAi::envelope_cache_across_own_moves`.

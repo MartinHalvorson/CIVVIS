@@ -235,4 +235,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // let a native seat turn on exactly one of its established predicates.
     ("governor_victory_lanes", "governor-victory-lanes", AdvancedAi::enable_governor_victory_lanes),
     ("governor_expansion_lane", "governor-expansion-lane", AdvancedAi::enable_governor_expansion_lane),
+    // `withdraw_hp` is a constant and the enemy's damage is not: a unit the
+    // strongest thing in reach would kill in one blow recovers whatever its
+    // hit points say, and healing ground that comes under a shooter's reach
+    // is left. See `BasicAi::one_shot_recovery`.
+    ("one_shot_recovery", "one-shot-recovery", AdvancedAi::enable_one_shot_recovery),
 ];

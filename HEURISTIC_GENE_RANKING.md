@@ -89,6 +89,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
 | `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
+| `one-shot-recovery` | off (unmeasured) | A unit one enemy blow from death withdraws to safe healing ground, and leaves that ground again the moment an enemy can strike it. |
 | `opportunistic-war` | off (unmeasured) | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
 | `raid-pillage-prizes` | off (unmeasured) | Count a neighbour's unpillaged tiles within reach as raid prizes and send raiding soldiers to them. |
