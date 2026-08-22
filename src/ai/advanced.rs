@@ -3983,6 +3983,19 @@ pub struct AdvancedAi {
     /// them, and why the census will price the combinations and not only the
     /// singles.
     ///
+    /// ⚠ MEASURED AND UNRESOLVED, WITH THE FLOOR THE LIKELY REASON. Over four
+    /// conditioned census games this gene was **byte-identical to control** on
+    /// every column — cities, the whole chain, techs, Science to a decimal,
+    /// score — and so was the four-gene bundle with and without it. It is not
+    /// structurally inert: a probe that zeroes `RESEARCH_CAMPUS_COVERAGE`
+    /// outright moves the same seed from 4 Campuses to 3 and 30 techs to 29,
+    /// so the term this scales is read and does decide things. And the brake
+    /// itself bites: over 160 turns of one game it was under 1.0 on **70
+    /// turns** and reached the floor. What it does not do at
+    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` = 0.25 is flip a decision on those
+    /// four seeds. Either the floor is too high to matter or four seeds cannot
+    /// see it; both stay open, and the gene ships off until a screen says.
+    ///
     /// With this on, `RESEARCH_CAMPUS_COVERAGE` is scaled by
     /// `research_chain_completion` — the share of Campus buildings the
     /// standing Campuses could produce now and do have. An empire with no

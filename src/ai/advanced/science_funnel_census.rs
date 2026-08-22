@@ -120,46 +120,25 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..4).map(|i| 84_000_000 + i).collect();
+    let seeds: Vec<u64> = (0..12).map(|i| 85_000_000 + i).collect();
+    // ⚠ TRIMMED TO THE QUESTION. Round one ran eight arms over four seeds and
+    // spent most of its games on answers it already had: `science-payback-
+    // horizon` lost 3 Research Labs and 166 Science in BOTH rounds, and
+    // `campus-finishes-first` was byte-identical to control in every column.
+    // Neither needs more seeds; the two arms that RAISED terminal Science do.
+    // Four arms at twelve seeds reads them three times as hard for half the
+    // games eight arms at four seeds cost.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("science-payback-horizon", |ai| {
-            ai.enable_science_payback_horizon()
-        }),
         ("science-multiplier-payoff", |ai| {
             ai.enable_science_multiplier_payoff()
         }),
         ("research-tier-premium", |ai| {
             ai.enable_research_tier_premium()
         }),
-        ("research-floor-holds", |ai| {
-            ai.enable_research_floor_holds()
-        }),
-        ("campus-finishes-first", |ai| {
-            ai.enable_campus_finishes_first()
-        }),
-        // The pairing the gradient predicts: the two genes that raised
-        // terminal Science, with the brake that stops them buying Campuses
-        // they will not finish.
-        ("premium+payoff+brake", |ai| {
+        ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_campus_finishes_first();
-        }),
-        ("all four", |ai| {
-            ai.enable_science_payback_horizon();
-            ai.enable_science_multiplier_payoff();
-            ai.enable_research_tier_premium();
-            ai.enable_research_floor_holds();
-        }),
-        // The same four with the brake: does it recover the nine Labs the
-        // bundle lost, or is the bundle bad for some other reason?
-        ("all four + brake", |ai| {
-            ai.enable_science_payback_horizon();
-            ai.enable_science_multiplier_payoff();
-            ai.enable_research_tier_premium();
-            ai.enable_research_floor_holds();
-            ai.enable_campus_finishes_first();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();

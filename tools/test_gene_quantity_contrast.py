@@ -117,5 +117,75 @@ class QuantityContrast(unittest.TestCase):
             self.assertEqual(len(contrast.seat_pairs(game_rows)), 1)
 
 
+
+class AppendedGenes(unittest.TestCase):
+    """A long run's file can carry more than one header.
+
+    `gene_screen` writes one per window, so rebuilding the binary mid-run to
+    add a gene makes every later window announce a longer list. The first draft
+    of the reader refused the whole file and threw away 480 good rows over an
+    append.
+    """
+
+    def write(self, tmp, blocks):
+        path = Path(tmp) / "run.jsonl"
+        path.write_text("\n".join(blocks) + "\n")
+        return path
+
+    def test_a_gene_appended_mid_run_does_not_discard_the_earlier_windows(self):
+        early = json.dumps({"kind": "header", "genes": ["alpha", "beta"]})
+        late = json.dumps({"kind": "header", "genes": ["alpha", "beta", "gamma"]})
+
+        def game(pair, arm, genome, techs):
+            return json.dumps(
+                {
+                    "kind": "game",
+                    "pair": pair,
+                    "arm": arm,
+                    "seed": 500 + pair,
+                    "seat": 0,
+                    "genome": genome,
+                    "techs": techs,
+                }
+            )
+
+        blocks = [early]
+        # Two pairs written before `gamma` existed: alpha on in arm 0, +2 techs.
+        for pair in (0, 1):
+            blocks += [game(pair, 0, "10", 52), game(pair, 1, "01", 50)]
+        blocks.append(late)
+        # Two more after the append, same alpha edge, now with a third bit.
+        for pair in (2, 3):
+            blocks += [game(pair, 0, "100", 52), game(pair, 1, "011", 50)]
+
+        with TemporaryDirectory() as tmp:
+            path = self.write(tmp, blocks)
+            genes, rows = contrast.read([path])
+            self.assertEqual(genes, ["alpha", "beta", "gamma"])
+            pairs = contrast.seat_pairs(rows)
+            self.assertEqual(len(pairs), 4, "no window is discarded")
+
+            # `alpha` is in every header, so all four pairs carry its edge.
+            mean, _se, _z, clusters = contrast.contrast(pairs, genes, "techs", "alpha")
+            self.assertAlmostEqual(2 * mean, 2.0)
+            self.assertEqual(clusters, 4)
+
+            # `gamma` exists in only the later windows and must be read from
+            # them alone — never off a two-bit genome that has no such column.
+            got = contrast.contrast(pairs, genes, "techs", "gamma")
+            self.assertEqual(got[3], 2, "only the windows that screened it")
+
+    def test_a_reordered_gene_list_is_still_refused(self):
+        with TemporaryDirectory() as tmp:
+            path = self.write(
+                tmp,
+                [
+                    json.dumps({"kind": "header", "genes": ["alpha", "beta"]}),
+                    json.dumps({"kind": "header", "genes": ["beta", "alpha"]}),
+                ],
+            )
+            with self.assertRaises(SystemExit):
+                contrast.read([path])
+
 if __name__ == "__main__":
     unittest.main()

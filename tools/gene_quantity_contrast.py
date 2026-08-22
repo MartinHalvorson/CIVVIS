@@ -40,21 +40,46 @@ BOOL_METRICS = {"win", "alive", "founded_religion", "inquisition"}
 
 
 def read(paths):
-    """Return (gene names, game rows) from one or more screen JSONL files."""
+    """Return (gene names, game rows) from one or more screen JSONL files.
+
+    ⚠ A long run's file can carry MORE THAN ONE header. `gene_screen` writes
+    one per window, so rebuilding the binary mid-run to add a gene makes every
+    later window announce a different list. The 83,000,000 run did exactly
+    that, and the first draft of this reader refused the whole file.
+
+    A row's signs are read against ITS OWN header, so a gene APPENDED to the
+    end is harmless: the genome string is positional and every earlier gene
+    keeps its index. Pooling is refused only when the shorter list is not a
+    prefix of the longer, which is a genuine reorder — position `i` means two
+    different genes and no care could line the matrix up.
+
+    ⭐ And that is what the 83,000,000 run turned out to be: the new gene was
+    inserted into the MIDDLE of the treatment table, beside its siblings, not
+    appended. The refusal was right, and the run had to be analysed as two
+    segments. **Append a gene at the END of the table if a screen is already
+    running against it**, or expect to split the file.
+    """
     genes, rows = None, []
     for path in paths:
+        current = None
         for line in Path(path).read_text().splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
             if row.get("kind") == "header":
-                if genes is not None and row["genes"] != genes:
+                current = row["genes"]
+                shorter, longer = sorted((genes or [], current), key=len)
+                if genes is not None and longer[: len(shorter)] != shorter:
                     raise SystemExit(
-                        "refusing to pool runs that screened different genes: "
-                        "the sign matrix would not line up"
+                        "refusing to pool rows whose gene lists disagree on "
+                        "order: position i would mean two different genes"
                     )
-                genes = row["genes"]
+                # Keep the longest list seen; it names every gene screened.
+                genes = longer
             elif row.get("kind") == "game":
+                if current is None:
+                    raise SystemExit("a game row before any header")
+                row["_genes"] = current
                 rows.append(row)
     if genes is None:
         raise SystemExit("no header row; is this a gene_screen --out file?")
@@ -79,10 +104,17 @@ def contrast(pairs, genes, metric, gene):
 
     The estimate is per unit of the +/-1 coding, so the on-minus-off difference
     a screen prints is twice it.
+
+    The sign is read against each row's own header (see `read`), so a window
+    written before the gene existed contributes nothing rather than reading
+    some other gene's bit.
     """
-    index = genes.index(gene)
     per_cluster = defaultdict(list)
     for arm0, arm1 in pairs:
+        names = arm0.get("_genes", genes)
+        if gene not in names:
+            continue
+        index = names.index(gene)
         sign = 1.0 if arm0["genome"][index] == "1" else -1.0
         per_cluster[arm0["pair"]].append(
             (value(arm0, metric) - value(arm1, metric)) * sign / 2.0
@@ -117,7 +149,15 @@ def main(argv=None):
     varying = [
         g
         for g in wanted
-        if g in genes and len({r["genome"][genes.index(g)] for r in rows}) > 1
+        if g in genes
+        and len(
+            {
+                r["genome"][r.get("_genes", genes).index(g)]
+                for r in rows
+                if g in r.get("_genes", genes)
+            }
+        )
+        > 1
     ]
     print(f"{len(pairs)} complete seat-pairs · metric {args.metric}")
     results = []
