@@ -103,6 +103,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `one-shot-recovery` | off (unmeasured) | A unit one enemy blow from death withdraws to safe healing ground, and leaves that ground again the moment an enemy can strike it. |
 | `opportunistic-war` | off (unmeasured) | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… |
 | `power-the-laboratory` | off (unmeasured) | A power plant is credited the yields it switches on in its city. |
+| `precise-evacuation` | off (unmeasured) | Route a unit that the enemy's exact next-turn attack envelopes can kill to safe recovery ground, ahead of the ordinary withdrawal threshold. |
 | `priced-tile-purchase` | off (unmeasured) | A border plot is bought only when its priced benefit clears its Gold by a margin. |
 | `raid-pillage-prizes` | off (unmeasured) | Count a neighbour's unpillaged tiles within reach as raid prizes and send raiding soldiers to them. |
 | `religious-defence-scales` | off (unmeasured) | Size the defensive Missionary corps by the number of cities actually under conversion pressure instead of the shipped constant 2. |
